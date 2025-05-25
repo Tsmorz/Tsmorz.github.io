@@ -1,91 +1,43 @@
----
-# Copyright (c) 2018 Florian Klampfer <https://qwtel.com/>
-layout: about
----
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My GitHub Page</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+  <header>
+    <h1>Welcome to My GitHub Page</h1>
+    <nav>
+      <a href="#about">About</a>
+      <a href="#projects">Projects</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
 
-{% assign strings = site.data.strings %}
+  <main>
+    <section id="about">
+      <h2>About</h2>
+      <p>This is a simple static site hosted with GitHub Pages. You can use this as a portfolio, blog, or documentation site.</p>
+    </section>
 
-{% if content contains "<!--projects-->" %}
-{% capture projets_x %}
-{% if page.selected_projects %}
-  <div class="columns mt2">
-  {% for project_path in page.selected_projects %}
-    {% assign project = site.projects | where:"path",project_path | first %}
-    {% assign featured = page.featured | default:project.featured | default:page.big_project | default:project.big_project %}
+    <section id="projects">
+      <h2>Projects</h2>
+      <ul>
+        <li>📌 Project 1 - Description of what it does.</li>
+        <li>📌 Project 2 - Another quick summary.</li>
+      </ul>
+    </section>
 
-    <div class="column {% if featured %}column-1{% else %}column-1-2{% endif %}">
-      {% if project %}
-        {% include pro/project-card.html project=project featured=featured %}
-      {% else %}
-        Project with path <code>{{ project_path }}</code> not found.
-      {% endif %}
-    </div>
-  {% endfor %}
-  </div>
-{% elsif site.projects.size > 1 %}
-  <div class="columns mt2">
-  {% assign ordered_projects = site.projects | sort:"date" | reverse %}
-  {% for project in ordered_projects limit:2 %}
-    {% assign featured = page.featured | default:project.featured | default:page.big_project | default:project.big_project %}
+    <section id="contact">
+      <h2>Contact</h2>
+      <p>Get in touch at <a href="mailto:your.email@example.com">your.email@example.com</a></p>
+    </section>
+  </main>
 
-    <div class="column {% if featured %}column-1{% else %}column-1-2{% endif %}">
-      {% include pro/project-card.html project=project featured=featured %}
-    </div>
-  {% endfor %}
-  </div>
-{% endif %}
-
-{% if page.more_projects %}
-  {% assign more_projects = site.pages | where:"path", page.more_projects | first %}
-  {% if more_projects %}
-    {% capture projects_title %}<a class="heading flip-title" href="{{ more_projects.url | relative_url }}">{{ more_projects.title }}</a>{% endcapture %}
-    {% assign text = strings.welcome.more_projects | default:"See <!--projects_title--> for more" %}
-    <p class="read-more mt0">
-      {{ text | replace:"<!--projects_title-->", projects_title }}
-    </p>
-  {% else %}
-    Page with path <code>{{ page.more_posts }}</code> not found.
-  {% endif  %}
-{% endif %}
-{% endcapture %}
-{% assign content = content | replace:"<!--projects-->", projets_x %}
-{% endif %}
-
-{% if content contains "<!--posts-->" %}
-{% capture posts_x %}
-{% if page.selected_posts %}
-  <ul class="related-posts mt2">
-    {% for post_path in page.selected_posts %}
-      {% assign post = site.posts | where:"path", post_path | first %}
-      {% if post %}
-        {% include components/post-list-item.html post=post %}
-      {% else %}
-        <li>Post with path <code>{{ post_path }}</code> not found.</li>
-      {% endif %}
-    {% endfor %}
-  </ul>
-{% elsif site.posts.size > 1 %}
-  <ul class="related-posts mt2">
-    {% for post in site.posts limit:5 %}
-      {% include components/post-list-item.html post=post %}
-    {% endfor %}
-  </ul>
-{% endif %}
-
-{% if page.more_posts %}
-  {% assign more_posts = site.pages | where:"path", page.more_posts | first %}
-  {% if more_posts %}
-    {% capture posts_title %}<a class="heading flip-title" href="{{ more_posts.url | relative_url }}">{{ more_posts.title }}</a>{% endcapture %}
-    {% assign text = strings.welcome.more_posts | default:"See <!--posts_title--> for more" %}
-    <p class="read-more">
-      {{ text | replace:"<!--posts_title-->", posts_title }}
-    </p>
-  {% else %}
-    Page with path <code>{{ page.more_posts }}</code> not found.
-  {% endif  %}
-{% endif %}
-{% endcapture %}
-{% assign content = content | replace:"<!--posts-->", posts_x %}
-{% endif %}
-
-{{ content }}
+  <footer>
+    <p>&copy; 2025 Your Name. Built with ❤️ and GitHub Pages.</p>
+  </footer>
+</body>
+</html>
