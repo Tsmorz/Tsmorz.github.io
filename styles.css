@@ -1,209 +1,45 @@
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@100;500&display=swap");
-
-html{
-    overflow: scroll;
-}
-
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    color: white;
-    font-family: "Montserrat", sans-serif;
-    font-weight: 400;
-}
-
 body {
-    /* background: rgb(253, 150, 68); */
-    background: rgb(32,178,170);
-}
-
-li,
-a {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 500;
-    font-size: 32px;
-    text-decoration: none;
-    color: rgb(255, 251, 245);
-}
-
-nav {
-    margin-left: auto;
-}
-
-#header {
-
-    width: 100vw;
-    top: 0;
-    left: 0;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  line-height: 1.6;
+  color: #333;
+  background: #f9f9f9;
 }
 
 header {
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-    padding: 10px;
-    background: rgb(14, 88, 85);
+  background: #0366d6;
+  color: white;
+  padding: 1rem;
+  text-align: center;
 }
 
-.logo {
-    cursor: pointer;
+nav a {
+  margin: 0 0.5rem;
+  color: white;
+  text-decoration: none;
+  font-weight: bold;
 }
 
-.logo-text {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 600;
-    font-size: 64px;
-    text-decoration: none;
-    color: rgb(255, 251, 245);
+nav a:hover {
+  text-decoration: underline;
 }
 
-.nav__links {
-    list-style: none;
-    margin-left: auto;
+main {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
-.nav__links li {
-    display: inline-block;
-    padding: 0px 40px;
-}
-
-.nav__links li a {
-    transition: all 0.3s ease 0s;
-    background-color: rgb(26, 26, 26, 0);
-    padding: 4px 15px;
-    border: none;
-    border-radius: 7px;
-    cursor: pointer;
-}
-
-.nav__links li a:hover {
-    background-color: rgb(26, 26, 26, .3);
-}
-
-.vignette {
-    position:relative;
-    top: 0;
-    left: 0;
-    box-shadow: 0 0 200px rgba(0, 0, 0, 0.2) inset;
-}
-
-.image-container{
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-.image{
-    padding: 5% 20;
-    padding-bottom: 70px;
-}
-
-#container {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
-
-#content {
-    flex-grow: 1;
-    flex: 1;
-    width: 100vw;
-    display: flex;
-    justify-content: center;
-    flex-direction: column;
-}
-
-#content-image {
-    flex-grow: 1;
-    flex: 1;
-    width: 100vw;
-    display: flex;
-    justify-content: flex-start;
-    align-items: center;
-    flex-direction: column;
-    cursor: default;
-}
-
-.button{
-    margin-top: 4%;
-    font-size: 40px;
-    background-color: rgb(3, 33, 43);
-    border: none;
-    border-radius: 7px;
-    cursor: pointer;
-}
-
-.image{
-    /* margin-top: 50px; */
-    margin-top: 10px;
-}
-
-.main-content {
-    font-family: "Montserrat", sans-serif;
-    font-weight: 600;
-    font-size: 96px;
-    text-decoration: none;
-    color: rgb(255, 251, 245);
-    text-align: center;
-}
-
-.main-content-about {
-    font-family: "Montserrat", sans-serif;
-    font-size: 46px;
-    text-decoration: none;
-    color: rgb(255, 251, 245);
-    text-align: center;
-}
-
-.animate{
-    animation: fadeInAnimation ease 1.5s;
-    animation-iteration-count: 1;
-    animation-fill-mode: forwards;
-}
-
-  
-@keyframes fadeInAnimation {
-    0% {
-        opacity: 0;
-    }
-    100% {
-        opacity: 1;
-     }
-}
-html, body {
-    max-width: 100%;
-    overflow-x: hidden;
+h1, h2 {
+  margin-top: 0;
 }
 
 footer {
-    /* text-align: center; */
-    padding: 3px;
-    background-color: rgb(4, 145, 138);
-    color: white;
-}
-
-.textbox {
-    margin-bottom: 1cm;
-    /* align-items: center;
-    justify-content: center; */
-    width: 50%;
-}
-
-/* trying to make gallery side-by-side images the same height */
-.container .box {
-    width:90%; /*540px; */
-    margin:5%; /*50px;*/
-    display:table;
-    vertical-align: top;
-}
-.container .box .box-row {
-    display:table-row;
-    vertical-align: top;
-}
-.container .box .box-cell {
-    display:table-cell;
-    border:0; /*1px solid black;*/
-    width:25%;
-    padding:10px;
-    vertical-align: middle;
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.9em;
+  color: #777;
 }
