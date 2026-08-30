@@ -1,0 +1,26 @@
+# Add a photo: drop the full-size file in /images/, run the resize command in
+# CLAUDE.md to make /assets/img/photos/<slug>.jpg and thumbs/<slug>.jpg,
+# then add a block here. `tall: true` makes it span two rows in the grid.
+
+- slug: van-life
+  title: Van Life
+  caption: The Milky Way over a home on wheels.
+  location: American Southwest
+  year: "2019"
+  tall: true
+
+- slug: gopro-2020
+  title: Sea Cave
+  caption: Lake Superior framed by sandstone at Pictured Rocks.
+  location: Michigan, USA
+  year: "2020"
+
+- slug: landscape-1
+  title: Shallows
+  caption: Clear water running out to the horizon.
+  year: "2019"
+
+- slug: landscape-2
+  title: Green Sea Turtle
+  caption: A turtle surfacing for air.
+  year: "2019"

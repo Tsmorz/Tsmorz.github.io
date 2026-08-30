@@ -1,0 +1,48 @@
+---
+layout: default
+title: Home
+description: Tony Smoragiewicz — robotics PhD researcher working on state estimation, sensor fusion, and autonomous aerial vehicles.
+---
+
+<section class="hero wrap">
+  <div class="hero-inner">
+    <div>
+      <span class="hero-eyebrow"><span class="dot"></span> PhD researcher in Munich</span>
+      <h1>Hi, I'm Tony &mdash;<br>I build <span class="accent">robots that know where they are.</span></h1>
+      <p class="hero-lede">
+        I'm a robotics PhD researcher at the Technical University of Munich, working on
+        state estimation, sensor fusion, and autonomous aerial vehicles. Before Munich:
+        an MSc in Robotics at Northeastern and a BSc in Aerospace Engineering at Michigan.
+        Most of what I build ends up open source.
+      </p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="{{ '/projects/' | relative_url }}">See my projects</a>
+        {% if site.cv_url %}<a class="btn" href="{{ site.cv_url | relative_url }}">Download CV</a>{% endif %}
+        <a class="btn" href="{{ site.social.github }}">GitHub</a>
+        <a class="btn" href="{{ site.social.linkedin }}">LinkedIn</a>
+      </div>
+    </div>
+    <img class="hero-photo" src="{{ site.author.photo | relative_url }}" alt="Portrait of Tony Smoragiewicz">
+  </div>
+</section>
+
+<section class="section wrap">
+  <div class="section-head">
+    <h2>Selected projects</h2>
+    <a class="more" href="{{ '/projects/' | relative_url }}">All projects &rarr;</a>
+  </div>
+  <div class="card-grid">
+    {%- for project in site.data.projects %}
+      {%- if project.featured %}{% include project-card.html project=project %}{% endif %}
+    {%- endfor %}
+  </div>
+</section>
+
+<section class="section wrap">
+  <div class="section-head">
+    <h2>Photography</h2>
+    <a class="more" href="{{ '/photos/' | relative_url }}">Full gallery &rarr;</a>
+  </div>
+  {% assign recent = site.data.photos | slice: 0, 4 %}
+  {% include photo-grid.html photos=recent %}
+</section>

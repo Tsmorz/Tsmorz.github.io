@@ -1,6 +1,42 @@
 title: Tony Smoragiewicz
-logo: /assets/img/logo.jpg
-description: My personal GitHub Pages site.
-show_downloads: true
-google_analytics:
-theme: jekyll-theme-minimal
+tagline: Robotics PhD researcher — state estimation, aerial vehicles, autonomy
+description: >-
+  Robotics researcher at the Technical University of Munich working on state
+  estimation, sensor fusion, and autonomous aerial vehicles.
+url: https://tsmorz.github.io
+lang: en-US
+
+author:
+  name: Tony Smoragiewicz
+  photo: /assets/img/logo.jpg
+  role: PhD Researcher in Robotics
+  affiliation: Technical University of Munich
+  location: Munich, Germany
+  email: tonysmoragiewicz@gmail.com
+
+social:
+  github: https://github.com/Tsmorz
+  linkedin: https://www.linkedin.com/in/tony-smoragiewicz
+  scholar:
+
+# Set to a file you drop in /assets/ to show a "Download CV" button, e.g. /assets/cv.pdf
+cv_url:
+
+sass:
+  style: compressed
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+exclude:
+  - .github
+  - CLAUDE.md
+  - Gemfile
+  - Gemfile.lock
+  - LICENSE
+  - README.md
+  - vendor
+  - images
+  - script
+  - "*.gemspec"

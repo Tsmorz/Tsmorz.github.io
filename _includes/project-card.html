@@ -1,0 +1,31 @@
+{%- assign proj = include.project -%}
+{%- assign tagkey = proj.tags | join: "|" -%}
+<article class="card" data-tags="{{ tagkey }}">
+  {%- if proj.image %}
+  <div class="card-media"><img src="{{ proj.image | relative_url }}" alt="{{ proj.name }}" loading="lazy"></div>
+  {%- endif %}
+  <div class="card-top">
+    <h3>
+      {%- if proj.links and proj.links.first -%}
+      <a href="{{ proj.links.first.url }}">{{ proj.name }}</a>
+      {%- else -%}
+      {{ proj.name }}
+      {%- endif -%}
+    </h3>
+    {%- if proj.year %}<span class="card-year">{{ proj.year }}</span>{% endif %}
+  </div>
+  <p>{{ proj.blurb }}</p>
+  {%- if proj.tags %}
+  <ul class="tags">
+    {%- for t in proj.tags %}<li class="tag">{{ t }}</li>{% endfor %}
+  </ul>
+  {%- endif %}
+  <div class="card-foot">
+    {%- if proj.links %}
+    <ul class="card-links">
+      {%- for l in proj.links %}<li><a href="{{ l.url }}">{{ l.label }}</a></li>{% endfor %}
+    </ul>
+    {%- endif %}
+    {%- if proj.on_cv %}<span class="cv-flag">On my CV</span>{% endif %}
+  </div>
+</article>

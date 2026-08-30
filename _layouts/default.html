@@ -1,56 +1,63 @@
 <!DOCTYPE html>
-<html lang="{{ site.lang | default: "en-US" }}">
+<html lang="{{ site.lang | default: 'en-US' }}">
   <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-
-{% seo %}
-    <link rel="stylesheet" href="{{ "/assets/css/style.css?v=" | append: site.github.build_revision | relative_url }}">
-    <!--[if lt IE 9]>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
-    <![endif]-->
-    {% include head-custom.html %}
+    <meta name="theme-color" content="#0b0f14">
+    {% seo %}
+    <link rel="icon" href="{{ '/assets/img/logo.jpg' | relative_url }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}">
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t) document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
-    <div class="wrapper">
-      <header>
-        <h1><a href="{{ "/" | absolute_url }}">{{ site.title | default: site.github.repository_name }}</a></h1>
+    <a class="skip-link" href="#main">Skip to content</a>
 
-        {% if site.logo %}
-          <img src="{{site.logo | relative_url}}" alt="Logo" />
-        {% endif %}
-
-        <p>{{ site.description | default: site.github.project_tagline }}</p>
-
-        {% if site.github.is_project_page %}
-        <p class="view"><a href="{{ site.github.repository_url }}">View the Project on GitHub <small>{{ site.github.repository_nwo }}</small></a></p>
-        {% endif %}
-
-        {% if site.github.is_user_page %}
-        <p class="view"><a href="{{ site.github.owner_url }}">View My GitHub Profile</a></p>
-        {% endif %}
-
-        {% if site.show_downloads %}
-        <ul class="downloads">
-          <li><a href="{{ site.github.zip_url }}">Download <strong>ZIP File</strong></a></li>
-          <li><a href="{{ site.github.tar_url }}">Download <strong>TAR Ball</strong></a></li>
-          <li><a href="{{ site.github.repository_url }}">View On <strong>GitHub</strong></a></li>
+    <header class="site-header">
+      <nav class="nav" aria-label="Primary">
+        <a class="nav-brand" href="{{ '/' | relative_url }}">
+          <img src="{{ site.author.photo | relative_url }}" alt="" width="32" height="32">
+          <span>{{ site.title }}</span>
+        </a>
+        <ul class="nav-links">
+          {% assign p = page.url %}
+          <li><a href="{{ '/' | relative_url }}" {% if p == '/' %}aria-current="page"{% endif %}>Home</a></li>
+          <li><a href="{{ '/projects/' | relative_url }}" {% if p contains '/projects' %}aria-current="page"{% endif %}>Projects</a></li>
+          <li><a href="{{ '/photos/' | relative_url }}" {% if p contains '/photos' %}aria-current="page"{% endif %}>Photos</a></li>
+          <li><a href="{{ '/about/' | relative_url }}" {% if p contains '/about' %}aria-current="page"{% endif %}>About</a></li>
         </ul>
-        {% endif %}
-      </header>
-      <section>
+        <button class="theme-toggle" type="button" aria-label="Toggle color theme" title="Toggle color theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+      </nav>
+    </header>
 
+    <main id="main">
       {{ content }}
+    </main>
 
-      </section>
-      <footer>
-        {% if site.github.is_project_page %}
-        <p>This project is maintained by <a href="{{ site.github.owner_url }}">{{ site.github.owner_name }}</a></p>
-        {% endif %}
-        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
-      </footer>
-    </div>
-    <script src="{{ "/assets/js/scale.fix.js" | relative_url }}"></script>
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <p>&copy; {{ 'now' | date: '%Y' }} {{ site.author.name }}{% if site.author.location %} &middot; {{ site.author.location }}{% endif %}</p>
+        <ul class="footer-links">
+          {% if site.social.github %}<li><a href="{{ site.social.github }}">GitHub</a></li>{% endif %}
+          {% if site.social.linkedin %}<li><a href="{{ site.social.linkedin }}">LinkedIn</a></li>{% endif %}
+          {% if site.social.scholar %}<li><a href="{{ site.social.scholar }}">Scholar</a></li>{% endif %}
+          {% if site.author.email %}<li><a href="mailto:{{ site.author.email }}">Email</a></li>{% endif %}
+        </ul>
+      </div>
+    </footer>
+
+    <script src="{{ '/assets/js/site.js' | relative_url }}"></script>
   </body>
 </html>
