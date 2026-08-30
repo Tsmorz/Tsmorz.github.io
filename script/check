@@ -1,0 +1,7 @@
+#!/bin/sh
+# Build the site and check every internal link — the same check CI runs.
+
+set -e
+cd "$(dirname "$0")/.."
+bundle exec jekyll build
+exec bundle exec htmlproofer ./_site --disable-external --allow-hash-href --ignore-empty-alt

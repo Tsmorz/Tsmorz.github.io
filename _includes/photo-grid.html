@@ -1,0 +1,21 @@
+<div class="gallery">
+  {%- for photo in include.photos %}
+  {%- assign meta = "" -%}
+  {%- if photo.location and photo.year %}{% assign meta = photo.location | append: " · " | append: photo.year %}
+  {%- elsif photo.location %}{% assign meta = photo.location %}
+  {%- elsif photo.year %}{% assign meta = photo.year %}{% endif -%}
+  <figure class="shot{% if photo.tall %} tall{% endif %}"
+          tabindex="0" role="button"
+          aria-label="View {{ photo.title }} full size"
+          data-full="{{ '/assets/img/photos/' | append: photo.slug | append: '.jpg' | relative_url }}"
+          data-title="{{ photo.title }}"
+          data-meta="{{ photo.caption }}{% if meta %} — {{ meta }}{% endif %}">
+    <img src="{{ '/assets/img/photos/thumbs/' | append: photo.slug | append: '.jpg' | relative_url }}"
+         alt="{{ photo.caption | default: photo.title }}" loading="lazy">
+    <figcaption>
+      <span class="shot-title">{{ photo.title }}</span>
+      {%- if meta %}<span class="shot-meta">{{ meta }}</span>{% endif %}
+    </figcaption>
+  </figure>
+  {%- endfor %}
+</div>

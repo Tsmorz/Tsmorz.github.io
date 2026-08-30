@@ -1,0 +1,43 @@
+#!/bin/sh
+# Prepare a photo for the gallery.
+#
+#   script/add-photo <source-image> <slug>
+#
+# Writes a 1800px web version to assets/img/photos/<slug>.jpg and a 700px
+# thumbnail to assets/img/photos/thumbs/<slug>.jpg, then reminds you to add
+# the entry to _data/photos.yml.
+
+set -e
+
+src="$1"
+slug="$2"
+
+if [ -z "$src" ] || [ -z "$slug" ]; then
+  echo "usage: script/add-photo <source-image> <slug>" >&2
+  exit 1
+fi
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+out="$root/assets/img/photos"
+mkdir -p "$out/thumbs"
+
+if command -v sips >/dev/null 2>&1; then
+  sips -Z 1800 -s format jpeg -s formatOptions 72 "$src" --out "$out/$slug.jpg" >/dev/null
+  sips -Z 700  -s format jpeg -s formatOptions 65 "$src" --out "$out/thumbs/$slug.jpg" >/dev/null
+elif command -v magick >/dev/null 2>&1; then
+  magick "$src" -auto-orient -resize 1800x1800\> -quality 82 "$out/$slug.jpg"
+  magick "$src" -auto-orient -resize 700x700\>   -quality 78 "$out/thumbs/$slug.jpg"
+else
+  echo "need sips (macOS) or ImageMagick (magick) on PATH" >&2
+  exit 1
+fi
+
+echo "wrote assets/img/photos/$slug.jpg and thumbs/$slug.jpg"
+echo
+echo "Now add this to _data/photos.yml:"
+echo
+echo "- slug: $slug"
+echo "  title: "
+echo "  caption: "
+echo "  location: "
+echo "  year: \"$(date +%Y)\""

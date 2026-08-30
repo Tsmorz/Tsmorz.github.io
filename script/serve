@@ -1,0 +1,7 @@
+#!/bin/sh
+# Run the site locally at http://127.0.0.1:4000 with live rebuilds.
+
+set -e
+cd "$(dirname "$0")/.."
+bundle install --quiet
+exec bundle exec jekyll serve --livereload --drafts "$@"
