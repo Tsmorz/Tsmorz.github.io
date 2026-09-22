@@ -111,11 +111,17 @@ pre code { background: none; border: 0; padding: 0; }
   display: flex; align-items: center; gap: .6rem;
   color: var(--text); font-weight: 600; letter-spacing: -0.01em;
   margin-right: auto;
+  flex-shrink: 0;
 }
 .nav-brand:hover { text-decoration: none; color: var(--accent); }
-.nav-brand img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; }
+.nav-brand img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 
-.nav-links { display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0; }
+.nav-links {
+  display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0;
+  min-width: 0; overflow-x: auto; scrollbar-width: none;
+}
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links li { flex-shrink: 0; }
 .nav-links a {
   display: block; padding: .4rem .7rem; border-radius: 8px;
   color: var(--text-muted); font-size: .95rem; font-weight: 500;
@@ -128,6 +134,7 @@ pre code { background: none; border: 0; padding: 0; }
   width: 36px; height: 36px; padding: 0;
   border: 1px solid var(--border); border-radius: 9px;
   background: var(--surface); color: var(--text-muted); cursor: pointer;
+  flex-shrink: 0;
 }
 .theme-toggle:hover { color: var(--text); border-color: var(--border-strong); }
 .theme-toggle svg { grid-area: 1 / 1; }
@@ -141,6 +148,7 @@ pre code { background: none; border: 0; padding: 0; }
 
 @media (max-width: 620px) {
   .nav-brand span { display: none; }
+  .nav-home { display: none; }
   .nav-links a { padding: .4rem .5rem; font-size: .9rem; }
 }
 
