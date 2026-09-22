@@ -13,7 +13,12 @@ permalink: /projects/
   </p>
 </section>
 
-<section class="wrap section" style="border: 0; padding-top: 1rem;">
+<section class="wrap section" style="padding-top: 0;">
+  <div class="section-head"><h2>By topic</h2></div>
+  {% include topic-chart.html projects=site.data.projects %}
+</section>
+
+<section class="wrap section" style="padding-top: 1rem;">
   {%- assign tag_str = "" -%}
   {%- for project in site.data.projects -%}
     {%- assign joined = project.tags | join: "|" -%}

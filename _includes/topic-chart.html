@@ -1,0 +1,58 @@
+{%- comment -%}
+  Horizontal bar chart of project count by tag, computed at build time from
+  include.projects. One measure across nominal categories, so every bar takes
+  the same accent hue (a value-ramp on nominal categories misencodes them) —
+  see /dataviz's color-formula.md. Tags used only once are noted as a count
+  below the chart rather than drawn as a bar: a project can carry several
+  one-off tags, so summing them isn't a project count and plotting it on the
+  same axis as the real per-project bars would invent a comparison that isn't
+  in the data.
+{%- endcomment -%}
+{%- assign items = include.projects -%}
+{%- assign tag_str = "" -%}
+{%- for project in items -%}
+  {%- assign joined = project.tags | join: "|" -%}
+  {%- assign tag_str = tag_str | append: "|" | append: joined -%}
+{%- endfor -%}
+{%- assign all_tokens = tag_str | split: "|" -%}
+{%- assign tag_names = all_tokens | uniq | sort -%}
+
+{%- assign max_count = 0 -%}
+{%- assign one_off_count = 0 -%}
+{%- for t in tag_names -%}
+  {%- if t != "" -%}
+    {%- assign n = 0 -%}
+    {%- for tok in all_tokens -%}{%- if tok == t -%}{%- assign n = n | plus: 1 -%}{%- endif -%}{%- endfor -%}
+    {%- if n >= 2 -%}
+      {%- if n > max_count -%}{%- assign max_count = n -%}{%- endif -%}
+    {%- else -%}
+      {%- assign one_off_count = one_off_count | plus: 1 -%}
+    {%- endif -%}
+  {%- endif -%}
+{%- endfor -%}
+
+{%- if max_count > 0 -%}
+<div class="chart-bars" role="img" aria-label="Number of projects tagged with each recurring topic, most common first">
+  {%- for want in (1..max_count) reversed -%}
+    {%- for t in tag_names -%}
+      {%- if t != "" -%}
+        {%- assign n = 0 -%}
+        {%- for tok in all_tokens -%}{%- if tok == t -%}{%- assign n = n | plus: 1 -%}{%- endif -%}{%- endfor -%}
+        {%- if n == want and n >= 2 -%}
+          {%- assign pct = n | times: 100 | divided_by: max_count | floor -%}
+          <div class="chart-row">
+            <span class="chart-label">{{ t }}</span>
+            <span class="chart-track">
+              <span class="chart-bar" style="width: {{ pct }}%" title="{{ t }} — {{ n }} projects"></span>
+            </span>
+            <span class="chart-value">{{ n }}</span>
+          </div>
+        {%- endif -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endfor -%}
+</div>
+{%- if one_off_count > 0 -%}
+<p class="chart-note">+ {{ one_off_count }} more topic{% if one_off_count != 1 %}s{% endif %}, each used once.</p>
+{%- endif -%}
+{%- endif -%}

@@ -9,13 +9,14 @@
   --border-strong: #cfd4da;
   --text: #14181d;
   --text-muted: #5b636d;
-  --accent: #1f6feb;
-  --accent-soft: rgba(31, 111, 235, 0.10);
+  --accent: #b5560f;
+  --accent-soft: rgba(181, 86, 15, 0.10);
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
   --wrap: 1080px;
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --serif: "STIX Two Text", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -28,8 +29,8 @@
     --border-strong: #33404f;
     --text: #e7ecf3;
     --text-muted: #9aa6b4;
-    --accent: #6ea8ff;
-    --accent-soft: rgba(110, 168, 255, 0.14);
+    --accent: #f0a445;
+    --accent-soft: rgba(240, 164, 69, 0.14);
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -43,8 +44,8 @@
   --border-strong: #33404f;
   --text: #e7ecf3;
   --text-muted: #9aa6b4;
-  --accent: #6ea8ff;
-  --accent-soft: rgba(110, 168, 255, 0.14);
+  --accent: #f0a445;
+  --accent-soft: rgba(240, 164, 69, 0.14);
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }
@@ -71,9 +72,10 @@ img { max-width: 100%; display: block; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-h1, h2, h3, h4 { line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 .5em; }
-h1 { font-size: clamp(2rem, 5vw, 2.9rem); font-weight: 700; }
-h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); font-weight: 650; }
+h1, h2, h3, h4 { line-height: 1.2; letter-spacing: -0.01em; margin: 0 0 .5em; }
+h1, h2 { font-family: var(--serif); font-weight: 600; letter-spacing: 0; }
+h1 { font-size: clamp(2.1rem, 5vw, 3.1rem); }
+h2 { font-size: clamp(1.5rem, 3vw, 1.95rem); }
 h3 { font-size: 1.15rem; font-weight: 600; }
 
 code, pre { font-family: var(--mono); font-size: .9em; }
@@ -168,12 +170,10 @@ pre code { background: none; border: 0; padding: 0; }
   align-items: center;
 }
 .hero-eyebrow {
-  display: inline-flex; align-items: center; gap: .5rem;
-  font-size: .85rem; font-weight: 500; color: var(--text-muted);
-  background: var(--bg-soft); border: 1px solid var(--border);
-  padding: .3rem .75rem; border-radius: 999px; margin-bottom: 1.1rem;
+  display: block;
+  font-family: var(--mono); font-size: .8rem; letter-spacing: .03em;
+  color: var(--accent); margin-bottom: 1rem;
 }
-.hero-eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: #2ecc71; }
 .hero h1 { margin-bottom: .6rem; }
 .hero h1 .accent { color: var(--accent); }
 .hero-lede { font-size: 1.12rem; color: var(--text-muted); max-width: 56ch; margin: 0 0 1.6rem; }
@@ -217,6 +217,23 @@ pre code { background: none; border: 0; padding: 0; }
 .page-sub { color: var(--text-muted); font-size: 1.08rem; margin: 0; max-width: 60ch; }
 
 /* ---------------------------------------------------------------
+   Topic chart (build-time bar chart of project counts by tag)
+   --------------------------------------------------------------- */
+.chart-bars { display: flex; flex-direction: column; gap: .6rem; }
+.chart-row {
+  display: grid; grid-template-columns: minmax(88px, 150px) 1fr 2.4ch;
+  align-items: center; gap: .85rem;
+}
+.chart-label {
+  font-size: .87rem; color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chart-track { height: 10px; background: var(--bg-soft); border-radius: 3px; overflow: hidden; }
+.chart-bar { display: block; height: 100%; min-width: 6px; background: var(--accent); border-radius: 0 4px 4px 0; }
+.chart-value { font-family: var(--mono); font-size: .82rem; color: var(--text); text-align: right; }
+.chart-note { color: var(--text-muted); font-size: .85rem; margin: .75rem 0 0; }
+
+/* ---------------------------------------------------------------
    Project cards
    --------------------------------------------------------------- */
 .card-grid {
@@ -228,9 +245,9 @@ pre code { background: none; border: 0; padding: 0; }
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1.35rem;
-  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  transition: border-color .16s ease, background .16s ease;
 }
-.card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); border-color: var(--border-strong); }
+.card:hover { border-color: var(--accent); background: var(--bg-soft); }
 .card-media { margin: -1.35rem -1.35rem 1.1rem; border-radius: var(--radius) var(--radius) 0 0; overflow: hidden; }
 .card-media img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
 .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
