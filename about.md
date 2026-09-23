@@ -5,23 +5,32 @@ subtitle: Aerospace by training, robotics by choice — currently in Munich.
 permalink: /about/
 ---
 
-I'm a PhD researcher in robotics at the **Technical University of Munich**. My work sits
-at the point where sensing meets control: how a vehicle turns noisy accelerometers,
-cameras, and barometers into a confident answer to "where am I, and where am I going?"
+I'm a **Robotics Software Engineer at Agile Robots SE** in Munich, building the software
+that keeps a fleet of robots connected and controllable — remote over-the-air updates and
+low-latency teleoperation for machines deployed around the world.
 
-Before Munich I earned an **MSc in Robotics** at Northeastern University and a
-**BSc in Aerospace Engineering** at the University of Michigan. The aerospace background
-still shows — most of what I build flies.
+Before Agile Robots I was a PhD candidate at the **Technical University of Munich**,
+working under **Prof. Lorenzo Masia** on sensor fusion for soft exosuits — turning noisy
+wearable sensor data into a reliable read on how a joint is actually moving.
 
-Outside the lab I'm usually outside: photography, travel, and the occasional
-robot built purely because the idea was too good to leave alone.
+<div class="about-photos">
+  <img src="{{ '/assets/img/about/exosuit-1.jpg' | relative_url }}" alt="Soft exosuit research at TU Munich">
+  <img src="{{ '/assets/img/about/exosuit-2.jpg' | relative_url }}" alt="Soft exosuit research at TU Munich">
+</div>
+
+Before that, an **MSc in Robotics** at Northeastern University and a **BSc in Aerospace
+Engineering** at the University of Michigan. The aerospace background still shows — most
+of what I build flies.
+
+Outside of work I'm usually outside: photography, travel, and the occasional robot built
+purely because the idea was too good to leave alone.
 
 ## Education
 
 <ul class="timeline">
   <li>
-    <span class="t-when">Present</span>
-    <p class="t-what">PhD, Robotics</p>
+    <span class="t-when">2025 – 2026</span>
+    <p class="t-what">PhD Candidate, Robotics</p>
     <p class="t-where">Technical University of Munich &middot; Munich, Germany</p>
   </li>
   <li>
@@ -38,6 +47,7 @@ robot built purely because the idea was too good to leave alone.
 
 ## What I work on
 
+- **Robot fleet software** — over-the-air updates and low-latency teleoperation
 - **State estimation & sensor fusion** — Kalman filtering, IMU fusion, SLAM
 - **Autonomous aerial vehicles** — multirotor and fixed-wing design, control, and localization
 - **Learning for control** — vision-based policies for flight

@@ -1,8 +1,8 @@
 title: Tony Smoragiewicz
-tagline: Robotics PhD researcher — state estimation, aerial vehicles, autonomy
+tagline: Robotics Software Engineer — state estimation, aerial vehicles, autonomy
 description: >-
-  Robotics researcher at the Technical University of Munich working on state
-  estimation, sensor fusion, and autonomous aerial vehicles.
+  Robotics Software Engineer at Agile Robots SE working on fleet
+  connectivity, teleoperation, and autonomous aerial vehicles.
 url: https://tsmorz.github.io
 lang: en-US
 image: /assets/img/logo.jpg
@@ -10,8 +10,8 @@ image: /assets/img/logo.jpg
 author:
   name: Tony Smoragiewicz
   photo: /assets/img/logo.jpg
-  role: PhD Researcher in Robotics
-  affiliation: Technical University of Munich
+  role: Robotics Software Engineer
+  affiliation: Agile Robots SE
   location: Munich, Germany
   email: tonysmoragiewicz@gmail.com
 

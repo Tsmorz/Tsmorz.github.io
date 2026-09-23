@@ -26,109 +26,26 @@
     - label: GitHub
       url: https://github.com/Tsmorz/ekf-slam
 
-- name: IMU Sensor Fusion
+- name: Joy Cam
   blurb: >-
-    A library that fuses accelerometer, gyroscope, magnetometer, and
-    barometer measurements into an orientation and position estimate.
-  year: "2025"
-  tags: [Python, Sensor Fusion]
-  featured: true
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/imu-fusion
-
-- name: UAV Sensor Fusion
-  blurb: >-
-    Research on localizing a UAV inside a previously mapped environment
-    using fused onboard sensing.
-  year: "2025"
-  tags: [Python, Research, Localization]
-  featured: false
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/uav-sensor-fusion
-
-- name: Vision-Based Control for Fixed-Wing UAVs
-  blurb: >-
-    Reinforcement learning final project: learning control policies for a
-    fixed-wing aircraft directly from visual input.
-  year: "2024"
-  tags: [Reinforcement Learning, Computer Vision]
-  featured: true
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/rl-final-project
-
-- name: Growbotics
-  blurb: >-
-    Open-source mobile robot with a parallel-link manipulator for labor
-    intensive farm work — transplanting seedlings, monitoring plant health,
-    and improving time-to-harvest estimates.
-  year: "2025"
-  tags: [Robotics, Agriculture, Open Source]
-  featured: true
-  on_cv: false
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/Growbotics
-
-- name: Badminton Robot
-  blurb: A badminton robot, built so that practicing alone is still practice.
-  year: "2025"
-  tags: [Robotics, For Fun]
-  featured: true
-  on_cv: false
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/badminton-robot
-
-- name: Lie Groups
-  blurb: >-
-    Clean implementations of SO(2), SE(2), SO(3), and SE(3) — the algebra
-    that shows up in every robotics and computer vision derivation.
-  year: "2025"
-  tags: [Python, Math, Robotics]
-  featured: false
-  on_cv: false
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/lie_groups
-
-- name: Aerial Robotics Course
-  blurb: >-
-    A hands-on undergraduate course in quadcopter design with an emphasis
-    on software development.
+    Joystick-controlled camera rig — drives pan, tilt, and shutter from a
+    USB gamepad instead of a phone app.
   year: "2026"
-  tags: [Teaching, Python]
-  featured: false
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/aerial-robotics
-
-- name: Project Junco
-  blurb: >-
-    An RC fixed-wing aircraft built for the Mobile Robotics course at
-    Northeastern University.
-  year: "2024"
-  tags: [Python, Fixed-Wing, Mobile Robotics]
-  featured: false
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/project-junco
-
-- name: Robot Simulator
-  blurb: >-
-    Manipulator simulation that loads Denavit–Hartenberg parameters from a
-    text file to analyze inverse kinematics and planning algorithms.
-  year: "2022"
-  tags: [Python, Kinematics]
-  featured: false
+  tags: [Python, Hardware]
+  featured: true
   on_cv: false
   links:
     - label: GitHub
-      url: https://github.com/Tsmorz/robot_sim
+      url: https://github.com/Tsmorz/joy-cam
+
+- name: ESP32 Home
+  blurb: >-
+    ESP32-based home automation and monitoring — sensors and controls
+    talking to each other without a cloud subscription in the loop.
+  year: "2026"
+  tags: [ESP32, IoT, Embedded]
+  featured: true
+  on_cv: false
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/esp32-home

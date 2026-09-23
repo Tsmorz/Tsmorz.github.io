@@ -157,7 +157,7 @@ pre code { background: none; border: 0; padding: 0; }
 /* ---------------------------------------------------------------
    Hero
    --------------------------------------------------------------- */
-.hero { padding: clamp(3rem, 8vw, 5.5rem) 0 2.5rem; position: relative; overflow: hidden; }
+.hero { padding: clamp(4.5rem, 14vw, 9rem) 0 4.5rem; position: relative; overflow: hidden; }
 .hero-field {
   position: absolute; inset: 0; z-index: 0;
   width: 100%; height: 100%;
@@ -217,23 +217,6 @@ pre code { background: none; border: 0; padding: 0; }
 .page-sub { color: var(--text-muted); font-size: 1.08rem; margin: 0; max-width: 60ch; }
 
 /* ---------------------------------------------------------------
-   Topic chart (build-time bar chart of project counts by tag)
-   --------------------------------------------------------------- */
-.chart-bars { display: flex; flex-direction: column; gap: .6rem; }
-.chart-row {
-  display: grid; grid-template-columns: minmax(88px, 150px) 1fr 2.4ch;
-  align-items: center; gap: .85rem;
-}
-.chart-label {
-  font-size: .87rem; color: var(--text-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.chart-track { height: 10px; background: var(--bg-soft); border-radius: 3px; overflow: hidden; }
-.chart-bar { display: block; height: 100%; min-width: 6px; background: var(--accent); border-radius: 0 4px 4px 0; }
-.chart-value { font-family: var(--mono); font-size: .82rem; color: var(--text); text-align: right; }
-.chart-note { color: var(--text-muted); font-size: .85rem; margin: .75rem 0 0; }
-
-/* ---------------------------------------------------------------
    Project cards
    --------------------------------------------------------------- */
 .card-grid {
@@ -276,21 +259,6 @@ pre code { background: none; border: 0; padding: 0; }
   color: var(--accent); background: var(--accent-soft);
   padding: .15rem .5rem; border-radius: 6px;
 }
-
-/* Filter bar */
-.filters { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.75rem; }
-.filter {
-  font: inherit; font-size: .88rem; font-weight: 500; cursor: pointer;
-  padding: .35rem .85rem; border-radius: 999px;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
-}
-.filter:hover { color: var(--text); border-color: var(--border-strong); }
-.filter[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-:root[data-theme="dark"] .filter[aria-pressed="true"] { color: #0b0f14; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .filter[aria-pressed="true"] { color: #0b0f14; }
-}
-.card[hidden] { display: none; }
 
 /* ---------------------------------------------------------------
    Photo gallery
@@ -368,6 +336,12 @@ pre code { background: none; border: 0; padding: 0; }
   margin: 1.5rem 0; padding: .25rem 0 .25rem 1.2rem;
   border-left: 3px solid var(--accent); color: var(--text-muted);
 }
+.about-photos { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+.about-photos img { border-radius: var(--radius); aspect-ratio: 4 / 3; object-fit: cover; }
+@media (max-width: 560px) {
+  .about-photos { grid-template-columns: 1fr; }
+}
+
 .prose table { width: 100%; border-collapse: collapse; font-size: .95rem; }
 .prose th, .prose td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid var(--border); }
 .prose hr { border: 0; border-top: 1px solid var(--border); margin: 2.5rem 0; }
