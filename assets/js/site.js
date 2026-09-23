@@ -83,7 +83,7 @@
     'q̇ = J⁺(q) ẋ', // inverse kinematics (Jacobian pseudoinverse)
     'M(q)q̈ + C(q,q̇)q̇ + G(q) = τ' // manipulator dynamics
   ];
-  var params = { K: 25, DAMPING_RATIO: 1.15, REPEL_R: 135, REPEL_STRENGTH: 240000, CURRENT_PUSH: 3, size: 18, count: 60 };
+  var params = { K: 25, DAMPING_RATIO: 1.15, REPEL_R: 135, REPEL_STRENGTH: 240000, CURRENT_PUSH: 3, size: 18, count: 90 };
 
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
   var w = 0, h = 0;
@@ -108,12 +108,12 @@
   function makeItem(text, isEquation) {
     var hxr, hyr;
     if (isEquation) {
-      // keep equations off the edges so the longer strings don't clip the hero bounds
-      hxr = 0.16 + Math.random() * 0.6;
-      hyr = 0.18 + Math.random() * 0.6;
+      // still keep a small margin so the longer strings don't clip the hero bounds
+      hxr = 0.09 + Math.random() * 0.82;
+      hyr = 0.08 + Math.random() * 0.84;
     } else {
-      hxr = 0.08 + Math.random() * 0.84;
-      hyr = 0.14 + Math.random() * 0.72;
+      hxr = 0.02 + Math.random() * 0.96;
+      hyr = 0.04 + Math.random() * 0.92;
     }
     return {
       hxr: hxr, hyr: hyr,
