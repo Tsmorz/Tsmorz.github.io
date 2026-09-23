@@ -15,26 +15,6 @@
   });
 })();
 
-// Project tag filter.
-(function () {
-  var bar = document.querySelector('.filters');
-  if (!bar) return;
-  var cards = Array.prototype.slice.call(document.querySelectorAll('.card[data-tags]'));
-
-  bar.addEventListener('click', function (e) {
-    var btn = e.target.closest('.filter');
-    if (!btn) return;
-    var tag = btn.dataset.tag;
-
-    bar.querySelectorAll('.filter').forEach(function (b) {
-      b.setAttribute('aria-pressed', String(b === btn));
-    });
-    cards.forEach(function (card) {
-      card.hidden = tag !== '*' && card.dataset.tags.split('|').indexOf(tag) === -1;
-    });
-  });
-})();
-
 // Photo lightbox.
 (function () {
   var shots = Array.prototype.slice.call(document.querySelectorAll('.shot'));

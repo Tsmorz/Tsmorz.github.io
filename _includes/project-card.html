@@ -1,6 +1,5 @@
 {%- assign proj = include.project -%}
-{%- assign tagkey = proj.tags | join: "|" -%}
-<article class="card" data-tags="{{ tagkey }}">
+<article class="card">
   {%- if proj.image %}
   <div class="card-media"><img src="{{ proj.image | relative_url }}" alt="{{ proj.name }}" loading="lazy"></div>
   {%- endif %}
