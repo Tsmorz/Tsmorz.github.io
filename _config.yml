@@ -21,7 +21,7 @@ social:
   scholar:
 
 # Set to a file you drop in /assets/ to show a "Download CV" button, e.g. /assets/cv.pdf
-cv_url:
+cv_url: /assets/Tony_Smoragiewicz_CV.pdf
 
 sass:
   style: compressed
