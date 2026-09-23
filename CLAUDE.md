@@ -33,7 +33,9 @@ Append a block to `_data/projects.yml`. Only `name` and `blurb` are required:
     One or two sentences. Plain language beats buzzwords.
   year: "2026"
   tags: [Python, Robotics]      # feeds the filter buttons on /projects/ automatically
-  featured: true                # shows it on the homepage
+  featured: true                # shows it on the homepage AND on /projects/ — the projects
+                                 # page only lists featured=true, so this is what controls
+                                 # who makes the cut, not just what's on top
   on_cv: true                   # renders the "On my CV" badge
   image: /assets/img/projects/foo.jpg   # optional, 16:9 crops best
   links:

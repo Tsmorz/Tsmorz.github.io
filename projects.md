@@ -8,19 +8,21 @@ permalink: /projects/
 <section class="wrap page-head">
   <h1 class="page-title">Projects</h1>
   <p class="page-sub">
-    Research work, coursework, and things I built because I wanted them to exist.
+    A few things I've built — research work and weekend projects alike.
     Anything marked <em>On my CV</em> is formal work; the rest is what I do for fun.
   </p>
 </section>
 
+{%- assign visible_projects = site.data.projects | where: "featured", true -%}
+
 <section class="wrap section" style="padding-top: 0;">
   <div class="section-head"><h2>By topic</h2></div>
-  {% include topic-chart.html projects=site.data.projects %}
+  {% include topic-chart.html projects=visible_projects %}
 </section>
 
 <section class="wrap section" style="padding-top: 1rem;">
   {%- assign tag_str = "" -%}
-  {%- for project in site.data.projects -%}
+  {%- for project in visible_projects -%}
     {%- assign joined = project.tags | join: "|" -%}
     {%- assign tag_str = tag_str | append: "|" | append: joined -%}
   {%- endfor -%}
@@ -34,6 +36,6 @@ permalink: /projects/
   </div>
 
   <div class="card-grid">
-    {%- for project in site.data.projects %}{% include project-card.html project=project %}{% endfor %}
+    {%- for project in visible_projects %}{% include project-card.html project=project %}{% endfor %}
   </div>
 </section>
