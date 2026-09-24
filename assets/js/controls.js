@@ -410,6 +410,7 @@
   }
 
   var FLIGHT_DT = 0.005;  // 200 Hz
+  var FLIGHT_MAX_ALT = 1480;  // matches VIEW_HI in makeFlightRenderer
 
   /* ================================================================
      Shared canvas renderer for flight demos
@@ -430,27 +431,21 @@
     new ResizeObserver(resize).observe(canvas.parentElement);
     resize();
 
-    // Dynamic altitude window — expands immediately when the aircraft leaves,
-    // contracts slowly back to the reference range when it returns.
     var REF_AMP = 100, REF_OMEGA = 0.15;
     var H_CENTER = 1200;
-    var REF_LO = H_CENTER - REF_AMP - 80;   // 1020
-    var REF_HI = H_CENTER + REF_AMP + 80;   // 1380
-    var viewLo = REF_LO, viewHi = REF_HI;
+    var REF_LO = H_CENTER - REF_AMP - 80;  // 1020
+    var REF_HI = H_CENTER + REF_AMP + 80;  // 1380
+    var VIEW_HI = FLIGHT_MAX_ALT;           // 1480 — fixed ceiling, never expands
+    var viewLo = REF_LO;                    // only the floor expands downward
 
     function updateViewport(h) {
+      // Expand floor downward when plane descends; drift back slowly
       var needLo = Math.min(REF_LO, h - 80);
-      var needHi = Math.max(REF_HI, h + 80);
-      // Snap outward instantly, drift inward slowly
       viewLo = viewLo < needLo ? viewLo + (needLo - viewLo) * 0.04 : needLo;
-      viewHi = viewHi > needHi ? viewHi - (viewHi - needHi) * 0.04 : needHi;
-      // Enforce minimum window height
-      var mid = (viewLo + viewHi) / 2;
-      if (viewHi - viewLo < 300) { viewLo = mid - 150; viewHi = mid + 150; }
     }
 
     function hToY(h, H) {
-      return H - (h - viewLo) / (viewHi - viewLo) * (H - 60) - 30;
+      return H - (h - viewLo) / (VIEW_HI - viewLo) * (H - 60) - 30;
     }
 
     // seedRand: deterministic pseudo-random in [0,1) from integer seed
@@ -495,7 +490,7 @@
     }
 
     function drawTrees(W, horizonY, downrange, isDarkMode) {
-      var spacing = 90;
+      var spacing = 48;
       var scroll  = downrange % (spacing * 40);
       var count   = Math.ceil(W / spacing) + 3;
       var base    = Math.floor(scroll / spacing) - 1;
@@ -505,6 +500,43 @@
         var ht  = (10 + seedRand(ti * 13 + 3) * 12) * sz;
         var yOff= seedRand(ti * 11 + 5) * 5;
         drawTree(sx, horizonY + yOff + 2, ht, seedRand(ti * 17 + 7) > 0.45, isDarkMode);
+      }
+    }
+
+    function drawCloud(x, y, r, isDarkMode) {
+      ctx.save();
+      ctx.fillStyle = isDarkMode ? 'rgba(110,150,210,0.22)' : 'rgba(255,255,255,0.92)';
+      ctx.beginPath();
+      ctx.arc(x,         y,        r,        0, Math.PI * 2);
+      ctx.arc(x + r,     y - r*0.3, r*0.78,  0, Math.PI * 2);
+      ctx.arc(x + r*2.0, y,         r*0.65,  0, Math.PI * 2);
+      ctx.arc(x + r*0.3, y - r*0.2, r*0.62,  0, Math.PI * 2);
+      ctx.arc(x + r*0.9, y + r*0.3, r*0.55,  0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawClouds(W, skyH, downrange, isDarkMode) {
+      if (skyH <= 20) return;
+      // Three parallax layers — higher in sky = smaller, slower
+      var layers = [
+        { yFrac: 0.08, parallax: 0.10, spacing: 340, sMin: 22, sMax: 42 },
+        { yFrac: 0.26, parallax: 0.18, spacing: 250, sMin: 16, sMax: 30 },
+        { yFrac: 0.50, parallax: 0.28, spacing: 190, sMin: 11, sMax: 21 },
+      ];
+      for (var li = 0; li < layers.length; li++) {
+        var l = layers[li];
+        var baseY = skyH * l.yFrac;
+        var scroll = downrange * l.parallax;
+        var count  = Math.ceil(W / l.spacing) + 3;
+        var base   = Math.floor(scroll / l.spacing) - 1;
+        for (var ci = base; ci < base + count; ci++) {
+          var cx2 = (ci - scroll / l.spacing) * l.spacing
+                  + seedRand(ci * 29 + li * 7 + 3) * l.spacing * 0.55;
+          var size = l.sMin + seedRand(ci * 17 + li * 5 + 1) * (l.sMax - l.sMin);
+          var cy2  = baseY + seedRand(ci * 23 + li * 9 + 5) * skyH * 0.07;
+          drawCloud(cx2, cy2, size, isDarkMode);
+        }
       }
     }
 
@@ -601,11 +633,16 @@
       var bgColor     = cssVar('--bg');
       var bgSoft      = cssVar('--bg-soft');
 
-      // Sky gradient
-      var horizonY = hToY(viewLo + 60, H);
-      var grad = ctx.createLinearGradient(0, 0, 0, horizonY);
       var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+      // Ground level mapped to canvas pixels (may be off-screen below when flying high)
+      var groundY = hToY(0, H);
+      var horizonY = Math.min(H, Math.max(0, groundY)); // clipped to canvas
+
+      // Sky gradient — covers canvas from top to wherever the ground appears
+      var skyH = horizonY; // height of sky region; may be full canvas if no ground visible
+      var grad = ctx.createLinearGradient(0, 0, 0, Math.max(skyH, 1));
       if (isDark) {
         grad.addColorStop(0, '#05090f');
         grad.addColorStop(1, '#0e1e2e');
@@ -614,26 +651,31 @@
         grad.addColorStop(1, '#dceef8');
       }
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, horizonY);
+      ctx.fillRect(0, 0, W, skyH);
 
-      // Ground
-      ctx.fillStyle = isDark ? '#0d1a0d' : '#b8d4a0';
-      ctx.fillRect(0, horizonY, W, H - horizonY);
+      // Clouds in sky (parallax layers)
+      drawClouds(W, skyH, downrange, isDark);
 
-      // Scrolling ground marks
-      ctx.strokeStyle = isDark ? '#1a2e1a' : '#a0c080';
-      ctx.lineWidth = 1;
-      var markSpacing = 120;
-      var offset = (downrange % markSpacing) / markSpacing * markSpacing;
-      for (var mx = -offset; mx < W + markSpacing; mx += markSpacing) {
-        ctx.beginPath();
-        ctx.moveTo(mx, horizonY);
-        ctx.lineTo(mx - 20, H);
-        ctx.stroke();
+      // Ground — only drawn when within the canvas
+      if (groundY < H) {
+        ctx.fillStyle = isDark ? '#0d1a0d' : '#b8d4a0';
+        ctx.fillRect(0, horizonY, W, H - horizonY);
+
+        // Scrolling ground marks
+        ctx.strokeStyle = isDark ? '#1a2e1a' : '#a0c080';
+        ctx.lineWidth = 1;
+        var markSpacing = 120;
+        var offset = (downrange % markSpacing) / markSpacing * markSpacing;
+        for (var mx = -offset; mx < W + markSpacing; mx += markSpacing) {
+          ctx.beginPath();
+          ctx.moveTo(mx, horizonY);
+          ctx.lineTo(mx - 20, H);
+          ctx.stroke();
+        }
+
+        // Cartoon trees
+        drawTrees(W, horizonY, downrange, isDark);
       }
-
-      // Cartoon trees on horizon
-      drawTrees(W, horizonY, downrange, isDark);
 
       // Reference altitude path (dashed)
       ctx.strokeStyle = accentColor;
@@ -658,9 +700,9 @@
       ctx.font = '11px ' + cssVar('--mono');
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      var tickStep = viewHi - viewLo > 800 ? 200 : 100;
+      var tickStep = VIEW_HI - viewLo > 800 ? 200 : 100;
       var tickStart = Math.ceil(viewLo / tickStep) * tickStep;
-      for (var ah = tickStart; ah <= viewHi; ah += tickStep) {
+      for (var ah = tickStart; ah <= VIEW_HI; ah += tickStep) {
         var ay = hToY(ah, H);
         if (ay < 12 || ay > H - 12) continue;
         ctx.fillText(ah + 'm', W - 8, ay);
@@ -712,7 +754,10 @@
 
       // Crash / stall overlay
       if (status && status !== 'ok') {
-        var msg = status === 'crashed' ? '💥  CRASHED' : status === 'stalled' ? '⚠️  STALLED' : status;
+        var msg = status === 'crashed' ? '💥  CRASHED'
+                : status === 'stalled'  ? '⚠️  STALLED'
+                : status === 'too_high' ? '🌤️  TOO HIGH'
+                : status;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.fillRect(0, 0, W, H);
         ctx.font = 'bold 22px ' + cssVar('--font');
@@ -725,10 +770,10 @@
         ctx.fillText('Resetting in a moment…', W / 2, H / 2 + 16);
       }
 
-      if (typeof extraFn === 'function') extraFn(ctx, W, H, viewLo, viewHi);
+      if (typeof extraFn === 'function') extraFn(ctx, W, H, viewLo, VIEW_HI);
     }
 
-    return { render: render, resetViewport: function () { viewLo = REF_LO; viewHi = REF_HI; } };
+    return { render: render, resetViewport: function () { viewLo = REF_LO; } };
   }
 
   /* ================================================================
@@ -830,6 +875,12 @@
         if (state[4] <= 0) {
           state[4] = 0;
           simStatus = 'crashed';
+          if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
+          return;
+        }
+        // Detect too-high (exits top of view)
+        if (state[4] >= FLIGHT_MAX_ALT) {
+          simStatus = 'too_high';
           if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
           return;
         }
@@ -1004,6 +1055,12 @@
         if (state[4] <= 0) {
           state[4] = 0;
           simStatus3 = 'crashed';
+          recording = false;
+          if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2500);
+          return;
+        }
+        if (state[4] >= FLIGHT_MAX_ALT) {
+          simStatus3 = 'too_high';
           recording = false;
           if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2500);
           return;
@@ -1601,6 +1658,11 @@
 
         if (state[4] <= 0) {
           state[4] = 0; simStatus = 'crashed';
+          if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 2500);
+          return;
+        }
+        if (state[4] >= FLIGHT_MAX_ALT) {
+          simStatus = 'too_high';
           if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 2500);
           return;
         }
