@@ -2,15 +2,16 @@
 layout: default
 title: Controls
 description: Interactive control-systems demos — PID tuning, nonlinear flight sim, system identification, and LQR.
+permalink: /controls/
 ---
 
 <div class="section wrap">
   <div class="page-head" style="padding-bottom:0">
     <h1 class="page-title" style="font-size:clamp(1.8rem,4vw,2.6rem)">Control Systems</h1>
     <p class="page-sub controls-intro">
-      Three interactive demos spanning classical and modern control. Tune a PID controller on a
-      mass-spring-damper, fly a nonlinear aircraft with elevator inputs, then collect flight data
-      to identify the linearized dynamics and synthesize an LQR autopilot.
+      Four interactive demos spanning classical and modern control. Tune a PID controller, fly a
+      nonlinear aircraft, identify the linearized dynamics for LQR synthesis, then train a neural
+      network to imitate the optimal controller entirely from flight data.
     </p>
   </div>
 
@@ -18,6 +19,7 @@ description: Interactive control-systems demos — PID tuning, nonlinear flight 
     <button class="sim-tab active" role="tab" aria-selected="true"  aria-controls="sec-msd"    id="tab-msd"    type="button">PID Tuning</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">System ID / LQR</button>
+    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-nn"     id="tab-nn"     type="button">Neural Net</button>
   </div>
 
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
@@ -166,6 +168,52 @@ description: Interactive control-systems demos — PID tuning, nonlinear flight 
           <span class="score-label">RMSE (m)</span>
         </div>
         <button class="sim-btn" id="sid-reset" type="button">Reset</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Demo 4: Neural Network Controller ─────────────────────── -->
+  <section class="sim-section" id="sec-nn" role="tabpanel" aria-labelledby="tab-nn">
+    <p class="demo-sub">
+      A small feedforward network learns to imitate the optimal LQR controller via behavioral
+      cloning. Generate training data (the LQR flying the reference), configure the architecture,
+      train with Adam, then activate the NN as the live flight controller.
+    </p>
+    <div class="sim-layout">
+      <div class="sim-canvas-wrap">
+        <canvas class="sim-canvas" id="nn-canvas" width="720" height="380" aria-label="Neural network flight controller"></canvas>
+      </div>
+      <div class="sim-panel">
+        <h3>Architecture</h3>
+        <div class="pid-group">
+          <label>Hidden layers <span id="nn-layers-val">1</span></label>
+          <input type="range" id="nn-layers" min="1" max="3" step="1" value="1">
+        </div>
+        <div class="pid-group">
+          <label>Neurons / layer <span id="nn-neurons-val">16</span></label>
+          <input type="range" id="nn-neurons" min="4" max="32" step="4" value="16">
+        </div>
+
+        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
+        <h3>1 — Training data</h3>
+        <button class="sim-btn" id="nn-gen-btn" type="button">Generate Data</button>
+        <div class="sysid-count" id="nn-gen-status">No data yet</div>
+
+        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
+        <h3>2 — Train</h3>
+        <button class="sim-btn" id="nn-train-btn" type="button" disabled>Train Network</button>
+        <canvas id="nn-loss-canvas" width="200" height="72" style="width:100%;border-radius:8px;border:1px solid var(--border);display:block;margin-top:.3rem"></canvas>
+        <div class="sysid-count" id="nn-train-status">—</div>
+
+        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
+        <h3>3 — Fly</h3>
+        <button class="sim-btn mode-btn" id="nn-activate-btn" type="button" disabled>Activate NN</button>
+
+        <div class="score-block" style="padding-top:.25rem">
+          <span class="score-value" id="nn-score">—</span>
+          <span class="score-label">RMSE (m)</span>
+        </div>
+        <button class="sim-btn" id="nn-reset" type="button">Reset</button>
       </div>
     </div>
   </section>
