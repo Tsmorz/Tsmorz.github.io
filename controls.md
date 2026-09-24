@@ -79,22 +79,22 @@ permalink: /controls/
         <div id="fl-manual-controls">
           <div class="pid-group">
             <label>Elevator δ<sub>e</sub> <span id="fl-elev-val">0.0°</span></label>
-            <input type="range" id="fl-elev" min="-20" max="20" step="0.5" value="0">
+            <input type="range" id="fl-elev" min="-15" max="15" step="0.5" value="0">
           </div>
         </div>
 
         <div id="fl-pid-controls" style="display:none;flex-direction:column;gap:.6rem">
           <div class="pid-group">
             <label>K<sub>p</sub> <span id="fl-kp-val">0.0</span></label>
-            <input type="range" id="fl-kp" min="-5" max="5" step="0.05" value="0">
+            <input type="range" id="fl-kp" min="-0.3" max="0.3" step="0.005" value="0">
           </div>
           <div class="pid-group">
             <label>K<sub>i</sub> <span id="fl-ki-val">0.0</span></label>
-            <input type="range" id="fl-ki" min="-2" max="2" step="0.01" value="0">
+            <input type="range" id="fl-ki" min="-0.05" max="0.05" step="0.001" value="0">
           </div>
           <div class="pid-group">
             <label>K<sub>d</sub> <span id="fl-kd-val">0.0</span></label>
-            <input type="range" id="fl-kd" min="-10" max="10" step="0.1" value="0">
+            <input type="range" id="fl-kd" min="-2" max="2" step="0.05" value="0">
           </div>
         </div>
 
@@ -134,7 +134,7 @@ permalink: /controls/
         </div>
         <div class="pid-group">
           <label>Elevator δ<sub>e</sub> <span id="sid-elev-val">0.0°</span></label>
-          <input type="range" id="sid-elev" min="-20" max="20" step="0.5" value="0">
+          <input type="range" id="sid-elev" min="-15" max="15" step="0.5" value="0">
         </div>
         <button class="sim-btn" id="sid-record-btn" type="button">Start Recording</button>
 

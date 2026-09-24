@@ -559,7 +559,7 @@
 
       // ── Elevator tab — amber flap at the tail, pivots by de_rad ──
       // Positive de_rad → trailing edge down (CW rotation in canvas coords)
-      var eDefl = clamp(de_rad, deg2rad(-20), deg2rad(20)) * 3.5;
+      var eDefl = clamp(de_rad, deg2rad(-15), deg2rad(15)) * 4;
       ctx.save();
       ctx.translate(-28, -4);   // hinge at mid-tail height
       ctx.rotate(eDefl);
@@ -673,7 +673,7 @@
       }
 
       // Elevator indicator (thin bar, right edge)
-      var eiFrac = (de_rad / deg2rad(20) + 1) / 2;  // 0=down, 1=up
+      var eiFrac = (de_rad / deg2rad(15) + 1) / 2;  // 0=down, 1=up
       var eiX = W - 22, eiTop = 50, eiH = 80;
       ctx.fillStyle = bgSoft;
       ctx.strokeStyle = borderColor;
@@ -819,7 +819,7 @@
             + parseFloat(kiSlider.value) * pidState.intE
             + parseFloat(kdSlider.value) * (e - pidState.prevE) / PID_DT;
           pidState.prevE = e;
-          de_target = clamp(deg2rad(de_cmd), deg2rad(-20), deg2rad(20));
+          de_target = clamp(deg2rad(de_cmd), deg2rad(-15), deg2rad(15));
         }
         de_rad += clamp(de_target - de_rad, -ELEV_MAX_RATE, ELEV_MAX_RATE);
         state = rk4(state, simT, FLIGHT_DT, function (t, s) {
@@ -994,7 +994,7 @@
         if (lqrActive && lqrK) {
           var dx = [state[0] - TRIM.V, state[1] - TRIM.gamma, state[2] - TRIM.alpha, state[3] - TRIM.q];
           var du = -(lqrK[0]*dx[0] + lqrK[1]*dx[1] + lqrK[2]*dx[2] + lqrK[3]*dx[3]);
-          var de_target3 = clamp(TRIM.de + du, deg2rad(-20), deg2rad(20));
+          var de_target3 = clamp(TRIM.de + du, deg2rad(-15), deg2rad(15));
           de_rad += clamp(de_target3 - de_rad, -ELEV_MAX_RATE3, ELEV_MAX_RATE3);
         }
         state = rk4(state, simT, FLIGHT_DT, function (t, s) {
@@ -1336,10 +1336,10 @@
         var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t);
         var dx = [s[0]-TRIM.V, s[1]-TRIM.gamma, s[2]-TRIM.alpha, s[3]-TRIM.q];
         var du = -(K_true[0]*dx[0]+K_true[1]*dx[1]+K_true[2]*dx[2]+K_true[3]*dx[3]);
-        var de = clamp(TRIM.de + du, deg2rad(-20), deg2rad(20));
+        var de = clamp(TRIM.de + du, deg2rad(-15), deg2rad(15));
         var errH = s[4] - hRef;
         intErr = clamp(intErr + errH * dt, -1000, 1000);
-        data.push({ x: [dx[0], dx[1], dx[2], dx[3], errH, intErr], y: de / deg2rad(20) });
+        data.push({ x: [dx[0], dx[1], dx[2], dx[3], errH, intErr], y: de / deg2rad(15) });
         s = rk4(s, t, dt, function(tt, ss) { return flightDerivatives(tt, ss, de); });
         s[4] = Math.max(s[4], 0);
         t += dt;
@@ -1590,7 +1590,7 @@
           var dx = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
           nnIntErr = clamp(nnIntErr + (state[4]-hRef) * FLIGHT_DT, -1000, 1000);
           var cache = fwdNet(net, [dx[0], dx[1], dx[2], dx[3], state[4]-hRef, nnIntErr]);
-          var de_nn_target = clamp(cache.out * deg2rad(20), deg2rad(-20), deg2rad(20));
+          var de_nn_target = clamp(cache.out * deg2rad(15), deg2rad(-15), deg2rad(15));
           de_rad += clamp(de_nn_target - de_rad, -ELEV_MAX_RATE_NN, ELEV_MAX_RATE_NN);
         }
 
