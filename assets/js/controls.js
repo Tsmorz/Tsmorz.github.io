@@ -638,7 +638,7 @@
         ctx.fillText('Resetting in a moment…', W / 2, H / 2 + 16);
       }
 
-      if (typeof extraFn === 'function') extraFn(ctx, W, H);
+      if (typeof extraFn === 'function') extraFn(ctx, W, H, viewLo, viewHi);
     }
 
     return { render: render, resetViewport: function () { viewLo = REF_LO; viewHi = REF_HI; } };
@@ -1142,6 +1142,400 @@
       }
       return lines.join('\n');
     }
+  })();
+
+  /* ================================================================
+     Demo 4 — Neural Network Controller
+     Behavioral cloning: a feedforward net imitates the LQR computed
+     from the true linearization, trained in-browser via Adam.
+  ================================================================ */
+  (function nnDemo() {
+    var canvas = document.getElementById('nn-canvas');
+    if (!canvas) return;
+    var renderer = makeFlightRenderer(canvas);
+
+    var REF_OMEGA = 0.15, REF_AMP = 100, H_CENTER = 1200;
+    var state, simT, de_rad, simStatus, resetTimer;
+    var errRing = [], RING = 1200;
+    var nnIntErr = 0;
+
+    function resetSim() {
+      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
+      simT = 0; de_rad = TRIM.de; simStatus = 'ok'; nnIntErr = 0;
+      errRing = [];
+      renderer.resetViewport();
+    }
+    resetSim();
+
+    /* ── Compact 4×4 matrix helpers ──────────────────────────── */
+    function m4eye() { return [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]; }
+    function m4copy(m) { return m.map(function(r) { return r.slice(); }); }
+    function m4add(A, B) { return A.map(function(r,i) { return r.map(function(v,j) { return v+B[i][j]; }); }); }
+    function m4scale(A, s) { return A.map(function(r) { return r.map(function(v) { return v*s; }); }); }
+    function m4mul(A, B) {
+      var C = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+      for (var i=0;i<4;i++) for (var j=0;j<4;j++) for (var k=0;k<4;k++) C[i][j] += A[i][k]*B[k][j];
+      return C;
+    }
+    function m4T(A) {
+      return [[A[0][0],A[1][0],A[2][0],A[3][0]],[A[0][1],A[1][1],A[2][1],A[3][1]],
+              [A[0][2],A[1][2],A[2][2],A[3][2]],[A[0][3],A[1][3],A[2][3],A[3][3]]];
+    }
+    function m4mulv(A, v) { return A.map(function(r) { return r[0]*v[0]+r[1]*v[1]+r[2]*v[2]+r[3]*v[3]; }); }
+    function m4vlt(v, A) { return [0,1,2,3].map(function(j) { return v[0]*A[0][j]+v[1]*A[1][j]+v[2]*A[2][j]+v[3]*A[3][j]; }); }
+    function vdot4(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3]; }
+    function m4os(col, row, s) { return col.map(function(c,ci) { return row.map(function(r) { return c*r*s; }); }); }
+
+    /* ── True LQR via numerical Jacobian + DARE ──────────────── */
+    var K_true = null;
+
+    function computeTrueLQR() {
+      var eps = 1e-5;
+      var x0 = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, 0];
+      var u0 = TRIM.de;
+
+      function f4(x6, u) { return flightDerivatives(0, x6, u).slice(0, 4); }
+
+      var cols = [];
+      for (var j = 0; j < 4; j++) {
+        var xp = x0.slice(); xp[j] += eps;
+        var xm = x0.slice(); xm[j] -= eps;
+        var fp = f4(xp, u0), fm = f4(xm, u0);
+        cols.push(fp.map(function(v, i) { return (v - fm[i]) / (2*eps); }));
+      }
+      var A = [[],[],[],[]];
+      for (var j = 0; j < 4; j++) for (var i = 0; i < 4; i++) A[i].push(cols[j][i]);
+
+      var fp2 = f4(x0, u0+eps), fm2 = f4(x0, u0-eps);
+      var Bv = fp2.map(function(v, i) { return (v - fm2[i]) / (2*eps); });
+
+      var dt = 0.05;
+      var Ad = m4add(m4eye(), m4scale(A, dt));
+      var Bd = Bv.map(function(v) { return v*dt; });
+      var Q = [[0.01,0,0,0],[0,100,0,0],[0,0,1,0],[0,0,0,0.1]], R = 1.0;
+      var P = m4copy(Q);
+      for (var iter = 0; iter < 2000; iter++) {
+        var PB = m4mulv(P, Bd), BtPB = vdot4(Bd, PB) + R;
+        var BtPA = m4vlt(Bd, m4mul(P, Ad));
+        var Pnew = m4add(m4add(Q, m4mul(m4T(Ad), m4mul(P, Ad))),
+                         m4scale(m4os(m4mulv(m4T(Ad), PB), BtPA, 1/BtPB), -1));
+        var diff = 0;
+        for (var r=0;r<4;r++) for (var c=0;c<4;c++) diff += Math.pow(Pnew[r][c]-P[r][c], 2);
+        P = Pnew;
+        if (diff < 1e-12) break;
+      }
+      var PB3 = m4mulv(P, Bd), BtPB3 = vdot4(Bd, PB3) + R;
+      return m4vlt(Bd, m4mul(P, Ad)).map(function(v) { return v/BtPB3; });
+    }
+
+    /* ── Training data generation ────────────────────────────── */
+    var INPUT_SCALES = [20, 0.3, 0.2, 0.5, 200, 500];
+
+    function genData() {
+      if (!K_true) K_true = computeTrueLQR();
+      var data = [], s = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, 0];
+      var t = 0, intErr = 0, dt = 0.025;
+      for (var i = 0; i < 2000; i++) {
+        var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t);
+        var dx = [s[0]-TRIM.V, s[1]-TRIM.gamma, s[2]-TRIM.alpha, s[3]-TRIM.q];
+        var du = -(K_true[0]*dx[0]+K_true[1]*dx[1]+K_true[2]*dx[2]+K_true[3]*dx[3]);
+        var de = clamp(TRIM.de + du, deg2rad(-20), deg2rad(20));
+        var errH = s[4] - hRef;
+        intErr = clamp(intErr + errH * dt, -1000, 1000);
+        data.push({ x: [dx[0], dx[1], dx[2], dx[3], errH, intErr], y: de / deg2rad(20) });
+        s = rk4(s, t, dt, function(tt, ss) { return flightDerivatives(tt, ss, de); });
+        s[4] = Math.max(s[4], 0);
+        t += dt;
+        if (i % 80 === 0) { s[1] += (Math.random()-0.5)*0.04; s[2] += (Math.random()-0.5)*0.02; }
+      }
+      return data;
+    }
+
+    /* ── Neural network (arbitrary depth feedforward, tanh) ───── */
+    var nLayers = 1, nNeurons = 16;
+    var net = null, adam = null, nnActive = false;
+    var lossHistory = [], trainingData = null;
+
+    function getLayerSizes() {
+      var s = [6];
+      for (var i = 0; i < nLayers; i++) s.push(nNeurons);
+      s.push(1);
+      return s;
+    }
+
+    function initNet(sizes) {
+      var W = [], b = [];
+      for (var l = 0; l < sizes.length-1; l++) {
+        var ni = sizes[l], no = sizes[l+1];
+        var w = new Float64Array(ni*no);
+        var sc = Math.sqrt(2/ni);
+        for (var k = 0; k < w.length; k++) {
+          var u1 = Math.random()+1e-10, u2 = Math.random();
+          w[k] = sc * Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
+        }
+        W.push(w); b.push(new Float64Array(no));
+      }
+      return { sizes: sizes, W: W, b: b };
+    }
+
+    function fwdNet(nn, xRaw) {
+      var inp = xRaw.map(function(v,i) { return clamp(v/INPUT_SCALES[i],-3,3); });
+      var a = [new Float64Array(inp)];
+      for (var l = 0; l < nn.W.length; l++) {
+        var ni = nn.sizes[l], no = nn.sizes[l+1];
+        var z = new Float64Array(no);
+        for (var i = 0; i < no; i++) {
+          var sum = nn.b[l][i];
+          for (var j = 0; j < ni; j++) sum += nn.W[l][i*ni+j] * a[l][j];
+          z[i] = (l < nn.W.length-1) ? Math.tanh(sum) : sum;
+        }
+        a.push(z);
+      }
+      return { out: a[a.length-1][0], a: a };
+    }
+
+    function bwdNet(nn, cache, target) {
+      var nL = nn.W.length;
+      var dW = nn.W.map(function(w) { return new Float64Array(w.length); });
+      var db = nn.b.map(function(bi) { return new Float64Array(bi.length); });
+      var delta = [cache.out - target];
+      for (var l = nL-1; l >= 0; l--) {
+        var ni = nn.sizes[l], no = nn.sizes[l+1];
+        for (var i = 0; i < no; i++) {
+          var d = delta[i];
+          if (l < nL-1) d *= (1 - cache.a[l+1][i]*cache.a[l+1][i]);
+          db[l][i] += d;
+          for (var j = 0; j < ni; j++) dW[l][i*ni+j] += d * cache.a[l][j];
+        }
+        if (l > 0) {
+          var dp = new Float64Array(ni);
+          for (var j = 0; j < ni; j++) {
+            var s = 0;
+            for (var i = 0; i < no; i++) {
+              var d2 = delta[i];
+              if (l < nL-1) d2 *= (1 - cache.a[l+1][i]*cache.a[l+1][i]);
+              s += nn.W[l][i*ni+j] * d2;
+            }
+            dp[j] = s;
+          }
+          delta = Array.prototype.slice.call(dp);
+        }
+      }
+      return { dW: dW, db: db };
+    }
+
+    function initAdam(nn) {
+      return {
+        mW: nn.W.map(function(w) { return new Float64Array(w.length); }),
+        vW: nn.W.map(function(w) { return new Float64Array(w.length); }),
+        mb: nn.b.map(function(bi) { return new Float64Array(bi.length); }),
+        vb: nn.b.map(function(bi) { return new Float64Array(bi.length); }),
+        t: 0
+      };
+    }
+
+    function adamStep(nn, grads, am, lr) {
+      var b1=0.9, b2=0.999, eps=1e-8;
+      am.t++;
+      var bc1 = 1-Math.pow(b1,am.t), bc2 = 1-Math.pow(b2,am.t);
+      for (var l = 0; l < nn.W.length; l++) {
+        for (var k = 0; k < nn.W[l].length; k++) {
+          am.mW[l][k] = b1*am.mW[l][k] + (1-b1)*grads.dW[l][k];
+          am.vW[l][k] = b2*am.vW[l][k] + (1-b2)*grads.dW[l][k]*grads.dW[l][k];
+          nn.W[l][k] -= lr*(am.mW[l][k]/bc1) / (Math.sqrt(am.vW[l][k]/bc2)+eps);
+        }
+        for (var k = 0; k < nn.b[l].length; k++) {
+          am.mb[l][k] = b1*am.mb[l][k] + (1-b1)*grads.db[l][k];
+          am.vb[l][k] = b2*am.vb[l][k] + (1-b2)*grads.db[l][k]*grads.db[l][k];
+          nn.b[l][k] -= lr*(am.mb[l][k]/bc1) / (Math.sqrt(am.vb[l][k]/bc2)+eps);
+        }
+      }
+    }
+
+    /* ── Loss canvas ─────────────────────────────────────────── */
+    var lossCanvas = document.getElementById('nn-loss-canvas');
+    var lossCtx    = lossCanvas && lossCanvas.getContext('2d');
+
+    function drawLoss() {
+      if (!lossCtx || !lossHistory.length) return;
+      var W = lossCanvas.offsetWidth || 200, H = 72;
+      lossCanvas.width  = Math.round(W * (window.devicePixelRatio || 1));
+      lossCanvas.height = Math.round(H * (window.devicePixelRatio || 1));
+      lossCtx.setTransform(window.devicePixelRatio||1, 0, 0, window.devicePixelRatio||1, 0, 0);
+      lossCtx.fillStyle = cssVar('--bg-soft');
+      lossCtx.fillRect(0, 0, W, H);
+      var maxL = Math.max.apply(null, lossHistory), n = lossHistory.length;
+      lossCtx.strokeStyle = cssVar('--accent');
+      lossCtx.lineWidth = 1.5;
+      lossCtx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var x = (i / Math.max(n-1, 1)) * W;
+        var y = H - 4 - (lossHistory[i] / Math.max(maxL, 1e-9)) * (H-8);
+        if (i === 0) lossCtx.moveTo(x, y); else lossCtx.lineTo(x, y);
+      }
+      lossCtx.stroke();
+      lossCtx.fillStyle = cssVar('--text-muted');
+      lossCtx.font = '10px monospace';
+      lossCtx.textAlign = 'left'; lossCtx.textBaseline = 'top';
+      lossCtx.fillText('MSE loss', 4, 3);
+    }
+
+    /* ── Training loop (async via setTimeout) ────────────────── */
+    function runEpoch(data, batchSize) {
+      for (var i = data.length-1; i > 0; i--) {
+        var j = Math.floor(Math.random()*(i+1));
+        var tmp = data[i]; data[i] = data[j]; data[j] = tmp;
+      }
+      var totalLoss = 0;
+      for (var b = 0; b < data.length; b += batchSize) {
+        var batch = data.slice(b, b+batchSize);
+        var accDW = net.W.map(function(w) { return new Float64Array(w.length); });
+        var accDb = net.b.map(function(bi) { return new Float64Array(bi.length); });
+        for (var s = 0; s < batch.length; s++) {
+          var cache = fwdNet(net, batch[s].x);
+          var err = cache.out - batch[s].y;
+          totalLoss += err*err;
+          var g = bwdNet(net, cache, batch[s].y);
+          for (var l = 0; l < net.W.length; l++) {
+            for (var k = 0; k < net.W[l].length; k++) accDW[l][k] += g.dW[l][k] / batch.length;
+            for (var k = 0; k < net.b[l].length; k++) accDb[l][k] += g.db[l][k] / batch.length;
+          }
+        }
+        adamStep(net, { dW: accDW, db: accDb }, adam, 0.001);
+      }
+      return totalLoss / data.length;
+    }
+
+    var trainStatusEl = document.getElementById('nn-train-status');
+    var activateBtnEl = document.getElementById('nn-activate-btn');
+
+    function trainLoop(epoch, maxEpochs) {
+      if (epoch >= maxEpochs) {
+        if (trainStatusEl) trainStatusEl.textContent = 'Done — ' + maxEpochs + ' epochs';
+        if (activateBtnEl) activateBtnEl.disabled = false;
+        return;
+      }
+      var loss = runEpoch(trainingData, 32);
+      lossHistory.push(loss);
+      if (trainStatusEl) trainStatusEl.textContent = 'Epoch ' + (epoch+1) + '/' + maxEpochs
+        + '  loss ' + loss.toFixed(5);
+      drawLoss();
+      setTimeout(function() { trainLoop(epoch+1, maxEpochs); }, 0);
+    }
+
+    /* ── DOM wiring ──────────────────────────────────────────── */
+    var layersSlider  = document.getElementById('nn-layers');
+    var neuronsSlider = document.getElementById('nn-neurons');
+    var layersVal     = document.getElementById('nn-layers-val');
+    var neuronsVal    = document.getElementById('nn-neurons-val');
+    var genBtn        = document.getElementById('nn-gen-btn');
+    var genStatus     = document.getElementById('nn-gen-status');
+    var trainBtn      = document.getElementById('nn-train-btn');
+    var scoreEl       = document.getElementById('nn-score');
+    var resetBtn      = document.getElementById('nn-reset');
+
+    function archChanged() {
+      nLayers  = parseInt(layersSlider.value);
+      nNeurons = parseInt(neuronsSlider.value);
+      if (layersVal)  layersVal.textContent  = nLayers;
+      if (neuronsVal) neuronsVal.textContent = nNeurons;
+      net = null; nnActive = false; lossHistory = [];
+      if (activateBtnEl) { activateBtnEl.disabled = true; activateBtnEl.textContent = 'Activate NN'; activateBtnEl.classList.remove('active'); }
+      if (trainStatusEl) trainStatusEl.textContent = 'Architecture changed — retrain';
+      if (lossCtx) lossCtx.clearRect(0, 0, lossCanvas.width, lossCanvas.height);
+    }
+    if (layersSlider)  layersSlider.addEventListener('input', archChanged);
+    if (neuronsSlider) neuronsSlider.addEventListener('input', archChanged);
+
+    if (genBtn) genBtn.addEventListener('click', function() {
+      genBtn.disabled = true;
+      if (genStatus) genStatus.textContent = 'Generating…';
+      setTimeout(function() {
+        if (!K_true) K_true = computeTrueLQR();
+        trainingData = genData();
+        genBtn.disabled = false;
+        if (genStatus) genStatus.textContent = trainingData.length + ' samples ready';
+        if (trainBtn) trainBtn.disabled = false;
+      }, 20);
+    });
+
+    if (trainBtn) trainBtn.addEventListener('click', function() {
+      if (!trainingData) return;
+      net = initNet(getLayerSizes());
+      adam = initAdam(net);
+      lossHistory = [];
+      nnActive = false;
+      if (activateBtnEl) { activateBtnEl.disabled = true; activateBtnEl.textContent = 'Activate NN'; activateBtnEl.classList.remove('active'); }
+      trainLoop(0, 150);
+    });
+
+    if (activateBtnEl) activateBtnEl.addEventListener('click', function() {
+      if (!net) return;
+      nnActive = !nnActive;
+      nnIntErr = 0;
+      activateBtnEl.textContent = nnActive ? 'Deactivate NN' : 'Activate NN';
+      activateBtnEl.classList.toggle('active', nnActive);
+    });
+
+    if (resetBtn) resetBtn.addEventListener('click', resetSim);
+
+    /* ── Simulation step ─────────────────────────────────────── */
+    setInterval(function() {
+      var sec = document.getElementById('sec-nn');
+      if (!sec || !sec.classList.contains('active')) return;
+      if (simStatus !== 'ok') return;
+
+      for (var i = 0; i < 5; i++) {
+        var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+
+        if (nnActive && net) {
+          var dx = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
+          nnIntErr = clamp(nnIntErr + (state[4]-hRef) * FLIGHT_DT, -1000, 1000);
+          var cache = fwdNet(net, [dx[0], dx[1], dx[2], dx[3], state[4]-hRef, nnIntErr]);
+          de_rad = clamp(cache.out * deg2rad(20), deg2rad(-20), deg2rad(20));
+        }
+
+        state = rk4(state, simT, FLIGHT_DT, function(t, s) {
+          return flightDerivatives(t, s, de_rad);
+        });
+        simT += FLIGHT_DT;
+
+        if (state[4] <= 0) {
+          state[4] = 0; simStatus = 'crashed';
+          if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 2500);
+          return;
+        }
+        if (state[0] < 15) {
+          simStatus = 'stalled';
+          if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 2500);
+          return;
+        }
+
+        errRing.push(Math.pow(hRef - state[4], 2));
+        if (errRing.length > RING) errRing.shift();
+      }
+
+      if (scoreEl && errRing.length > 0) {
+        var rmse = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0) / errRing.length);
+        scoreEl.textContent = rmse.toFixed(1);
+      }
+    }, 25);
+
+    /* ── Render loop ─────────────────────────────────────────── */
+    (function loop() {
+      var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+      renderer.render(state, simT, de_rad, simStatus, function(ctx, W) {
+        if (nnActive) {
+          ctx.save();
+          ctx.font = 'bold 11px monospace';
+          ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+          ctx.fillStyle = 'rgba(80,200,120,0.9)';
+          ctx.fillText('● NN active', 215, 8);
+          ctx.restore();
+        }
+      });
+      requestAnimationFrame(loop);
+    })();
   })();
 
 })();
