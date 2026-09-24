@@ -106,21 +106,22 @@
   }
 
   function makeItem(text, isEquation) {
-    var hxr, hyr;
-    if (isEquation) {
-      // still keep a small margin so the longer strings don't clip the hero bounds
-      hxr = 0.09 + Math.random() * 0.82;
-      hyr = 0.08 + Math.random() * 0.84;
-    } else {
-      hxr = 0.02 + Math.random() * 0.96;
-      hyr = 0.04 + Math.random() * 0.92;
-    }
+    var size = isEquation ? rand(params.size * 0.6, params.size * 0.72) : rand(params.size - 5, params.size + 5);
+    // Margin is derived from the glyph's actual rendered width vs. the canvas
+    // width, so it self-adjusts on narrow phone screens instead of relying on
+    // a fixed fraction that clips long equations against the hero's edges.
+    ctx.font = 'italic ' + size + "px 'STIX Two Text', 'Times New Roman', serif";
+    var halfWidth = ctx.measureText(text).width / 2;
+    var marginX = clamp((halfWidth + 12) / w, 0.05, 0.45);
+    var marginY = 0.08;
+    var hxr = marginX + Math.random() * (1 - marginX * 2);
+    var hyr = marginY + Math.random() * (1 - marginY * 2);
     return {
       hxr: hxr, hyr: hyr,
       x: hxr * w, y: hyr * h,
       vx: 0, vy: 0,
       char: text,
-      size: isEquation ? rand(params.size * 0.6, params.size * 0.72) : rand(params.size - 5, params.size + 5),
+      size: size,
       opacity: isEquation ? rand(0.22, 0.4) : rand(0.28, 0.6),
       seed: Math.random() * 1000
     };
@@ -141,7 +142,12 @@
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    initSymbols();
+    // Only seed symbols once. Their home points are stored as fractions of
+    // w/h, so later resizes (address-bar collapse, a web-font swap reflowing
+    // the heading, orientation change) already retarget correctly without a
+    // full re-randomize, which used to snap every symbol to a new spot and
+    // read as a flash right after load.
+    if (!symbols.length) initSymbols();
   }
 
   function onPointerMove(e) {

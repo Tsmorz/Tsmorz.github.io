@@ -33,6 +33,7 @@
           <li class="nav-home"><a href="{{ '/' | relative_url }}" {% if p == '/' %}aria-current="page"{% endif %}>Home</a></li>
           <li><a href="{{ '/projects/' | relative_url }}" {% if p contains '/projects' %}aria-current="page"{% endif %}>Projects</a></li>
           <li><a href="{{ '/photos/' | relative_url }}" {% if p contains '/photos' %}aria-current="page"{% endif %}>Photos</a></li>
+          <li><a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' %}aria-current="page"{% endif %}>Controls</a></li>
           <li><a href="{{ '/about/' | relative_url }}" {% if p contains '/about' %}aria-current="page"{% endif %}>About</a></li>
         </ul>
         <button class="theme-toggle" type="button" aria-label="Toggle color theme" title="Toggle color theme">
