@@ -2,6 +2,7 @@
 layout: default
 title: Controls
 description: Interactive control-systems demos — PID tuning, nonlinear flight sim, system identification, and LQR.
+permalink: /controls/
 ---
 
 <div class="section wrap">
