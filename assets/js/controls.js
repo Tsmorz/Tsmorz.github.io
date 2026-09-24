@@ -513,90 +513,67 @@
       ctx.translate(cx, cy);
       ctx.rotate(-theta_rad);  // positive pitch = nose up on screen
 
-      var bodyC  = isDarkMode ? '#ccd6ec' : '#1e2a4a';
-      var darkC  = isDarkMode ? '#5a6888' : '#0e1530';
-      var elevC  = '#e08820';  // amber — stands out against sky/ground
-      var glassC = isDarkMode ? 'rgba(90,170,240,0.55)' : 'rgba(70,140,220,0.6)';
+      // Paper airplane — crisp white-blue tones, no engine/cockpit
+      var upper = isDarkMode ? '#d8e8f8' : '#eef4ff'; // top fold face (lighter)
+      var lower = isDarkMode ? '#a4bcd8' : '#c4d4ee'; // wing face (slightly darker)
+      var edge  = isDarkMode ? '#4058a0' : '#3050a0'; // outline / fold edge
+      var crease= isDarkMode ? '#8090c0' : '#7888c0'; // center crease line
+      var elevC = '#f0a020';                           // amber elevator tab
 
-      // ── Fuselage (nose at +x, side profile) ──
-      ctx.fillStyle = bodyC;
+      // ── Wing / lower body — the big swept triangle you see from the side ──
+      ctx.fillStyle = lower;
       ctx.beginPath();
-      ctx.moveTo(36,  0);                               // nose tip
-      ctx.bezierCurveTo(30, -4, 16, -8,  6, -7);       // top: nose → cockpit
-      ctx.bezierCurveTo(-4, -6, -18, -5, -26, -4);     // top: cockpit → tail
-      ctx.lineTo(-36,  1);                              // tail tip
-      ctx.bezierCurveTo(-22,  5, -6,  5,  6,  4);      // belly: tail → mid
-      ctx.bezierCurveTo(16,   2, 28,  1,  36,  0);     // belly: mid → nose
+      ctx.moveTo( 12,  1);   // wing root — under the body, front
+      ctx.lineTo(-28,  1);   // wing root — tail
+      ctx.lineTo(-15, 24);   // wing tip (trailing)
+      ctx.lineTo( -1, 22);   // wing tip (leading)
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      // Engine cowling band
-      ctx.fillStyle = darkC;
+      // ── Upper body — the folded center ridge, tapers to nose ──
+      ctx.fillStyle = upper;
       ctx.beginPath();
-      ctx.moveTo(30, -3); ctx.lineTo(26, -5);
-      ctx.lineTo(26,  4); ctx.lineTo(30,  3);
+      ctx.moveTo( 40,  0);   // nose tip
+      ctx.lineTo( 14, -11);  // top leading edge
+      ctx.lineTo(-28, -9);   // top trailing
+      ctx.lineTo(-28,  1);   // tail (meets wing root)
+      ctx.lineTo( 12,  1);   // front of wing root
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      // Cockpit window
-      ctx.fillStyle = glassC;
+      // ── Center fold crease (dashed) ──
+      ctx.strokeStyle = crease;
+      ctx.lineWidth = 0.9;
+      ctx.setLineDash([6, 4]);
       ctx.beginPath();
-      ctx.ellipse(18, -6, 8, 3, -0.12, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(38, 0);
+      ctx.lineTo(-26, 0);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-      // ── Wing (swept-back, below fuselage — side view) ──
-      ctx.fillStyle = darkC;
-      ctx.beginPath();
-      ctx.moveTo(10,  2);   // root leading edge
-      ctx.lineTo(-2,  1);   // root trailing edge
-      ctx.lineTo(-18, 28);  // tip trailing edge
-      ctx.lineTo(-6,  27);  // tip leading edge
-      ctx.closePath();
-      ctx.fill();
-      // wing upper-surface shine
-      ctx.fillStyle = bodyC;
-      ctx.globalAlpha = 0.28;
-      ctx.beginPath();
-      ctx.moveTo(8, 3); ctx.lineTo(-1, 2);
-      ctx.lineTo(-14, 25); ctx.lineTo(-5, 25);
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1;
-
-      // ── Vertical tail fin ──
-      ctx.fillStyle = darkC;
-      ctx.beginPath();
-      ctx.moveTo(-20, -4);
-      ctx.lineTo(-30, -4);
-      ctx.lineTo(-34, -20);
-      ctx.lineTo(-23, -5);
-      ctx.closePath();
-      ctx.fill();
-
-      // ── Horizontal stabilizer (fixed) ──
-      ctx.fillStyle = darkC;
-      ctx.beginPath();
-      ctx.moveTo(-21,  4);   // root LE
-      ctx.lineTo(-29,  4);   // root TE → elevator hinge
-      ctx.lineTo(-32, 14);   // tip
-      ctx.lineTo(-25, 13);
-      ctx.closePath();
-      ctx.fill();
-
-      // ── Elevator — amber surface, pivots from stabilizer TE ──
-      // Positive de_rad → trailing edge down (canvas +y CW)
-      var eDefl = clamp(de_rad, deg2rad(-20), deg2rad(20)) * 3;
+      // ── Elevator tab — amber flap at the tail, pivots by de_rad ──
+      // Positive de_rad → trailing edge down (CW rotation in canvas coords)
+      var eDefl = clamp(de_rad, deg2rad(-20), deg2rad(20)) * 3.5;
       ctx.save();
-      ctx.translate(-29, 4);
+      ctx.translate(-28, -4);   // hinge at mid-tail height
       ctx.rotate(eDefl);
       ctx.fillStyle = elevC;
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo( 0,  0);
-      ctx.lineTo(-10,  0);
-      ctx.lineTo(-10,  5);
-      ctx.lineTo(  0,  3);
+      ctx.moveTo( 0, -5);
+      ctx.lineTo(-8, -4);
+      ctx.lineTo(-8,  4);
+      ctx.lineTo( 0,  5);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
       ctx.restore();
 
       ctx.restore();
