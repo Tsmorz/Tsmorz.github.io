@@ -410,6 +410,7 @@
   }
 
   var FLIGHT_DT = 0.005;  // 200 Hz
+  var FLIGHT_MAX_ALT = 1480;  // matches VIEW_HI in makeFlightRenderer
 
   /* ================================================================
      Shared canvas renderer for flight demos
@@ -430,27 +431,21 @@
     new ResizeObserver(resize).observe(canvas.parentElement);
     resize();
 
-    // Dynamic altitude window — expands immediately when the aircraft leaves,
-    // contracts slowly back to the reference range when it returns.
     var REF_AMP = 100, REF_OMEGA = 0.15;
     var H_CENTER = 1200;
-    var REF_LO = H_CENTER - REF_AMP - 80;   // 1020
-    var REF_HI = H_CENTER + REF_AMP + 80;   // 1380
-    var viewLo = REF_LO, viewHi = REF_HI;
+    var REF_LO = H_CENTER - REF_AMP - 80;  // 1020
+    var REF_HI = H_CENTER + REF_AMP + 80;  // 1380
+    var VIEW_HI = FLIGHT_MAX_ALT;           // 1480 — fixed ceiling, never expands
+    var viewLo = REF_LO;                    // only the floor expands downward
 
     function updateViewport(h) {
+      // Expand floor downward when plane descends; drift back slowly
       var needLo = Math.min(REF_LO, h - 80);
-      var needHi = Math.max(REF_HI, h + 80);
-      // Snap outward instantly, drift inward slowly
       viewLo = viewLo < needLo ? viewLo + (needLo - viewLo) * 0.04 : needLo;
-      viewHi = viewHi > needHi ? viewHi - (viewHi - needHi) * 0.04 : needHi;
-      // Enforce minimum window height
-      var mid = (viewLo + viewHi) / 2;
-      if (viewHi - viewLo < 300) { viewLo = mid - 150; viewHi = mid + 150; }
     }
 
     function hToY(h, H) {
-      return H - (h - viewLo) / (viewHi - viewLo) * (H - 60) - 30;
+      return H - (h - viewLo) / (VIEW_HI - viewLo) * (H - 60) - 30;
     }
 
     // seedRand: deterministic pseudo-random in [0,1) from integer seed
@@ -495,7 +490,7 @@
     }
 
     function drawTrees(W, horizonY, downrange, isDarkMode) {
-      var spacing = 90;
+      var spacing = 48;
       var scroll  = downrange % (spacing * 40);
       var count   = Math.ceil(W / spacing) + 3;
       var base    = Math.floor(scroll / spacing) - 1;
@@ -508,95 +503,109 @@
       }
     }
 
+    function drawCloud(x, y, r, isDarkMode) {
+      ctx.save();
+      ctx.fillStyle = isDarkMode ? 'rgba(110,150,210,0.22)' : 'rgba(255,255,255,0.92)';
+      ctx.beginPath();
+      ctx.arc(x,         y,        r,        0, Math.PI * 2);
+      ctx.arc(x + r,     y - r*0.3, r*0.78,  0, Math.PI * 2);
+      ctx.arc(x + r*2.0, y,         r*0.65,  0, Math.PI * 2);
+      ctx.arc(x + r*0.3, y - r*0.2, r*0.62,  0, Math.PI * 2);
+      ctx.arc(x + r*0.9, y + r*0.3, r*0.55,  0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawClouds(W, skyH, downrange, isDarkMode) {
+      if (skyH <= 20) return;
+      // Three parallax layers — higher in sky = smaller, slower
+      var layers = [
+        { yFrac: 0.08, parallax: 0.10, spacing: 340, sMin: 22, sMax: 42 },
+        { yFrac: 0.26, parallax: 0.18, spacing: 250, sMin: 16, sMax: 30 },
+        { yFrac: 0.50, parallax: 0.28, spacing: 190, sMin: 11, sMax: 21 },
+      ];
+      for (var li = 0; li < layers.length; li++) {
+        var l = layers[li];
+        var baseY = skyH * l.yFrac;
+        var scroll = downrange * l.parallax;
+        var count  = Math.ceil(W / l.spacing) + 3;
+        var base   = Math.floor(scroll / l.spacing) - 1;
+        for (var ci = base; ci < base + count; ci++) {
+          var cx2 = (ci - scroll / l.spacing) * l.spacing
+                  + seedRand(ci * 29 + li * 7 + 3) * l.spacing * 0.55;
+          var size = l.sMin + seedRand(ci * 17 + li * 5 + 1) * (l.sMax - l.sMin);
+          var cy2  = baseY + seedRand(ci * 23 + li * 9 + 5) * skyH * 0.07;
+          drawCloud(cx2, cy2, size, isDarkMode);
+        }
+      }
+    }
+
     function drawPlane(cx, cy, theta_rad, de_rad, isDarkMode) {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(-theta_rad);  // positive pitch = nose up on screen
 
-      var bodyC  = isDarkMode ? '#ccd6ec' : '#1e2a4a';
-      var darkC  = isDarkMode ? '#5a6888' : '#0e1530';
-      var elevC  = '#e08820';  // amber — stands out against sky/ground
-      var glassC = isDarkMode ? 'rgba(90,170,240,0.55)' : 'rgba(70,140,220,0.6)';
+      // Paper airplane — crisp white-blue tones, no engine/cockpit
+      var upper = isDarkMode ? '#d8e8f8' : '#eef4ff'; // top fold face (lighter)
+      var lower = isDarkMode ? '#a4bcd8' : '#c4d4ee'; // wing face (slightly darker)
+      var edge  = isDarkMode ? '#4058a0' : '#3050a0'; // outline / fold edge
+      var crease= isDarkMode ? '#8090c0' : '#7888c0'; // center crease line
+      var elevC = '#f0a020';                           // amber elevator tab
 
-      // ── Fuselage (nose at +x, side profile) ──
-      ctx.fillStyle = bodyC;
+      // ── Wing / lower body — the big swept triangle you see from the side ──
+      ctx.fillStyle = lower;
       ctx.beginPath();
-      ctx.moveTo(36,  0);                               // nose tip
-      ctx.bezierCurveTo(30, -4, 16, -8,  6, -7);       // top: nose → cockpit
-      ctx.bezierCurveTo(-4, -6, -18, -5, -26, -4);     // top: cockpit → tail
-      ctx.lineTo(-36,  1);                              // tail tip
-      ctx.bezierCurveTo(-22,  5, -6,  5,  6,  4);      // belly: tail → mid
-      ctx.bezierCurveTo(16,   2, 28,  1,  36,  0);     // belly: mid → nose
+      ctx.moveTo( 12,  1);   // wing root — under the body, front
+      ctx.lineTo(-28,  1);   // wing root — tail
+      ctx.lineTo(-15, 24);   // wing tip (trailing)
+      ctx.lineTo( -1, 22);   // wing tip (leading)
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      // Engine cowling band
-      ctx.fillStyle = darkC;
+      // ── Upper body — the folded center ridge, tapers to nose ──
+      ctx.fillStyle = upper;
       ctx.beginPath();
-      ctx.moveTo(30, -3); ctx.lineTo(26, -5);
-      ctx.lineTo(26,  4); ctx.lineTo(30,  3);
+      ctx.moveTo( 40,  0);   // nose tip
+      ctx.lineTo( 14, -11);  // top leading edge
+      ctx.lineTo(-28, -9);   // top trailing
+      ctx.lineTo(-28,  1);   // tail (meets wing root)
+      ctx.lineTo( 12,  1);   // front of wing root
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      // Cockpit window
-      ctx.fillStyle = glassC;
+      // ── Center fold crease (dashed) ──
+      ctx.strokeStyle = crease;
+      ctx.lineWidth = 0.9;
+      ctx.setLineDash([6, 4]);
       ctx.beginPath();
-      ctx.ellipse(18, -6, 8, 3, -0.12, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(38, 0);
+      ctx.lineTo(-26, 0);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-      // ── Wing (swept-back, below fuselage — side view) ──
-      ctx.fillStyle = darkC;
-      ctx.beginPath();
-      ctx.moveTo(10,  2);   // root leading edge
-      ctx.lineTo(-2,  1);   // root trailing edge
-      ctx.lineTo(-18, 28);  // tip trailing edge
-      ctx.lineTo(-6,  27);  // tip leading edge
-      ctx.closePath();
-      ctx.fill();
-      // wing upper-surface shine
-      ctx.fillStyle = bodyC;
-      ctx.globalAlpha = 0.28;
-      ctx.beginPath();
-      ctx.moveTo(8, 3); ctx.lineTo(-1, 2);
-      ctx.lineTo(-14, 25); ctx.lineTo(-5, 25);
-      ctx.closePath();
-      ctx.fill();
-      ctx.globalAlpha = 1;
-
-      // ── Vertical tail fin ──
-      ctx.fillStyle = darkC;
-      ctx.beginPath();
-      ctx.moveTo(-20, -4);
-      ctx.lineTo(-30, -4);
-      ctx.lineTo(-34, -20);
-      ctx.lineTo(-23, -5);
-      ctx.closePath();
-      ctx.fill();
-
-      // ── Horizontal stabilizer (fixed) ──
-      ctx.fillStyle = darkC;
-      ctx.beginPath();
-      ctx.moveTo(-21,  4);   // root LE
-      ctx.lineTo(-29,  4);   // root TE → elevator hinge
-      ctx.lineTo(-32, 14);   // tip
-      ctx.lineTo(-25, 13);
-      ctx.closePath();
-      ctx.fill();
-
-      // ── Elevator — amber surface, pivots from stabilizer TE ──
-      // Positive de_rad → trailing edge down (canvas +y CW)
-      var eDefl = clamp(de_rad, deg2rad(-20), deg2rad(20)) * 3;
+      // ── Elevator tab — amber flap at the tail, pivots by de_rad ──
+      // Positive de_rad → trailing edge down (CW rotation in canvas coords)
+      var eDefl = clamp(de_rad, deg2rad(-15), deg2rad(15)) * 4;
       ctx.save();
-      ctx.translate(-29, 4);
+      ctx.translate(-28, -4);   // hinge at mid-tail height
       ctx.rotate(eDefl);
       ctx.fillStyle = elevC;
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo( 0,  0);
-      ctx.lineTo(-10,  0);
-      ctx.lineTo(-10,  5);
-      ctx.lineTo(  0,  3);
+      ctx.moveTo( 0, -5);
+      ctx.lineTo(-8, -4);
+      ctx.lineTo(-8,  4);
+      ctx.lineTo( 0,  5);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
       ctx.restore();
 
       ctx.restore();
@@ -624,11 +633,16 @@
       var bgColor     = cssVar('--bg');
       var bgSoft      = cssVar('--bg-soft');
 
-      // Sky gradient
-      var horizonY = hToY(viewLo + 60, H);
-      var grad = ctx.createLinearGradient(0, 0, 0, horizonY);
       var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+      // Ground level mapped to canvas pixels (may be off-screen below when flying high)
+      var groundY = hToY(0, H);
+      var horizonY = Math.min(H, Math.max(0, groundY)); // clipped to canvas
+
+      // Sky gradient — covers canvas from top to wherever the ground appears
+      var skyH = horizonY; // height of sky region; may be full canvas if no ground visible
+      var grad = ctx.createLinearGradient(0, 0, 0, Math.max(skyH, 1));
       if (isDark) {
         grad.addColorStop(0, '#05090f');
         grad.addColorStop(1, '#0e1e2e');
@@ -637,26 +651,31 @@
         grad.addColorStop(1, '#dceef8');
       }
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, horizonY);
+      ctx.fillRect(0, 0, W, skyH);
 
-      // Ground
-      ctx.fillStyle = isDark ? '#0d1a0d' : '#b8d4a0';
-      ctx.fillRect(0, horizonY, W, H - horizonY);
+      // Clouds in sky (parallax layers)
+      drawClouds(W, skyH, downrange, isDark);
 
-      // Scrolling ground marks
-      ctx.strokeStyle = isDark ? '#1a2e1a' : '#a0c080';
-      ctx.lineWidth = 1;
-      var markSpacing = 120;
-      var offset = (downrange % markSpacing) / markSpacing * markSpacing;
-      for (var mx = -offset; mx < W + markSpacing; mx += markSpacing) {
-        ctx.beginPath();
-        ctx.moveTo(mx, horizonY);
-        ctx.lineTo(mx - 20, H);
-        ctx.stroke();
+      // Ground — only drawn when within the canvas
+      if (groundY < H) {
+        ctx.fillStyle = isDark ? '#0d1a0d' : '#b8d4a0';
+        ctx.fillRect(0, horizonY, W, H - horizonY);
+
+        // Scrolling ground marks
+        ctx.strokeStyle = isDark ? '#1a2e1a' : '#a0c080';
+        ctx.lineWidth = 1;
+        var markSpacing = 120;
+        var offset = (downrange % markSpacing) / markSpacing * markSpacing;
+        for (var mx = -offset; mx < W + markSpacing; mx += markSpacing) {
+          ctx.beginPath();
+          ctx.moveTo(mx, horizonY);
+          ctx.lineTo(mx - 20, H);
+          ctx.stroke();
+        }
+
+        // Cartoon trees
+        drawTrees(W, horizonY, downrange, isDark);
       }
-
-      // Cartoon trees on horizon
-      drawTrees(W, horizonY, downrange, isDark);
 
       // Reference altitude path (dashed)
       ctx.strokeStyle = accentColor;
@@ -681,9 +700,9 @@
       ctx.font = '11px ' + cssVar('--mono');
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      var tickStep = viewHi - viewLo > 800 ? 200 : 100;
+      var tickStep = VIEW_HI - viewLo > 800 ? 200 : 100;
       var tickStart = Math.ceil(viewLo / tickStep) * tickStep;
-      for (var ah = tickStart; ah <= viewHi; ah += tickStep) {
+      for (var ah = tickStart; ah <= VIEW_HI; ah += tickStep) {
         var ay = hToY(ah, H);
         if (ay < 12 || ay > H - 12) continue;
         ctx.fillText(ah + 'm', W - 8, ay);
@@ -696,7 +715,7 @@
       }
 
       // Elevator indicator (thin bar, right edge)
-      var eiFrac = (de_rad / deg2rad(20) + 1) / 2;  // 0=down, 1=up
+      var eiFrac = (de_rad / deg2rad(15) + 1) / 2;  // 0=down, 1=up
       var eiX = W - 22, eiTop = 50, eiH = 80;
       ctx.fillStyle = bgSoft;
       ctx.strokeStyle = borderColor;
@@ -735,7 +754,10 @@
 
       // Crash / stall overlay
       if (status && status !== 'ok') {
-        var msg = status === 'crashed' ? '💥  CRASHED' : status === 'stalled' ? '⚠️  STALLED' : status;
+        var msg = status === 'crashed' ? '💥  CRASHED'
+                : status === 'stalled'  ? '⚠️  STALLED'
+                : status === 'too_high' ? '🌤️  TOO HIGH'
+                : status;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.fillRect(0, 0, W, H);
         ctx.font = 'bold 22px ' + cssVar('--font');
@@ -748,10 +770,10 @@
         ctx.fillText('Resetting in a moment…', W / 2, H / 2 + 16);
       }
 
-      if (typeof extraFn === 'function') extraFn(ctx, W, H, viewLo, viewHi);
+      if (typeof extraFn === 'function') extraFn(ctx, W, H, viewLo, VIEW_HI);
     }
 
-    return { render: render, resetViewport: function () { viewLo = REF_LO; viewHi = REF_HI; } };
+    return { render: render, resetViewport: function () { viewLo = REF_LO; } };
   }
 
   /* ================================================================
@@ -842,7 +864,7 @@
             + parseFloat(kiSlider.value) * pidState.intE
             + parseFloat(kdSlider.value) * (e - pidState.prevE) / PID_DT;
           pidState.prevE = e;
-          de_target = clamp(deg2rad(de_cmd), deg2rad(-20), deg2rad(20));
+          de_target = clamp(deg2rad(de_cmd), deg2rad(-15), deg2rad(15));
         }
         de_rad += clamp(de_target - de_rad, -ELEV_MAX_RATE, ELEV_MAX_RATE);
         state = rk4(state, simT, FLIGHT_DT, function (t, s) {
@@ -853,6 +875,12 @@
         if (state[4] <= 0) {
           state[4] = 0;
           simStatus = 'crashed';
+          if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
+          return;
+        }
+        // Detect too-high (exits top of view)
+        if (state[4] >= FLIGHT_MAX_ALT) {
+          simStatus = 'too_high';
           if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
           return;
         }
@@ -1017,7 +1045,7 @@
         if (lqrActive && lqrK) {
           var dx = [state[0] - TRIM.V, state[1] - TRIM.gamma, state[2] - TRIM.alpha, state[3] - TRIM.q];
           var du = -(lqrK[0]*dx[0] + lqrK[1]*dx[1] + lqrK[2]*dx[2] + lqrK[3]*dx[3]);
-          var de_target3 = clamp(TRIM.de + du, deg2rad(-20), deg2rad(20));
+          var de_target3 = clamp(TRIM.de + du, deg2rad(-15), deg2rad(15));
           de_rad += clamp(de_target3 - de_rad, -ELEV_MAX_RATE3, ELEV_MAX_RATE3);
         }
         state = rk4(state, simT, FLIGHT_DT, function (t, s) {
@@ -1027,6 +1055,12 @@
         if (state[4] <= 0) {
           state[4] = 0;
           simStatus3 = 'crashed';
+          recording = false;
+          if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2500);
+          return;
+        }
+        if (state[4] >= FLIGHT_MAX_ALT) {
+          simStatus3 = 'too_high';
           recording = false;
           if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2500);
           return;
@@ -1359,10 +1393,10 @@
         var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t);
         var dx = [s[0]-TRIM.V, s[1]-TRIM.gamma, s[2]-TRIM.alpha, s[3]-TRIM.q];
         var du = -(K_true[0]*dx[0]+K_true[1]*dx[1]+K_true[2]*dx[2]+K_true[3]*dx[3]);
-        var de = clamp(TRIM.de + du, deg2rad(-20), deg2rad(20));
+        var de = clamp(TRIM.de + du, deg2rad(-15), deg2rad(15));
         var errH = s[4] - hRef;
         intErr = clamp(intErr + errH * dt, -1000, 1000);
-        data.push({ x: [dx[0], dx[1], dx[2], dx[3], errH, intErr], y: de / deg2rad(20) });
+        data.push({ x: [dx[0], dx[1], dx[2], dx[3], errH, intErr], y: de / deg2rad(15) });
         s = rk4(s, t, dt, function(tt, ss) { return flightDerivatives(tt, ss, de); });
         s[4] = Math.max(s[4], 0);
         t += dt;
@@ -1613,7 +1647,7 @@
           var dx = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
           nnIntErr = clamp(nnIntErr + (state[4]-hRef) * FLIGHT_DT, -1000, 1000);
           var cache = fwdNet(net, [dx[0], dx[1], dx[2], dx[3], state[4]-hRef, nnIntErr]);
-          var de_nn_target = clamp(cache.out * deg2rad(20), deg2rad(-20), deg2rad(20));
+          var de_nn_target = clamp(cache.out * deg2rad(15), deg2rad(-15), deg2rad(15));
           de_rad += clamp(de_nn_target - de_rad, -ELEV_MAX_RATE_NN, ELEV_MAX_RATE_NN);
         }
 
@@ -1624,6 +1658,11 @@
 
         if (state[4] <= 0) {
           state[4] = 0; simStatus = 'crashed';
+          if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 2500);
+          return;
+        }
+        if (state[4] >= FLIGHT_MAX_ALT) {
+          simStatus = 'too_high';
           if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 2500);
           return;
         }
