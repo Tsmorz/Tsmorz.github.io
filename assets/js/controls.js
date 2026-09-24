@@ -345,11 +345,27 @@
      Shared flight physics engine (used by Demo 2 and Demo 3)
   ================================================================ */
 
-  // Cessna sprite — loaded once, drawn by makeFlightRenderer
-  var cessnaImg = (function () {
-    var img = new Image();
-    img.src = '/assets/img/cessna.png';
-    return img;
+  // Cessna sprite — loaded once, white background stripped via pixel manipulation
+  var cessna = (function () {
+    var raw = new Image();
+    var processed = null;
+    raw.onload = function () {
+      var oc = document.createElement('canvas');
+      oc.width = raw.naturalWidth;
+      oc.height = raw.naturalHeight;
+      var oc2d = oc.getContext('2d');
+      oc2d.drawImage(raw, 0, 0);
+      var id = oc2d.getImageData(0, 0, oc.width, oc.height);
+      var d = id.data;
+      for (var i = 0; i < d.length; i += 4) {
+        // Make near-white pixels fully transparent
+        if (d[i] > 220 && d[i+1] > 220 && d[i+2] > 220) d[i+3] = 0;
+      }
+      oc2d.putImageData(id, 0, 0);
+      processed = oc;
+    };
+    raw.src = '/assets/img/cessna.png';
+    return { get: function () { return processed; } };
   }());
 
   // Aircraft constants
@@ -469,50 +485,64 @@
       return x - Math.floor(x);
     }
 
-    function drawTree(x, y, h, isConifer, isDarkMode) {
-      var trunkW = Math.max(2, h * 0.12);
-      var trunkH = h * 0.38;
-      var crownR = h * 0.34;
-      ctx.fillStyle = isDarkMode ? '#3a2010' : '#6b3d18';
-      ctx.fillRect(x - trunkW / 2, y - trunkH, trunkW, trunkH);
-      if (isConifer) {
-        ctx.fillStyle = isDarkMode ? '#1c4220' : '#2d6b34';
-        ctx.beginPath();
-        ctx.moveTo(x, y - h);
-        ctx.lineTo(x + crownR * 1.2, y - trunkH);
-        ctx.lineTo(x - crownR * 1.2, y - trunkH);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = isDarkMode ? '#234e28' : '#378040';
-        ctx.beginPath();
-        ctx.moveTo(x, y - h * 0.62);
-        ctx.lineTo(x + crownR * 1.7, y - trunkH);
-        ctx.lineTo(x - crownR * 1.7, y - trunkH);
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        ctx.fillStyle = isDarkMode ? '#1e4a20' : '#3a7a2e';
-        ctx.beginPath();
-        ctx.arc(x, y - trunkH - crownR * 0.7, crownR * 1.1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = isDarkMode ? '#256030' : '#4a9638';
-        ctx.beginPath();
-        ctx.arc(x + crownR * 0.3, y - trunkH - crownR, crownR * 0.65, 0, Math.PI * 2);
-        ctx.fill();
-      }
+    // Redwood-style tree: tall, narrow spire, reddish-brown trunk
+    function drawTree(x, baseY, h, isDarkMode) {
+      var trunkW = Math.max(3, h * 0.07);
+      var trunkH = h * 0.45;
+      var cw     = h * 0.17;   // half-width of crown base
+
+      // Trunk — reddish-brown bark
+      ctx.fillStyle = isDarkMode ? '#4a1e08' : '#7a3010';
+      ctx.fillRect(x - trunkW / 2, baseY - trunkH, trunkW, trunkH);
+
+      // Lower crown tier (widest)
+      ctx.fillStyle = isDarkMode ? '#1a3a18' : '#285a22';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h * 0.38);
+      ctx.lineTo(x + cw * 2.2, baseY - trunkH * 0.55);
+      ctx.lineTo(x - cw * 2.2, baseY - trunkH * 0.55);
+      ctx.closePath();
+      ctx.fill();
+
+      // Mid crown tier
+      ctx.fillStyle = isDarkMode ? '#1f4820' : '#306828';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h * 0.58);
+      ctx.lineTo(x + cw * 1.7, baseY - h * 0.38);
+      ctx.lineTo(x - cw * 1.7, baseY - h * 0.38);
+      ctx.closePath();
+      ctx.fill();
+
+      // Upper crown tier
+      ctx.fillStyle = isDarkMode ? '#245624' : '#377830';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h * 0.76);
+      ctx.lineTo(x + cw * 1.2, baseY - h * 0.58);
+      ctx.lineTo(x - cw * 1.2, baseY - h * 0.58);
+      ctx.closePath();
+      ctx.fill();
+
+      // Narrow spire
+      ctx.fillStyle = isDarkMode ? '#296029' : '#3d8534';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h);
+      ctx.lineTo(x + cw * 0.6, baseY - h * 0.76);
+      ctx.lineTo(x - cw * 0.6, baseY - h * 0.76);
+      ctx.closePath();
+      ctx.fill();
     }
 
     function drawTrees(W, horizonY, downrange, isDarkMode) {
-      var spacing = 48;
+      var spacing = 55;
       var scroll  = downrange % (spacing * 40);
       var count   = Math.ceil(W / spacing) + 3;
       var base    = Math.floor(scroll / spacing) - 1;
       for (var ti = base; ti < base + count; ti++) {
-        var sx  = (ti - scroll / spacing) * spacing + seedRand(ti * 7 + 1) * spacing * 0.4;
-        var sz  = 0.4 + seedRand(ti * 19 + 2) * 0.6;
-        var ht  = (10 + seedRand(ti * 13 + 3) * 12) * sz;
-        var yOff= seedRand(ti * 11 + 5) * 5;
-        drawTree(sx, horizonY + yOff + 2, ht, seedRand(ti * 17 + 7) > 0.45, isDarkMode);
+        var sx  = (ti - scroll / spacing) * spacing + seedRand(ti * 7 + 1) * spacing * 0.35;
+        var sz  = 0.65 + seedRand(ti * 19 + 2) * 0.65;   // 0.65–1.3 scale
+        var ht  = (42 + seedRand(ti * 13 + 3) * 32) * sz; // 27–96 px tall
+        var yOff= seedRand(ti * 11 + 5) * 4;
+        drawTree(sx, horizonY + yOff + 2, ht, isDarkMode);
       }
     }
 
@@ -559,13 +589,13 @@
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(-theta_rad);  // negative: CCW = nose up
-      if (cessnaImg.complete && cessnaImg.naturalWidth > 0) {
+      var ci = cessna.get();
+      if (ci) {
         var dispW = 110;
-        var dispH = dispW * cessnaImg.naturalHeight / cessnaImg.naturalWidth;
-        // Center on CG — approximately 45% from left (tail) edge of image
-        ctx.drawImage(cessnaImg, -dispW * 0.5, -dispH * 0.5, dispW, dispH);
+        var dispH = dispW * ci.height / ci.width;
+        ctx.drawImage(ci, -dispW * 0.5, -dispH * 0.5, dispW, dispH);
       } else {
-        // Fallback triangle
+        // Fallback triangle while image processes
         ctx.fillStyle = isDarkMode ? '#c0d0e0' : '#4060a0';
         ctx.beginPath();
         ctx.moveTo(20, 0);
