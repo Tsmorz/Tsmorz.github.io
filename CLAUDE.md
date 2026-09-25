@@ -112,6 +112,13 @@ Needs Ruby ≥ 2.7 — **system Ruby on this Mac is 2.6.10 and cannot run Jekyll
 (`rouge` requires 2.7+). Use `brew install ruby@3.3` and put it ahead on `PATH`, or rely
 on CI to build.
 
+`Taskfile.yml` is the single entrypoint (`task --list`: `serve`, `build`, `check`,
+`check:js`, `check:links`, `install`, `clean`, `add-photo`). The build and the CI checks
+are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
+to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
+Task and runs `task build BASEURL=…`, `task check:js`, `task check:links`. `serve` and
+`add-photo` still wrap the `script/` files (`task add-photo -- <source-image> <slug>`).
+
 ## Deployment
 
 `.github/workflows/pages.yml` builds on every push and PR, runs html-proofer, and deploys

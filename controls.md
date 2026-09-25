@@ -7,9 +7,11 @@ permalink: /controls/
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
-    Five interactive demos spanning classical and modern control. Tune a PID controller, race
-    an AI car with a pure-pursuit path tracker, fly a nonlinear aircraft, identify linearized
-    dynamics for LQR synthesis, then train a neural network to imitate the optimal controller.
+    Six interactive demos spanning classical and modern control. Tune a PID controller, track
+    a B-spline race course with a PID path follower, fly a nonlinear aircraft, identify linearized
+    dynamics for LQR synthesis, train a neural network to drive the race car by imitating an expert,
+    then become the controller yourself — chase a jumping target and let the site fit the PID gains
+    and reaction delay hidden in your own hand.
   </p>
 </section>
 
@@ -20,14 +22,18 @@ permalink: /controls/
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">System ID / LQR</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-nn"     id="tab-nn"     type="button">Neural Net</button>
+    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-react"  id="tab-react"  type="button">Be the Controller</button>
   </div>
 
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
   <section class="sim-section active" id="sec-msd" role="tabpanel" aria-labelledby="tab-msd">
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="msd-canvas" width="720" height="360" aria-label="Mass-spring-damper simulation"></canvas>
-        <canvas id="msd-pid-plot" height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
+        <div class="msd-stage">
+          <canvas class="sim-canvas msd-anim" id="msd-canvas" width="220" height="320" aria-label="Mass-spring-damper simulation"></canvas>
+          <canvas class="sim-canvas msd-ts" id="msd-ts-plot" width="480" height="320" aria-label="Position vs reference time series"></canvas>
+        </div>
+        <canvas class="msd-gain" id="msd-pid-plot" height="240" aria-label="PID contribution chart"></canvas>
       </div>
       <div class="sim-panel">
         <h3>PID Gains</h3>
@@ -47,6 +53,17 @@ permalink: /controls/
           <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="msd-kd-range" class="range-input" value="10" min="1" step="1"></div>
         </div>
         <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
+        <h3>Disturbances</h3>
+        <div class="pid-group">
+          <label>Delay <span id="msd-delay-val">0 ms</span></label>
+          <input type="range" id="msd-delay" min="0" max="1000" step="10" value="0">
+          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="msd-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
+        </div>
+        <div class="pid-group">
+          <label>Sensor noise &#963; <span id="msd-noise-val">0.00</span></label>
+          <input type="range" id="msd-noise" min="0" max="0.5" step="0.01" value="0">
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="score-block">
           <span class="score-value" id="msd-score">&#8212;</span>
           <span class="score-label">RMSE (m)</span>
@@ -63,7 +80,10 @@ permalink: /controls/
         <em>integral</em> term eliminates steady-state offset, and the <em>derivative</em> term
         damps oscillation. RMSE measures average tracking accuracy over the last 10 s.
         Try starting with K<sub>p</sub> alone, then add K<sub>d</sub> to reduce overshoot,
-        and finally a small K<sub>i</sub> to remove any remaining offset. &#8594;
+        and finally a small K<sub>i</sub> to remove any remaining offset. Add a
+        <strong>transport delay</strong> to the control command or inject <strong>sensor
+        noise</strong> to see how each erodes stability &#8212; delay eats phase margin, and
+        noise is amplified hardest by the derivative term. &#8594;
         <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
     </details>
@@ -73,36 +93,46 @@ permalink: /controls/
   <section class="sim-section" id="sec-race" role="tabpanel" aria-labelledby="tab-race">
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="race-canvas" width="700" height="400" aria-label="F1 race track simulation"></canvas>
+        <canvas class="sim-canvas" id="race-canvas" width="700" height="400" aria-label="B-spline race track PID demo"></canvas>
+        <canvas id="race-state-plot" height="160" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history: cross-track error and heading error"></canvas>
       </div>
       <div class="sim-panel">
-        <h3>Speed</h3>
+        <h3>PID Gains</h3>
         <div class="pid-group">
-          <label>Throttle <span id="race-speed-val">50%</span></label>
+          <label>K<sub>p</sub> <span id="race-kp-val">0.00</span></label>
+          <input type="range" id="race-kp" min="-5" max="5" step="0.05" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="race-kp-range" class="range-input" value="5" min="0.1" step="0.1"></div>
+        </div>
+        <div class="pid-group">
+          <label>K<sub>i</sub> <span id="race-ki-val">0.00</span></label>
+          <input type="range" id="race-ki" min="-2" max="2" step="0.01" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="race-ki-range" class="range-input" value="2" min="0.1" step="0.1"></div>
+        </div>
+        <div class="pid-group">
+          <label>K<sub>d</sub> <span id="race-kd-val">0.00</span></label>
+          <input type="range" id="race-kd" min="-5" max="5" step="0.05" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="race-kd-range" class="range-input" value="5" min="0.1" step="0.1"></div>
+        </div>
+        <div class="pid-group">
+          <label>Speed <span id="race-speed-val">50%</span></label>
           <input type="range" id="race-speed" min="0" max="1" step="0.05" value="0.5">
         </div>
-        <div class="race-steer-btns">
-          <button class="sim-btn race-steer" id="race-left"  type="button">&#8592; Left</button>
-          <button class="sim-btn race-steer" id="race-right" type="button">Right &#8594;</button>
-        </div>
-        <p style="font-size:.75rem;color:var(--text-muted);margin:.1rem 0 .4rem">Arrow keys also steer</p>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.4rem 0">
-        <h3>You</h3>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="telemetry">
-          <span class="t-key">Lap</span>  <span class="t-val" id="race-lap-you">0</span>
-          <span class="t-key">Last</span> <span class="t-val" id="race-last-you">&#8212;</span>
-          <span class="t-key">Best</span> <span class="t-val" id="race-best-you">&#8212;</span>
-          <span class="t-key">CTE</span>  <span class="t-val" id="race-cte">&#8212;</span>
-        </div>
-        <h3>AI</h3>
-        <div class="telemetry">
-          <span class="t-key">Lap</span>  <span class="t-val" id="race-lap-ai">0</span>
-          <span class="t-key">Last</span> <span class="t-val" id="race-last-ai">&#8212;</span>
-          <span class="t-key">Best</span> <span class="t-val" id="race-best-ai">&#8212;</span>
+          <span class="t-key">e<sub>y</sub></span>   <span class="t-val" id="race-ey">&#8212;</span>
+          <span class="t-key">e<sub>&#952;</sub></span> <span class="t-val" id="race-eth">&#8212;</span>
+          <span class="t-key">Lap</span>              <span class="t-val" id="race-lap-pid">0</span>
+          <span class="t-key">Best</span>             <span class="t-val" id="race-best-pid">&#8212;</span>
         </div>
         <div class="score-block" style="padding-top:.2rem">
           <span class="score-value" id="race-score">&#8212;</span>
-          <span class="score-label">CTE (px)</span>
+          <span class="score-label">RMS CTE (px)</span>
+          <div class="score-best" id="race-best"></div>
+        </div>
+        <h3 style="margin-top:.4rem">AI Reference</h3>
+        <div class="telemetry">
+          <span class="t-key">Lap</span>  <span class="t-val" id="race-lap-ai">0</span>
+          <span class="t-key">Best</span> <span class="t-val" id="race-best-ai">&#8212;</span>
         </div>
         <button class="sim-btn" id="race-reset" type="button">Reset</button>
       </div>
@@ -110,13 +140,14 @@ permalink: /controls/
     <details class="demo-guide" style="margin-top:.6rem">
       <summary>About this demo</summary>
       <p>
-        The dashed line is the <strong>reference path</strong> (the ideal racing line). The red AI car
-        follows it with a <strong>pure-pursuit controller</strong> &#8212; a classical path-following
-        algorithm that steers toward a look-ahead point a fixed distance ahead on the reference.
-        Use &#8592;/&#8594; arrow keys (or the buttons) to steer your car and try to beat the AI by
-        staying on the dashed reference. <strong>Cross-track error (CTE)</strong> measures how far
-        your car strays from the reference at each moment. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Pure_pursuit" target="_blank" rel="noopener">Pure pursuit &#8212; Wikipedia</a>
+        A car follows a closed <strong>B-spline</strong> track at constant speed. The controller
+        observes two state variables: <strong>e<sub>y</sub></strong> (signed lateral distance from
+        the centreline, in pixels) and <strong>e<sub>&#952;</sub></strong> (heading error &#8212; angle
+        between the car and the track tangent). The PID acts on e<sub>y</sub> and produces a
+        steering command; the derivative term naturally suppresses heading error because
+        &#279;<sub>y</sub> &#8776; v&#183;sin(e<sub>&#952;</sub>). Tune the gains to minimise RMS CTE.
+        The red AI car uses a pure-pursuit reference for comparison. &#8594;
+        <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
     </details>
   </section>
@@ -287,9 +318,9 @@ permalink: /controls/
   <section class="sim-section" id="sec-nn" role="tabpanel" aria-labelledby="tab-nn">
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="nn-canvas" width="720" height="380" aria-label="Neural network flight controller"></canvas>
-        <canvas id="nn-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history"></canvas>
-        <canvas id="nn-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="NN output chart"></canvas>
+        <canvas class="sim-canvas" id="nn-canvas" width="720" height="380" aria-label="Neural network race-car controller"></canvas>
+        <canvas id="nn-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history: cross-track and heading error"></canvas>
+        <canvas id="nn-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="NN vs expert steering"></canvas>
       </div>
       <div class="sim-panel">
         <h3>Architecture</h3>
@@ -302,14 +333,12 @@ permalink: /controls/
           <input type="range" id="nn-neurons" min="4" max="32" step="4" value="16">
         </div>
 
-        <canvas id="nn-net-canvas" height="200" style="display:block;width:100%;background:var(--bg-soft);border-radius:6px;margin-top:.4rem" aria-label="Network diagram"></canvas>
-
         <hr style="border:0;border-top:1px solid var(--border);margin:.6rem 0 .3rem">
         <div class="pid-group">
-          <label>Elevator &#948;<sub>e</sub> <span id="nn-elev-val">0.0&#176;</span></label>
-          <input type="range" id="nn-elev" min="-25" max="25" step="0.5" value="0">
+          <label>Steering &#948; <span id="nn-steer-val">0.00</span></label>
+          <input type="range" id="nn-steer" min="-1" max="1" step="0.05" value="0">
         </div>
-        <p style="font-size:.75rem;color:var(--text-muted);margin:.1rem 0 .4rem">&#8593;/&#8595; arrows steer in manual mode</p>
+        <p style="font-size:.75rem;color:var(--text-muted);margin:.1rem 0 .4rem">&#8592;/&#8594; arrows steer in manual mode</p>
 
         <hr style="border:0;border-top:1px solid var(--border);margin:.3rem 0">
         <h3>1 &#8212; Training data</h3>
@@ -328,20 +357,89 @@ permalink: /controls/
 
         <div class="score-block" style="padding-top:.25rem">
           <span class="score-value" id="nn-score">&#8212;</span>
-          <span class="score-label">RMSE (m)</span>
+          <span class="score-label">RMS CTE (px)</span>
         </div>
         <button class="sim-btn" id="nn-reset" type="button">Reset</button>
+      </div>
+    </div>
+
+    <div class="nn-netviz">
+      <div class="nn-netviz-head">
+        <h3>Network activations</h3>
+        <div class="nn-legend" aria-hidden="true">
+          <span class="nn-legend-cap">&#8722;</span>
+          <span class="nn-legend-bar"></span>
+          <span class="nn-legend-cap">+</span>
+          <span class="nn-legend-txt">neuron activation</span>
+        </div>
+      </div>
+      <canvas id="nn-net-canvas" height="440" aria-label="Neural network diagram with color-coded neuron activations"></canvas>
+    </div>
+
+    <details class="demo-guide" style="margin-top:.6rem">
+      <summary>About this demo</summary>
+      <p>
+        A small feedforward network learns to drive the car around the B-spline track via
+        <strong>behavioral cloning</strong>: a pure-pursuit expert laps the circuit and the network is
+        trained (Adam SGD) to reproduce its steering from the car's observations &#8212; cross-track
+        error e<sub>y</sub>, heading error e<sub>&#952;</sub>, and four look-ahead angles &#968;<sub>1..4</sub>.
+        Generate data, train, then <strong>Activate NN</strong> to hand it the wheel; the red
+        <strong>Expert</strong> car shows the target line. Use &#8592;/&#8594; arrows or the slider to steer
+        manually. &#8594;
+        <a href="https://en.wikipedia.org/wiki/Feedforward_neural_network" target="_blank" rel="noopener">Feedforward neural network &#8212; Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/Imitation_learning" target="_blank" rel="noopener">Imitation learning &#8212; Wikipedia</a>
+      </p>
+    </details>
+  </section>
+
+  <!-- ── Demo 5: Be the Controller ──────────────────────────────── -->
+  <section class="sim-section" id="sec-react" role="tabpanel" aria-labelledby="tab-react">
+    <div class="sim-layout">
+      <div class="sim-canvas-wrap">
+        <canvas class="sim-canvas" id="react-canvas" width="720" height="380" aria-label="Reaction step-response — chase the jumping target"></canvas>
+        <canvas id="react-plot" height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="Step response: your path vs the fitted PID controller"></canvas>
+      </div>
+      <div class="sim-panel">
+        <h3>Reaction test</h3>
+        <p class="react-help" id="react-status">Press &#8220;Start trial&#8221;, then chase the dot the instant it jumps.</p>
+        <button class="sim-btn" id="react-start" type="button">Start trial</button>
+
+        <div class="score-block">
+          <span class="score-value" id="react-reaction">&#8212;</span>
+          <span class="score-label">reaction (ms)</span>
+          <div class="score-best" id="react-best"></div>
+        </div>
+
+        <div id="react-results" style="display:none;flex-direction:column;gap:.6rem">
+          <h3 style="margin-top:.2rem">Your fitted PID</h3>
+          <div class="telemetry">
+            <span class="t-key">K<sub>p</sub></span>       <span class="t-val" id="react-kp">&#8212;</span>
+            <span class="t-key">K<sub>i</sub></span>       <span class="t-val" id="react-ki">&#8212;</span>
+            <span class="t-key">K<sub>d</sub></span>       <span class="t-val" id="react-kd">&#8212;</span>
+            <span class="t-key">dead time L</span>        <span class="t-val" id="react-L">&#8212;</span>
+            <span class="t-key">overshoot</span>          <span class="t-val" id="react-os">&#8212;</span>
+            <span class="t-key">fit R&#178;</span>        <span class="t-val" id="react-r2">&#8212;</span>
+          </div>
+          <p class="react-read" id="react-read"></p>
+        </div>
+
+        <button class="sim-btn" id="react-reset" type="button">Reset</button>
       </div>
     </div>
     <details class="demo-guide" style="margin-top:.6rem">
       <summary>About this demo</summary>
       <p>
-        A small feedforward network learns to imitate the optimal LQR controller via
-        <strong>behavioral cloning</strong>: the true LQR flies rollouts and the network is trained
-        (Adam SGD) to reproduce those elevator commands from the aircraft state. Use &#8593;/&#8595; arrows
-        or the slider to steer manually and collect your own trajectories. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Feedforward_neural_network" target="_blank" rel="noopener">Feedforward neural network &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Imitation_learning" target="_blank" rel="noopener">Imitation learning &#8212; Wikipedia</a>
+        The tables turn &#8212; now <em>you</em> are the controller. A target jumps between the
+        corners of the box at a random moment you can&#8217;t predict; chase it with your mouse or
+        finger. The site records your trajectory and treats your hand as a controller: it measures
+        your <strong>reaction delay</strong> (the pure <em>dead time</em> L before you move) and then
+        least-squares fits the PID law
+        <em>&#7819; = K<sub>p</sub>&#183;e + K<sub>i</sub>&#183;&#8747;e + K<sub>d</sub>&#183;&#279;</em>
+        to the motion after that &#8212; the same system-identification tool as the LQR demo, run
+        backwards. The lower plot overlays your normalized path against a PID controller replaying
+        your fitted gains, so you can see how PID-like your reflexes really are. &#8594;
+        <a href="https://en.wikipedia.org/wiki/System_identification" target="_blank" rel="noopener">System identification &#8212; Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
     </details>
   </section>
@@ -368,4 +466,6 @@ details.demo-guide[open] summary::before{content:'\25BE '}
 .range-row{display:flex;align-items:center;gap:.35rem;margin-top:.2rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
 .range-input{width:5rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
+.react-help{font-size:.82rem;line-height:1.45;color:var(--text-muted);margin:.1rem 0 .2rem;min-height:2.6em}
+.react-read{font-size:.8rem;line-height:1.5;color:var(--text-muted);margin:.1rem 0 0;font-style:italic}
 </style>

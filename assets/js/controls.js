@@ -75,8 +75,19 @@
     // Simulation state
     var sim = { x: 0, v: 0, t: 0, intE: 0, prevE: 0 };
 
-    // PID gains (from sliders)
-    var pid = { kp: 0, ki: 0, kd: 0 };
+    // PID gains + disturbances (from sliders)
+    var pid = { kp: 0, ki: 0, kd: 0, delay: 0, noise: 0 };
+
+    // Transport-delay buffer: commanded forces awaiting application
+    var forceBuf = [];
+
+    // Standard-normal sample (Box–Muller) for sensor noise
+    function gaussian() {
+      var u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
 
     // History ring buffer for RMSE (last 5 s @ 200 Hz = 1000 samples)
     var RING = 1000;
@@ -101,14 +112,23 @@
     var scoreEl   = document.getElementById('msd-score');
     var bestEl    = document.getElementById('msd-best');
     var resetBtn  = document.getElementById('msd-reset');
+    var delaySlider = document.getElementById('msd-delay');
+    var delayAmt    = document.getElementById('msd-delay-amt');
+    var delayVal    = document.getElementById('msd-delay-val');
+    var noiseSlider = document.getElementById('msd-noise');
+    var noiseVal    = document.getElementById('msd-noise-val');
 
     function syncSliders() {
       pid.kp = parseFloat(kpSlider.value);
       pid.ki = parseFloat(kiSlider.value);
       pid.kd = parseFloat(kdSlider.value);
+      pid.delay = delaySlider ? parseFloat(delaySlider.value) : 0;
+      pid.noise = noiseSlider ? parseFloat(noiseSlider.value) : 0;
       kpVal.textContent = pid.kp.toFixed(1);
       kiVal.textContent = pid.ki.toFixed(1);
       kdVal.textContent = pid.kd.toFixed(2);
+      if (delayVal) delayVal.textContent = Math.round(pid.delay) + ' ms';
+      if (noiseVal) noiseVal.textContent = pid.noise.toFixed(2);
     }
     function applyRange(slider, rangeInput) {
       var r = Math.max(1, parseFloat(rangeInput.value) || 1);
@@ -125,15 +145,29 @@
       var sl = pair[0], ri = pair[1];
       if (ri) ri.addEventListener('input', function () { applyRange(sl, ri); syncSliders(); });
     });
-    [kpSlider, kiSlider, kdSlider].forEach(function (s) {
-      s.addEventListener('input', syncSliders);
+    [kpSlider, kiSlider, kdSlider, noiseSlider].forEach(function (s) {
+      if (s) s.addEventListener('input', syncSliders);
     });
+    // Delay slider and its numeric "amount" input stay in sync both ways.
+    if (delaySlider && delayAmt) {
+      var delayMax = parseFloat(delaySlider.max) || 1000;
+      delaySlider.addEventListener('input', function () {
+        delayAmt.value = delaySlider.value;
+        syncSliders();
+      });
+      delayAmt.addEventListener('input', function () {
+        var v = clamp(parseFloat(delayAmt.value) || 0, 0, delayMax);
+        delaySlider.value = v;
+        syncSliders();
+      });
+    }
     syncSliders();
 
     function resetSim() {
       sim.x = 0; sim.v = 0; sim.t = 0;
       sim.intE = 0; sim.prevE = 0;
       errRing = [];
+      forceBuf.length = 0;
       hist.xArr = []; hist.refArr = []; hist.time = [];
       pidContrib.p = []; pidContrib.i = []; pidContrib.d = []; pidContrib.total = [];
       bestScore = null;
@@ -145,17 +179,24 @@
 
     function step() {
       // 5 physics steps per timer tick (step called at 40 Hz → 200 Hz effective)
+      var P_t = 0, I_t = 0, D_t = 0, F = 0;
       for (var i = 0; i < 5; i++) {
         var ref = AMP_REF * Math.sin(OMEGA_REF * sim.t);
-        var e   = ref - sim.x;
+        // Controller sees a noisy measurement of position, not the true state.
+        var xMeas = sim.x + (pid.noise > 0 ? gaussian() * pid.noise : 0);
+        var e   = ref - xMeas;
         sim.intE  = clamp(sim.intE + e * DT, -20, 20);
         var de  = (e - sim.prevE) / DT;
-        var P_t = pid.kp * e, I_t = pid.ki * sim.intE, D_t = pid.kd * de;
-        var F   = P_t + I_t + D_t;
+        P_t = pid.kp * e; I_t = pid.ki * sim.intE; D_t = pid.kd * de;
+        F   = P_t + I_t + D_t;
         sim.prevE = e;
-        // F is constant over this step (zero-order hold on control)
+        // Transport delay: the plant feels the command from `delay` ms ago.
+        forceBuf.push(F);
+        var delaySamples = Math.round((pid.delay / 1000) / DT);
+        var Fapplied = (forceBuf.length > delaySamples) ? forceBuf.shift() : 0;
+        // Fapplied is constant over this step (zero-order hold on control)
         var s = rk4([sim.x, sim.v], sim.t, DT, function (t2, s2) {
-          return [s2[1], (F - C_damp * s2[1] - K_spring * s2[0]) / M];
+          return [s2[1], (Fapplied - C_damp * s2[1] - K_spring * s2[0]) / M];
         });
         sim.x = s[0]; sim.v = s[1];
         sim.t += DT;
@@ -209,20 +250,29 @@
     }
 
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var ANIM_H = 320, TS_H = 320;
+    var tsCanvas = document.getElementById('msd-ts-plot');
+    var tsCtx = tsCanvas ? tsCanvas.getContext('2d') : null;
 
-    function resizeCanvas() {
-      var w = canvas.parentElement.clientWidth;
-      canvas.width  = Math.round(w * dpr);
-      canvas.height = Math.round(360 * dpr);
-      canvas.style.width  = w + 'px';
-      canvas.style.height = '360px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    function sizeOne(cv, cx2, h) {
+      var w = cv.clientWidth || parseInt(cv.getAttribute('width'), 10) || 200;
+      cv.width  = Math.round(w * dpr);
+      cv.height = Math.round(h * dpr);
+      cv.style.height = h + 'px';
+      cx2.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
-    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
+    function resizeCanvas() {
+      sizeOne(canvas, ctx, ANIM_H);
+      if (tsCtx) sizeOne(tsCanvas, tsCtx, TS_H);
+    }
+    var wrapEl = canvas.closest('.sim-canvas-wrap') || canvas.parentElement;
+    new ResizeObserver(resizeCanvas).observe(wrapEl);
     resizeCanvas();
 
-    function render() {
-      var W = canvas.clientWidth, H = 360;
+    // === Compact spring-mass animation (left) ===
+    function renderAnim() {
+      var W = canvas.clientWidth, H = ANIM_H;
+      if (!W) return;
       ctx.clearRect(0, 0, W, H);
 
       var textColor  = cssVar('--text');
@@ -231,16 +281,12 @@
       var borderColor = cssVar('--border');
       var bgSoft = cssVar('--bg-soft');
 
-      // === Left half: spring-mass animation ===
-      var lw = W * 0.38;
-      var cx = lw / 2;
-      var anchorY = 30;
-      var restLen = 80;
-      var massH = 40, massW = 50;
-
-      // Scale: 1 unit = 50px, centred around y=180
-      var massY = H / 2 + sim.x * 80;
-      var refY  = H / 2 + AMP_REF * Math.sin(OMEGA_REF * sim.t) * 80;
+      var cx = W / 2;
+      var anchorY = 26;
+      var massH = 42, massW = 54;
+      var scale = 80;  // 1 m = 80px
+      var massY = H / 2 + sim.x * scale;
+      var refY  = H / 2 + AMP_REF * Math.sin(OMEGA_REF * sim.t) * scale;
 
       // Reference dashed line
       ctx.save();
@@ -248,15 +294,15 @@
       ctx.setLineDash([6, 4]);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(cx - 35, refY);
-      ctx.lineTo(cx + 35, refY);
+      ctx.moveTo(cx - 38, refY);
+      ctx.lineTo(cx + 38, refY);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
 
       // Anchor bar
       ctx.fillStyle = mutedColor;
-      ctx.fillRect(cx - 30, anchorY - 8, 60, 8);
+      ctx.fillRect(cx - 32, anchorY - 8, 64, 8);
 
       // Spring
       ctx.strokeStyle = mutedColor;
@@ -278,81 +324,84 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('m', cx, massY);
+    }
 
-      // Divider
-      ctx.strokeStyle = borderColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(lw, 20);
-      ctx.lineTo(lw, H - 20);
-      ctx.stroke();
+    // === Wide reference-tracking time-series plot (right) ===
+    function renderPlot() {
+      if (!tsCtx) return;
+      var W = tsCanvas.clientWidth, H = TS_H;
+      if (!W) return;
+      tsCtx.clearRect(0, 0, W, H);
 
-      // === Right half: time-series plot ===
-      var pw = W - lw - 20, ph = H - 60;
-      var px0 = lw + 10, py0 = 30;
+      var textColor  = cssVar('--text');
+      var mutedColor = cssVar('--text-muted');
+      var accentColor = cssVar('--accent');
+      var borderColor = cssVar('--border');
 
-      ctx.fillStyle = bgSoft;
-      ctx.strokeStyle = borderColor;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(px0, py0, pw, ph, 6);
-      ctx.fill();
-      ctx.stroke();
-
-      // Axes labels
-      ctx.fillStyle = mutedColor;
-      ctx.font = '11px ' + cssVar('--mono');
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText('x (m)', px0 + 4, py0 + 4);
-
+      var px0 = 38, py0 = 16, pw = W - px0 - 14, ph = H - 38;
       var yMap = function (v) { return py0 + ph / 2 - v * (ph / 2 - 12) / AMP_REF; };
 
+      // Axis label
+      tsCtx.fillStyle = mutedColor;
+      tsCtx.font = '11px ' + cssVar('--mono');
+      tsCtx.textAlign = 'left';
+      tsCtx.textBaseline = 'top';
+      tsCtx.fillText('x (m)', px0 + 2, py0);
+
       // Grid line at 0
-      ctx.strokeStyle = borderColor;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(px0 + 2, yMap(0));
-      ctx.lineTo(px0 + pw - 2, yMap(0));
-      ctx.stroke();
-      ctx.setLineDash([]);
+      tsCtx.strokeStyle = borderColor;
+      tsCtx.setLineDash([3, 3]);
+      tsCtx.beginPath();
+      tsCtx.moveTo(px0, yMap(0));
+      tsCtx.lineTo(px0 + pw, yMap(0));
+      tsCtx.stroke();
+      tsCtx.setLineDash([]);
 
       if (hist.xArr.length > 1) {
         var xStep = pw / HIST;
 
-        // Reference line (dashed accent)
-        ctx.strokeStyle = accentColor;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash([5, 4]);
-        ctx.beginPath();
+        // Reference (dashed accent)
+        tsCtx.strokeStyle = accentColor;
+        tsCtx.lineWidth = 1.5;
+        tsCtx.setLineDash([5, 4]);
+        tsCtx.beginPath();
         for (var i = 0; i < hist.refArr.length; i++) {
           var xx = px0 + (i - hist.refArr.length + HIST) * xStep;
           var yy = yMap(hist.refArr[i]);
-          if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+          if (i === 0) tsCtx.moveTo(xx, yy); else tsCtx.lineTo(xx, yy);
         }
-        ctx.stroke();
-        ctx.setLineDash([]);
+        tsCtx.stroke();
+        tsCtx.setLineDash([]);
 
         // Actual position (solid)
-        ctx.strokeStyle = textColor;
-        ctx.lineWidth = 1.8;
-        ctx.beginPath();
-        for (var i = 0; i < hist.xArr.length; i++) {
-          var xx = px0 + (i - hist.xArr.length + HIST) * xStep;
-          var yy = yMap(hist.xArr[i]);
-          if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+        tsCtx.strokeStyle = textColor;
+        tsCtx.lineWidth = 1.8;
+        tsCtx.beginPath();
+        for (var j = 0; j < hist.xArr.length; j++) {
+          var xx2 = px0 + (j - hist.xArr.length + HIST) * xStep;
+          var yy2 = yMap(hist.xArr[j]);
+          if (j === 0) tsCtx.moveTo(xx2, yy2); else tsCtx.lineTo(xx2, yy2);
         }
-        ctx.stroke();
+        tsCtx.stroke();
       }
 
+      // Y-axis ticks
+      tsCtx.fillStyle = mutedColor;
+      tsCtx.font = '10px ' + cssVar('--mono');
+      tsCtx.textAlign = 'right';
+      tsCtx.textBaseline = 'middle';
+      tsCtx.fillText(AMP_REF.toFixed(1), px0 - 4, yMap(AMP_REF));
+      tsCtx.fillText('0', px0 - 4, yMap(0));
+      tsCtx.fillText((-AMP_REF).toFixed(1), px0 - 4, yMap(-AMP_REF));
+
       // Legend
-      ctx.font = '11px ' + cssVar('--mono');
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'bottom';
-      ctx.fillStyle = accentColor;
-      ctx.fillText('— reference', px0 + pw - 6, py0 + ph - 4);
-      ctx.fillStyle = textColor;
-      ctx.fillText('— actual', px0 + pw - 6 - 90, py0 + ph - 4);
+      tsCtx.font = '11px ' + cssVar('--mono');
+      tsCtx.textAlign = 'right';
+      tsCtx.textBaseline = 'bottom';
+      tsCtx.fillStyle = accentColor;
+      tsCtx.fillText('— reference', px0 + pw, H - 4);
+      tsCtx.fillStyle = textColor;
+      tsCtx.fillText('— actual', px0 + pw - 92, H - 4);
     }
 
     var stepTimer = setInterval(function () {
@@ -360,11 +409,11 @@
     }, 25);
 
     var msdPidCanvas = document.getElementById('msd-pid-plot');
-    var accentColor3 = function() { return cssVar('--accent'); };
 
     var rafId = null;
     function loop() {
-      render();
+      renderAnim();
+      renderPlot();
       drawContribPlot(msdPidCanvas, [
         { label: 'P', color: cssVar('--accent'),   data: pidContrib.p },
         { label: 'I', color: '#f0a040',            data: pidContrib.i },
@@ -377,22 +426,22 @@
   })();
 
   /* ================================================================
-     Demo 1.5 — F1 Race Track (pure-pursuit path tracking)
+     Demo 1.5 — B-spline Race Track (PID path tracking)
   ================================================================ */
   (function raceDemo() {
     var canvas = document.getElementById('race-canvas');
     if (!canvas) return;
     var ctx = canvas.getContext('2d');
 
-    // Virtual track space (700 × 420) — preserved in toScreen with letterbox
+    // Virtual track space (700 × 420)
     var VW = 700, VH = 420;
-    var TW = 36;   // track half-width in virtual px
-    var WB = 28;   // wheelbase in virtual px
-    var MAX_STEER = 0.48; // max steer angle (rad)
-    var LA = 70;   // AI pure-pursuit lookahead (virtual px)
-    var NS = 500;  // path samples
+    var TW = 36;       // track half-width in virtual px
+    var WB = 28;       // wheelbase in virtual px
+    var MAX_STEER = 0.48;  // max steer angle (rad)
+    var LA = 70;       // AI pure-pursuit lookahead (virtual px)
+    var NS = 500;      // path samples
 
-    // Track waypoints — closed loop, virtual px
+    // B-spline control polygon — closed loop, virtual px
     var RAW = [
       [130, 355], [310, 355], [490, 355],
       [565, 305], [600, 245], [590, 188],
@@ -402,12 +451,16 @@
       [105, 305]
     ];
 
-    // Catmull-Rom: interpolate between p1 and p2 (4 control points)
-    function cr4(p0, p1, p2, p3, t) {
+    // Uniform cubic B-spline segment (C² everywhere; does not interpolate through control points)
+    function bspline4(p0, p1, p2, p3, t) {
       var t2 = t * t, t3 = t2 * t;
+      var b0 = (-t3 + 3*t2 - 3*t + 1) / 6;
+      var b1 = ( 3*t3 - 6*t2       + 4) / 6;
+      var b2 = (-3*t3 + 3*t2 + 3*t + 1) / 6;
+      var b3 = t3 / 6;
       return [
-        0.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
-        0.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+        b0*p0[0] + b1*p1[0] + b2*p2[0] + b3*p3[0],
+        b0*p0[1] + b1*p1[1] + b2*p2[1] + b3*p3[1]
       ];
     }
 
@@ -416,17 +469,17 @@
     (function buildPath() {
       var n = RAW.length;
       for (var ii = 0; ii < NS; ii++) {
-        var u  = ii / NS * n;
-        var si = Math.floor(u) % n;
-        var t  = u - Math.floor(u);
+        var u   = ii / NS * n;
+        var si  = Math.floor(u) % n;
+        var t   = u - Math.floor(u);
         var p0 = RAW[(si-1+n)%n], p1 = RAW[si], p2 = RAW[(si+1)%n], p3 = RAW[(si+2)%n];
-        var pt = cr4(p0, p1, p2, p3, t);
-        var u2 = (ii / NS + 0.001) * n;
+        var pt  = bspline4(p0, p1, p2, p3, t);
+        var u2  = (ii / NS + 0.001) * n;
         var si2 = Math.floor(u2) % n;
         var t2  = u2 - Math.floor(u2);
-        var pt2 = cr4(RAW[(si2-1+n)%n], RAW[si2], RAW[(si2+1)%n], RAW[(si2+2)%n], t2);
-        var tx = pt2[0]-pt[0], ty = pt2[1]-pt[1];
-        var tl = Math.hypot(tx, ty) || 1;
+        var pt2 = bspline4(RAW[(si2-1+n)%n], RAW[si2], RAW[(si2+1)%n], RAW[(si2+2)%n], t2);
+        var tx  = pt2[0] - pt[0], ty = pt2[1] - pt[1];
+        var tl  = Math.hypot(tx, ty) || 1;
         path.push({ x: pt[0], y: pt[1], nx: -ty/tl, ny: tx/tl, tx: tx/tl, ty: ty/tl });
       }
     })();
@@ -469,18 +522,79 @@
       };
     }
 
-    var player, aiCar;
+    var pidCar, aiCar;
+
+    // ── PID state ────────────────────────────────────────────────
+    var pidGains = { kp: 0, ki: 0, kd: 0 };
+    var pidCtrl  = { intE: 0, prevE: 0 };
+
+    // State history for plot
+    var SHIST = 400;
+    var stateHist = { ey: [], eth: [] };
+    var RING = 600;
+    var eyRing = [];
+    var bestRMSE = null;
 
     function resetRace() {
-      player        = makeCar();
-      player.x     += path[0].nx * 11;
-      player.y     += path[0].ny * 11;
-      aiCar         = makeCar();
-      aiCar.x      -= path[0].nx * 11;
-      aiCar.y      -= path[0].ny * 11;
-      aiCar.speed   = 50;
+      pidCar          = makeCar();
+      pidCar.x       += path[0].nx * 11;
+      pidCar.y       += path[0].ny * 11;
+      aiCar           = makeCar();
+      aiCar.x        -= path[0].nx * 11;
+      aiCar.y        -= path[0].ny * 11;
+      aiCar.speed     = 50;
+      pidCtrl.intE    = 0;
+      pidCtrl.prevE   = 0;
+      stateHist.ey    = [];
+      stateHist.eth   = [];
+      eyRing          = [];
+      bestRMSE        = null;
+      var bestEl = document.getElementById('race-best');
+      if (bestEl) bestEl.textContent = '';
     }
     resetRace();
+
+    // ── PID sliders ──────────────────────────────────────────────
+    var kpSlider = document.getElementById('race-kp');
+    var kiSlider = document.getElementById('race-ki');
+    var kdSlider = document.getElementById('race-kd');
+    var kpValEl  = document.getElementById('race-kp-val');
+    var kiValEl  = document.getElementById('race-ki-val');
+    var kdValEl  = document.getElementById('race-kd-val');
+
+    function syncPID() {
+      pidGains.kp = kpSlider ? parseFloat(kpSlider.value) : 0;
+      pidGains.ki = kiSlider ? parseFloat(kiSlider.value) : 0;
+      pidGains.kd = kdSlider ? parseFloat(kdSlider.value) : 0;
+      if (kpValEl) kpValEl.textContent = pidGains.kp.toFixed(2);
+      if (kiValEl) kiValEl.textContent = pidGains.ki.toFixed(2);
+      if (kdValEl) kdValEl.textContent = pidGains.kd.toFixed(2);
+    }
+    function applyRange(slider, rangeInput) {
+      var r = Math.max(0.1, parseFloat(rangeInput.value) || 1);
+      var prev = parseFloat(slider.value);
+      slider.min   = -r;
+      slider.max   =  r;
+      slider.step  =  r / 100;
+      slider.value = clamp(prev, -r, r);
+    }
+    var kpRange = document.getElementById('race-kp-range');
+    var kiRange = document.getElementById('race-ki-range');
+    var kdRange = document.getElementById('race-kd-range');
+    [[kpSlider, kpRange], [kiSlider, kiRange], [kdSlider, kdRange]].forEach(function (pair) {
+      var sl = pair[0], ri = pair[1];
+      if (ri && sl) ri.addEventListener('input', function () { applyRange(sl, ri); syncPID(); });
+    });
+    [kpSlider, kiSlider, kdSlider].forEach(function (s) {
+      if (s) s.addEventListener('input', syncPID);
+    });
+    syncPID();
+
+    var speedSlider = document.getElementById('race-speed');
+    var speedValEl  = document.getElementById('race-speed-val');
+    if (speedSlider) speedSlider.addEventListener('input', function () {
+      if (speedValEl) speedValEl.textContent = Math.round(parseFloat(speedSlider.value) * 100) + '%';
+    });
 
     // ── Physics ──────────────────────────────────────────────────
     function stepCar(car, dt) {
@@ -492,7 +606,7 @@
       while (car.heading < -Math.PI) car.heading += 2 * Math.PI;
     }
 
-    // Find nearest path index within a search window
+    // Nearest path index within a search window
     function nearestIdx(car) {
       var n = NS, best = car.pathIdx, bestD = Infinity;
       for (var i = -20; i <= 80; i++) {
@@ -504,7 +618,33 @@
       return best;
     }
 
-    // ── Pure-pursuit AI controller ───────────────────────────────
+    // Signed cross-track error and heading error
+    function getErrors(car) {
+      var idx = nearestIdx(car);
+      var p   = path[idx];
+      var dx  = car.x - p.x, dy = car.y - p.y;
+      // Signed lateral offset (positive = left of travel direction)
+      var ey  = dx * p.nx + dy * p.ny;
+      // Heading error: track tangent angle minus car heading
+      var trackAngle = Math.atan2(p.ty, p.tx);
+      var eth = trackAngle - car.heading;
+      while (eth >  Math.PI) eth -= 2 * Math.PI;
+      while (eth < -Math.PI) eth += 2 * Math.PI;
+      return { ey: ey, eth: eth };
+    }
+
+    // PID steering: error = ey; D term naturally captures heading error (ėy ≈ v·sin(eθ))
+    function updatePID(car, dt) {
+      var errs = getErrors(car);
+      var e    = errs.ey;
+      pidCtrl.intE = clamp(pidCtrl.intE + e * dt, -100, 100);
+      var de       = dt > 0 ? (e - pidCtrl.prevE) / dt : 0;
+      pidCtrl.prevE = e;
+      car.steer    = clamp(pidGains.kp * e + pidGains.ki * pidCtrl.intE + pidGains.kd * de, -1, 1);
+      return errs;
+    }
+
+    // ── Pure-pursuit AI ──────────────────────────────────────────
     function updateAI(car) {
       nearestIdx(car);
       var walked = 0, idx = car.pathIdx;
@@ -521,7 +661,7 @@
       car.steer = clamp(err * 2.2, -1, 1);
     }
 
-    // ── Lap detection via pathIdx wrap ───────────────────────────
+    // ── Lap detection ────────────────────────────────────────────
     function checkLap(car, now) {
       var cur = nearestIdx(car);
       if (car._prevIdx > NS * 0.88 && cur < NS * 0.12) {
@@ -535,46 +675,6 @@
       car._prevIdx = cur;
     }
 
-    // ── Keyboard + touch steer ───────────────────────────────────
-    var keys = {};
-    document.addEventListener('keydown', function (e) {
-      var sec = document.getElementById('sec-race');
-      if (!sec || !sec.classList.contains('active')) return;
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        keys[e.key] = true;
-        keys._moved  = true;
-      }
-    });
-    document.addEventListener('keyup', function (e) {
-      delete keys[e.key];
-    });
-
-    // On-screen steer buttons
-    (function wireSteerBtn(id, key) {
-      var btn = document.getElementById(id);
-      if (!btn) return;
-      function dn(e) { e.preventDefault(); keys[key] = true; keys._moved = true; }
-      function up(e) { e.preventDefault(); delete keys[key]; }
-      btn.addEventListener('mousedown',  dn); btn.addEventListener('mouseup',   up); btn.addEventListener('mouseleave', up);
-      btn.addEventListener('touchstart', dn); btn.addEventListener('touchend',  up); btn.addEventListener('touchcancel', up);
-    }('race-left', 'ArrowLeft'));
-    (function wireSteerBtn(id, key) {
-      var btn = document.getElementById(id);
-      if (!btn) return;
-      function dn(e) { e.preventDefault(); keys[key] = true; keys._moved = true; }
-      function up(e) { e.preventDefault(); delete keys[key]; }
-      btn.addEventListener('mousedown',  dn); btn.addEventListener('mouseup',   up); btn.addEventListener('mouseleave', up);
-      btn.addEventListener('touchstart', dn); btn.addEventListener('touchend',  up); btn.addEventListener('touchcancel', up);
-    }('race-right', 'ArrowRight'));
-
-    // Speed slider
-    var speedSlider = document.getElementById('race-speed');
-    var speedValEl  = document.getElementById('race-speed-val');
-    if (speedSlider) speedSlider.addEventListener('input', function () {
-      if (speedValEl) speedValEl.textContent = Math.round(parseFloat(speedSlider.value) * 100) + '%';
-    });
-
     // ── Simulation step ──────────────────────────────────────────
     var lastRaceNow = null;
 
@@ -585,43 +685,55 @@
       var dt = Math.min((now - lastRaceNow) / 1000, 0.05);
       lastRaceNow = now;
 
-      var spd     = speedSlider ? parseFloat(speedSlider.value) : 0.5;
-      player.speed = 35 + spd * 40;
-      aiCar.speed  = 35 + spd * 37;
-
-      player.steer = 0;
-      if (keys['ArrowLeft'])  player.steer -= 1;
-      if (keys['ArrowRight']) player.steer += 1;
+      var spd       = speedSlider ? parseFloat(speedSlider.value) : 0.5;
+      pidCar.speed  = 35 + spd * 40;
+      aiCar.speed   = 35 + spd * 37;
 
       var SUBS = 8, sdt = dt / SUBS;
+      var lastErrs = null;
       for (var i = 0; i < SUBS; i++) {
+        lastErrs = updatePID(pidCar, sdt);
         updateAI(aiCar);
-        stepCar(player, sdt);
+        stepCar(pidCar, sdt);
         stepCar(aiCar,  sdt);
       }
 
-      checkLap(player, now);
+      checkLap(pidCar, now);
       checkLap(aiCar,  now);
 
-      // Update DOM telemetry
-      var cte = Math.hypot(
-        player.x - path[nearestIdx(player)].x,
-        player.y - path[nearestIdx(player)].y
-      ).toFixed(0);
+      // State history
+      if (lastErrs) {
+        stateHist.ey.push(lastErrs.ey);
+        stateHist.eth.push(lastErrs.eth);
+        if (stateHist.ey.length > SHIST) { stateHist.ey.shift(); stateHist.eth.shift(); }
+        eyRing.push(lastErrs.ey * lastErrs.ey);
+        if (eyRing.length > RING) eyRing.shift();
+      }
+
+      // Score
       function setEl(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
       function fmt(ms) {
         if (!ms && ms !== 0) return '—';
         var m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000), cs = Math.floor((ms%1000)/10);
         return m+':'+(s<10?'0':'')+s+'.'+(cs<10?'0':'')+cs;
       }
-      setEl('race-lap-you',  player._lapCount);
-      setEl('race-last-you', fmt(player.lapTime));
-      setEl('race-best-you', fmt(player.bestLap));
+      if (eyRing.length > 0) {
+        var rmse = Math.sqrt(eyRing.reduce(function (a, b) { return a + b; }, 0) / eyRing.length);
+        setEl('race-score', rmse.toFixed(1));
+        if (bestRMSE === null || rmse < bestRMSE) {
+          bestRMSE = rmse;
+          var bestEl = document.getElementById('race-best');
+          if (bestEl) bestEl.textContent = 'Best: ' + rmse.toFixed(1) + ' px';
+        }
+      }
+
+      // Telemetry
+      setEl('race-ey',       lastErrs ? lastErrs.ey.toFixed(1) + ' px' : '—');
+      setEl('race-eth',      lastErrs ? rad2deg(lastErrs.eth).toFixed(1) + '°' : '—');
+      setEl('race-lap-pid',  pidCar._lapCount);
+      setEl('race-best-pid', fmt(pidCar.bestLap));
       setEl('race-lap-ai',   aiCar._lapCount);
-      setEl('race-last-ai',  fmt(aiCar.lapTime));
       setEl('race-best-ai',  fmt(aiCar.bestLap));
-      setEl('race-cte',      cte + ' px');
-      setEl('race-score',    cte);
     }
 
     // ── Rendering ────────────────────────────────────────────────
@@ -635,24 +747,22 @@
       var n = NS, dark = darkMode();
       var tw = TW * vScale;
 
-      // Track surface
       ctx.beginPath();
       for (var i = 0; i < n; i++) {
         var p = path[i];
         if (i === 0) ctx.moveTo(sx(p.x), sy(p.y)); else ctx.lineTo(sx(p.x), sy(p.y));
       }
       ctx.closePath();
-      ctx.lineWidth  = tw * 2;
+      ctx.lineWidth   = tw * 2;
       ctx.strokeStyle = dark ? '#1c1c2e' : '#2c2c2c';
       ctx.lineJoin    = 'round';
       ctx.lineCap     = 'round';
       ctx.stroke();
 
-      // Edge lines (white)
       [1, -1].forEach(function (side) {
         ctx.beginPath();
         for (var i = 0; i < n; i++) {
-          var p = path[i];
+          var p  = path[i];
           var ex = sx(p.x + p.nx * TW * 0.90 * side);
           var ey = sy(p.y + p.ny * TW * 0.90 * side);
           if (i === 0) ctx.moveTo(ex, ey); else ctx.lineTo(ex, ey);
@@ -664,7 +774,6 @@
         ctx.stroke();
       });
 
-      // Dashed centre reference line
       ctx.beginPath();
       for (var i = 0; i < n; i++) {
         var p = path[i];
@@ -677,7 +786,6 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Start/finish line
       var sp = path[0];
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth   = 3;
@@ -686,7 +794,6 @@
       ctx.lineTo(sx(sp.x - sp.nx * TW * 0.92), sy(sp.y - sp.ny * TW * 0.92));
       ctx.stroke();
 
-      // Corner labels (outside of track)
       var corners = [
         { idx: Math.round(NS * 0.14), label: 'T1' },
         { idx: Math.round(NS * 0.33), label: 'T2' },
@@ -711,26 +818,21 @@
       ctx.save();
       ctx.translate(csx, csy);
       ctx.rotate(car.heading);
-      // Body
       ctx.fillStyle = bodyColor;
       ctx.beginPath();
       ctx.roundRect(-cl * 0.5, -cw * 0.5, cl, cw, 2);
       ctx.fill();
-      // Nose
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
       ctx.beginPath();
-      ctx.moveTo( cl * 0.5,          0);
-      ctx.lineTo( cl * 0.5 - cw*0.8, -cw * 0.45);
-      ctx.lineTo( cl * 0.5 - cw*0.8,  cw * 0.45);
+      ctx.moveTo( cl * 0.5,            0);
+      ctx.lineTo( cl * 0.5 - cw * 0.8, -cw * 0.45);
+      ctx.lineTo( cl * 0.5 - cw * 0.8,  cw * 0.45);
       ctx.closePath();
       ctx.fill();
-      // Front wing
       ctx.fillStyle = bodyColor;
-      ctx.fillRect(cl*0.26, -cw*0.75, cw*0.6, cw*1.5);
-      // Rear wing
-      ctx.fillRect(-cl*0.50, -cw*0.75, cw*0.5, cw*1.5);
+      ctx.fillRect( cl * 0.26,  -cw * 0.75, cw * 0.6, cw * 1.5);
+      ctx.fillRect(-cl * 0.50,  -cw * 0.75, cw * 0.5, cw * 1.5);
       ctx.restore();
-      // Label
       ctx.fillStyle    = bodyColor;
       ctx.font         = 'bold ' + Math.max(9, Math.round(10 * vScale)) + 'px ' + cssVar('--mono');
       ctx.textAlign    = 'center';
@@ -738,46 +840,35 @@
       ctx.fillText(label, csx, csy - cw * 0.6);
     }
 
-    function raceRender(now) {
+    function raceRender() {
       var dark = darkMode();
       ctx.fillStyle = dark ? '#0c1a0c' : '#4a8040';
       ctx.fillRect(0, 0, W, H);
       drawTrack();
       drawCar(aiCar,  '#e74c3c', 'AI');
-      drawCar(player, cssVar('--accent'), 'YOU');
-
-      // Arrow-key hint until first steer
-      if (!keys._moved) {
-        ctx.fillStyle    = dark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.38)';
-        ctx.font         = '13px ' + cssVar('--font');
-        ctx.textAlign    = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText('← / → arrow keys or buttons to steer', W / 2, H - 10);
-      }
-
-      // Lead indicator
-      var pAhead = player._lapCount > aiCar._lapCount ||
-        (player._lapCount === aiCar._lapCount && player.pathIdx > aiCar.pathIdx);
-      if (player._lapCount > 0 || aiCar._lapCount > 0) {
-        ctx.fillStyle    = pAhead ? '#4caf50' : '#ef5350';
-        ctx.font         = 'bold 11px ' + cssVar('--font');
-        ctx.textAlign    = 'right';
-        ctx.textBaseline = 'top';
-        ctx.fillText(pAhead ? 'YOU LEAD' : 'AI LEADS', W - 10, 10);
-      }
+      drawCar(pidCar, cssVar('--accent'), 'PID');
     }
 
-    // Reset button
+    // State plot: ey and eth over time
+    function drawRaceStatePlot() {
+      var pc = document.getElementById('race-state-plot');
+      if (!pc) return;
+      drawContribPlot(pc, [
+        { label: 'ey CTE (px)',   color: cssVar('--accent'), data: stateHist.ey  },
+        { label: 'eth hdg (rad)', color: '#f0a040',          data: stateHist.eth }
+      ], null, 'state');
+    }
+
     var raceResetBtn = document.getElementById('race-reset');
     if (raceResetBtn) raceResetBtn.addEventListener('click', function () {
       resetRace();
       lastRaceNow = null;
     });
 
-    // Main loop
     function raceLoop(now) {
       raceStep(now);
-      raceRender(now);
+      raceRender();
+      drawRaceStatePlot();
       requestAnimationFrame(raceLoop);
     }
     requestAnimationFrame(raceLoop);
@@ -908,10 +999,10 @@
 
   // Shared reference trajectory constants (used by all flight demos + renderer)
   var H_CENTER  = 300;   // m — reference altitude centre
-  var REF_AMP   = 100;   // m — sine amplitude
-  var REF_OMEGA = 0.45;  // rad/s — period ≈ 14 s (was 0.15; 0.45 makes the wave visible on screen)
+  var REF_AMP   = 60;    // m — sine amplitude (gentler than before for a smoother tracking task)
+  var REF_OMEGA = 0.25;  // rad/s — period ≈ 25 s (longer/slower wave than the old 0.45)
   // Seconds of reference shown across the full canvas width (determines how many cycles appear)
-  var REF_DISPLAY_SPAN = 20;
+  var REF_DISPLAY_SPAN = 24;
 
   function makeFlightRenderer(canvas) {
     var ctx = canvas.getContext('2d');
@@ -1132,22 +1223,59 @@
       // Trees always visible at horizon
       drawTrees(W, horizonY, downrange, isDark);
 
-      // Reference altitude path (dashed accent line)
-      // tOffset: maps canvas x-pixel to a time offset so the full REF_DISPLAY_SPAN
-      // of the sine wave spans the canvas — ensures the wave is always visible.
+      // Reference altitude path.
+      // tOffset maps a canvas x-pixel to a time offset so REF_DISPLAY_SPAN seconds of
+      // the sine wave span the canvas. The plane sits at planeScreenX, so pixels to its
+      // LEFT are the past reference (older in time) and pixels to its RIGHT are the future.
+      var planeScreenX = W * 0.35;
+      function refYAt(px) {
+        var tOffset = (px - planeScreenX) / W * REF_DISPLAY_SPAN;
+        return hToY(H_CENTER + REF_AMP * Math.sin(REF_OMEGA * (simT + tOffset)), H);
+      }
+
+      // Future reference (right of the plane) — faint dashed guide to anticipate.
+      ctx.save();
+      ctx.globalAlpha = 0.32;
       ctx.strokeStyle = accentColor;
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.2;
       ctx.setLineDash([8, 5]);
       ctx.beginPath();
-      var planeScreenX = W * 0.35;
-      for (var px = 0; px <= W; px += 4) {
-        var tOffset = (px - planeScreenX) / W * REF_DISPLAY_SPAN;
-        var refH = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * (simT + tOffset));
-        var ry = hToY(refH, H);
-        if (px === 0) ctx.moveTo(px, ry); else ctx.lineTo(px, ry);
+      for (var px = planeScreenX; px <= W; px += 4) {
+        var ry = refYAt(px);
+        if (px === planeScreenX) ctx.moveTo(px, ry); else ctx.lineTo(px, ry);
       }
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.restore();
+
+      // Past reference (left of the plane) — a solid "comet tail" that fades with age.
+      ctx.save();
+      ctx.strokeStyle = accentColor;
+      ctx.lineCap = 'round';
+      for (var px = planeScreenX; px > 0; px -= 4) {
+        var age = (planeScreenX - px) / planeScreenX;   // 0 at the dot → 1 at far left
+        ctx.globalAlpha = Math.max(0, 1 - age);
+        ctx.lineWidth = 0.5 + 2.2 * (1 - age);
+        ctx.beginPath();
+        ctx.moveTo(px, refYAt(px));
+        ctx.lineTo(px - 4, refYAt(px - 4));
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Moving reference dot — the target the aircraft is chasing right now.
+      var dotY = refYAt(planeScreenX);
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.arc(planeScreenX, dotY, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(planeScreenX, dotY, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
 
       // Cessna sprite
       drawPlane(planeScreenX, hToY(h, H), theta, isDark);
@@ -2043,121 +2171,178 @@
   })();
 
   /* ================================================================
-     Demo 4 — Neural Network Controller
-     Behavioral cloning: a feedforward net imitates the LQR computed
-     from the true linearization, trained in-browser via Adam.
+     Demo 4 — Neural Network Controller (race car)
+     Behavioral cloning: a feedforward net learns to drive the car
+     around the B-spline track by imitating a pure-pursuit expert,
+     trained in-browser via Adam.
   ================================================================ */
   (function nnDemo() {
     var canvas = document.getElementById('nn-canvas');
     if (!canvas) return;
-    var renderer = makeFlightRenderer(canvas);
+    var ctx = canvas.getContext('2d');
 
-    var state, simT, de_rad, simStatus, resetTimer;
-    var errRing = [], RING = 1200;
-    var CHIST = 300;
-    var nnIntErr = 0;
-    var ELEV_MAX_RAD_NN = deg2rad(25);
+    /* ── Track geometry (shared B-spline with the Race Track demo) ── */
+    var VW = 700, VH = 420;
+    var TW = 36;            // track half-width (virtual px)
+    var WB = 28;            // wheelbase (virtual px)
+    var MAX_STEER = 0.48;   // max steer angle (rad)
+    var LA = 70;            // pure-pursuit lookahead (virtual px)
+    var NS = 500;           // path samples
+
+    var RAW = [
+      [130, 355], [310, 355], [490, 355],
+      [565, 305], [600, 245], [590, 188],
+      [555, 150], [500, 133], [455, 152],
+      [425, 110], [330, 78],  [210, 74],
+      [148, 106], [110, 165], [86,  237],
+      [105, 305]
+    ];
+
+    function bspline4(p0, p1, p2, p3, t) {
+      var t2 = t * t, t3 = t2 * t;
+      var b0 = (-t3 + 3*t2 - 3*t + 1) / 6;
+      var b1 = ( 3*t3 - 6*t2       + 4) / 6;
+      var b2 = (-3*t3 + 3*t2 + 3*t + 1) / 6;
+      var b3 = t3 / 6;
+      return [
+        b0*p0[0] + b1*p1[0] + b2*p2[0] + b3*p3[0],
+        b0*p0[1] + b1*p1[1] + b2*p2[1] + b3*p3[1]
+      ];
+    }
+
+    var path = [];
+    (function buildPath() {
+      var n = RAW.length;
+      for (var ii = 0; ii < NS; ii++) {
+        var u   = ii / NS * n;
+        var si  = Math.floor(u) % n;
+        var t   = u - Math.floor(u);
+        var p0 = RAW[(si-1+n)%n], p1 = RAW[si], p2 = RAW[(si+1)%n], p3 = RAW[(si+2)%n];
+        var pt  = bspline4(p0, p1, p2, p3, t);
+        var u2  = (ii / NS + 0.001) * n;
+        var si2 = Math.floor(u2) % n;
+        var t2  = u2 - Math.floor(u2);
+        var pt2 = bspline4(RAW[(si2-1+n)%n], RAW[si2], RAW[(si2+1)%n], RAW[(si2+2)%n], t2);
+        var tx  = pt2[0] - pt[0], ty = pt2[1] - pt[1];
+        var tl  = Math.hypot(tx, ty) || 1;
+        path.push({ x: pt[0], y: pt[1], nx: -ty/tl, ny: tx/tl, tx: tx/tl, ty: ty/tl });
+      }
+    })();
+
+    /* ── Canvas sizing + virtual→screen transform ─────────────── */
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = 700, H = 380, vScale = 1, vOx = 0, vOy = 0;
+
+    function resizeCanvas() {
+      W = canvas.parentElement.clientWidth || 700;
+      H = Math.max(300, Math.min(400, Math.round(W * 0.55)));
+      canvas.width  = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width  = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      vScale = Math.min(W / VW, H / VH) * 0.92;
+      vOx    = (W - VW * vScale) / 2;
+      vOy    = (H - VH * vScale) / 2;
+    }
+    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
+    resizeCanvas();
+    function sx(x) { return x * vScale + vOx; }
+    function sy(y) { return y * vScale + vOy; }
+
+    /* ── Car kinematics (bicycle model) ───────────────────────── */
+    function makeCar() {
+      var p0 = path[0], p1 = path[1];
+      return {
+        x: p0.x, y: p0.y,
+        heading: Math.atan2(p1.y - p0.y, p1.x - p0.x),
+        steer: 0, speed: 52, pathIdx: 0
+      };
+    }
+    function stepCar(car, dt) {
+      var delta = car.steer * MAX_STEER;
+      car.x       += car.speed * Math.cos(car.heading) * dt;
+      car.y       += car.speed * Math.sin(car.heading) * dt;
+      car.heading += (car.speed / WB) * Math.tan(delta) * dt;
+      while (car.heading >  Math.PI) car.heading -= 2 * Math.PI;
+      while (car.heading < -Math.PI) car.heading += 2 * Math.PI;
+    }
+    function nearestIdx(car) {
+      var n = NS, best = car.pathIdx, bestD = Infinity;
+      for (var i = -20; i <= 80; i++) {
+        var idx = (car.pathIdx + i + n) % n;
+        var d   = Math.hypot(path[idx].x - car.x, path[idx].y - car.y);
+        if (d < bestD) { bestD = d; best = idx; }
+      }
+      car.pathIdx = best;
+      return best;
+    }
+    function getErrors(car) {
+      var idx = nearestIdx(car), p = path[idx];
+      var dx = car.x - p.x, dy = car.y - p.y;
+      var ey = dx * p.nx + dy * p.ny;
+      var eth = Math.atan2(p.ty, p.tx) - car.heading;
+      while (eth >  Math.PI) eth -= 2 * Math.PI;
+      while (eth < -Math.PI) eth += 2 * Math.PI;
+      return { ey: ey, eth: eth };
+    }
+    // Signed angle from the car to the centreline point `dist` px ahead.
+    function previewAngle(car, dist) {
+      var walked = 0, idx = car.pathIdx;
+      while (walked < dist) {
+        var next = (idx + 1) % NS;
+        walked += Math.hypot(path[next].x - path[idx].x, path[next].y - path[idx].y);
+        idx = next;
+        if (idx === car.pathIdx) break;
+      }
+      var tgt = path[idx];
+      var a = Math.atan2(tgt.y - car.y, tgt.x - car.x) - car.heading;
+      while (a >  Math.PI) a -= 2 * Math.PI;
+      while (a < -Math.PI) a += 2 * Math.PI;
+      return a;
+    }
+    var PREVIEW = [35, 70, 105, 140];
+    // Observation vector fed to the network (6 inputs).
+    function observe(car) {
+      var e = getErrors(car);   // also refreshes car.pathIdx
+      var x = [e.ey, e.eth];
+      for (var i = 0; i < PREVIEW.length; i++) x.push(previewAngle(car, PREVIEW[i]));
+      return { x: x, errs: e };
+    }
+    // Pure-pursuit expert we clone: steer toward the lookahead point.
+    function expertSteer(car) {
+      nearestIdx(car);
+      return clamp(previewAngle(car, LA) * 2.2, -1, 1);
+    }
+
+    /* ── Episode state ────────────────────────────────────────── */
+    var car, expertCar, steerCmd, manual, simStatus, resetTimer;
+    var lastErrs = { ey: 0, eth: 0 };
+    var CHIST = 300, RING = 900;
+    var cteRing = [];
     var lastNNCache = null;
-    var nnOutputHist = { out_deg: [], err_deg: [] };
-    var stateHist    = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+    var stateHist = { ey: [], eth: [] };
+    var outHist   = { nn: [], exp: [] };
 
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
-      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
-      simT = 0; de_rad = TRIM.de; simStatus = 'ok'; nnIntErr = 0;
-      errRing = [];
-      nnOutputHist = { out_deg: [], err_deg: [] };
-      stateHist    = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
-      lastNNCache  = null;
-      if (nnElevSlider) { nnElevSlider.value = rad2deg(TRIM.de).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(TRIM.de).toFixed(1) + '°'; }
-      renderer.resetViewport();
-    }
-
-    /* ── Compact 4×4 matrix helpers ──────────────────────────── */
-    function m4eye() { return [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]; }
-    function m4copy(m) { return m.map(function(r) { return r.slice(); }); }
-    function m4add(A, B) { return A.map(function(r,i) { return r.map(function(v,j) { return v+B[i][j]; }); }); }
-    function m4scale(A, s) { return A.map(function(r) { return r.map(function(v) { return v*s; }); }); }
-    function m4mul(A, B) {
-      var C = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
-      for (var i=0;i<4;i++) for (var j=0;j<4;j++) for (var k=0;k<4;k++) C[i][j] += A[i][k]*B[k][j];
-      return C;
-    }
-    function m4T(A) {
-      return [[A[0][0],A[1][0],A[2][0],A[3][0]],[A[0][1],A[1][1],A[2][1],A[3][1]],
-              [A[0][2],A[1][2],A[2][2],A[3][2]],[A[0][3],A[1][3],A[2][3],A[3][3]]];
-    }
-    function m4mulv(A, v) { return A.map(function(r) { return r[0]*v[0]+r[1]*v[1]+r[2]*v[2]+r[3]*v[3]; }); }
-    function m4vlt(v, A) { return [0,1,2,3].map(function(j) { return v[0]*A[0][j]+v[1]*A[1][j]+v[2]*A[2][j]+v[3]*A[3][j]; }); }
-    function vdot4(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3]; }
-    function m4os(col, row, s) { return col.map(function(c,ci) { return row.map(function(r) { return c*r*s; }); }); }
-
-    /* ── True LQR via numerical Jacobian + DARE ──────────────── */
-    var K_true = null;
-
-    function computeTrueLQR() {
-      var eps = 1e-5;
-      var x0 = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, 0];
-      var u0 = TRIM.de;
-
-      function f4(x6, u) { return flightDerivatives(0, x6, u).slice(0, 4); }
-
-      var cols = [];
-      for (var j = 0; j < 4; j++) {
-        var xp = x0.slice(); xp[j] += eps;
-        var xm = x0.slice(); xm[j] -= eps;
-        var fp = f4(xp, u0), fm = f4(xm, u0);
-        cols.push(fp.map(function(v, i) { return (v - fm[i]) / (2*eps); }));
-      }
-      var A = [[],[],[],[]];
-      for (var j = 0; j < 4; j++) for (var i = 0; i < 4; i++) A[i].push(cols[j][i]);
-
-      var fp2 = f4(x0, u0+eps), fm2 = f4(x0, u0-eps);
-      var Bv = fp2.map(function(v, i) { return (v - fm2[i]) / (2*eps); });
-
-      var dt = 0.05;
-      var Ad = m4add(m4eye(), m4scale(A, dt));
-      var Bd = Bv.map(function(v) { return v*dt; });
-      var Q = [[0.01,0,0,0],[0,100,0,0],[0,0,1,0],[0,0,0,0.1]], R = 1.0;
-      var P = m4copy(Q);
-      for (var iter = 0; iter < 2000; iter++) {
-        var PB = m4mulv(P, Bd), BtPB = vdot4(Bd, PB) + R;
-        var BtPA = m4vlt(Bd, m4mul(P, Ad));
-        var Pnew = m4add(m4add(Q, m4mul(m4T(Ad), m4mul(P, Ad))),
-                         m4scale(m4os(m4mulv(m4T(Ad), PB), BtPA, 1/BtPB), -1));
-        var diff = 0;
-        for (var r=0;r<4;r++) for (var c=0;c<4;c++) diff += Math.pow(Pnew[r][c]-P[r][c], 2);
-        P = Pnew;
-        if (diff < 1e-12) break;
-      }
-      var PB3 = m4mulv(P, Bd), BtPB3 = vdot4(Bd, PB3) + R;
-      return m4vlt(Bd, m4mul(P, Ad)).map(function(v) { return v/BtPB3; });
-    }
-
-    /* ── Training data generation ────────────────────────────── */
-    var INPUT_SCALES = [20, 0.3, 0.2, 0.5, 150, 300];
-
-    function genData() {
-      if (!K_true) K_true = computeTrueLQR();
-      var data = [], s = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, 0];
-      var t = 0, intErr = 0, dt = 0.025;
-      for (var i = 0; i < 2000; i++) {
-        var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t);
-        var dx = [s[0]-TRIM.V, s[1]-TRIM.gamma, s[2]-TRIM.alpha, s[3]-TRIM.q];
-        var du = -(K_true[0]*dx[0]+K_true[1]*dx[1]+K_true[2]*dx[2]+K_true[3]*dx[3]);
-        var de = clamp(TRIM.de + du, deg2rad(-15), deg2rad(15));
-        var errH = s[4] - hRef;
-        intErr = clamp(intErr + errH * dt, -1000, 1000);
-        data.push({ x: [dx[0], dx[1], dx[2], dx[3], errH, intErr], y: de / deg2rad(15) });
-        s = rk4(s, t, dt, function(tt, ss) { return flightDerivatives(tt, ss, de); });
-        s[4] = Math.max(s[4], 0);
-        t += dt;
-        if (i % 80 === 0) { s[1] += (Math.random()-0.5)*0.04; s[2] += (Math.random()-0.5)*0.02; }
-      }
-      return data;
+      car = makeCar();
+      car.x += path[0].nx * 11; car.y += path[0].ny * 11;
+      expertCar = makeCar();
+      expertCar.x -= path[0].nx * 11; expertCar.y -= path[0].ny * 11;
+      expertCar.speed = 50;
+      steerCmd = 0; manual = false; simStatus = 'ok';
+      lastErrs = { ey: 0, eth: 0 };
+      cteRing = [];
+      stateHist = { ey: [], eth: [] };
+      outHist   = { nn: [], exp: [] };
+      lastNNCache = null;
+      if (steerSlider) { steerSlider.value = '0'; if (steerVal) steerVal.textContent = '0.00'; }
     }
 
     /* ── Neural network (arbitrary depth feedforward, tanh) ───── */
+    // Input normalisation: eᵧ (px), e_θ (rad), four preview angles (rad).
+    var INPUT_SCALES = [22, 0.5, 0.8, 0.8, 0.8, 0.8];
     var nLayers = 1, nNeurons = 16;
     var net = null, adam = null, nnActive = false;
     var lossHistory = [], trainingData = null;
@@ -2168,7 +2353,6 @@
       s.push(1);
       return s;
     }
-
     function initNet(sizes) {
       var W = [], b = [];
       for (var l = 0; l < sizes.length-1; l++) {
@@ -2183,7 +2367,6 @@
       }
       return { sizes: sizes, W: W, b: b };
     }
-
     function fwdNet(nn, xRaw) {
       var inp = xRaw.map(function(v,i) { return clamp(v/INPUT_SCALES[i],-3,3); });
       var a = [new Float64Array(inp)];
@@ -2199,7 +2382,6 @@
       }
       return { out: a[a.length-1][0], a: a };
     }
-
     function bwdNet(nn, cache, target) {
       var nL = nn.W.length;
       var dW = nn.W.map(function(w) { return new Float64Array(w.length); });
@@ -2229,7 +2411,6 @@
       }
       return { dW: dW, db: db };
     }
-
     function initAdam(nn) {
       return {
         mW: nn.W.map(function(w) { return new Float64Array(w.length); }),
@@ -2239,7 +2420,6 @@
         t: 0
       };
     }
-
     function adamStep(nn, grads, am, lr) {
       var b1=0.9, b2=0.999, eps=1e-8;
       am.t++;
@@ -2258,25 +2438,46 @@
       }
     }
 
+    /* ── Training data: expert rollouts with perturbations ────── */
+    function genData() {
+      var data = [];
+      var c = makeCar();
+      for (var i = 0; i < 2400; i++) {
+        // Periodically knock the car off the racing line so the net sees
+        // recovery states, not just the perfect trajectory.
+        if (i % 45 === 0) {
+          var p = path[c.pathIdx];
+          var off = (Math.random()-0.5) * 2 * TW * 0.85;
+          c.x = p.x + p.nx * off; c.y = p.y + p.ny * off;
+          c.heading = Math.atan2(p.ty, p.tx) + (Math.random()-0.5) * 0.8;
+        }
+        var o = observe(c);
+        var steer = expertSteer(c);
+        data.push({ x: o.x, y: steer });
+        c.steer = steer;
+        stepCar(c, 0.03);
+      }
+      return data;
+    }
+
     /* ── Loss canvas ─────────────────────────────────────────── */
     var lossCanvas = document.getElementById('nn-loss-canvas');
     var lossCtx    = lossCanvas && lossCanvas.getContext('2d');
-
     function drawLoss() {
       if (!lossCtx || !lossHistory.length) return;
-      var W = lossCanvas.offsetWidth || 200, H = 72;
-      lossCanvas.width  = Math.round(W * (window.devicePixelRatio || 1));
-      lossCanvas.height = Math.round(H * (window.devicePixelRatio || 1));
+      var LW = lossCanvas.offsetWidth || 200, LH = 72;
+      lossCanvas.width  = Math.round(LW * (window.devicePixelRatio || 1));
+      lossCanvas.height = Math.round(LH * (window.devicePixelRatio || 1));
       lossCtx.setTransform(window.devicePixelRatio||1, 0, 0, window.devicePixelRatio||1, 0, 0);
       lossCtx.fillStyle = cssVar('--bg-soft');
-      lossCtx.fillRect(0, 0, W, H);
+      lossCtx.fillRect(0, 0, LW, LH);
       var maxL = Math.max.apply(null, lossHistory), n = lossHistory.length;
       lossCtx.strokeStyle = cssVar('--accent');
       lossCtx.lineWidth = 1.5;
       lossCtx.beginPath();
       for (var i = 0; i < n; i++) {
-        var x = (i / Math.max(n-1, 1)) * W;
-        var y = H - 4 - (lossHistory[i] / Math.max(maxL, 1e-9)) * (H-8);
+        var x = (i / Math.max(n-1, 1)) * LW;
+        var y = LH - 4 - (lossHistory[i] / Math.max(maxL, 1e-9)) * (LH-8);
         if (i === 0) lossCtx.moveTo(x, y); else lossCtx.lineTo(x, y);
       }
       lossCtx.stroke();
@@ -2314,7 +2515,6 @@
 
     var trainStatusEl = document.getElementById('nn-train-status');
     var activateBtnEl = document.getElementById('nn-activate-btn');
-
     function trainLoop(epoch, maxEpochs) {
       if (epoch >= maxEpochs) {
         if (trainStatusEl) trainStatusEl.textContent = 'Done — ' + maxEpochs + ' epochs';
@@ -2339,34 +2539,31 @@
     var trainBtn      = document.getElementById('nn-train-btn');
     var scoreEl       = document.getElementById('nn-score');
     var resetBtn      = document.getElementById('nn-reset');
-    var nnElevSlider  = document.getElementById('nn-elev');
-    var nnElevVal     = document.getElementById('nn-elev-val');
+    var steerSlider   = document.getElementById('nn-steer');
+    var steerVal      = document.getElementById('nn-steer-val');
     var nnStatePlot   = document.getElementById('nn-state-plot');
     var nnPidPlot     = document.getElementById('nn-pid-plot');
     var nnNetCanvas   = document.getElementById('nn-net-canvas');
 
     resetSim();
 
-    if (nnElevSlider) nnElevSlider.addEventListener('input', function() {
-      if (!nnActive) { de_rad = deg2rad(parseFloat(nnElevSlider.value)); }
-      if (nnElevVal) nnElevVal.textContent = parseFloat(nnElevSlider.value).toFixed(1) + '°';
+    if (steerSlider) steerSlider.addEventListener('input', function() {
+      manual = true;
+      if (!nnActive) steerCmd = parseFloat(steerSlider.value);
+      if (steerVal) steerVal.textContent = parseFloat(steerSlider.value).toFixed(2);
     });
 
-    // Keyboard elevator control (manual mode only)
+    // Keyboard steering (manual mode only): ←/→
     document.addEventListener('keydown', function(e) {
       var sec = document.getElementById('sec-nn');
       if (!sec || !sec.classList.contains('active')) return;
       if (nnActive) return;
-      var step = deg2rad(0.5);
-      if (e.key === 'ArrowUp') {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
-        de_rad = clamp(de_rad + step, -ELEV_MAX_RAD_NN, ELEV_MAX_RAD_NN);
-        if (nnElevSlider) { nnElevSlider.value = rad2deg(de_rad).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; }
-      }
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        de_rad = clamp(de_rad - step, -ELEV_MAX_RAD_NN, ELEV_MAX_RAD_NN);
-        if (nnElevSlider) { nnElevSlider.value = rad2deg(de_rad).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; }
+        manual = true;
+        var step = (e.key === 'ArrowLeft') ? -0.06 : 0.06;
+        steerCmd = clamp(steerCmd + step, -1, 1);
+        if (steerSlider) { steerSlider.value = steerCmd.toFixed(2); if (steerVal) steerVal.textContent = steerCmd.toFixed(2); }
       }
     });
 
@@ -2375,19 +2572,22 @@
       nNeurons = parseInt(neuronsSlider.value);
       if (layersVal)  layersVal.textContent  = nLayers;
       if (neuronsVal) neuronsVal.textContent = nNeurons;
-      net = null; nnActive = false; lossHistory = [];
+      // Keep an (untrained) net so the diagram always shows the current
+      // architecture; training reinitialises it. Activation stays gated on
+      // the button's disabled state, so an untrained net can't take control.
+      net = initNet(getLayerSizes()); nnActive = false; lossHistory = [];
       if (activateBtnEl) { activateBtnEl.disabled = true; activateBtnEl.textContent = 'Activate NN'; activateBtnEl.classList.remove('active'); }
       if (trainStatusEl) trainStatusEl.textContent = 'Architecture changed — retrain';
       if (lossCtx) lossCtx.clearRect(0, 0, lossCanvas.width, lossCanvas.height);
     }
     if (layersSlider)  layersSlider.addEventListener('input', archChanged);
     if (neuronsSlider) neuronsSlider.addEventListener('input', archChanged);
+    net = initNet(getLayerSizes());  // show the architecture before training
 
     if (genBtn) genBtn.addEventListener('click', function() {
       genBtn.disabled = true;
       if (genStatus) genStatus.textContent = 'Generating…';
       setTimeout(function() {
-        if (!K_true) K_true = computeTrueLQR();
         trainingData = genData();
         genBtn.disabled = false;
         if (genStatus) genStatus.textContent = trainingData.length + ' samples ready';
@@ -2408,7 +2608,6 @@
     if (activateBtnEl) activateBtnEl.addEventListener('click', function() {
       if (!net) return;
       nnActive = !nnActive;
-      nnIntErr = 0;
       activateBtnEl.textContent = nnActive ? 'Deactivate NN' : 'Activate NN';
       activateBtnEl.classList.toggle('active', nnActive);
     });
@@ -2416,182 +2615,632 @@
     if (resetBtn) resetBtn.addEventListener('click', resetSim);
 
     /* ── Simulation step ─────────────────────────────────────── */
-    var ELEV_MAX_RATE_NN = deg2rad(40) * FLIGHT_DT;
+    var STEER_RATE = 0.14;  // max steer-command change per substep
     setInterval(function() {
       var sec = document.getElementById('sec-nn');
       if (!sec || !sec.classList.contains('active')) return;
       if (simStatus !== 'ok') return;
 
-      for (var i = 0; i < 5; i++) {
-        var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+      var dt = 0.03, SUBS = 3;
+      for (var i = 0; i < SUBS; i++) {
+        // Expert reference car (always pure-pursuit)
+        expertCar.steer = expertSteer(expertCar);
+        stepCar(expertCar, dt);
 
+        // Learner car
+        var o = observe(car);
+        lastErrs = o.errs;
+        if (net) lastNNCache = fwdNet(net, o.x);   // always light the diagram
         if (nnActive && net) {
-          var dx = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
-          nnIntErr = clamp(nnIntErr + (state[4]-hRef) * FLIGHT_DT, -1000, 1000);
-          lastNNCache = fwdNet(net, [dx[0], dx[1], dx[2], dx[3], state[4]-hRef, nnIntErr]);
-          var de_nn_target = clamp(lastNNCache.out * ELEV_MAX_RAD_NN, -ELEV_MAX_RAD_NN, ELEV_MAX_RAD_NN);
-          de_rad += clamp(de_nn_target - de_rad, -ELEV_MAX_RATE_NN, ELEV_MAX_RATE_NN);
-          if (nnElevSlider) { nnElevSlider.value = rad2deg(de_rad).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; }
+          var target = clamp(lastNNCache.out, -1, 1);
+          steerCmd += clamp(target - steerCmd, -STEER_RATE, STEER_RATE);
+        } else if (!manual) {
+          // Before the net drives (and until you take over), shadow the
+          // expert so the car laps cleanly instead of driving off.
+          steerCmd = expertSteer(car);
         }
+        car.steer = steerCmd;
+        stepCar(car, dt);
 
-        state = rk4(state, simT, FLIGHT_DT, function(t, s) {
-          return flightDerivatives(t, s, de_rad);
-        });
-        simT += FLIGHT_DT;
-
-        var stopNN = checkStopConditions(state);
-        if (stopNN) {
-          simStatus = stopNN;
-          if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 2500);
-          return;
+        if (Math.abs(o.errs.ey) > TW * 2.2) {
+          simStatus = 'off';
+          if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 1600);
+          break;
         }
-
-        errRing.push(Math.pow(hRef - state[4], 2));
-        if (errRing.length > RING) errRing.shift();
+        cteRing.push(o.errs.ey * o.errs.ey);
+        if (cteRing.length > RING) cteRing.shift();
       }
 
-      // History
-      var hRef2 = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
-      nnOutputHist.out_deg.push(rad2deg(de_rad));
-      nnOutputHist.err_deg.push(hRef2 - state[4]);
-      stateHist.h.push(state[4]); stateHist.V.push(state[0]);
-      stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
-      if (nnOutputHist.out_deg.length > CHIST) { nnOutputHist.out_deg.shift(); nnOutputHist.err_deg.shift(); }
-      if (stateHist.h.length > CHIST) { stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift(); }
+      if (nnActive && steerSlider) { steerSlider.value = car.steer.toFixed(2); if (steerVal) steerVal.textContent = car.steer.toFixed(2); }
 
-      if (scoreEl && errRing.length > 0) {
-        var rmse = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0) / errRing.length);
+      // History
+      stateHist.ey.push(lastErrs.ey); stateHist.eth.push(lastErrs.eth);
+      outHist.nn.push(car.steer);     outHist.exp.push(expertSteer(car));
+      if (stateHist.ey.length > CHIST) { stateHist.ey.shift(); stateHist.eth.shift(); }
+      if (outHist.nn.length   > CHIST) { outHist.nn.shift();   outHist.exp.shift(); }
+
+      if (scoreEl && cteRing.length > 0) {
+        var rmse = Math.sqrt(cteRing.reduce(function(a,b){return a+b;},0) / cteRing.length);
         scoreEl.textContent = rmse.toFixed(1);
       }
     }, 25);
 
+    /* ── Rendering ───────────────────────────────────────────── */
+    function darkMode() {
+      return document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (!document.documentElement.getAttribute('data-theme') &&
+         window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+    function drawTrack() {
+      var n = NS, dark = darkMode(), tw = TW * vScale;
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) { var p = path[i]; if (i===0) ctx.moveTo(sx(p.x), sy(p.y)); else ctx.lineTo(sx(p.x), sy(p.y)); }
+      ctx.closePath();
+      ctx.lineWidth = tw * 2; ctx.strokeStyle = dark ? '#1c1c2e' : '#2c2c2c';
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+      [1, -1].forEach(function(side) {
+        ctx.beginPath();
+        for (var i = 0; i < n; i++) {
+          var p = path[i];
+          var ex = sx(p.x + p.nx * TW * 0.90 * side), ey = sy(p.y + p.ny * TW * 0.90 * side);
+          if (i===0) ctx.moveTo(ex, ey); else ctx.lineTo(ex, ey);
+        }
+        ctx.closePath(); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,0.60)'; ctx.lineJoin = 'round'; ctx.stroke();
+      });
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) { var p = path[i]; if (i===0) ctx.moveTo(sx(p.x), sy(p.y)); else ctx.lineTo(sx(p.x), sy(p.y)); }
+      ctx.closePath();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = cssVar('--accent');
+      ctx.setLineDash([6 * vScale, 8 * vScale]); ctx.stroke(); ctx.setLineDash([]);
+      var sp = path[0];
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(sx(sp.x + sp.nx * TW * 0.92), sy(sp.y + sp.ny * TW * 0.92));
+      ctx.lineTo(sx(sp.x - sp.nx * TW * 0.92), sy(sp.y - sp.ny * TW * 0.92));
+      ctx.stroke();
+    }
+    function drawCar(car, bodyColor, label) {
+      var csx = sx(car.x), csy = sy(car.y);
+      var cl = 20 * vScale, cw = 8 * vScale;
+      ctx.save();
+      ctx.translate(csx, csy); ctx.rotate(car.heading);
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath(); ctx.roundRect(-cl*0.5, -cw*0.5, cl, cw, 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(cl*0.5, 0); ctx.lineTo(cl*0.5 - cw*0.8, -cw*0.45); ctx.lineTo(cl*0.5 - cw*0.8, cw*0.45);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = bodyColor;
+      ctx.fillRect(cl*0.26, -cw*0.75, cw*0.6, cw*1.5);
+      ctx.fillRect(-cl*0.50, -cw*0.75, cw*0.5, cw*1.5);
+      ctx.restore();
+      ctx.fillStyle = bodyColor;
+      ctx.font = 'bold ' + Math.max(9, Math.round(10 * vScale)) + 'px ' + cssVar('--mono');
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText(label, csx, csy - cw * 0.6);
+    }
+    function raceRender() {
+      var dark = darkMode();
+      ctx.fillStyle = dark ? '#0c1a0c' : '#4a8040';
+      ctx.fillRect(0, 0, W, H);
+      drawTrack();
+      drawCar(expertCar, '#e74c3c', 'Expert');
+      drawCar(car, cssVar('--accent'), nnActive ? 'NN' : (manual ? 'Manual' : 'Shadow'));
+      ctx.save();
+      ctx.font = 'bold 11px ' + cssVar('--mono');
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      if (nnActive) { ctx.fillStyle = 'rgba(80,200,120,0.95)'; ctx.fillText('● NN driving', 12, 10); }
+      if (simStatus === 'off') { ctx.fillStyle = 'rgba(231,76,60,0.95)'; ctx.fillText('Off track — resetting…', 12, 26); }
+      ctx.restore();
+    }
+
     /* ── NN architecture visualisation ──────────────────────── */
+    function parseRGB(str) {
+      if (!str) return [128, 128, 128];
+      str = str.trim();
+      if (str.charAt(0) === '#') {
+        var h = str.slice(1);
+        if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+        return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+      }
+      var m = str.match(/(\d+(?:\.\d+)?)/g);
+      if (m && m.length >= 3) return [+m[0], +m[1], +m[2]];
+      return [128, 128, 128];
+    }
+    function mixRGB(a, b, t) {
+      return [ Math.round(a[0]+(b[0]-a[0])*t), Math.round(a[1]+(b[1]-a[1])*t), Math.round(a[2]+(b[2]-a[2])*t) ];
+    }
     function drawNetViz(canvas, nn, cache, isDark) {
       if (!canvas || !nn) return;
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
-      if (!W) W = 300;
+      if (!W) W = 640;
+      var H = canvas.clientHeight || 440;
       canvas.width  = Math.round(W * dpr);
-      canvas.height = Math.round((canvas.clientHeight || 200) * dpr);
-      var H = canvas.clientHeight || 200;
+      canvas.height = Math.round(H * dpr);
       var ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      var bg     = cssVar('--bg');
-      var accent = cssVar('--accent');
+      var bgSoft = cssVar('--bg-soft');
       var muted  = cssVar('--text-muted');
       var mono   = cssVar('--mono');
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+      var actNeg  = parseRGB(cssVar('--nn-act-neg'));
+      var actZero = parseRGB(cssVar('--nn-act-zero'));
+      var actPos  = parseRGB(cssVar('--nn-act-pos'));
+      var accRGB  = parseRGB(cssVar('--accent'));
+      ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
 
       var sizes  = nn.sizes;
       var nL     = sizes.length;
-      var MAX_N  = 10;  // max neurons shown per layer
+      var MAX_N  = 16;
+      var PAD_X  = Math.max(48, W * 0.07);
+      var PAD_TOP = 26, PAD_BOT = 34;
+      var innerW = W - PAD_X * 2;
       var colX   = [];
-      for (var l = 0; l < nL; l++) colX.push(Math.round(W * (l + 0.5) / nL));
-      var INPUT_LABELS  = ['ΔV', 'Δγ', 'Δα', 'Δq', 'ΔH', '∫ΔH'];
-      var OUTPUT_LABELS = ['δe'];
+      for (var l = 0; l < nL; l++) {
+        colX.push(nL > 1 ? Math.round(PAD_X + innerW * l / (nL - 1)) : Math.round(W / 2));
+      }
+      var INPUT_LABELS  = ['eᵧ', 'e_θ', 'ψ₁', 'ψ₂', 'ψ₃', 'ψ₄'];
+      var OUTPUT_LABELS = ['δ'];
+
+      var maxShown = 1;
+      for (var l = 0; l < nL; l++) maxShown = Math.max(maxShown, Math.min(sizes[l], MAX_N));
+      var gap = (H - PAD_TOP - PAD_BOT) / Math.max(maxShown - 1, 1);
+      gap = Math.min(gap, 34);
+      var R = Math.max(6, Math.min(gap * 0.36, 16));
 
       function nodeY(l, i, n) {
         var shown = Math.min(n, MAX_N);
-        var gap = Math.min((H - 40) / Math.max(shown - 1, 1), 28);
         var totalH = (shown - 1) * gap;
-        return (H / 2 - totalH / 2) + i * gap;
+        return ((H - PAD_BOT + PAD_TOP) / 2 - totalH / 2) + i * gap;
       }
+      function actAt(l, i) { return (cache && cache.a && cache.a[l]) ? cache.a[l][i] : 0; }
+      function actColor(t) { return (t >= 0) ? mixRGB(actZero, actPos, t) : mixRGB(actZero, actNeg, -t); }
 
-      // Edges
       for (var l = 0; l < nL - 1; l++) {
         var ni = sizes[l], no = sizes[l+1];
         var shownI = Math.min(ni, MAX_N), shownO = Math.min(no, MAX_N);
         for (var ii = 0; ii < shownI; ii++) {
           for (var oi = 0; oi < shownO; oi++) {
             var w = nn.W[l][oi * ni + ii];
-            var alpha = Math.min(Math.abs(w) * 3, 0.5);
-            var col = (w >= 0) ? accent : (isDark ? 'rgba(220,80,80,' : 'rgba(160,40,40,');
-            ctx.strokeStyle = (w >= 0) ? accent.replace(')', ',' + alpha + ')').replace('rgb(', 'rgba(') : col + alpha + ')';
-            ctx.lineWidth = 0.5;
+            var mag = Math.min(Math.abs(w), 1.5) / 1.5;
+            var alpha = 0.06 + mag * 0.5;
+            var c = (w >= 0) ? accRGB : actNeg;
+            ctx.strokeStyle = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + alpha.toFixed(3) + ')';
+            ctx.lineWidth = 0.5 + mag * 2;
             ctx.beginPath();
-            ctx.moveTo(colX[l], nodeY(l, ii, ni));
-            ctx.lineTo(colX[l+1], nodeY(l+1, oi, no));
+            ctx.moveTo(colX[l] + R, nodeY(l, ii, ni));
+            ctx.lineTo(colX[l+1] - R, nodeY(l+1, oi, no));
             ctx.stroke();
           }
         }
       }
 
-      // Nodes
       for (var l = 0; l < nL; l++) {
         var n = sizes[l];
         var shown = Math.min(n, MAX_N);
         for (var ii = 0; ii < shown; ii++) {
           var cy = nodeY(l, ii, n);
-          var act = (cache && cache.a && cache.a[l]) ? cache.a[l][ii] : 0;
-          // Color: 0 → bg-soft, ±1 → accent / red
-          var t = Math.tanh(act);
-          var r, g, b2;
-          if (isDark) {
-            if (t >= 0) {
-              r = Math.round(30 + t * 80); g = Math.round(30 + t * 140); b2 = Math.round(50 + t * 180);
-            } else {
-              r = Math.round(30 + (-t) * 180); g = Math.round(30); b2 = Math.round(50);
-            }
-          } else {
-            if (t >= 0) {
-              r = Math.round(200 - t * 100); g = Math.round(200 - t * 60); b2 = Math.round(200 + t * 55);
-            } else {
-              r = Math.round(200 + (-t) * 55); g = Math.round(200 - (-t) * 100); b2 = Math.round(200 - (-t) * 100);
-            }
+          var t = Math.tanh(actAt(l, ii));
+          var rgb = actColor(t);
+          var glow = Math.abs(t);
+          ctx.save();
+          if (glow > 0.05) {
+            ctx.shadowColor = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + (0.55 * glow).toFixed(3) + ')';
+            ctx.shadowBlur = R * 1.4 * glow;
           }
           ctx.beginPath();
-          ctx.arc(colX[l], cy, 5, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b2 + ')';
+          ctx.arc(colX[l], cy, R, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
           ctx.fill();
-          ctx.strokeStyle = muted; ctx.lineWidth = 0.5; ctx.stroke();
+          ctx.restore();
+          ctx.beginPath();
+          ctx.arc(colX[l], cy, R, 0, Math.PI * 2);
+          ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.stroke();
         }
         if (n > MAX_N) {
-          ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'center';
-          ctx.fillText('⋯', colX[l], nodeY(l, shown - 1, n) + 12);
+          ctx.fillStyle = muted; ctx.font = (R + 4) + 'px ' + mono; ctx.textAlign = 'center';
+          ctx.fillText('⋯', colX[l], nodeY(l, shown - 1, n) + gap * 0.7);
         }
-        // Layer labels
-        var lbl = l === 0 ? 'in' : l === nL - 1 ? 'out' : 'h' + l;
-        ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'center';
-        ctx.fillText(lbl + '(' + n + ')', colX[l], H - 4);
-        // Input/output node labels
+        var lbl = l === 0 ? 'input' : l === nL - 1 ? 'output' : 'hidden ' + l;
+        ctx.fillStyle = muted; ctx.font = '600 12px ' + mono; ctx.textAlign = 'center';
+        ctx.fillText(lbl + ' (' + n + ')', colX[l], H - 12);
         if (l === 0) {
           var shownL = Math.min(n, INPUT_LABELS.length);
-          for (var ii = 0; ii < shownL; ii++) {
-            ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'right';
-            ctx.fillText(INPUT_LABELS[ii], colX[l] - 8, nodeY(l, ii, n) + 3);
+          ctx.font = '11px ' + mono; ctx.textAlign = 'right'; ctx.fillStyle = muted;
+          for (var k = 0; k < shownL; k++) {
+            ctx.fillText(INPUT_LABELS[k], colX[l] - R - 6, nodeY(l, k, n) + 4);
           }
         } else if (l === nL - 1) {
-          ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'left';
-          ctx.fillText(OUTPUT_LABELS[0], colX[l] + 8, nodeY(l, 0, n) + 3);
+          ctx.font = '11px ' + mono; ctx.textAlign = 'left'; ctx.fillStyle = muted;
+          ctx.fillText(OUTPUT_LABELS[0], colX[l] + R + 6, nodeY(l, 0, n) + 4);
         }
       }
     }
 
     /* ── Render loop ─────────────────────────────────────────── */
     (function loop() {
-      var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-        (!document.documentElement.getAttribute('data-theme') &&
-         window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-      renderer.render(state, simT, de_rad, simStatus, function(ctx, W) {
-        if (nnActive) {
-          ctx.save();
-          ctx.font = 'bold 11px monospace';
-          ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-          ctx.fillStyle = 'rgba(80,200,120,0.9)';
-          ctx.fillText('● NN active', 215, 8);
-          ctx.restore();
-        }
-      });
-      drawStatePlot(nnStatePlot, stateHist);
+      var isDark = darkMode();
+      raceRender();
+      drawContribPlot(nnStatePlot, [
+        { label: 'eᵧ CTE (px)',  color: cssVar('--accent'), data: stateHist.ey  },
+        { label: 'e_θ hdg (rad)', color: '#f0a040',          data: stateHist.eth }
+      ], null, 'state');
       drawContribPlot(nnPidPlot, [
-        { label: 'δe out', color: cssVar('--accent'),  data: nnOutputHist.out_deg },
-        { label: 'h err(m)',   color: '#f0a040',            data: nnOutputHist.err_deg }
-      ], rad2deg(ELEV_MAX_RAD_NN), 'δe (°) / h err (m)');
+        { label: 'δ NN',     color: cssVar('--accent'), data: outHist.nn  },
+        { label: 'δ expert', color: '#f0a040',          data: outHist.exp }
+      ], 1.0, 'steer δ');
       drawNetViz(nnNetCanvas, net, lastNNCache, isDark);
       requestAnimationFrame(loop);
     })();
+  })();
+
+  /* ================================================================
+     Demo 6 — Be the Controller (human step-response → PID fit)
+     A target jumps between the corners of a box. The user chases it
+     with the mouse / finger. We measure the reaction delay (dead time)
+     and least-squares fit ẋ = Kp·e + Ki·∫e + Kd·ė to the recorded
+     motion — i.e. identify the PID controller behind the user's hand.
+  ================================================================ */
+  (function reactDemo() {
+    var canvas = document.getElementById('react-canvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = 720, H = 380;
+
+    function resize() {
+      W = canvas.parentElement.clientWidth;
+      canvas.width  = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width  = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    new ResizeObserver(resize).observe(canvas.parentElement);
+    resize();
+
+    var R_TARGET = 26, R_DWELL = 34;
+    function corners() {
+      var m = Math.max(48, Math.min(90, W * 0.16));
+      return [
+        { x: m,     y: 60      },
+        { x: W - m, y: 60      },
+        { x: W - m, y: H - 60  },
+        { x: m,     y: H - 60  }
+      ];
+    }
+
+    // ── Pointer tracking (mouse + touch via Pointer Events) ──────
+    var ptr = { x: W / 2, y: H / 2, active: false };
+    function setPtr(clientX, clientY) {
+      var r = canvas.getBoundingClientRect();
+      ptr.x = clientX - r.left;
+      ptr.y = clientY - r.top;
+      ptr.active = true;
+    }
+    canvas.style.touchAction = 'none';
+    canvas.addEventListener('pointermove', function (e) { setPtr(e.clientX, e.clientY); });
+    canvas.addEventListener('pointerdown', function (e) { setPtr(e.clientX, e.clientY); });
+
+    // ── State machine ────────────────────────────────────────────
+    var phase = 'idle';          // idle · wait_dwell · wait_jump · active · done
+    var startIdx = 0, tgtIdx = 2;
+    var dwellStart = null;
+    var jumpAt = 0, t0 = 0;
+    var samples = [];            // {t, x, y} recorded during the active phase
+    var bestReaction = null;
+    var lastFit = { user: [], pid: [], setp: [] };
+
+    function el(id) { return document.getElementById(id); }
+    var statusEl  = el('react-status');
+    var startBtn  = el('react-start');
+    var resetBtn  = el('react-reset');
+    var resultsBox = el('react-results');
+    var reactPlot = el('react-plot');
+
+    function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+    function setTxt(id, t) { var e = el(id); if (e) e.textContent = t; }
+
+    function randCornerExcept(i) {
+      var c; do { c = Math.floor(Math.random() * 4); } while (c === i);
+      return c;
+    }
+
+    function beginTrial() {
+      startIdx = Math.floor(Math.random() * 4);
+      tgtIdx   = startIdx;
+      phase    = 'wait_dwell';
+      dwellStart = null;
+      samples  = [];
+      if (resultsBox) resultsBox.style.display = 'none';
+      setStatus('Move onto the glowing dot and hold still…');
+    }
+    if (startBtn) startBtn.addEventListener('click', beginTrial);
+    if (resetBtn) resetBtn.addEventListener('click', function () {
+      phase = 'idle'; samples = []; bestReaction = null;
+      lastFit = { user: [], pid: [], setp: [] };
+      if (resultsBox) resultsBox.style.display = 'none';
+      setTxt('react-reaction', '—');
+      setTxt('react-best', '');
+      setStatus('Press “Start trial”, then chase the dot the instant it jumps.');
+    });
+
+    function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+
+    function update(now) {
+      var cs = corners();
+      if (phase === 'wait_dwell') {
+        var c = cs[startIdx];
+        if (ptr.active && dist(ptr.x, ptr.y, c.x, c.y) < R_DWELL) {
+          if (dwellStart === null) dwellStart = now;
+          if (now - dwellStart > 400) {
+            jumpAt = now + 700 + Math.random() * 1900;   // unpredictable delay
+            phase  = 'wait_jump';
+            setStatus('Hold steady… stay ready.');
+          }
+        } else {
+          dwellStart = null;
+        }
+      } else if (phase === 'wait_jump') {
+        if (now >= jumpAt) {
+          tgtIdx  = randCornerExcept(startIdx);
+          t0      = now;
+          samples = [];
+          dwellStart = null;
+          phase   = 'active';
+          setStatus('GO! Chase the dot.');
+        }
+      } else if (phase === 'active') {
+        var B = cs[tgtIdx];
+        samples.push({ t: (now - t0) / 1000, x: ptr.x, y: ptr.y });
+        var onTgt = ptr.active && dist(ptr.x, ptr.y, B.x, B.y) < R_TARGET;
+        if (onTgt) { if (dwellStart === null) dwellStart = now; }
+        else dwellStart = null;
+        var elapsed = (now - t0) / 1000;
+        if ((dwellStart && now - dwellStart > 350) || elapsed > 4.5) {
+          phase = 'done';
+          analyze(cs[startIdx], cs[tgtIdx]);
+        }
+      }
+    }
+
+    // ── Linear solve for the 3×3 normal equations ────────────────
+    function solve3(M, b) {
+      var a = [M[0].slice(), M[1].slice(), M[2].slice()], y = b.slice();
+      for (var i = 0; i < 3; i++) {
+        var p = i;
+        for (var r = i + 1; r < 3; r++) if (Math.abs(a[r][i]) > Math.abs(a[p][i])) p = r;
+        if (p !== i) { var tt = a[p]; a[p] = a[i]; a[i] = tt; var ty = y[p]; y[p] = y[i]; y[i] = ty; }
+        if (Math.abs(a[i][i]) < 1e-12) return null;
+        for (var r2 = i + 1; r2 < 3; r2++) {
+          var f = a[r2][i] / a[i][i];
+          for (var cc = i; cc < 3; cc++) a[r2][cc] -= f * a[i][cc];
+          y[r2] -= f * y[i];
+        }
+      }
+      var x = [0, 0, 0];
+      for (var k = 2; k >= 0; k--) {
+        var s = y[k];
+        for (var c2 = k + 1; c2 < 3; c2++) s -= a[k][c2] * x[c2];
+        x[k] = s / a[k][k];
+      }
+      return x;
+    }
+
+    function interp(xs, ys, x) {
+      if (x <= xs[0]) return ys[0];
+      if (x >= xs[xs.length - 1]) return ys[ys.length - 1];
+      for (var i = 1; i < xs.length; i++) {
+        if (x <= xs[i]) {
+          var f = (x - xs[i - 1]) / ((xs[i] - xs[i - 1]) || 1);
+          return ys[i - 1] + f * (ys[i] - ys[i - 1]);
+        }
+      }
+      return ys[ys.length - 1];
+    }
+
+    // Simulate a PID velocity-controller with pure dead time L, sampled on `grid`.
+    function simulatePID(Kp, Ki, Kd, L, grid) {
+      var h = 0.008, d = 0, integ = 0, prevE = 1, t = 0, out = [], gi = 0;
+      var Tend = grid[grid.length - 1];
+      while (gi < grid.length) {
+        while (gi < grid.length && grid[gi] <= t) { out.push(d); gi++; }
+        if (t > Tend) break;
+        var e = 1 - d;
+        var v = 0;
+        if (t >= L) {
+          integ += e * h;
+          var de = (e - prevE) / h;
+          v = Kp * e + Ki * integ + Kd * de;
+          prevE = e;
+        }
+        d += v * h;
+        if (d > 3) d = 3; if (d < -2) d = -2;
+        t += h;
+      }
+      while (out.length < grid.length) out.push(d);
+      return out;
+    }
+
+    function characterRead(overshoot, finalE, L) {
+      var parts = ['Your hand added ' + Math.round(L * 1000) + ' ms of dead time before reacting.'];
+      if (overshoot > 12)      parts.push('You overshot by ' + overshoot.toFixed(0) + '% — proportional-heavy and underdamped; more Kd would settle it faster.');
+      else if (overshoot > 3)  parts.push('Slight overshoot (' + overshoot.toFixed(0) + '%) — close to critically damped.');
+      else                     parts.push('Almost no overshoot — nicely damped.');
+      if (Math.abs(finalE) > 0.06) parts.push('You settled short of the mark, like a controller with too little integral action.');
+      return parts.join(' ');
+    }
+
+    function showFail() {
+      phase = 'idle';
+      setStatus('Not enough motion to fit — press “Start trial” and chase the dot a bit more.');
+    }
+
+    function analyze(A, B) {
+      var ux = B.x - A.x, uy = B.y - A.y;
+      var D = Math.hypot(ux, uy) || 1;
+      ux /= D; uy /= D;
+      var S = samples;
+      if (S.length < 6) { showFail(); return; }
+
+      var d = [], tt = [];
+      for (var i = 0; i < S.length; i++) {
+        d.push(((S[i].x - A.x) * ux + (S[i].y - A.y) * uy) / D);   // normalized progress 0→1
+        tt.push(S[i].t);
+      }
+
+      // Reaction delay: first sample that has moved appreciably from the start.
+      var d0 = d[0], Lidx = -1;
+      for (var j = 1; j < d.length; j++) {
+        if (Math.abs(d[j] - d0) > 0.06) { Lidx = j; break; }
+      }
+      if (Lidx < 0) Lidx = 1;
+      var L = tt[Lidx];
+
+      // Build regression rows (post-reaction) for ẋ = Kp·e + Ki·∫e + Kd·ė.
+      var integ = 0, rows = [];
+      for (var m = 1; m < d.length; m++) {
+        var dtt = tt[m] - tt[m - 1];
+        if (dtt <= 0) continue;
+        var e = 1 - d[m];
+        integ += e * dtt;
+        var de = (e - (1 - d[m - 1])) / dtt;
+        var v  = (d[m] - d[m - 1]) / dtt;
+        if (tt[m] >= L) rows.push([e, integ, de, v]);
+      }
+      if (rows.length < 4) { showFail(); return; }
+
+      var XtX = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], Xty = [0, 0, 0];
+      rows.forEach(function (r) {
+        var phi = [r[0], r[1], r[2]];
+        for (var a1 = 0; a1 < 3; a1++) {
+          for (var b1 = 0; b1 < 3; b1++) XtX[a1][b1] += phi[a1] * phi[b1];
+          Xty[a1] += phi[a1] * r[3];
+        }
+      });
+      var tr = XtX[0][0] + XtX[1][1] + XtX[2][2];
+      var lam = 1e-4 * (tr / 3 || 1);            // ridge term for numerical stability
+      XtX[0][0] += lam; XtX[1][1] += lam; XtX[2][2] += lam;
+      var k = solve3(XtX, Xty) || [0, 0, 0];
+      var Kp = k[0], Ki = k[1], Kd = k[2];
+
+      // R² of the velocity fit.
+      var meanV = 0; rows.forEach(function (r) { meanV += r[3]; }); meanV /= rows.length;
+      var ssr = 0, sst = 0;
+      rows.forEach(function (r) {
+        var pred = Kp * r[0] + Ki * r[1] + Kd * r[2];
+        ssr += (r[3] - pred) * (r[3] - pred);
+        sst += (r[3] - meanV) * (r[3] - meanV);
+      });
+      var r2 = sst > 1e-9 ? Math.max(0, 1 - ssr / sst) : 0;
+
+      var maxD = Math.max.apply(null, d);
+      var overshoot = Math.max(0, maxD - 1) * 100;
+      var finalE = 1 - d[d.length - 1];
+
+      // Overlay data: user path, fitted-PID replay, and the unit setpoint.
+      var Tend = tt[tt.length - 1], N = 140, grid = [];
+      for (var g = 0; g < N; g++) grid.push(Tend * g / (N - 1));
+      lastFit = {
+        user: grid.map(function (gt) { return interp(tt, d, gt); }),
+        pid:  simulatePID(Kp, Ki, Kd, L, grid),
+        setp: grid.map(function () { return 1; })
+      };
+
+      // Fill the panel.
+      setTxt('react-reaction', Math.round(L * 1000));
+      if (bestReaction === null || L < bestReaction) {
+        bestReaction = L;
+        setTxt('react-best', 'Best: ' + Math.round(L * 1000) + ' ms');
+      }
+      setTxt('react-kp', Kp.toFixed(2));
+      setTxt('react-ki', Ki.toFixed(2));
+      setTxt('react-kd', Kd.toFixed(2));
+      setTxt('react-L',  Math.round(L * 1000) + ' ms');
+      setTxt('react-os', overshoot.toFixed(0) + ' %');
+      setTxt('react-r2', r2.toFixed(2));
+      setTxt('react-read', characterRead(overshoot, finalE, L));
+      if (resultsBox) resultsBox.style.display = 'flex';
+      setStatus('Nice — press “Start trial” to go again.');
+    }
+
+    // ── Rendering ────────────────────────────────────────────────
+    function draw() {
+      var cs = corners();
+      ctx.clearRect(0, 0, W, H);
+
+      var muted  = cssVar('--text-muted');
+      var accent = cssVar('--accent');
+      var border = cssVar('--border');
+      var text   = cssVar('--text');
+
+      // Box outline + corner markers
+      ctx.strokeStyle = border;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(cs[0].x, cs[0].y, cs[1].x - cs[0].x, cs[3].y - cs[0].y);
+      cs.forEach(function (c) {
+        ctx.beginPath(); ctx.arc(c.x, c.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = muted; ctx.fill();
+      });
+
+      // User's recorded trail
+      if (samples.length > 1) {
+        ctx.strokeStyle = accent;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (var i = 0; i < samples.length; i++) {
+          if (i === 0) ctx.moveTo(samples[i].x, samples[i].y);
+          else ctx.lineTo(samples[i].x, samples[i].y);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // Active target dot (pulsing)
+      var tgt = (phase === 'wait_dwell' || phase === 'wait_jump') ? cs[startIdx]
+              : (phase === 'active' || phase === 'done') ? cs[tgtIdx] : null;
+      if (tgt) {
+        var pulse = 0.5 + 0.5 * Math.sin(Date.now() / 180);
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = 0.25;
+        ctx.beginPath(); ctx.arc(tgt.x, tgt.y, R_TARGET, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.beginPath(); ctx.arc(tgt.x, tgt.y, 8 + 3 * pulse, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // User pointer marker
+      if (ptr.active) {
+        ctx.strokeStyle = text; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(ptr.x, ptr.y, 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = text;
+        ctx.beginPath(); ctx.arc(ptr.x, ptr.y, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // Centre prompt for idle state
+      if (phase === 'idle') {
+        ctx.fillStyle = muted;
+        ctx.font = '14px ' + cssVar('--font');
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('Press “Start trial”, then chase the dot when it jumps.', W / 2, H / 2);
+      }
+    }
+
+    function loop(now) {
+      var sec = document.getElementById('sec-react');
+      if (sec && sec.classList.contains('active')) {
+        update(now);
+        draw();
+        drawContribPlot(reactPlot, [
+          { label: 'setpoint',   color: cssVar('--text-muted'), data: lastFit.setp },
+          { label: 'you',        color: cssVar('--accent'),     data: lastFit.user },
+          { label: 'fitted PID', color: '#f0a040',              data: lastFit.pid  }
+        ], null, 'position');
+      }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
   })();
 
 })();

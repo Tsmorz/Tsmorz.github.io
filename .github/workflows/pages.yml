@@ -26,32 +26,23 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: actions/configure-pages@v5
         id: pages
 
       - name: Build site
-        run: bundle exec jekyll build --baseurl "${{ steps.pages.outputs.base_path }}"
-        env:
-          JEKYLL_ENV: production
+        run: task build BASEURL="${{ steps.pages.outputs.base_path }}"
 
       - name: Check JS assets are referenced
-        run: |
-          FAIL=0
-          for js in assets/js/*.js; do
-            filename=$(basename "$js")
-            if ! grep -qr "$filename" _site/; then
-              echo "UNREFERENCED: $js is not loaded by any page"
-              FAIL=1
-            fi
-          done
-          [ $FAIL -eq 0 ] || exit 1
+        run: task check:js
 
       - name: Check for broken internal links
-        run: |
-          bundle exec htmlproofer ./_site \
-            --disable-external \
-            --allow-hash-href \
-            --ignore-empty-alt
+        run: task check:links
 
       - uses: actions/upload-pages-artifact@v3
 
