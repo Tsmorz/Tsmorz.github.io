@@ -87,6 +87,10 @@
     var HIST = 600;
     var hist = { xArr: [], refArr: [], time: [] };
 
+    // PID contribution history for contribution plot
+    var CHIST = 300;
+    var pidContrib = { p: [], i: [], d: [], total: [] };
+
     // Sliders
     var kpSlider  = document.getElementById('msd-kp');
     var kiSlider  = document.getElementById('msd-ki');
@@ -116,6 +120,7 @@
       sim.intE = 0; sim.prevE = 0;
       errRing = [];
       hist.xArr = []; hist.refArr = []; hist.time = [];
+      pidContrib.p = []; pidContrib.i = []; pidContrib.d = []; pidContrib.total = [];
       bestScore = null;
       if (bestEl) bestEl.textContent = '';
     }
@@ -130,7 +135,8 @@
         var e   = ref - sim.x;
         sim.intE  = clamp(sim.intE + e * DT, -20, 20);
         var de  = (e - sim.prevE) / DT;
-        var F   = pid.kp * e + pid.ki * sim.intE + pid.kd * de;
+        var P_t = pid.kp * e, I_t = pid.ki * sim.intE, D_t = pid.kd * de;
+        var F   = P_t + I_t + D_t;
         sim.prevE = e;
         // F is constant over this step (zero-order hold on control)
         var s = rk4([sim.x, sim.v], sim.t, DT, function (t2, s2) {
@@ -149,6 +155,11 @@
       hist.time.push(sim.t);
       if (hist.xArr.length > HIST) {
         hist.xArr.shift(); hist.refArr.shift(); hist.time.shift();
+      }
+      // PID contribution history
+      pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(F);
+      if (pidContrib.p.length > CHIST) {
+        pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift();
       }
       // Score
       if (errRing.length > 0) {
@@ -333,9 +344,18 @@
       if (document.getElementById('sec-msd').classList.contains('active')) step();
     }, 25);
 
+    var msdPidCanvas = document.getElementById('msd-pid-plot');
+    var accentColor3 = function() { return cssVar('--accent'); };
+
     var rafId = null;
     function loop() {
       render();
+      drawContribPlot(msdPidCanvas, [
+        { label: 'P', color: cssVar('--accent'),   data: pidContrib.p },
+        { label: 'I', color: '#f0a040',            data: pidContrib.i },
+        { label: 'D', color: '#72c472',            data: pidContrib.d },
+        { label: 'Total', color: '#c0d0e8',        data: pidContrib.total }
+      ], null, 'F (N)');
       rafId = requestAnimationFrame(loop);
     }
     loop();
@@ -377,10 +397,20 @@
   };
 
   function aero(V, alpha, q, de) {
-    var qbar = 0.5 * AC.rho * V * V;
-    var CL   = AC.CL0 + AC.CLa * alpha + AC.CLde * de;
-    var CD   = AC.CD0 + AC.k * CL * CL;
-    var Cm   = AC.Cm0 + AC.Cma * alpha + AC.Cmq * q * AC.cbar / (2 * Math.max(V, 1)) + AC.Cmde * de;
+    var qbar    = 0.5 * AC.rho * V * V;
+    var a_stall = deg2rad(16);
+    // Sigmoid stall factor: ~1 pre-stall → ~0 post-stall (smooth nonlinear rolloff)
+    var sigma   = 1 / (1 + Math.exp(30 * (Math.abs(alpha) - a_stall) / Math.PI));
+    var CL_lin  = AC.CL0 + AC.CLa * alpha + AC.CLde * de;
+    // Post-stall lift asymptotes to 55% of peak CL, same sign as alpha
+    var CL_peak = AC.CL0 + AC.CLa * a_stall;
+    var CL_post = 0.55 * CL_peak * (alpha < 0 ? -1 : 1) + AC.CLde * de;
+    var CL      = sigma * CL_lin + (1 - sigma) * CL_post;
+    // Extra induced drag post-stall
+    var CD      = AC.CD0 + AC.k * CL * CL + 0.15 * (1 - sigma);
+    var Cm      = AC.Cm0 + AC.Cma * alpha
+                + AC.Cmq * q * AC.cbar / (2 * Math.max(V, 1))
+                + AC.Cmde * de;
     return {
       L:  qbar * AC.S * CL,
       D:  qbar * AC.S * CD,
@@ -391,7 +421,7 @@
   // Trim: find (alpha0, de0) such that L=W and Cm=0; also compute T_trim=D_trim
   function computeTrim() {
     var W  = AC.m * AC.g;
-    var V0 = 85;
+    var V0 = 65;
     // At trim: gamma=0, q=0
     // From Cm=0: de = -(Cm0+Cma*alpha)/Cmde
     // Substitute into L=W and solve for alpha
@@ -454,6 +484,13 @@
   var WORLD_HI = 600;   // m — top of visible world (sky ceiling)
   var WORLD_LO = 0;     // m — ground
 
+  // Shared reference trajectory constants (used by all flight demos + renderer)
+  var H_CENTER  = 300;   // m — reference altitude centre
+  var REF_AMP   = 100;   // m — sine amplitude
+  var REF_OMEGA = 0.45;  // rad/s — period ≈ 14 s (was 0.15; 0.45 makes the wave visible on screen)
+  // Seconds of reference shown across the full canvas width (determines how many cycles appear)
+  var REF_DISPLAY_SPAN = 20;
+
   function makeFlightRenderer(canvas) {
     var ctx = canvas.getContext('2d');
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -468,9 +505,6 @@
     }
     new ResizeObserver(resize).observe(canvas.parentElement);
     resize();
-
-    // Fixed reference path — 300 m center, ±100 m amplitude
-    var H_CENTER = 300, REF_AMP = 100, REF_OMEGA = 0.15;
 
     // Bottom 36 px are always the ground strip; the rest maps h=0→horizon, h=WORLD_HI→top
     var GROUND_PX = 36;
@@ -591,7 +625,7 @@
       ctx.rotate(-theta_rad);  // negative: CCW = nose up
       var ci = cessna.get();
       if (ci) {
-        var dispW = 110;
+        var dispW = 26;
         var dispH = dispW * ci.height / ci.width;
         ctx.drawImage(ci, -dispW * 0.5, -dispH * 0.5, dispW, dispH);
       } else {
@@ -667,13 +701,15 @@
       drawTrees(W, horizonY, downrange, isDark);
 
       // Reference altitude path (dashed accent line)
+      // tOffset: maps canvas x-pixel to a time offset so the full REF_DISPLAY_SPAN
+      // of the sine wave spans the canvas — ensures the wave is always visible.
       ctx.strokeStyle = accentColor;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([8, 5]);
       ctx.beginPath();
       var planeScreenX = W * 0.35;
       for (var px = 0; px <= W; px += 4) {
-        var tOffset = (px - planeScreenX) / Math.max(V, 1) / 60;
+        var tOffset = (px - planeScreenX) / W * REF_DISPLAY_SPAN;
         var refH = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * (simT + tOffset));
         var ry = hToY(refH, H);
         if (px === 0) ctx.moveTo(px, ry); else ctx.lineTo(px, ry);
@@ -703,7 +739,7 @@
 
       // Elevator indicator bar (right edge).
       // Positive de_rad → plane pitches up → thumb moves UP.
-      var eiFrac = (de_rad / deg2rad(15) + 1) / 2;  // 0 = full down, 1 = full up
+      var eiFrac = (de_rad / deg2rad(25) + 1) / 2;  // 0 = full down, 1 = full up
       var eiX = W - 22, eiTop = 50, eiH = 80;
       ctx.fillStyle = bgSoft;
       ctx.strokeStyle = borderColor;
@@ -766,6 +802,198 @@
   }
 
   /* ================================================================
+     Shared sub-canvas plot utilities
+  ================================================================ */
+
+  // Draw a scrolling multi-line time-series on a canvas element.
+  // series: [{label, color, data}]  data: rolling array of numbers
+  // limitVal: optional ± dotted boundary (in the same units as data)
+  // yLabel: optional y-axis title string
+  function drawContribPlot(canvas, series, limitVal, yLabel) {
+    if (!canvas) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
+    if (!W) W = 400;
+    canvas.width  = Math.round(W * dpr);
+    canvas.height = Math.round(canvas.clientHeight * dpr || 120 * dpr);
+    var H = canvas.clientHeight || 120;
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+      (!document.documentElement.getAttribute('data-theme') &&
+       window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    var bg      = cssVar('--bg');
+    var border  = cssVar('--border');
+    var muted   = cssVar('--text-muted');
+    var mono    = cssVar('--mono');
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Find y-range across all series
+    var allVals = [];
+    series.forEach(function(s) { allVals = allVals.concat(s.data); });
+    if (allVals.length === 0) { ctx.fillStyle = muted; ctx.font = '11px ' + mono; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('no data yet', W/2, H/2); return; }
+    var yMax = Math.max(Math.abs(limitVal || 0), Math.max.apply(null, allVals.map(Math.abs)) || 1) * 1.1;
+
+    var PAD_L = 38, PAD_R = 8, PAD_T = 8, PAD_B = 18;
+    var pw = W - PAD_L - PAD_R, ph = H - PAD_T - PAD_B;
+
+    function yPx(v) { return PAD_T + ph * (1 - (v + yMax) / (2 * yMax)); }
+    var n = Math.max.apply(null, series.map(function(s) { return s.data.length; }));
+
+    // Zero axis
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(PAD_L, yPx(0)); ctx.lineTo(PAD_L + pw, yPx(0)); ctx.stroke();
+
+    // Limit lines
+    if (limitVal) {
+      ctx.strokeStyle = isDark ? 'rgba(255,180,80,0.35)' : 'rgba(200,140,40,0.45)';
+      ctx.lineWidth = 1;
+      [limitVal, -limitVal].forEach(function(lv) {
+        ctx.beginPath(); ctx.moveTo(PAD_L, yPx(lv)); ctx.lineTo(PAD_L + pw, yPx(lv)); ctx.stroke();
+      });
+    }
+    ctx.setLineDash([]);
+
+    // Series lines
+    series.forEach(function(s) {
+      if (!s.data.length) return;
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      var xStep = pw / Math.max(n - 1, 1);
+      for (var i = 0; i < s.data.length; i++) {
+        var xp = PAD_L + (i - s.data.length + n) * xStep;
+        var yp = yPx(s.data[i]);
+        if (i === 0) ctx.moveTo(xp, yp); else ctx.lineTo(xp, yp);
+      }
+      ctx.stroke();
+    });
+
+    // Y axis labels
+    ctx.fillStyle = muted;
+    ctx.font = '9px ' + mono;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(yMax.toFixed(1), PAD_L - 3, PAD_T);
+    ctx.fillText((-yMax).toFixed(1), PAD_L - 3, PAD_T + ph);
+    ctx.fillText('0', PAD_L - 3, yPx(0));
+    if (yLabel) {
+      ctx.save(); ctx.translate(10, H / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.font = '9px ' + mono;
+      ctx.fillText(yLabel, 0, 0);
+      ctx.restore();
+    }
+
+    // Legend (bottom row)
+    var lx = PAD_L;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.font = '9px ' + mono;
+    series.forEach(function(s) {
+      ctx.fillStyle = s.color;
+      ctx.fillRect(lx, H - PAD_B + 4, 12, 3);
+      ctx.fillStyle = muted;
+      ctx.fillText(s.label, lx + 14, H - 2);
+      lx += ctx.measureText(s.label).width + 22;
+    });
+    if (limitVal) {
+      ctx.fillStyle = isDark ? 'rgba(255,180,80,0.7)' : 'rgba(200,140,40,0.8)';
+      ctx.fillText('±' + limitVal.toFixed(0) + ' limit', lx, H - 2);
+    }
+  }
+
+  // Draw a state history plot showing h, V, alpha, gamma over time.
+  // stateHist: {h[], V[], alpha_deg[], gamma_deg[]}
+  function drawStatePlot(canvas, stateHist) {
+    if (!canvas) return;
+    var SERIES = [
+      { key: 'h',         label: 'h(m)',    color: cssVar('--accent') },
+      { key: 'V',         label: 'V(m/s)',  color: '#5aafff' },
+      { key: 'alpha_deg', label: 'α(°)',    color: '#f0a040' },
+      { key: 'gamma_deg', label: 'γ(°)',    color: '#72c472' }
+    ];
+    var series = SERIES.map(function(s) { return { label: s.label, color: s.color, data: stateHist[s.key] || [] }; });
+    // Use independent y-scales: normalise each to [-1,1] in a shared space isn't ideal;
+    // instead overlay each on its own sub-row within the canvas.
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
+    if (!W) W = 400;
+    canvas.width  = Math.round(W * dpr);
+    canvas.height = Math.round(canvas.clientHeight * dpr || 150 * dpr);
+    var H = canvas.clientHeight || 150;
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+      (!document.documentElement.getAttribute('data-theme') &&
+       window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+    var bg     = cssVar('--bg');
+    var border = cssVar('--border');
+    var muted  = cssVar('--text-muted');
+    var mono   = cssVar('--mono');
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    var n = 0;
+    series.forEach(function(s) { n = Math.max(n, s.data.length); });
+    if (!n) {
+      ctx.fillStyle = muted; ctx.font = '11px ' + mono; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('no data yet', W/2, H/2); return;
+    }
+
+    var PAD_L = 38, PAD_R = 8, PAD_T = 6, PAD_B = 18;
+    var rowH = (H - PAD_T - PAD_B) / series.length;
+    var pw = W - PAD_L - PAD_R;
+
+    series.forEach(function(s, si) {
+      var yTop = PAD_T + si * rowH;
+      var vals = s.data;
+      if (!vals.length) return;
+      var vMin = Math.min.apply(null, vals), vMax = Math.max.apply(null, vals);
+      var vRange = vMax - vMin;
+      if (vRange < 0.01) vRange = 1;
+      var vMid = (vMin + vMax) / 2;
+
+      function yPx(v) { return yTop + rowH * (0.9 - 0.8 * (v - vMid) / (vRange * 0.5)); }
+
+      // Row background separator
+      if (si > 0) {
+        ctx.strokeStyle = border; ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.moveTo(PAD_L, yTop); ctx.lineTo(PAD_L + pw, yTop); ctx.stroke();
+      }
+      // Zero / mid line
+      ctx.strokeStyle = border; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(PAD_L, yPx(vMid)); ctx.lineTo(PAD_L + pw, yPx(vMid)); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Data line
+      ctx.strokeStyle = s.color; ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      var xStep = pw / Math.max(n - 1, 1);
+      for (var i = 0; i < vals.length; i++) {
+        var xp = PAD_L + (i - vals.length + n) * xStep;
+        var yp = yPx(vals[i]);
+        if (i === 0) ctx.moveTo(xp, yp); else ctx.lineTo(xp, yp);
+      }
+      ctx.stroke();
+
+      // Label + current value
+      ctx.fillStyle = s.color; ctx.font = 'bold 9px ' + mono;
+      ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      var cur = vals[vals.length - 1];
+      ctx.fillText(s.label + ' ' + cur.toFixed(1), PAD_L - 2, yTop + 2);
+    });
+  }
+
+  /* ================================================================
      Demo 2 — Flight Simulator
   ================================================================ */
   (function flightDemo() {
@@ -777,7 +1005,11 @@
     var state, simT, de_rad, pidState, simStatus;
     var mode = 'manual';
     var errRing = [];
-    var RING = 1200;  // 10 s @ 120 Hz effective
+    var RING = 1200;
+    var CHIST = 300;
+    var pidContrib = { p: [], i: [], d: [], total: [] };
+    var stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+    var resetTimer = null;
 
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
@@ -786,10 +1018,16 @@
       de_rad = TRIM.de;
       pidState = { intE: 0, prevE: 0 };
       errRing = [];
+      pidContrib = { p: [], i: [], d: [], total: [] };
+      stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
       simStatus = 'ok';
+      // Sync elevator slider to trim deflection
+      if (elevSlider) {
+        elevSlider.value = rad2deg(TRIM.de).toFixed(1);
+        if (elevVal) elevVal.textContent = rad2deg(TRIM.de).toFixed(1) + '°';
+      }
       renderer.resetViewport();
     }
-    resetSim();
 
     // DOM
     var manualBtn  = document.getElementById('fl-manual-btn');
@@ -806,10 +1044,24 @@
     var kdValEl    = document.getElementById('fl-kd-val');
     var scoreEl    = document.getElementById('fl-score');
     var resetBtn   = document.getElementById('fl-reset');
+    var flStatePlot = document.getElementById('fl-state-plot');
+    var flPidPlot   = document.getElementById('fl-pid-plot');
+
+    resetSim();
 
     if (elevSlider) elevSlider.addEventListener('input', function () {
       de_rad = deg2rad(parseFloat(elevSlider.value));
-      elevVal.textContent = parseFloat(elevSlider.value).toFixed(1) + '°';
+      if (elevVal) elevVal.textContent = parseFloat(elevSlider.value).toFixed(1) + '°';
+    });
+
+    // Keyboard elevator control (flight sim manual mode)
+    document.addEventListener('keydown', function (e) {
+      var sec = document.getElementById('sec-flight');
+      if (!sec || !sec.classList.contains('active')) return;
+      if (mode !== 'manual') return;
+      var step = deg2rad(0.5);
+      if (e.key === 'ArrowUp')   { e.preventDefault(); de_rad = clamp(de_rad + step, deg2rad(-25), deg2rad(25)); if (elevSlider) { elevSlider.value = rad2deg(de_rad).toFixed(1); if (elevVal) elevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; } }
+      if (e.key === 'ArrowDown') { e.preventDefault(); de_rad = clamp(de_rad - step, deg2rad(-25), deg2rad(25)); if (elevSlider) { elevSlider.value = rad2deg(de_rad).toFixed(1); if (elevVal) elevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; } }
     });
 
     function syncPidVals() {
@@ -828,32 +1080,33 @@
       if (manualCtrl) manualCtrl.style.display = m === 'manual' ? '' : 'none';
       if (pidCtrl)    pidCtrl.style.display    = m === 'pid'    ? 'flex' : 'none';
       pidState = { intE: 0, prevE: 0 };
+      pidContrib = { p: [], i: [], d: [], total: [] };
     }
     if (manualBtn) manualBtn.addEventListener('click', function () { setMode('manual'); });
     if (pidBtn)    pidBtn.addEventListener('click', function () { setMode('pid'); });
     if (resetBtn)  resetBtn.addEventListener('click', resetSim);
 
-    var REF_OMEGA = 0.15, REF_AMP = 100, H_CENTER = 300;
     var PID_DT = FLIGHT_DT;
-
-    var resetTimer = null;
-
-    var ELEV_MAX_RATE = deg2rad(40) * FLIGHT_DT; // 40°/sec rate limit per physics step
+    var ELEV_MAX_RATE = deg2rad(40) * FLIGHT_DT;
+    var ELEV_MAX_RAD  = deg2rad(25);   // single source — matches slider min/max
 
     function step() {
       if (!document.getElementById('sec-flight').classList.contains('active')) return;
       if (simStatus !== 'ok') return;
+      var P_t = 0, I_t = 0, D_t = 0, total_deg = 0;
       for (var i = 0; i < 5; i++) {
         var de_target = de_rad;
         if (mode === 'pid') {
           var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
           var e = hRef - state[4];
           pidState.intE = clamp(pidState.intE + e * PID_DT, -200, 200);
-          var de_cmd = parseFloat(kpSlider.value) * e
-            + parseFloat(kiSlider.value) * pidState.intE
-            + parseFloat(kdSlider.value) * (e - pidState.prevE) / PID_DT;
+          P_t = parseFloat(kpSlider.value) * e;
+          I_t = parseFloat(kiSlider.value) * pidState.intE;
+          D_t = parseFloat(kdSlider.value) * (e - pidState.prevE) / PID_DT;
           pidState.prevE = e;
-          de_target = clamp(deg2rad(de_cmd), deg2rad(-15), deg2rad(15));
+          var de_cmd = P_t + I_t + D_t;
+          total_deg = de_cmd;
+          de_target = clamp(deg2rad(de_cmd), -ELEV_MAX_RAD, ELEV_MAX_RAD);
         }
         de_rad += clamp(de_target - de_rad, -ELEV_MAX_RATE, ELEV_MAX_RATE);
         state = rk4(state, simT, FLIGHT_DT, function (t, s) {
@@ -866,11 +1119,20 @@
           if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
           return;
         }
-        var refH = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
-        var err = refH - state[4];
-        errRing.push(err * err);
+        var refH2 = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+        errRing.push(Math.pow(refH2 - state[4], 2));
         if (errRing.length > RING) errRing.shift();
       }
+      // Record PID contributions (in degrees for legibility)
+      if (mode === 'pid') {
+        pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(total_deg);
+        if (pidContrib.p.length > CHIST) { pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift(); }
+      }
+      // Record state history
+      stateHist.h.push(state[4]); stateHist.V.push(state[0]);
+      stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
+      if (stateHist.h.length > CHIST) { stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift(); }
+
       // Update UI telemetry
       var tH = document.getElementById('fl-t-h');
       var tV = document.getElementById('fl-t-v');
@@ -890,6 +1152,13 @@
 
     function loop() {
       renderer.render(state, simT, de_rad, simStatus);
+      drawStatePlot(flStatePlot, stateHist);
+      drawContribPlot(flPidPlot, [
+        { label: 'P',     color: cssVar('--accent'), data: pidContrib.p },
+        { label: 'I',     color: '#f0a040',          data: pidContrib.i },
+        { label: 'D',     color: '#72c472',          data: pidContrib.d },
+        { label: 'Total', color: '#c0d0e8',          data: pidContrib.total }
+      ], rad2deg(ELEV_MAX_RAD), 'δe (°)');
       requestAnimationFrame(loop);
     }
     loop();
@@ -905,19 +1174,20 @@
 
     var state, simT, de_rad;
     var recording = false;
-    var dataBuf = [];   // [{x:[ΔV,Δγ,Δα,Δq], u:Δde, xprev}]
+    var dataBuf = [];
     var lqrActive = false;
-    var lqrK = null;   // [kV, kgamma, kalpha, kq]
-    var errRingBefore = null;
+    var lqrK = null;
     var errRing = [];
     var RING = 1200;
+    var CHIST = 300;
     var pidState = { intE: 0, prevE: 0 };
     var scoreBeforeVal = null;
-
-    var REF_OMEGA = 0.15, REF_AMP = 100, H_CENTER = 300;
+    var lqrContrib = { kv: [], kg: [], ka: [], kq: [], total: [] };
+    var stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
 
     var simStatus3 = 'ok';
     var resetTimer3 = null;
+    var ELEV_MAX_RAD3 = deg2rad(25);
 
     function resetSim() {
       if (resetTimer3) { clearTimeout(resetTimer3); resetTimer3 = null; }
@@ -929,36 +1199,59 @@
       lqrActive = false;
       lqrK = null;
       errRing = [];
-      errRingBefore = null;
       scoreBeforeVal = null;
       pidState = { intE: 0, prevE: 0 };
+      lqrContrib = { kv: [], kg: [], ka: [], kq: [], total: [] };
+      stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
       simStatus3 = 'ok';
+      // Sync elevator slider to trim
+      if (elevSlider) {
+        elevSlider.value = rad2deg(TRIM.de).toFixed(1);
+        if (elevVal) elevVal.textContent = rad2deg(TRIM.de).toFixed(1) + '°';
+      }
       renderer.resetViewport();
       updateUI();
     }
-    resetSim();
 
-    var recordBtn  = document.getElementById('sid-record-btn');
-    var identBtn   = document.getElementById('sid-identify-btn');
-    var lqrBtn     = document.getElementById('sid-lqr-btn');
-    var resetBtn   = document.getElementById('sid-reset');
-    var elevSlider = document.getElementById('sid-elev');
-    var elevVal    = document.getElementById('sid-elev-val');
-    var barEl      = document.getElementById('sid-bar');
-    var countEl    = document.getElementById('sid-count');
-    var matricesEl = document.getElementById('sid-matrices');
-    var aDisplay   = document.getElementById('sid-A-display');
-    var bDisplay   = document.getElementById('sid-B-display');
-    var lqrSection = document.getElementById('sid-lqr-section');
-    var kDisplay   = document.getElementById('sid-K-display');
-    var scoreCompEl = document.getElementById('sid-score-compare');
-    var scoreEl    = document.getElementById('sid-score');
+    var recordBtn    = document.getElementById('sid-record-btn');
+    var identBtn     = document.getElementById('sid-identify-btn');
+    var lqrBtn       = document.getElementById('sid-lqr-btn');
+    var analyticBtn  = document.getElementById('sid-analytic-lqr-btn');
+    var resetBtn     = document.getElementById('sid-reset');
+    var elevSlider   = document.getElementById('sid-elev');
+    var elevVal      = document.getElementById('sid-elev-val');
+    var barEl        = document.getElementById('sid-bar');
+    var countEl      = document.getElementById('sid-count');
+    var matricesEl   = document.getElementById('sid-matrices');
+    var aDisplay     = document.getElementById('sid-A-display');
+    var bDisplay     = document.getElementById('sid-B-display');
+    var lqrSection   = document.getElementById('sid-lqr-section');
+    var kDisplay     = document.getElementById('sid-K-display');
+    var scoreCompEl  = document.getElementById('sid-score-compare');
+    var scoreEl      = document.getElementById('sid-score');
+    var sidStatePlot = document.getElementById('sid-state-plot');
+    var sidPidPlot   = document.getElementById('sid-pid-plot');
     var NEEDED = 300;
+
+    resetSim();
 
     if (elevSlider) elevSlider.addEventListener('input', function () {
       if (!lqrActive) de_rad = deg2rad(parseFloat(elevSlider.value));
-      elevVal.textContent = parseFloat(elevSlider.value).toFixed(1) + '°';
+      if (elevVal) elevVal.textContent = parseFloat(elevSlider.value).toFixed(1) + '°';
     });
+
+    // Q/R weight slider display
+    (function() {
+      var pairs = [
+        ['sid-qg', 'sid-qg-val', 0], ['sid-qa', 'sid-qa-val', 2],
+        ['sid-qv', 'sid-qv-val', 3], ['sid-r',  'sid-r-val',  1]
+      ];
+      pairs.forEach(function(p) {
+        var sl = document.getElementById(p[0]), vl = document.getElementById(p[1]);
+        if (!sl || !vl) return;
+        sl.addEventListener('input', function() { vl.textContent = parseFloat(sl.value).toFixed(p[2]); });
+      });
+    })();
 
     function updateUI() {
       if (recordBtn) {
@@ -967,45 +1260,54 @@
       }
       var n = dataBuf.length;
       var frac = Math.min(n / NEEDED, 1);
-      if (barEl)   barEl.style.width = (frac * 100).toFixed(1) + '%';
-      if (countEl) countEl.textContent = n + ' / ' + NEEDED + ' samples';
+      if (barEl)    barEl.style.width = (frac * 100).toFixed(1) + '%';
+      if (countEl)  countEl.textContent = n + ' / ' + NEEDED + ' samples';
       if (identBtn) identBtn.disabled = n < NEEDED;
     }
 
-    if (recordBtn) recordBtn.addEventListener('click', function () {
-      recording = !recording;
-      updateUI();
-    });
+    if (recordBtn) recordBtn.addEventListener('click', function () { recording = !recording; updateUI(); });
+    if (resetBtn)  resetBtn.addEventListener('click', resetSim);
 
-    if (resetBtn) resetBtn.addEventListener('click', resetSim);
-
-    // ---- System identification ----
-    if (identBtn) identBtn.addEventListener('click', function () {
-      var result = runSystemID();
-      if (!result) { alert('Not enough data — please collect more samples.'); return; }
-      if (aDisplay) aDisplay.textContent = formatMatrix(result.A, 4, 4);
-      if (bDisplay) bDisplay.textContent = formatMatrix([result.B[0], result.B[1], result.B[2], result.B[3]], 4, 1);
-      if (matricesEl) matricesEl.style.display = '';
-      if (lqrBtn) lqrBtn.disabled = false;
-      window._sidResult = result;  // store for LQR step
-      // save current RMSE as "before"
-      if (errRing.length > 0) {
-        scoreBeforeVal = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
-      }
-    });
-
-    // ---- LQR ----
-    if (lqrBtn) lqrBtn.addEventListener('click', function () {
-      if (!window._sidResult) return;
-      var K = runLQR(window._sidResult.A, window._sidResult.B);
-      if (!K) { alert('DARE did not converge — try collecting more diverse flight data.'); return; }
+    function activateLQR(K) {
       lqrK = K;
       lqrActive = true;
       recording = false;
       updateUI();
       if (kDisplay) kDisplay.textContent = 'K = [' + K.map(function (v) { return v.toFixed(4); }).join(', ') + ']';
       if (lqrSection) lqrSection.style.display = '';
-      errRing = [];  // reset score window
+      if (errRing.length > 0) scoreBeforeVal = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length);
+      errRing = [];
+      lqrContrib = { kv: [], kg: [], ka: [], kq: [], total: [] };
+    }
+
+    // ---- System identification ----
+    if (identBtn) identBtn.addEventListener('click', function () {
+      var result = runSystemID();
+      if (!result) { alert('Not enough data.'); return; }
+      if (aDisplay) aDisplay.textContent = formatMatrix(result.A, 4, 4);
+      if (bDisplay) bDisplay.textContent = formatMatrix([result.B[0], result.B[1], result.B[2], result.B[3]], 4, 1);
+      if (matricesEl) matricesEl.style.display = '';
+      if (lqrBtn) lqrBtn.disabled = false;
+      window._sidResult = result;
+    });
+
+    // ---- LQR from system-ID data ----
+    if (lqrBtn) lqrBtn.addEventListener('click', function () {
+      if (!window._sidResult) return;
+      var K = runLQR(window._sidResult.A, window._sidResult.B);
+      if (!K) { alert('DARE did not converge — collect more diverse flight data.'); return; }
+      activateLQR(K);
+    });
+
+    // ---- Analytic LQR (exact Jacobian, no data needed) ----
+    if (analyticBtn) analyticBtn.addEventListener('click', function () {
+      var K = computeAnalyticLQR();
+      if (!K) { alert('Analytic LQR failed.'); return; }
+      // Show analytic A, B matrices if not yet displayed
+      if (matricesEl) matricesEl.style.display = '';
+      if (aDisplay)   aDisplay.textContent = '(computed from numerical Jacobian at trim)';
+      if (bDisplay)   bDisplay.textContent = '';
+      activateLQR(K);
     });
 
     var ELEV_MAX_RATE3 = deg2rad(40) * FLIGHT_DT;
@@ -1016,12 +1318,17 @@
       if (simStatus3 !== 'ok') return;
 
       var prevState = state.slice();
+      var kv_t = 0, kg_t = 0, ka_t = 0, kq_t = 0, du_t = 0;
 
       for (var i = 0; i < 5; i++) {
         if (lqrActive && lqrK) {
-          var dx = [state[0] - TRIM.V, state[1] - TRIM.gamma, state[2] - TRIM.alpha, state[3] - TRIM.q];
-          var du = -(lqrK[0]*dx[0] + lqrK[1]*dx[1] + lqrK[2]*dx[2] + lqrK[3]*dx[3]);
-          var de_target3 = clamp(TRIM.de + du, deg2rad(-15), deg2rad(15));
+          var dx = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
+          kv_t = -lqrK[0]*dx[0]; kg_t = -lqrK[1]*dx[1]; ka_t = -lqrK[2]*dx[2]; kq_t = -lqrK[3]*dx[3];
+          du_t = kv_t + kg_t + ka_t + kq_t;
+          // Outer altitude loop to track the sinusoid
+          var hRef3 = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+          var h_err3 = hRef3 - state[4];
+          var de_target3 = clamp(TRIM.de + du_t - 0.003 * (-h_err3), -ELEV_MAX_RAD3, ELEV_MAX_RAD3);
           de_rad += clamp(de_target3 - de_rad, -ELEV_MAX_RATE3, ELEV_MAX_RATE3);
         }
         state = rk4(state, simT, FLIGHT_DT, function (t, s) {
@@ -1037,36 +1344,39 @@
         }
       }
 
-      // Record data (every 10 physics steps = 0.05 s)
+      // Record system-ID data
       if (recording) {
-        var dx_trim = [
-          state[0] - TRIM.V,
-          state[1] - TRIM.gamma,
-          state[2] - TRIM.alpha,
-          state[3] - TRIM.q
-        ];
+        var dx_trim = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
         var du_trim = de_rad - TRIM.de;
-        var dxprev = [
-          prevState[0] - TRIM.V,
-          prevState[1] - TRIM.gamma,
-          prevState[2] - TRIM.alpha,
-          prevState[3] - TRIM.q
-        ];
+        var dxprev  = [prevState[0]-TRIM.V, prevState[1]-TRIM.gamma, prevState[2]-TRIM.alpha, prevState[3]-TRIM.q];
         dataBuf.push({ x: dx_trim, u: du_trim, xprev: dxprev });
         updateUI();
       }
 
+      // LQR contribution history
+      if (lqrActive) {
+        lqrContrib.kv.push(rad2deg(kv_t)); lqrContrib.kg.push(rad2deg(kg_t));
+        lqrContrib.ka.push(rad2deg(ka_t)); lqrContrib.kq.push(rad2deg(kq_t));
+        lqrContrib.total.push(rad2deg(du_t));
+        if (lqrContrib.kv.length > CHIST) {
+          lqrContrib.kv.shift(); lqrContrib.kg.shift(); lqrContrib.ka.shift(); lqrContrib.kq.shift(); lqrContrib.total.shift();
+        }
+      }
+
+      // State history
+      stateHist.h.push(state[4]); stateHist.V.push(state[0]);
+      stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
+      if (stateHist.h.length > CHIST) { stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift(); }
+
       // Score
       var refH = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
-      var err = refH - state[4];
-      errRing.push(err * err);
+      errRing.push(Math.pow(refH - state[4], 2));
       if (errRing.length > RING) errRing.shift();
       if (scoreEl && errRing.length > 0) {
-        var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
+        var rmse = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length);
         scoreEl.textContent = rmse.toFixed(1);
         if (scoreBeforeVal !== null && lqrActive && scoreCompEl) {
-          scoreCompEl.textContent =
-            'Before: ' + scoreBeforeVal.toFixed(1) + ' m\nAfter:  ' + rmse.toFixed(1) + ' m';
+          scoreCompEl.textContent = 'Before: ' + scoreBeforeVal.toFixed(1) + ' m\nAfter:  ' + rmse.toFixed(1) + ' m';
         }
       }
     }
@@ -1075,6 +1385,14 @@
 
     function loop() {
       renderer.render(state, simT, de_rad, simStatus3);
+      drawStatePlot(sidStatePlot, stateHist);
+      drawContribPlot(sidPidPlot, [
+        { label: 'Kᵛ·ΔV', color: cssVar('--accent'), data: lqrContrib.kv },
+        { label: 'Kγ·Δγ', color: '#5aafff',    data: lqrContrib.kg },
+        { label: 'Kα·Δα', color: '#f0a040',    data: lqrContrib.ka },
+        { label: 'Kᵱ·Δq',      color: '#72c472',    data: lqrContrib.kq },
+        { label: 'Total',                      color: '#c0d0e8',    data: lqrContrib.total }
+      ], rad2deg(ELEV_MAX_RAD3), 'δe (°)');
       requestAnimationFrame(loop);
     }
     loop();
@@ -1125,16 +1443,45 @@
       return { A: At, B: B };
     }
 
+    /* ---- Analytic LQR: numerical Jacobian at trim ---- */
+    function computeAnalyticLQR() {
+      var eps = 1e-5;
+      var x0 = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, 0];
+      var u0 = TRIM.de;
+      function f4(x6, u) { return flightDerivatives(0, x6, u).slice(0, 4); }
+      var cols = [];
+      for (var jj = 0; jj < 4; jj++) {
+        var xp = x0.slice(); xp[jj] += eps;
+        var xm = x0.slice(); xm[jj] -= eps;
+        var fp = f4(xp, u0), fm = f4(xm, u0);
+        cols.push(fp.map(function(v, i) { return (v - fm[i]) / (2 * eps); }));
+      }
+      var Aj = [[],[],[],[]];
+      for (var jj = 0; jj < 4; jj++) for (var ii = 0; ii < 4; ii++) Aj[ii].push(cols[jj][ii]);
+      var fp2 = f4(x0, u0 + eps), fm2 = f4(x0, u0 - eps);
+      var Bj = fp2.map(function(v, i) { return (v - fm2[i]) / (2 * eps); });
+      return runLQR(Aj, Bj);
+    }
+
     /* ---- LQR via DARE ---- */
+    function getLQRWeights() {
+      var qv = parseFloat((document.getElementById('sid-qv') || {value:'0.01'}).value);
+      var qg = parseFloat((document.getElementById('sid-qg') || {value:'100'}).value);
+      var qa = parseFloat((document.getElementById('sid-qa') || {value:'1'}).value);
+      var R  = parseFloat((document.getElementById('sid-r')  || {value:'1.0'}).value);
+      return { Q: [[qv,0,0,0],[0,qg,0,0],[0,0,qa,0],[0,0,0,0.1]], R: R };
+    }
+
     function runLQR(A, B) {
       // Discretise: Ad = I + dt*A,  Bd = dt*B
       var dt = 0.05;
       var Ad = mat4add(mat4eye(), mat4scale(A, dt));
       var Bd = B.map(function (v) { return v * dt; });
 
-      // Q, R weights
-      var Q = [[0.01,0,0,0],[0,100,0,0],[0,0,1,0],[0,0,0,0.1]];
-      var R = 1.0;
+      // Q, R weights from sliders
+      var w = getLQRWeights();
+      var Q = w.Q;
+      var R = w.R;
 
       var P = mat4copy(Q);
       for (var iter = 0; iter < 2000; iter++) {
@@ -1271,19 +1618,26 @@
     if (!canvas) return;
     var renderer = makeFlightRenderer(canvas);
 
-    var REF_OMEGA = 0.15, REF_AMP = 100, H_CENTER = 300;
     var state, simT, de_rad, simStatus, resetTimer;
     var errRing = [], RING = 1200;
+    var CHIST = 300;
     var nnIntErr = 0;
+    var ELEV_MAX_RAD_NN = deg2rad(25);
+    var lastNNCache = null;
+    var nnOutputHist = { out_deg: [], err_deg: [] };
+    var stateHist    = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
 
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
       state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
       simT = 0; de_rad = TRIM.de; simStatus = 'ok'; nnIntErr = 0;
       errRing = [];
+      nnOutputHist = { out_deg: [], err_deg: [] };
+      stateHist    = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+      lastNNCache  = null;
+      if (nnElevSlider) { nnElevSlider.value = rad2deg(TRIM.de).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(TRIM.de).toFixed(1) + '°'; }
       renderer.resetViewport();
     }
-    resetSim();
 
     /* ── Compact 4×4 matrix helpers ──────────────────────────── */
     function m4eye() { return [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]; }
@@ -1551,6 +1905,36 @@
     var trainBtn      = document.getElementById('nn-train-btn');
     var scoreEl       = document.getElementById('nn-score');
     var resetBtn      = document.getElementById('nn-reset');
+    var nnElevSlider  = document.getElementById('nn-elev');
+    var nnElevVal     = document.getElementById('nn-elev-val');
+    var nnStatePlot   = document.getElementById('nn-state-plot');
+    var nnPidPlot     = document.getElementById('nn-pid-plot');
+    var nnNetCanvas   = document.getElementById('nn-net-canvas');
+
+    resetSim();
+
+    if (nnElevSlider) nnElevSlider.addEventListener('input', function() {
+      if (!nnActive) { de_rad = deg2rad(parseFloat(nnElevSlider.value)); }
+      if (nnElevVal) nnElevVal.textContent = parseFloat(nnElevSlider.value).toFixed(1) + '°';
+    });
+
+    // Keyboard elevator control (manual mode only)
+    document.addEventListener('keydown', function(e) {
+      var sec = document.getElementById('sec-nn');
+      if (!sec || !sec.classList.contains('active')) return;
+      if (nnActive) return;
+      var step = deg2rad(0.5);
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        de_rad = clamp(de_rad + step, -ELEV_MAX_RAD_NN, ELEV_MAX_RAD_NN);
+        if (nnElevSlider) { nnElevSlider.value = rad2deg(de_rad).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; }
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        de_rad = clamp(de_rad - step, -ELEV_MAX_RAD_NN, ELEV_MAX_RAD_NN);
+        if (nnElevSlider) { nnElevSlider.value = rad2deg(de_rad).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; }
+      }
+    });
 
     function archChanged() {
       nLayers  = parseInt(layersSlider.value);
@@ -1598,21 +1982,22 @@
     if (resetBtn) resetBtn.addEventListener('click', resetSim);
 
     /* ── Simulation step ─────────────────────────────────────── */
+    var ELEV_MAX_RATE_NN = deg2rad(40) * FLIGHT_DT;
     setInterval(function() {
       var sec = document.getElementById('sec-nn');
       if (!sec || !sec.classList.contains('active')) return;
       if (simStatus !== 'ok') return;
 
-      var ELEV_MAX_RATE_NN = deg2rad(40) * FLIGHT_DT;
       for (var i = 0; i < 5; i++) {
         var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
 
         if (nnActive && net) {
           var dx = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
           nnIntErr = clamp(nnIntErr + (state[4]-hRef) * FLIGHT_DT, -1000, 1000);
-          var cache = fwdNet(net, [dx[0], dx[1], dx[2], dx[3], state[4]-hRef, nnIntErr]);
-          var de_nn_target = clamp(cache.out * deg2rad(15), deg2rad(-15), deg2rad(15));
+          lastNNCache = fwdNet(net, [dx[0], dx[1], dx[2], dx[3], state[4]-hRef, nnIntErr]);
+          var de_nn_target = clamp(lastNNCache.out * ELEV_MAX_RAD_NN, -ELEV_MAX_RAD_NN, ELEV_MAX_RAD_NN);
           de_rad += clamp(de_nn_target - de_rad, -ELEV_MAX_RATE_NN, ELEV_MAX_RATE_NN);
+          if (nnElevSlider) { nnElevSlider.value = rad2deg(de_rad).toFixed(1); if (nnElevVal) nnElevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; }
         }
 
         state = rk4(state, simT, FLIGHT_DT, function(t, s) {
@@ -1631,15 +2016,130 @@
         if (errRing.length > RING) errRing.shift();
       }
 
+      // History
+      var hRef2 = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+      nnOutputHist.out_deg.push(rad2deg(de_rad));
+      nnOutputHist.err_deg.push(hRef2 - state[4]);
+      stateHist.h.push(state[4]); stateHist.V.push(state[0]);
+      stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
+      if (nnOutputHist.out_deg.length > CHIST) { nnOutputHist.out_deg.shift(); nnOutputHist.err_deg.shift(); }
+      if (stateHist.h.length > CHIST) { stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift(); }
+
       if (scoreEl && errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0) / errRing.length);
         scoreEl.textContent = rmse.toFixed(1);
       }
     }, 25);
 
+    /* ── NN architecture visualisation ──────────────────────── */
+    function drawNetViz(canvas, nn, cache, isDark) {
+      if (!canvas || !nn) return;
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
+      if (!W) W = 300;
+      canvas.width  = Math.round(W * dpr);
+      canvas.height = Math.round((canvas.clientHeight || 200) * dpr);
+      var H = canvas.clientHeight || 200;
+      var ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      var bg     = cssVar('--bg');
+      var accent = cssVar('--accent');
+      var muted  = cssVar('--text-muted');
+      var mono   = cssVar('--mono');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+      var sizes  = nn.sizes;
+      var nL     = sizes.length;
+      var MAX_N  = 10;  // max neurons shown per layer
+      var colX   = [];
+      for (var l = 0; l < nL; l++) colX.push(Math.round(W * (l + 0.5) / nL));
+      var INPUT_LABELS  = ['ΔV', 'Δγ', 'Δα', 'Δq', 'ΔH', '∫ΔH'];
+      var OUTPUT_LABELS = ['δe'];
+
+      function nodeY(l, i, n) {
+        var shown = Math.min(n, MAX_N);
+        var gap = Math.min((H - 40) / Math.max(shown - 1, 1), 28);
+        var totalH = (shown - 1) * gap;
+        return (H / 2 - totalH / 2) + i * gap;
+      }
+
+      // Edges
+      for (var l = 0; l < nL - 1; l++) {
+        var ni = sizes[l], no = sizes[l+1];
+        var shownI = Math.min(ni, MAX_N), shownO = Math.min(no, MAX_N);
+        for (var ii = 0; ii < shownI; ii++) {
+          for (var oi = 0; oi < shownO; oi++) {
+            var w = nn.W[l][oi * ni + ii];
+            var alpha = Math.min(Math.abs(w) * 3, 0.5);
+            var col = (w >= 0) ? accent : (isDark ? 'rgba(220,80,80,' : 'rgba(160,40,40,');
+            ctx.strokeStyle = (w >= 0) ? accent.replace(')', ',' + alpha + ')').replace('rgb(', 'rgba(') : col + alpha + ')';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(colX[l], nodeY(l, ii, ni));
+            ctx.lineTo(colX[l+1], nodeY(l+1, oi, no));
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Nodes
+      for (var l = 0; l < nL; l++) {
+        var n = sizes[l];
+        var shown = Math.min(n, MAX_N);
+        for (var ii = 0; ii < shown; ii++) {
+          var cy = nodeY(l, ii, n);
+          var act = (cache && cache.a && cache.a[l]) ? cache.a[l][ii] : 0;
+          // Color: 0 → bg-soft, ±1 → accent / red
+          var t = Math.tanh(act);
+          var r, g, b2;
+          if (isDark) {
+            if (t >= 0) {
+              r = Math.round(30 + t * 80); g = Math.round(30 + t * 140); b2 = Math.round(50 + t * 180);
+            } else {
+              r = Math.round(30 + (-t) * 180); g = Math.round(30); b2 = Math.round(50);
+            }
+          } else {
+            if (t >= 0) {
+              r = Math.round(200 - t * 100); g = Math.round(200 - t * 60); b2 = Math.round(200 + t * 55);
+            } else {
+              r = Math.round(200 + (-t) * 55); g = Math.round(200 - (-t) * 100); b2 = Math.round(200 - (-t) * 100);
+            }
+          }
+          ctx.beginPath();
+          ctx.arc(colX[l], cy, 5, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b2 + ')';
+          ctx.fill();
+          ctx.strokeStyle = muted; ctx.lineWidth = 0.5; ctx.stroke();
+        }
+        if (n > MAX_N) {
+          ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'center';
+          ctx.fillText('⋯', colX[l], nodeY(l, shown - 1, n) + 12);
+        }
+        // Layer labels
+        var lbl = l === 0 ? 'in' : l === nL - 1 ? 'out' : 'h' + l;
+        ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'center';
+        ctx.fillText(lbl + '(' + n + ')', colX[l], H - 4);
+        // Input/output node labels
+        if (l === 0) {
+          var shownL = Math.min(n, INPUT_LABELS.length);
+          for (var ii = 0; ii < shownL; ii++) {
+            ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'right';
+            ctx.fillText(INPUT_LABELS[ii], colX[l] - 8, nodeY(l, ii, n) + 3);
+          }
+        } else if (l === nL - 1) {
+          ctx.fillStyle = muted; ctx.font = '8px ' + mono; ctx.textAlign = 'left';
+          ctx.fillText(OUTPUT_LABELS[0], colX[l] + 8, nodeY(l, 0, n) + 3);
+        }
+      }
+    }
+
     /* ── Render loop ─────────────────────────────────────────── */
     (function loop() {
-      var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (!document.documentElement.getAttribute('data-theme') &&
+         window.matchMedia('(prefers-color-scheme: dark)').matches);
+
       renderer.render(state, simT, de_rad, simStatus, function(ctx, W) {
         if (nnActive) {
           ctx.save();
@@ -1650,6 +2150,12 @@
           ctx.restore();
         }
       });
+      drawStatePlot(nnStatePlot, stateHist);
+      drawContribPlot(nnPidPlot, [
+        { label: 'δe out', color: cssVar('--accent'),  data: nnOutputHist.out_deg },
+        { label: 'h err(m)',   color: '#f0a040',            data: nnOutputHist.err_deg }
+      ], rad2deg(ELEV_MAX_RAD_NN), 'δe (°) / h err (m)');
+      drawNetViz(nnNetCanvas, net, lastNNCache, isDark);
       requestAnimationFrame(loop);
     })();
   })();

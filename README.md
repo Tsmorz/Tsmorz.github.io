@@ -1,7 +1,7 @@
 # tsmorz.github.io
 
 My personal site — projects, photography, and how to reach me.
-Live at **<https://tsmorz.github.io>**.
+Live at **[https://tsmorz.github.io](https://tsmorz.github.io)**.
 
 A small custom Jekyll site: no theme gem, no bundler, no CSS framework. The design is
 `_layouts/`, `assets/css/main.css`, and about 90 lines of vanilla JS.
@@ -10,7 +10,7 @@ A small custom Jekyll site: no theme gem, no bundler, no CSS framework. The desi
 
 Requires Ruby ≥ 2.7 (macOS system Ruby is too old — `brew install ruby@3.3`).
 
-```sh
+```Shell
 script/serve    # http://127.0.0.1:4000, live reload
 script/check    # build + internal link check, same as CI
 ```
