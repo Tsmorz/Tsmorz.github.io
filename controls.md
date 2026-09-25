@@ -7,15 +7,16 @@ permalink: /controls/
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
-    Four interactive demos spanning classical and modern control. Tune a PID controller, fly a
-    nonlinear aircraft, identify the linearized dynamics for LQR synthesis, then train a neural
-    network to imitate the optimal controller entirely from flight data.
+    Five interactive demos spanning classical and modern control. Tune a PID controller, race
+    an AI car with a pure-pursuit path tracker, fly a nonlinear aircraft, identify linearized
+    dynamics for LQR synthesis, then train a neural network to imitate the optimal controller.
   </p>
 </section>
 
 <div class="wrap" style="padding-bottom:3rem">
   <div class="sim-tabs" role="tablist" aria-label="Demo selector">
     <button class="sim-tab active" role="tab" aria-selected="true"  aria-controls="sec-msd"    id="tab-msd"    type="button">PID Tuning</button>
+    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-race"   id="tab-race"   type="button">Race Track</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">System ID / LQR</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-nn"     id="tab-nn"     type="button">Neural Net</button>
@@ -23,7 +24,38 @@ permalink: /controls/
 
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
   <section class="sim-section active" id="sec-msd" role="tabpanel" aria-labelledby="tab-msd">
-    <details class="demo-guide">
+    <div class="sim-layout">
+      <div class="sim-canvas-wrap">
+        <canvas class="sim-canvas" id="msd-canvas" width="720" height="360" aria-label="Mass-spring-damper simulation"></canvas>
+        <canvas id="msd-pid-plot" height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
+      </div>
+      <div class="sim-panel">
+        <h3>PID Gains</h3>
+        <div class="pid-group">
+          <label>K<sub>p</sub> <span id="msd-kp-val">0.0</span></label>
+          <input type="range" id="msd-kp" min="-50" max="50" step="0.5" value="0">
+          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="msd-kp-range" class="range-input" value="50" min="1" step="1"></div>
+        </div>
+        <div class="pid-group">
+          <label>K<sub>i</sub> <span id="msd-ki-val">0.0</span></label>
+          <input type="range" id="msd-ki" min="-20" max="20" step="0.1" value="0">
+          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="msd-ki-range" class="range-input" value="20" min="1" step="1"></div>
+        </div>
+        <div class="pid-group">
+          <label>K<sub>d</sub> <span id="msd-kd-val">0.0</span></label>
+          <input type="range" id="msd-kd" min="-10" max="10" step="0.05" value="0">
+          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="msd-kd-range" class="range-input" value="10" min="1" step="1"></div>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
+        <div class="score-block">
+          <span class="score-value" id="msd-score">&#8212;</span>
+          <span class="score-label">RMSE (m)</span>
+          <div class="score-best" id="msd-best"></div>
+        </div>
+        <button class="sim-btn" id="msd-reset" type="button">Reset</button>
+      </div>
+    </div>
+    <details class="demo-guide" style="margin-top:.6rem">
       <summary>About this demo</summary>
       <p>
         A <strong>PID controller</strong> drives an underdamped mass-spring-damper to track a
@@ -35,39 +67,114 @@ permalink: /controls/
         <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
     </details>
+  </section>
+
+  <!-- ── Demo 1.5: Race Track ───────────────────────────────────── -->
+  <section class="sim-section" id="sec-race" role="tabpanel" aria-labelledby="tab-race">
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="msd-canvas" width="720" height="360" aria-label="Mass-spring-damper simulation"></canvas>
-        <canvas id="msd-pid-plot" height="120" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
+        <canvas class="sim-canvas" id="race-canvas" width="700" height="400" aria-label="F1 race track simulation"></canvas>
       </div>
       <div class="sim-panel">
-        <h3>PID Gains</h3>
+        <h3>Speed</h3>
         <div class="pid-group">
-          <label>K<sub>p</sub> <span id="msd-kp-val">0.0</span></label>
-          <input type="range" id="msd-kp" min="-50" max="50" step="0.5" value="0">
+          <label>Throttle <span id="race-speed-val">50%</span></label>
+          <input type="range" id="race-speed" min="0" max="1" step="0.05" value="0.5">
         </div>
-        <div class="pid-group">
-          <label>K<sub>i</sub> <span id="msd-ki-val">0.0</span></label>
-          <input type="range" id="msd-ki" min="-20" max="20" step="0.1" value="0">
+        <div class="race-steer-btns">
+          <button class="sim-btn race-steer" id="race-left"  type="button">&#8592; Left</button>
+          <button class="sim-btn race-steer" id="race-right" type="button">Right &#8594;</button>
         </div>
-        <div class="pid-group">
-          <label>K<sub>d</sub> <span id="msd-kd-val">0.0</span></label>
-          <input type="range" id="msd-kd" min="-10" max="10" step="0.05" value="0">
+        <p style="font-size:.75rem;color:var(--text-muted);margin:.1rem 0 .4rem">Arrow keys also steer</p>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.4rem 0">
+        <h3>You</h3>
+        <div class="telemetry">
+          <span class="t-key">Lap</span>  <span class="t-val" id="race-lap-you">0</span>
+          <span class="t-key">Last</span> <span class="t-val" id="race-last-you">&#8212;</span>
+          <span class="t-key">Best</span> <span class="t-val" id="race-best-you">&#8212;</span>
+          <span class="t-key">CTE</span>  <span class="t-val" id="race-cte">&#8212;</span>
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
-        <div class="score-block">
-          <span class="score-value" id="msd-score">&#8212;</span>
-          <span class="score-label">RMSE (m)</span>
-          <div class="score-best" id="msd-best"></div>
+        <h3>AI</h3>
+        <div class="telemetry">
+          <span class="t-key">Lap</span>  <span class="t-val" id="race-lap-ai">0</span>
+          <span class="t-key">Last</span> <span class="t-val" id="race-last-ai">&#8212;</span>
+          <span class="t-key">Best</span> <span class="t-val" id="race-best-ai">&#8212;</span>
         </div>
-        <button class="sim-btn" id="msd-reset" type="button">Reset</button>
+        <div class="score-block" style="padding-top:.2rem">
+          <span class="score-value" id="race-score">&#8212;</span>
+          <span class="score-label">CTE (px)</span>
+        </div>
+        <button class="sim-btn" id="race-reset" type="button">Reset</button>
       </div>
     </div>
+    <details class="demo-guide" style="margin-top:.6rem">
+      <summary>About this demo</summary>
+      <p>
+        The dashed line is the <strong>reference path</strong> (the ideal racing line). The red AI car
+        follows it with a <strong>pure-pursuit controller</strong> &#8212; a classical path-following
+        algorithm that steers toward a look-ahead point a fixed distance ahead on the reference.
+        Use &#8592;/&#8594; arrow keys (or the buttons) to steer your car and try to beat the AI by
+        staying on the dashed reference. <strong>Cross-track error (CTE)</strong> measures how far
+        your car strays from the reference at each moment. &#8594;
+        <a href="https://en.wikipedia.org/wiki/Pure_pursuit" target="_blank" rel="noopener">Pure pursuit &#8212; Wikipedia</a>
+      </p>
+    </details>
   </section>
 
   <!-- ── Demo 2: Flight Sim ──────────────────────────────────────── -->
   <section class="sim-section" id="sec-flight" role="tabpanel" aria-labelledby="tab-flight">
-    <details class="demo-guide">
+    <div class="sim-layout">
+      <div class="sim-canvas-wrap">
+        <canvas class="sim-canvas" id="flight-canvas" width="720" height="380" aria-label="2D flight simulator"></canvas>
+        <canvas id="fl-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history"></canvas>
+        <canvas id="fl-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
+      </div>
+      <div class="sim-panel">
+        <h3>Mode</h3>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="fl-manual-btn" type="button">Manual</button>
+          <button class="mode-btn"        id="fl-pid-btn"    type="button">PID</button>
+        </div>
+
+        <div id="fl-manual-controls">
+          <div class="pid-group">
+            <label>Elevator &#948;<sub>e</sub> <span id="fl-elev-val">0.0&#176;</span></label>
+            <input type="range" id="fl-elev" min="-25" max="25" step="0.5" value="0">
+          </div>
+          <p style="font-size:.75rem;color:var(--text-muted);margin:.15rem 0 0">&#8593;/&#8595; arrows also adjust elevator</p>
+        </div>
+
+        <div id="fl-pid-controls" style="display:none;flex-direction:column;gap:.6rem">
+          <div class="pid-group">
+            <label>K<sub>p</sub> <span id="fl-kp-val">0.000</span></label>
+            <input type="range" id="fl-kp" min="-0.5" max="0.5" step="0.005" value="0">
+          </div>
+          <div class="pid-group">
+            <label>K<sub>i</sub> <span id="fl-ki-val">0.000</span></label>
+            <input type="range" id="fl-ki" min="-0.5" max="0.5" step="0.005" value="0">
+          </div>
+          <div class="pid-group">
+            <label>K<sub>d</sub> <span id="fl-kd-val">0.000</span></label>
+            <input type="range" id="fl-kd" min="-0.5" max="0.5" step="0.005" value="0">
+          </div>
+        </div>
+
+        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
+        <div class="telemetry" id="fl-telemetry">
+          <span class="t-key">h</span>  <span class="t-val" id="fl-t-h">&#8212;</span>
+          <span class="t-key">V</span>  <span class="t-val" id="fl-t-v">&#8212;</span>
+          <span class="t-key">&#945;</span>  <span class="t-val" id="fl-t-a">&#8212;</span>
+          <span class="t-key">q</span>  <span class="t-val" id="fl-t-q">&#8212;</span>
+        </div>
+
+        <div class="score-block">
+          <span class="score-value" id="fl-score">&#8212;</span>
+          <span class="score-label">RMSE (m)</span>
+        </div>
+        <button class="sim-btn" id="fl-reset" type="button">Reset</button>
+      </div>
+    </div>
+    <details class="demo-guide" style="margin-top:.6rem">
       <summary>About this demo</summary>
       <p>
         A nonlinear longitudinal aircraft model with six states: airspeed V, flight-path angle &#947;,
@@ -91,89 +198,15 @@ permalink: /controls/
         <p class="eqn-note">L, D, M<sub>y</sub> from nonlinear aero model (sigmoid stall at ~16&#176;). T = trim thrust (constant). RK4 at 200 Hz.</p>
       </div>
     </details>
-    <div class="sim-layout">
-      <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="flight-canvas" width="720" height="380" aria-label="2D flight simulator"></canvas>
-        <canvas id="fl-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history"></canvas>
-        <canvas id="fl-pid-plot"   height="120" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
-      </div>
-      <div class="sim-panel">
-        <h3>Mode</h3>
-        <div class="mode-toggle">
-          <button class="mode-btn active" id="fl-manual-btn" type="button">Manual</button>
-          <button class="mode-btn"        id="fl-pid-btn"    type="button">PID</button>
-        </div>
-
-        <div id="fl-manual-controls">
-          <div class="pid-group">
-            <label>Elevator &#948;<sub>e</sub> <span id="fl-elev-val">0.0&#176;</span></label>
-            <input type="range" id="fl-elev" min="-25" max="25" step="0.5" value="0">
-          </div>
-          <p style="font-size:.75rem;color:var(--text-muted);margin:.15rem 0 0">&#8593;/&#8595; arrows also adjust elevator</p>
-        </div>
-
-        <div id="fl-pid-controls" style="display:none;flex-direction:column;gap:.6rem">
-          <div class="pid-group">
-            <label>K<sub>p</sub> <span id="fl-kp-val">0.00</span></label>
-            <input type="range" id="fl-kp" min="-2" max="2" step="0.01" value="0">
-          </div>
-          <div class="pid-group">
-            <label>K<sub>i</sub> <span id="fl-ki-val">0.000</span></label>
-            <input type="range" id="fl-ki" min="-0.5" max="0.5" step="0.005" value="0">
-          </div>
-          <div class="pid-group">
-            <label>K<sub>d</sub> <span id="fl-kd-val">0.0</span></label>
-            <input type="range" id="fl-kd" min="-10" max="10" step="0.1" value="0">
-          </div>
-        </div>
-
-        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
-        <div class="telemetry" id="fl-telemetry">
-          <span class="t-key">h</span>  <span class="t-val" id="fl-t-h">&#8212;</span>
-          <span class="t-key">V</span>  <span class="t-val" id="fl-t-v">&#8212;</span>
-          <span class="t-key">&#945;</span>  <span class="t-val" id="fl-t-a">&#8212;</span>
-          <span class="t-key">q</span>  <span class="t-val" id="fl-t-q">&#8212;</span>
-        </div>
-
-        <div class="score-block">
-          <span class="score-value" id="fl-score">&#8212;</span>
-          <span class="score-label">RMSE (m)</span>
-        </div>
-        <button class="sim-btn" id="fl-reset" type="button">Reset</button>
-      </div>
-    </div>
   </section>
 
   <!-- ── Demo 3: System ID + LQR ─────────────────────────────────── -->
   <section class="sim-section" id="sec-sysid" role="tabpanel" aria-labelledby="tab-sysid">
-    <details class="demo-guide">
-      <summary>About this demo</summary>
-      <p>
-        Fly the aircraft to excite the longitudinal modes, record data, then fit a linear model
-        &#7819; = Ax + Bu via least squares (<strong>system identification</strong>).
-        The identified A and B feed the <strong>discrete algebraic Riccati equation (DARE)</strong>
-        to compute the LQR gain K that minimises J = &#8721;(x'Qx + u'Ru). Click
-        <em>Analytic LQR</em> to skip data collection and compute K from exact numerical Jacobians.
-        &#8594;
-        <a href="https://en.wikipedia.org/wiki/System_identification" target="_blank" rel="noopener">System identification &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Linear%E2%80%93quadratic_regulator" target="_blank" rel="noopener">LQR &#8212; Wikipedia</a>
-      </p>
-    </details>
-    <details class="demo-guide" style="margin-top:-.5rem">
-      <summary>LQR equations</summary>
-      <div class="eqn-block">
-        <div class="eqn-row"><span class="eqn-lhs">A<sub>d</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">I + dt &#183; A,&#160; B<sub>d</sub> = dt &#183; B&#160;&#160;(dt = 0.05 s)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">P</span><span class="eqn-eq">=</span><span class="eqn-rhs">Q + A<sub>d</sub>'PA<sub>d</sub> &#8722; A<sub>d</sub>'PB<sub>d</sub>(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup>B<sub>d</sub>'PA<sub>d</sub></span></div>
-        <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup> B<sub>d</sub>'PA<sub>d</sub></span></div>
-        <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>trim</sub> &#8722; K [&#916;V, &#916;&#947;, &#916;&#945;, &#916;q]'</span></div>
-        <p class="eqn-note">Q = diag(0.01, 100, 1, 0.1)&#160; R = 1. Iterated 2000&#215; until convergence.</p>
-      </div>
-    </details>
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
         <canvas class="sim-canvas" id="sysid-canvas" width="720" height="380" aria-label="System ID flight canvas"></canvas>
         <canvas id="sid-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history"></canvas>
-        <canvas id="sid-pid-plot"   height="120" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="LQR contribution chart"></canvas>
+        <canvas id="sid-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="LQR contribution chart"></canvas>
       </div>
       <div class="sim-panel">
         <h3>1 &#8212; Collect data</h3>
@@ -225,26 +258,38 @@ permalink: /controls/
         <button class="sim-btn" id="sid-reset" type="button">Reset</button>
       </div>
     </div>
+    <details class="demo-guide" style="margin-top:.6rem">
+      <summary>About this demo</summary>
+      <p>
+        Fly the aircraft to excite the longitudinal modes, record data, then fit a linear model
+        &#7819; = Ax + Bu via least squares (<strong>system identification</strong>).
+        The identified A and B feed the <strong>discrete algebraic Riccati equation (DARE)</strong>
+        to compute the LQR gain K that minimises J = &#8721;(x'Qx + u'Ru). Click
+        <em>Analytic LQR</em> to skip data collection and compute K from exact numerical Jacobians.
+        &#8594;
+        <a href="https://en.wikipedia.org/wiki/System_identification" target="_blank" rel="noopener">System identification &#8212; Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/Linear%E2%80%93quadratic_regulator" target="_blank" rel="noopener">LQR &#8212; Wikipedia</a>
+      </p>
+    </details>
+    <details class="demo-guide" style="margin-top:-.5rem">
+      <summary>LQR equations</summary>
+      <div class="eqn-block">
+        <div class="eqn-row"><span class="eqn-lhs">A<sub>d</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">I + dt &#183; A,&#160; B<sub>d</sub> = dt &#183; B&#160;&#160;(dt = 0.05 s)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">P</span><span class="eqn-eq">=</span><span class="eqn-rhs">Q + A<sub>d</sub>'PA<sub>d</sub> &#8722; A<sub>d</sub>'PB<sub>d</sub>(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup>B<sub>d</sub>'PA<sub>d</sub></span></div>
+        <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup> B<sub>d</sub>'PA<sub>d</sub></span></div>
+        <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>trim</sub> &#8722; K [&#916;V, &#916;&#947;, &#916;&#945;, &#916;q]'</span></div>
+        <p class="eqn-note">Q = diag(0.01, 100, 1, 0.1)&#160; R = 1. Iterated 2000&#215; until convergence.</p>
+      </div>
+    </details>
   </section>
 
   <!-- ── Demo 4: Neural Network Controller ─────────────────────── -->
   <section class="sim-section" id="sec-nn" role="tabpanel" aria-labelledby="tab-nn">
-    <details class="demo-guide">
-      <summary>About this demo</summary>
-      <p>
-        A small feedforward network learns to imitate the optimal LQR controller via
-        <strong>behavioral cloning</strong>: the true LQR flies rollouts and the network is trained
-        (Adam SGD) to reproduce those elevator commands from the aircraft state. Use &#8593;/&#8595; arrows
-        or the slider to steer manually and collect your own trajectories. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Feedforward_neural_network" target="_blank" rel="noopener">Feedforward neural network &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Imitation_learning" target="_blank" rel="noopener">Imitation learning &#8212; Wikipedia</a>
-      </p>
-    </details>
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
         <canvas class="sim-canvas" id="nn-canvas" width="720" height="380" aria-label="Neural network flight controller"></canvas>
         <canvas id="nn-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history"></canvas>
-        <canvas id="nn-pid-plot"   height="120" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="NN output chart"></canvas>
+        <canvas id="nn-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="NN output chart"></canvas>
       </div>
       <div class="sim-panel">
         <h3>Architecture</h3>
@@ -288,6 +333,17 @@ permalink: /controls/
         <button class="sim-btn" id="nn-reset" type="button">Reset</button>
       </div>
     </div>
+    <details class="demo-guide" style="margin-top:.6rem">
+      <summary>About this demo</summary>
+      <p>
+        A small feedforward network learns to imitate the optimal LQR controller via
+        <strong>behavioral cloning</strong>: the true LQR flies rollouts and the network is trained
+        (Adam SGD) to reproduce those elevator commands from the aircraft state. Use &#8593;/&#8595; arrows
+        or the slider to steer manually and collect your own trajectories. &#8594;
+        <a href="https://en.wikipedia.org/wiki/Feedforward_neural_network" target="_blank" rel="noopener">Feedforward neural network &#8212; Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/Imitation_learning" target="_blank" rel="noopener">Imitation learning &#8212; Wikipedia</a>
+      </p>
+    </details>
   </section>
 
 </div>
@@ -295,6 +351,8 @@ permalink: /controls/
 <script src="{{ '/assets/js/controls.js' | relative_url }}"></script>
 
 <style>
+.race-steer-btns{display:flex;gap:.4rem;margin:.35rem 0 .1rem}
+.race-steer{flex:1;padding:.35rem .2rem;font-size:.82rem}
 .demo-guide{margin:.4rem 0 .8rem;border:1px solid var(--border);border-radius:6px;padding:0}
 .demo-guide summary{cursor:pointer;padding:.5rem .75rem;font-size:.82rem;font-weight:600;list-style:none;color:var(--text-muted)}
 .demo-guide summary::-webkit-details-marker{display:none}
@@ -307,4 +365,7 @@ details.demo-guide[open] summary::before{content:'\25BE '}
 .eqn-eq{min-width:1rem}
 .eqn-rhs{color:var(--text-muted)}
 .eqn-note{margin:.5rem 0 0;font-size:.74rem;color:var(--text-muted);font-family:var(--font);font-style:italic}
+.range-row{display:flex;align-items:center;gap:.35rem;margin-top:.2rem}
+.range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
+.range-input{width:5rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
 </style>

@@ -110,6 +110,21 @@
       kiVal.textContent = pid.ki.toFixed(1);
       kdVal.textContent = pid.kd.toFixed(2);
     }
+    function applyRange(slider, rangeInput) {
+      var r = Math.max(1, parseFloat(rangeInput.value) || 1);
+      var prev = parseFloat(slider.value);
+      slider.min  = -r;
+      slider.max  =  r;
+      slider.step =  r / 100;
+      slider.value = clamp(prev, -r, r);
+    }
+    var kpRange = document.getElementById('msd-kp-range');
+    var kiRange = document.getElementById('msd-ki-range');
+    var kdRange = document.getElementById('msd-kd-range');
+    [[kpSlider, kpRange], [kiSlider, kiRange], [kdSlider, kdRange]].forEach(function (pair) {
+      var sl = pair[0], ri = pair[1];
+      if (ri) ri.addEventListener('input', function () { applyRange(sl, ri); syncSliders(); });
+    });
     [kpSlider, kiSlider, kdSlider].forEach(function (s) {
       s.addEventListener('input', syncSliders);
     });
@@ -362,6 +377,413 @@
   })();
 
   /* ================================================================
+     Demo 1.5 — F1 Race Track (pure-pursuit path tracking)
+  ================================================================ */
+  (function raceDemo() {
+    var canvas = document.getElementById('race-canvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+
+    // Virtual track space (700 × 420) — preserved in toScreen with letterbox
+    var VW = 700, VH = 420;
+    var TW = 36;   // track half-width in virtual px
+    var WB = 28;   // wheelbase in virtual px
+    var MAX_STEER = 0.48; // max steer angle (rad)
+    var LA = 70;   // AI pure-pursuit lookahead (virtual px)
+    var NS = 500;  // path samples
+
+    // Track waypoints — closed loop, virtual px
+    var RAW = [
+      [130, 355], [310, 355], [490, 355],
+      [565, 305], [600, 245], [590, 188],
+      [555, 150], [500, 133], [455, 152],
+      [425, 110], [330, 78],  [210, 74],
+      [148, 106], [110, 165], [86,  237],
+      [105, 305]
+    ];
+
+    // Catmull-Rom: interpolate between p1 and p2 (4 control points)
+    function cr4(p0, p1, p2, p3, t) {
+      var t2 = t * t, t3 = t2 * t;
+      return [
+        0.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+        0.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+      ];
+    }
+
+    // Build sampled path: [{x, y, nx, ny, tx, ty}]
+    var path = [];
+    (function buildPath() {
+      var n = RAW.length;
+      for (var ii = 0; ii < NS; ii++) {
+        var u  = ii / NS * n;
+        var si = Math.floor(u) % n;
+        var t  = u - Math.floor(u);
+        var p0 = RAW[(si-1+n)%n], p1 = RAW[si], p2 = RAW[(si+1)%n], p3 = RAW[(si+2)%n];
+        var pt = cr4(p0, p1, p2, p3, t);
+        var u2 = (ii / NS + 0.001) * n;
+        var si2 = Math.floor(u2) % n;
+        var t2  = u2 - Math.floor(u2);
+        var pt2 = cr4(RAW[(si2-1+n)%n], RAW[si2], RAW[(si2+1)%n], RAW[(si2+2)%n], t2);
+        var tx = pt2[0]-pt[0], ty = pt2[1]-pt[1];
+        var tl = Math.hypot(tx, ty) || 1;
+        path.push({ x: pt[0], y: pt[1], nx: -ty/tl, ny: tx/tl, tx: tx/tl, ty: ty/tl });
+      }
+    })();
+
+    // Canvas sizing and virtual→screen transform
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var W = 700, H = 400;
+    var vScale = 1, vOx = 0, vOy = 0;
+
+    function resizeCanvas() {
+      W = canvas.parentElement.clientWidth;
+      H = Math.max(300, Math.min(400, Math.round(W * 0.58)));
+      canvas.width  = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width  = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      vScale = Math.min(W / VW, H / VH) * 0.92;
+      vOx    = (W - VW * vScale) / 2;
+      vOy    = (H - VH * vScale) / 2;
+    }
+    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
+    resizeCanvas();
+
+    function sx(x) { return x * vScale + vOx; }
+    function sy(y) { return y * vScale + vOy; }
+
+    // ── Car struct ───────────────────────────────────────────────
+    function makeCar() {
+      var p0 = path[0], p1 = path[1];
+      return {
+        x: p0.x, y: p0.y,
+        heading: Math.atan2(p1.y - p0.y, p1.x - p0.x),
+        steer: 0,
+        speed: 55,
+        pathIdx: 0,
+        _prevIdx: 0,
+        _lapCount: 0, _lapStart: null,
+        lapTime: null, bestLap: null
+      };
+    }
+
+    var player, aiCar;
+
+    function resetRace() {
+      player        = makeCar();
+      player.x     += path[0].nx * 11;
+      player.y     += path[0].ny * 11;
+      aiCar         = makeCar();
+      aiCar.x      -= path[0].nx * 11;
+      aiCar.y      -= path[0].ny * 11;
+      aiCar.speed   = 50;
+    }
+    resetRace();
+
+    // ── Physics ──────────────────────────────────────────────────
+    function stepCar(car, dt) {
+      var delta = car.steer * MAX_STEER;
+      car.x      += car.speed * Math.cos(car.heading) * dt;
+      car.y      += car.speed * Math.sin(car.heading) * dt;
+      car.heading += (car.speed / WB) * Math.tan(delta) * dt;
+      while (car.heading >  Math.PI) car.heading -= 2 * Math.PI;
+      while (car.heading < -Math.PI) car.heading += 2 * Math.PI;
+    }
+
+    // Find nearest path index within a search window
+    function nearestIdx(car) {
+      var n = NS, best = car.pathIdx, bestD = Infinity;
+      for (var i = -20; i <= 80; i++) {
+        var idx = (car.pathIdx + i + n) % n;
+        var d   = Math.hypot(path[idx].x - car.x, path[idx].y - car.y);
+        if (d < bestD) { bestD = d; best = idx; }
+      }
+      car.pathIdx = best;
+      return best;
+    }
+
+    // ── Pure-pursuit AI controller ───────────────────────────────
+    function updateAI(car) {
+      nearestIdx(car);
+      var walked = 0, idx = car.pathIdx;
+      while (walked < LA) {
+        var next = (idx + 1) % NS;
+        walked  += Math.hypot(path[next].x - path[idx].x, path[next].y - path[idx].y);
+        idx      = next;
+        if (idx === car.pathIdx) break;
+      }
+      var tgt = path[idx];
+      var err = Math.atan2(tgt.y - car.y, tgt.x - car.x) - car.heading;
+      while (err >  Math.PI) err -= 2 * Math.PI;
+      while (err < -Math.PI) err += 2 * Math.PI;
+      car.steer = clamp(err * 2.2, -1, 1);
+    }
+
+    // ── Lap detection via pathIdx wrap ───────────────────────────
+    function checkLap(car, now) {
+      var cur = nearestIdx(car);
+      if (car._prevIdx > NS * 0.88 && cur < NS * 0.12) {
+        if (car._lapStart !== null) {
+          car.lapTime = now - car._lapStart;
+          if (!car.bestLap || car.lapTime < car.bestLap) car.bestLap = car.lapTime;
+        }
+        car._lapStart = now;
+        car._lapCount++;
+      }
+      car._prevIdx = cur;
+    }
+
+    // ── Keyboard + touch steer ───────────────────────────────────
+    var keys = {};
+    document.addEventListener('keydown', function (e) {
+      var sec = document.getElementById('sec-race');
+      if (!sec || !sec.classList.contains('active')) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        keys[e.key] = true;
+        keys._moved  = true;
+      }
+    });
+    document.addEventListener('keyup', function (e) {
+      delete keys[e.key];
+    });
+
+    // On-screen steer buttons
+    (function wireSteerBtn(id, key) {
+      var btn = document.getElementById(id);
+      if (!btn) return;
+      function dn(e) { e.preventDefault(); keys[key] = true; keys._moved = true; }
+      function up(e) { e.preventDefault(); delete keys[key]; }
+      btn.addEventListener('mousedown',  dn); btn.addEventListener('mouseup',   up); btn.addEventListener('mouseleave', up);
+      btn.addEventListener('touchstart', dn); btn.addEventListener('touchend',  up); btn.addEventListener('touchcancel', up);
+    }('race-left', 'ArrowLeft'));
+    (function wireSteerBtn(id, key) {
+      var btn = document.getElementById(id);
+      if (!btn) return;
+      function dn(e) { e.preventDefault(); keys[key] = true; keys._moved = true; }
+      function up(e) { e.preventDefault(); delete keys[key]; }
+      btn.addEventListener('mousedown',  dn); btn.addEventListener('mouseup',   up); btn.addEventListener('mouseleave', up);
+      btn.addEventListener('touchstart', dn); btn.addEventListener('touchend',  up); btn.addEventListener('touchcancel', up);
+    }('race-right', 'ArrowRight'));
+
+    // Speed slider
+    var speedSlider = document.getElementById('race-speed');
+    var speedValEl  = document.getElementById('race-speed-val');
+    if (speedSlider) speedSlider.addEventListener('input', function () {
+      if (speedValEl) speedValEl.textContent = Math.round(parseFloat(speedSlider.value) * 100) + '%';
+    });
+
+    // ── Simulation step ──────────────────────────────────────────
+    var lastRaceNow = null;
+
+    function raceStep(now) {
+      if (lastRaceNow === null) { lastRaceNow = now; return; }
+      var sec = document.getElementById('sec-race');
+      if (!sec || !sec.classList.contains('active')) { lastRaceNow = now; return; }
+      var dt = Math.min((now - lastRaceNow) / 1000, 0.05);
+      lastRaceNow = now;
+
+      var spd     = speedSlider ? parseFloat(speedSlider.value) : 0.5;
+      player.speed = 35 + spd * 40;
+      aiCar.speed  = 35 + spd * 37;
+
+      player.steer = 0;
+      if (keys['ArrowLeft'])  player.steer -= 1;
+      if (keys['ArrowRight']) player.steer += 1;
+
+      var SUBS = 8, sdt = dt / SUBS;
+      for (var i = 0; i < SUBS; i++) {
+        updateAI(aiCar);
+        stepCar(player, sdt);
+        stepCar(aiCar,  sdt);
+      }
+
+      checkLap(player, now);
+      checkLap(aiCar,  now);
+
+      // Update DOM telemetry
+      var cte = Math.hypot(
+        player.x - path[nearestIdx(player)].x,
+        player.y - path[nearestIdx(player)].y
+      ).toFixed(0);
+      function setEl(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+      function fmt(ms) {
+        if (!ms && ms !== 0) return '—';
+        var m = Math.floor(ms/60000), s = Math.floor((ms%60000)/1000), cs = Math.floor((ms%1000)/10);
+        return m+':'+(s<10?'0':'')+s+'.'+(cs<10?'0':'')+cs;
+      }
+      setEl('race-lap-you',  player._lapCount);
+      setEl('race-last-you', fmt(player.lapTime));
+      setEl('race-best-you', fmt(player.bestLap));
+      setEl('race-lap-ai',   aiCar._lapCount);
+      setEl('race-last-ai',  fmt(aiCar.lapTime));
+      setEl('race-best-ai',  fmt(aiCar.bestLap));
+      setEl('race-cte',      cte + ' px');
+      setEl('race-score',    cte);
+    }
+
+    // ── Rendering ────────────────────────────────────────────────
+    function darkMode() {
+      return document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (!document.documentElement.getAttribute('data-theme') &&
+         window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+
+    function drawTrack() {
+      var n = NS, dark = darkMode();
+      var tw = TW * vScale;
+
+      // Track surface
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var p = path[i];
+        if (i === 0) ctx.moveTo(sx(p.x), sy(p.y)); else ctx.lineTo(sx(p.x), sy(p.y));
+      }
+      ctx.closePath();
+      ctx.lineWidth  = tw * 2;
+      ctx.strokeStyle = dark ? '#1c1c2e' : '#2c2c2c';
+      ctx.lineJoin    = 'round';
+      ctx.lineCap     = 'round';
+      ctx.stroke();
+
+      // Edge lines (white)
+      [1, -1].forEach(function (side) {
+        ctx.beginPath();
+        for (var i = 0; i < n; i++) {
+          var p = path[i];
+          var ex = sx(p.x + p.nx * TW * 0.90 * side);
+          var ey = sy(p.y + p.ny * TW * 0.90 * side);
+          if (i === 0) ctx.moveTo(ex, ey); else ctx.lineTo(ex, ey);
+        }
+        ctx.closePath();
+        ctx.lineWidth   = 1.5;
+        ctx.strokeStyle = 'rgba(255,255,255,0.60)';
+        ctx.lineJoin    = 'round';
+        ctx.stroke();
+      });
+
+      // Dashed centre reference line
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var p = path[i];
+        if (i === 0) ctx.moveTo(sx(p.x), sy(p.y)); else ctx.lineTo(sx(p.x), sy(p.y));
+      }
+      ctx.closePath();
+      ctx.lineWidth   = 1.5;
+      ctx.strokeStyle = cssVar('--accent');
+      ctx.setLineDash([6 * vScale, 8 * vScale]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Start/finish line
+      var sp = path[0];
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 3;
+      ctx.beginPath();
+      ctx.moveTo(sx(sp.x + sp.nx * TW * 0.92), sy(sp.y + sp.ny * TW * 0.92));
+      ctx.lineTo(sx(sp.x - sp.nx * TW * 0.92), sy(sp.y - sp.ny * TW * 0.92));
+      ctx.stroke();
+
+      // Corner labels (outside of track)
+      var corners = [
+        { idx: Math.round(NS * 0.14), label: 'T1' },
+        { idx: Math.round(NS * 0.33), label: 'T2' },
+        { idx: Math.round(NS * 0.52), label: 'T3' },
+        { idx: Math.round(NS * 0.74), label: 'T4' }
+      ];
+      ctx.font         = 'bold 10px ' + cssVar('--mono');
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle    = 'rgba(255,255,255,0.30)';
+      corners.forEach(function (c) {
+        var p  = path[c.idx % NS];
+        var lx = sx(p.x + p.nx * (TW + 16));
+        var ly = sy(p.y + p.ny * (TW + 16));
+        ctx.fillText(c.label, lx, ly);
+      });
+    }
+
+    function drawCar(car, bodyColor, label) {
+      var csx = sx(car.x), csy = sy(car.y);
+      var cl = 20 * vScale, cw = 8 * vScale;
+      ctx.save();
+      ctx.translate(csx, csy);
+      ctx.rotate(car.heading);
+      // Body
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath();
+      ctx.roundRect(-cl * 0.5, -cw * 0.5, cl, cw, 2);
+      ctx.fill();
+      // Nose
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.moveTo( cl * 0.5,          0);
+      ctx.lineTo( cl * 0.5 - cw*0.8, -cw * 0.45);
+      ctx.lineTo( cl * 0.5 - cw*0.8,  cw * 0.45);
+      ctx.closePath();
+      ctx.fill();
+      // Front wing
+      ctx.fillStyle = bodyColor;
+      ctx.fillRect(cl*0.26, -cw*0.75, cw*0.6, cw*1.5);
+      // Rear wing
+      ctx.fillRect(-cl*0.50, -cw*0.75, cw*0.5, cw*1.5);
+      ctx.restore();
+      // Label
+      ctx.fillStyle    = bodyColor;
+      ctx.font         = 'bold ' + Math.max(9, Math.round(10 * vScale)) + 'px ' + cssVar('--mono');
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label, csx, csy - cw * 0.6);
+    }
+
+    function raceRender(now) {
+      var dark = darkMode();
+      ctx.fillStyle = dark ? '#0c1a0c' : '#4a8040';
+      ctx.fillRect(0, 0, W, H);
+      drawTrack();
+      drawCar(aiCar,  '#e74c3c', 'AI');
+      drawCar(player, cssVar('--accent'), 'YOU');
+
+      // Arrow-key hint until first steer
+      if (!keys._moved) {
+        ctx.fillStyle    = dark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.38)';
+        ctx.font         = '13px ' + cssVar('--font');
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('← / → arrow keys or buttons to steer', W / 2, H - 10);
+      }
+
+      // Lead indicator
+      var pAhead = player._lapCount > aiCar._lapCount ||
+        (player._lapCount === aiCar._lapCount && player.pathIdx > aiCar.pathIdx);
+      if (player._lapCount > 0 || aiCar._lapCount > 0) {
+        ctx.fillStyle    = pAhead ? '#4caf50' : '#ef5350';
+        ctx.font         = 'bold 11px ' + cssVar('--font');
+        ctx.textAlign    = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillText(pAhead ? 'YOU LEAD' : 'AI LEADS', W - 10, 10);
+      }
+    }
+
+    // Reset button
+    var raceResetBtn = document.getElementById('race-reset');
+    if (raceResetBtn) raceResetBtn.addEventListener('click', function () {
+      resetRace();
+      lastRaceNow = null;
+    });
+
+    // Main loop
+    function raceLoop(now) {
+      raceStep(now);
+      raceRender(now);
+      requestAnimationFrame(raceLoop);
+    }
+    requestAnimationFrame(raceLoop);
+  })();
+
+  /* ================================================================
      Shared flight physics engine (used by Demo 2 and Demo 3)
   ================================================================ */
 
@@ -506,12 +928,14 @@
     new ResizeObserver(resize).observe(canvas.parentElement);
     resize();
 
-    // Bottom 36 px are always the ground strip; the rest maps h=0→horizon, h=WORLD_HI→top
+    // Bottom 36 px are always the ground strip; the viewport shows VIEW_RANGE metres
+    // centred on the plane's current altitude — the world zooms in rather than scrolling.
     var GROUND_PX = 36;
+    var VIEW_RANGE = 200;  // metres of altitude shown (was full 600 m)
 
-    function hToY(h, H) {
-      return (H - GROUND_PX) * (1 - h / WORLD_HI);
-    }
+    // hToY maps world altitude to canvas y for the current viewport [viewLo, viewHi].
+    // Defined as a var so render() can rebind it each frame without parameter-passing.
+    var hToY = function (altH, H) { return (H - GROUND_PX) * (1 - altH / WORLD_HI); };
 
     // Deterministic pseudo-random in [0,1) from integer seed
     function seedRand(seed) {
@@ -625,7 +1049,7 @@
       ctx.rotate(-theta_rad);  // negative: CCW = nose up
       var ci = cessna.get();
       if (ci) {
-        var dispW = 26;
+        var dispW = Math.round(26 * WORLD_HI / VIEW_RANGE);  // scales with viewport zoom
         var dispH = dispW * ci.height / ci.width;
         ctx.drawImage(ci, -dispW * 0.5, -dispH * 0.5, dispW, dispH);
       } else {
@@ -663,8 +1087,16 @@
         (!document.documentElement.getAttribute('data-theme') &&
          window.matchMedia('(prefers-color-scheme: dark)').matches);
 
+      // Zoomed viewport: VIEW_RANGE metres centred on the plane, clamped to world bounds.
+      // hToY is rebound each frame so everything else (ref line, ticks, plane) just calls it.
+      var viewLo = Math.max(WORLD_LO, Math.min(h - VIEW_RANGE / 2, WORLD_HI - VIEW_RANGE));
+      var viewHi = viewLo + VIEW_RANGE;
+      hToY = function (altH, H) {
+        return (H - GROUND_PX) * (1 - (altH - viewLo) / VIEW_RANGE);
+      };
+
       // Horizon at h=0 — always (H - GROUND_PX) pixels from canvas top
-      var horizonY = H - GROUND_PX;  // hToY(0, H)
+      var horizonY = H - GROUND_PX;  // ground strip is always fixed at the bottom
 
       // Full-canvas sky gradient
       var grad = ctx.createLinearGradient(0, 0, 0, horizonY);
@@ -720,12 +1152,14 @@
       // Cessna sprite
       drawPlane(planeScreenX, hToY(h, H), theta, isDark);
 
-      // Altitude scale (right side) — ticks every 100 m within 0–600 m
+      // Altitude scale (right side) — ticks every 25 m across the zoomed viewport
       ctx.fillStyle = mutedColor;
       ctx.font = '11px ' + cssVar('--mono');
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      for (var ah = 0; ah <= WORLD_HI; ah += 100) {
+      var tickStep = 25;
+      var tickStart = Math.ceil(viewLo / tickStep) * tickStep;
+      for (var ah = tickStart; ah <= viewHi; ah += tickStep) {
         var ay = hToY(ah, H);
         if (ay < 12 || ay > H - 12) continue;
         ctx.fillText(ah + 'm', W - 8, ay);
@@ -1065,9 +1499,9 @@
     });
 
     function syncPidVals() {
-      if (kpValEl) kpValEl.textContent = parseFloat(kpSlider.value).toFixed(2);
+      if (kpValEl) kpValEl.textContent = parseFloat(kpSlider.value).toFixed(3);
       if (kiValEl) kiValEl.textContent = parseFloat(kiSlider.value).toFixed(3);
-      if (kdValEl) kdValEl.textContent = parseFloat(kdSlider.value).toFixed(1);
+      if (kdValEl) kdValEl.textContent = parseFloat(kdSlider.value).toFixed(3);
     }
     if (kpSlider) { kpSlider.addEventListener('input', syncPidVals); syncPidVals(); }
     if (kiSlider) { kiSlider.addEventListener('input', syncPidVals); }
