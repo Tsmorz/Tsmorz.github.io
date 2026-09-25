@@ -34,6 +34,11 @@ tasks:
     cmds:
       - bundle exec jekyll build {{if .BASEURL}}--baseurl "{{.BASEURL}}"{{end}}
 
+  check:data:
+    desc: Validate _data/*.yml (required fields, photo/project images exist) — no build needed
+    cmds:
+      - script/test-data
+
   check:js:
     desc: Verify every assets/js/*.js file is referenced by a built page
     cmds:
@@ -60,6 +65,7 @@ tasks:
   check:
     desc: Build, verify JS is referenced, and check internal links — the CI check
     cmds:
+      - task: check:data
       - task: build
       - task: check:js
       - task: check:links

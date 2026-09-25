@@ -35,6 +35,9 @@ jobs:
       - uses: actions/configure-pages@v5
         id: pages
 
+      - name: Check data files
+        run: task check:data
+
       - name: Build site
         run: task build BASEURL="${{ steps.pages.outputs.base_path }}"
 

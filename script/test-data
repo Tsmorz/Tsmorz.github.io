@@ -1,0 +1,58 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Validate _data/*.yml against what the pages assume — the things a Jekyll build
+# and html-proofer don't catch:
+#   * required fields are present (projects need name + blurb; photos need slug)
+#   * every photo's full-size image exists (referenced in a data-full attribute,
+#     which html-proofer never checks) as well as its thumbnail
+#   * any local project image path points at a real file
+#
+# Pure stdlib (YAML ships with Ruby), no bundler, no build. Runs anywhere Ruby does.
+
+require "yaml"
+
+root = File.expand_path("..", __dir__)
+Dir.chdir(root)
+
+errors = []
+
+def load_yaml(path, errors)
+  YAML.safe_load_file(path) || []
+rescue => e
+  errors << "#{path}: could not parse (#{e.message})"
+  []
+end
+
+# --- projects ---
+load_yaml("_data/projects.yml", errors).each_with_index do |proj, i|
+  label = proj["name"] || "project ##{i + 1}"
+  errors << "projects.yml: #{label} is missing `name`"  if proj["name"].to_s.strip.empty?
+  errors << "projects.yml: #{label} is missing `blurb`" if proj["blurb"].to_s.strip.empty?
+
+  img = proj["image"].to_s
+  if img.start_with?("/") && !File.exist?(File.join(root, img))
+    errors << "projects.yml: #{label} image not found: #{img}"
+  end
+end
+
+# --- photos ---
+load_yaml("_data/photos.yml", errors).each_with_index do |photo, i|
+  slug = photo["slug"].to_s.strip
+  if slug.empty?
+    errors << "photos.yml: entry ##{i + 1} is missing `slug`"
+    next
+  end
+  full  = "assets/img/photos/#{slug}.jpg"
+  thumb = "assets/img/photos/thumbs/#{slug}.jpg"
+  errors << "photos.yml: #{slug} full-size missing: #{full} (run script/add-photo)" unless File.exist?(full)
+  errors << "photos.yml: #{slug} thumbnail missing: #{thumb} (run script/add-photo)" unless File.exist?(thumb)
+end
+
+if errors.empty?
+  puts "OK — _data content is consistent with the files on disk."
+else
+  warn "Data check failed:"
+  errors.each { |e| warn "  - #{e}" }
+  exit 1
+end

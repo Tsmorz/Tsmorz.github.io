@@ -113,7 +113,11 @@ Needs Ruby ≥ 2.7 — **system Ruby on this Mac is 2.6.10 and cannot run Jekyll
 on CI to build.
 
 `Taskfile.yml` is the single entrypoint (`task --list`: `serve`, `build`, `check`,
-`check:js`, `check:links`, `install`, `clean`, `add-photo`). The build and the CI checks
+`check:data`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
+validates `_data/*.yml` — required fields, and that each photo's full-size + thumbnail and
+each local project image actually exist (the full-size lives in a `data-full` attribute
+that html-proofer never sees, so this is the only thing guarding it). It's pure Ruby
+stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
 Task and runs `task build BASEURL=…`, `task check:js`, `task check:links`. `serve` and
