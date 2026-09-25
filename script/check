@@ -1,26 +1,8 @@
 #!/bin/sh
 # Build the site and check every internal link — the same check CI runs.
+# The actual steps live in Taskfile.yml so they're defined once; this is the
+# familiar shortcut that delegates there.
 
 set -e
 cd "$(dirname "$0")/.."
-bundle exec jekyll build
-
-echo "--- Checking JS asset references ---"
-# Every .js file under assets/js must appear in at least one built HTML page.
-# This catches the case where a script is written but never wired up with a <script> tag.
-FAIL=0
-for js in assets/js/*.js; do
-  filename=$(basename "$js")
-  if ! grep -qr "$filename" _site/; then
-    echo "UNREFERENCED: $js is not loaded by any page in _site/"
-    FAIL=1
-  fi
-done
-if [ $FAIL -eq 1 ]; then
-  echo "Fix: add a <script src=\"...$filename\"> tag to the page(s) that need it."
-  exit 1
-fi
-echo "OK — all JS files are referenced."
-
-echo "--- Checking internal links ---"
-exec bundle exec htmlproofer ./_site --disable-external --allow-hash-href --ignore-empty-alt
+exec task check

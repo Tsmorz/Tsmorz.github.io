@@ -1,0 +1,81 @@
+# Taskfile for tsmorz.github.io — a thin wrapper over bundler + script/.
+# https://taskfile.dev  ·  run `task` or `task --list` to see everything.
+#
+# This is the single source of truth for the build and the CI checks: both
+# `script/check` and .github/workflows/pages.yml delegate here, so the JS and
+# link checks are defined exactly once. No build step for CSS/JS.
+
+version: "3"
+
+vars:
+  SITE_DIR: _site
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  install:
+    desc: Install Ruby gem dependencies (bundle install)
+    cmds:
+      - bundle install
+
+  serve:
+    desc: Serve the site locally at http://127.0.0.1:4000 with live reload
+    cmds:
+      - script/serve {{.CLI_ARGS}}
+
+  build:
+    desc: Build the site into _site/ (production; pass BASEURL=... for a subpath)
+    env:
+      JEKYLL_ENV: production
+    cmds:
+      - bundle exec jekyll build {{if .BASEURL}}--baseurl "{{.BASEURL}}"{{end}}
+
+  check:data:
+    desc: Validate _data/*.yml (required fields, photo/project images exist) — no build needed
+    cmds:
+      - script/test-data
+
+  check:js:
+    desc: Verify every assets/js/*.js file is referenced by a built page
+    cmds:
+      - |
+        FAIL=0
+        for js in assets/js/*.js; do
+          filename=$(basename "$js")
+          if ! grep -qr "$filename" {{.SITE_DIR}}/; then
+            echo "UNREFERENCED: $js is not loaded by any page in {{.SITE_DIR}}/"
+            FAIL=1
+          fi
+        done
+        if [ $FAIL -eq 1 ]; then
+          echo "Fix: add a <script src=\"...$filename\"> tag to the page(s) that need it."
+          exit 1
+        fi
+        echo "OK — all JS files are referenced."
+
+  check:links:
+    desc: Check internal links with html-proofer
+    cmds:
+      - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt
+
+  check:
+    desc: Build, verify JS is referenced, and check internal links — the CI check
+    cmds:
+      - task: check:data
+      - task: build
+      - task: check:js
+      - task: check:links
+
+  add-photo:
+    desc: 'Add a gallery photo — usage: task add-photo -- <source-image> <slug>'
+    cmds:
+      - script/add-photo {{.CLI_ARGS}}
+
+  clean:
+    desc: Remove the built site and Jekyll cache
+    cmds:
+      - rm -rf {{.SITE_DIR}} .jekyll-cache .jekyll-metadata

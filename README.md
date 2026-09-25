@@ -15,6 +15,9 @@ script/serve    # http://127.0.0.1:4000, live reload
 script/check    # build + internal link check, same as CI
 ```
 
+Or use [Task](https://taskfile.dev): `task serve`, `task check`, `task build`,
+`task clean`. Run `task --list` to see them all.
+
 ## Adding content
 
 Everything that repeats lives in `_data/`:
