@@ -34,6 +34,18 @@ jobs:
         env:
           JEKYLL_ENV: production
 
+      - name: Check JS assets are referenced
+        run: |
+          FAIL=0
+          for js in assets/js/*.js; do
+            filename=$(basename "$js")
+            if ! grep -qr "$filename" _site/; then
+              echo "UNREFERENCED: $js is not loaded by any page"
+              FAIL=1
+            fi
+          done
+          [ $FAIL -eq 0 ] || exit 1
+
       - name: Check for broken internal links
         run: |
           bundle exec htmlproofer ./_site \

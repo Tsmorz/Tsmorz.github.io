@@ -292,6 +292,8 @@ permalink: /controls/
 
 </div>
 
+<script src="{{ '/assets/js/controls.js' | relative_url }}"></script>
+
 <style>
 .demo-guide{margin:.4rem 0 .8rem;border:1px solid var(--border);border-radius:6px;padding:0}
 .demo-guide summary{cursor:pointer;padding:.5rem .75rem;font-size:.82rem;font-weight:600;list-style:none;color:var(--text-muted)}
