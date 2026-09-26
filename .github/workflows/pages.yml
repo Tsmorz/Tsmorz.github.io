@@ -18,6 +18,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # jekyll-github-metadata (pulled in by the github-pages gem) needs the repo
+    # name to build; the runner can't always infer it from git, so pass it here.
+    env:
+      PAGES_REPO_NWO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
 
