@@ -17,6 +17,17 @@ Dir.chdir(root)
 
 errors = []
 
+# Case-sensitive existence check. macOS's default filesystem is case-insensitive,
+# so File.exist? happily returns true for "Van-Life.jpg" when the file is really
+# "van-life.jpg" — then it 404s on the case-sensitive Linux CI runner. Compare the
+# exact basename against the directory's real entries so we catch it locally too.
+def file_present?(path)
+  dir = File.dirname(path)
+  return false unless Dir.exist?(dir)
+
+  Dir.children(dir).include?(File.basename(path))
+end
+
 def load_yaml(path, errors)
   YAML.safe_load_file(path) || []
 rescue => e
@@ -31,8 +42,8 @@ load_yaml("_data/projects.yml", errors).each_with_index do |proj, i|
   errors << "projects.yml: #{label} is missing `blurb`" if proj["blurb"].to_s.strip.empty?
 
   img = proj["image"].to_s
-  if img.start_with?("/") && !File.exist?(File.join(root, img))
-    errors << "projects.yml: #{label} image not found: #{img}"
+  if img.start_with?("/") && !file_present?(File.join(root, img))
+    errors << "projects.yml: #{label} image not found (check exact spelling/case): #{img}"
   end
 end
 
@@ -45,8 +56,8 @@ load_yaml("_data/photos.yml", errors).each_with_index do |photo, i|
   end
   full  = "assets/img/photos/#{slug}.jpg"
   thumb = "assets/img/photos/thumbs/#{slug}.jpg"
-  errors << "photos.yml: #{slug} full-size missing: #{full} (run script/add-photo)" unless File.exist?(full)
-  errors << "photos.yml: #{slug} thumbnail missing: #{thumb} (run script/add-photo)" unless File.exist?(thumb)
+  errors << "photos.yml: #{slug} full-size missing: #{full} (run script/add-photo)" unless file_present?(full)
+  errors << "photos.yml: #{slug} thumbnail missing: #{thumb} (run script/add-photo)" unless file_present?(thumb)
 end
 
 if errors.empty?

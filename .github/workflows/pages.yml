@@ -39,17 +39,11 @@ jobs:
       - uses: actions/configure-pages@v5
         id: pages
 
-      - name: Check data files
-        run: task check:data
-
-      - name: Build site
-        run: task build BASEURL="${{ steps.pages.outputs.base_path }}"
-
-      - name: Check JS assets are referenced
-        run: task check:js
-
-      - name: Check for broken internal links
-        run: task check:links
+      # Validate data, build with the real Pages base path (this IS the deploy
+      # artifact), and check it — the link check strips the base path so it
+      # resolves against _site/ (see CLAUDE.md CI gotchas).
+      - name: Validate, build, and check the site
+        run: task check BASEURL="${{ steps.pages.outputs.base_path }}"
 
       - uses: actions/upload-pages-artifact@v3
 
