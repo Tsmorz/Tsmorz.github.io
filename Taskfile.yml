@@ -32,7 +32,11 @@ tasks:
     env:
       JEKYLL_ENV: production
     cmds:
-      - bundle exec jekyll build {{if .BASEURL}}--baseurl "{{.BASEURL}}"{{end}}
+      # Always pass --baseurl explicitly (empty by default). Omitting it makes
+      # jekyll-github-metadata try to derive the baseurl from GitHub, which fails
+      # on the runner ("No repo name found") and, once it succeeds, injects an
+      # unwanted /pages/<owner> prefix. Explicit --baseurl sidesteps both.
+      - bundle exec jekyll build --baseurl "{{.BASEURL}}"
 
   check:data:
     desc: Validate _data/*.yml (required fields, photo/project images exist) — no build needed
@@ -58,22 +62,17 @@ tasks:
         echo "OK — all JS files are referenced."
 
   check:links:
-    desc: Check internal links with html-proofer (pass BASEURL=… to strip a deploy base path)
+    desc: Check internal links with html-proofer
     cmds:
-      # On CI the built HTML carries the Pages base path (e.g. /pages/Tsmorz), even
-      # without --baseurl, because the github-pages gem injects it. Strip that prefix
-      # so html-proofer resolves paths against _site/ where the files actually live.
-      - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt {{if .BASEURL}}--swap-urls "^{{.BASEURL}}/:/"{{end}}
+      - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt
 
   check:
     desc: Build, verify JS is referenced, and check internal links — the CI check
     cmds:
       - task: check:data
       - task: build
-        vars: { BASEURL: "{{.BASEURL}}" }
       - task: check:js
       - task: check:links
-        vars: { BASEURL: "{{.BASEURL}}" }
 
   add-photo:
     desc: 'Add a gallery photo — usage: task add-photo -- <source-image> <slug>'

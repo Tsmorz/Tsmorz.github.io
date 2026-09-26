@@ -121,9 +121,8 @@ stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
 Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → build →
-JS → links); that one baseurl'd build is both link-checked (prefix stripped) and uploaded
-as the deploy artifact. `serve` and `add-photo` still wrap the `script/` files
-(`task add-photo -- <source-image> <slug>`).
+JS → links); that build is the uploaded deploy artifact. `serve` and `add-photo` still wrap
+the `script/` files (`task add-photo -- <source-image> <slug>`).
 
 ## Deployment
 
@@ -136,22 +135,16 @@ Don't re-enable the legacy branch-based Pages build; the two conflict.
 The runner is Linux with no git-inferred repo context; a Mac dev box is neither. Each of
 these bit us once; the guard that now prevents it is noted.
 
-- **`No repo name found` during build.** The `github-pages` gem loads
-  `jekyll-github-metadata`, which needs the repo's `owner/name`. Locally it reads your git
-  `origin` remote; the runner can't reliably. **Guard:** the build job sets
-  `PAGES_REPO_NWO: ${{ github.repository }}`. Don't remove it.
-- **html-proofer `internal image … does not exist` for every asset.** The runner's build
-  prefixes every link with the Pages base path (`/pages/Tsmorz/assets/…`) but the files
-  live at `_site/assets/…`, so html-proofer can't resolve them. Crucially, **the prefix is
-  injected even when you don't pass `--baseurl`** — once `PAGES_REPO_NWO` is set the
-  `github-pages` gem reproduces the Pages build environment and sets `site.baseurl` from the
-  repo. So "just build at root for the check" does *not* work on CI. **Guard:** `check:links`
-  takes a `BASEURL` and passes html-proofer `--swap-urls "^<base>/:/"` to strip the prefix
-  before resolving; `task check BASEURL=…` threads it through build + link check, and that
-  one baseurl'd build is also the deploy artifact. Locally `BASEURL` is empty, so no swap.
-  - `base_path` is `/pages/Tsmorz` (the `/pages/<user>` scheme GitHub Enterprise Pages serves
-    under), read from the Pages API by `configure-pages`. Trust it — don't hardcode a baseurl
-    or assume it's empty just because `tsmorz.github.io` looks like a root-served user page.
+- **Always pass `--baseurl` to the build, even when it's empty.** `task build` runs
+  `jekyll build --baseurl "{{.BASEURL}}"` unconditionally (empty by default). This matters:
+  if you *omit* the flag, `jekyll-github-metadata` (pulled in by the `github-pages` gem)
+  tries to *derive* `site.baseurl` from GitHub, which fails on the runner with
+  **`No repo name found`**, and if you then force it to resolve (e.g. by setting
+  `PAGES_REPO_NWO`) it injects an unwanted `/pages/<owner>` prefix into every URL — which
+  then makes html-proofer report every asset as missing. An explicit `--baseurl` sidesteps
+  the whole chain, which is why the original workflow always passed it. Don't "simplify" it
+  back to a conditional flag. (This bit us: making the flag conditional caused *both* CI
+  failures, and `PAGES_REPO_NWO` / `--swap-urls` were wrong patches for a self-inflicted bug.)
 - **Case-sensitive filesystem.** macOS is case-insensitive, so `logo.JPG` referenced as
   `logo.jpg` works locally and 404s on Linux. **Guard:** `script/test-data` compares exact
   basenames (not `File.exist?`), so `task check:data` catches wrong-case photo/project
