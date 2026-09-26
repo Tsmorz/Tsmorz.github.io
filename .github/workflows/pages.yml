@@ -39,14 +39,11 @@ jobs:
       - uses: actions/configure-pages@v5
         id: pages
 
-      # Validate data + build a plain root site + check it. Link resolution
-      # never depends on the deploy base path this way (see CLAUDE.md CI gotchas).
-      - name: Validate and check the site
-        run: task check
-
-      # Rebuild with the real Pages base path for the artifact that gets deployed.
-      - name: Build site for deploy
-        run: task build BASEURL="${{ steps.pages.outputs.base_path }}"
+      # Validate data, build with the real Pages base path (this IS the deploy
+      # artifact), and check it — the link check strips the base path so it
+      # resolves against _site/ (see CLAUDE.md CI gotchas).
+      - name: Validate, build, and check the site
+        run: task check BASEURL="${{ steps.pages.outputs.base_path }}"
 
       - uses: actions/upload-pages-artifact@v3
 

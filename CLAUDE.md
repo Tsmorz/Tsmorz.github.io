@@ -120,9 +120,10 @@ that html-proofer never sees, so this is the only thing guarding it). It's pure 
 stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
-Task, runs `task check` (data → build → JS → links), then rebuilds with the deploy base
-path (`task build BASEURL=…`) for the uploaded artifact. `serve` and `add-photo` still wrap
-the `script/` files (`task add-photo -- <source-image> <slug>`).
+Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → build →
+JS → links); that one baseurl'd build is both link-checked (prefix stripped) and uploaded
+as the deploy artifact. `serve` and `add-photo` still wrap the `script/` files
+(`task add-photo -- <source-image> <slug>`).
 
 ## Deployment
 
@@ -139,15 +140,18 @@ these bit us once; the guard that now prevents it is noted.
   `jekyll-github-metadata`, which needs the repo's `owner/name`. Locally it reads your git
   `origin` remote; the runner can't reliably. **Guard:** the build job sets
   `PAGES_REPO_NWO: ${{ github.repository }}`. Don't remove it.
-- **html-proofer `internal image … does not exist` for every asset.** When Jekyll builds
-  with a non-empty `--baseurl` (from `steps.pages.outputs.base_path`), every link is
-  prefixed (e.g. `/pages/Tsmorz/assets/…`) and html-proofer resolves that against `_site/`,
-  where it isn't. **Guard:** checks run against a plain **root build** (`task check`, no
-  BASEURL); a *separate* `task build BASEURL=…` produces the deploy artifact. Never point
-  the link check at the baseurl'd build.
-  - Related: if `base_path` is non-empty for this **user page** (`tsmorz.github.io` should
-    deploy at `/`), the *live* site breaks even though CI is green — that means Pages
-    Source isn't set to GitHub Actions. CI can't catch this; check the deployed site.
+- **html-proofer `internal image … does not exist` for every asset.** The runner's build
+  prefixes every link with the Pages base path (`/pages/Tsmorz/assets/…`) but the files
+  live at `_site/assets/…`, so html-proofer can't resolve them. Crucially, **the prefix is
+  injected even when you don't pass `--baseurl`** — once `PAGES_REPO_NWO` is set the
+  `github-pages` gem reproduces the Pages build environment and sets `site.baseurl` from the
+  repo. So "just build at root for the check" does *not* work on CI. **Guard:** `check:links`
+  takes a `BASEURL` and passes html-proofer `--swap-urls "^<base>/:/"` to strip the prefix
+  before resolving; `task check BASEURL=…` threads it through build + link check, and that
+  one baseurl'd build is also the deploy artifact. Locally `BASEURL` is empty, so no swap.
+  - `base_path` is `/pages/Tsmorz` (the `/pages/<user>` scheme GitHub Enterprise Pages serves
+    under), read from the Pages API by `configure-pages`. Trust it — don't hardcode a baseurl
+    or assume it's empty just because `tsmorz.github.io` looks like a root-served user page.
 - **Case-sensitive filesystem.** macOS is case-insensitive, so `logo.JPG` referenced as
   `logo.jpg` works locally and 404s on Linux. **Guard:** `script/test-data` compares exact
   basenames (not `File.exist?`), so `task check:data` catches wrong-case photo/project

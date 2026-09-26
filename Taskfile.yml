@@ -58,17 +58,22 @@ tasks:
         echo "OK — all JS files are referenced."
 
   check:links:
-    desc: Check internal links with html-proofer
+    desc: Check internal links with html-proofer (pass BASEURL=… to strip a deploy base path)
     cmds:
-      - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt
+      # On CI the built HTML carries the Pages base path (e.g. /pages/Tsmorz), even
+      # without --baseurl, because the github-pages gem injects it. Strip that prefix
+      # so html-proofer resolves paths against _site/ where the files actually live.
+      - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt {{if .BASEURL}}--swap-urls "^{{.BASEURL}}/:/"{{end}}
 
   check:
     desc: Build, verify JS is referenced, and check internal links — the CI check
     cmds:
       - task: check:data
       - task: build
+        vars: { BASEURL: "{{.BASEURL}}" }
       - task: check:js
       - task: check:links
+        vars: { BASEURL: "{{.BASEURL}}" }
 
   add-photo:
     desc: 'Add a gallery photo — usage: task add-photo -- <source-image> <slug>'
