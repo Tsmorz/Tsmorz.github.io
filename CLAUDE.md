@@ -120,14 +120,41 @@ that html-proofer never sees, so this is the only thing guarding it). It's pure 
 stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
-Task and runs `task build BASEURL=…`, `task check:js`, `task check:links`. `serve` and
-`add-photo` still wrap the `script/` files (`task add-photo -- <source-image> <slug>`).
+Task, runs `task check` (data → build → JS → links), then rebuilds with the deploy base
+path (`task build BASEURL=…`) for the uploaded artifact. `serve` and `add-photo` still wrap
+the `script/` files (`task add-photo -- <source-image> <slug>`).
 
 ## Deployment
 
 `.github/workflows/pages.yml` builds on every push and PR, runs html-proofer, and deploys
 to Pages from `main`. Repo setting required: **Settings → Pages → Source = GitHub Actions**.
 Don't re-enable the legacy branch-based Pages build; the two conflict.
+
+### CI gotchas — things that pass locally but fail on the runner
+
+The runner is Linux with no git-inferred repo context; a Mac dev box is neither. Each of
+these bit us once; the guard that now prevents it is noted.
+
+- **`No repo name found` during build.** The `github-pages` gem loads
+  `jekyll-github-metadata`, which needs the repo's `owner/name`. Locally it reads your git
+  `origin` remote; the runner can't reliably. **Guard:** the build job sets
+  `PAGES_REPO_NWO: ${{ github.repository }}`. Don't remove it.
+- **html-proofer `internal image … does not exist` for every asset.** When Jekyll builds
+  with a non-empty `--baseurl` (from `steps.pages.outputs.base_path`), every link is
+  prefixed (e.g. `/pages/Tsmorz/assets/…`) and html-proofer resolves that against `_site/`,
+  where it isn't. **Guard:** checks run against a plain **root build** (`task check`, no
+  BASEURL); a *separate* `task build BASEURL=…` produces the deploy artifact. Never point
+  the link check at the baseurl'd build.
+  - Related: if `base_path` is non-empty for this **user page** (`tsmorz.github.io` should
+    deploy at `/`), the *live* site breaks even though CI is green — that means Pages
+    Source isn't set to GitHub Actions. CI can't catch this; check the deployed site.
+- **Case-sensitive filesystem.** macOS is case-insensitive, so `logo.JPG` referenced as
+  `logo.jpg` works locally and 404s on Linux. **Guard:** `script/test-data` compares exact
+  basenames (not `File.exist?`), so `task check:data` catches wrong-case photo/project
+  images before you push.
+- **External links are not checked** (`--disable-external`), on purpose — a third-party
+  site going down shouldn't fail our deploy. So a typo'd external URL won't be caught here;
+  it's the one class of link the pipeline is blind to.
 
 ## When editing, don't
 
