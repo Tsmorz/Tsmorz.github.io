@@ -2892,9 +2892,27 @@
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
       if (!W) W = 640;
-      var H = canvas.clientHeight || 440;
+
+      var sizes  = nn.sizes;
+      var nL     = sizes.length;
+      var MAX_N  = 16;
+      var PAD_X  = Math.max(48, W * 0.07);
+      var PAD_TOP = 26, PAD_BOT = 34;
+
+      // Derive the height from the tallest layer so every node fits. The old code
+      // read canvas.clientHeight, which fought the CSS box (width:100%, no height)
+      // and left the lower rows and labels clipped. Set an explicit style height,
+      // matching how the other demo canvases size themselves.
+      var maxShown = 1;
+      for (var l = 0; l < nL; l++) maxShown = Math.max(maxShown, Math.min(sizes[l], MAX_N));
+      var gap = 30;                                   // vertical spacing between nodes
+      var R = Math.max(6, Math.min(gap * 0.36, 16));
+      var H = Math.max(200, Math.round(PAD_TOP + PAD_BOT + (maxShown - 1) * gap));
+
       canvas.width  = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
+      canvas.style.width = '100%';
+      canvas.style.height = H + 'px';
       var ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -2907,11 +2925,6 @@
       var accRGB  = parseRGB(cssVar('--accent'));
       ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
 
-      var sizes  = nn.sizes;
-      var nL     = sizes.length;
-      var MAX_N  = 16;
-      var PAD_X  = Math.max(48, W * 0.07);
-      var PAD_TOP = 26, PAD_BOT = 34;
       var innerW = W - PAD_X * 2;
       var colX   = [];
       for (var l = 0; l < nL; l++) {
@@ -2919,12 +2932,6 @@
       }
       var INPUT_LABELS  = ['eᵧ', 'e_θ', 'ψ₁', 'ψ₂', 'ψ₃', 'ψ₄'];
       var OUTPUT_LABELS = ['δ'];
-
-      var maxShown = 1;
-      for (var l = 0; l < nL; l++) maxShown = Math.max(maxShown, Math.min(sizes[l], MAX_N));
-      var gap = (H - PAD_TOP - PAD_BOT) / Math.max(maxShown - 1, 1);
-      gap = Math.min(gap, 34);
-      var R = Math.max(6, Math.min(gap * 0.36, 16));
 
       function nodeY(l, i, n) {
         var shown = Math.min(n, MAX_N);
