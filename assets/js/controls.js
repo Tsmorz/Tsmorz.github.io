@@ -415,10 +415,10 @@
       renderAnim();
       renderPlot();
       drawContribPlot(msdPidCanvas, [
-        { label: 'P', color: cssVar('--accent'),   data: pidContrib.p },
-        { label: 'I', color: '#f0a040',            data: pidContrib.i },
-        { label: 'D', color: '#72c472',            data: pidContrib.d },
-        { label: 'Total', color: '#c0d0e8',        data: pidContrib.total }
+        { label: 'P', color: cssVar('--viz-1'),    data: pidContrib.p },
+        { label: 'I', color: cssVar('--viz-2'),    data: pidContrib.i },
+        { label: 'D', color: cssVar('--viz-3'),    data: pidContrib.d },
+        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
       ], null, 'F (N)');
       rafId = requestAnimationFrame(loop);
     }
@@ -441,14 +441,17 @@
     var LA = 70;       // AI pure-pursuit lookahead (virtual px)
     var NS = 500;      // path samples
 
-    // B-spline control polygon — closed loop, virtual px
+    // B-spline control polygon — closed loop, virtual px. A more interesting circuit:
+    // a tight top-left hairpin, a chicane-like kink up top, a long right-hand sweeper,
+    // and a bottom straight. Vertices are ordered by monotonic angle about the centre,
+    // which guarantees the loop stays simple (no self-intersections).
     var RAW = [
-      [130, 355], [310, 355], [490, 355],
-      [565, 305], [600, 245], [590, 188],
-      [555, 150], [500, 133], [455, 152],
-      [425, 110], [330, 78],  [210, 74],
-      [148, 106], [110, 165], [86,  237],
-      [105, 305]
+      [88, 196], [122, 103], [236, 79],
+      [309, 92], [336, 74], [391, 61],
+      [466, 67], [575, 95], [622, 196],
+      [589, 302], [492, 352], [407, 346],
+      [355, 345], [307, 338], [263, 325],
+      [241, 279], [164, 266], [105, 222]
     ];
 
     // Uniform cubic B-spline segment (C² everywhere; does not interpolate through control points)
@@ -854,8 +857,8 @@
       var pc = document.getElementById('race-state-plot');
       if (!pc) return;
       drawContribPlot(pc, [
-        { label: 'ey CTE (px)',   color: cssVar('--accent'), data: stateHist.ey  },
-        { label: 'eth hdg (rad)', color: '#f0a040',          data: stateHist.eth }
+        { label: 'eᵧ CTE (px)',   color: cssVar('--viz-1'), data: stateHist.ey  },
+        { label: 'e_θ hdg (rad)', color: cssVar('--viz-2'), data: stateHist.eth }
       ], null, 'state');
     }
 
@@ -999,10 +1002,10 @@
 
   // Shared reference trajectory constants (used by all flight demos + renderer)
   var H_CENTER  = 300;   // m — reference altitude centre
-  var REF_AMP   = 60;    // m — sine amplitude (gentler than before for a smoother tracking task)
-  var REF_OMEGA = 0.25;  // rad/s — period ≈ 25 s (longer/slower wave than the old 0.45)
+  var REF_AMP   = 15;    // m — sine amplitude (very small: a gentle, easy-to-track altitude hold)
+  var REF_OMEGA = 0.10;  // rad/s — period ≈ 63 s (long, slow wave so the autopilot has plenty of phase margin)
   // Seconds of reference shown across the full canvas width (determines how many cycles appear)
-  var REF_DISPLAY_SPAN = 24;
+  var REF_DISPLAY_SPAN = 60;
 
   function makeFlightRenderer(canvas) {
     var ctx = canvas.getContext('2d');
@@ -1470,15 +1473,17 @@
     }
   }
 
-  // Draw a state history plot showing h, V, alpha, gamma over time.
-  // stateHist: {h[], V[], alpha_deg[], gamma_deg[]}
-  function drawStatePlot(canvas, stateHist) {
+  // Draw a stacked state-history plot: one sub-row per state, each on its own
+  // auto-scaled y-axis with a direct label + current value.
+  // stateHist: an object of arrays keyed by `spec[i].key`.
+  // spec (optional): [{key, label, color}] — defaults to the flight states.
+  function drawStatePlot(canvas, stateHist, spec) {
     if (!canvas) return;
-    var SERIES = [
-      { key: 'h',         label: 'h(m)',    color: cssVar('--accent') },
-      { key: 'V',         label: 'V(m/s)',  color: '#5aafff' },
-      { key: 'alpha_deg', label: 'α(°)',    color: '#f0a040' },
-      { key: 'gamma_deg', label: 'γ(°)',    color: '#72c472' }
+    var SERIES = spec || [
+      { key: 'h',         label: 'h (m)',   color: cssVar('--viz-1') },
+      { key: 'V',         label: 'V (m/s)', color: cssVar('--viz-2') },
+      { key: 'alpha_deg', label: 'α (°)',   color: cssVar('--viz-3') },
+      { key: 'gamma_deg', label: 'γ (°)',   color: cssVar('--viz-4') }
     ];
     var series = SERIES.map(function(s) { return { label: s.label, color: s.color, data: stateHist[s.key] || [] }; });
     // Use independent y-scales: normalise each to [-1,1] in a shared space isn't ideal;
@@ -1716,10 +1721,10 @@
       renderer.render(state, simT, de_rad, simStatus);
       drawStatePlot(flStatePlot, stateHist);
       drawContribPlot(flPidPlot, [
-        { label: 'P',     color: cssVar('--accent'), data: pidContrib.p },
-        { label: 'I',     color: '#f0a040',          data: pidContrib.i },
-        { label: 'D',     color: '#72c472',          data: pidContrib.d },
-        { label: 'Total', color: '#c0d0e8',          data: pidContrib.total }
+        { label: 'P',     color: cssVar('--viz-1'), data: pidContrib.p },
+        { label: 'I',     color: cssVar('--viz-2'), data: pidContrib.i },
+        { label: 'D',     color: cssVar('--viz-3'), data: pidContrib.d },
+        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
       ], rad2deg(ELEV_MAX_RAD), 'δe (°)');
       requestAnimationFrame(loop);
     }
@@ -1732,46 +1737,67 @@
   (function sysidDemo() {
     var canvas = document.getElementById('sysid-canvas');
     if (!canvas) return;
-    var renderer = makeFlightRenderer(canvas);
 
-    var state, simT, de_rad;
+    /* ---- Cart-pole plant ----
+       state = [x, ẋ, θ, θ̇]  (m, m/s, rad, rad/s); θ measured from straight up.
+       Control u = horizontal force F (N) on the cart. The upright θ=0 is an
+       UNSTABLE equilibrium — the whole point of the demo. */
+    var M_CART = 1.0, M_POLE = 0.15, L_POLE = 0.6;   // half-length of the rod
+    var G = 9.8, TOTAL_M = M_CART + M_POLE, PML = M_POLE * L_POLE;
+    var FMAX = 15;                 // N — actuator saturation
+    var CP_DT = 0.005, SUBSTEPS = 5;  // 25 ms/step → real time at setInterval(25)
+    var FALL_ANGLE = deg2rad(55), X_LIMIT = 3.2;
+    var X_TARGET = 0;              // cart set-point (m)
+
+    function cpDeriv(t, s, F) {
+      var th = s[2], w = s[3];
+      var sinth = Math.sin(th), costh = Math.cos(th);
+      var temp = (F + PML * w * w * sinth) / TOTAL_M;
+      var thddot = (G * sinth - costh * temp) / (L_POLE * (4.0 / 3.0 - M_POLE * costh * costh / TOTAL_M));
+      var xddot  = temp - PML * thddot * costh / TOTAL_M;
+      return [s[1], xddot, w, thddot];
+    }
+
+    function gaussian() {
+      var u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    }
+
+    var state, simT, uForce;
     var recording = false;
     var dataBuf = [];
     var lqrActive = false;
     var lqrK = null;
+    var keepaliveK = null;   // stabiliser used while collecting closed-loop data
+    var exc = 0;             // smoothed excitation force
+    var pushF = 0;           // manual disturbance from the slider
     var errRing = [];
     var RING = 1200;
     var CHIST = 300;
-    var pidState = { intE: 0, prevE: 0 };
     var scoreBeforeVal = null;
-    var lqrContrib = { kv: [], kg: [], ka: [], kq: [], total: [] };
-    var stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+    var lqrContrib = { kx: [], kv: [], kt: [], kw: [], total: [] };
+    var stateHist  = { x: [], xd: [], th: [], thd: [] };
 
     var simStatus3 = 'ok';
     var resetTimer3 = null;
-    var ELEV_MAX_RAD3 = deg2rad(25);
 
     function resetSim() {
       if (resetTimer3) { clearTimeout(resetTimer3); resetTimer3 = null; }
-      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
+      state = [0, 0, deg2rad(7), 0];   // start with a small tilt so it visibly falls uncontrolled
       simT = 0;
-      de_rad = TRIM.de;
+      uForce = 0;
+      exc = 0;
       recording = false;
       dataBuf = [];
       lqrActive = false;
       lqrK = null;
       errRing = [];
       scoreBeforeVal = null;
-      pidState = { intE: 0, prevE: 0 };
-      lqrContrib = { kv: [], kg: [], ka: [], kq: [], total: [] };
-      stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+      lqrContrib = { kx: [], kv: [], kt: [], kw: [], total: [] };
+      stateHist  = { x: [], xd: [], th: [], thd: [] };
       simStatus3 = 'ok';
-      // Sync elevator slider to trim
-      if (elevSlider) {
-        elevSlider.value = rad2deg(TRIM.de).toFixed(1);
-        if (elevVal) elevVal.textContent = rad2deg(TRIM.de).toFixed(1) + '°';
-      }
-      renderer.resetViewport();
       updateUI();
     }
 
@@ -1780,8 +1806,8 @@
     var lqrBtn       = document.getElementById('sid-lqr-btn');
     var analyticBtn  = document.getElementById('sid-analytic-lqr-btn');
     var resetBtn     = document.getElementById('sid-reset');
-    var elevSlider   = document.getElementById('sid-elev');
-    var elevVal      = document.getElementById('sid-elev-val');
+    var forceSlider  = document.getElementById('sid-force');
+    var forceVal     = document.getElementById('sid-force-val');
     var barEl        = document.getElementById('sid-bar');
     var countEl      = document.getElementById('sid-count');
     var matricesEl   = document.getElementById('sid-matrices');
@@ -1795,18 +1821,31 @@
     var sidPidPlot   = document.getElementById('sid-pid-plot');
     var NEEDED = 300;
 
+    var CP_STATE_SPEC = [
+      { key: 'x',   label: 'x (m)',    color: cssVar('--viz-1') },
+      { key: 'xd',  label: 'ẋ (m/s)',  color: cssVar('--viz-2') },
+      { key: 'th',  label: 'θ (°)',    color: cssVar('--viz-3') },
+      { key: 'thd', label: 'θ̇ (°/s)',  color: cssVar('--viz-4') }
+    ];
+
+    // Pre-compute a stabilising gain for closed-loop data collection.
+    try {
+      var j0 = jacobianAtUpright();
+      keepaliveK = runLQRexplicit(j0.A, j0.B, [[1,0,0,0],[0,1,0,0],[0,0,25,0],[0,0,0,3]], 0.5);
+    } catch (e) { keepaliveK = null; }
+
     resetSim();
 
-    if (elevSlider) elevSlider.addEventListener('input', function () {
-      if (!lqrActive) de_rad = deg2rad(parseFloat(elevSlider.value));
-      if (elevVal) elevVal.textContent = parseFloat(elevSlider.value).toFixed(1) + '°';
+    if (forceSlider) forceSlider.addEventListener('input', function () {
+      pushF = parseFloat(forceSlider.value) || 0;
+      if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
     });
 
     // Q/R weight slider display
     (function() {
       var pairs = [
-        ['sid-qg', 'sid-qg-val', 0], ['sid-qa', 'sid-qa-val', 2],
-        ['sid-qv', 'sid-qv-val', 3], ['sid-r',  'sid-r-val',  1]
+        ['sid-qx', 'sid-qx-val', 1], ['sid-qth', 'sid-qth-val', 0],
+        ['sid-qthd', 'sid-qthd-val', 1], ['sid-r',  'sid-r-val',  2]
       ];
       pairs.forEach(function(p) {
         var sl = document.getElementById(p[0]), vl = document.getElementById(p[1]);
@@ -1827,19 +1866,25 @@
       if (identBtn) identBtn.disabled = n < NEEDED;
     }
 
-    if (recordBtn) recordBtn.addEventListener('click', function () { recording = !recording; updateUI(); });
+    if (recordBtn) recordBtn.addEventListener('click', function () {
+      if (!recording && !keepaliveK) { alert('Stabiliser unavailable — try Analytic LQR instead.'); return; }
+      recording = !recording;
+      if (recording) { lqrActive = false; lqrK = null; state = [0, 0, deg2rad(2), 0]; simStatus3 = 'ok'; }
+      updateUI();
+    });
     if (resetBtn)  resetBtn.addEventListener('click', resetSim);
 
     function activateLQR(K) {
       lqrK = K;
       lqrActive = true;
       recording = false;
+      if (state[2] === undefined || Math.abs(state[2]) > FALL_ANGLE) { state = [0, 0, deg2rad(6), 0]; simStatus3 = 'ok'; }
       updateUI();
-      if (kDisplay) kDisplay.textContent = 'K = [' + K.map(function (v) { return v.toFixed(4); }).join(', ') + ']';
+      if (kDisplay) kDisplay.textContent = 'K = [' + K.map(function (v) { return v.toFixed(3); }).join(', ') + ']';
       if (lqrSection) lqrSection.style.display = '';
       if (errRing.length > 0) scoreBeforeVal = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length);
       errRing = [];
-      lqrContrib = { kv: [], kg: [], ka: [], kq: [], total: [] };
+      lqrContrib = { kx: [], kv: [], kt: [], kw: [], total: [] };
     }
 
     // ---- System identification ----
@@ -1857,7 +1902,7 @@
     if (lqrBtn) lqrBtn.addEventListener('click', function () {
       if (!window._sidResult) return;
       var K = runLQR(window._sidResult.A, window._sidResult.B);
-      if (!K) { alert('DARE did not converge — collect more diverse flight data.'); return; }
+      if (!K) { alert('DARE did not converge — collect more diverse data.'); return; }
       activateLQR(K);
     });
 
@@ -1865,14 +1910,11 @@
     if (analyticBtn) analyticBtn.addEventListener('click', function () {
       var K = computeAnalyticLQR();
       if (!K) { alert('Analytic LQR failed.'); return; }
-      // Show analytic A, B matrices if not yet displayed
       if (matricesEl) matricesEl.style.display = '';
-      if (aDisplay)   aDisplay.textContent = '(computed from numerical Jacobian at trim)';
+      if (aDisplay)   aDisplay.textContent = '(computed from numerical Jacobian at θ = 0)';
       if (bDisplay)   bDisplay.textContent = '';
       activateLQR(K);
     });
-
-    var ELEV_MAX_RATE3 = deg2rad(40) * FLIGHT_DT;
 
     // ---- Simulation step ----
     function step() {
@@ -1880,81 +1922,171 @@
       if (simStatus3 !== 'ok') return;
 
       var prevState = state.slice();
-      var kv_t = 0, kg_t = 0, ka_t = 0, kq_t = 0, du_t = 0;
+      var kx_t = 0, kv_t = 0, kt_t = 0, kw_t = 0, uCtrl = 0;
 
-      for (var i = 0; i < 5; i++) {
-        if (lqrActive && lqrK) {
-          var dx = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
-          kv_t = -lqrK[0]*dx[0]; kg_t = -lqrK[1]*dx[1]; ka_t = -lqrK[2]*dx[2]; kq_t = -lqrK[3]*dx[3];
-          du_t = kv_t + kg_t + ka_t + kq_t;
-          // Outer altitude loop to track the sinusoid
-          var hRef3 = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
-          var h_err3 = hRef3 - state[4];
-          var de_target3 = clamp(TRIM.de + du_t - 0.003 * (-h_err3), -ELEV_MAX_RAD3, ELEV_MAX_RAD3);
-          de_rad += clamp(de_target3 - de_rad, -ELEV_MAX_RATE3, ELEV_MAX_RATE3);
-        }
-        state = rk4(state, simT, FLIGHT_DT, function (t, s) {
-          return flightDerivatives(t, s, de_rad);
-        });
-        simT += FLIGHT_DT;
-        var stop3 = checkStopConditions(state);
-        if (stop3) {
-          simStatus3 = stop3;
-          recording = false;
-          if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2500);
-          return;
-        }
+      // Decide the control force for this step (held across substeps).
+      if (lqrActive && lqrK) {
+        var dx = [state[0] - X_TARGET, state[1], state[2], state[3]];
+        kx_t = -lqrK[0]*dx[0]; kv_t = -lqrK[1]*dx[1]; kt_t = -lqrK[2]*dx[2]; kw_t = -lqrK[3]*dx[3];
+        uCtrl = kx_t + kv_t + kt_t + kw_t;
+      } else if (recording && keepaliveK) {
+        // Closed-loop excitation: a light stabiliser keeps the pole near upright
+        // while smoothed random forces persistently excite the dynamics.
+        exc = 0.9 * exc + 0.1 * gaussian() * 6;
+        uCtrl = -(keepaliveK[0]*state[0] + keepaliveK[1]*state[1] + keepaliveK[2]*state[2] + keepaliveK[3]*state[3]) + exc;
+      }
+      uForce = clamp(uCtrl + pushF, -FMAX, FMAX);
+
+      for (var i = 0; i < SUBSTEPS; i++) {
+        state = rk4(state, simT, CP_DT, function (t, s) { return cpDeriv(t, s, uForce); });
+        simT += CP_DT;
       }
 
-      // Record system-ID data
+      if (Math.abs(state[2]) > FALL_ANGLE || Math.abs(state[0]) > X_LIMIT) {
+        simStatus3 = Math.abs(state[0]) > X_LIMIT ? 'offtrack' : 'fell';
+        recording = false;
+        updateUI();
+        if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2000);
+        return;
+      }
+
+      // Record system-ID data: deviations from the upright equilibrium (which is 0).
       if (recording) {
-        var dx_trim = [state[0]-TRIM.V, state[1]-TRIM.gamma, state[2]-TRIM.alpha, state[3]-TRIM.q];
-        var du_trim = de_rad - TRIM.de;
-        var dxprev  = [prevState[0]-TRIM.V, prevState[1]-TRIM.gamma, prevState[2]-TRIM.alpha, prevState[3]-TRIM.q];
-        dataBuf.push({ x: dx_trim, u: du_trim, xprev: dxprev });
+        dataBuf.push({
+          x:     [state[0], state[1], state[2], state[3]],
+          u:     uForce,
+          xprev: [prevState[0], prevState[1], prevState[2], prevState[3]]
+        });
         updateUI();
       }
 
-      // LQR contribution history
+      // LQR contribution history (Newtons)
       if (lqrActive) {
-        lqrContrib.kv.push(rad2deg(kv_t)); lqrContrib.kg.push(rad2deg(kg_t));
-        lqrContrib.ka.push(rad2deg(ka_t)); lqrContrib.kq.push(rad2deg(kq_t));
-        lqrContrib.total.push(rad2deg(du_t));
-        if (lqrContrib.kv.length > CHIST) {
-          lqrContrib.kv.shift(); lqrContrib.kg.shift(); lqrContrib.ka.shift(); lqrContrib.kq.shift(); lqrContrib.total.shift();
+        lqrContrib.kx.push(kx_t); lqrContrib.kv.push(kv_t);
+        lqrContrib.kt.push(kt_t); lqrContrib.kw.push(kw_t);
+        lqrContrib.total.push(kx_t + kv_t + kt_t + kw_t);
+        if (lqrContrib.kx.length > CHIST) {
+          lqrContrib.kx.shift(); lqrContrib.kv.shift(); lqrContrib.kt.shift(); lqrContrib.kw.shift(); lqrContrib.total.shift();
         }
       }
 
       // State history
-      stateHist.h.push(state[4]); stateHist.V.push(state[0]);
-      stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
-      if (stateHist.h.length > CHIST) { stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift(); }
+      stateHist.x.push(state[0]); stateHist.xd.push(state[1]);
+      stateHist.th.push(rad2deg(state[2])); stateHist.thd.push(rad2deg(state[3]));
+      if (stateHist.x.length > CHIST) { stateHist.x.shift(); stateHist.xd.shift(); stateHist.th.shift(); stateHist.thd.shift(); }
 
-      // Score
-      var refH = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
-      errRing.push(Math.pow(refH - state[4], 2));
+      // Score: RMS pole angle over the recent window (deg) — lower is better balance.
+      errRing.push(Math.pow(rad2deg(state[2]), 2));
       if (errRing.length > RING) errRing.shift();
       if (scoreEl && errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length);
-        scoreEl.textContent = rmse.toFixed(1);
+        scoreEl.textContent = rmse.toFixed(2);
         if (scoreBeforeVal !== null && lqrActive && scoreCompEl) {
-          scoreCompEl.textContent = 'Before: ' + scoreBeforeVal.toFixed(1) + ' m\nAfter:  ' + rmse.toFixed(1) + ' m';
+          scoreCompEl.textContent = 'Before: ' + scoreBeforeVal.toFixed(2) + ' °\nAfter:  ' + rmse.toFixed(2) + ' °';
         }
       }
     }
 
     setInterval(step, 25);
 
+    // ---- Cart-pole renderer ----
+    function drawCartPole() {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.width;
+      if (!W) W = 720;
+      var H = 380;
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width = '100%';
+      canvas.style.height = H + 'px';
+      var ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      var bg = cssVar('--bg'), border = cssVar('--border'), muted = cssVar('--text-muted');
+      var text = cssVar('--text'), accent = cssVar('--accent'), mono = cssVar('--mono');
+      var poleColor = cssVar('--viz-2');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+      var trackY = H * 0.72;
+      var scale = (W * 0.5) / (X_LIMIT + 0.6);   // px per metre
+      var cx = W / 2;
+      function sx(xm) { return cx + xm * scale; }
+
+      // Track + rail limits
+      ctx.strokeStyle = border; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(20, trackY); ctx.lineTo(W - 20, trackY); ctx.stroke();
+      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+      [-X_LIMIT, X_LIMIT].forEach(function (xm) {
+        ctx.beginPath(); ctx.moveTo(sx(xm), trackY - 12); ctx.lineTo(sx(xm), trackY + 12); ctx.stroke();
+      });
+      // Target set-point marker
+      ctx.strokeStyle = accent; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(sx(X_TARGET), trackY - 60); ctx.lineTo(sx(X_TARGET), trackY + 14); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
+      ctx.fillText('target', sx(X_TARGET), trackY + 28);
+
+      var cartX = sx(state[0]);
+      var cartW = 60, cartH = 26;
+
+      // Force arrow (under the cart)
+      if (Math.abs(uForce) > 0.2) {
+        var fl = clamp(uForce / FMAX, -1, 1) * 46;
+        ctx.strokeStyle = poleColor; ctx.fillStyle = poleColor; ctx.lineWidth = 3;
+        var ay = trackY + 40;
+        ctx.beginPath(); ctx.moveTo(cartX, ay); ctx.lineTo(cartX + fl, ay); ctx.stroke();
+        var s = fl >= 0 ? 1 : -1;
+        ctx.beginPath();
+        ctx.moveTo(cartX + fl, ay); ctx.lineTo(cartX + fl - 7 * s, ay - 4);
+        ctx.lineTo(cartX + fl - 7 * s, ay + 4); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
+        ctx.fillText('F = ' + uForce.toFixed(1) + ' N', cartX, ay + 18);
+      }
+
+      // Cart
+      ctx.fillStyle = accent;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(cartX - cartW/2, trackY - cartH, cartW, cartH, 5); ctx.fill(); }
+      else ctx.fillRect(cartX - cartW/2, trackY - cartH, cartW, cartH);
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.arc(cartX - cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
+      ctx.beginPath(); ctx.arc(cartX + cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
+
+      // Pole
+      var pivotX = cartX, pivotY = trackY - cartH;
+      var poleLenPx = L_POLE * 2 * scale * 0.9;
+      var tipX = pivotX + poleLenPx * Math.sin(state[2]);
+      var tipY = pivotY - poleLenPx * Math.cos(state[2]);
+      ctx.strokeStyle = poleColor; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
+      ctx.fillStyle = poleColor;
+      ctx.beginPath(); ctx.arc(tipX, tipY, 9, 0, 2*Math.PI); ctx.fill();
+      ctx.fillStyle = border;
+      ctx.beginPath(); ctx.arc(pivotX, pivotY, 4, 0, 2*Math.PI); ctx.fill();
+      ctx.lineCap = 'butt';
+
+      // Mode / status banner
+      ctx.textAlign = 'left'; ctx.font = '600 13px ' + cssVar('--font');
+      var label, col;
+      if (simStatus3 === 'fell')      { label = 'Pole fell over — resetting…'; col = poleColor; }
+      else if (simStatus3 === 'offtrack') { label = 'Cart hit the rail — resetting…'; col = poleColor; }
+      else if (lqrActive)             { label = 'LQR balancing'; col = accent; }
+      else if (recording)             { label = 'Recording (stabiliser + excitation)…'; col = accent; }
+      else                            { label = 'Uncontrolled — enable a controller'; col = muted; }
+      ctx.fillStyle = col; ctx.fillText(label, 18, 26);
+      ctx.fillStyle = muted; ctx.font = '11px ' + mono;
+      ctx.fillText('θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m', 18, 44);
+    }
+
     function loop() {
-      renderer.render(state, simT, de_rad, simStatus3);
-      drawStatePlot(sidStatePlot, stateHist);
+      drawCartPole();
+      drawStatePlot(sidStatePlot, stateHist, CP_STATE_SPEC);
       drawContribPlot(sidPidPlot, [
-        { label: 'Kᵛ·ΔV', color: cssVar('--accent'), data: lqrContrib.kv },
-        { label: 'Kγ·Δγ', color: '#5aafff',    data: lqrContrib.kg },
-        { label: 'Kα·Δα', color: '#f0a040',    data: lqrContrib.ka },
-        { label: 'Kᵱ·Δq',      color: '#72c472',    data: lqrContrib.kq },
-        { label: 'Total',                      color: '#c0d0e8',    data: lqrContrib.total }
-      ], rad2deg(ELEV_MAX_RAD3), 'δe (°)');
+        { label: 'Kₓ·Δx',  color: cssVar('--viz-1'),     data: lqrContrib.kx },
+        { label: 'Kᵥ·Δẋ',  color: cssVar('--viz-2'),     data: lqrContrib.kv },
+        { label: 'K_θ·Δθ', color: cssVar('--viz-3'),     data: lqrContrib.kt },
+        { label: 'K_ω·Δθ̇', color: cssVar('--viz-4'),     data: lqrContrib.kw },
+        { label: 'Total F', color: cssVar('--viz-total'), data: lqrContrib.total }
+      ], FMAX, 'force (N)');
       requestAnimationFrame(loop);
     }
     loop();
@@ -1964,23 +2096,22 @@
       var n = dataBuf.length;
       if (n < NEEDED) return null;
 
-      // Build Φ (N×5) and Y (N×4)
-      // Δẋ ≈ (x_k+1 - x_k) / dt  (already stored as consecutive diffs)
-      var dt = FLIGHT_DT * 5;  // step stores every 5 physics steps
+      // Build Φ (N×5) and Y (N×4). Fit ẋ ≈ A·x + B·u by least squares.
+      var dt = CP_DT * SUBSTEPS;  // one recorded sample per control step
 
-      // Φ row: [ΔV, Δγ, Δα, Δq, Δδe]
-      // Y row: [(x_{k} - x_{k-1}) / dt]  using forward difference from consecutive samples
+      // Each record holds one control step: xprev → x under force u. Pair the
+      // transition with the force that actually caused it (self-consistent).
+      // Φ row: [x, ẋ, θ, θ̇, F]   Y row: [(x − xprev) / dt]
       var Phi = [], Y = [];
-      for (var i = 1; i < n; i++) {
-        var row = dataBuf[i].xprev.concat([dataBuf[i-1].u]);
-        var ydot = [
-          (dataBuf[i].x[0] - dataBuf[i-1].x[0]) / dt,
-          (dataBuf[i].x[1] - dataBuf[i-1].x[1]) / dt,
-          (dataBuf[i].x[2] - dataBuf[i-1].x[2]) / dt,
-          (dataBuf[i].x[3] - dataBuf[i-1].x[3]) / dt
-        ];
-        Phi.push(row);
-        Y.push(ydot);
+      for (var i = 0; i < n; i++) {
+        var d = dataBuf[i];
+        Phi.push(d.xprev.concat([d.u]));
+        Y.push([
+          (d.x[0] - d.xprev[0]) / dt,
+          (d.x[1] - d.xprev[1]) / dt,
+          (d.x[2] - d.xprev[2]) / dt,
+          (d.x[3] - d.xprev[3]) / dt
+        ]);
       }
 
       // Normal equations: (Φ'Φ) θ = Φ'Y  for each column of Y
@@ -2005,12 +2136,11 @@
       return { A: At, B: B };
     }
 
-    /* ---- Analytic LQR: numerical Jacobian at trim ---- */
-    function computeAnalyticLQR() {
+    /* ---- Continuous Jacobian of the cart-pole at the upright equilibrium ---- */
+    function jacobianAtUpright() {
       var eps = 1e-5;
-      var x0 = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, 0];
-      var u0 = TRIM.de;
-      function f4(x6, u) { return flightDerivatives(0, x6, u).slice(0, 4); }
+      var x0 = [0, 0, 0, 0], u0 = 0;
+      function f4(x, u) { return cpDeriv(0, x, u); }
       var cols = [];
       for (var jj = 0; jj < 4; jj++) {
         var xp = x0.slice(); xp[jj] += eps;
@@ -2022,28 +2152,35 @@
       for (var jj = 0; jj < 4; jj++) for (var ii = 0; ii < 4; ii++) Aj[ii].push(cols[jj][ii]);
       var fp2 = f4(x0, u0 + eps), fm2 = f4(x0, u0 - eps);
       var Bj = fp2.map(function(v, i) { return (v - fm2[i]) / (2 * eps); });
-      return runLQR(Aj, Bj);
+      return { A: Aj, B: Bj };
+    }
+
+    /* ---- Analytic LQR: exact Jacobian → DARE (no data needed) ---- */
+    function computeAnalyticLQR() {
+      var j = jacobianAtUpright();
+      return runLQR(j.A, j.B);
     }
 
     /* ---- LQR via DARE ---- */
     function getLQRWeights() {
-      var qv = parseFloat((document.getElementById('sid-qv') || {value:'0.01'}).value);
-      var qg = parseFloat((document.getElementById('sid-qg') || {value:'100'}).value);
-      var qa = parseFloat((document.getElementById('sid-qa') || {value:'1'}).value);
-      var R  = parseFloat((document.getElementById('sid-r')  || {value:'1.0'}).value);
-      return { Q: [[qv,0,0,0],[0,qg,0,0],[0,0,qa,0],[0,0,0,0.1]], R: R };
+      var qx   = parseFloat((document.getElementById('sid-qx')   || {value:'5'}).value);
+      var qth  = parseFloat((document.getElementById('sid-qth')  || {value:'100'}).value);
+      var qthd = parseFloat((document.getElementById('sid-qthd') || {value:'1'}).value);
+      var R    = parseFloat((document.getElementById('sid-r')    || {value:'0.1'}).value);
+      // Q = diag(x, ẋ, θ, θ̇); cart-velocity weight is a small fixed value.
+      return { Q: [[qx,0,0,0],[0,0.5,0,0],[0,0,qth,0],[0,0,0,qthd]], R: R };
     }
 
     function runLQR(A, B) {
-      // Discretise: Ad = I + dt*A,  Bd = dt*B
-      var dt = 0.05;
+      var w = getLQRWeights();
+      return runLQRexplicit(A, B, w.Q, w.R);
+    }
+
+    // Discrete-time LQR by iterating the Riccati recursion to convergence.
+    function runLQRexplicit(A, B, Q, R) {
+      var dt = CP_DT * SUBSTEPS;   // control period → Euler discretisation
       var Ad = mat4add(mat4eye(), mat4scale(A, dt));
       var Bd = B.map(function (v) { return v * dt; });
-
-      // Q, R weights from sliders
-      var w = getLQRWeights();
-      var Q = w.Q;
-      var R = w.R;
 
       var P = mat4copy(Q);
       for (var iter = 0; iter < 2000; iter++) {
@@ -2755,9 +2892,27 @@
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
       if (!W) W = 640;
-      var H = canvas.clientHeight || 440;
+
+      var sizes  = nn.sizes;
+      var nL     = sizes.length;
+      var MAX_N  = 16;
+      var PAD_X  = Math.max(48, W * 0.07);
+      var PAD_TOP = 26, PAD_BOT = 34;
+
+      // Derive the height from the tallest layer so every node fits. The old code
+      // read canvas.clientHeight, which fought the CSS box (width:100%, no height)
+      // and left the lower rows and labels clipped. Set an explicit style height,
+      // matching how the other demo canvases size themselves.
+      var maxShown = 1;
+      for (var l = 0; l < nL; l++) maxShown = Math.max(maxShown, Math.min(sizes[l], MAX_N));
+      var gap = 30;                                   // vertical spacing between nodes
+      var R = Math.max(6, Math.min(gap * 0.36, 16));
+      var H = Math.max(200, Math.round(PAD_TOP + PAD_BOT + (maxShown - 1) * gap));
+
       canvas.width  = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
+      canvas.style.width = '100%';
+      canvas.style.height = H + 'px';
       var ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -2770,11 +2925,6 @@
       var accRGB  = parseRGB(cssVar('--accent'));
       ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
 
-      var sizes  = nn.sizes;
-      var nL     = sizes.length;
-      var MAX_N  = 16;
-      var PAD_X  = Math.max(48, W * 0.07);
-      var PAD_TOP = 26, PAD_BOT = 34;
       var innerW = W - PAD_X * 2;
       var colX   = [];
       for (var l = 0; l < nL; l++) {
@@ -2782,12 +2932,6 @@
       }
       var INPUT_LABELS  = ['eᵧ', 'e_θ', 'ψ₁', 'ψ₂', 'ψ₃', 'ψ₄'];
       var OUTPUT_LABELS = ['δ'];
-
-      var maxShown = 1;
-      for (var l = 0; l < nL; l++) maxShown = Math.max(maxShown, Math.min(sizes[l], MAX_N));
-      var gap = (H - PAD_TOP - PAD_BOT) / Math.max(maxShown - 1, 1);
-      gap = Math.min(gap, 34);
-      var R = Math.max(6, Math.min(gap * 0.36, 16));
 
       function nodeY(l, i, n) {
         var shown = Math.min(n, MAX_N);
@@ -2863,12 +3007,12 @@
       var isDark = darkMode();
       raceRender();
       drawContribPlot(nnStatePlot, [
-        { label: 'eᵧ CTE (px)',  color: cssVar('--accent'), data: stateHist.ey  },
-        { label: 'e_θ hdg (rad)', color: '#f0a040',          data: stateHist.eth }
+        { label: 'eᵧ CTE (px)',  color: cssVar('--viz-1'), data: stateHist.ey  },
+        { label: 'e_θ hdg (rad)', color: cssVar('--viz-2'), data: stateHist.eth }
       ], null, 'state');
       drawContribPlot(nnPidPlot, [
-        { label: 'δ NN',     color: cssVar('--accent'), data: outHist.nn  },
-        { label: 'δ expert', color: '#f0a040',          data: outHist.exp }
+        { label: 'δ NN',     color: cssVar('--viz-1'), data: outHist.nn  },
+        { label: 'δ expert', color: cssVar('--viz-2'), data: outHist.exp }
       ], 1.0, 'steer δ');
       drawNetViz(nnNetCanvas, net, lastNNCache, isDark);
       requestAnimationFrame(loop);
@@ -3233,9 +3377,9 @@
         update(now);
         draw();
         drawContribPlot(reactPlot, [
-          { label: 'setpoint',   color: cssVar('--text-muted'), data: lastFit.setp },
-          { label: 'you',        color: cssVar('--accent'),     data: lastFit.user },
-          { label: 'fitted PID', color: '#f0a040',              data: lastFit.pid  }
+          { label: 'setpoint',   color: cssVar('--viz-total'), data: lastFit.setp },
+          { label: 'you',        color: cssVar('--viz-1'),     data: lastFit.user },
+          { label: 'fitted PID', color: cssVar('--viz-2'),     data: lastFit.pid  }
         ], null, 'position');
       }
       requestAnimationFrame(loop);
