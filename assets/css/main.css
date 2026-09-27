@@ -14,6 +14,14 @@
   --nn-act-neg: #c9524b;
   --nn-act-zero: #d3d8de;
   --nn-act-pos: #0d7a75;
+  /* Data-viz series palette — validated categorical order (blue/orange/aqua/yellow),
+     colorblind-safe in both modes. Used by every controls plot for a shared color
+     language. Reference labels always accompany the color, so identity is never color-alone. */
+  --viz-1: #2a78d6;  /* blue   */
+  --viz-2: #eb6834;  /* orange */
+  --viz-3: #1baf7a;  /* aqua   */
+  --viz-4: #eda100;  /* yellow */
+  --viz-total: #6b7280;  /* neutral gray — aggregate / total lines */
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -37,6 +45,11 @@
     --nn-act-neg: #e06a60;
     --nn-act-zero: #2a3441;
     --nn-act-pos: #3ecfc4;
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+    --viz-4: #c98500;
+    --viz-total: #9aa6b4;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -55,6 +68,11 @@
   --nn-act-neg: #e06a60;
   --nn-act-zero: #2a3441;
   --nn-act-pos: #3ecfc4;
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-total: #9aa6b4;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }

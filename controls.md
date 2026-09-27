@@ -1,17 +1,17 @@
 ---
 layout: default
 title: Controls
-description: Interactive control-systems demos — PID tuning, nonlinear flight sim, system identification, and LQR.
+description: Interactive control-systems demos — PID tuning, path tracking, a nonlinear flight sim, cart-pole system-ID + LQR, and behavioral cloning.
 permalink: /controls/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
     Six interactive demos spanning classical and modern control. Tune a PID controller, track
-    a B-spline race course with a PID path follower, fly a nonlinear aircraft, identify linearized
-    dynamics for LQR synthesis, train a neural network to drive the race car by imitating an expert,
-    then become the controller yourself — chase a jumping target and let the site fit the PID gains
-    and reaction delay hidden in your own hand.
+    a B-spline race course with a PID path follower, fly a nonlinear aircraft, then <strong>identify a
+    cart-pole from data and balance it with an LQR controller you tune</strong>, train a neural network
+    to drive the race car by imitating an expert, and finally become the controller yourself — chase a
+    jumping target and let the site fit the PID gains and reaction delay hidden in your own hand.
   </p>
 </section>
 
@@ -20,7 +20,7 @@ permalink: /controls/
     <button class="sim-tab active" role="tab" aria-selected="true"  aria-controls="sec-msd"    id="tab-msd"    type="button">PID Tuning</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-race"   id="tab-race"   type="button">Race Track</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
-    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">System ID / LQR</button>
+    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">Cart-Pole LQR</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-nn"     id="tab-nn"     type="button">Neural Net</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-react"  id="tab-react"  type="button">Be the Controller</button>
   </div>
@@ -72,8 +72,8 @@ permalink: /controls/
         <button class="sim-btn" id="msd-reset" type="button">Reset</button>
       </div>
     </div>
-    <details class="demo-guide" style="margin-top:.6rem">
-      <summary>About this demo</summary>
+    <div class="demo-note">
+      <h4 class="demo-note-title">About this demo</h4>
       <p>
         A <strong>PID controller</strong> drives an underdamped mass-spring-damper to track a
         sinusoidal reference. The <em>proportional</em> term reacts to current error, the
@@ -86,7 +86,7 @@ permalink: /controls/
         noise is amplified hardest by the derivative term. &#8594;
         <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
-    </details>
+    </div>
   </section>
 
   <!-- ── Demo 1.5: Race Track ───────────────────────────────────── -->
@@ -137,8 +137,8 @@ permalink: /controls/
         <button class="sim-btn" id="race-reset" type="button">Reset</button>
       </div>
     </div>
-    <details class="demo-guide" style="margin-top:.6rem">
-      <summary>About this demo</summary>
+    <div class="demo-note">
+      <h4 class="demo-note-title">About this demo</h4>
       <p>
         A car follows a closed <strong>B-spline</strong> track at constant speed. The controller
         observes two state variables: <strong>e<sub>y</sub></strong> (signed lateral distance from
@@ -149,7 +149,7 @@ permalink: /controls/
         The red AI car uses a pure-pursuit reference for comparison. &#8594;
         <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
-    </details>
+    </div>
   </section>
 
   <!-- ── Demo 2: Flight Sim ──────────────────────────────────────── -->
@@ -205,8 +205,8 @@ permalink: /controls/
         <button class="sim-btn" id="fl-reset" type="button">Reset</button>
       </div>
     </div>
-    <details class="demo-guide" style="margin-top:.6rem">
-      <summary>About this demo</summary>
+    <div class="demo-note">
+      <h4 class="demo-note-title">About this demo</h4>
       <p>
         A nonlinear longitudinal aircraft model with six states: airspeed V, flight-path angle &#947;,
         angle of attack &#945;, pitch rate q, altitude h, and downrange x. Lift uses a nonlinear
@@ -216,9 +216,9 @@ permalink: /controls/
         <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics &#8212; Wikipedia</a>,
         <a href="https://en.wikipedia.org/wiki/Angle_of_attack" target="_blank" rel="noopener">Angle of attack</a>
       </p>
-    </details>
-    <details class="demo-guide" style="margin-top:-.5rem">
-      <summary>Equations of motion</summary>
+    </div>
+    <div class="demo-note">
+      <h4 class="demo-note-title">Equations of motion</h4>
       <div class="eqn-block">
         <div class="eqn-row"><span class="eqn-lhs">V&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T cos&#945; &#8722; D] / m &#8722; g sin&#947;</span></div>
         <div class="eqn-row"><span class="eqn-lhs">&#947;&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T sin&#945; + L &#8722; mg cos&#947;] / (mV)</span></div>
@@ -228,28 +228,29 @@ permalink: /controls/
         <div class="eqn-row"><span class="eqn-lhs">x&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V cos&#947;</span></div>
         <p class="eqn-note">L, D, M<sub>y</sub> from nonlinear aero model (sigmoid stall at ~16&#176;). T = trim thrust (constant). RK4 at 200 Hz.</p>
       </div>
-    </details>
+    </div>
   </section>
 
-  <!-- ── Demo 3: System ID + LQR ─────────────────────────────────── -->
+  <!-- ── Demo 3: Cart-Pole System ID + LQR ───────────────────────── -->
   <section class="sim-section" id="sec-sysid" role="tabpanel" aria-labelledby="tab-sysid">
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="sysid-canvas" width="720" height="380" aria-label="System ID flight canvas"></canvas>
-        <canvas id="sid-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history"></canvas>
-        <canvas id="sid-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="LQR contribution chart"></canvas>
+        <canvas class="sim-canvas" id="sysid-canvas" width="720" height="380" aria-label="Cart-pole balancing simulation"></canvas>
+        <canvas id="sid-state-plot" height="160" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history: cart position, velocity, pole angle, pole rate"></canvas>
+        <canvas id="sid-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="LQR force contribution chart"></canvas>
       </div>
       <div class="sim-panel">
         <h3>1 &#8212; Collect data</h3>
+        <p class="panel-hint">A built-in stabiliser keeps the pole up while random shoves excite the dynamics &#8212; closed-loop system ID.</p>
         <div class="sysid-progress">
           <div class="sysid-bar-wrap"><div class="sysid-bar" id="sid-bar"></div></div>
           <div class="sysid-count" id="sid-count">0 / 300 samples</div>
         </div>
-        <div class="pid-group">
-          <label>Elevator &#948;<sub>e</sub> <span id="sid-elev-val">0.0&#176;</span></label>
-          <input type="range" id="sid-elev" min="-25" max="25" step="0.5" value="0">
-        </div>
         <button class="sim-btn" id="sid-record-btn" type="button">Start Recording</button>
+        <div class="pid-group" style="margin-top:.5rem">
+          <label>Push the cart (disturbance) <span id="sid-force-val">0.0 N</span></label>
+          <input type="range" id="sid-force" min="-8" max="8" step="0.5" value="0">
+        </div>
 
         <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
         <h3>2 &#8212; System ID</h3>
@@ -267,11 +268,11 @@ permalink: /controls/
 
         <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
         <h3>3 &#8212; LQR</h3>
-        <p style="font-size:.8rem;margin:.15rem 0 .4rem;color:var(--text-muted)">Cost weights — LQR minimises <em>x&#7488;Qx + u&#7488;Ru</em>. Higher Q penalises state error; higher R penalises large elevator inputs.</p>
-        <div class="ctrl-row"><label>Q<sub>&#947;</sub> (flight path) <span id="sid-qg-val">100</span></label><input type="range" id="sid-qg" min="1" max="500" step="1" value="100"></div>
-        <div class="ctrl-row"><label>Q<sub>&#945;</sub> (angle of attack) <span id="sid-qa-val">1</span></label><input type="range" id="sid-qa" min="0.01" max="20" step="0.01" value="1"></div>
-        <div class="ctrl-row"><label>Q<sub>V</sub> (speed) <span id="sid-qv-val">0.01</span></label><input type="range" id="sid-qv" min="0.001" max="1" step="0.001" value="0.01"></div>
-        <div class="ctrl-row"><label>R (control effort) <span id="sid-r-val">1.0</span></label><input type="range" id="sid-r" min="0.1" max="10" step="0.1" value="1.0"></div>
+        <p style="font-size:.8rem;margin:.15rem 0 .4rem;color:var(--text-muted)">Cost weights — LQR minimises <em>x&#7488;Qx + u&#7488;Ru</em>. Higher Q punishes state error; higher R punishes large pushes.</p>
+        <div class="ctrl-row"><label>Q<sub>x</sub> (cart position) <span id="sid-qx-val">5.0</span></label><input type="range" id="sid-qx" min="0" max="60" step="0.5" value="5"></div>
+        <div class="ctrl-row"><label>Q<sub>&#952;</sub> (pole angle) <span id="sid-qth-val">100</span></label><input type="range" id="sid-qth" min="1" max="400" step="1" value="100"></div>
+        <div class="ctrl-row"><label>Q<sub>&#952;&#775;</sub> (pole rate) <span id="sid-qthd-val">1.0</span></label><input type="range" id="sid-qthd" min="0" max="20" step="0.1" value="1"></div>
+        <div class="ctrl-row"><label>R (control effort) <span id="sid-r-val">0.10</span></label><input type="range" id="sid-r" min="0.01" max="2" step="0.01" value="0.10"></div>
         <button class="sim-btn" id="sid-lqr-btn" type="button" disabled>Enable LQR</button>
         <button class="sim-btn" id="sid-analytic-lqr-btn" type="button" style="margin-top:.35rem">Analytic LQR</button>
         <div class="matrix-section" id="sid-lqr-section" style="display:none">
@@ -284,34 +285,42 @@ permalink: /controls/
 
         <div class="score-block" style="padding-top:.25rem">
           <span class="score-value" id="sid-score">&#8212;</span>
-          <span class="score-label">RMSE (m)</span>
+          <span class="score-label">RMS &#952; (&#176;)</span>
         </div>
         <button class="sim-btn" id="sid-reset" type="button">Reset</button>
       </div>
     </div>
-    <details class="demo-guide" style="margin-top:.6rem">
-      <summary>About this demo</summary>
+    <div class="demo-note">
+      <h4 class="demo-note-title">About this demo</h4>
       <p>
-        Fly the aircraft to excite the longitudinal modes, record data, then fit a linear model
-        &#7819; = Ax + Bu via least squares (<strong>system identification</strong>).
-        The identified A and B feed the <strong>discrete algebraic Riccati equation (DARE)</strong>
-        to compute the LQR gain K that minimises J = &#8721;(x'Qx + u'Ru). Click
-        <em>Analytic LQR</em> to skip data collection and compute K from exact numerical Jacobians.
-        &#8594;
-        <a href="https://en.wikipedia.org/wiki/System_identification" target="_blank" rel="noopener">System identification &#8212; Wikipedia</a>,
+        The <strong>cart-pole</strong> is the classic unstable plant: a pole hinged on a cart that
+        you can only push left or right. Balancing it upright is the textbook test for
+        <strong>LQR</strong>. First press <em>Start Recording</em> &#8212; a light built-in stabiliser
+        holds the pole near vertical while random shoves excite all four states, and the run is logged.
+        With 300 samples, <em>Identify System</em> fits a linear model &#7819; = Ax + Bu by least
+        squares (<strong>system identification</strong>).
+      </p>
+      <p>
+        The identified A and B feed the <strong>discrete algebraic Riccati equation (DARE)</strong>,
+        which returns the LQR gain K that minimises J = &#8721;(x&#7488;Qx + u&#7488;Ru). Tune the Q/R
+        weights and press <em>Enable LQR</em> to hand it the controls, or click <em>Analytic LQR</em> to
+        skip data collection and solve K from the exact numerical Jacobian. Drag <em>Push the cart</em>
+        to disturb it and watch the regulator recover. &#8594;
+        <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum &#8212; Wikipedia</a>,
         <a href="https://en.wikipedia.org/wiki/Linear%E2%80%93quadratic_regulator" target="_blank" rel="noopener">LQR &#8212; Wikipedia</a>
       </p>
-    </details>
-    <details class="demo-guide" style="margin-top:-.5rem">
-      <summary>LQR equations</summary>
+    </div>
+    <div class="demo-note">
+      <h4 class="demo-note-title">Equations of motion &amp; LQR</h4>
       <div class="eqn-block">
-        <div class="eqn-row"><span class="eqn-lhs">A<sub>d</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">I + dt &#183; A,&#160; B<sub>d</sub> = dt &#183; B&#160;&#160;(dt = 0.05 s)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">P</span><span class="eqn-eq">=</span><span class="eqn-rhs">Q + A<sub>d</sub>'PA<sub>d</sub> &#8722; A<sub>d</sub>'PB<sub>d</sub>(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup>B<sub>d</sub>'PA<sub>d</sub></span></div>
-        <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup> B<sub>d</sub>'PA<sub>d</sub></span></div>
-        <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>trim</sub> &#8722; K [&#916;V, &#916;&#947;, &#916;&#945;, &#916;q]'</span></div>
-        <p class="eqn-note">Q = diag(0.01, 100, 1, 0.1)&#160; R = 1. Iterated 2000&#215; until convergence.</p>
+        <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">A<sub>d</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">I + dt&#183;A,&#160; B<sub>d</sub> = dt&#183;B&#160;&#160;(dt = 0.025 s)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup> B<sub>d</sub>'PA<sub>d</sub>,&#160; from the DARE solution P</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#8722;K [x, &#7819;, &#952;, &#952;&#775;]'</span></div>
+        <p class="eqn-note">M = 1 kg cart, m = 0.15 kg pole, &#8467; = 0.6 m half-length, g = 9.8. State [x, &#7819;, &#952;, &#952;&#775;]; upright &#952; = 0 is unstable. Riccati recursion iterated to convergence.</p>
       </div>
-    </details>
+    </div>
   </section>
 
   <!-- ── Demo 4: Neural Network Controller ─────────────────────── -->
@@ -376,8 +385,8 @@ permalink: /controls/
       <canvas id="nn-net-canvas" height="440" aria-label="Neural network diagram with color-coded neuron activations"></canvas>
     </div>
 
-    <details class="demo-guide" style="margin-top:.6rem">
-      <summary>About this demo</summary>
+    <div class="demo-note">
+      <h4 class="demo-note-title">About this demo</h4>
       <p>
         A small feedforward network learns to drive the car around the B-spline track via
         <strong>behavioral cloning</strong>: a pure-pursuit expert laps the circuit and the network is
@@ -389,7 +398,7 @@ permalink: /controls/
         <a href="https://en.wikipedia.org/wiki/Feedforward_neural_network" target="_blank" rel="noopener">Feedforward neural network &#8212; Wikipedia</a>,
         <a href="https://en.wikipedia.org/wiki/Imitation_learning" target="_blank" rel="noopener">Imitation learning &#8212; Wikipedia</a>
       </p>
-    </details>
+    </div>
   </section>
 
   <!-- ── Demo 5: Be the Controller ──────────────────────────────── -->
@@ -426,8 +435,8 @@ permalink: /controls/
         <button class="sim-btn" id="react-reset" type="button">Reset</button>
       </div>
     </div>
-    <details class="demo-guide" style="margin-top:.6rem">
-      <summary>About this demo</summary>
+    <div class="demo-note">
+      <h4 class="demo-note-title">About this demo</h4>
       <p>
         The tables turn &#8212; now <em>you</em> are the controller. A target jumps between the
         corners of the box at a random moment you can&#8217;t predict; chase it with your mouse or
@@ -441,7 +450,7 @@ permalink: /controls/
         <a href="https://en.wikipedia.org/wiki/System_identification" target="_blank" rel="noopener">System identification &#8212; Wikipedia</a>,
         <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
-    </details>
+    </div>
   </section>
 
 </div>
@@ -451,13 +460,16 @@ permalink: /controls/
 <style>
 .race-steer-btns{display:flex;gap:.4rem;margin:.35rem 0 .1rem}
 .race-steer{flex:1;padding:.35rem .2rem;font-size:.82rem}
-.demo-guide{margin:.4rem 0 .8rem;border:1px solid var(--border);border-radius:6px;padding:0}
-.demo-guide summary{cursor:pointer;padding:.5rem .75rem;font-size:.82rem;font-weight:600;list-style:none;color:var(--text-muted)}
-.demo-guide summary::-webkit-details-marker{display:none}
-.demo-guide summary::before{content:'\25B8 '}
-details.demo-guide[open] summary::before{content:'\25BE '}
-.demo-guide>p{padding:.25rem .75rem .6rem;margin:0;font-size:.82rem;line-height:1.55}
-.eqn-block{padding:.4rem .75rem .65rem;font-family:var(--mono);font-size:.8rem}
+.demo-note{margin:.55rem 0 .85rem;border:1px solid var(--border);border-radius:8px;padding:.65rem .85rem;background:var(--bg-soft)}
+.demo-note-title{margin:0 0 .35rem;font-size:.8rem;font-weight:600;color:var(--text);letter-spacing:.01em}
+.demo-note>p{margin:.15rem 0;font-size:.82rem;line-height:1.55}
+.demo-note>p+p{margin-top:.5rem}
+.panel-hint{font-size:.75rem;line-height:1.45;color:var(--text-muted);margin:.1rem 0 .5rem}
+.ctrl-row{display:flex;flex-direction:column;gap:.2rem;margin:.35rem 0}
+.ctrl-row label{display:flex;justify-content:space-between;align-items:baseline;font-size:.85rem;font-weight:550;color:var(--text-muted)}
+.ctrl-row label span{font-family:var(--mono);font-size:.82rem;color:var(--accent);font-weight:400}
+.ctrl-row input[type="range"]{width:100%;accent-color:var(--accent);cursor:pointer}
+.eqn-block{padding:.25rem 0 0;font-family:var(--mono);font-size:.8rem}
 .eqn-row{display:flex;gap:.4rem;margin:.18rem 0}
 .eqn-lhs{min-width:2.4rem;text-align:right;font-weight:600}
 .eqn-eq{min-width:1rem}
