@@ -1,2 +1,3 @@
 ---
 BUNDLE_DISABLE_CHECKSUM_VALIDATION: "true"
+BUNDLE_PATH: "vendor/bundle"
