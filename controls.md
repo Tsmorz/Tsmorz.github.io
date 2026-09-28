@@ -318,7 +318,7 @@ permalink: /controls/
         <div class="eqn-row"><span class="eqn-lhs">A<sub>d</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">I + dt&#183;A,&#160; B<sub>d</sub> = dt&#183;B&#160;&#160;(dt = 0.025 s)</span></div>
         <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup> B<sub>d</sub>'PA<sub>d</sub>,&#160; from the DARE solution P</span></div>
         <div class="eqn-row"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#8722;K [x, &#7819;, &#952;, &#952;&#775;]'</span></div>
-        <p class="eqn-note">M = 1 kg cart, m = 0.15 kg pole, &#8467; = 0.6 m half-length, g = 9.8. State [x, &#7819;, &#952;, &#952;&#775;]; upright &#952; = 0 is unstable. Riccati recursion iterated to convergence.</p>
+        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, g = 9.8 &#8212; a light cart under a long, heavy pole, so it shoves easily and topples slowly. State [x, &#7819;, &#952;, &#952;&#775;]; upright &#952; = 0 is unstable. Riccati recursion iterated to convergence.</p>
       </div>
     </div>
   </section>
