@@ -441,18 +441,25 @@
     var LA = 70;       // AI pure-pursuit lookahead (virtual px)
     var NS = 500;      // path samples
 
-    // B-spline control polygon — closed loop, virtual px. A more interesting circuit:
-    // a tight top-left hairpin, a chicane-like kink up top, a long right-hand sweeper,
-    // and a bottom straight. Vertices are ordered by monotonic angle about the centre,
-    // which guarantees the loop stays simple (no self-intersections).
-    var RAW = [
-      [88, 196], [122, 103], [236, 79],
-      [309, 92], [336, 74], [391, 61],
-      [466, 67], [575, 95], [622, 196],
-      [589, 302], [492, 352], [407, 346],
-      [355, 345], [307, 338], [263, 325],
-      [241, 279], [164, 266], [105, 222]
-    ];
+    // B-spline control polygon — a closed loop in virtual px, sampled from a
+    // trefoil curve (x = sin t + 2 sin 2t, y = cos t − 2 cos 2t). The trefoil
+    // crosses itself three times, so the circuit is no longer a single oval: it
+    // weaves through three connected loops joined by three crossovers. The cubic
+    // B-spline stays C² everywhere, so the racing line is smooth despite the
+    // self-intersections. The two crossing branches meet ~1/3 of a lap apart in
+    // path-index space — far outside the nearest-point search window in
+    // nearestIdx — so a car always follows its own branch through a crossover.
+    var RAW = (function buildControlPolygon() {
+      var pts = [], N = 30, cx = 350, cy = 238, ax = 95, ay = 62;
+      for (var k = 0; k < N; k++) {
+        var t = k / N * 2 * Math.PI;
+        pts.push([
+          cx + ax * (Math.sin(t) + 2 * Math.sin(2 * t)),
+          cy + ay * (Math.cos(t) - 2 * Math.cos(2 * t))
+        ]);
+      }
+      return pts;
+    })();
 
     // Uniform cubic B-spline segment (C² everywhere; does not interpolate through control points)
     function bspline4(p0, p1, p2, p3, t) {
@@ -1002,10 +1009,10 @@
 
   // Shared reference trajectory constants (used by all flight demos + renderer)
   var H_CENTER  = 300;   // m — reference altitude centre
-  var REF_AMP   = 15;    // m — sine amplitude (very small: a gentle, easy-to-track altitude hold)
-  var REF_OMEGA = 0.10;  // rad/s — period ≈ 63 s (long, slow wave so the autopilot has plenty of phase margin)
+  var REF_AMP   = 25;    // m — sine amplitude → 50 m peak-to-peak height delta
+  var REF_OMEGA = 2 * Math.PI / 8;  // rad/s — period = 8 s
   // Seconds of reference shown across the full canvas width (determines how many cycles appear)
-  var REF_DISPLAY_SPAN = 60;
+  var REF_DISPLAY_SPAN = 24;   // ≈ 3 cycles of the 8 s wave stay legible
 
   function makeFlightRenderer(canvas) {
     var ctx = canvas.getContext('2d');
@@ -1742,7 +1749,10 @@
        state = [x, ẋ, θ, θ̇]  (m, m/s, rad, rad/s); θ measured from straight up.
        Control u = horizontal force F (N) on the cart. The upright θ=0 is an
        UNSTABLE equilibrium — the whole point of the demo. */
-    var M_CART = 1.0, M_POLE = 0.15, L_POLE = 0.6;   // half-length of the rod
+    // Light cart + a long, heavy pole (a bob on top): the cart is easy to shove
+    // side to side, and the tall pole's high rotational inertia makes it fall
+    // slowly, so it's far more forgiving to balance than a short, light stick.
+    var M_CART = 0.4, M_POLE = 0.4, L_POLE = 0.9;   // half-length of the rod
     var G = 9.8, TOTAL_M = M_CART + M_POLE, PML = M_POLE * L_POLE;
     var FMAX = 15;                 // N — actuator saturation
     var CP_DT = 0.005, SUBSTEPS = 5;  // 25 ms/step → real time at setInterval(25)
@@ -2059,7 +2069,7 @@
       ctx.strokeStyle = poleColor; ctx.lineWidth = 6; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
       ctx.fillStyle = poleColor;
-      ctx.beginPath(); ctx.arc(tipX, tipY, 9, 0, 2*Math.PI); ctx.fill();
+      ctx.beginPath(); ctx.arc(tipX, tipY, 13, 0, 2*Math.PI); ctx.fill();
       ctx.fillStyle = border;
       ctx.beginPath(); ctx.arc(pivotX, pivotY, 4, 0, 2*Math.PI); ctx.fill();
       ctx.lineCap = 'butt';
@@ -2318,7 +2328,9 @@
     if (!canvas) return;
     var ctx = canvas.getContext('2d');
 
-    /* ── Track geometry (shared B-spline with the Race Track demo) ── */
+    /* ── Track geometry (its own single-loop B-spline oval — kept simple, with
+       no crossovers, so the cloned network has a clean racing line to imitate;
+       the Race Track demo uses a harder multi-loop trefoil circuit) ── */
     var VW = 700, VH = 420;
     var TW = 36;            // track half-width (virtual px)
     var WB = 28;            // wheelbase (virtual px)
