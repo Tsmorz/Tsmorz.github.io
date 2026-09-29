@@ -19,8 +19,8 @@ description: Tony Smoragiewicz — robotics software engineer at Agile Robots wo
       <div class="btn-row">
         <a class="btn btn-primary" href="{{ '/projects/' | relative_url }}">See my projects</a>
         {% if site.cv_url %}<a class="btn" href="{{ site.cv_url | relative_url }}">Download CV</a>{% endif %}
-        <a class="btn" href="{{ site.social.github }}">GitHub</a>
-        <a class="btn" href="{{ site.social.linkedin }}">LinkedIn</a>
+        <a class="btn btn-icon" href="{{ site.social.github }}" aria-label="GitHub">{% include social-icon.html name="github" %}</a>
+        <a class="btn btn-icon" href="{{ site.social.linkedin }}" aria-label="LinkedIn">{% include social-icon.html name="linkedin" %}</a>
       </div>
     </div>
     <img class="hero-photo" src="{{ site.author.photo | relative_url }}" alt="Portrait of Tony Smoragiewicz">

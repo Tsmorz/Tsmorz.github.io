@@ -53,6 +53,26 @@ purely because the idea was too good to leave alone.
 - **Learning for control** — vision-based policies for flight
 - **Teaching** — a hands-on undergraduate course in quadcopter design
 
+## Hardware design
+
+Software is most of what I do, but not all of it. When a project needs a physical part
+that doesn't exist yet, I design it — modelling in CAD, iterating on the geometry, and
+fabricating the result to test it in the real world. The most satisfying hardware is the
+kind I get to put through its paces myself.
+
+<figure class="about-figure">
+  <img src="{{ '/assets/img/about/bike-aerobar-cad.png' | relative_url }}" alt="CAD model of a bike aerobar I designed">
+  <figcaption>A bike aerobar I designed in CAD. I raced it through my 2020 professional
+  season and used it to take top finishes on the World Cup circuit.</figcaption>
+</figure>
+
+## Racing
+
+Before robotics was the day job, I raced professionally. The 2020 season was the
+highlight — top finishes on the World Cup circuit, on a setup I'd designed and built
+myself (above). Chasing marginal gains on the bike is where a lot of my instinct for
+hardware and control came from: measure, model, change one thing, test, repeat.
+
 ## Elsewhere
 
 - [GitHub]({{ site.social.github }}) — most of my work, open source
