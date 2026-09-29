@@ -4,13 +4,17 @@
   var btn = document.querySelector('.theme-toggle');
   if (!btn) return;
 
+  function isDark() {
+    var t = root.getAttribute('data-theme');
+    return t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  btn.setAttribute('aria-checked', isDark() ? 'true' : 'false');
+
   btn.addEventListener('click', function () {
-    var current = root.getAttribute('data-theme');
-    if (!current) {
-      current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    var next = current === 'dark' ? 'light' : 'dark';
+    var next = isDark() ? 'light' : 'dark';
     root.setAttribute('data-theme', next);
+    btn.setAttribute('aria-checked', next === 'dark' ? 'true' : 'false');
     try { localStorage.setItem('theme', next); } catch (e) {}
   });
 })();
