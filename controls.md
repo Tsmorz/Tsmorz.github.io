@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Controls
-description: Interactive control-systems demos — PID tuning, tilt table, flight sim, cart-pole LQR and behavioral cloning.
+description: Interactive control-systems demos — PID tuning, tilt table, flight sim, cart-pole PPO.
 permalink: /controls/
 ---
 <section class="wrap page-head">
@@ -9,7 +9,7 @@ permalink: /controls/
   <p class="page-sub controls-intro">
     Four interactive demos spanning classical and modern control. Tune a PID controller on a
     mass-spring, a ball-balancing tilt table, and a nonlinear aircraft autopilot, then identify a
-    cart-pole from data, balance it with an <strong>LQR controller</strong>, and train a neural
+    cart-pole balance it with a <strong>PPO policy network</strong>, and train a neural
     network to take over.
   </p>
 </section>
@@ -19,7 +19,7 @@ permalink: /controls/
     <button class="sim-tab active" role="tab" aria-selected="true"  aria-controls="sec-msd"    id="tab-msd"    type="button">Intro</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-tilt"   id="tab-tilt"   type="button">Tilt Table</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
-    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">Cart-Pole LQR</button>
+    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">Cart-Pole PPO</button>
   </div>
 
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
@@ -135,8 +135,8 @@ permalink: /controls/
       <p>
         A <strong>PID controller</strong> tilts a beam to balance a rolling ball at the centre.
         Each trial starts with the ball at a random position in the <em>inner half</em> of the beam
-        and a small random velocity; the table starts flat. A trial succeeds when the ball holds
-        within 3 cm of centre for 0.5 s, and fails if it reaches the edge or 8 s elapse.
+        and a small outward velocity; the table starts flat. A trial succeeds when the ball holds
+        within 8 mm of centre at under 4 cm/s for 0.5 s, and fails if it reaches the edge or 8 s elapse.
         The <strong>stabilisation heatmap</strong> below accumulates results across trials:
         x-axis = initial distance from centre, y-axis = initial speed, colour = time to stabilise
         (green = fast, red = slow, dark = failed, grey = no data). Start with K<sub>p</sub> alone
@@ -156,34 +156,25 @@ permalink: /controls/
         <canvas id="fl-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
       </div>
       <div class="sim-panel">
-        <h3>PID Gains</h3>
+        <h3>System Identification</h3>
+        <p class="panel-hint">Excite the aircraft with a PRBS elevator signal (&#177;5&#176;) for 15 s, then fit a discrete-time linear model by least squares.</p>
+        <button class="sim-btn" id="fl-record-btn" type="button">Record Excitation (15 s)</button>
+        <div class="sysid-count" id="fl-sysid-status">Press Record to begin</div>
+        <button class="sim-btn" id="fl-fit-btn" type="button" disabled style="margin-top:.3rem">Fit Linear Model</button>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.5rem 0">
+        <h3>LQR Design</h3>
+        <p class="panel-hint">Tune cost weights, then solve the discrete Riccati equation (DARE) to get the optimal feedback gain K.</p>
         <div class="pid-group">
-          <label>K<sub>p</sub> <span id="fl-kp-val">0.000</span></label>
-          <input type="range" id="fl-kp" min="-0.5" max="0.5" step="0.005" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kp-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
+          <label>Q (state cost weight) <span id="fl-q-val">1.00</span></label>
+          <input type="range" id="fl-q" min="0.1" max="10" step="0.1" value="1">
         </div>
         <div class="pid-group">
-          <label>K<sub>i</sub> <span id="fl-ki-val">0.000</span></label>
-          <input type="range" id="fl-ki" min="-0.5" max="0.5" step="0.005" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-ki-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
+          <label>R (control cost) <span id="fl-r-val">1.00</span></label>
+          <input type="range" id="fl-r" min="0.1" max="20" step="0.1" value="1">
         </div>
-        <div class="pid-group">
-          <label>K<sub>d</sub> <span id="fl-kd-val">0.000</span></label>
-          <input type="range" id="fl-kd" min="-0.5" max="0.5" step="0.005" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kd-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
-        </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
-        <h3>Disturbances</h3>
-        <div class="pid-group">
-          <label>Delay <span id="fl-delay-val">0 ms</span></label>
-          <input type="range" id="fl-delay" min="0" max="1000" step="10" value="0">
-          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="fl-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
-        </div>
-        <div class="pid-group">
-          <label>Sensor noise &#963; <span id="fl-noise-val">0.00</span></label>
-          <input type="range" id="fl-noise" min="0" max="0.5" step="0.01" value="0">
-        </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
+        <button class="sim-btn" id="fl-lqr-btn" type="button" disabled>Compute LQR</button>
+        <button class="sim-btn" id="fl-activate-btn" type="button" disabled style="margin-top:.3rem">Activate LQR</button>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.5rem 0">
         <div class="score-block">
           <span class="score-value" id="fl-score">&#8212;</span>
           <span class="score-label">RMSE (m)</span>
@@ -195,13 +186,17 @@ permalink: /controls/
     <div class="demo-note">
       <h4 class="demo-note-title">About this demo</h4>
       <p>
-        A nonlinear longitudinal aircraft model with six states: airspeed V, flight-path angle &#947;,
-        angle of attack &#945;, pitch rate q, altitude h, and downrange x. Lift uses a nonlinear
-        stall model &#8212; C<sub>L</sub> rises linearly to ~16&#176; angle of attack then drops sharply,
-        matching a real NACA airfoil curve. A PID autopilot tracks a sinusoidal altitude reference
-        by commanding elevator deflection. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Angle_of_attack" target="_blank" rel="noopener">Angle of attack</a>
+        A nonlinear 6-state longitudinal aircraft model (V, &#947;, &#945;, q, h, x) with a sigmoid
+        stall model. Each trial starts the plane at a random altitude and pitch offset from a random
+        flat reference altitude (dashed line). The workflow mirrors the tilt table but uses
+        data-driven control: (1) <strong>record</strong> a PRBS elevator excitation to collect
+        input&#8211;output data; (2) <strong>fit</strong> a discrete-time linear model
+        &#916;x<sub>k+1</sub> = F<sub>d</sub>&#916;x<sub>k</sub> + G<sub>d</sub>&#916;u<sub>k</sub>
+        around the trim point; (3) <strong>design</strong> an LQR controller by solving the
+        discrete algebraic Riccati equation; (4) <strong>activate</strong> &#8212; the plane then
+        corrects any random starting condition to the reference. &#8594;
+        <a href="https://en.wikipedia.org/wiki/System_identification" target="_blank" rel="noopener">System identification &#8212; Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/Linear%E2%80%93quadratic_regulator" target="_blank" rel="noopener">LQR &#8212; Wikipedia</a>
       </p>
     </div>
     <div class="demo-note">
@@ -213,7 +208,18 @@ permalink: /controls/
         <div class="eqn-row"><span class="eqn-lhs">q&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">M<sub>y</sub> / I<sub>yy</sub></span></div>
         <div class="eqn-row"><span class="eqn-lhs">h&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V sin&#947;</span></div>
         <div class="eqn-row"><span class="eqn-lhs">x&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V cos&#947;</span></div>
-        <p class="eqn-note">L, D, M<sub>y</sub> from nonlinear aero model (sigmoid stall at ~16&#176;). T = trim thrust (constant). RK4 at 200 Hz.</p>
+        <p class="eqn-note">L, D, M<sub>y</sub> from nonlinear aero (sigmoid stall ~16&#176;). T = trim thrust. RK4 at 200 Hz.</p>
+      </div>
+    </div>
+    <div class="demo-note">
+      <h4 class="demo-note-title">System ID &amp; LQR</h4>
+      <div class="eqn-block">
+        <div class="eqn-row"><span class="eqn-lhs">&#916;x<sub>k+1</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">F<sub>d</sub>&#160;&#916;x<sub>k</sub> + G<sub>d</sub>&#160;&#916;u<sub>k</sub>&#160;&#160;&#160;(fit by least squares from PRBS data)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">J</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#8721;<sub>k</sub> (&#916;x<sub>k</sub><sup>T</sup> Q &#916;x<sub>k</sub> + R&#160;&#916;u<sub>k</sub><sup>2</sup>)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">P</span><span class="eqn-eq">=</span><span class="eqn-rhs">Q + F<sub>d</sub><sup>T</sup> P F<sub>d</sub> &#8722; F<sub>d</sub><sup>T</sup> P G<sub>d</sub> (R + G<sub>d</sub><sup>T</sup> P G<sub>d</sub>)<sup>&#8722;1</sup> G<sub>d</sub><sup>T</sup> P F<sub>d</sub>&#160;&#160;&#160;(DARE)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + G<sub>d</sub><sup>T</sup> P G<sub>d</sub>)<sup>&#8722;1</sup> G<sub>d</sub><sup>T</sup> P F<sub>d</sub></span></div>
+        <div class="eqn-row"><span class="eqn-lhs">&#916;u<sub>k</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#8722;K&#160;&#916;x<sub>k</sub>&#160;&#160;&#160;&#916;x = [&#916;h, &#916;&#947;, &#916;&#945;, &#916;q]</span></div>
+        <p class="eqn-note">State: perturbation from trim. Q = diag(Q<sub>h</sub>, 2Q<sub>h</sub>, 5, 0.5). Elevator clamped &#177;15&#176;.</p>
       </div>
     </div>
   </section>
@@ -224,71 +230,29 @@ permalink: /controls/
       <div class="sim-canvas-wrap">
         <canvas class="sim-canvas" id="sysid-canvas" width="720" height="380" aria-label="Cart-pole balancing simulation"></canvas>
         <canvas id="sid-state-plot" height="160" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history: cart position, velocity, pole angle, pole rate"></canvas>
-        <canvas id="sid-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="LQR force contribution chart"></canvas>
       </div>
       <div class="sim-panel">
-        <h3>1 &#8212; Swing-Up Trials</h3>
-        <p class="panel-hint">Pole starts hanging down. Use &#8592;&#8594; arrow keys or the slider to push the cart and swing it upright. Hold within 20&#176; of vertical for 2 s to succeed. Each successful trial saves training data for the neural network.</p>
-        <div class="trial-status-row">
-          <span class="trial-status-text" id="sid-trial-status">Ready to start</span>
-          <span class="trial-timer" id="sid-trial-timer">20.0 s</span>
+        <h3>PPO Training</h3>
+        <p class="panel-hint">Trains a policy network with <strong>Proximal Policy Optimisation</strong>. The agent learns from simulated experience &#8212; no demonstrations needed. Click Train to start; activate when done to hand it the controls.</p>
+        <div class="pid-group">
+          <label>Hidden layers <span id="sid-nn-layers-val">2</span></label>
+          <input type="range" id="sid-nn-layers" min="1" max="4" step="1" value="2">
         </div>
-        <div class="sysid-count" id="sid-trials-saved">0 trials saved</div>
-        <button class="sim-btn" id="sid-trial-btn" type="button">Start Trial</button>
-        <div class="pid-group" style="margin-top:.5rem">
+        <div class="pid-group">
+          <label>Neurons / layer <span id="sid-nn-neurons-val">32</span></label>
+          <input type="range" id="sid-nn-neurons" min="8" max="64" step="8" value="32">
+        </div>
+        <button class="sim-btn" id="sid-ppo-train-btn" type="button">Train PPO</button>
+        <div class="sysid-count" id="sid-ppo-status">Click Train to start learning from scratch</div>
+        <canvas id="sid-nn-loss-canvas" height="60" style="width:100%;margin-top:.3rem" aria-label="Episode reward history"></canvas>
+        <button class="sim-btn" id="sid-nn-activate-btn" type="button" disabled style="margin-top:.35rem">Activate Policy</button>
+
+        <hr style="border:0;border-top:1px solid var(--border);margin:.5rem 0">
+        <div class="pid-group" style="margin-top:.25rem">
           <label>Push the cart <span id="sid-force-val">0.0 N</span></label>
           <input type="range" id="sid-force" min="-8" max="8" step="0.5" value="0">
           <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="sid-force-range" class="range-input" value="8" min="1" step="1"></div>
         </div>
-
-        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
-        <h3>2 &#8212; System ID</h3>
-        <button class="sim-btn" id="sid-identify-btn" type="button" disabled>Identify System</button>
-        <div class="matrix-section" id="sid-matrices" style="display:none">
-          <div>
-            <div class="matrix-label">A&#160; (4 &#215; 4)</div>
-            <pre class="matrix-display" id="sid-A-display"></pre>
-          </div>
-          <div>
-            <div class="matrix-label">B&#160; (4 &#215; 1)</div>
-            <pre class="matrix-display" id="sid-B-display"></pre>
-          </div>
-        </div>
-
-        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
-        <h3>3 &#8212; LQR</h3>
-        <p style="font-size:.8rem;margin:.15rem 0 .4rem;color:var(--text-muted)">Cost weights — LQR minimises <em>x&#7488;Qx + u&#7488;Ru</em>. Higher Q punishes state error; higher R punishes large pushes.</p>
-        <div class="ctrl-row"><label>Q<sub>x</sub> (cart position) <span id="sid-qx-val">5.0</span></label><input type="range" id="sid-qx" min="0" max="60" step="0.5" value="5"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-qx-range" class="range-input" value="60" min="1" step="1"></div></div>
-        <div class="ctrl-row"><label>Q<sub>&#952;</sub> (pole angle) <span id="sid-qth-val">100</span></label><input type="range" id="sid-qth" min="1" max="400" step="1" value="100"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-qth-range" class="range-input" value="400" min="1" step="1"></div></div>
-        <div class="ctrl-row"><label>Q<sub>&#952;&#775;</sub> (pole rate) <span id="sid-qthd-val">1.0</span></label><input type="range" id="sid-qthd" min="0" max="20" step="0.1" value="1"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-qthd-range" class="range-input" value="20" min="1" step="1"></div></div>
-        <div class="ctrl-row"><label>R (control effort) <span id="sid-r-val">0.10</span></label><input type="range" id="sid-r" min="0.01" max="2" step="0.01" value="0.10"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-r-range" class="range-input" value="2" min="0.1" step="0.1"></div></div>
-        <button class="sim-btn" id="sid-lqr-btn" type="button" disabled>Enable LQR</button>
-        <button class="sim-btn" id="sid-analytic-lqr-btn" type="button" style="margin-top:.35rem">Analytic LQR</button>
-        <div class="matrix-section" id="sid-lqr-section" style="display:none">
-          <div>
-            <div class="matrix-label">K&#160; (1 &#215; 4)</div>
-            <pre class="matrix-display" id="sid-K-display"></pre>
-          </div>
-          <div class="score-compare" id="sid-score-compare"></div>
-        </div>
-
-        <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
-        <h3>4 &#8212; Neural Network</h3>
-        <p class="panel-hint">Train a feedforward net to imitate your swing-up demos. With saved trial data, &#8220;Prepare Training Data&#8221; converts them into input&#8211;output pairs. Without trials, falls back to LQR expert rollouts (balance only).</p>
-        <div class="pid-group">
-          <label>Hidden layers <span id="sid-nn-layers-val">1</span></label>
-          <input type="range" id="sid-nn-layers" min="1" max="3" step="1" value="1">
-        </div>
-        <div class="pid-group">
-          <label>Neurons / layer <span id="sid-nn-neurons-val">16</span></label>
-          <input type="range" id="sid-nn-neurons" min="4" max="32" step="4" value="16">
-        </div>
-        <button class="sim-btn" id="sid-nn-gen-btn" type="button">Prepare Training Data</button>
-        <div class="sysid-count" id="sid-nn-gen-status">Complete trials first, or uses LQR expert as fallback</div>
-        <button class="sim-btn" id="sid-nn-train-btn" type="button" disabled style="margin-top:.35rem">Train Network</button>
-        <canvas id="sid-nn-loss-canvas" height="60" style="width:100%;margin-top:.3rem" aria-label="Training loss"></canvas>
-        <div class="sysid-count" id="sid-nn-train-status"></div>
-        <button class="sim-btn" id="sid-nn-activate-btn" type="button" disabled style="margin-top:.35rem">Activate NN</button>
 
         <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="score-block" style="padding-top:.25rem">
@@ -316,32 +280,26 @@ permalink: /controls/
       <h4 class="demo-note-title">About this demo</h4>
       <p>
         The <strong>cart-pole</strong> is the classic unstable plant: a pole hinged on a cart that
-        you can only push left or right. This demo turns it into a <strong>swing-up game</strong>:
-        the pole starts hanging down and you have 20 seconds to swing it upright and hold it stable.
-        Use &#8592;&#8594; arrow keys or the force slider to push the cart. Each successful trial
-        (pole held within 20&#176; of vertical for 2 s) saves your actions as training data.
-      </p>
-      <p>
-        Once you have saved trials, press <em>Prepare Training Data</em> to convert them into
-        input&#8211;output pairs, then <em>Train Network</em> to fit a feedforward net via
-        Adam SGD using <strong>behavioral cloning</strong> &#8212; the net learns to imitate
-        your successful demonstrations. Press <em>Activate NN</em> to hand it the controls and
-        watch it attempt the full swing-up from scratch. The optional <em>Analytic LQR</em>
-        button solves the exact Jacobian-based balance gain if you want to compare against an
-        optimal controller. &#8594;
+        can only be pushed left or right. The pole starts hanging down; use &#8592;&#8594; arrow keys
+        or the force slider to shove the cart. Click <em>Train PPO</em> to run
+        <strong>Proximal Policy Optimisation</strong> entirely in the browser &#8212; the agent
+        simulates thousands of episodes in the background, collects advantage-weighted rollouts,
+        and updates a small actor&#8211;critic network via Adam. Once training finishes, press
+        <em>Activate Policy</em> to deploy the learned controller and watch it balance from a
+        random hanging start. &#8594;
         <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Behavioral_cloning" target="_blank" rel="noopener">Behavioral cloning</a>
+        <a href="https://en.wikipedia.org/wiki/Proximal_policy_optimization" target="_blank" rel="noopener">PPO &#8212; Wikipedia</a>
       </p>
     </div>
     <div class="demo-note">
-      <h4 class="demo-note-title">Equations of motion &amp; LQR</h4>
+      <h4 class="demo-note-title">Equations of motion &amp; PPO</h4>
       <div class="eqn-block">
         <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">A<sub>d</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">I + dt&#183;A,&#160; B<sub>d</sub> = dt&#183;B&#160;&#160;(dt = 0.025 s)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + B<sub>d</sub>'PB<sub>d</sub>)<sup>&#8722;1</sup> B<sub>d</sub>'PA<sub>d</sub>,&#160; from the DARE solution P</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#8722;K [x, &#7819;, &#952;, &#952;&#775;]'</span></div>
-        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, g = 9.8 &#8212; a light cart under a long, heavy pole, so it shoves easily and topples slowly. State [x, &#7819;, &#952;, &#952;&#775;]; upright &#952; = 0 is unstable. Riccati recursion iterated to convergence.</p>
+        <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">r</span><span class="eqn-eq">=</span><span class="eqn-rhs">cos&#952; &#8722; 0.1(x/x<sub>max</sub>)&#178; &#8722; 0.001(F/F<sub>max</sub>)&#178; + 1</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">L<sub>CLIP</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">E[min(r<sub>t</sub>&#8239;A&#770;<sub>t</sub>, clip(r<sub>t</sub>, 1&#8722;&#949;, 1+&#949;)&#8239;A&#770;<sub>t</sub>)],&#160; &#949; = 0.2</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">r<sub>t</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#960;&#952;(a<sub>t</sub>|s<sub>t</sub>) / &#960;<sub>&#952;&#8320;</sub>(a<sub>t</sub>|s<sub>t</sub>)&#160; (importance ratio)</span></div>
+        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, b = 1.2 N&#183;s/m cart friction, g = 9.8 m/s&#178;. GAE advantages (&#947; = 0.99, &#955; = 0.95), rollout 512 steps, 4 epochs per update, minibatch 64. Actor: Gaussian policy &#956;(s) = tanh(net(s))&#183;F<sub>max</sub>, fixed &#963; &#8776; 15 N; critic: separate value network.</p>
       </div>
     </div>
   </section>

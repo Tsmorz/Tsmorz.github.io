@@ -437,9 +437,9 @@
     var ctx = canvas.getContext('2d');
 
     var g    = 9.81;
-    var ROLL = 5 / 7;
+    var ROLL = 1.0;           // full gravitational acceleration (no rolling inertia reduction)
     var DAMP = 0.28;
-    var T    = 0.5;           // beam half-length (m)
+    var T    = 1.0;           // beam half-length (m)
     var TILT_LIM = 20 * Math.PI / 180;
 
     // Heatmap grid
@@ -1206,7 +1206,7 @@
     }
 
     // status: 'ok' | 'crashed' | 'stalled' | 'too_high' | 'over_top'
-    function render(state, simT, de_rad, status, extraFn) {
+    function render(state, simT, de_rad, status, extraFn, hRefTarget) {
       var W = canvas.clientWidth, H = 380;
       ctx.clearRect(0, 0, W, H);
 
@@ -1277,42 +1277,59 @@
       // the sine wave span the canvas. The plane sits at planeScreenX, so pixels to its
       // LEFT are the past reference (older in time) and pixels to its RIGHT are the future.
       var planeScreenX = W * 0.35;
+      var isFlat = (typeof hRefTarget !== 'undefined');
       function refYAt(px) {
+        if (isFlat) return hToY(hRefTarget, H);
         var tOffset = (px - planeScreenX) / W * REF_DISPLAY_SPAN;
         return hToY(H_CENTER + REF_AMP * Math.sin(REF_OMEGA * (simT + tOffset)), H);
       }
 
-      // Future reference (right of the plane) — faint dashed guide to anticipate.
-      ctx.save();
-      ctx.globalAlpha = 0.32;
-      ctx.strokeStyle = accentColor;
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([8, 5]);
-      ctx.beginPath();
-      for (var px = planeScreenX; px <= W; px += 4) {
-        var ry = refYAt(px);
-        if (px === planeScreenX) ctx.moveTo(px, ry); else ctx.lineTo(px, ry);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.restore();
-
-      // Past reference (left of the plane) — a solid "comet tail" that fades with age.
-      ctx.save();
-      ctx.strokeStyle = accentColor;
-      ctx.lineCap = 'round';
-      for (var px = planeScreenX; px > 0; px -= 4) {
-        var age = (planeScreenX - px) / planeScreenX;   // 0 at the dot → 1 at far left
-        ctx.globalAlpha = Math.max(0, 1 - age);
-        ctx.lineWidth = 0.5 + 2.2 * (1 - age);
+      if (isFlat) {
+        // Flat reference: single horizontal dashed line across the full canvas.
+        var flatRefY = refYAt(planeScreenX);
+        ctx.save();
+        ctx.strokeStyle = accentColor;
+        ctx.setLineDash([10, 6]);
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.6;
         ctx.beginPath();
-        ctx.moveTo(px, refYAt(px));
-        ctx.lineTo(px - 4, refYAt(px - 4));
+        ctx.moveTo(0, flatRefY);
+        ctx.lineTo(W, flatRefY);
         ctx.stroke();
-      }
-      ctx.restore();
+        ctx.setLineDash([]);
+        ctx.restore();
+      } else {
+        // Sine reference: future dashed guide + past comet tail.
+        ctx.save();
+        ctx.globalAlpha = 0.32;
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([8, 5]);
+        ctx.beginPath();
+        for (var px = planeScreenX; px <= W; px += 4) {
+          var ry = refYAt(px);
+          if (px === planeScreenX) ctx.moveTo(px, ry); else ctx.lineTo(px, ry);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
 
-      // Moving reference dot — the target the aircraft is chasing right now.
+        ctx.save();
+        ctx.strokeStyle = accentColor;
+        ctx.lineCap = 'round';
+        for (var px = planeScreenX; px > 0; px -= 4) {
+          var age = (planeScreenX - px) / planeScreenX;
+          ctx.globalAlpha = Math.max(0, 1 - age);
+          ctx.lineWidth = 0.5 + 2.2 * (1 - age);
+          ctx.beginPath();
+          ctx.moveTo(px, refYAt(px));
+          ctx.lineTo(px - 4, refYAt(px - 4));
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Reference dot — target the aircraft is chasing right now.
       var dotY = refYAt(planeScreenX);
       ctx.save();
       ctx.globalAlpha = 0.35;
@@ -1350,7 +1367,7 @@
 
       // Elevator indicator bar (right edge).
       // Positive de_rad → plane pitches up → thumb moves UP.
-      var eiFrac = (de_rad / deg2rad(25) + 1) / 2;  // 0 = full down, 1 = full up
+      var eiFrac = (de_rad / deg2rad(15) + 1) / 2;  // 0 = full down, 1 = full up
       var eiX = W - 22, eiTop = 50, eiH = 80;
       ctx.fillStyle = bgSoft;
       ctx.strokeStyle = borderColor;
@@ -1607,54 +1624,196 @@
   }
 
   /* ================================================================
-     Demo 2 — Flight Simulator
+     Demo 2 — Flight Simulator  (System ID + LQR)
+     Workflow: Record PRBS excitation → Fit linear model (LS) →
+               Design LQR (DARE) → Activate from random IC
   ================================================================ */
   (function flightDemo() {
     var canvas = document.getElementById('flight-canvas');
     if (!canvas) return;
     var renderer = makeFlightRenderer(canvas);
 
-    var state, simT, de_rad, pidState, simStatus;
+    // ---- Constants -----------------------------------------------
+    var ELEV_MAX_RAD = deg2rad(15);
+    var EXCITE_DUR   = 15;           // seconds of excitation recording
+    var EXCITE_AMP   = deg2rad(5);   // PRBS amplitude (±5°)
+
+    // ---- Sim state -----------------------------------------------
+    var state, simT, de_rad, simStatus;
     var errRing = [], RING = 1200, CHIST = 300;
-    var pidContrib = { p: [], i: [], d: [], total: [] };
-    var stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+    var stateHist = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+    var ctrlHist  = [];
     var resetTimer = null, bestRMSE = null;
-    var flDelayBuf = [];
+    var flHRef = TRIM.h;
 
-    function gaussFlight() {
-      var u = 0, v = 0;
-      while (u === 0) u = Math.random();
-      while (v === 0) v = Math.random();
-      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-    }
+    // ---- System-ID / LQR workflow state --------------------------
+    // wfMode: 'idle' | 'excite' | 'ready' | 'lqr'
+    var wfMode      = 'idle';
+    var exciteData  = [];   // [{dx:[4], du:scalar, dxn:[4]}]
+    var exciteT     = 0;
+    var exciteSign  = 1;
+    var exciteTick  = 0;    // countdown to next PRBS switch (seconds)
+    var sysModel    = null; // {Fd:4×4, Gd:4×1} discrete-time linearisation
+    var lqrK        = null; // [[k0,k1,k2,k3]]  1×4 feedback gain
 
-    var kpSlider = document.getElementById('fl-kp');
-    var kiSlider = document.getElementById('fl-ki');
-    var kdSlider = document.getElementById('fl-kd');
-    var kpValEl  = document.getElementById('fl-kp-val');
-    var kiValEl  = document.getElementById('fl-ki-val');
-    var kdValEl  = document.getElementById('fl-kd-val');
-    var flDelaySlider = document.getElementById('fl-delay');
-    var flDelayValEl  = document.getElementById('fl-delay-val');
-    var flDelayAmt    = document.getElementById('fl-delay-amt');
-    var flNoiseSlider = document.getElementById('fl-noise');
-    var flNoiseValEl  = document.getElementById('fl-noise-val');
-    var scoreEl  = document.getElementById('fl-score');
-    var resetBtn = document.getElementById('fl-reset');
+    // ---- DOM handles ---------------------------------------------
+    var scoreEl     = document.getElementById('fl-score');
+    var resetBtn    = document.getElementById('fl-reset');
+    var recordBtn   = document.getElementById('fl-record-btn');
+    var fitBtn      = document.getElementById('fl-fit-btn');
+    var lqrBtn      = document.getElementById('fl-lqr-btn');
+    var activateBtn = document.getElementById('fl-activate-btn');
+    var statusEl    = document.getElementById('fl-sysid-status');
+    var qSlider     = document.getElementById('fl-q');
+    var rSlider     = document.getElementById('fl-r');
+    var qValEl      = document.getElementById('fl-q-val');
+    var rValEl      = document.getElementById('fl-r-val');
     var flStatePlot = document.getElementById('fl-state-plot');
     var flPidPlot   = document.getElementById('fl-pid-plot');
 
-    function getDelay() { return flDelaySlider ? parseFloat(flDelaySlider.value) / 1000 : 0; }
-    function getNoise() { return flNoiseSlider ? parseFloat(flNoiseSlider.value) : 0; }
+    function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
 
+    // ---- Tiny matrix library (2-D row arrays) --------------------
+    // All functions operate on plain arrays-of-arrays (row-major).
+    function mm(A, B) {
+      var m = A.length, p = A[0].length, n = B[0].length;
+      var C = [], i, j, k, s;
+      for (i = 0; i < m; i++) {
+        C[i] = [];
+        for (j = 0; j < n; j++) {
+          s = 0;
+          for (k = 0; k < p; k++) s += A[i][k] * B[k][j];
+          C[i][j] = s;
+        }
+      }
+      return C;
+    }
+    function mt(A) {
+      var m = A.length, n = A[0].length, C = [], i, j;
+      for (i = 0; i < n; i++) { C[i] = []; for (j = 0; j < m; j++) C[i][j] = A[j][i]; }
+      return C;
+    }
+    function ma(A, B) { return A.map(function (r, i) { return r.map(function (v, j) { return v + B[i][j]; }); }); }
+    function ms(A, B) { return A.map(function (r, i) { return r.map(function (v, j) { return v - B[i][j]; }); }); }
+    function msc(A, s) { return A.map(function (r) { return r.map(function (v) { return v * s; }); }); }
+    function mcopy(A) { return A.map(function (r) { return r.slice(); }); }
+    function minv(A) {
+      var n = A.length, i, j, k, f, p, tmp;
+      var aug = A.map(function (row, ri) {
+        var r = row.slice();
+        for (var c = 0; c < n; c++) r.push(ri === c ? 1 : 0);
+        return r;
+      });
+      for (i = 0; i < n; i++) {
+        p = i;
+        for (k = i + 1; k < n; k++) if (Math.abs(aug[k][i]) > Math.abs(aug[p][i])) p = k;
+        tmp = aug[i]; aug[i] = aug[p]; aug[p] = tmp;
+        f = aug[i][i];
+        if (Math.abs(f) < 1e-14) return null;
+        for (j = 0; j < 2 * n; j++) aug[i][j] /= f;
+        for (k = 0; k < n; k++) {
+          if (k === i) continue;
+          f = aug[k][i];
+          for (j = 0; j < 2 * n; j++) aug[k][j] -= f * aug[i][j];
+        }
+      }
+      return aug.map(function (r) { return r.slice(n); });
+    }
+
+    // ---- Perturbation state: [Δh, Δγ, Δα, Δq]  (1×4 matrix) -----
+    function dxOf(st) {
+      return [[st[4] - flHRef, st[1] - TRIM.gamma, st[2] - TRIM.alpha, st[3] - TRIM.q]];
+    }
+
+    // ---- System identification (discrete-time LS) ----------------
+    // Fits x_{k+1} = Fd x_k + Gd u_k from exciteData.
+    function fitModel() {
+      var N = exciteData.length;
+      if (N < 30) { setStatus('Need more data — re-record'); return; }
+      // Z: N×5  each row = [Δx_k | Δu_k]
+      // Y: N×4  each row = Δx_{k+1}
+      var Z = [], Y = [], k;
+      for (k = 0; k < N; k++) {
+        Z.push(exciteData[k].dx.concat([exciteData[k].du]));
+        Y.push(exciteData[k].dxn);
+      }
+      var Zt    = mt(Z);          // 5×N
+      var ZtZ   = mm(Zt, Z);      // 5×5
+      var ZtZi  = minv(ZtZ);      // 5×5
+      if (!ZtZi) { setStatus('Rank-deficient — re-record data'); return; }
+      var theta = mm(ZtZi, mm(Zt, Y));   // 5×4
+      var FdGd  = mt(theta);             // 4×5
+      sysModel = {
+        Fd: FdGd.map(function (r) { return r.slice(0, 4); }),  // 4×4
+        Gd: FdGd.map(function (r) { return [r[4]]; })          // 4×1
+      };
+      setStatus(N + ' pts · model fit ✓  →  Compute LQR');
+      if (lqrBtn) lqrBtn.disabled = false;
+    }
+
+    // ---- LQR via discrete-time Riccati iteration (DARE) ----------
+    function computeLQR() {
+      if (!sysModel) { setStatus('Fit a model first'); return; }
+      var q_h = qSlider ? parseFloat(qSlider.value) : 1;
+      var r   = rSlider  ? parseFloat(rSlider.value)  : 1;
+      // Q: all states scaled by q slider — [Δh, Δγ, Δα, Δq]
+      var Q = [[q_h,       0, 0,           0          ],
+               [0,   q_h * 2, 0,           0          ],
+               [0,         0, q_h * 5,     0          ],
+               [0,         0, 0,       q_h * 0.5      ]];
+      var Fd = sysModel.Fd, Gd = sysModel.Gd;
+      var P = mcopy(Q), K = null, iter, diff, i, j;
+      for (iter = 0; iter < 1000; iter++) {
+        var GtP   = mm(mt(Gd), P);           // 1×4
+        var GtPG  = mm(GtP, Gd)[0][0];       // scalar
+        var denom = r + GtPG;
+        if (!isFinite(denom) || Math.abs(denom) < 1e-14) break;
+        K = msc(mm(GtP, Fd), 1 / denom);    // 1×4
+        var FtP   = mm(mt(Fd), P);            // 4×4
+        var FtPFd = mm(FtP, Fd);              // 4×4
+        var FtPGK = mm(mm(FtP, Gd), K);      // 4×4
+        var P2    = ma(Q, ms(FtPFd, FtPGK));
+        diff = 0;
+        for (i = 0; i < 4; i++) for (j = 0; j < 4; j++) diff += Math.pow(P2[i][j] - P[i][j], 2);
+        P = P2;
+        if (diff < 1e-12) break;
+      }
+      // Sanity check
+      var ok = K && K[0].every(function (v) { return isFinite(v); });
+      if (!ok) { setStatus('DARE did not converge — re-record data'); lqrK = null; return; }
+      lqrK = K;
+      var ks = K[0].map(function (v) { return v.toFixed(3); }).join(', ');
+      setStatus('K = [' + ks + ']');
+      if (activateBtn) activateBtn.disabled = false;
+    }
+
+    // ---- Excitation reset: fly at exact trim for data collection --
+    function resetToTrim() {
+      flHRef = TRIM.h;
+      state  = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
+      simT = 0; de_rad = TRIM.de;
+      errRing = [];
+      stateHist = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+      ctrlHist  = [];
+      simStatus = 'ok';
+    }
+
+    // ---- Normal (trial) reset: random IC, random target ----------
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
-      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
+      if (wfMode === 'lqr') {
+        flHRef = 200 + Math.random() * 200;
+        var hOff = (Math.random() - 0.5) * 80;
+        var gPerturb = (Math.random() - 0.5) * deg2rad(16);
+        state = [TRIM.V, TRIM.gamma + gPerturb, TRIM.alpha, TRIM.q, flHRef + hOff, TRIM.x];
+      } else {
+        flHRef = TRIM.h;
+        state  = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
+      }
       simT = 0; de_rad = TRIM.de;
-      pidState = { intE: 0, prevE: 0 };
-      errRing = []; flDelayBuf = [];
-      pidContrib = { p: [], i: [], d: [], total: [] };
-      stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+      errRing = [];
+      stateHist = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+      ctrlHist  = [];
       simStatus = 'ok'; bestRMSE = null;
       var bestEl = document.getElementById('fl-best');
       if (bestEl) bestEl.textContent = '';
@@ -1662,82 +1821,119 @@
     }
     resetSim();
 
-    function syncPidVals() {
-      if (kpValEl) kpValEl.textContent = parseFloat(kpSlider.value).toFixed(3);
-      if (kiValEl) kiValEl.textContent = parseFloat(kiSlider.value).toFixed(3);
-      if (kdValEl) kdValEl.textContent = parseFloat(kdSlider.value).toFixed(3);
+    // ---- Event handlers ------------------------------------------
+    if (resetBtn) resetBtn.addEventListener('click', function () {
+      if (wfMode === 'excite') { wfMode = 'idle'; setStatus('Recording cancelled'); }
+      resetSim();
+      if (activateBtn) activateBtn.textContent = 'Activate LQR';
+    });
+
+    if (recordBtn) recordBtn.addEventListener('click', function () {
+      wfMode      = 'excite';
+      exciteData  = [];
+      exciteT     = 0;
+      exciteSign  = 1;
+      exciteTick  = 0;
+      resetToTrim();
+      setStatus('Recording… 0 / ' + EXCITE_DUR + ' s');
+      if (fitBtn)     fitBtn.disabled     = true;
+      if (lqrBtn)     lqrBtn.disabled     = true;
+      if (activateBtn) { activateBtn.disabled = true; activateBtn.textContent = 'Activate LQR'; }
+    });
+
+    if (fitBtn) { fitBtn.disabled = true; fitBtn.addEventListener('click', fitModel); }
+    if (lqrBtn) { lqrBtn.disabled = true; lqrBtn.addEventListener('click', computeLQR); }
+
+    if (qSlider) qSlider.addEventListener('input', function () {
+      if (qValEl) qValEl.textContent = parseFloat(qSlider.value).toFixed(2);
+    });
+    if (rSlider) rSlider.addEventListener('input', function () {
+      if (rValEl) rValEl.textContent = parseFloat(rSlider.value).toFixed(2);
+    });
+
+    if (activateBtn) {
+      activateBtn.disabled = true;
+      activateBtn.addEventListener('click', function () {
+        if (wfMode === 'lqr') {
+          wfMode = 'idle';
+          activateBtn.textContent = 'Activate LQR';
+          resetSim();
+        } else {
+          if (!lqrK) { computeLQR(); if (!lqrK) return; }
+          wfMode = 'lqr';
+          activateBtn.textContent = 'Deactivate';
+          resetSim();
+        }
+      });
     }
-    if (kpSlider) { kpSlider.addEventListener('input', syncPidVals); syncPidVals(); }
-    if (kiSlider) kiSlider.addEventListener('input', syncPidVals);
-    if (kdSlider) kdSlider.addEventListener('input', syncPidVals);
 
-    function applyGainRange(slider, input) {
-      var r = Math.max(0.05, parseFloat(input.value) || 0.05);
-      var prev = parseFloat(slider.value);
-      slider.min = -r; slider.max = r; slider.step = r / 100;
-      slider.value = clamp(prev, -r, r);
-    }
-    [['fl-kp', kpSlider], ['fl-ki', kiSlider], ['fl-kd', kdSlider]].forEach(function (p) {
-      var ri = document.getElementById(p[0] + '-range'), sl = p[1];
-      if (ri && sl) ri.addEventListener('input', function () { applyGainRange(sl, ri); syncPidVals(); });
-    });
-
-    if (flDelaySlider) flDelaySlider.addEventListener('input', function () {
-      var v = parseFloat(flDelaySlider.value);
-      if (flDelayValEl) flDelayValEl.textContent = v + ' ms';
-      if (flDelayAmt)   flDelayAmt.value = v;
-    });
-    if (flDelayAmt) flDelayAmt.addEventListener('change', function () {
-      var v = clamp(parseFloat(flDelayAmt.value) || 0, 0, 1000);
-      if (flDelaySlider) flDelaySlider.value = v;
-      if (flDelayValEl)  flDelayValEl.textContent = v + ' ms';
-    });
-    if (flNoiseSlider) flNoiseSlider.addEventListener('input', function () {
-      if (flNoiseValEl) flNoiseValEl.textContent = parseFloat(flNoiseSlider.value).toFixed(2);
-    });
-
-    if (resetBtn) resetBtn.addEventListener('click', resetSim);
-
-    var PID_DT = FLIGHT_DT;
-    var ELEV_MAX_RATE = deg2rad(40) * FLIGHT_DT;
-    var ELEV_MAX_RAD  = deg2rad(25);
-
+    // ---- Physics + control step ----------------------------------
     function step() {
       if (!document.getElementById('sec-flight').classList.contains('active')) return;
       if (simStatus !== 'ok') return;
-      var P_t = 0, I_t = 0, D_t = 0, total_deg = 0;
+
+      var dxk, duk;  // excitation sample captured before RK4
       for (var i = 0; i < 5; i++) {
-        var hRef  = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
-        var hMeas = state[4] + getNoise() * gaussFlight();
-        flDelayBuf.push({ t: simT, v: hMeas });
-        while (flDelayBuf.length > 1 && flDelayBuf[0].t < simT - getDelay()) flDelayBuf.shift();
-        var e = hRef - flDelayBuf[0].v;
-        pidState.intE = clamp(pidState.intE + e * PID_DT, -200, 200);
-        P_t = parseFloat(kpSlider.value) * e;
-        I_t = parseFloat(kiSlider.value) * pidState.intE;
-        D_t = parseFloat(kdSlider.value) * (e - pidState.prevE) / PID_DT;
-        pidState.prevE = e;
-        var de_cmd    = P_t + I_t + D_t;
-        total_deg     = de_cmd;
-        var de_target = clamp(deg2rad(de_cmd), -ELEV_MAX_RAD, ELEV_MAX_RAD);
-        de_rad += clamp(de_target - de_rad, -ELEV_MAX_RATE, ELEV_MAX_RATE);
+        if (wfMode === 'excite') {
+          exciteTick -= FLIGHT_DT;
+          if (exciteTick <= 0) {
+            exciteSign = Math.random() < 0.5 ? 1 : -1;
+            exciteTick = 0.15 + Math.random() * 0.40;
+          }
+          dxk = dxOf(state)[0];
+          duk = exciteSign * EXCITE_AMP;
+          de_rad = clamp(TRIM.de + duk, -ELEV_MAX_RAD, ELEV_MAX_RAD);
+        } else if (wfMode === 'lqr' && lqrK) {
+          var dx4 = dxOf(state)[0];
+          de_rad = clamp(TRIM.de - (lqrK[0][0]*dx4[0] + lqrK[0][1]*dx4[1] +
+                                    lqrK[0][2]*dx4[2] + lqrK[0][3]*dx4[3]),
+                         -ELEV_MAX_RAD, ELEV_MAX_RAD);
+        } else {
+          de_rad = TRIM.de;
+        }
+
         state = rk4(state, simT, FLIGHT_DT, function (t, s) { return flightDerivatives(t, s, de_rad); });
+
+        if (wfMode === 'excite') {
+          exciteData.push({ dx: dxk, du: duk, dxn: dxOf(state)[0] });
+          exciteT += FLIGHT_DT;
+        }
         simT += FLIGHT_DT;
+
         var stop = checkStopConditions(state);
         if (stop) {
           simStatus = stop;
+          if (wfMode === 'excite') {
+            // Crash mid-excitation: restart trim and continue collecting
+            resetToTrim(); simStatus = 'ok'; break;
+          }
           if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
           return;
         }
-        var refH2 = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
-        errRing.push(Math.pow(refH2 - state[4], 2));
+        errRing.push(Math.pow(flHRef - state[4], 2));
         if (errRing.length > RING) errRing.shift();
       }
-      pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(total_deg);
-      if (pidContrib.p.length > CHIST) { pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift(); }
+
+      // Check excitation completion
+      if (wfMode === 'excite') {
+        if (exciteT >= EXCITE_DUR) {
+          wfMode = 'ready';
+          if (fitBtn) fitBtn.disabled = false;
+          setStatus(exciteData.length + ' samples recorded — click Fit Model');
+        } else {
+          setStatus('Recording… ' + exciteT.toFixed(1) + ' / ' + EXCITE_DUR + ' s');
+        }
+      }
+
       stateHist.h.push(state[4]); stateHist.V.push(state[0]);
       stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
-      if (stateHist.h.length > CHIST) { stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift(); }
+      ctrlHist.push(rad2deg(de_rad));
+      if (stateHist.h.length > CHIST) {
+        stateHist.h.shift(); stateHist.V.shift();
+        stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift();
+      }
+      if (ctrlHist.length > CHIST) ctrlHist.shift();
+
       if (scoreEl && errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
         scoreEl.textContent = rmse.toFixed(1);
@@ -1752,13 +1948,10 @@
     setInterval(step, 25);
 
     function loop() {
-      renderer.render(state, simT, de_rad, simStatus);
+      renderer.render(state, simT, de_rad, simStatus, null, flHRef);
       drawStatePlot(flStatePlot, stateHist);
       drawContribPlot(flPidPlot, [
-        { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
-        { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
-        { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
-        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+        { label: 'δe (°)', color: cssVar('--viz-1'), data: ctrlHist }
       ], rad2deg(ELEV_MAX_RAD), 'δe (°)');
       requestAnimationFrame(loop);
     }
@@ -1766,7 +1959,7 @@
   })();
 
   /* ================================================================
-     Demo 3 — System ID + LQR
+     Demo 3 — Cart-Pole PPO
   ================================================================ */
   (function sysidDemo() {
     var canvas = document.getElementById('sysid-canvas');
@@ -1776,20 +1969,19 @@
        state = [x, ẋ, θ, θ̇]  (m, m/s, rad, rad/s); θ measured from straight up.
        Control u = horizontal force F (N) on the cart. The upright θ=0 is an
        UNSTABLE equilibrium — the whole point of the demo. */
-    // Light cart + a long, heavy pole (a bob on top): the cart is easy to shove
-    // side to side, and the tall pole's high rotational inertia makes it fall
-    // slowly, so it's far more forgiving to balance than a short, light stick.
-    var M_CART = 0.4, M_POLE = 0.4, L_POLE = 1.4;   // half-length of the rod
-    var G = 6.5, TOTAL_M = M_CART + M_POLE, PML = M_POLE * L_POLE;
-    var FMAX = 25;                 // N — actuator saturation
-    var CP_DT = 0.005, SUBSTEPS = 5;  // 25 ms/step → real time at setInterval(25)
-    var FALL_ANGLE = deg2rad(55), X_LIMIT = 3.2;
-    var X_TARGET = 0;              // cart set-point (m)
+    var M_CART = 0.4, M_POLE = 0.4, L_POLE = 0.9;
+    var G = 9.81, TOTAL_M = M_CART + M_POLE, PML = M_POLE * L_POLE;
+    var FMAX = 8;
+    var CP_DT = 0.005, SUBSTEPS = 5;
+    var FALL_ANGLE = deg2rad(55), X_LIMIT = 5.0;
+    var X_TARGET = 0;
+    var CART_FRICTION = 1.2;   // N·s/m viscous cart damping
 
     function cpDeriv(t, s, F) {
       var th = s[2], w = s[3];
       var sinth = Math.sin(th), costh = Math.cos(th);
-      var temp = (F + PML * w * w * sinth) / TOTAL_M;
+      var Fnet = F - CART_FRICTION * s[1];
+      var temp = (Fnet + PML * w * w * sinth) / TOTAL_M;
       var thddot = (G * sinth - costh * temp) / (L_POLE * (4.0 / 3.0 - M_POLE * costh * costh / TOTAL_M));
       var xddot  = temp - PML * thddot * costh / TOTAL_M;
       return [s[1], xddot, w, thddot];
@@ -1802,87 +1994,41 @@
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
-    var state, simT, uForce;
-    var recording = false;
-    var dataBuf = [];
-    var lqrActive = false;
-    var lqrK = null;
-    var keepaliveK = null;   // stabiliser used while collecting closed-loop data
-    var exc = 0;             // smoothed excitation force
-    var pushF = 0;           // manual disturbance from the slider
-    var errRing = [];
-    var RING = 1200;
-    var CHIST = 300;
-    var scoreBeforeVal = null;
-    var lqrContrib = { kx: [], kv: [], kt: [], kw: [], total: [] };
-    var stateHist  = { x: [], xd: [], th: [], thd: [] };
+    // ---- PPO hyperparameters ----
+    var PPO_LOG_STD = -0.5;   // fixed log σ; σ ≈ 0.6 × FMAX ≈ 15 N spread
+    var PPO_ROLLOUT = 512, PPO_GAMMA = 0.99, PPO_LAMBDA = 0.95;
+    var PPO_CLIP = 0.2, PPO_EPOCHS = 4, PPO_BATCH = 64, PPO_LR = 2e-4;
+    var PPO_MAX_UPDATES = 500; // kept for reference; active limit is PPO_FINETUNE
 
+    // ---- Simulation state ----
+    var state, simT, uForce;
+    var pushF = 0, keyForce = 0;
     var simStatus3 = 'ok';
     var resetTimer3 = null;
+    var nnActive3 = false, nnNet3 = null;   // deployed actor
+    var ppoCriticNet = null;
+    var ppoActorAdam = null, ppoCriticAdam = null;
+    var ppoTraining = false, ppoTrainTimer = null;
+    var ppoRewardHist = [];
+    var ppoUpdateCount = 0;
+    var ppoEverBalanced = false;   // true once pole reaches near-upright after activation
+    var ppoActivatedSimT = 0;     // simT when policy was last activated
+    var errRing = [], RING = 1200, CHIST = 300;
+    var stateHist = { x: [], xd: [], th: [], thd: [] };
 
-    // NN state (shared with the NN block added below)
-    var nnActive3 = false, nnNet3 = null;
+    // ---- NN architecture ----
+    var nnLayers3 = 2, nnNeurons3 = 32;
 
-    // Swing-up trial state
-    var TRIAL_DURATION = 20.0;
-    var SUCCESS_ANGLE = deg2rad(20);
-    var SUCCESS_HOLD_TIME = 2.0;
-    var swingUpTrialActive = false;
-    var trialTimerRemaining = TRIAL_DURATION;
-    var trialSuccessTimer = 0;
-    var trialCurrentData = [];
-    var humanTrialData = [];
-    var trialCount = 0;
-    var trialStatus = 'ready';  // 'ready' | 'active' | 'success' | 'failed'
-    var keyForce = 0;
-
-    function resetSim() {
-      if (resetTimer3) { clearTimeout(resetTimer3); resetTimer3 = null; }
-      state = [0, 0, Math.PI - 0.08 + (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.4];
-      simT = 0;
-      uForce = 0;
-      exc = 0;
-      recording = false;
-      dataBuf = [];
-      lqrActive = false;
-      lqrK = null;
-      nnActive3 = false;
-      swingUpTrialActive = false;
-      trialTimerRemaining = TRIAL_DURATION;
-      trialSuccessTimer = 0;
-      trialCurrentData = [];
-      trialStatus = 'ready';
-      keyForce = 0;
-      errRing = [];
-      scoreBeforeVal = null;
-      lqrContrib = { kx: [], kv: [], kt: [], kw: [], total: [] };
-      stateHist  = { x: [], xd: [], th: [], thd: [] };
-      simStatus3 = 'ok';
-      var activateBtnEl3 = document.getElementById('sid-nn-activate-btn');
-      if (activateBtnEl3) { activateBtnEl3.textContent = 'Activate NN'; activateBtnEl3.classList.remove('active'); }
-      updateUI();
-      updateTrialUI();
-    }
-
-    var recordBtn    = document.getElementById('sid-record-btn');
-    var identBtn     = document.getElementById('sid-identify-btn');
-    var lqrBtn       = document.getElementById('sid-lqr-btn');
-    var analyticBtn  = document.getElementById('sid-analytic-lqr-btn');
-    var resetBtn     = document.getElementById('sid-reset');
-    var forceSlider  = document.getElementById('sid-force');
-    var forceVal     = document.getElementById('sid-force-val');
-    var barEl        = document.getElementById('sid-bar');
-    var countEl      = document.getElementById('sid-count');
-    var matricesEl   = document.getElementById('sid-matrices');
-    var aDisplay     = document.getElementById('sid-A-display');
-    var bDisplay     = document.getElementById('sid-B-display');
-    var lqrSection   = document.getElementById('sid-lqr-section');
-    var kDisplay     = document.getElementById('sid-K-display');
-    var scoreCompEl  = document.getElementById('sid-score-compare');
-    var scoreEl      = document.getElementById('sid-score');
-    var sidStatePlot = document.getElementById('sid-state-plot');
-    var sidPidPlot   = document.getElementById('sid-pid-plot');
-    var NEEDED = 300;
+    // ---- DOM handles ----
+    var sidStatePlot   = document.getElementById('sid-state-plot');
+    var forceSlider    = document.getElementById('sid-force');
+    var forceVal       = document.getElementById('sid-force-val');
+    var scoreEl        = document.getElementById('sid-score');
+    var ppoBtnEl       = document.getElementById('sid-ppo-train-btn');
+    var ppoStatusEl    = document.getElementById('sid-ppo-status');
+    var nnActivateBtn3 = document.getElementById('sid-nn-activate-btn');
+    var nnNetviz3      = document.getElementById('sid-netviz');
+    var resetBtn       = document.getElementById('sid-reset');
 
     var CP_STATE_SPEC = [
       { key: 'x',   label: 'x (m)',    color: cssVar('--viz-1') },
@@ -1891,694 +2037,9 @@
       { key: 'thd', label: 'θ̇ (°/s)',  color: cssVar('--viz-4') }
     ];
 
-    // Pre-compute a stabilising gain for closed-loop data collection.
-    try {
-      var j0 = jacobianAtUpright();
-      keepaliveK = runLQRexplicit(j0.A, j0.B, [[1,0,0,0],[0,1,0,0],[0,0,25,0],[0,0,0,3]], 0.5);
-    } catch (e) { keepaliveK = null; }
-
-    resetSim();
-
-    if (forceSlider) forceSlider.addEventListener('input', function () {
-      pushF = parseFloat(forceSlider.value) || 0;
-      if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
-    });
-    // Adjustable disturbance bounds — symmetric "Range ±" input, like the PID demo.
-    (function () {
-      var ri = document.getElementById('sid-force-range');
-      if (!ri || !forceSlider) return;
-      ri.addEventListener('input', function () {
-        var r = Math.max(1, parseFloat(ri.value) || 1);
-        var prev = parseFloat(forceSlider.value);
-        forceSlider.min = -r; forceSlider.max = r; forceSlider.step = r / 40;
-        forceSlider.value = clamp(prev, -r, r);
-        pushF = parseFloat(forceSlider.value) || 0;
-        if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
-      });
-    })();
-
-    // Q/R weight sliders — value display + adjustable upper bound ("Max" input).
-    // Q and R must stay non-negative for the LQR solve, so the bound is one-sided
-    // (only the max moves) rather than the symmetric "Range ±" used for the gains.
-    (function() {
-      var pairs = [
-        ['sid-qx', 'sid-qx-val', 1], ['sid-qth', 'sid-qth-val', 0],
-        ['sid-qthd', 'sid-qthd-val', 1], ['sid-r',  'sid-r-val',  2]
-      ];
-      pairs.forEach(function(p) {
-        var sl = document.getElementById(p[0]), vl = document.getElementById(p[1]);
-        if (!sl || !vl) return;
-        function show() { vl.textContent = parseFloat(sl.value).toFixed(p[2]); }
-        sl.addEventListener('input', show);
-        var ri = document.getElementById(p[0] + '-range');
-        if (ri) ri.addEventListener('input', function() {
-          var lo = parseFloat(sl.min) || 0;
-          var step = parseFloat(sl.step) || 0.01;
-          var m = Math.max(lo + step, parseFloat(ri.value) || lo + step);
-          sl.max = m;
-          sl.value = clamp(parseFloat(sl.value), lo, m);
-          show();
-        });
-      });
-    })();
-
-    function updateUI() {
-      if (recordBtn) {
-        recordBtn.textContent = recording ? 'Stop Recording' : 'Start Recording';
-        recordBtn.classList.toggle('recording', recording);
-      }
-      var n = dataBuf.length;
-      var frac = Math.min(n / NEEDED, 1);
-      if (barEl)    barEl.style.width = (frac * 100).toFixed(1) + '%';
-      if (countEl)  countEl.textContent = n + ' / ' + NEEDED + ' samples';
-      if (identBtn) identBtn.disabled = n < NEEDED;
-      updateTrialUI();
-    }
-
-    function updateTrialUI() {
-      var timerEl  = document.getElementById('sid-trial-timer');
-      var statusEl = document.getElementById('sid-trial-status');
-      var savedEl  = document.getElementById('sid-trials-saved');
-      var btnEl    = document.getElementById('sid-trial-btn');
-      if (timerEl) {
-        timerEl.textContent = Math.max(0, trialTimerRemaining).toFixed(1) + ' s';
-        timerEl.className = 'trial-timer' + (swingUpTrialActive && trialTimerRemaining < 5 ? ' urgent' : '');
-      }
-      if (statusEl) {
-        var msg;
-        if (trialStatus === 'active') {
-          if (Math.abs(state[2]) < SUCCESS_ANGLE) {
-            msg = 'Hold it! ' + trialSuccessTimer.toFixed(1) + ' / ' + SUCCESS_HOLD_TIME.toFixed(0) + ' s';
-          } else {
-            msg = 'Swing up… θ = ' + rad2deg(state[2]).toFixed(0) + '° from upright';
-          }
-        } else if (trialStatus === 'success') {
-          msg = 'Trial succeeded — data saved!';
-        } else if (trialStatus === 'failed') {
-          msg = 'Trial failed — try again';
-        } else {
-          msg = 'Ready to start';
-        }
-        statusEl.textContent = msg;
-        statusEl.className = 'trial-status-text' +
-          (trialStatus === 'success' ? ' success' : trialStatus === 'failed' ? ' failed' : '');
-      }
-      if (savedEl) {
-        savedEl.textContent = trialCount + ' trial' + (trialCount === 1 ? '' : 's') +
-          ' saved (' + humanTrialData.length + ' samples)';
-      }
-      if (btnEl) {
-        btnEl.textContent = swingUpTrialActive ? 'Cancel Trial' : 'Start Trial';
-      }
-    }
-
-    function endTrial(success) {
-      swingUpTrialActive = false;
-      if (success) {
-        for (var ei = 0; ei < trialCurrentData.length; ei++) humanTrialData.push(trialCurrentData[ei]);
-        trialCount++;
-        trialStatus = 'success';
-        var genBtn3 = document.getElementById('sid-nn-gen-btn');
-        if (genBtn3) genBtn3.disabled = false;
-      } else {
-        trialStatus = 'failed';
-        simStatus3 = 'trial_failed';
-        if (!resetTimer3) resetTimer3 = setTimeout(function () {
-          resetTimer3 = null;
-          state = [0, 0, Math.PI - 0.08 + (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.4];
-          simT = 0; uForce = 0; simStatus3 = 'ok';
-          trialStatus = 'ready';
-          trialTimerRemaining = TRIAL_DURATION;
-          trialSuccessTimer = 0;
-          updateTrialUI();
-        }, 1500);
-      }
-      trialCurrentData = [];
-      trialTimerRemaining = TRIAL_DURATION;
-      trialSuccessTimer = 0;
-      updateTrialUI();
-      updateUI();
-    }
-
-    if (recordBtn) recordBtn.addEventListener('click', function () {
-      if (!recording && !keepaliveK) { alert('Stabiliser unavailable — try Analytic LQR instead.'); return; }
-      recording = !recording;
-      if (recording) { lqrActive = false; lqrK = null; state = [0, 0, deg2rad(2), 0]; simStatus3 = 'ok'; }
-      updateUI();
-    });
-    if (resetBtn)  resetBtn.addEventListener('click', resetSim);
-
-    // Swing-up trial button
-    var trialBtn = document.getElementById('sid-trial-btn');
-    if (trialBtn) trialBtn.addEventListener('click', function () {
-      if (swingUpTrialActive) {
-        swingUpTrialActive = false;
-        trialCurrentData = [];
-        trialTimerRemaining = TRIAL_DURATION;
-        trialSuccessTimer = 0;
-        trialStatus = 'ready';
-        state = [0, 0, Math.PI - 0.08 + (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.4];
-        simT = 0; uForce = 0; simStatus3 = 'ok';
-        updateTrialUI();
-      } else {
-        lqrActive = false; lqrK = null; nnActive3 = false; recording = false;
-        state = [0, 0, Math.PI - 0.08 + (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.4];
-        simT = 0; uForce = 0; simStatus3 = 'ok';
-        swingUpTrialActive = true;
-        trialTimerRemaining = TRIAL_DURATION;
-        trialSuccessTimer = 0;
-        trialCurrentData = [];
-        trialStatus = 'active';
-        updateUI();
-      }
-    });
-
-    // Keyboard control: arrow keys push the cart during a trial or free-play
-    document.addEventListener('keydown', function (e) {
-      var sec = document.getElementById('sec-sysid');
-      if (!sec || !sec.classList.contains('active')) return;
-      if (lqrActive || nnActive3) return;
-      if (e.key === 'ArrowLeft')  { keyForce = -FMAX * 0.55; e.preventDefault(); }
-      if (e.key === 'ArrowRight') { keyForce =  FMAX * 0.55; e.preventDefault(); }
-    });
-    document.addEventListener('keyup', function (e) {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') keyForce = 0;
-    });
-
-    function activateLQR(K) {
-      lqrK = K;
-      lqrActive = true;
-      recording = false;
-      swingUpTrialActive = false; trialCurrentData = []; trialTimerRemaining = TRIAL_DURATION;
-      trialSuccessTimer = 0; trialStatus = 'ready';
-      if (state[2] === undefined || Math.abs(state[2]) > FALL_ANGLE) { state = [0, 0, deg2rad(6), 0]; simStatus3 = 'ok'; }
-      updateUI();
-      if (kDisplay) kDisplay.textContent = 'K = [' + K.map(function (v) { return v.toFixed(3); }).join(', ') + ']';
-      if (lqrSection) lqrSection.style.display = '';
-      if (errRing.length > 0) scoreBeforeVal = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length);
-      errRing = [];
-      lqrContrib = { kx: [], kv: [], kt: [], kw: [], total: [] };
-    }
-
-    // ---- System identification ----
-    if (identBtn) identBtn.addEventListener('click', function () {
-      var result = runSystemID();
-      if (!result) { alert('Not enough data.'); return; }
-      if (aDisplay) aDisplay.textContent = formatMatrix(result.A, 4, 4);
-      if (bDisplay) bDisplay.textContent = formatMatrix([result.B[0], result.B[1], result.B[2], result.B[3]], 4, 1);
-      if (matricesEl) matricesEl.style.display = '';
-      if (lqrBtn) lqrBtn.disabled = false;
-      window._sidResult = result;
-    });
-
-    // ---- LQR from system-ID data ----
-    if (lqrBtn) lqrBtn.addEventListener('click', function () {
-      if (!window._sidResult) return;
-      var K = runLQR(window._sidResult.A, window._sidResult.B);
-      if (!K) { alert('DARE did not converge — collect more diverse data.'); return; }
-      activateLQR(K);
-    });
-
-    // ---- Analytic LQR (exact Jacobian, no data needed) ----
-    if (analyticBtn) analyticBtn.addEventListener('click', function () {
-      var K = computeAnalyticLQR();
-      if (!K) { alert('Analytic LQR failed.'); return; }
-      if (matricesEl) matricesEl.style.display = '';
-      if (aDisplay)   aDisplay.textContent = '(computed from numerical Jacobian at θ = 0)';
-      if (bDisplay)   bDisplay.textContent = '';
-      activateLQR(K);
-    });
-
-    // ---- Simulation step ----
-    function step() {
-      if (!document.getElementById('sec-sysid').classList.contains('active')) return;
-      if (simStatus3 !== 'ok') return;
-
-      var prevState = state.slice();
-      var kx_t = 0, kv_t = 0, kt_t = 0, kw_t = 0, uCtrl = 0;
-
-      // Decide the control force for this step.
-      if (lqrActive && lqrK) {
-        var dx = [state[0] - X_TARGET, state[1], state[2], state[3]];
-        kx_t = -lqrK[0]*dx[0]; kv_t = -lqrK[1]*dx[1]; kt_t = -lqrK[2]*dx[2]; kw_t = -lqrK[3]*dx[3];
-        uCtrl = kx_t + kv_t + kt_t + kw_t;
-      } else if (nnActive3 && nnNet3) {
-        var s3 = state;
-        var inp3 = [s3[0]/X_LIMIT, s3[1]/3.5, s3[2]/Math.PI, s3[3]/6.0];
-        uCtrl = clamp(fwdNetCP(nnNet3, inp3) * FMAX, -FMAX, FMAX);
-      } else if (recording && keepaliveK) {
-        exc = 0.9 * exc + 0.1 * gaussian() * 6;
-        uCtrl = -(keepaliveK[0]*state[0] + keepaliveK[1]*state[1] + keepaliveK[2]*state[2] + keepaliveK[3]*state[3]) + exc;
-      } else {
-        uCtrl = keyForce;
-      }
-      uForce = clamp(uCtrl + pushF, -FMAX, FMAX);
-
-      for (var i = 0; i < SUBSTEPS; i++) {
-        state = rk4(state, simT, CP_DT, function (t, s) { return cpDeriv(t, s, uForce); });
-        simT += CP_DT;
-      }
-
-      // Cart hit the rail: always end any active trial and reset.
-      if (Math.abs(state[0]) > X_LIMIT) {
-        if (swingUpTrialActive) endTrial(false);
-        else {
-          recording = false;
-          simStatus3 = 'offtrack';
-          updateUI();
-          if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2000);
-          return;
-        }
-      }
-
-      // Angle check only for LQR/NN balance mode (pole starts hanging so angle is always large)
-      if ((lqrActive || nnActive3) && Math.abs(state[2]) > FALL_ANGLE) {
-        simStatus3 = 'fell';
-        updateUI();
-        if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2000);
-        return;
-      }
-
-      // Swing-up trial logic
-      if (swingUpTrialActive) {
-        trialCurrentData.push({ x: state.slice(), u: uForce });
-        trialTimerRemaining -= CP_DT * SUBSTEPS;
-        var nearUpright = Math.abs(state[2]) < SUCCESS_ANGLE;
-        if (nearUpright) {
-          trialSuccessTimer += CP_DT * SUBSTEPS;
-          if (trialSuccessTimer >= SUCCESS_HOLD_TIME) { endTrial(true); return; }
-        } else {
-          trialSuccessTimer = 0;
-        }
-        if (trialTimerRemaining <= 0) { endTrial(false); return; }
-        updateTrialUI();
-      }
-
-      // Record system-ID data (legacy path — kept for System ID step)
-      if (recording) {
-        dataBuf.push({
-          x:     [state[0], state[1], state[2], state[3]],
-          u:     uForce,
-          xprev: [prevState[0], prevState[1], prevState[2], prevState[3]]
-        });
-        updateUI();
-      }
-
-      // LQR contribution history (Newtons)
-      if (lqrActive) {
-        lqrContrib.kx.push(kx_t); lqrContrib.kv.push(kv_t);
-        lqrContrib.kt.push(kt_t); lqrContrib.kw.push(kw_t);
-        lqrContrib.total.push(kx_t + kv_t + kt_t + kw_t);
-        if (lqrContrib.kx.length > CHIST) {
-          lqrContrib.kx.shift(); lqrContrib.kv.shift(); lqrContrib.kt.shift(); lqrContrib.kw.shift(); lqrContrib.total.shift();
-        }
-      }
-
-      // State history
-      stateHist.x.push(state[0]); stateHist.xd.push(state[1]);
-      stateHist.th.push(rad2deg(state[2])); stateHist.thd.push(rad2deg(state[3]));
-      if (stateHist.x.length > CHIST) { stateHist.x.shift(); stateHist.xd.shift(); stateHist.th.shift(); stateHist.thd.shift(); }
-
-      // Score: RMS pole angle over the recent window (deg) — lower is better balance.
-      errRing.push(Math.pow(rad2deg(state[2]), 2));
-      if (errRing.length > RING) errRing.shift();
-      if (scoreEl && errRing.length > 0) {
-        var rmse = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length);
-        scoreEl.textContent = rmse.toFixed(2);
-        if (scoreBeforeVal !== null && lqrActive && scoreCompEl) {
-          scoreCompEl.textContent = 'Before: ' + scoreBeforeVal.toFixed(2) + ' °\nAfter:  ' + rmse.toFixed(2) + ' °';
-        }
-      }
-    }
-
-    setInterval(step, 25);
-
-    // ---- Cart-pole renderer ----
-    function drawCartPole() {
-      var dpr = Math.min(window.devicePixelRatio || 1, 2);
-      var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.width;
-      if (!W) W = 720;
-      var H = 380;
-      canvas.width = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      canvas.style.width = '100%';
-      canvas.style.height = H + 'px';
-      var ctx = canvas.getContext('2d');
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      var bg = cssVar('--bg'), border = cssVar('--border'), muted = cssVar('--text-muted');
-      var text = cssVar('--text'), accent = cssVar('--accent'), mono = cssVar('--mono');
-      var poleColor = cssVar('--viz-2');
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-
-      var trackY = H * 0.72;
-      var scale = (W * 0.5) / (X_LIMIT + 0.6);   // px per metre
-      var cx = W / 2;
-      function sx(xm) { return cx + xm * scale; }
-
-      // Track + rail limits
-      ctx.strokeStyle = border; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(20, trackY); ctx.lineTo(W - 20, trackY); ctx.stroke();
-      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
-      [-X_LIMIT, X_LIMIT].forEach(function (xm) {
-        ctx.beginPath(); ctx.moveTo(sx(xm), trackY - 12); ctx.lineTo(sx(xm), trackY + 12); ctx.stroke();
-      });
-      // Target set-point marker
-      ctx.strokeStyle = accent; ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(sx(X_TARGET), trackY - 60); ctx.lineTo(sx(X_TARGET), trackY + 14); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
-      ctx.fillText('target', sx(X_TARGET), trackY + 28);
-
-      var cartX = sx(state[0]);
-      var cartW = 60, cartH = 26;
-
-      // Force arrow (under the cart)
-      if (Math.abs(uForce) > 0.2) {
-        var fl = clamp(uForce / FMAX, -1, 1) * 46;
-        ctx.strokeStyle = poleColor; ctx.fillStyle = poleColor; ctx.lineWidth = 3;
-        var ay = trackY + 40;
-        ctx.beginPath(); ctx.moveTo(cartX, ay); ctx.lineTo(cartX + fl, ay); ctx.stroke();
-        var s = fl >= 0 ? 1 : -1;
-        ctx.beginPath();
-        ctx.moveTo(cartX + fl, ay); ctx.lineTo(cartX + fl - 7 * s, ay - 4);
-        ctx.lineTo(cartX + fl - 7 * s, ay + 4); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
-        ctx.fillText('F = ' + uForce.toFixed(1) + ' N', cartX, ay + 18);
-      }
-
-      // Cart
-      ctx.fillStyle = accent;
-      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(cartX - cartW/2, trackY - cartH, cartW, cartH, 5); ctx.fill(); }
-      else ctx.fillRect(cartX - cartW/2, trackY - cartH, cartW, cartH);
-      ctx.fillStyle = bg;
-      ctx.beginPath(); ctx.arc(cartX - cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
-      ctx.beginPath(); ctx.arc(cartX + cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
-
-      // Pole
-      var pivotX = cartX, pivotY = trackY - cartH;
-      var poleLenPx = L_POLE * 2 * scale * 0.9;
-      var tipX = pivotX + poleLenPx * Math.sin(state[2]);
-      var tipY = pivotY - poleLenPx * Math.cos(state[2]);
-      ctx.strokeStyle = poleColor; ctx.lineWidth = 6; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
-      ctx.fillStyle = poleColor;
-      ctx.beginPath(); ctx.arc(tipX, tipY, 13, 0, 2*Math.PI); ctx.fill();
-      ctx.fillStyle = border;
-      ctx.beginPath(); ctx.arc(pivotX, pivotY, 4, 0, 2*Math.PI); ctx.fill();
-      ctx.lineCap = 'butt';
-
-      // Mode / status banner
-      ctx.textAlign = 'left'; ctx.font = '600 13px ' + cssVar('--font');
-      var label, col;
-      if (simStatus3 === 'fell')         { label = 'Pole fell — resetting…'; col = poleColor; }
-      else if (simStatus3 === 'offtrack'){ label = 'Cart hit the rail — resetting…'; col = poleColor; }
-      else if (simStatus3 === 'trial_failed') { label = 'Trial failed — resetting…'; col = poleColor; }
-      else if (lqrActive)               { label = 'LQR balancing'; col = accent; }
-      else if (nnActive3)               { label = 'Neural network in control'; col = accent; }
-      else if (recording)               { label = 'Recording (stabiliser + excitation)…'; col = accent; }
-      else if (swingUpTrialActive)      { label = 'Swing-up trial — use ←→ keys'; col = accent; }
-      else                              { label = 'Pole hanging — press Start Trial'; col = muted; }
-      ctx.fillStyle = col; ctx.fillText(label, 18, 26);
-      ctx.fillStyle = muted; ctx.font = '11px ' + mono;
-      ctx.fillText('θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m', 18, 44);
-
-      // Swing-up trial timer overlay
-      if (swingUpTrialActive) {
-        var tRem = Math.max(0, trialTimerRemaining);
-        ctx.font = 'bold 36px ' + mono;
-        ctx.textAlign = 'right';
-        ctx.fillStyle = tRem < 5 ? poleColor : accent;
-        ctx.fillText(tRem.toFixed(1), W - 16, 44);
-        ctx.font = '10px ' + mono;
-        ctx.fillStyle = muted;
-        ctx.fillText('seconds left', W - 16, 56);
-        // Hold progress bar at bottom when near upright
-        if (trialSuccessTimer > 0) {
-          var frac = trialSuccessTimer / SUCCESS_HOLD_TIME;
-          ctx.fillStyle = accent;
-          ctx.globalAlpha = 0.4;
-          ctx.fillRect(0, H - 8, W * frac, 8);
-          ctx.globalAlpha = 1;
-          ctx.font = 'bold 11px ' + mono;
-          ctx.textAlign = 'center';
-          ctx.fillStyle = accent;
-          ctx.fillText('Hold stable… ' + trialSuccessTimer.toFixed(1) + ' / ' + SUCCESS_HOLD_TIME.toFixed(0) + ' s', W / 2, H - 12);
-        }
-      }
-
-      // Success flash
-      if (trialStatus === 'success' && !swingUpTrialActive) {
-        ctx.fillStyle = 'rgba(0,200,80,0.15)';
-        ctx.fillRect(0, 0, W, H);
-        ctx.font = 'bold 26px ' + cssVar('--font');
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#22c55e';
-        ctx.fillText('✓ Trial Succeeded!', W / 2, H / 2 - 14);
-        ctx.font = '13px ' + cssVar('--font');
-        ctx.fillStyle = 'rgba(34,197,94,0.8)';
-        ctx.fillText('Data saved — press Start Trial for another', W / 2, H / 2 + 14);
-        ctx.textBaseline = 'alphabetic';
-      }
-    }
-
-    function loop() {
-      drawCartPole();
-      drawStatePlot(sidStatePlot, stateHist, CP_STATE_SPEC);
-      drawContribPlot(sidPidPlot, [
-        { label: 'Kₓ·Δx',  color: cssVar('--viz-1'),     data: lqrContrib.kx },
-        { label: 'Kᵥ·Δẋ',  color: cssVar('--viz-2'),     data: lqrContrib.kv },
-        { label: 'K_θ·Δθ', color: cssVar('--viz-3'),     data: lqrContrib.kt },
-        { label: 'K_ω·Δθ̇', color: cssVar('--viz-4'),     data: lqrContrib.kw },
-        { label: 'Total F', color: cssVar('--viz-total'), data: lqrContrib.total }
-      ], FMAX, 'force (N)');
-      requestAnimationFrame(loop);
-    }
-    loop();
-
-    /* ---- System ID: least squares ---- */
-    function runSystemID() {
-      var n = dataBuf.length;
-      if (n < NEEDED) return null;
-
-      // Build Φ (N×5) and Y (N×4). Fit ẋ ≈ A·x + B·u by least squares.
-      var dt = CP_DT * SUBSTEPS;  // one recorded sample per control step
-
-      // Each record holds one control step: xprev → x under force u. Pair the
-      // transition with the force that actually caused it (self-consistent).
-      // Φ row: [x, ẋ, θ, θ̇, F]   Y row: [(x − xprev) / dt]
-      var Phi = [], Y = [];
-      for (var i = 0; i < n; i++) {
-        var d = dataBuf[i];
-        Phi.push(d.xprev.concat([d.u]));
-        Y.push([
-          (d.x[0] - d.xprev[0]) / dt,
-          (d.x[1] - d.xprev[1]) / dt,
-          (d.x[2] - d.xprev[2]) / dt,
-          (d.x[3] - d.xprev[3]) / dt
-        ]);
-      }
-
-      // Normal equations: (Φ'Φ) θ = Φ'Y  for each column of Y
-      var PhiTPhiInv = matInv5(matMul5T(Phi, Phi));
-      if (!PhiTPhiInv) return null;
-
-      var A = [], B = [];
-      for (var col = 0; col < 4; col++) {
-        var Yc = Y.map(function (r) { return r[col]; });
-        var PhiTYc = matMulTv5(Phi, Yc);
-        var theta = matMulVec5(PhiTPhiInv, PhiTYc);  // 5-vector
-        A.push(theta.slice(0, 4));
-        B.push(theta[4]);
-      }
-
-      // A is currently 4×4 where A[i] is row i of A^T → transpose
-      var At = [];
-      for (var i = 0; i < 4; i++) {
-        At.push([A[0][i], A[1][i], A[2][i], A[3][i]]);
-      }
-
-      return { A: At, B: B };
-    }
-
-    /* ---- Continuous Jacobian of the cart-pole at the upright equilibrium ---- */
-    function jacobianAtUpright() {
-      var eps = 1e-5;
-      var x0 = [0, 0, 0, 0], u0 = 0;
-      function f4(x, u) { return cpDeriv(0, x, u); }
-      var cols = [];
-      for (var jj = 0; jj < 4; jj++) {
-        var xp = x0.slice(); xp[jj] += eps;
-        var xm = x0.slice(); xm[jj] -= eps;
-        var fp = f4(xp, u0), fm = f4(xm, u0);
-        cols.push(fp.map(function(v, i) { return (v - fm[i]) / (2 * eps); }));
-      }
-      var Aj = [[],[],[],[]];
-      for (var jj = 0; jj < 4; jj++) for (var ii = 0; ii < 4; ii++) Aj[ii].push(cols[jj][ii]);
-      var fp2 = f4(x0, u0 + eps), fm2 = f4(x0, u0 - eps);
-      var Bj = fp2.map(function(v, i) { return (v - fm2[i]) / (2 * eps); });
-      return { A: Aj, B: Bj };
-    }
-
-    /* ---- Analytic LQR: exact Jacobian → DARE (no data needed) ---- */
-    function computeAnalyticLQR() {
-      var j = jacobianAtUpright();
-      return runLQR(j.A, j.B);
-    }
-
-    /* ---- LQR via DARE ---- */
-    function getLQRWeights() {
-      var qx   = parseFloat((document.getElementById('sid-qx')   || {value:'5'}).value);
-      var qth  = parseFloat((document.getElementById('sid-qth')  || {value:'100'}).value);
-      var qthd = parseFloat((document.getElementById('sid-qthd') || {value:'1'}).value);
-      var R    = parseFloat((document.getElementById('sid-r')    || {value:'0.1'}).value);
-      // Q = diag(x, ẋ, θ, θ̇); cart-velocity weight is a small fixed value.
-      return { Q: [[qx,0,0,0],[0,0.5,0,0],[0,0,qth,0],[0,0,0,qthd]], R: R };
-    }
-
-    function runLQR(A, B) {
-      var w = getLQRWeights();
-      return runLQRexplicit(A, B, w.Q, w.R);
-    }
-
-    // Discrete-time LQR by iterating the Riccati recursion to convergence.
-    function runLQRexplicit(A, B, Q, R) {
-      var dt = CP_DT * SUBSTEPS;   // control period → Euler discretisation
-      var Ad = mat4add(mat4eye(), mat4scale(A, dt));
-      var Bd = B.map(function (v) { return v * dt; });
-
-      var P = mat4copy(Q);
-      for (var iter = 0; iter < 2000; iter++) {
-        // BPBA = Ad' P B (R + B' P B)^-1 B' P Ad
-        var PB    = mat4mulVec(P, Bd);         // 4-vec
-        var BtPB  = vecDot4(Bd, PB) + R;       // scalar
-        var BtPAd = mat4vecMulLeft(Bd, mat4mul(P, Ad));  // Bd' * P * Ad → 4-vec
-        // P_{k+1} = Q + Ad'PAd - (Ad'PB)(BtPB)^-1 (B'PAd)
-        var AdtPAd = mat4mul(mat4T(Ad), mat4mul(P, Ad));
-        var outer  = mat4outerScale(mat4mulVec(mat4T(Ad), PB), BtPAd, 1 / BtPB);
-        var Pnew = mat4add(mat4add(Q, AdtPAd), mat4scale(outer, -1));
-        // Check convergence
-        var diff = 0;
-        for (var r = 0; r < 4; r++)
-          for (var c = 0; c < 4; c++)
-            diff += Math.pow(Pnew[r][c] - P[r][c], 2);
-        P = Pnew;
-        if (diff < 1e-12) break;
-      }
-      // K = (R + Bd'PBd)^-1 Bd'PAd
-      var PBd    = mat4mulVec(P, Bd);
-      var BtPBd  = vecDot4(Bd, PBd) + R;
-      var BtPAd2 = mat4vecMulLeft(Bd, mat4mul(P, Ad));
-      return BtPAd2.map(function (v) { return v / BtPBd; });
-    }
-
-    /* ---- Matrix utilities (4×4 and 5×5) ---- */
-
-    function mat4eye() {
-      return [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
-    }
-    function mat4copy(m) { return m.map(function (r) { return r.slice(); }); }
-    function mat4add(A, B) {
-      return A.map(function (r, i) { return r.map(function (v, j) { return v + B[i][j]; }); });
-    }
-    function mat4scale(A, s) {
-      return A.map(function (r) { return r.map(function (v) { return v * s; }); });
-    }
-    function mat4mul(A, B) {
-      var C = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
-      for (var i = 0; i < 4; i++)
-        for (var j = 0; j < 4; j++)
-          for (var k = 0; k < 4; k++) C[i][j] += A[i][k] * B[k][j];
-      return C;
-    }
-    function mat4T(A) {
-      return [[A[0][0],A[1][0],A[2][0],A[3][0]],
-              [A[0][1],A[1][1],A[2][1],A[3][1]],
-              [A[0][2],A[1][2],A[2][2],A[3][2]],
-              [A[0][3],A[1][3],A[2][3],A[3][3]]];
-    }
-    function mat4mulVec(A, v) {
-      return A.map(function (r) { return r[0]*v[0]+r[1]*v[1]+r[2]*v[2]+r[3]*v[3]; });
-    }
-    function mat4vecMulLeft(v, A) {  // v' * A  (treats v as row)
-      return [0,1,2,3].map(function (j) {
-        return v[0]*A[0][j]+v[1]*A[1][j]+v[2]*A[2][j]+v[3]*A[3][j];
-      });
-    }
-    function vecDot4(a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3]; }
-    function mat4outerScale(col, row, s) {  // col ⊗ row * s
-      return col.map(function (c) { return row.map(function (r) { return c * r * s; }); });
-    }
-
-    // 5×5 matrix ops for system ID normal equations
-    function matMul5T(Phi, B) {
-      // Phi' * Phi  (5×5) where Phi is N×5
-      var N = Phi.length;
-      var C = [];
-      for (var i = 0; i < 5; i++) { C.push([]); for (var j = 0; j < 5; j++) C[i].push(0); }
-      for (var n = 0; n < N; n++)
-        for (var i = 0; i < 5; i++)
-          for (var j = 0; j < 5; j++) C[i][j] += Phi[n][i] * Phi[n][j];
-      return C;
-    }
-    function matMulTv5(Phi, y) {
-      // Phi' * y  (5-vec) where Phi N×5, y N-vec
-      var v = [0,0,0,0,0];
-      for (var n = 0; n < Phi.length; n++)
-        for (var i = 0; i < 5; i++) v[i] += Phi[n][i] * y[n];
-      return v;
-    }
-    function matMulVec5(A, v) {
-      return A.map(function (r) {
-        var s = 0; for (var i = 0; i < 5; i++) s += r[i] * v[i]; return s;
-      });
-    }
-    function matInv5(M) {
-      // Gaussian elimination with partial pivoting (5×5)
-      var n = 5;
-      var a = M.map(function (r) { return r.slice(); });
-      var inv = [];
-      for (var i = 0; i < n; i++) { inv.push([]); for (var j = 0; j < n; j++) inv[i].push(i === j ? 1 : 0); }
-      for (var col = 0; col < n; col++) {
-        // Pivot
-        var maxRow = col;
-        for (var row = col + 1; row < n; row++) if (Math.abs(a[row][col]) > Math.abs(a[maxRow][col])) maxRow = row;
-        var tmp = a[col]; a[col] = a[maxRow]; a[maxRow] = tmp;
-        var ti  = inv[col]; inv[col] = inv[maxRow]; inv[maxRow] = ti;
-        var piv = a[col][col];
-        if (Math.abs(piv) < 1e-14) return null;
-        for (var j = 0; j < n; j++) { a[col][j] /= piv; inv[col][j] /= piv; }
-        for (var row = 0; row < n; row++) {
-          if (row === col) continue;
-          var f = a[row][col];
-          for (var j = 0; j < n; j++) { a[row][j] -= f * a[col][j]; inv[row][j] -= f * inv[col][j]; }
-        }
-      }
-      return inv;
-    }
-
-    function formatMatrix(m, rows, cols) {
-      // m can be flat (rows*cols) or rows-of-cols
-      var lines = [];
-      for (var i = 0; i < rows; i++) {
-        var parts = [];
-        for (var j = 0; j < cols; j++) {
-          var v = Array.isArray(m[i]) ? m[i][j] : m[i * cols + j];
-          parts.push((v >= 0 ? ' ' : '') + v.toFixed(4));
-        }
-        lines.push('  [ ' + parts.join('  ') + ' ]');
-      }
-      return lines.join('\n');
-    }
-
-    /* ---- Step 4: Neural Network (behavioral cloning from LQR expert) ---- */
-    var CP_INPUT_SCALES = [X_LIMIT, 3.5, FALL_ANGLE, 6.0];
-    var nnLayers3 = 1, nnNeurons3 = 16;
-    var lossHistory3 = [], trainingData3 = null;
-    var trainTimer3 = null;
-
+    // ---- NN utility functions ----
     function getLayerSizes3() {
-      var s = [4];
+      var s = [5];   // [x, xdot, cos θ, sin θ, thetadot]
       for (var i = 0; i < nnLayers3; i++) s.push(nnNeurons3);
       s.push(1); return s;
     }
@@ -2597,7 +2058,7 @@
       return { sizes: sizes, W: W, b: b };
     }
     function fwdNetCP(nn, xRaw) {
-      var inp = xRaw.map(function (v, i) { return clamp(v / 1.0, -3, 3); }); // already normalised
+      var inp = xRaw.map(function (v) { return clamp(v / 1.0, -3, 3); });
       var a = [new Float64Array(inp)];
       for (var l = 0; l < nn.W.length; l++) {
         var ni = nn.sizes[l], no = nn.sizes[l+1];
@@ -2666,88 +2127,398 @@
         }
       }
     }
-    function runEpoch3(data, net, adam, batchSize) {
-      for (var i = data.length - 1; i > 0; i--) {
-        var j = Math.floor(Math.random() * (i+1));
-        var tmp = data[i]; data[i] = data[j]; data[j] = tmp;
+
+    // ---- Expert controller (energy-shaping swing-up + LQR balance) ----
+    function expertController(s) {
+      var th = s[2], thdot = s[3], costh = Math.cos(th);
+      if (Math.abs(th) < deg2rad(22)) {
+        // LQR near upright: F = k_th·θ + k_thd·θ̇ - k_x·x - k_xd·ẋ
+        return clamp(18.0*th + 4.0*thdot - 0.4*s[0] - 0.9*s[1], -FMAX, FMAX);
       }
-      var totalLoss = 0;
-      for (var b = 0; b < data.length; b += batchSize) {
-        var batch = data.slice(b, b + batchSize);
-        var accDW = net.W.map(function (w) { return new Float64Array(w.length); });
-        var accDb = net.b.map(function (bi) { return new Float64Array(bi.length); });
-        for (var s = 0; s < batch.length; s++) {
-          var cache = fwdNetCP(net, batch[s].x);
-          var err = cache.out - batch[s].y;
-          totalLoss += err * err;
-          var g = bwdNetCP(net, cache, batch[s].y);
-          for (var l = 0; l < net.W.length; l++) {
-            for (var k = 0; k < net.W[l].length; k++) accDW[l][k] += g.dW[l][k] / batch.length;
-            for (var k = 0; k < net.b[l].length; k++) accDb[l][k] += g.db[l][k] / batch.length;
+      // Energy-shaping swing-up
+      var KE = 0.5*(M_CART+M_POLE)*s[1]*s[1]
+             + 0.5*M_POLE*L_POLE*s[1]*thdot*costh
+             + (1/6)*M_POLE*L_POLE*L_POLE*thdot*thdot;
+      var PE   = M_POLE*G*(L_POLE/2)*costh;
+      var Eref = M_POLE*G*(L_POLE/2);
+      return clamp(3.0*(KE+PE-Eref)*thdot*costh, -FMAX, FMAX);
+    }
+
+    function collectExpertDemos(nEps, maxSteps) {
+      var demos = [];
+      for (var ep = 0; ep < nEps; ep++) {
+        // small kick so energy shaping has non-zero θ̇ to work with
+        var ts = [(Math.random()-0.5)*0.2, 0, Math.PI, 0.4+(Math.random()-0.5)*0.3];
+        for (var step = 0; step < maxSteps; step++) {
+          var obs = ppoObs(ts);
+          var F = expertController(ts);
+          demos.push({ obs: obs, action: F });
+          var Fc = F;
+          for (var sub = 0; sub < SUBSTEPS; sub++) {
+            ts = rk4(ts, 0, CP_DT, function(t,s_){ return cpDeriv(t,s_,Fc); });
           }
+          if (Math.abs(ts[0]) > X_LIMIT) break;
         }
-        adamStep3(net, { dW: accDW, db: accDb }, adam, 0.001);
       }
-      return totalLoss / data.length;
+      return demos;
     }
 
-    function genNNData() {
-      // Prefer human trial data (enables swing-up learning)
-      if (humanTrialData.length >= 50) {
-        var data = [];
-        for (var hi = 0; hi < humanTrialData.length; hi++) {
-          var d = humanTrialData[hi];
-          var inp = [d.x[0]/X_LIMIT, d.x[1]/3.5, d.x[2]/Math.PI, d.x[3]/6.0];
-          data.push({ x: inp, y: clamp(d.u / FMAX, -1, 1) });
+    // ---- PPO functions ----
+    function ppoObs(s) {
+      // cos/sin encoding avoids the ±π discontinuity — hanging is (-1, ~0) regardless of direction
+      return [s[0]/X_LIMIT, s[1]/3.5, Math.cos(s[2]), Math.sin(s[2]), s[3]/6.0];
+    }
+
+    function ppoRewardFn(s, F, done) {
+      if (done) return -1;
+      var xdot = s[1], costh = Math.cos(s[2]), thdot = s[3];
+      // Total mechanical energy of the uniform-rod cart-pole
+      var KE = 0.5*(M_CART+M_POLE)*xdot*xdot
+             + 0.5*M_POLE*L_POLE*xdot*thdot*costh
+             + (1/6)*M_POLE*L_POLE*L_POLE*thdot*thdot;
+      var PE   = M_POLE*G*(L_POLE/2)*costh;
+      var E    = KE + PE;
+      // Reference: upright + stopped (cart position is free)
+      var Eref  = M_POLE*G*(L_POLE/2);
+      var Escale = 2*Eref;   // bottom-stopped error normalises to ±1
+      var dE = (E - Eref) / Escale;
+      var xPen = (s[0]/X_LIMIT) * (s[0]/X_LIMIT);
+      return 1 - dE*dE - 0.1*xPen;
+    }
+
+    function ppoActSample(obs, deterministic) {
+      var result = fwdNetCP(nnNet3, obs);
+      var tanhOut = Math.tanh(result.out);
+      var mu = tanhOut * FMAX;
+      var std = Math.exp(PPO_LOG_STD) * FMAX;
+      var noise = deterministic ? 0 : gaussian();
+      var action = clamp(mu + std * noise, -FMAX, FMAX);
+      var logProb = -0.5 * Math.pow((action - mu)/std, 2) - Math.log(std) - 0.9189;
+      return { action: action, logProb: logProb, result: result, tanhOut: tanhOut };
+    }
+
+    function collectRollout() {
+      var obs_buf = [], act_buf = [], rew_buf = [], done_buf = [], logp_buf = [], val_buf = [];
+      var episodeRews = [], epRew = 0;
+      // 50/50 mix: hanging start for swing-up, upright start for balance robustness.
+      // Only terminate on X_LIMIT — never for pole angle — so upright starts don't
+      // immediately look like a "done" state.
+      function randomStart() {
+        if (Math.random() < 0.5) {
+          return [(Math.random()-0.5)*0.3, 0, Math.PI, 0];           // hanging
+        } else {
+          return [(Math.random()-0.5)*0.2, 0, (Math.random()-0.5)*deg2rad(10), 0]; // near-upright
         }
-        return data;
       }
-      // Fall back to LQR expert rollouts for balance-only training
-      var K = computeAnalyticLQR();
-      if (!K) return null;
-      var data = [];
-      var s = [0, 0, deg2rad(4), 0], t = 0;
-      for (var i = 0; i < 3000; i++) {
-        if (i % 60 === 0) {
-          s = [(Math.random()-0.5)*X_LIMIT*0.7, (Math.random()-0.5)*1.2,
-               (Math.random()-0.5)*FALL_ANGLE*0.6, (Math.random()-0.5)*2.0];
-        }
-        var dx = [s[0]-X_TARGET, s[1], s[2], s[3]];
-        var F = clamp(-(K[0]*dx[0]+K[1]*dx[1]+K[2]*dx[2]+K[3]*dx[3]), -FMAX, FMAX);
-        var inp = [s[0]/X_LIMIT, s[1]/3.5, s[2]/Math.PI, s[3]/6.0];
-        data.push({ x: inp, y: F / FMAX });
+      var ts = randomStart();
+      for (var step = 0; step < PPO_ROLLOUT; step++) {
+        var obs = ppoObs(ts);
+        var act = ppoActSample(obs, false);
+        var val = fwdNetCP(ppoCriticNet, obs).out;
+        var F = act.action;
         for (var sub = 0; sub < SUBSTEPS; sub++) {
-          s = rk4(s, t, CP_DT, function (tt, ss) { return cpDeriv(tt, ss, F); });
-          t += CP_DT;
+          ts = rk4(ts, 0, CP_DT, function(t, s) { return cpDeriv(t, s, F); });
         }
-        if (Math.abs(s[2]) > FALL_ANGLE || Math.abs(s[0]) > X_LIMIT) {
-          s = [0, 0, deg2rad(3), 0];
+        var done = Math.abs(ts[0]) > X_LIMIT;
+        var rew = ppoRewardFn(ts, F, done);
+        epRew += rew;
+        obs_buf.push(obs); act_buf.push(F); rew_buf.push(rew);
+        done_buf.push(done ? 1 : 0); logp_buf.push(act.logProb); val_buf.push(val);
+        if (done) {
+          episodeRews.push(epRew); epRew = 0;
+          ts = randomStart();
         }
       }
-      return data;
+      var lastVal = done_buf[PPO_ROLLOUT-1] ? 0 : fwdNetCP(ppoCriticNet, ppoObs(ts)).out;
+      var advantages = new Array(PPO_ROLLOUT);
+      var returns = new Array(PPO_ROLLOUT);
+      var gae = 0;
+      for (var t = PPO_ROLLOUT - 1; t >= 0; t--) {
+        var nextV = (t === PPO_ROLLOUT-1) ? lastVal : val_buf[t+1];
+        var delta = rew_buf[t] + PPO_GAMMA * nextV * (1 - done_buf[t]) - val_buf[t];
+        gae = delta + PPO_GAMMA * PPO_LAMBDA * (1 - done_buf[t]) * gae;
+        advantages[t] = gae;
+        returns[t] = gae + val_buf[t];
+      }
+      var advMean = 0;
+      for (var i = 0; i < PPO_ROLLOUT; i++) advMean += advantages[i];
+      advMean /= PPO_ROLLOUT;
+      var advVar = 0;
+      for (var i = 0; i < PPO_ROLLOUT; i++) advVar += (advantages[i]-advMean)*(advantages[i]-advMean);
+      var advStd = Math.sqrt(advVar/PPO_ROLLOUT + 1e-8);
+      for (var i = 0; i < PPO_ROLLOUT; i++) advantages[i] = (advantages[i]-advMean)/advStd;
+      var meanRew = episodeRews.length > 0
+        ? episodeRews.reduce(function(a,b){return a+b;},0)/episodeRews.length : epRew;
+      return { obs: obs_buf, acts: act_buf, logProbs: logp_buf,
+               advantages: advantages, returns: returns, meanRew: meanRew };
     }
 
-    function drawLoss3() {
+    function ppoUpdate(rollout) {
+      var N = PPO_ROLLOUT;
+      var indices = [];
+      for (var i = 0; i < N; i++) indices.push(i);
+      for (var epoch = 0; epoch < PPO_EPOCHS; epoch++) {
+        for (var i = N-1; i > 0; i--) {
+          var j = Math.floor(Math.random()*(i+1));
+          var tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
+        }
+        for (var b = 0; b < N; b += PPO_BATCH) {
+          var bEnd = Math.min(b+PPO_BATCH, N);
+          var bSize = bEnd - b;
+          var aGrads = {
+            dW: nnNet3.W.map(function(w){return new Float64Array(w.length);}),
+            db: nnNet3.b.map(function(bi){return new Float64Array(bi.length);})
+          };
+          var cGrads = {
+            dW: ppoCriticNet.W.map(function(w){return new Float64Array(w.length);}),
+            db: ppoCriticNet.b.map(function(bi){return new Float64Array(bi.length);})
+          };
+          for (var k = b; k < bEnd; k++) {
+            var idx = indices[k];
+            var obs = rollout.obs[idx];
+            var act = rollout.acts[idx];
+            var oldLogP = rollout.logProbs[idx];
+            var adv = rollout.advantages[idx];
+            var ret = rollout.returns[idx];
+            // Actor: PPO clipped policy gradient
+            var aResult = fwdNetCP(nnNet3, obs);
+            var tanhOut = Math.tanh(aResult.out);
+            var mu = tanhOut * FMAX;
+            var std = Math.exp(PPO_LOG_STD) * FMAX;
+            var newLogP = -0.5*Math.pow((act-mu)/std,2) - Math.log(std) - 0.9189;
+            var ratio = Math.exp(Math.min(newLogP - oldLogP, 5));
+            var clipped = (adv > 0 && ratio > 1+PPO_CLIP) || (adv < 0 && ratio < 1-PPO_CLIP);
+            var dLoss_dLogP = clipped ? 0 : -ratio * adv;
+            var sech2 = 1 - tanhOut*tanhOut;
+            var dLogP_dMu = (act - mu) / (std * std);
+            var dLoss_dOut = dLoss_dLogP * dLogP_dMu * sech2 * FMAX / bSize;
+            var aG = bwdNetCP(nnNet3, aResult, aResult.out - dLoss_dOut);
+            for (var l = 0; l < nnNet3.W.length; l++) {
+              for (var ki = 0; ki < nnNet3.W[l].length; ki++) aGrads.dW[l][ki] += aG.dW[l][ki];
+              for (var ki = 0; ki < nnNet3.b[l].length; ki++) aGrads.db[l][ki] += aG.db[l][ki];
+            }
+            // Critic: MSE on return
+            var cResult = fwdNetCP(ppoCriticNet, obs);
+            var cG = bwdNetCP(ppoCriticNet, cResult, ret);
+            for (var l = 0; l < ppoCriticNet.W.length; l++) {
+              for (var ki = 0; ki < ppoCriticNet.W[l].length; ki++) cGrads.dW[l][ki] += cG.dW[l][ki]/bSize;
+              for (var ki = 0; ki < ppoCriticNet.b[l].length; ki++) cGrads.db[l][ki] += cG.db[l][ki]/bSize;
+            }
+          }
+          adamStep3(nnNet3, aGrads, ppoActorAdam, PPO_LR);
+          adamStep3(ppoCriticNet, cGrads, ppoCriticAdam, PPO_LR * 3);
+        }
+      }
+    }
+
+    // ---- Reward history chart ----
+    function drawRewardChart() {
       var lc = document.getElementById('sid-nn-loss-canvas');
-      if (!lc || !lossHistory3.length) return;
-      var dpr2 = Math.min(window.devicePixelRatio || 1, 2);
-      var LW = lc.offsetWidth || 200, LH = 60;
-      lc.width = Math.round(LW * dpr2); lc.height = Math.round(LH * dpr2);
+      if (!lc || !ppoRewardHist.length) return;
+      var dpr2 = Math.min(window.devicePixelRatio||1,2);
+      var LW = lc.offsetWidth||200, LH = 60;
+      lc.width = Math.round(LW*dpr2); lc.height = Math.round(LH*dpr2);
       var lctx = lc.getContext('2d');
-      lctx.setTransform(dpr2, 0, 0, dpr2, 0, 0);
-      lctx.fillStyle = cssVar('--bg-soft'); lctx.fillRect(0, 0, LW, LH);
-      var maxL = Math.max.apply(null, lossHistory3), n = lossHistory3.length;
+      lctx.setTransform(dpr2,0,0,dpr2,0,0);
+      lctx.fillStyle = cssVar('--bg-soft'); lctx.fillRect(0,0,LW,LH);
+      var n = ppoRewardHist.length;
+      var maxR = Math.max.apply(null, ppoRewardHist);
+      var minR = Math.min.apply(null, ppoRewardHist);
+      var rng = Math.max(maxR - minR, 1);
       lctx.strokeStyle = cssVar('--accent'); lctx.lineWidth = 1.5; lctx.beginPath();
       for (var i = 0; i < n; i++) {
-        var x = (i / Math.max(n-1, 1)) * LW;
-        var y = LH - 4 - (lossHistory3[i] / Math.max(maxL, 1e-9)) * (LH-8);
-        if (i === 0) lctx.moveTo(x, y); else lctx.lineTo(x, y);
+        var x = (i/Math.max(n-1,1))*LW;
+        var y = LH-4 - ((ppoRewardHist[i]-minR)/rng)*(LH-8);
+        if (i===0) lctx.moveTo(x,y); else lctx.lineTo(x,y);
       }
       lctx.stroke();
       lctx.fillStyle = cssVar('--text-muted'); lctx.font = '10px monospace';
       lctx.textAlign = 'left'; lctx.textBaseline = 'top';
-      lctx.fillText('MSE loss', 4, 3);
+      lctx.fillText('mean episode reward', 4, 3);
+      lctx.textAlign = 'right'; lctx.textBaseline = 'bottom';
+      lctx.fillText(ppoRewardHist[n-1].toFixed(1), LW-4, LH-2);
     }
+
+    // ---- Sim management ----
+    function resetSim() {
+      if (resetTimer3) { clearTimeout(resetTimer3); resetTimer3 = null; }
+      state = [0, 0, Math.PI, 0];
+      simT = 0; uForce = 0;
+      nnActive3 = false;
+      ppoEverBalanced = false;
+      ppoActivatedSimT = 0;
+      stateHist = { x: [], xd: [], th: [], thd: [] };
+      errRing = [];
+      simStatus3 = 'ok';
+      if (nnActivateBtn3) { nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
+    }
+
+    resetSim();
+
+    if (forceSlider) forceSlider.addEventListener('input', function () {
+      pushF = parseFloat(forceSlider.value) || 0;
+      if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
+    });
+    (function () {
+      var ri = document.getElementById('sid-force-range');
+      if (!ri || !forceSlider) return;
+      ri.addEventListener('input', function () {
+        var r = Math.max(1, parseFloat(ri.value) || 1);
+        var prev = parseFloat(forceSlider.value);
+        forceSlider.min = -r; forceSlider.max = r; forceSlider.step = r / 40;
+        forceSlider.value = clamp(prev, -r, r);
+        pushF = parseFloat(forceSlider.value) || 0;
+        if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
+      });
+    })();
+
+    if (resetBtn) resetBtn.addEventListener('click', resetSim);
+
+    document.addEventListener('keydown', function (e) {
+      var sec = document.getElementById('sec-sysid');
+      if (!sec || !sec.classList.contains('active')) return;
+      if (nnActive3) return;
+      if (e.key === 'ArrowLeft')  { keyForce = -8; e.preventDefault(); }
+      if (e.key === 'ArrowRight') { keyForce =  8; e.preventDefault(); }
+    });
+    document.addEventListener('keyup', function (e) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') keyForce = 0;
+    });
+
+    // ---- Simulation step (25 ms) ----
+    function step() {
+      if (!document.getElementById('sec-sysid').classList.contains('active')) return;
+      if (simStatus3 !== 'ok') return;
+
+      var uCtrl;
+      if (nnActive3 && nnNet3) {
+        uCtrl = ppoActSample(ppoObs(state), true).action;
+      } else {
+        uCtrl = keyForce;
+      }
+      uForce = clamp(uCtrl + pushF, -FMAX, FMAX);
+
+      for (var i = 0; i < SUBSTEPS; i++) {
+        state = rk4(state, simT, CP_DT, function (t, s) { return cpDeriv(t, s, uForce); });
+        simT += CP_DT;
+      }
+
+      if (Math.abs(state[0]) > X_LIMIT) {
+        simStatus3 = 'offtrack';
+        if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2000);
+        return;
+      }
+      if (nnActive3) {
+        if (Math.abs(state[2]) < deg2rad(25)) ppoEverBalanced = true;
+        var swingTimeout = !ppoEverBalanced && (simT - ppoActivatedSimT) > 5.0;
+        if (swingTimeout || (ppoEverBalanced && Math.abs(state[2]) > FALL_ANGLE)) {
+          simStatus3 = 'fell';
+          if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2000);
+          return;
+        }
+      }
+
+      stateHist.x.push(state[0]); stateHist.xd.push(state[1]);
+      stateHist.th.push(rad2deg(state[2])); stateHist.thd.push(rad2deg(state[3]));
+      if (stateHist.x.length > CHIST) { stateHist.x.shift(); stateHist.xd.shift(); stateHist.th.shift(); stateHist.thd.shift(); }
+
+      errRing.push(Math.pow(rad2deg(state[2]), 2));
+      if (errRing.length > RING) errRing.shift();
+      if (scoreEl && errRing.length > 0) {
+        scoreEl.textContent = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length).toFixed(2);
+      }
+    }
+
+    setInterval(step, 25);
+
+    // ---- Cart-pole renderer ----
+    function drawCartPole() {
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.width;
+      if (!W) W = 720;
+      var H = 380;
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      canvas.style.width = '100%';
+      canvas.style.height = H + 'px';
+      var ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      var bg = cssVar('--bg'), border = cssVar('--border'), muted = cssVar('--text-muted');
+      var accent = cssVar('--accent'), mono = cssVar('--mono');
+      var poleColor = cssVar('--viz-2');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+      var trackY = H * 0.72;
+      var scale = (W * 0.5) / (X_LIMIT + 0.6);
+      var cx = W / 2;
+      function sx(xm) { return cx + xm * scale; }
+
+      ctx.strokeStyle = border; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(20, trackY); ctx.lineTo(W - 20, trackY); ctx.stroke();
+      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+      [-X_LIMIT, X_LIMIT].forEach(function (xm) {
+        ctx.beginPath(); ctx.moveTo(sx(xm), trackY - 12); ctx.lineTo(sx(xm), trackY + 12); ctx.stroke();
+      });
+      ctx.strokeStyle = accent; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(sx(X_TARGET), trackY - 60); ctx.lineTo(sx(X_TARGET), trackY + 14); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
+      ctx.fillText('target', sx(X_TARGET), trackY + 28);
+
+      var cartX = sx(state[0]);
+      var cartW = 60, cartH = 26;
+
+      if (Math.abs(uForce) > 0.2) {
+        var fl = clamp(uForce / FMAX, -1, 1) * 46;
+        ctx.strokeStyle = poleColor; ctx.fillStyle = poleColor; ctx.lineWidth = 3;
+        var ay = trackY + 40;
+        ctx.beginPath(); ctx.moveTo(cartX, ay); ctx.lineTo(cartX + fl, ay); ctx.stroke();
+        var fsign = fl >= 0 ? 1 : -1;
+        ctx.beginPath();
+        ctx.moveTo(cartX + fl, ay); ctx.lineTo(cartX + fl - 7*fsign, ay - 4);
+        ctx.lineTo(cartX + fl - 7*fsign, ay + 4); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
+        ctx.fillText('F = ' + uForce.toFixed(1) + ' N', cartX, ay + 18);
+      }
+
+      ctx.fillStyle = accent;
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(cartX - cartW/2, trackY - cartH, cartW, cartH, 5); ctx.fill(); }
+      else ctx.fillRect(cartX - cartW/2, trackY - cartH, cartW, cartH);
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.arc(cartX - cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
+      ctx.beginPath(); ctx.arc(cartX + cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
+
+      var pivotX = cartX, pivotY = trackY - cartH;
+      var poleLenPx = L_POLE * 2 * scale * 0.9;
+      var tipX = pivotX + poleLenPx * Math.sin(state[2]);
+      var tipY = pivotY - poleLenPx * Math.cos(state[2]);
+      ctx.strokeStyle = poleColor; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
+      ctx.fillStyle = poleColor;
+      ctx.beginPath(); ctx.arc(tipX, tipY, 13, 0, 2*Math.PI); ctx.fill();
+      ctx.fillStyle = border;
+      ctx.beginPath(); ctx.arc(pivotX, pivotY, 4, 0, 2*Math.PI); ctx.fill();
+      ctx.lineCap = 'butt';
+
+      ctx.textAlign = 'left'; ctx.font = '600 13px ' + cssVar('--font');
+      var label, col;
+      if (simStatus3 === 'fell')          { label = 'Pole fell — resetting…'; col = poleColor; }
+      else if (simStatus3 === 'offtrack') { label = 'Cart hit the rail — resetting…'; col = poleColor; }
+      else if (nnActive3)                 { label = 'PPO policy in control'; col = accent; }
+      else if (ppoTraining)               { label = 'Training PPO in background…'; col = accent; }
+      else                                { label = 'Pole hanging — use ←→ keys or slider'; col = muted; }
+      ctx.fillStyle = col; ctx.fillText(label, 18, 26);
+      ctx.fillStyle = muted; ctx.font = '11px ' + mono;
+      ctx.fillText('θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m', 18, 44);
+    }
+
+    function loop() {
+      drawCartPole();
+      drawStatePlot(sidStatePlot, stateHist, CP_STATE_SPEC);
+      requestAnimationFrame(loop);
+    }
+    loop();
 
     function parseRGB3(str) {
       if (!str) return [128, 128, 128];
@@ -2831,95 +2602,94 @@
       }
     }
 
-    // NN DOM wiring
+    // ---- Architecture sliders ----
     var nnLayersSlider3  = document.getElementById('sid-nn-layers');
     var nnNeuronsSlider3 = document.getElementById('sid-nn-neurons');
     var nnLayersVal3     = document.getElementById('sid-nn-layers-val');
     var nnNeuronsVal3    = document.getElementById('sid-nn-neurons-val');
-    var nnGenBtn3        = document.getElementById('sid-nn-gen-btn');
-    var nnGenStatus3     = document.getElementById('sid-nn-gen-status');
-    var nnTrainBtn3      = document.getElementById('sid-nn-train-btn');
-    var nnTrainStatus3   = document.getElementById('sid-nn-train-status');
-    var nnActivateBtn3   = document.getElementById('sid-nn-activate-btn');
-    var nnNetviz3        = document.getElementById('sid-netviz');
     var nnLastCache3     = null;
 
     if (nnLayersSlider3) nnLayersSlider3.addEventListener('input', function () {
       nnLayers3 = parseInt(nnLayersSlider3.value);
       if (nnLayersVal3) nnLayersVal3.textContent = nnLayers3;
-      nnNet3 = initNet3(getLayerSizes3()); nnActive3 = false; lossHistory3 = [];
-      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate NN'; nnActivateBtn3.classList.remove('active'); }
-      if (nnTrainStatus3) nnTrainStatus3.textContent = 'Architecture changed — retrain';
+      nnNet3 = initNet3(getLayerSizes3());
+      ppoCriticNet = initNet3(getLayerSizes3());
+      ppoRewardHist = [];
+      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
+      if (ppoStatusEl) ppoStatusEl.textContent = 'Architecture changed — retrain';
     });
     if (nnNeuronsSlider3) nnNeuronsSlider3.addEventListener('input', function () {
       nnNeurons3 = parseInt(nnNeuronsSlider3.value);
       if (nnNeuronsVal3) nnNeuronsVal3.textContent = nnNeurons3;
-      nnNet3 = initNet3(getLayerSizes3()); nnActive3 = false; lossHistory3 = [];
-      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate NN'; nnActivateBtn3.classList.remove('active'); }
-      if (nnTrainStatus3) nnTrainStatus3.textContent = 'Architecture changed — retrain';
+      nnNet3 = initNet3(getLayerSizes3());
+      ppoCriticNet = initNet3(getLayerSizes3());
+      ppoRewardHist = [];
+      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
+      if (ppoStatusEl) ppoStatusEl.textContent = 'Architecture changed — retrain';
     });
     nnNet3 = initNet3(getLayerSizes3());
+    ppoCriticNet = initNet3(getLayerSizes3());
 
-    if (nnGenBtn3) nnGenBtn3.addEventListener('click', function () {
-      nnGenBtn3.disabled = true;
-      if (nnGenStatus3) nnGenStatus3.textContent = humanTrialData.length >= 50 ? 'Converting trial data…' : 'Generating LQR expert data…';
-      setTimeout(function () {
-        trainingData3 = genNNData();
-        nnGenBtn3.disabled = false;
-        if (nnGenStatus3) {
-          if (trainingData3) {
-            var src = humanTrialData.length >= 50 ? ' (from your trials)' : ' (LQR expert fallback)';
-            nnGenStatus3.textContent = trainingData3.length + ' samples ready' + src;
-          } else {
-            nnGenStatus3.textContent = 'Failed — complete some trials or run Analytic LQR first';
-          }
-        }
-        if (nnTrainBtn3) nnTrainBtn3.disabled = !trainingData3;
-      }, 20);
-    });
-
-    if (nnTrainBtn3) nnTrainBtn3.addEventListener('click', function () {
-      if (!trainingData3) return;
+    // ---- PPO train button ----
+    if (ppoBtnEl) ppoBtnEl.addEventListener('click', function () {
+      if (ppoTraining) {
+        ppoTraining = false;
+        if (ppoTrainTimer) { clearTimeout(ppoTrainTimer); ppoTrainTimer = null; }
+        ppoBtnEl.textContent = 'Train PPO';
+        if (ppoStatusEl) ppoStatusEl.textContent = 'Stopped at update ' + ppoUpdateCount;
+        return;
+      }
+      ppoTraining = true;
+      ppoUpdateCount = 0;
+      ppoRewardHist = [];
       nnNet3 = initNet3(getLayerSizes3());
-      var adam3 = initAdam3(nnNet3);
-      lossHistory3 = []; nnActive3 = false;
-      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate NN'; nnActivateBtn3.classList.remove('active'); }
-      (function trainLoop3(epoch, maxEpochs, ad) {
-        if (epoch >= maxEpochs) {
-          if (nnTrainStatus3) nnTrainStatus3.textContent = 'Done — ' + maxEpochs + ' epochs';
+      ppoCriticNet = initNet3(getLayerSizes3());
+      ppoActorAdam = initAdam3(nnNet3);
+      ppoCriticAdam = initAdam3(ppoCriticNet);
+      nnActive3 = false;
+      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
+      ppoBtnEl.textContent = 'Stop Training';
+      if (ppoStatusEl) ppoStatusEl.textContent = 'Training…';
+      (function trainStep() {
+        if (!ppoTraining) return;
+        var rollout = collectRollout();
+        ppoUpdate(rollout);
+        ppoUpdateCount++;
+        ppoRewardHist.push(rollout.meanRew);
+        drawRewardChart();
+        if (ppoStatusEl) ppoStatusEl.textContent =
+          'Update ' + ppoUpdateCount + ' / ' + PPO_MAX_UPDATES + ' — avg reward ' + rollout.meanRew.toFixed(1);
+        if (ppoUpdateCount >= PPO_MAX_UPDATES) {
+          ppoTraining = false;
+          ppoBtnEl.textContent = 'Retrain PPO';
+          if (ppoStatusEl) ppoStatusEl.textContent = 'Done (' + PPO_MAX_UPDATES + ' updates) — activate to deploy';
           if (nnActivateBtn3) nnActivateBtn3.disabled = false;
-          if (nnNetviz3) nnNetviz3.style.display = '';  // show viz after training
+          if (nnNetviz3) nnNetviz3.style.display = '';
           return;
         }
-        var loss = runEpoch3(trainingData3, nnNet3, ad, 32);
-        lossHistory3.push(loss);
-        if (nnTrainStatus3) nnTrainStatus3.textContent = 'Epoch ' + (epoch+1) + '/' + maxEpochs + '  loss ' + loss.toFixed(5);
-        drawLoss3();
-        setTimeout(function () { trainLoop3(epoch+1, maxEpochs, ad); }, 0);
-      })(0, 150, adam3);
+        ppoTrainTimer = setTimeout(trainStep, 0);
+      })();
     });
 
+    // ---- Activate trained policy ----
     if (nnActivateBtn3) nnActivateBtn3.addEventListener('click', function () {
       if (!nnNet3) return;
       nnActive3 = !nnActive3;
       if (nnActive3) {
-        lqrActive = false; lqrK = null; recording = false;
-        swingUpTrialActive = false; trialStatus = 'ready';
-        state = [0, 0, Math.PI - 0.08 + (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.4];
-        simStatus3 = 'ok';
-        updateTrialUI();
+        state = [0, 0, Math.PI, 0];
+        simStatus3 = 'ok'; simT = 0; uForce = 0;
+        ppoEverBalanced = false;
+        ppoActivatedSimT = 0;
       }
-      nnActivateBtn3.textContent = nnActive3 ? 'Deactivate NN' : 'Activate NN';
+      nnActivateBtn3.textContent = nnActive3 ? 'Deactivate Policy' : 'Activate Policy';
       nnActivateBtn3.classList.toggle('active', nnActive3);
-      if (nnNetviz3) nnNetviz3.style.display = '';  // keep visible once trained
+      if (nnNetviz3) nnNetviz3.style.display = '';
     });
 
-    // Separate RAF loop for NN visualisation (runs alongside the main loop)
+    // Separate RAF loop for NN visualisation
     (function vizLoop() {
       if (nnNet3 && nnNetviz3 && nnNetviz3.style.display !== 'none') {
-        var s3 = state;
-        var inp3 = [s3[0]/X_LIMIT, s3[1]/3.5, s3[2]/Math.PI, s3[3]/6.0];
-        nnLastCache3 = fwdNetCP(nnNet3, inp3);
+        nnLastCache3 = fwdNetCP(nnNet3, ppoObs(state));
         drawNetViz3(nnNet3, nnLastCache3);
       }
       requestAnimationFrame(vizLoop);
