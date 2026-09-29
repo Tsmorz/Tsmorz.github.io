@@ -1,5 +1,5 @@
 // Controls page — three interactive demos.
-// Tab switcher, mass-spring-damper PID, 6-DOF 3-D flight sim, system ID + LQR.
+// Tab switcher, mass-spring-damper PID, nonlinear flight sim, system ID + LQR.
 (function () {
   'use strict';
 
@@ -885,524 +885,492 @@
   })();
 
   /* ================================================================
-     Shared 6-DOF flight physics engine (used by the Flight Sim demo)
-
-     State vector s (12):
-       [ u, v, w,        body-frame velocity     (m/s)
-         p, q, r,        body angular rates       (rad/s)
-         phi, theta, psi, Euler roll/pitch/yaw    (rad)
-         N, E, h ]       position north / east / altitude (m)
-
-     Body axes: x forward, y right, z down (standard aerospace).
-     Control commands c = { de, da, dr, thr } use a *command* convention
-     chosen so positive always means the intuitive thing:
-       +de → nose up, +da → roll right, +dr → yaw right, thr ∈ [0,1].
-     (The usual negative surface-sign bookkeeping is folded into the
-     coefficient signs below so the keyboard mapping reads naturally.)
+     Shared flight physics engine (used by Demo 2 and Demo 3)
   ================================================================ */
 
-  // Cessna-172-class light aircraft. Inertias/derivatives are textbook
-  // magnitudes; a few control signs are chosen so positive command =
-  // intuitive response (see the note above).
+  // Cessna sprite — loaded once, white background stripped via pixel manipulation
+  var cessna = (function () {
+    var raw = new Image();
+    var processed = null;
+    raw.onload = function () {
+      var oc = document.createElement('canvas');
+      oc.width = raw.naturalWidth;
+      oc.height = raw.naturalHeight;
+      var oc2d = oc.getContext('2d');
+      oc2d.drawImage(raw, 0, 0);
+      var id = oc2d.getImageData(0, 0, oc.width, oc.height);
+      var d = id.data;
+      for (var i = 0; i < d.length; i += 4) {
+        // Make near-white pixels fully transparent
+        if (d[i] > 220 && d[i+1] > 220 && d[i+2] > 220) d[i+3] = 0;
+      }
+      oc2d.putImageData(id, 0, 0);
+      processed = oc;
+    };
+    raw.src = '/assets/img/cessna.png';
+    return { get: function () { return processed; } };
+  }());
+
+  // Aircraft constants
   var AC = {
-    m: 1043.3, g: 9.81, rho: 1.225,
-    S: 16.17, b: 10.9, cbar: 1.49,
-    Ix: 1285, Iy: 1825, Iz: 2667,
-    // Longitudinal
-    CL0: 0.31, CLa: 5.14, CLq: 3.9,
-    CD0: 0.031, k: 0.054,
-    Cm0: 0.06, Cma: -0.60, Cmq: -13.0, Cmde: 1.10,
-    // Lateral–directional
-    CYb: -0.31, CYdr: 0.187,
-    Clb: -0.089, Clp: -0.47, Clr: 0.096, Clda: 0.18, Cldr: 0.015,
-    Cnb: 0.065, Cnp: -0.03, Cnr: -0.15, Cnda: -0.02, Cndr: 0.10,
-    Tmax: 2600
+    m: 1000, Iyy: 1800, S: 16, cbar: 1.5, rho: 1.225, g: 9.81,
+    CL0: 0.40, CLa: 4.80, CLde: 0.36,
+    CD0: 0.027, k: 0.045,
+    Cm0: 0.04, Cma: -0.70, Cmq: -3.0, Cmde: -1.2
   };
 
-  var STALL_A = deg2rad(15);   // stall angle of attack
-
-  // Airspeed / aero angles from a state vector.
-  function airdata(s) {
-    var u = s[0], v = s[1], w = s[2];
-    var V = Math.sqrt(u * u + v * v + w * w);
-    if (V < 1) V = 1;
-    return { V: V, alpha: Math.atan2(w, u), beta: Math.asin(clamp(v / V, -1, 1)) };
-  }
-
-  // 6-DOF derivatives. c = {de, da, dr, thr}.
-  function sixDof(t, s, c) {
-    var u = s[0], v = s[1], w = s[2];
-    var p = s[3], q = s[4], r = s[5];
-    var phi = s[6], th = s[7], psi = s[8];
-
-    var V = Math.sqrt(u * u + v * v + w * w); if (V < 1) V = 1;
-    var alpha = Math.atan2(w, u);
-    var beta  = Math.asin(clamp(v / V, -1, 1));
-    var qbar  = 0.5 * AC.rho * V * V;
-    var qS    = qbar * AC.S;
-
-    // Non-dimensional body rates
-    var phat = p * AC.b / (2 * V);
-    var qhat = q * AC.cbar / (2 * V);
-    var rhat = r * AC.b / (2 * V);
-
-    // Lift with a smooth sigmoid stall: CL rolls off past STALL_A.
-    var sig    = 1 / (1 + Math.exp(25 * (Math.abs(alpha) - STALL_A)));
-    var CLlin  = AC.CL0 + AC.CLa * alpha + AC.CLq * qhat;
-    var CLpeak = AC.CL0 + AC.CLa * STALL_A;
-    var CLpost = 0.6 * CLpeak * (alpha < 0 ? -1 : 1);
-    var CL     = sig * CLlin + (1 - sig) * CLpost;
-    var CD     = AC.CD0 + AC.k * CL * CL + 0.9 * (1 - sig);   // stall drag rise
-    var CY     = AC.CYb * beta + AC.CYdr * c.dr;
-
-    var Cl = AC.Clb * beta + AC.Clp * phat + AC.Clr * rhat + AC.Clda * c.da + AC.Cldr * c.dr;
-    var Cm = AC.Cm0 + AC.Cma * alpha + AC.Cmq * qhat + AC.Cmde * c.de;
-    var Cn = AC.Cnb * beta + AC.Cnp * phat + AC.Cnr * rhat + AC.Cnda * c.da + AC.Cndr * c.dr;
-
-    // Aerodynamic force: rotate wind-axis [-D, Y, -L] into body axes.
-    var D = qS * CD, Yf = qS * CY, L = qS * CL;
-    var ca = Math.cos(alpha), sa = Math.sin(alpha);
-    var cb = Math.cos(beta),  sb = Math.sin(beta);
-    var Xa = -D * ca * cb - Yf * ca * sb + L * sa;
-    var Ya = -D * sb + Yf * cb;
-    var Za = -D * sa * cb - Yf * sa * sb - L * ca;
-
-    var T = c.thr * AC.Tmax;   // thrust along +x body
-
-    // Gravity resolved into body axes
-    var sphi = Math.sin(phi), cphi = Math.cos(phi);
-    var sth  = Math.sin(th),  cth  = Math.cos(th);
-    var gx = -AC.g * sth;
-    var gy =  AC.g * cth * sphi;
-    var gz =  AC.g * cth * cphi;
-
-    var m = AC.m;
-    var ax = (Xa + T) / m + gx;
-    var ay =  Ya / m + gy;
-    var az =  Za / m + gz;
-
-    var udot = ax + r * v - q * w;
-    var vdot = ay + p * w - r * u;
-    var wdot = az + q * u - p * v;
-
-    // Moments → angular accelerations (principal-axis inertia)
-    var Lm = qS * AC.b * Cl, Mm = qS * AC.cbar * Cm, Nm = qS * AC.b * Cn;
-    var pdot = (Lm + (AC.Iy - AC.Iz) * q * r) / AC.Ix;
-    var qdot = (Mm + (AC.Iz - AC.Ix) * p * r) / AC.Iy;
-    var rdot = (Nm + (AC.Ix - AC.Iy) * p * q) / AC.Iz;
-
-    // Euler-angle kinematics (guard cos θ near ±90°)
-    var tth = Math.tan(th);
-    var cthS = Math.abs(cth) < 1e-3 ? (cth < 0 ? -1e-3 : 1e-3) : cth;
-    var phidot = p + (sphi * q + cphi * r) * tth;
-    var thdot  = cphi * q - sphi * r;
-    var psidot = (sphi * q + cphi * r) / cthS;
-
-    // Navigation: body velocity → earth (NED), then ḣ = -Vd
-    var spsi = Math.sin(psi), cpsi = Math.cos(psi);
-    var Vn = cth * cpsi * u + (sphi * sth * cpsi - cphi * spsi) * v + (cphi * sth * cpsi + sphi * spsi) * w;
-    var Ve = cth * spsi * u + (sphi * sth * spsi + cphi * cpsi) * v + (cphi * sth * spsi - sphi * cpsi) * w;
-    var Vd = -sth * u + sphi * cth * v + cphi * cth * w;
-
-    return [udot, vdot, wdot, pdot, qdot, rdot, phidot, thdot, psidot, Vn, Ve, -Vd];
-  }
-
-  // Level-flight trim at V0: solve for alpha, elevator command, throttle.
-  function computeTrim() {
-    var V0 = 52;                       // ~100 kt cruise
-    var W  = AC.m * AC.g;
-    var qbar = 0.5 * AC.rho * V0 * V0;
-    var qS = qbar * AC.S;
-    var CLreq = W / qS;
-    var alpha = (CLreq - AC.CL0) / AC.CLa;
-    var de    = -(AC.Cm0 + AC.Cma * alpha) / AC.Cmde;
-    var CD    = AC.CD0 + AC.k * CLreq * CLreq;
-    var thr   = clamp(qS * CD / AC.Tmax, 0, 1);
+  function aero(V, alpha, q, de) {
+    var qbar    = 0.5 * AC.rho * V * V;
+    var a_stall = deg2rad(16);
+    // Sigmoid stall factor: ~1 pre-stall → ~0 post-stall (smooth nonlinear rolloff)
+    var sigma   = 1 / (1 + Math.exp(30 * (Math.abs(alpha) - a_stall) / Math.PI));
+    var CL_lin  = AC.CL0 + AC.CLa * alpha + AC.CLde * de;
+    // Post-stall lift asymptotes to 55% of peak CL, same sign as alpha
+    var CL_peak = AC.CL0 + AC.CLa * a_stall;
+    var CL_post = 0.55 * CL_peak * (alpha < 0 ? -1 : 1) + AC.CLde * de;
+    var CL      = sigma * CL_lin + (1 - sigma) * CL_post;
+    // Extra induced drag post-stall
+    var CD      = AC.CD0 + AC.k * CL * CL + 0.15 * (1 - sigma);
+    var Cm      = AC.Cm0 + AC.Cma * alpha
+                + AC.Cmq * q * AC.cbar / (2 * Math.max(V, 1))
+                + AC.Cmde * de;
     return {
-      V: V0, alpha: alpha, de: de, thr: thr,
-      N0: -1800, E0: 0, h0: 250,        // 1.8 km south of the runway, heading N
-      u: V0 * Math.cos(alpha), w: V0 * Math.sin(alpha), theta: alpha
+      L:  qbar * AC.S * CL,
+      D:  qbar * AC.S * CD,
+      My: qbar * AC.S * AC.cbar * Cm
     };
   }
 
-  var TRIM = computeTrim();
+  // Trim: find (alpha0, de0) such that L=W and Cm=0; also compute T_trim=D_trim
+  function computeTrim() {
+    var W  = AC.m * AC.g;
+    var V0 = 65;
+    // At trim: gamma=0, q=0
+    // From Cm=0: de = -(Cm0+Cma*alpha)/Cmde
+    // Substitute into L=W and solve for alpha
+    var qbar = 0.5 * AC.rho * V0 * V0;
+    var CLreq  = W / (qbar * AC.S);
+    var aCoef  = AC.CLa - AC.CLde * AC.Cma / AC.Cmde;
+    var rhs    = CLreq - AC.CL0 + AC.CLde * AC.Cm0 / AC.Cmde;
+    var alpha0 = rhs / aCoef;
+    var de0    = -(AC.Cm0 + AC.Cma * alpha0) / AC.Cmde;
+    // Thrust at trim: T*cos(alpha0) = D → T = D/cos(alpha0)
+    var CL0t = AC.CL0 + AC.CLa * alpha0 + AC.CLde * de0;
+    var CD0t = AC.CD0 + AC.k * CL0t * CL0t;
+    var D0   = qbar * AC.S * CD0t;
+    var T0   = D0 / Math.cos(alpha0);
+    return { V: V0, gamma: 0, alpha: alpha0, q: 0, de: de0, h: 300, x: 0, T: T0 };
+  }
 
-  // Sutherland–Hodgman clip of a polygon against the half-plane fval(pt) >= 0.
-  function clipHalf(poly, fval) {
-    var out = [];
-    for (var i = 0; i < poly.length; i++) {
-      var a = poly[i], b = poly[(i + 1) % poly.length];
-      var fa = fval(a), fb = fval(b);
-      if (fa >= 0) out.push(a);
-      if ((fa >= 0) !== (fb >= 0)) {
-        var t = fa / (fa - fb);
-        out.push({ x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
-      }
-    }
-    return out;
+  var TRIM = computeTrim();
+  AC.T = TRIM.T;  // constant thrust throughout
+
+  // State vector indices: [V, gamma, alpha, q, h, x]
+  function flightDerivatives(t, s, de_rad) {
+    var V     = Math.max(s[0], 10);
+    var gamma = s[1];
+    var alpha = s[2];
+    var q     = s[3];
+    // h, x not needed in derivatives except for ḣ and ẋ
+    var f = aero(V, alpha, q, de_rad);
+    var T = AC.T;   // constant thrust (set to D_trim at startup)
+
+    var Vdot     = (T * Math.cos(alpha) - f.D) / AC.m - AC.g * Math.sin(gamma);
+    var gammaDot = (T * Math.sin(alpha) + f.L - AC.m * AC.g * Math.cos(gamma)) / (AC.m * V);
+    var alphaDot = q - gammaDot;
+    var qdot     = f.My / AC.Iyy;
+    var hdot     = V * Math.sin(gamma);
+    var xdot     = V * Math.cos(gamma);
+
+    return [Vdot, gammaDot, alphaDot, qdot, hdot, xdot];
+  }
+
+  var FLIGHT_DT = 0.005;  // 200 Hz
+  var FLIGHT_MAX_ALT = 590;   // world ceiling — triggers too_high stop
+
+  // Shared stop-condition checker used by all flight demos
+  function checkStopConditions(s) {
+    if (s[4] <= 0)                    { s[4] = 0; return 'crashed'; }
+    if (s[4] >= FLIGHT_MAX_ALT)       { return 'too_high'; }
+    if (s[0] < 25)                    { return 'stalled'; }   // below stall speed
+    if (s[2] > deg2rad(18))           { return 'stalled'; }   // high-alpha stall
+    if (Math.abs(s[1]) > deg2rad(80)) { return 'over_top'; }  // inverted / over the top
+    return null;
   }
 
   /* ================================================================
-     3-D out-the-window cockpit view with a HUD.
-     Pinhole camera fixed to the airframe (body axes): x = depth into
-     the screen, y = screen-right, z = screen-down. World points are
-     rotated earth→body by the aircraft attitude, then projected.
+     Shared canvas renderer for flight demos
+     Fixed 600 m world: ground at h=0 (bottom), ceiling at h=600 (top).
+     Viewport never scrolls — trees and clouds are always visible.
   ================================================================ */
-  function makeFlightView(canvas) {
+
+  var WORLD_HI = 600;   // m — top of visible world (sky ceiling)
+  var WORLD_LO = 0;     // m — ground
+
+  // Shared reference trajectory constants (used by all flight demos + renderer)
+  var H_CENTER  = 300;   // m — reference altitude centre
+  var REF_AMP   = 25;    // m — sine amplitude → 50 m peak-to-peak height delta
+  var REF_OMEGA = 2 * Math.PI / 8;  // rad/s — period = 8 s
+  // Seconds of reference shown across the full canvas width (determines how many cycles appear)
+  var REF_DISPLAY_SPAN = 24;   // ≈ 3 cycles of the 8 s wave stay legible
+
+  function makeFlightRenderer(canvas) {
     var ctx = canvas.getContext('2d');
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W = 720, H = 380, cx = 360, cy = 190, f = 480;
-    var NEAR = 2;                         // near-plane depth (m) for world points
-    var FOV = deg2rad(65);
 
     function resize() {
       var w = canvas.parentElement.clientWidth;
-      W = w; H = 380; cx = W / 2; cy = H / 2;
-      f = (W / 2) / Math.tan(FOV / 2);
-      canvas.width = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      canvas.style.width = W + 'px';
-      canvas.style.height = H + 'px';
+      canvas.width  = Math.round(w * dpr);
+      canvas.height = Math.round(380 * dpr);
+      canvas.style.width  = w + 'px';
+      canvas.style.height = '380px';
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     new ResizeObserver(resize).observe(canvas.parentElement);
+    resize();
 
-    // Rotate an earth (NED, relative to aircraft) vector into body axes,
-    // using body→earth DCM elements r[] (row-major 3×3), transposed.
-    function toBody(dN, dE, dD, r) {
-      return {
-        x: r[0] * dN + r[3] * dE + r[6] * dD,
-        y: r[1] * dN + r[4] * dE + r[7] * dD,
-        z: r[2] * dN + r[5] * dE + r[8] * dD
-      };
+    // Bottom 36 px are always the ground strip; the viewport shows VIEW_RANGE metres
+    // centred on the plane's current altitude — the world zooms in rather than scrolling.
+    var GROUND_PX = 36;
+    var VIEW_RANGE = 200;  // metres of altitude shown (was full 600 m)
+
+    // hToY maps world altitude to canvas y for the current viewport [viewLo, viewHi].
+    // Defined as a var so render() can rebind it each frame without parameter-passing.
+    var hToY = function (altH, H) { return (H - GROUND_PX) * (1 - altH / WORLD_HI); };
+
+    // Deterministic pseudo-random in [0,1) from integer seed
+    function seedRand(seed) {
+      var x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+      return x - Math.floor(x);
     }
-    function dcm(phi, th, psi) {
-      var sp = Math.sin(phi), cp = Math.cos(phi);
-      var st = Math.sin(th),  ct = Math.cos(th);
-      var ss = Math.sin(psi), cs = Math.cos(psi);
-      return [                                   // body→earth, row-major
-        ct * cs, sp * st * cs - cp * ss, cp * st * cs + sp * ss,
-        ct * ss, sp * st * ss + cp * cs, cp * st * ss - sp * cs,
-        -st,     sp * ct,               cp * ct
+
+    // Redwood-style tree: tall, narrow spire, reddish-brown trunk
+    function drawTree(x, baseY, h, isDarkMode) {
+      var trunkW = Math.max(3, h * 0.07);
+      var trunkH = h * 0.45;
+      var cw     = h * 0.17;   // half-width of crown base
+
+      // Trunk — reddish-brown bark
+      ctx.fillStyle = isDarkMode ? '#4a1e08' : '#7a3010';
+      ctx.fillRect(x - trunkW / 2, baseY - trunkH, trunkW, trunkH);
+
+      // Lower crown tier (widest)
+      ctx.fillStyle = isDarkMode ? '#1a3a18' : '#285a22';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h * 0.38);
+      ctx.lineTo(x + cw * 2.2, baseY - trunkH * 0.55);
+      ctx.lineTo(x - cw * 2.2, baseY - trunkH * 0.55);
+      ctx.closePath();
+      ctx.fill();
+
+      // Mid crown tier
+      ctx.fillStyle = isDarkMode ? '#1f4820' : '#306828';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h * 0.58);
+      ctx.lineTo(x + cw * 1.7, baseY - h * 0.38);
+      ctx.lineTo(x - cw * 1.7, baseY - h * 0.38);
+      ctx.closePath();
+      ctx.fill();
+
+      // Upper crown tier
+      ctx.fillStyle = isDarkMode ? '#245624' : '#377830';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h * 0.76);
+      ctx.lineTo(x + cw * 1.2, baseY - h * 0.58);
+      ctx.lineTo(x - cw * 1.2, baseY - h * 0.58);
+      ctx.closePath();
+      ctx.fill();
+
+      // Narrow spire
+      ctx.fillStyle = isDarkMode ? '#296029' : '#3d8534';
+      ctx.beginPath();
+      ctx.moveTo(x,          baseY - h);
+      ctx.lineTo(x + cw * 0.6, baseY - h * 0.76);
+      ctx.lineTo(x - cw * 0.6, baseY - h * 0.76);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawTrees(W, horizonY, downrange, isDarkMode) {
+      var spacing = 55;
+      var scroll  = downrange % (spacing * 40);
+      var count   = Math.ceil(W / spacing) + 3;
+      var base    = Math.floor(scroll / spacing) - 1;
+      for (var ti = base; ti < base + count; ti++) {
+        var sx  = (ti - scroll / spacing) * spacing + seedRand(ti * 7 + 1) * spacing * 0.35;
+        var sz  = 0.65 + seedRand(ti * 19 + 2) * 0.65;   // 0.65–1.3 scale
+        var ht  = (42 + seedRand(ti * 13 + 3) * 32) * sz; // 27–96 px tall
+        var yOff= seedRand(ti * 11 + 5) * 4;
+        drawTree(sx, horizonY + yOff + 2, ht, isDarkMode);
+      }
+    }
+
+    function drawCloud(x, y, r, isDarkMode) {
+      ctx.save();
+      ctx.fillStyle = isDarkMode ? 'rgba(110,150,210,0.22)' : 'rgba(255,255,255,0.92)';
+      ctx.beginPath();
+      ctx.arc(x,          y,         r,       0, Math.PI * 2);
+      ctx.arc(x + r,      y - r*0.3, r*0.78,  0, Math.PI * 2);
+      ctx.arc(x + r*2.0,  y,         r*0.65,  0, Math.PI * 2);
+      ctx.arc(x + r*0.3,  y - r*0.2, r*0.62,  0, Math.PI * 2);
+      ctx.arc(x + r*0.9,  y + r*0.3, r*0.55,  0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Clouds are always in the top ~30% of the canvas (high altitude zone)
+    function drawClouds(W, H, downrange, isDarkMode) {
+      var layers = [
+        { yFrac: 0.04, parallax: 0.10, spacing: 340, sMin: 22, sMax: 42 },
+        { yFrac: 0.12, parallax: 0.18, spacing: 250, sMin: 16, sMax: 30 },
+        { yFrac: 0.22, parallax: 0.28, spacing: 190, sMin: 11, sMax: 21 },
       ];
-    }
-    // Project a body-frame world point (needs depth > NEAR metres).
-    function proj(b) {
-      if (b.x <= NEAR) return null;
-      return { x: cx + f * b.y / b.x, y: cy + f * b.z / b.x, d: b.x };
-    }
-    // Project a body-frame *direction* (point at infinity): only needs to
-    // be in front of the camera, so no metric near-plane test.
-    function projDir(b) {
-      if (b.x <= 1e-3) return null;
-      return { x: cx + f * b.y / b.x, y: cy + f * b.z / b.x };
-    }
-    // Clip a body-space segment to x > NEAR, then project both ends.
-    function projSeg(a, b) {
-      var ain = a.x > NEAR, bin = b.x > NEAR;
-      if (!ain && !bin) return null;
-      if (ain && bin) return [proj(a), proj(b)];
-      var t = (NEAR - a.x) / (b.x - a.x);
-      var m = { x: NEAR + 1e-3, y: a.y + t * (b.y - a.y), z: a.z + t * (b.z - a.z) };
-      return ain ? [proj(a), proj(m)] : [proj(m), proj(b)];
+      for (var li = 0; li < layers.length; li++) {
+        var l = layers[li];
+        var baseY = H * l.yFrac;
+        var scroll = downrange * l.parallax;
+        var count  = Math.ceil(W / l.spacing) + 3;
+        var base   = Math.floor(scroll / l.spacing) - 1;
+        for (var ci = base; ci < base + count; ci++) {
+          var cx2 = (ci - scroll / l.spacing) * l.spacing
+                  + seedRand(ci * 29 + li * 7 + 3) * l.spacing * 0.55;
+          var size = l.sMin + seedRand(ci * 17 + li * 5 + 1) * (l.sMax - l.sMin);
+          var cy2  = baseY + seedRand(ci * 23 + li * 9 + 5) * H * 0.04;
+          drawCloud(cx2, cy2, size, isDarkMode);
+        }
+      }
     }
 
-    function render(state, ctrl, extra) {
-      var phi = state[6], th = state[7], psi = state[8];
-      var h = state[11], N0 = state[9], E0 = state[10];
-      var ad = airdata(state);
-      var r = dcm(phi, th, psi);
+    // Draw the Cessna sprite rotated by pitch angle theta.
+    // theta > 0 → nose up (CCW in canvas coords because Y-axis is flipped).
+    // Elevator deflection de_rad is shown via the side indicator bar, not on the sprite.
+    function drawPlane(cx, cy, theta_rad, isDarkMode) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-theta_rad);  // negative: CCW = nose up
+      var ci = cessna.get();
+      if (ci) {
+        var dispW = Math.round(26 * WORLD_HI / VIEW_RANGE);  // scales with viewport zoom
+        var dispH = dispW * ci.height / ci.width;
+        ctx.drawImage(ci, -dispW * 0.5, -dispH * 0.5, dispW, dispH);
+      } else {
+        // Fallback triangle while image processes
+        ctx.fillStyle = isDarkMode ? '#c0d0e0' : '#4060a0';
+        ctx.beginPath();
+        ctx.moveTo(20, 0);
+        ctx.lineTo(-20, -8);
+        ctx.lineTo(-20, 8);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // status: 'ok' | 'crashed' | 'stalled' | 'too_high' | 'over_top'
+    function render(state, simT, de_rad, status, extraFn) {
+      var W = canvas.clientWidth, H = 380;
+      ctx.clearRect(0, 0, W, H);
+
+      var h      = state[4];
+      var V      = state[0];
+      var alpha  = state[2];
+      var q      = state[3];
+      var gamma  = state[1];
+      var theta  = gamma + alpha;        // pitch = flight-path + AoA
+      var downrange = state[5];
+
+      var accentColor = cssVar('--accent');
+      var mutedColor  = cssVar('--text-muted');
+      var borderColor = cssVar('--border');
+      var bgSoft      = cssVar('--bg-soft');
 
       var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (!document.documentElement.getAttribute('data-theme') &&
          window.matchMedia('(prefers-color-scheme: dark)').matches);
-      var accent = cssVar('--accent');
-      var muted  = cssVar('--text-muted');
 
-      ctx.clearRect(0, 0, W, H);
+      // Zoomed viewport: VIEW_RANGE metres centred on the plane, clamped to world bounds.
+      // hToY is rebound each frame so everything else (ref line, ticks, plane) just calls it.
+      var viewLo = Math.max(WORLD_LO, Math.min(h - VIEW_RANGE / 2, WORLD_HI - VIEW_RANGE));
+      var viewHi = viewLo + VIEW_RANGE;
+      hToY = function (altH, H) {
+        return (H - GROUND_PX) * (1 - (altH - viewLo) / VIEW_RANGE);
+      };
 
-      // ---- Sky / ground split via the analytic horizon half-plane ----
-      // Earth-up in body axes; a screen pixel is "sky" where up·dir > 0.
-      var upx = -r[6], upy = -r[7], upz = -r[8];    // earth-up in body = toBody(0,0,-1)
-      var A = upy, B = upz, C = f * upx;            // centred-screen line A·X+B·Y+C=0
-      var rect = [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }];
-      function fval(pt) { return A * (pt.x - cx) + B * (pt.y - cy) + C; }
-      var sky = clipHalf(rect, fval);
+      // Horizon at h=0 — always (H - GROUND_PX) pixels from canvas top
+      var horizonY = H - GROUND_PX;  // ground strip is always fixed at the bottom
 
-      ctx.fillStyle = isDark ? '#0c1712' : '#8bab6e';   // ground
-      ctx.fillRect(0, 0, W, H);
-      if (sky.length > 2) {
-        var grad = ctx.createLinearGradient(0, 0, 0, H);
-        if (isDark) { grad.addColorStop(0, '#050912'); grad.addColorStop(1, '#132842'); }
-        else        { grad.addColorStop(0, '#7fb3e6'); grad.addColorStop(1, '#cfe6f5'); }
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.moveTo(sky[0].x, sky[0].y);
-        for (var i = 1; i < sky.length; i++) ctx.lineTo(sky[i].x, sky[i].y);
-        ctx.closePath();
-        ctx.fill();
+      // Full-canvas sky gradient
+      var grad = ctx.createLinearGradient(0, 0, 0, horizonY);
+      if (isDark) {
+        grad.addColorStop(0, '#05090f');
+        grad.addColorStop(1, '#0e1e2e');
+      } else {
+        grad.addColorStop(0, '#b8d4f0');
+        grad.addColorStop(1, '#dceef8');
       }
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, horizonY);
 
-      // ---- Ground grid (perspective) ----
-      var gridCol = isDark ? 'rgba(90,150,120,0.55)' : 'rgba(55,80,45,0.5)';
-      var STEP = 250, SPAN = 5000;
+      // Clouds always in upper portion of canvas (sky only)
+      drawClouds(W, horizonY, downrange, isDark);
+
+      // Ground strip — always visible at bottom
+      ctx.fillStyle = isDark ? '#0d1a0d' : '#b8d4a0';
+      ctx.fillRect(0, horizonY, W, H - horizonY);
+
+      // Scrolling ground marks
+      ctx.strokeStyle = isDark ? '#1a2e1a' : '#a0c080';
       ctx.lineWidth = 1;
-      function gridLine(aN, aE, bN, bE) {
-        var seg = projSeg(toBody(aN - N0, aE - E0, h, r), toBody(bN - N0, bE - E0, h, r));
-        if (!seg || !seg[0] || !seg[1]) return;
-        ctx.globalAlpha = clamp(1 - Math.min(seg[0].d, seg[1].d) / SPAN, 0.06, 1);
-        ctx.strokeStyle = gridCol;
+      var markSpacing = 120;
+      var offset = (downrange % markSpacing) / markSpacing * markSpacing;
+      for (var mx = -offset; mx < W + markSpacing; mx += markSpacing) {
         ctx.beginPath();
-        ctx.moveTo(seg[0].x, seg[0].y);
-        ctx.lineTo(seg[1].x, seg[1].y);
+        ctx.moveTo(mx, horizonY);
+        ctx.lineTo(mx - 20, H);
         ctx.stroke();
       }
-      var n0 = Math.floor((N0 - SPAN) / STEP) * STEP;
-      var e0 = Math.floor((E0 - SPAN) / STEP) * STEP;
-      for (var gn = n0; gn <= N0 + SPAN; gn += STEP) gridLine(gn, E0 - SPAN, gn, E0 + SPAN);
-      for (var ge = e0; ge <= E0 + SPAN; ge += STEP) gridLine(N0 - SPAN, ge, N0 + SPAN, ge);
-      ctx.globalAlpha = 1;
 
-      // ---- Runway near the origin, aligned along +N ----
-      drawRunway(N0, E0, h, r, isDark);
+      // Trees always visible at horizon
+      drawTrees(W, horizonY, downrange, isDark);
 
-      // ---- HUD ----
+      // Reference altitude path.
+      // tOffset maps a canvas x-pixel to a time offset so REF_DISPLAY_SPAN seconds of
+      // the sine wave span the canvas. The plane sits at planeScreenX, so pixels to its
+      // LEFT are the past reference (older in time) and pixels to its RIGHT are the future.
+      var planeScreenX = W * 0.35;
+      function refYAt(px) {
+        var tOffset = (px - planeScreenX) / W * REF_DISPLAY_SPAN;
+        return hToY(H_CENTER + REF_AMP * Math.sin(REF_OMEGA * (simT + tOffset)), H);
+      }
+
+      // Future reference (right of the plane) — faint dashed guide to anticipate.
       ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.45)';
-      ctx.shadowBlur = 2;
-      var hud = accent;
-
-      drawLadder(r, psi, hud);
-
-      // Boresight (where the nose points)
-      ctx.strokeStyle = hud; ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.32;
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([8, 5]);
       ctx.beginPath();
-      ctx.moveTo(cx - 26, cy); ctx.lineTo(cx - 8, cy);
-      ctx.moveTo(cx + 8, cy);  ctx.lineTo(cx + 26, cy);
-      ctx.moveTo(cx, cy - 6);  ctx.lineTo(cx, cy);
-      ctx.stroke();
-
-      // Flight-path (velocity) marker
-      var u = state[0], v = state[1], w = state[2];
-      if (u > 1) {
-        var fx = clamp(cx + f * v / u, 12, W - 12);
-        var fy = clamp(cy + f * w / u, 12, H - 12);
-        ctx.strokeStyle = hud; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(fx, fy, 6, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(fx - 6, fy); ctx.lineTo(fx - 14, fy);
-        ctx.moveTo(fx + 6, fy); ctx.lineTo(fx + 14, fy);
-        ctx.moveTo(fx, fy - 6);  ctx.lineTo(fx, fy - 11);
-        ctx.stroke();
+      for (var px = planeScreenX; px <= W; px += 4) {
+        var ry = refYAt(px);
+        if (px === planeScreenX) ctx.moveTo(px, ry); else ctx.lineTo(px, ry);
       }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
 
-      drawBank(phi, hud, muted);
-      drawHeadingTape(psi, hud, muted, isDark);
-      drawVTape(ad.V, hud, muted, isDark);
-      drawAltTape(h, extra && extra.altBug, hud, muted, isDark);
-      drawThrottle(ctrl.thr, hud, muted, isDark);
-
-      var warn = ad.alpha > STALL_A ? 'STALL' : (ad.V < 28 ? 'AIRSPEED' : null);
-      if (warn) {
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = (Math.floor(Date.now() / 300) % 2) ? '#ff5252' : 'rgba(255,82,82,0.35)';
-        ctx.font = 'bold 18px ' + cssVar('--font');
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(warn, cx, cy + 62);
+      // Past reference (left of the plane) — a solid "comet tail" that fades with age.
+      ctx.save();
+      ctx.strokeStyle = accentColor;
+      ctx.lineCap = 'round';
+      for (var px = planeScreenX; px > 0; px -= 4) {
+        var age = (planeScreenX - px) / planeScreenX;   // 0 at the dot → 1 at far left
+        ctx.globalAlpha = Math.max(0, 1 - age);
+        ctx.lineWidth = 0.5 + 2.2 * (1 - age);
+        ctx.beginPath();
+        ctx.moveTo(px, refYAt(px));
+        ctx.lineTo(px - 4, refYAt(px - 4));
+        ctx.stroke();
       }
       ctx.restore();
 
-      // Crash overlay
-      if (extra && extra.status && extra.status !== 'ok') {
+      // Moving reference dot — the target the aircraft is chasing right now.
+      var dotY = refYAt(planeScreenX);
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.arc(planeScreenX, dotY, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(planeScreenX, dotY, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Cessna sprite
+      drawPlane(planeScreenX, hToY(h, H), theta, isDark);
+
+      // Altitude scale (right side) — ticks every 25 m across the zoomed viewport
+      ctx.fillStyle = mutedColor;
+      ctx.font = '11px ' + cssVar('--mono');
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      var tickStep = 25;
+      var tickStart = Math.ceil(viewLo / tickStep) * tickStep;
+      for (var ah = tickStart; ah <= viewHi; ah += tickStep) {
+        var ay = hToY(ah, H);
+        if (ay < 12 || ay > H - 12) continue;
+        ctx.fillText(ah + 'm', W - 8, ay);
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(W - 45, ay);
+        ctx.lineTo(W - 55, ay);
+        ctx.stroke();
+      }
+
+      // Elevator indicator bar (right edge).
+      // Positive de_rad → plane pitches up → thumb moves UP.
+      var eiFrac = (de_rad / deg2rad(25) + 1) / 2;  // 0 = full down, 1 = full up
+      var eiX = W - 22, eiTop = 50, eiH = 80;
+      ctx.fillStyle = bgSoft;
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(eiX - 4, eiTop, 8, eiH, 4);
+      ctx.fill();
+      ctx.stroke();
+      var thumbY = eiTop + (1 - eiFrac) * eiH;   // eiFrac=1 → top of bar
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.roundRect(eiX - 7, thumbY - 3, 14, 6, 3);
+      ctx.fill();
+      ctx.fillStyle = mutedColor;
+      ctx.font = '9px ' + cssVar('--mono');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('δe', eiX, eiTop - 2);
+
+      // Telemetry overlay (bottom-left)
+      ctx.fillStyle = isDark ? 'rgba(11,15,20,0.72)' : 'rgba(245,246,248,0.82)';
+      ctx.beginPath();
+      ctx.roundRect(10, H - 76, 196, 66, 8);
+      ctx.fill();
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.font = '12px ' + cssVar('--mono');
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = mutedColor;
+      ctx.fillText('h   ' + h.toFixed(0) + ' m', 18, H - 70);
+      ctx.fillText('V   ' + V.toFixed(1) + ' m/s', 18, H - 56);
+      ctx.fillText('α   ' + rad2deg(alpha).toFixed(1) + '°', 18, H - 42);
+      ctx.fillText('q   ' + rad2deg(q).toFixed(2) + '°/s', 18, H - 28);
+
+      // Stop-condition overlay
+      if (status && status !== 'ok') {
+        var msg = status === 'crashed'  ? '💥  CRASHED'
+                : status === 'stalled'  ? '⚠️  STALLED'
+                : status === 'too_high' ? '🌤️  TOO HIGH'
+                : status === 'over_top' ? '🔄  OVER THE TOP'
+                : status;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.fillRect(0, 0, W, H);
         ctx.font = 'bold 22px ' + cssVar('--font');
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
         ctx.fillStyle = '#fff';
-        ctx.fillText(extra.status === 'crashed' ? '💥  CRASHED' : extra.status, cx, cy - 12);
+        ctx.fillText(msg, W / 2, H / 2 - 12);
         ctx.font = '14px ' + cssVar('--font');
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-        ctx.fillText('Resetting…', cx, cy + 16);
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        ctx.fillText('Resetting in a moment…', W / 2, H / 2 + 16);
       }
+
+      if (typeof extraFn === 'function') extraFn(ctx, W, H, WORLD_LO, WORLD_HI);
     }
 
-    // --- HUD sub-drawers (closures over ctx / W / H / cx / cy / f) ---
-
-    function drawRunway(N0, E0, h, r, isDark) {
-      var L0 = 0, L1 = 900, HW = 14;                 // 900 m long, 28 m wide
-      function grd(n, e) { return toBody(n - N0, e - E0, h, r); }
-      var c = [
-        projSeg(grd(L0, -HW), grd(L1, -HW)),
-        projSeg(grd(L0,  HW), grd(L1,  HW))
-      ];
-      // Fill the strip only when both long edges are fully in front.
-      var full = c[0] && c[1] && c[0][0] && c[0][1] && c[1][0] && c[1][1];
-      ctx.save();
-      if (full) {
-        ctx.fillStyle = isDark ? 'rgba(40,46,54,0.9)' : 'rgba(70,74,80,0.85)';
-        ctx.beginPath();
-        ctx.moveTo(c[0][0].x, c[0][0].y);
-        ctx.lineTo(c[0][1].x, c[0][1].y);
-        ctx.lineTo(c[1][1].x, c[1][1].y);
-        ctx.lineTo(c[1][0].x, c[1][0].y);
-        ctx.closePath(); ctx.fill();
-        // Dashed centreline
-        ctx.strokeStyle = 'rgba(240,240,240,0.85)';
-        ctx.setLineDash([10, 12]); ctx.lineWidth = 2;
-        var cl = projSeg(grd(L0, 0), grd(L1, 0));
-        if (cl && cl[0] && cl[1]) {
-          ctx.beginPath(); ctx.moveTo(cl[0].x, cl[0].y); ctx.lineTo(cl[1].x, cl[1].y); ctx.stroke();
-        }
-        ctx.setLineDash([]);
-      }
-      ctx.restore();
-    }
-
-    function drawLadder(r, psi, hud) {
-      ctx.lineWidth = 1.5;
-      ctx.font = '10px ' + cssVar('--mono');
-      ctx.textBaseline = 'middle';
-      var levels = [-30, -20, -10, 0, 10, 20, 30, 45];
-      for (var li = 0; li < levels.length; li++) {
-        var el = deg2rad(levels[li]);
-        var wide = deg2rad(levels[li] === 0 ? 22 : 11);
-        var pts = [];
-        for (var side = -1; side <= 1; side += 2) {
-          var az = psi + side * wide;
-          pts.push(projDir(toBody(Math.cos(el) * Math.cos(az),
-                                  Math.cos(el) * Math.sin(az),
-                                  -Math.sin(el), r)));
-        }
-        if (!pts[0] || !pts[1]) continue;
-        ctx.strokeStyle = hud;
-        ctx.globalAlpha = levels[li] === 0 ? 1 : 0.8;
-        ctx.setLineDash(levels[li] < 0 ? [6, 5] : []);
-        // Two half-rungs with a gap around the boresight
-        line(pts[0], lerp(pts[0], pts[1], 0.4));
-        line(lerp(pts[0], pts[1], 0.6), pts[1]);
-        ctx.setLineDash([]);
-        if (levels[li] !== 0) {
-          ctx.fillStyle = hud; ctx.textAlign = 'right';
-          ctx.fillText('' + Math.abs(levels[li]), pts[0].x - 4, pts[0].y);
-          ctx.textAlign = 'left';
-          ctx.fillText('' + Math.abs(levels[li]), pts[1].x + 4, pts[1].y);
-        }
-        ctx.globalAlpha = 1;
-      }
-    }
-    function line(a, b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
-    function lerp(a, b, t) { return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; }
-
-    function drawBank(phi, hud, muted) {
-      var ticks = [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60];
-      ctx.strokeStyle = muted; ctx.globalAlpha = 0.8; ctx.lineWidth = 1;
-      for (var j = 0; j < ticks.length; j++) {
-        var ang = -Math.PI / 2 + deg2rad(ticks[j]);
-        var big = (ticks[j] % 30 === 0) || Math.abs(ticks[j]) === 45;
-        var rr = 116, rr2 = 116 - (big ? 10 : 6);
-        ctx.beginPath();
-        ctx.moveTo(cx + rr * Math.cos(ang), cy + rr * Math.sin(ang));
-        ctx.lineTo(cx + rr2 * Math.cos(ang), cy + rr2 * Math.sin(ang));
-        ctx.stroke();
-      }
-      var pa = -Math.PI / 2 + phi, pr = 104;
-      var px = cx + pr * Math.cos(pa), py = cy + pr * Math.sin(pa);
-      ctx.fillStyle = hud; ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px + 7 * Math.cos(pa + 2.5), py + 7 * Math.sin(pa + 2.5));
-      ctx.lineTo(px + 7 * Math.cos(pa - 2.5), py + 7 * Math.sin(pa - 2.5));
-      ctx.closePath(); ctx.fill();
-    }
-
-    function drawHeadingTape(psi, hud, muted, isDark) {
-      var y = 14, hw = 130;
-      var hdg = ((rad2deg(psi) % 360) + 360) % 360;
-      ctx.fillStyle = isDark ? 'rgba(8,14,22,0.5)' : 'rgba(250,252,255,0.5)';
-      ctx.fillRect(cx - hw, 2, hw * 2, 22);
-      ctx.save();
-      ctx.beginPath(); ctx.rect(cx - hw, 2, hw * 2, 22); ctx.clip();
-      ctx.font = '10px ' + cssVar('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      for (var d = -50; d <= 50; d += 10) {
-        var hdv = Math.round(hdg / 10) * 10 + d;
-        var sx = cx + (hdv - hdg) * 4;
-        var lbl = ((hdv % 360) + 360) % 360;
-        ctx.strokeStyle = muted; ctx.globalAlpha = 0.8; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(sx, y - 6); ctx.lineTo(sx, y - 1); ctx.stroke();
-        ctx.fillStyle = muted; ctx.globalAlpha = 1;
-        ctx.fillText(lbl === 0 ? 'N' : lbl === 90 ? 'E' : lbl === 180 ? 'S' : lbl === 270 ? 'W' : '' + (lbl / 10 | 0), sx, y + 3);
-      }
-      ctx.restore();
-      ctx.fillStyle = hud;
-      ctx.beginPath(); ctx.moveTo(cx, y + 9); ctx.lineTo(cx - 5, y + 3); ctx.lineTo(cx + 5, y + 3); ctx.closePath(); ctx.fill();
-      ctx.font = 'bold 11px ' + cssVar('--mono'); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillText(('00' + Math.round(hdg)).slice(-3) + '°', cx, y + 12);
-    }
-
-    function drawVTape(V, hud, muted, isDark) {
-      var x = 18, th2 = 120;
-      ctx.fillStyle = isDark ? 'rgba(8,14,22,0.5)' : 'rgba(250,252,255,0.5)';
-      ctx.fillRect(x, cy - th2 / 2, 40, th2);
-      ctx.save();
-      ctx.beginPath(); ctx.rect(x, cy - th2 / 2, 40, th2); ctx.clip();
-      ctx.font = '9px ' + cssVar('--mono'); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      for (var s = Math.round((V - 30) / 10) * 10; s <= V + 30; s += 10) {
-        if (s < 0) continue;
-        var sy = cy + (V - s) * 2.2;
-        ctx.strokeStyle = muted; ctx.globalAlpha = 0.7; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(x + 34, sy); ctx.lineTo(x + 40, sy); ctx.stroke();
-        ctx.fillStyle = muted; ctx.globalAlpha = 1;
-        ctx.fillText('' + s, x + 32, sy);
-      }
-      ctx.restore();
-      ctx.fillStyle = hud; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      ctx.font = 'bold 12px ' + cssVar('--mono');
-      ctx.fillText(V.toFixed(0), x + 2, cy);
-      ctx.fillStyle = muted; ctx.font = '8px ' + cssVar('--mono'); ctx.textBaseline = 'bottom';
-      ctx.fillText('m/s', x + 2, cy - th2 / 2 - 2);
-    }
-
-    function drawAltTape(h, bug, hud, muted, isDark) {
-      var x = W - 58, th2 = 120;
-      ctx.fillStyle = isDark ? 'rgba(8,14,22,0.5)' : 'rgba(250,252,255,0.5)';
-      ctx.fillRect(x, cy - th2 / 2, 44, th2);
-      ctx.save();
-      ctx.beginPath(); ctx.rect(x, cy - th2 / 2, 44, th2); ctx.clip();
-      ctx.font = '9px ' + cssVar('--mono'); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-      for (var s = Math.round((h - 180) / 50) * 50; s <= h + 180; s += 50) {
-        var sy = cy + (h - s) * 0.35;
-        ctx.strokeStyle = muted; ctx.globalAlpha = 0.7; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(x, sy); ctx.lineTo(x + 6, sy); ctx.stroke();
-        ctx.fillStyle = muted; ctx.globalAlpha = 1;
-        ctx.fillText('' + s, x + 8, sy);
-      }
-      if (typeof bug === 'number') {
-        var by = clamp(cy + (h - bug) * 0.35, cy - th2 / 2, cy + th2 / 2);
-        ctx.fillStyle = hud;
-        ctx.beginPath(); ctx.moveTo(x, by); ctx.lineTo(x + 6, by - 4); ctx.lineTo(x + 6, by + 4); ctx.closePath(); ctx.fill();
-      }
-      ctx.restore();
-      ctx.fillStyle = hud; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      ctx.font = 'bold 12px ' + cssVar('--mono');
-      ctx.fillText(h.toFixed(0), x + 42, cy);
-      ctx.fillStyle = muted; ctx.font = '8px ' + cssVar('--mono'); ctx.textBaseline = 'bottom'; ctx.textAlign = 'right';
-      ctx.fillText('m', x + 42, cy - th2 / 2 - 2);
-    }
-
-    function drawThrottle(thr, hud, muted, isDark) {
-      var x = 18, y = H - 58, bw = 10, bh = 44;
-      ctx.fillStyle = isDark ? 'rgba(8,14,22,0.55)' : 'rgba(250,252,255,0.6)';
-      ctx.strokeStyle = muted; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.rect(x, y, bw, bh); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = hud;
-      ctx.fillRect(x, y + bh * (1 - thr), bw, bh * thr);
-      ctx.fillStyle = muted; ctx.font = '9px ' + cssVar('--mono');
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText('THR ' + Math.round(thr * 100) + '%', x + bw + 5, y + 2);
-    }
-
-    resize();
-    return { render: render, resize: resize };
+    return { render: render, resetViewport: function () { /* fixed viewport — no-op */ } };
   }
 
   /* ================================================================
@@ -1600,220 +1568,182 @@
   }
 
   /* ================================================================
-     Flight Sim — 6-DOF aircraft, out-the-window 3-D cockpit view.
-     Fly it yourself with the keyboard, or hand it to a cascaded
-     autopilot that holds a target altitude + heading.
+     Demo 2 — Flight Simulator
   ================================================================ */
   (function flightDemo() {
     var canvas = document.getElementById('flight-canvas');
     if (!canvas) return;
-    var view = makeFlightView(canvas);
+    var renderer = makeFlightRenderer(canvas);
 
-    // Control limits and self-centring rate (rad; command convention)
-    var DE_MAX = deg2rad(18), DA_MAX = deg2rad(18), DR_MAX = deg2rad(22);
-    var DT = 0.005, SUBSTEPS = 5;               // 25 ms/tick → real time
-    var TICK = DT * SUBSTEPS;                    // 0.025 s
-    var RISE = 0.35;                             // s to slew a surface full-scale
-
-    var state, ctrl, simStatus, resetTimer = null;
-    var CHIST = 300;
-    var stateHist = { phi_deg: [], theta_deg: [], h: [], V: [] };
-    var surfHist  = { de: [], da: [], dr: [] };
-    var errRing = [], RING = 1200;
+    // State: [V, gamma, alpha, q, h, x]
+    var state, simT, de_rad, pidState, simStatus;
     var mode = 'manual';
-    var keys = {};
-
-    // DOM
-    var manualBtn = document.getElementById('fl-manual-btn');
-    var autoBtn   = document.getElementById('fl-auto-btn');
-    var manualCtl = document.getElementById('fl-manual-controls');
-    var autoCtl   = document.getElementById('fl-auto-controls');
-    var sasChk    = document.getElementById('fl-sas');
-    var thrSlider = document.getElementById('fl-throttle');
-    var thrVal    = document.getElementById('fl-throttle-val');
-    var tgtAlt    = document.getElementById('fl-tgt-alt');
-    var tgtAltVal = document.getElementById('fl-tgt-alt-val');
-    var tgtHdg    = document.getElementById('fl-tgt-hdg');
-    var tgtHdgVal = document.getElementById('fl-tgt-hdg-val');
-    var scoreEl   = document.getElementById('fl-score');
-    var resetBtn  = document.getElementById('fl-reset');
-    var flStatePlot = document.getElementById('fl-state-plot');
-    var flSurfPlot  = document.getElementById('fl-pid-plot');
-
-    var FL_STATE_SPEC = [
-      { key: 'phi_deg',   label: 'φ (°)',   color: cssVar('--viz-1') },
-      { key: 'theta_deg', label: 'θ (°)',   color: cssVar('--viz-2') },
-      { key: 'h',         label: 'h (m)',   color: cssVar('--viz-3') },
-      { key: 'V',         label: 'V (m/s)', color: cssVar('--viz-4') }
-    ];
-
-    function targetAlt() { return tgtAlt ? parseFloat(tgtAlt.value) : TRIM.h0; }
-    function targetHdg() { return tgtHdg ? deg2rad(parseFloat(tgtHdg.value)) : 0; }
+    var errRing = [];
+    var RING = 1200;
+    var CHIST = 300;
+    var pidContrib = { p: [], i: [], d: [], total: [] };
+    var stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+    var resetTimer = null;
 
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
-      state = [TRIM.u, 0, TRIM.w, 0, 0, 0, 0, TRIM.theta, 0, TRIM.N0, TRIM.E0, TRIM.h0];
-      ctrl = { de: TRIM.de, da: 0, dr: 0, thr: TRIM.thr };
-      simStatus = 'ok';
+      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
+      simT = 0;
+      de_rad = TRIM.de;
+      pidState = { intE: 0, prevE: 0 };
       errRing = [];
-      stateHist = { phi_deg: [], theta_deg: [], h: [], V: [] };
-      surfHist  = { de: [], da: [], dr: [] };
-      if (thrSlider) { thrSlider.value = Math.round(TRIM.thr * 100); syncThr(); }
+      pidContrib = { p: [], i: [], d: [], total: [] };
+      stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
+      simStatus = 'ok';
+      // Sync elevator slider to trim deflection
+      if (elevSlider) {
+        elevSlider.value = rad2deg(TRIM.de).toFixed(1);
+        if (elevVal) elevVal.textContent = rad2deg(TRIM.de).toFixed(1) + '°';
+      }
+      renderer.resetViewport();
     }
 
-    function syncThr() {
-      ctrl.thr = clamp(parseFloat(thrSlider.value) / 100, 0, 1);
-      if (thrVal) thrVal.textContent = Math.round(ctrl.thr * 100) + '%';
+    // DOM
+    var manualBtn  = document.getElementById('fl-manual-btn');
+    var pidBtn     = document.getElementById('fl-pid-btn');
+    var manualCtrl = document.getElementById('fl-manual-controls');
+    var pidCtrl    = document.getElementById('fl-pid-controls');
+    var elevSlider = document.getElementById('fl-elev');
+    var elevVal    = document.getElementById('fl-elev-val');
+    var kpSlider   = document.getElementById('fl-kp');
+    var kiSlider   = document.getElementById('fl-ki');
+    var kdSlider   = document.getElementById('fl-kd');
+    var kpValEl    = document.getElementById('fl-kp-val');
+    var kiValEl    = document.getElementById('fl-ki-val');
+    var kdValEl    = document.getElementById('fl-kd-val');
+    var scoreEl    = document.getElementById('fl-score');
+    var resetBtn   = document.getElementById('fl-reset');
+    var flStatePlot = document.getElementById('fl-state-plot');
+    var flPidPlot   = document.getElementById('fl-pid-plot');
+
+    resetSim();
+
+    if (elevSlider) elevSlider.addEventListener('input', function () {
+      de_rad = deg2rad(parseFloat(elevSlider.value));
+      if (elevVal) elevVal.textContent = parseFloat(elevSlider.value).toFixed(1) + '°';
+    });
+
+    // Keyboard elevator control (flight sim manual mode)
+    document.addEventListener('keydown', function (e) {
+      var sec = document.getElementById('sec-flight');
+      if (!sec || !sec.classList.contains('active')) return;
+      if (mode !== 'manual') return;
+      var step = deg2rad(0.5);
+      if (e.key === 'ArrowUp')   { e.preventDefault(); de_rad = clamp(de_rad + step, deg2rad(-25), deg2rad(25)); if (elevSlider) { elevSlider.value = rad2deg(de_rad).toFixed(1); if (elevVal) elevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; } }
+      if (e.key === 'ArrowDown') { e.preventDefault(); de_rad = clamp(de_rad - step, deg2rad(-25), deg2rad(25)); if (elevSlider) { elevSlider.value = rad2deg(de_rad).toFixed(1); if (elevVal) elevVal.textContent = rad2deg(de_rad).toFixed(1) + '°'; } }
+    });
+
+    function syncPidVals() {
+      if (kpValEl) kpValEl.textContent = parseFloat(kpSlider.value).toFixed(3);
+      if (kiValEl) kiValEl.textContent = parseFloat(kiSlider.value).toFixed(3);
+      if (kdValEl) kdValEl.textContent = parseFloat(kdSlider.value).toFixed(3);
     }
-    if (thrSlider) thrSlider.addEventListener('input', syncThr);
-    if (tgtAlt) tgtAlt.addEventListener('input', function () { if (tgtAltVal) tgtAltVal.textContent = Math.round(parseFloat(tgtAlt.value)) + ' m'; });
-    if (tgtHdg) tgtHdg.addEventListener('input', function () { if (tgtHdgVal) tgtHdgVal.textContent = Math.round(parseFloat(tgtHdg.value)) + '°'; });
+    if (kpSlider) { kpSlider.addEventListener('input', syncPidVals); syncPidVals(); }
+    if (kiSlider) { kiSlider.addEventListener('input', syncPidVals); }
+    if (kdSlider) { kdSlider.addEventListener('input', syncPidVals); }
+    // Adjustable gain bounds — the "Range ±" input, same idea as the PID demo.
+    function applyGainRange(slider, input) {
+      var r = Math.max(0.05, parseFloat(input.value) || 0.05);
+      var prev = parseFloat(slider.value);
+      slider.min = -r; slider.max = r; slider.step = r / 100;
+      slider.value = clamp(prev, -r, r);
+    }
+    [['fl-kp', kpSlider], ['fl-ki', kiSlider], ['fl-kd', kdSlider]].forEach(function (p) {
+      var ri = document.getElementById(p[0] + '-range'), sl = p[1];
+      if (ri && sl) ri.addEventListener('input', function () { applyGainRange(sl, ri); syncPidVals(); });
+    });
 
     function setMode(m) {
       mode = m;
       if (manualBtn) manualBtn.classList.toggle('active', m === 'manual');
-      if (autoBtn)   autoBtn.classList.toggle('active', m === 'auto');
-      if (manualCtl) manualCtl.style.display = m === 'manual' ? '' : 'none';
-      if (autoCtl)   autoCtl.style.display   = m === 'auto' ? 'flex' : 'none';
+      if (pidBtn)    pidBtn.classList.toggle('active', m === 'pid');
+      if (manualCtrl) manualCtrl.style.display = m === 'manual' ? '' : 'none';
+      if (pidCtrl)    pidCtrl.style.display    = m === 'pid'    ? 'flex' : 'none';
+      pidState = { intE: 0, prevE: 0 };
+      pidContrib = { p: [], i: [], d: [], total: [] };
     }
     if (manualBtn) manualBtn.addEventListener('click', function () { setMode('manual'); });
-    if (autoBtn)   autoBtn.addEventListener('click', function () { setMode('auto'); });
+    if (pidBtn)    pidBtn.addEventListener('click', function () { setMode('pid'); });
     if (resetBtn)  resetBtn.addEventListener('click', resetSim);
 
-    // Keyboard: only when the flight tab is active and in manual mode.
-    var KEYMAP = {
-      ArrowUp: 'up', w: 'up', ArrowDown: 'down', s: 'down',
-      ArrowLeft: 'left', a: 'left', ArrowRight: 'right', d: 'right',
-      q: 'yawL', e: 'yawR', z: 'thrDn', x: 'thrUp'
-    };
-    function flightActive() {
-      var sec = document.getElementById('sec-flight');
-      return sec && sec.classList.contains('active');
-    }
-    document.addEventListener('keydown', function (e) {
-      if (!flightActive()) return;
-      var k = KEYMAP[e.key] || KEYMAP[e.key.toLowerCase()];
-      if (!k) return;
-      e.preventDefault();
-      keys[k] = true;
-    });
-    document.addEventListener('keyup', function (e) {
-      var k = KEYMAP[e.key] || KEYMAP[e.key.toLowerCase()];
-      if (k) keys[k] = false;
-    });
-
-    // Slew a surface toward its target at the fixed full-scale rate.
-    function slew(cur, target, max) {
-      var step = max * TICK / RISE;
-      return cur + clamp(target - cur, -step, step);
-    }
-    function wrapPi(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
-
-    function manualControls() {
-      var pitch = (keys.up ? 1 : 0) - (keys.down ? 1 : 0);
-      var roll  = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-      var yaw   = (keys.yawR ? 1 : 0) - (keys.yawL ? 1 : 0);
-      // Elevator self-centres to TRIM.de (so hands-off holds trimmed level
-      // flight); aileron/rudder centre to zero (symmetric trim).
-      ctrl.de = slew(ctrl.de, clamp(TRIM.de + pitch * DE_MAX, -DE_MAX, DE_MAX), DE_MAX);
-      ctrl.da = slew(ctrl.da, roll * DA_MAX, DA_MAX);
-      ctrl.dr = slew(ctrl.dr, yaw  * DR_MAX, DR_MAX);
-      if (keys.thrUp) ctrl.thr = clamp(ctrl.thr + 0.5 * TICK, 0, 1);
-      if (keys.thrDn) ctrl.thr = clamp(ctrl.thr - 0.5 * TICK, 0, 1);
-      if ((keys.thrUp || keys.thrDn) && thrSlider) { thrSlider.value = Math.round(ctrl.thr * 100); if (thrVal) thrVal.textContent = Math.round(ctrl.thr * 100) + '%'; }
-      // Stability augmentation: extra rate damping so it's flyable.
-      if (sasChk && sasChk.checked) {
-        var q = state[4], p = state[3], r = state[5];
-        ctrl.de = clamp(ctrl.de - 0.45 * q, -DE_MAX, DE_MAX);
-        ctrl.da = clamp(ctrl.da - 0.30 * p, -DA_MAX, DA_MAX);
-        ctrl.dr = clamp(ctrl.dr - 0.60 * r, -DR_MAX, DR_MAX);   // yaw-rate damper
-      }
-    }
-
-    // Climb rate ḣ = -V_d from the body velocity + attitude.
-    function climbRate(s) {
-      var u = s[0], v = s[1], w = s[2], phi = s[6], th = s[7];
-      var cth = Math.cos(th), sth = Math.sin(th), sphi = Math.sin(phi), cphi = Math.cos(phi);
-      return -(-sth * u + sphi * cth * v + cphi * cth * w);
-    }
-
-    // Cascaded autopilot: altitude→vertical-speed→pitch→elevator,
-    // heading→bank→aileron, yaw-rate damper, airspeed→throttle.
-    // Commanded pitch is capped to a thrust-sustainable climb angle so it
-    // never bleeds to a stall; roll only when fast enough to stay coordinated.
-    function autoControls() {
-      var ad = airdata(state), V = ad.V;
-      var phi = state[6], th = state[7], psi = state[8];
-      var p = state[3], q = state[4], r = state[5];
-      var cr = climbRate(state);
-      // Heading → bank (only when fast enough to hold a coordinated turn)
-      var spd = clamp((V - 42) / 8, 0, 1);
-      var phiCmd = clamp(0.5 * wrapPi(targetHdg() - psi), -deg2rad(18), deg2rad(18)) * spd;
-      ctrl.da = clamp(1.2 * (phiCmd - phi) - 0.9 * p, -DA_MAX, DA_MAX);
-      // Altitude → vertical speed → pitch (bank-compensated, thrust-limited)
-      var vsCmd = clamp(0.04 * (targetAlt() - state[11]), -2.5, 2.5);
-      var bankComp = deg2rad((1 / Math.cos(clamp(phi, -0.5, 0.5)) - 1) * 3.0);
-      var thetaCmd = clamp(TRIM.theta + 0.045 * (vsCmd - cr) + bankComp,
-                           TRIM.theta - deg2rad(6), TRIM.theta + deg2rad(6));
-      ctrl.de = clamp(TRIM.de + 1.7 * (thetaCmd - th) - 0.9 * q, -DE_MAX, DE_MAX);
-      ctrl.dr = clamp(-0.6 * r, -DR_MAX, DR_MAX);
-      ctrl.thr = clamp(TRIM.thr + 0.07 * (TRIM.V - V) + 0.05 * Math.max(vsCmd, 0)
-                       + 0.6 * (1 - Math.cos(clamp(phi, -0.5, 0.5))), 0, 1);
-      if (thrSlider) { thrSlider.value = Math.round(ctrl.thr * 100); if (thrVal) thrVal.textContent = Math.round(ctrl.thr * 100) + '%'; }
-    }
+    var PID_DT = FLIGHT_DT;
+    var ELEV_MAX_RATE = deg2rad(40) * FLIGHT_DT;
+    var ELEV_MAX_RAD  = deg2rad(25);   // single source — matches slider min/max
 
     function step() {
-      if (!flightActive() || simStatus !== 'ok') return;
-      for (var i = 0; i < SUBSTEPS; i++) {
-        if (mode === 'auto') autoControls(); else manualControls();
-        state = rk4(state, 0, DT, function (t, s) { return sixDof(t, s, ctrl); });
-        if (state[11] <= 0) { state[11] = 0; simStatus = 'crashed'; break; }
-        var eAlt = targetAlt() - state[11];
-        errRing.push(eAlt * eAlt);
+      if (!document.getElementById('sec-flight').classList.contains('active')) return;
+      if (simStatus !== 'ok') return;
+      var P_t = 0, I_t = 0, D_t = 0, total_deg = 0;
+      for (var i = 0; i < 5; i++) {
+        var de_target = de_rad;
+        if (mode === 'pid') {
+          var hRef = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+          var e = hRef - state[4];
+          pidState.intE = clamp(pidState.intE + e * PID_DT, -200, 200);
+          P_t = parseFloat(kpSlider.value) * e;
+          I_t = parseFloat(kiSlider.value) * pidState.intE;
+          D_t = parseFloat(kdSlider.value) * (e - pidState.prevE) / PID_DT;
+          pidState.prevE = e;
+          var de_cmd = P_t + I_t + D_t;
+          total_deg = de_cmd;
+          de_target = clamp(deg2rad(de_cmd), -ELEV_MAX_RAD, ELEV_MAX_RAD);
+        }
+        de_rad += clamp(de_target - de_rad, -ELEV_MAX_RATE, ELEV_MAX_RATE);
+        state = rk4(state, simT, FLIGHT_DT, function (t, s) {
+          return flightDerivatives(t, s, de_rad);
+        });
+        simT += FLIGHT_DT;
+        var stop = checkStopConditions(state);
+        if (stop) {
+          simStatus = stop;
+          if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
+          return;
+        }
+        var refH2 = H_CENTER + REF_AMP * Math.sin(REF_OMEGA * simT);
+        errRing.push(Math.pow(refH2 - state[4], 2));
         if (errRing.length > RING) errRing.shift();
       }
-      if (simStatus === 'crashed') {
-        if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
-        return;
+      // Record PID contributions (in degrees for legibility)
+      if (mode === 'pid') {
+        pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(total_deg);
+        if (pidContrib.p.length > CHIST) { pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift(); }
       }
+      // Record state history
+      stateHist.h.push(state[4]); stateHist.V.push(state[0]);
+      stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
+      if (stateHist.h.length > CHIST) { stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift(); }
 
-      var ad = airdata(state);
-      stateHist.phi_deg.push(rad2deg(state[6]));
-      stateHist.theta_deg.push(rad2deg(state[7]));
-      stateHist.h.push(state[11]);
-      stateHist.V.push(ad.V);
-      surfHist.de.push(rad2deg(ctrl.de));
-      surfHist.da.push(rad2deg(ctrl.da));
-      surfHist.dr.push(rad2deg(ctrl.dr));
-      ['phi_deg', 'theta_deg', 'h', 'V'].forEach(function (k) { if (stateHist[k].length > CHIST) stateHist[k].shift(); });
-      ['de', 'da', 'dr'].forEach(function (k) { if (surfHist[k].length > CHIST) surfHist[k].shift(); });
-
-      set('fl-t-h', state[11].toFixed(0) + ' m');
-      set('fl-t-v', ad.V.toFixed(1) + ' m/s');
-      set('fl-t-a', rad2deg(ad.alpha).toFixed(1) + '°');
-      set('fl-t-b', rad2deg(ad.beta).toFixed(1) + '°');
-      set('fl-t-phi', rad2deg(state[6]).toFixed(0) + '°');
-      set('fl-t-theta', rad2deg(state[7]).toFixed(0) + '°');
-      set('fl-t-psi', (((rad2deg(state[8]) % 360) + 360) % 360).toFixed(0) + '°');
-      if (scoreEl && errRing.length) {
+      // Update UI telemetry
+      var tH = document.getElementById('fl-t-h');
+      var tV = document.getElementById('fl-t-v');
+      var tA = document.getElementById('fl-t-a');
+      var tQ = document.getElementById('fl-t-q');
+      if (tH) tH.textContent = state[4].toFixed(0) + ' m';
+      if (tV) tV.textContent = state[0].toFixed(1) + ' m/s';
+      if (tA) tA.textContent = rad2deg(state[2]).toFixed(1) + '°';
+      if (tQ) tQ.textContent = rad2deg(state[3]).toFixed(2) + '°/s';
+      if (scoreEl && errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
         scoreEl.textContent = rmse.toFixed(1);
       }
     }
-    function set(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
 
-    resetSim();
-    setMode('manual');
     setInterval(step, 25);
 
     function loop() {
-      view.render(state, ctrl, { status: simStatus, altBug: targetAlt() });
-      drawStatePlot(flStatePlot, stateHist, FL_STATE_SPEC);
-      drawContribPlot(flSurfPlot, [
-        { label: 'δe', color: cssVar('--viz-1'), data: surfHist.de },
-        { label: 'δa', color: cssVar('--viz-2'), data: surfHist.da },
-        { label: 'δr', color: cssVar('--viz-3'), data: surfHist.dr }
-      ], rad2deg(DR_MAX), 'surface (°)');
+      renderer.render(state, simT, de_rad, simStatus);
+      drawStatePlot(flStatePlot, stateHist);
+      drawContribPlot(flPidPlot, [
+        { label: 'P',     color: cssVar('--viz-1'), data: pidContrib.p },
+        { label: 'I',     color: cssVar('--viz-2'), data: pidContrib.i },
+        { label: 'D',     color: cssVar('--viz-3'), data: pidContrib.d },
+        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+      ], rad2deg(ELEV_MAX_RAD), 'δe (°)');
       requestAnimationFrame(loop);
     }
     loop();
@@ -1931,8 +1861,23 @@
       pushF = parseFloat(forceSlider.value) || 0;
       if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
     });
+    // Adjustable disturbance bounds — symmetric "Range ±" input, like the PID demo.
+    (function () {
+      var ri = document.getElementById('sid-force-range');
+      if (!ri || !forceSlider) return;
+      ri.addEventListener('input', function () {
+        var r = Math.max(1, parseFloat(ri.value) || 1);
+        var prev = parseFloat(forceSlider.value);
+        forceSlider.min = -r; forceSlider.max = r; forceSlider.step = r / 40;
+        forceSlider.value = clamp(prev, -r, r);
+        pushF = parseFloat(forceSlider.value) || 0;
+        if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
+      });
+    })();
 
-    // Q/R weight slider display
+    // Q/R weight sliders — value display + adjustable upper bound ("Max" input).
+    // Q and R must stay non-negative for the LQR solve, so the bound is one-sided
+    // (only the max moves) rather than the symmetric "Range ±" used for the gains.
     (function() {
       var pairs = [
         ['sid-qx', 'sid-qx-val', 1], ['sid-qth', 'sid-qth-val', 0],
@@ -1941,7 +1886,17 @@
       pairs.forEach(function(p) {
         var sl = document.getElementById(p[0]), vl = document.getElementById(p[1]);
         if (!sl || !vl) return;
-        sl.addEventListener('input', function() { vl.textContent = parseFloat(sl.value).toFixed(p[2]); });
+        function show() { vl.textContent = parseFloat(sl.value).toFixed(p[2]); }
+        sl.addEventListener('input', show);
+        var ri = document.getElementById(p[0] + '-range');
+        if (ri) ri.addEventListener('input', function() {
+          var lo = parseFloat(sl.min) || 0;
+          var step = parseFloat(sl.step) || 0.01;
+          var m = Math.max(lo + step, parseFloat(ri.value) || lo + step);
+          sl.max = m;
+          sl.value = clamp(parseFloat(sl.value), lo, m);
+          show();
+        });
       });
     })();
 

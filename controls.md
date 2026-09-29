@@ -8,7 +8,7 @@ permalink: /controls/
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
     Six interactive demos spanning classical and modern control. Tune a PID controller, track
-    a B-spline race course with a PID path follower, fly a 6-DOF aircraft in a 3-D cockpit view, then <strong>identify a
+    a B-spline race course with a PID path follower, fly a nonlinear aircraft, then <strong>identify a
     cart-pole from data and balance it with an LQR controller you tune</strong>, train a neural network
     to drive the race car by imitating an expert, and finally become the controller yourself — chase a
     jumping target and let the site fit the PID gains and reaction delay hidden in your own hand.
@@ -164,49 +164,46 @@ permalink: /controls/
         <h3>Mode</h3>
         <div class="mode-toggle">
           <button class="mode-btn active" id="fl-manual-btn" type="button">Manual</button>
-          <button class="mode-btn"        id="fl-auto-btn"   type="button">Autopilot</button>
+          <button class="mode-btn"        id="fl-pid-btn"    type="button">PID</button>
         </div>
 
         <div id="fl-manual-controls">
-          <div class="keymap">
-            <span class="key-k">&#8593;&#8595; / W S</span><span class="key-d">pitch (elevator)</span>
-            <span class="key-k">&#8592;&#8594; / A D</span><span class="key-d">roll (aileron)</span>
-            <span class="key-k">Q&#160;&#160;E</span><span class="key-d">yaw (rudder)</span>
-            <span class="key-k">Z&#160;&#160;X</span><span class="key-d">throttle down / up</span>
-          </div>
-          <label class="sas-row"><input type="checkbox" id="fl-sas" checked> Stability assist (rate dampers)</label>
           <div class="pid-group">
-            <label>Throttle <span id="fl-throttle-val">40%</span></label>
-            <input type="range" id="fl-throttle" min="0" max="100" step="1" value="40">
+            <label>Elevator &#948;<sub>e</sub> <span id="fl-elev-val">0.0&#176;</span></label>
+            <input type="range" id="fl-elev" min="-25" max="25" step="0.5" value="0">
           </div>
+          <p style="font-size:.75rem;color:var(--text-muted);margin:.15rem 0 0">&#8593;/&#8595; arrows also adjust elevator</p>
         </div>
 
-        <div id="fl-auto-controls" style="display:none;flex-direction:column;gap:.6rem">
+        <div id="fl-pid-controls" style="display:none;flex-direction:column;gap:.6rem">
           <div class="pid-group">
-            <label>Target altitude <span id="fl-tgt-alt-val">250 m</span></label>
-            <input type="range" id="fl-tgt-alt" min="80" max="800" step="10" value="250">
+            <label>K<sub>p</sub> <span id="fl-kp-val">0.000</span></label>
+            <input type="range" id="fl-kp" min="-0.5" max="0.5" step="0.005" value="0">
+            <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kp-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
           </div>
           <div class="pid-group">
-            <label>Target heading <span id="fl-tgt-hdg-val">0&#176;</span></label>
-            <input type="range" id="fl-tgt-hdg" min="0" max="359" step="1" value="0">
+            <label>K<sub>i</sub> <span id="fl-ki-val">0.000</span></label>
+            <input type="range" id="fl-ki" min="-0.5" max="0.5" step="0.005" value="0">
+            <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-ki-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
           </div>
-          <p style="font-size:.75rem;color:var(--text-muted);margin:.1rem 0 0">A cascaded autopilot flies the aircraft to these targets.</p>
+          <div class="pid-group">
+            <label>K<sub>d</sub> <span id="fl-kd-val">0.000</span></label>
+            <input type="range" id="fl-kd" min="-0.5" max="0.5" step="0.005" value="0">
+            <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kd-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
+          </div>
         </div>
 
         <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
         <div class="telemetry" id="fl-telemetry">
-          <span class="t-key">h</span>   <span class="t-val" id="fl-t-h">&#8212;</span>
-          <span class="t-key">V</span>   <span class="t-val" id="fl-t-v">&#8212;</span>
-          <span class="t-key">&#945;</span>   <span class="t-val" id="fl-t-a">&#8212;</span>
-          <span class="t-key">&#946;</span>   <span class="t-val" id="fl-t-b">&#8212;</span>
-          <span class="t-key">&#966;</span>   <span class="t-val" id="fl-t-phi">&#8212;</span>
-          <span class="t-key">&#952;</span>   <span class="t-val" id="fl-t-theta">&#8212;</span>
-          <span class="t-key">&#968;</span>   <span class="t-val" id="fl-t-psi">&#8212;</span>
+          <span class="t-key">h</span>  <span class="t-val" id="fl-t-h">&#8212;</span>
+          <span class="t-key">V</span>  <span class="t-val" id="fl-t-v">&#8212;</span>
+          <span class="t-key">&#945;</span>  <span class="t-val" id="fl-t-a">&#8212;</span>
+          <span class="t-key">q</span>  <span class="t-val" id="fl-t-q">&#8212;</span>
         </div>
 
         <div class="score-block">
           <span class="score-value" id="fl-score">&#8212;</span>
-          <span class="score-label">RMS alt error (m)</span>
+          <span class="score-label">RMSE (m)</span>
         </div>
         <button class="sim-btn" id="fl-reset" type="button">Reset</button>
       </div>
@@ -214,30 +211,25 @@ permalink: /controls/
     <div class="demo-note">
       <h4 class="demo-note-title">About this demo</h4>
       <p>
-        A full <strong>six-degree-of-freedom</strong> aircraft &#8212; the same longitudinal physics as
-        before, now with roll and yaw so it actually turns. Twelve states: body velocities (u,&#160;v,&#160;w),
-        body rates (p,&#160;q,&#160;r), the Euler angles (&#966;,&#160;&#952;,&#160;&#968;), and position (N,&#160;E,&#160;h).
-        The view is out-the-window from the cockpit with a HUD &#8212; artificial horizon and pitch ladder,
-        flight-path marker, bank pointer, and heading / airspeed / altitude tapes. Lift keeps the nonlinear
-        sigmoid stall past ~15&#176; angle of attack.
-      </p>
-      <p>
-        <strong>Manual</strong>: fly it with the keyboard (stability-assist dampers on by default make it
-        docile). <strong>Autopilot</strong>: a cascaded controller flies to a target altitude and heading &#8212;
-        altitude&#8594;pitch&#8594;elevator, heading&#8594;roll&#8594;aileron, plus a yaw damper and airspeed-hold
-        throttle. The score is RMS altitude error against the target bug. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Aircraft_flight_dynamics" target="_blank" rel="noopener">Flight dynamics &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Six_degrees_of_freedom" target="_blank" rel="noopener">Six degrees of freedom</a>
+        A nonlinear longitudinal aircraft model with six states: airspeed V, flight-path angle &#947;,
+        angle of attack &#945;, pitch rate q, altitude h, and downrange x. Lift uses a nonlinear
+        stall model &#8212; C<sub>L</sub> rises linearly to ~16&#176; angle of attack then drops sharply,
+        matching a real NACA airfoil curve. In Manual mode use the elevator slider (or &#8593;/&#8595; keys)
+        to pitch the aircraft; in PID mode an autopilot tracks the altitude sine wave. &#8594;
+        <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics &#8212; Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/Angle_of_attack" target="_blank" rel="noopener">Angle of attack</a>
       </p>
     </div>
     <div class="demo-note">
       <h4 class="demo-note-title">Equations of motion</h4>
       <div class="eqn-block">
-        <div class="eqn-row"><span class="eqn-lhs">u&#775;,v&#775;,w&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">(F<sub>aero</sub> + F<sub>thrust</sub>)/m + g<sub>body</sub> &#8722; &#969; &#215; V<sub>body</sub></span></div>
-        <div class="eqn-row"><span class="eqn-lhs">p&#775;,q&#775;,r&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">I<sup>&#8722;1</sup>(M &#8722; &#969; &#215; I&#969;)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">&#966;&#775;,&#952;&#775;,&#968;&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">E(&#966;,&#952;) [p,&#160;q,&#160;r]&#7488;&#160;&#160;(Euler kinematics)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">N&#775;,E&#775;,h&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">R<sub>eb</sub>(&#966;,&#952;,&#968;) V<sub>body</sub>,&#160;&#160; h&#775; = &#8722;V<sub>d</sub></span></div>
-        <p class="eqn-note">Forces from lift/drag/side-force + three moment coefficients (roll/pitch/yaw), each with control-surface and rate-damping terms. Wind-axis aero rotated into body axes by &#945;,&#160;&#946;. RK4 at 200&#160;Hz.</p>
+        <div class="eqn-row"><span class="eqn-lhs">V&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T cos&#945; &#8722; D] / m &#8722; g sin&#947;</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">&#947;&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T sin&#945; + L &#8722; mg cos&#947;] / (mV)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">&#945;&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">q &#8722; &#947;&#775;</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">q&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">M<sub>y</sub> / I<sub>yy</sub></span></div>
+        <div class="eqn-row"><span class="eqn-lhs">h&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V sin&#947;</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">x&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V cos&#947;</span></div>
+        <p class="eqn-note">L, D, M<sub>y</sub> from nonlinear aero model (sigmoid stall at ~16&#176;). T = trim thrust (constant). RK4 at 200 Hz.</p>
       </div>
     </div>
   </section>
@@ -261,6 +253,7 @@ permalink: /controls/
         <div class="pid-group" style="margin-top:.5rem">
           <label>Push the cart (disturbance) <span id="sid-force-val">0.0 N</span></label>
           <input type="range" id="sid-force" min="-8" max="8" step="0.5" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="sid-force-range" class="range-input" value="8" min="1" step="1"></div>
         </div>
 
         <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
@@ -280,10 +273,10 @@ permalink: /controls/
         <hr style="border:0;border-top:1px solid var(--border);margin:.1rem 0">
         <h3>3 &#8212; LQR</h3>
         <p style="font-size:.8rem;margin:.15rem 0 .4rem;color:var(--text-muted)">Cost weights — LQR minimises <em>x&#7488;Qx + u&#7488;Ru</em>. Higher Q punishes state error; higher R punishes large pushes.</p>
-        <div class="ctrl-row"><label>Q<sub>x</sub> (cart position) <span id="sid-qx-val">5.0</span></label><input type="range" id="sid-qx" min="0" max="60" step="0.5" value="5"></div>
-        <div class="ctrl-row"><label>Q<sub>&#952;</sub> (pole angle) <span id="sid-qth-val">100</span></label><input type="range" id="sid-qth" min="1" max="400" step="1" value="100"></div>
-        <div class="ctrl-row"><label>Q<sub>&#952;&#775;</sub> (pole rate) <span id="sid-qthd-val">1.0</span></label><input type="range" id="sid-qthd" min="0" max="20" step="0.1" value="1"></div>
-        <div class="ctrl-row"><label>R (control effort) <span id="sid-r-val">0.10</span></label><input type="range" id="sid-r" min="0.01" max="2" step="0.01" value="0.10"></div>
+        <div class="ctrl-row"><label>Q<sub>x</sub> (cart position) <span id="sid-qx-val">5.0</span></label><input type="range" id="sid-qx" min="0" max="60" step="0.5" value="5"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-qx-range" class="range-input" value="60" min="1" step="1"></div></div>
+        <div class="ctrl-row"><label>Q<sub>&#952;</sub> (pole angle) <span id="sid-qth-val">100</span></label><input type="range" id="sid-qth" min="1" max="400" step="1" value="100"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-qth-range" class="range-input" value="400" min="1" step="1"></div></div>
+        <div class="ctrl-row"><label>Q<sub>&#952;&#775;</sub> (pole rate) <span id="sid-qthd-val">1.0</span></label><input type="range" id="sid-qthd" min="0" max="20" step="0.1" value="1"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-qthd-range" class="range-input" value="20" min="1" step="1"></div></div>
+        <div class="ctrl-row"><label>R (control effort) <span id="sid-r-val">0.10</span></label><input type="range" id="sid-r" min="0.01" max="2" step="0.01" value="0.10"><div class="range-row"><label class="range-lbl">Max</label><input type="number" id="sid-r-range" class="range-input" value="2" min="0.1" step="0.1"></div></div>
         <button class="sim-btn" id="sid-lqr-btn" type="button" disabled>Enable LQR</button>
         <button class="sim-btn" id="sid-analytic-lqr-btn" type="button" style="margin-top:.35rem">Analytic LQR</button>
         <div class="matrix-section" id="sid-lqr-section" style="display:none">
@@ -491,9 +484,4 @@ permalink: /controls/
 .range-input{width:5rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
 .react-help{font-size:.82rem;line-height:1.45;color:var(--text-muted);margin:.1rem 0 .2rem;min-height:2.6em}
 .react-read{font-size:.8rem;line-height:1.5;color:var(--text-muted);margin:.1rem 0 0;font-style:italic}
-.keymap{display:grid;grid-template-columns:auto 1fr;gap:.2rem .6rem;margin:.2rem 0 .5rem;font-size:.78rem;align-items:baseline}
-.keymap .key-k{font-family:var(--mono);font-size:.74rem;color:var(--text);background:var(--bg-soft);border:1px solid var(--border);border-radius:4px;padding:.05rem .35rem;white-space:nowrap;text-align:center}
-.keymap .key-d{color:var(--text-muted)}
-.sas-row{display:flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--text-muted);margin:.1rem 0 .5rem;cursor:pointer}
-.sas-row input{accent-color:var(--accent);cursor:pointer}
 </style>

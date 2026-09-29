@@ -51,8 +51,8 @@
       <div class="wrap footer-inner">
         <p>&copy; {{ 'now' | date: '%Y' }} {{ site.author.name }}{% if site.author.location %} &middot; {{ site.author.location }}{% endif %}</p>
         <ul class="footer-links">
-          {% if site.social.github %}<li><a href="{{ site.social.github }}">GitHub</a></li>{% endif %}
-          {% if site.social.linkedin %}<li><a href="{{ site.social.linkedin }}">LinkedIn</a></li>{% endif %}
+          {% if site.social.github %}<li><a href="{{ site.social.github }}" aria-label="GitHub">{% include social-icon.html name="github" %}</a></li>{% endif %}
+          {% if site.social.linkedin %}<li><a href="{{ site.social.linkedin }}" aria-label="LinkedIn">{% include social-icon.html name="linkedin" %}</a></li>{% endif %}
           {% if site.social.scholar %}<li><a href="{{ site.social.scholar }}">Scholar</a></li>{% endif %}
           {% if site.author.email %}<li><a href="mailto:{{ site.author.email }}">Email</a></li>{% endif %}
         </ul>
