@@ -437,10 +437,10 @@ pre code { background: none; border: 0; padding: 0; }
 .sim-tabs-row .sim-tabs { margin-bottom: 0; }
 .sim-tab-link {
   padding: .45rem 1.1rem; border-radius: 10px; font-size: .92rem; font-weight: 550;
-  border: 1px dashed var(--accent); color: var(--accent); background: var(--surface);
-  transition: background .12s ease;
+  border: 1px solid var(--border); color: var(--text-muted); background: var(--surface);
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
 }
-.sim-tab-link:hover { background: var(--accent-soft); }
+.sim-tab-link:hover { color: var(--text); border-color: var(--border-strong); }
 
 .sim-section { display: none; }
 .sim-section.active { display: block; }

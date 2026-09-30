@@ -260,6 +260,7 @@
   // Manual drag: a stiff, well-damped virtual spring from the cart to the pointer
   // (ζ ≈ 0.7 on the 1.35 kg cart+bobs), then the same ±Fmax / slew limits as the robot.
   var DRAG_K = 150, DRAG_C = 20;
+  var MANUAL_F = 10;   // manual force cap (N); the plant's own limit stays as exported
   var PUSH_F = 5;                     // N — arrow-key shove in TQC mode (a disturbance)
   var HIST = 600;                     // telemetry samples (6 s at 100 Hz)
   var MAX_STEPS_PER_FRAME = 8;
@@ -397,11 +398,12 @@
       shove = keys * PUSH_F;
       modesUsed.tqc = true;
     } else {
-      cmd = keys * p.force_max;
+      cmd = keys * MANUAL_F;
       if (dragX !== null) {
         var target = clamp(dragX, -p.x_lim, p.x_lim);
         cmd += DRAG_K * (target - state[0]) - DRAG_C * state[1];
       }
+      cmd = clamp(cmd, -MANUAL_F, MANUAL_F);
       // Idle manual time (e.g. while the weights load) doesn't disqualify a TQC run.
       if (cmd !== 0) modesUsed.manual = true;
     }

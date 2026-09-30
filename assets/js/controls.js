@@ -107,6 +107,14 @@
     // Transport-delay buffer: commanded forces awaiting application
     var forceBuf = [];
 
+    // Manual mode: drag the mass; a damped virtual spring to the pointer, ±FMAN.
+    var FMAN = 10, DRAG_K = 40, DRAG_C = 8, ANIM_SCALE = 80;
+    var man = bindManual('msd', canvas, function () {
+      forceBuf.length = 0; sim.intE = 0; sim.prevE = 0;
+      errRing = []; bestScore = null;
+      if (bestEl) bestEl.textContent = '';
+    });
+
     // Standard-normal sample (Box–Muller) for sensor noise
     function gaussian() {
       var u = 0, v = 0;
@@ -216,10 +224,19 @@
         P_t = pid.kp * e; I_t = pid.ki * sim.intE; D_t = pid.kd * de;
         F   = P_t + I_t + D_t;
         sim.prevE = e;
+        if (man.manual) {
+          P_t = I_t = D_t = 0;
+          F = 0;
+          if (man.drag) {
+            var xt = clamp((man.drag.y - ANIM_H / 2) / ANIM_SCALE, -1.6, 1.6);
+            F = clamp(DRAG_K * (xt - sim.x) - DRAG_C * sim.v, -FMAN, FMAN);
+          }
+        }
         // Transport delay: the plant feels the command from `delay` ms ago.
         forceBuf.push(F);
         var delaySamples = Math.round((pid.delay / 1000) / DT);
         var Fapplied = (forceBuf.length > delaySamples) ? forceBuf.shift() : 0;
+        if (man.manual) { forceBuf.length = 0; Fapplied = F; }
         // Fapplied is constant over this step (zero-order hold on control)
         var s = rk4([sim.x, sim.v], sim.t, DT, function (t2, s2) {
           return [s2[1], (Fapplied - C_damp * s2[1] - K_spring * s2[0]) / M];
@@ -247,7 +264,7 @@
       if (errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
         scoreEl.textContent = rmse.toFixed(3);
-        if (bestScore === null || rmse < bestScore) {
+        if (!man.manual && (bestScore === null || rmse < bestScore)) {
           bestScore = rmse;
           if (bestEl) bestEl.textContent = 'Best: ' + rmse.toFixed(3) + ' m';
         }
@@ -310,7 +327,7 @@
       var cx = W / 2;
       var anchorY = 26;
       var massH = 42, massW = 54;
-      var scale = 80;  // 1 m = 80px
+      var scale = ANIM_SCALE;  // 1 m = 80px
       var massY = H / 2 + sim.x * scale;
       var refY  = H / 2 + AMP_REF * Math.sin(OMEGA_REF * sim.t) * scale;
 
@@ -501,6 +518,13 @@
     var errRing = [], bestRMSE = null;
     var RING = 400;
 
+    // Manual mode: drag a beam end and the beam swings to follow the pointer.
+    var MAN_SLEW = 90 * Math.PI / 180;   // rad/s
+    var man = bindManual('tilt', canvas, function () {
+      pidState.intE = 0; pidState.prevE = 0; delayBuf = [];
+      errRing = []; bestRMSE = null;
+    });
+
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
     var W = 700, H = 300;
 
@@ -553,6 +577,8 @@
     function recordResult(settleTime) {
       var dc = clamp(Math.floor(trialInitDist / HM_MAX_D * HM_COLS), 0, HM_COLS - 1);
       var rc = clamp(Math.floor(trialInitSpeed / HM_MAX_V * HM_ROWS), 0, HM_ROWS - 1);
+      // Manual runs would muddy a map of how well the PID gains do.
+      if (man.manual) { newTrial(); return; }
       hmData[rc][dc].push(settleTime);
       trialCount++;
       newTrial();
@@ -619,6 +645,20 @@
       var sdt  = dt / SUBS;
 
       for (var i = 0; i < SUBS; i++) {
+        if (man.manual) {
+          // Angle of the beam-centre → pointer line; the tilt holds where it was left.
+          if (man.drag) {
+            var ddx = man.drag.x - W / 2, ddy = man.drag.y - H * 0.52;
+            if (Math.abs(ddx) > W * 0.05) {
+              var tgt = clamp(Math.atan(ddy / ddx), -TILT_LIM, TILT_LIM);
+              tiltX += clamp(tgt - tiltX, -MAN_SLEW * sdt, MAN_SLEW * sdt);
+            }
+          }
+          var axm = ROLL * g * Math.sin(tiltX) - DAMP * vx;
+          vx += axm * sdt;
+          bx += vx * sdt;
+          continue;
+        }
         var bxM = bx + (noise > 0 ? noise * gaussian() : 0);
         var err = -bxM;    // reference = 0
         pidState.intE = clamp(pidState.intE + err * sdt, -2, 2);
@@ -1710,6 +1750,53 @@
   }
 
   /* ================================================================
+     Manual mode — shared PID/Manual toggle + pointer drag for a demo canvas.
+     Returns a live { manual, drag } object; `drag` is null when idle, else
+     { x, y, x0, y0 } in CSS px relative to the canvas (x0/y0 = where it began).
+     onChange fires whenever the mode flips, so a demo can flush PID state.
+  ================================================================ */
+  function bindManual(prefix, canvas, onChange) {
+    var m = { manual: false, drag: null };
+    var box = document.getElementById(prefix + '-mode');
+    var btns = box ? Array.prototype.slice.call(box.querySelectorAll('.mode-btn')) : [];
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        m.manual = b.dataset.mode === 'manual';
+        m.drag = null;
+        btns.forEach(function (o) {
+          var on = o === b;
+          o.classList.toggle('active', on);
+          o.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        canvas.style.touchAction = m.manual ? 'none' : '';
+        canvas.style.cursor = m.manual ? 'grab' : '';
+        if (onChange) onChange(m.manual);
+      });
+    });
+    function at(e) {
+      var r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    canvas.addEventListener('pointerdown', function (e) {
+      if (!m.manual) return;
+      var p = at(e);
+      m.drag = { x: p.x, y: p.y, x0: p.x, y0: p.y };
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!m.drag) return;
+      var p = at(e);
+      m.drag.x = p.x; m.drag.y = p.y;
+    });
+    function end() { m.drag = null; }
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+    window.addEventListener('blur', end);
+    return m;
+  }
+
+  /* ================================================================
      Demo 2 — Flight Simulator  (PID altitude autopilot)
      PID on altitude error commands elevator to track a sinusoidal
      altitude reference, starting from trim.
@@ -1727,6 +1814,14 @@
     var errRing = [], RING = 1200, CHIST = 300;
     var pidContrib, stateHist;
     var resetTimer = null, bestRMSE = null;
+
+    // Manual mode: drag up for nose-up elevator, down for nose-down; release = trim.
+    var STICK_PX = 90;   // drag distance for full elevator
+    var man = bindManual('fl', canvas, function () {
+      pidState.intE = 0; pidState.prevE = 0; measBuf = [];
+      errRing = []; bestRMSE = null;
+      if (bestEl) bestEl.textContent = '';
+    });
 
     var scoreEl     = document.getElementById('fl-score');
     var bestEl      = document.getElementById('fl-best');
@@ -1775,6 +1870,12 @@
         D_t = pid.kd * (e - pidState.prevE) / FLIGHT_DT;
         pidState.prevE = e;
         u_deg = P_t + I_t + D_t;   // nose-up elevator command (°) about trim
+        if (man.manual) {
+          P_t = I_t = D_t = 0;
+          u_deg = man.drag
+            ? clamp((man.drag.y0 - man.drag.y) / STICK_PX, -1, 1) * rad2deg(ELEV_MAX_RAD)
+            : 0;
+        }
         // Cm_δe < 0, so trailing-edge-up (negative) elevator pitches the nose up.
         // Subtracting the command from trim means positive gains climb when low.
         var de_target = clamp(TRIM.de - deg2rad(u_deg), -ELEV_MAX_RAD, ELEV_MAX_RAD);
@@ -1802,7 +1903,7 @@
       if (scoreEl && errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
         scoreEl.textContent = rmse.toFixed(1);
-        if (bestRMSE === null || rmse < bestRMSE) {
+        if (!man.manual && (bestRMSE === null || rmse < bestRMSE)) {
           bestRMSE = rmse;
           if (bestEl) bestEl.textContent = 'Best: ' + rmse.toFixed(1) + ' m';
         }
@@ -1876,6 +1977,16 @@
     var errRing = [], RING = 400, CHIST = 300, bestRMS = null;
     var stateHist, pidContrib;
 
+    // Manual mode: drag the cart; a damped virtual spring to the pointer, ±FMAX.
+    // `view` is refreshed by the renderer so pointer px map to track metres.
+    var DRAG_K = 30, DRAG_C = 8;
+    var view = { cx: 360, scale: 60, camX: 0 };
+    var man = bindManual('cp', canvas, function () {
+      pidState = { intE: 0, prevE: state[2] }; forceBuf = [];
+      errRing = []; bestRMS = null;
+      if (bestEl) bestEl.textContent = '';
+    });
+
     var scoreEl    = document.getElementById('cp-score');
     var bestEl     = document.getElementById('cp-best');
     var resetBtn   = document.getElementById('cp-reset');
@@ -1936,9 +2047,18 @@
         D_t = pid.kd * (e - pidState.prevE) / CP_DT;
         pidState.prevE = e;
         cmd = clamp(P_t + I_t + D_t, -FMAX, FMAX);
+        if (man.manual) {
+          P_t = I_t = D_t = 0;
+          cmd = 0;
+          if (man.drag) {
+            var xt = view.camX + (man.drag.x - view.cx) / view.scale;
+            cmd = clamp(DRAG_K * (xt - state[0]) - DRAG_C * state[1], -FMAX, FMAX);
+          }
+        }
         // Transport delay: the cart feels the command from `delay` seconds ago.
         forceBuf.push(cmd);
         var Fapplied = (forceBuf.length > delaySamples) ? forceBuf.shift() : 0;
+        if (man.manual) { forceBuf.length = 0; Fapplied = cmd; }
         uForce = Fapplied + keyForce;
         state = rk4(state, simT, CP_DT, function (t, s) { return cpDeriv(t, s, uForce); });
         simT += CP_DT;
@@ -1964,7 +2084,7 @@
       if (errRing.length > RING) errRing.shift();
       var rms = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
       if (scoreEl) scoreEl.textContent = rms.toFixed(2);
-      if (errRing.length === RING && (bestRMS === null || rms < bestRMS)) {
+      if (!man.manual && errRing.length === RING && (bestRMS === null || rms < bestRMS)) {
         bestRMS = rms;
         if (bestEl) bestEl.textContent = 'Best: ' + rms.toFixed(2) + '°';
       }
@@ -1994,6 +2114,7 @@
       var scale = clamp(W * 0.09, 40, 70);   // px per metre
       var cx = W / 2;
       var camX = state[0];
+      view.cx = cx; view.scale = scale; view.camX = camX;
       function sx(xm) { return cx + (xm - camX) * scale; }
 
       // Track + scrolling metre ticks
@@ -2052,6 +2173,7 @@
       ctx.textAlign = 'left'; ctx.font = '600 13px ' + cssVar('--font');
       var label, col;
       if (simStatus === 'fell')                   { label = 'Pole fell — new trial…'; col = poleColor; }
+      else if (man.manual)                        { label = 'Manual · up ' + simT.toFixed(1) + ' s'; col = accent; }
       else if (!pid.kp && !pid.ki && !pid.kd)     { label = 'No control — raise Kp to catch the pole'; col = muted; }
       else                                        { label = 'PID balancing · up ' + simT.toFixed(1) + ' s'; col = accent; }
       ctx.fillStyle = col; ctx.fillText(label, 18, 26);

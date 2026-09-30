@@ -38,6 +38,12 @@ permalink: /controls/
         <canvas class="msd-gain" id="msd-pid-plot" height="240" aria-label="PID contribution chart"></canvas>
       </div>
       <div class="sim-panel">
+        <h3>Controller</h3>
+        <div class="mode-toggle" id="msd-mode" role="group" aria-label="Who is in control">
+          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
+          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+        </div>
+        <p class="panel-hint"><strong>Manual:</strong> drag the mass up or down. Delay and noise apply to PID only.</p>
         <h3>PID Gains</h3>
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="msd-kp-val">0.0</span></label>
@@ -99,6 +105,12 @@ permalink: /controls/
         <canvas id="tilt-heatmap" height="200" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="Stabilisation heatmap by initial conditions"></canvas>
       </div>
       <div class="sim-panel">
+        <h3>Controller</h3>
+        <div class="mode-toggle" id="tilt-mode" role="group" aria-label="Who is in control">
+          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
+          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+        </div>
+        <p class="panel-hint"><strong>Manual:</strong> drag the beam ends to tilt it. Delay and noise apply to PID only.</p>
         <h3>PID Gains</h3>
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="tilt-kp-val">0.0</span></label>
@@ -161,6 +173,12 @@ permalink: /controls/
         <canvas id="fl-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
       </div>
       <div class="sim-panel">
+        <h3>Controller</h3>
+        <div class="mode-toggle" id="fl-mode" role="group" aria-label="Who is in control">
+          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
+          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+        </div>
+        <p class="panel-hint"><strong>Manual:</strong> drag up to pitch the nose up, down for nose down; release to return to trim. Delay and noise apply to PID only.</p>
         <h3>PID Gains</h3>
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="fl-kp-val">0.000</span></label>
@@ -244,6 +262,12 @@ permalink: /controls/
         <canvas id="cp-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
       </div>
       <div class="sim-panel">
+        <h3>Controller</h3>
+        <div class="mode-toggle" id="cp-mode" role="group" aria-label="Who is in control">
+          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
+          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+        </div>
+        <p class="panel-hint"><strong>Manual:</strong> drag the cart, or hold &#8592; &#8594;. Delay and noise apply to PID only.</p>
         <h3>PID Gains</h3>
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="cp-kp-val">0.00</span></label>
