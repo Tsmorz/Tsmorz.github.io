@@ -7,11 +7,13 @@ permalink: /controls/
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
-    Four interactive demos, one controller. Tune the same <strong>PID</strong> panel on a
+    Four live simulations, one controller. Tune the same <strong>PID</strong> panel on a
     mass-spring, a ball-balancing tilt table, a nonlinear aircraft autopilot, and an inverted
-    pendulum on a cart &#8212; then add delay and sensor noise to see what breaks it.
-    Past what PID can do: <a href="{{ '/controls/swingup/' | relative_url }}">swing up a double
-    pendulum</a> by hand, or hand it to a reinforcement-learning policy.
+    pendulum on a cart, then add transport delay and sensor noise to see what breaks it. Switch
+    any demo to <strong>Manual</strong> and drag the plant yourself to feel how hard the job is.
+    The plots under each sim show the plant's states and what each of P, I, and D is contributing.
+    For a problem past what PID can do, <a href="{{ '/controls/swingup/' | relative_url }}">swing
+    up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy.
   </p>
 </section>
 
@@ -86,15 +88,15 @@ permalink: /controls/
     <div class="demo-note">
       <h4 class="demo-note-title">About this demo</h4>
       <p>
-        A <strong>PID controller</strong> drives an underdamped mass-spring-damper to track a
-        sinusoidal reference. The <em>proportional</em> term reacts to current error, the
-        <em>integral</em> term eliminates steady-state offset, and the <em>derivative</em> term
-        damps oscillation. RMSE measures average tracking accuracy over the last 10 s.
-        Try starting with K<sub>p</sub> alone, then add K<sub>d</sub> to reduce overshoot,
-        and finally a small K<sub>i</sub> to remove any remaining offset. Add a
-        <strong>transport delay</strong> to the control command or inject <strong>sensor
-        noise</strong> to see how each erodes stability &#8212; delay eats phase margin, and
-        noise is amplified hardest by the derivative term. &#8594;
+        A <strong>PID controller</strong> pushes a lightly damped mass on a spring
+        (&#950; &#8776; 0.1) to track a slow sine reference. The <em>proportional</em> term
+        reacts to the current error, the <em>integral</em> term removes steady-state offset, and
+        the <em>derivative</em> term damps oscillation. The score is RMSE over the last 5 s.
+        Start with K<sub>p</sub> alone, add K<sub>d</sub> to cut the overshoot, then a small
+        K<sub>i</sub> to remove what's left. Then add a <strong>transport delay</strong> to the
+        command or <strong>sensor noise</strong> to the measurement: delay eats phase margin, and
+        the derivative term amplifies noise the most. In Manual mode, drag the mass to follow the
+        reference yourself. &#8594;
         <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
       </p>
     </div>
@@ -154,15 +156,16 @@ permalink: /controls/
     <div class="demo-note">
       <h4 class="demo-note-title">About this demo</h4>
       <p>
-        A <strong>PID controller</strong> tilts a beam to balance a rolling ball at the centre.
-        Each trial starts with the ball at a random position in the <em>inner half</em> of the beam
-        and a small outward velocity; the table starts flat. A trial succeeds when the ball holds
-        within 8 mm of centre at under 4 cm/s for 0.5 s, and fails if it reaches the edge or 8 s elapse;
-        either way the next trial starts. The controller outputs a <em>commanded</em> tilt, and a
-        servo moves the beam toward it at no more than 60&nbsp;&#176;/s (the same limit applies when
-        you tilt it by hand), so a large correction takes time to happen &#8212; watch &#952;&#775;
-        saturate in the state plot. Start with K<sub>p</sub> alone &#8212; the ball oscillates; add
-        K<sub>d</sub> to damp it; a small K<sub>i</sub> removes any residual offset. &#8594;
+        A <strong>PID controller</strong> tilts a beam to bring a rolling ball to rest at the
+        centre. Each trial starts with the table flat and the ball somewhere in the
+        <em>inner half</em> of the beam, rolling outward. A trial succeeds when the ball stays
+        within 8 mm of centre, slower than 4 cm/s, for 0.5 s. It fails if the ball rolls off the
+        end or 8 s pass. Either way, the next trial starts. The controller outputs a
+        <em>commanded</em> tilt, and a servo turns the beam toward it at no more than
+        60&nbsp;&#176;/s, so a big correction takes time. Watch &#952;&#775; saturate in the state
+        plot. K<sub>p</sub> alone makes the ball oscillate, K<sub>d</sub> damps it, and a small
+        K<sub>i</sub> removes any leftover offset. In Manual mode, drag either end of the beam to
+        tilt it. The same servo limit applies to you. &#8594;
         <a href="https://en.wikipedia.org/wiki/Ball_and_beam" target="_blank" rel="noopener">Ball and beam &#8212; Wikipedia</a>
       </p>
     </div>
@@ -222,14 +225,15 @@ permalink: /controls/
     <div class="demo-note">
       <h4 class="demo-note-title">About this demo</h4>
       <p>
-        A nonlinear 6-state longitudinal aircraft model (V, &#947;, &#945;, q, h, x) with a sigmoid
-        stall model &#8212; C<sub>L</sub> rises linearly to ~16&#176; angle of attack, then drops
-        sharply. A <strong>PID autopilot</strong> tracks a sinusoidal altitude reference by
-        commanding elevator deflection about trim: altitude error in, nose-up elevator (&#176;) out.
-        The aircraft only reaches altitude <em>through</em> pitch and flight-path angle, so
-        K<sub>p</sub> alone oscillates; K<sub>d</sub> (which acts on climb rate) is what damps it.
-        Push too hard and the wing stalls. Delay and sensor noise work as in the other demos
-        (noise &#963; in metres). &#8594;
+        A nonlinear longitudinal aircraft model with six states (V, &#947;, &#945;, q, h, x) and
+        a smooth stall: C<sub>L</sub> rises linearly up to about 16&#176; angle of attack, then
+        drops sharply. A <strong>PID autopilot</strong> tracks a sine-wave altitude reference by
+        moving the elevator away from trim. Altitude error goes in, and a nose-up elevator command
+        in degrees comes out. The aircraft can only change altitude <em>through</em> its pitch and
+        flight-path angle, so K<sub>p</sub> alone oscillates. K<sub>d</sub> acts on climb rate,
+        and it is what damps the oscillation. Push too hard and the wing stalls. Delay and sensor
+        noise work as in the other demos, with noise &#963; in metres. In Manual mode the canvas
+        is a control stick: drag up to pitch the nose up, and let go to return to trim. &#8594;
         <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics &#8212; Wikipedia</a>,
         <a href="https://en.wikipedia.org/wiki/Autopilot" target="_blank" rel="noopener">Autopilot &#8212; Wikipedia</a>
       </p>
@@ -249,10 +253,10 @@ permalink: /controls/
     <div class="demo-note">
       <h4 class="demo-note-title">PID autopilot</h4>
       <div class="eqn-block">
-        <div class="eqn-row"><span class="eqn-lhs">e</span><span class="eqn-eq">=</span><span class="eqn-rhs">h<sub>ref</sub>(t) &#8722; h<sub>meas</sub>,&#160;&#160; h<sub>ref</sub> = 300 + 25 sin(2&#960;t / 16)&#160;m</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">e</span><span class="eqn-eq">=</span><span class="eqn-rhs">h<sub>ref</sub>(t) &#8722; h<sub>meas</sub>,&#160;&#160; h<sub>ref</sub> = 60 + 25 sin(2&#960;t / 16)&#160;m</span></div>
         <div class="eqn-row"><span class="eqn-lhs">u</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>e + K<sub>i</sub>&#8747;e&#8202;dt + K<sub>d</sub>&#8202;&#279;&#160;&#160;&#160;(nose-up command, &#176;)</span></div>
         <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>e,trim</sub> &#8722; u</span></div>
-        <p class="eqn-note">Elevator clamped &#177;15&#176; and slew-limited to 40&#176;/s. The run resets on a crash, stall, or loop.</p>
+        <p class="eqn-note">Elevator clamped &#177;15&#176; and slew-limited to 40&#176;/s. The run resets on a crash, a stall, a loop, or a climb past 590&#160;m. The score is altitude RMSE over the last 6 s.</p>
       </div>
     </div>
   </section>
@@ -313,15 +317,17 @@ permalink: /controls/
       <h4 class="demo-note-title">About this demo</h4>
       <p>
         The <strong>cart-pole</strong> is the classic unstable plant: a pole hinged on a cart that
-        can only be pushed left or right. Each trial starts with the pole <em>upright</em> plus a
-        small random tilt, and with no control it falls within a second or two. A
-        <strong>PID controller</strong> on the pole angle drives the cart under the pole. Start
-        with K<sub>p</sub> &#8212; it has to beat gravity before anything happens &#8212; then add
-        K<sub>d</sub> to stop the wobble. With P and D alone the pole stays up, but the cart
+        can only be pushed left or right. Each trial starts with the pole <em>upright</em>, tilted
+        1&#8211;4&#176; at random, and with no control it falls within a second or two. A
+        <strong>PID controller</strong> on the pole angle drives the cart back under the pole.
+        Start with K<sub>p</sub>. Nothing happens until it is strong enough to beat gravity. Then
+        add K<sub>d</sub> to stop the wobble. With P and D alone the pole stays up, but the cart
         slowly speeds up until the pole falls. That drift is a real limit of a single loop on
-        &#952;: nothing is measuring the cart. A K<sub>i</sub> above roughly b&#183;g &#8776; 12 cancels
-        it by supplying the force that friction eats. The track is unbounded and the camera follows
-        the cart. Use the &#8592;&#8594; arrow keys to shove the cart and test your tune. &#8594;
+        &#952;, because nothing is measuring the cart. A K<sub>i</sub> above roughly
+        b&#183;g &#8776; 12 cancels it by supplying the force that friction takes away. The track
+        has no ends and the camera follows the cart. The score is RMS pole angle over the last
+        10 s. Hold the &#8592;&#8594; arrow keys to shove the cart and test your tune, or switch to
+        Manual and drag the cart to balance the pole yourself. &#8594;
         <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum &#8212; Wikipedia</a>
       </p>
     </div>
@@ -331,7 +337,7 @@ permalink: /controls/
         <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
         <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
         <div class="eqn-row"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>&#952; + K<sub>i</sub>&#8747;&#952;&#8202;dt + K<sub>d</sub>&#952;&#775;&#160;&#160;&#160;(&#952; in rad, measured from vertical)</span></div>
-        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, b = 1.2 N&#183;s/m cart friction, g = 9.8 m/s&#178;. Force saturates at &#177;10 N; arrow-key pushes add &#177;4 N on top. The trial ends when |&#952;| &gt; 45&#176;. RK4 at 200 Hz.</p>
+        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, b = 1.2 N&#183;s/m cart friction, g = 9.81 m/s&#178;. Force saturates at &#177;10 N; arrow-key pushes add &#177;4 N on top. The trial ends when |&#952;| &gt; 45&#176;. RK4 at 200 Hz.</p>
       </div>
     </div>
   </section>
