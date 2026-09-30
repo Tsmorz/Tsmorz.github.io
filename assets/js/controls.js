@@ -1,5 +1,5 @@
-// Controls page — three interactive demos.
-// Tab switcher, mass-spring-damper PID, nonlinear flight sim, system ID + LQR.
+// Controls page — four interactive demos, all driven by the same PID panel.
+// Tab switcher, mass-spring-damper, tilt table, nonlinear flight sim, cart-pole.
 (function () {
   'use strict';
 
@@ -1624,323 +1624,157 @@
   }
 
   /* ================================================================
-     Demo 2 — Flight Simulator  (System ID + LQR)
-     Workflow: Record PRBS excitation → Fit linear model (LS) →
-               Design LQR (DARE) → Activate from random IC
+     Shared PID panel wiring (flight + cart-pole)
+     Binds the standard panel — K_p/K_i/K_d sliders with ± range inputs,
+     transport delay and sensor noise — for element ids `<prefix>-kp` etc.
+     Returns a live { kp, ki, kd, delay (s), noise } object kept in sync.
+  ================================================================ */
+  function bindPidPanel(prefix, opts) {
+    opts = opts || {};
+    var gainDigits = opts.gainDigits != null ? opts.gainDigits : 2;
+    var noiseFmt   = opts.noiseFmt || function (v) { return v.toFixed(2); };
+    var p = { kp: 0, ki: 0, kd: 0, delay: 0, noise: 0 };
+    function el(id) { return document.getElementById(prefix + '-' + id); }
+    var GAINS = ['kp', 'ki', 'kd'];
+    var delaySl = el('delay'), delayAmt = el('delay-amt'), delayVal = el('delay-val');
+    var noiseSl = el('noise'), noiseVal = el('noise-val');
+
+    function sync() {
+      GAINS.forEach(function (k) {
+        var s = el(k);
+        if (!s) return;
+        p[k] = parseFloat(s.value) || 0;
+        var v = el(k + '-val');
+        if (v) v.textContent = p[k].toFixed(gainDigits);
+      });
+      p.delay = delaySl ? (parseFloat(delaySl.value) || 0) / 1000 : 0;
+      p.noise = noiseSl ? (parseFloat(noiseSl.value) || 0) : 0;
+      if (delayVal) delayVal.textContent = Math.round(p.delay * 1000) + ' ms';
+      if (noiseVal) noiseVal.textContent = noiseFmt(p.noise);
+    }
+
+    GAINS.forEach(function (k) {
+      var s = el(k), ri = el(k + '-range');
+      if (!s) return;
+      s.addEventListener('input', sync);
+      if (ri) ri.addEventListener('input', function () {
+        var r = Math.max(parseFloat(ri.min) || 0.01, parseFloat(ri.value) || 0);
+        var prev = parseFloat(s.value);
+        s.min = -r; s.max = r; s.step = r / 100;
+        s.value = clamp(prev, -r, r);
+        sync();
+      });
+    });
+    // Delay slider and its numeric "amount" input stay in sync both ways.
+    if (delaySl) delaySl.addEventListener('input', function () {
+      if (delayAmt) delayAmt.value = delaySl.value;
+      sync();
+    });
+    if (delaySl && delayAmt) delayAmt.addEventListener('input', function () {
+      delaySl.value = clamp(parseFloat(delayAmt.value) || 0, 0, parseFloat(delaySl.max) || 1000);
+      sync();
+    });
+    if (noiseSl) noiseSl.addEventListener('input', sync);
+    sync();
+    return p;
+  }
+
+  /* ================================================================
+     Demo 2 — Flight Simulator  (PID altitude autopilot)
+     PID on altitude error commands elevator to track a sinusoidal
+     altitude reference, starting from trim.
   ================================================================ */
   (function flightDemo() {
     var canvas = document.getElementById('flight-canvas');
     if (!canvas) return;
     var renderer = makeFlightRenderer(canvas);
+    var pid = bindPidPanel('fl', { gainDigits: 3 });
 
-    // ---- Constants -----------------------------------------------
-    var ELEV_MAX_RAD = deg2rad(15);
-    var EXCITE_DUR   = 15;           // seconds of excitation recording
-    var EXCITE_AMP   = deg2rad(5);   // PRBS amplitude (±5°)
+    var ELEV_MAX_RAD  = deg2rad(15);
+    var ELEV_MAX_RATE = deg2rad(40) * FLIGHT_DT;   // actuator slew limit per step
 
-    // ---- Sim state -----------------------------------------------
-    var state, simT, de_rad, simStatus;
+    var state, simT, de_rad, simStatus, pidState, measBuf;
     var errRing = [], RING = 1200, CHIST = 300;
-    var stateHist = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
-    var ctrlHist  = [];
+    var pidContrib, stateHist;
     var resetTimer = null, bestRMSE = null;
-    var flHRef = TRIM.h;
 
-    // ---- System-ID / LQR workflow state --------------------------
-    // wfMode: 'idle' | 'excite' | 'ready' | 'lqr'
-    var wfMode      = 'idle';
-    var exciteData  = [];   // [{dx:[4], du:scalar, dxn:[4]}]
-    var exciteT     = 0;
-    var exciteSign  = 1;
-    var exciteTick  = 0;    // countdown to next PRBS switch (seconds)
-    var sysModel    = null; // {Fd:4×4, Gd:4×1} discrete-time linearisation
-    var lqrK        = null; // [[k0,k1,k2,k3]]  1×4 feedback gain
-
-    // ---- DOM handles ---------------------------------------------
     var scoreEl     = document.getElementById('fl-score');
+    var bestEl      = document.getElementById('fl-best');
     var resetBtn    = document.getElementById('fl-reset');
-    var recordBtn   = document.getElementById('fl-record-btn');
-    var fitBtn      = document.getElementById('fl-fit-btn');
-    var lqrBtn      = document.getElementById('fl-lqr-btn');
-    var activateBtn = document.getElementById('fl-activate-btn');
-    var statusEl    = document.getElementById('fl-sysid-status');
-    var qSlider     = document.getElementById('fl-q');
-    var rSlider     = document.getElementById('fl-r');
-    var qValEl      = document.getElementById('fl-q-val');
-    var rValEl      = document.getElementById('fl-r-val');
     var flStatePlot = document.getElementById('fl-state-plot');
     var flPidPlot   = document.getElementById('fl-pid-plot');
 
-    function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
-
-    // ---- Tiny matrix library (2-D row arrays) --------------------
-    // All functions operate on plain arrays-of-arrays (row-major).
-    function mm(A, B) {
-      var m = A.length, p = A[0].length, n = B[0].length;
-      var C = [], i, j, k, s;
-      for (i = 0; i < m; i++) {
-        C[i] = [];
-        for (j = 0; j < n; j++) {
-          s = 0;
-          for (k = 0; k < p; k++) s += A[i][k] * B[k][j];
-          C[i][j] = s;
-        }
-      }
-      return C;
-    }
-    function mt(A) {
-      var m = A.length, n = A[0].length, C = [], i, j;
-      for (i = 0; i < n; i++) { C[i] = []; for (j = 0; j < m; j++) C[i][j] = A[j][i]; }
-      return C;
-    }
-    function ma(A, B) { return A.map(function (r, i) { return r.map(function (v, j) { return v + B[i][j]; }); }); }
-    function ms(A, B) { return A.map(function (r, i) { return r.map(function (v, j) { return v - B[i][j]; }); }); }
-    function msc(A, s) { return A.map(function (r) { return r.map(function (v) { return v * s; }); }); }
-    function mcopy(A) { return A.map(function (r) { return r.slice(); }); }
-    function minv(A) {
-      var n = A.length, i, j, k, f, p, tmp;
-      var aug = A.map(function (row, ri) {
-        var r = row.slice();
-        for (var c = 0; c < n; c++) r.push(ri === c ? 1 : 0);
-        return r;
-      });
-      for (i = 0; i < n; i++) {
-        p = i;
-        for (k = i + 1; k < n; k++) if (Math.abs(aug[k][i]) > Math.abs(aug[p][i])) p = k;
-        tmp = aug[i]; aug[i] = aug[p]; aug[p] = tmp;
-        f = aug[i][i];
-        if (Math.abs(f) < 1e-14) return null;
-        for (j = 0; j < 2 * n; j++) aug[i][j] /= f;
-        for (k = 0; k < n; k++) {
-          if (k === i) continue;
-          f = aug[k][i];
-          for (j = 0; j < 2 * n; j++) aug[k][j] -= f * aug[i][j];
-        }
-      }
-      return aug.map(function (r) { return r.slice(n); });
+    function gaussian() {
+      var u = 0, v = 0;
+      while (u === 0) u = Math.random();
+      while (v === 0) v = Math.random();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
-    // ---- Perturbation state: [Δh, Δγ, Δα, Δq]  (1×4 matrix) -----
-    function dxOf(st) {
-      return [[st[4] - flHRef, st[1] - TRIM.gamma, st[2] - TRIM.alpha, st[3] - TRIM.q]];
-    }
+    function hRefAt(t) { return H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t); }
 
-    // ---- System identification (discrete-time LS) ----------------
-    // Fits x_{k+1} = Fd x_k + Gd u_k from exciteData.
-    function fitModel() {
-      var N = exciteData.length;
-      if (N < 30) { setStatus('Need more data — re-record'); return; }
-      // Z: N×5  each row = [Δx_k | Δu_k]
-      // Y: N×4  each row = Δx_{k+1}
-      var Z = [], Y = [], k;
-      for (k = 0; k < N; k++) {
-        Z.push(exciteData[k].dx.concat([exciteData[k].du]));
-        Y.push(exciteData[k].dxn);
-      }
-      var Zt    = mt(Z);          // 5×N
-      var ZtZ   = mm(Zt, Z);      // 5×5
-      var ZtZi  = minv(ZtZ);      // 5×5
-      if (!ZtZi) { setStatus('Rank-deficient — re-record data'); return; }
-      var theta = mm(ZtZi, mm(Zt, Y));   // 5×4
-      var FdGd  = mt(theta);             // 4×5
-      sysModel = {
-        Fd: FdGd.map(function (r) { return r.slice(0, 4); }),  // 4×4
-        Gd: FdGd.map(function (r) { return [r[4]]; })          // 4×1
-      };
-      setStatus(N + ' pts · model fit ✓  →  Compute LQR');
-      if (lqrBtn) lqrBtn.disabled = false;
-    }
-
-    // ---- LQR via discrete-time Riccati iteration (DARE) ----------
-    function computeLQR() {
-      if (!sysModel) { setStatus('Fit a model first'); return; }
-      var q_h = qSlider ? parseFloat(qSlider.value) : 1;
-      var r   = rSlider  ? parseFloat(rSlider.value)  : 1;
-      // Q: all states scaled by q slider — [Δh, Δγ, Δα, Δq]
-      var Q = [[q_h,       0, 0,           0          ],
-               [0,   q_h * 2, 0,           0          ],
-               [0,         0, q_h * 5,     0          ],
-               [0,         0, 0,       q_h * 0.5      ]];
-      var Fd = sysModel.Fd, Gd = sysModel.Gd;
-      var P = mcopy(Q), K = null, iter, diff, i, j;
-      for (iter = 0; iter < 1000; iter++) {
-        var GtP   = mm(mt(Gd), P);           // 1×4
-        var GtPG  = mm(GtP, Gd)[0][0];       // scalar
-        var denom = r + GtPG;
-        if (!isFinite(denom) || Math.abs(denom) < 1e-14) break;
-        K = msc(mm(GtP, Fd), 1 / denom);    // 1×4
-        var FtP   = mm(mt(Fd), P);            // 4×4
-        var FtPFd = mm(FtP, Fd);              // 4×4
-        var FtPGK = mm(mm(FtP, Gd), K);      // 4×4
-        var P2    = ma(Q, ms(FtPFd, FtPGK));
-        diff = 0;
-        for (i = 0; i < 4; i++) for (j = 0; j < 4; j++) diff += Math.pow(P2[i][j] - P[i][j], 2);
-        P = P2;
-        if (diff < 1e-12) break;
-      }
-      // Sanity check
-      var ok = K && K[0].every(function (v) { return isFinite(v); });
-      if (!ok) { setStatus('DARE did not converge — re-record data'); lqrK = null; return; }
-      lqrK = K;
-      var ks = K[0].map(function (v) { return v.toFixed(3); }).join(', ');
-      setStatus('K = [' + ks + ']');
-      if (activateBtn) activateBtn.disabled = false;
-    }
-
-    // ---- Excitation reset: fly at exact trim for data collection --
-    function resetToTrim() {
-      flHRef = TRIM.h;
-      state  = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
-      simT = 0; de_rad = TRIM.de;
-      errRing = [];
-      stateHist = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
-      ctrlHist  = [];
-      simStatus = 'ok';
-    }
-
-    // ---- Normal (trial) reset: random IC, random target ----------
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
-      if (wfMode === 'lqr') {
-        flHRef = 200 + Math.random() * 200;
-        var hOff = (Math.random() - 0.5) * 80;
-        var gPerturb = (Math.random() - 0.5) * deg2rad(16);
-        state = [TRIM.V, TRIM.gamma + gPerturb, TRIM.alpha, TRIM.q, flHRef + hOff, TRIM.x];
-      } else {
-        flHRef = TRIM.h;
-        state  = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
-      }
+      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
       simT = 0; de_rad = TRIM.de;
+      pidState = { intE: 0, prevE: hRefAt(0) - TRIM.h };
+      measBuf = [];
       errRing = [];
-      stateHist = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
-      ctrlHist  = [];
+      pidContrib = { p: [], i: [], d: [], total: [] };
+      stateHist  = { h: [], V: [], alpha_deg: [], gamma_deg: [] };
       simStatus = 'ok'; bestRMSE = null;
-      var bestEl = document.getElementById('fl-best');
       if (bestEl) bestEl.textContent = '';
       renderer.resetViewport();
     }
     resetSim();
+    if (resetBtn) resetBtn.addEventListener('click', resetSim);
 
-    // ---- Event handlers ------------------------------------------
-    if (resetBtn) resetBtn.addEventListener('click', function () {
-      if (wfMode === 'excite') { wfMode = 'idle'; setStatus('Recording cancelled'); }
-      resetSim();
-      if (activateBtn) activateBtn.textContent = 'Activate LQR';
-    });
-
-    if (recordBtn) recordBtn.addEventListener('click', function () {
-      wfMode      = 'excite';
-      exciteData  = [];
-      exciteT     = 0;
-      exciteSign  = 1;
-      exciteTick  = 0;
-      resetToTrim();
-      setStatus('Recording… 0 / ' + EXCITE_DUR + ' s');
-      if (fitBtn)     fitBtn.disabled     = true;
-      if (lqrBtn)     lqrBtn.disabled     = true;
-      if (activateBtn) { activateBtn.disabled = true; activateBtn.textContent = 'Activate LQR'; }
-    });
-
-    if (fitBtn) { fitBtn.disabled = true; fitBtn.addEventListener('click', fitModel); }
-    if (lqrBtn) { lqrBtn.disabled = true; lqrBtn.addEventListener('click', computeLQR); }
-
-    if (qSlider) qSlider.addEventListener('input', function () {
-      if (qValEl) qValEl.textContent = parseFloat(qSlider.value).toFixed(2);
-    });
-    if (rSlider) rSlider.addEventListener('input', function () {
-      if (rValEl) rValEl.textContent = parseFloat(rSlider.value).toFixed(2);
-    });
-
-    if (activateBtn) {
-      activateBtn.disabled = true;
-      activateBtn.addEventListener('click', function () {
-        if (wfMode === 'lqr') {
-          wfMode = 'idle';
-          activateBtn.textContent = 'Activate LQR';
-          resetSim();
-        } else {
-          if (!lqrK) { computeLQR(); if (!lqrK) return; }
-          wfMode = 'lqr';
-          activateBtn.textContent = 'Deactivate';
-          resetSim();
-        }
-      });
-    }
-
-    // ---- Physics + control step ----------------------------------
     function step() {
       if (!document.getElementById('sec-flight').classList.contains('active')) return;
       if (simStatus !== 'ok') return;
-
-      var dxk, duk;  // excitation sample captured before RK4
+      var P_t = 0, I_t = 0, D_t = 0, u_deg = 0;
       for (var i = 0; i < 5; i++) {
-        if (wfMode === 'excite') {
-          exciteTick -= FLIGHT_DT;
-          if (exciteTick <= 0) {
-            exciteSign = Math.random() < 0.5 ? 1 : -1;
-            exciteTick = 0.15 + Math.random() * 0.40;
-          }
-          dxk = dxOf(state)[0];
-          duk = exciteSign * EXCITE_AMP;
-          de_rad = clamp(TRIM.de + duk, -ELEV_MAX_RAD, ELEV_MAX_RAD);
-        } else if (wfMode === 'lqr' && lqrK) {
-          var dx4 = dxOf(state)[0];
-          de_rad = clamp(TRIM.de - (lqrK[0][0]*dx4[0] + lqrK[0][1]*dx4[1] +
-                                    lqrK[0][2]*dx4[2] + lqrK[0][3]*dx4[3]),
-                         -ELEV_MAX_RAD, ELEV_MAX_RAD);
-        } else {
-          de_rad = TRIM.de;
-        }
-
+        // Controller sees a noisy altitude reading, `delay` seconds old.
+        var hMeas = state[4] + (pid.noise > 0 ? pid.noise * gaussian() : 0);
+        measBuf.push({ t: simT, v: hMeas });
+        while (measBuf.length > 1 && measBuf[0].t < simT - pid.delay) measBuf.shift();
+        var e = hRefAt(simT) - measBuf[0].v;
+        pidState.intE = clamp(pidState.intE + e * FLIGHT_DT, -200, 200);
+        P_t = pid.kp * e;
+        I_t = pid.ki * pidState.intE;
+        D_t = pid.kd * (e - pidState.prevE) / FLIGHT_DT;
+        pidState.prevE = e;
+        u_deg = P_t + I_t + D_t;   // nose-up elevator command (°) about trim
+        // Cm_δe < 0, so trailing-edge-up (negative) elevator pitches the nose up.
+        // Subtracting the command from trim means positive gains climb when low.
+        var de_target = clamp(TRIM.de - deg2rad(u_deg), -ELEV_MAX_RAD, ELEV_MAX_RAD);
+        de_rad += clamp(de_target - de_rad, -ELEV_MAX_RATE, ELEV_MAX_RATE);
         state = rk4(state, simT, FLIGHT_DT, function (t, s) { return flightDerivatives(t, s, de_rad); });
-
-        if (wfMode === 'excite') {
-          exciteData.push({ dx: dxk, du: duk, dxn: dxOf(state)[0] });
-          exciteT += FLIGHT_DT;
-        }
         simT += FLIGHT_DT;
-
         var stop = checkStopConditions(state);
         if (stop) {
           simStatus = stop;
-          if (wfMode === 'excite') {
-            // Crash mid-excitation: restart trim and continue collecting
-            resetToTrim(); simStatus = 'ok'; break;
-          }
           if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
           return;
         }
-        errRing.push(Math.pow(flHRef - state[4], 2));
+        errRing.push(Math.pow(hRefAt(simT) - state[4], 2));
         if (errRing.length > RING) errRing.shift();
       }
-
-      // Check excitation completion
-      if (wfMode === 'excite') {
-        if (exciteT >= EXCITE_DUR) {
-          wfMode = 'ready';
-          if (fitBtn) fitBtn.disabled = false;
-          setStatus(exciteData.length + ' samples recorded — click Fit Model');
-        } else {
-          setStatus('Recording… ' + exciteT.toFixed(1) + ' / ' + EXCITE_DUR + ' s');
-        }
+      pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(u_deg);
+      if (pidContrib.p.length > CHIST) {
+        pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift();
       }
-
       stateHist.h.push(state[4]); stateHist.V.push(state[0]);
       stateHist.alpha_deg.push(rad2deg(state[2])); stateHist.gamma_deg.push(rad2deg(state[1]));
-      ctrlHist.push(rad2deg(de_rad));
       if (stateHist.h.length > CHIST) {
-        stateHist.h.shift(); stateHist.V.shift();
-        stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift();
+        stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift();
       }
-      if (ctrlHist.length > CHIST) ctrlHist.shift();
-
       if (scoreEl && errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
         scoreEl.textContent = rmse.toFixed(1);
         if (bestRMSE === null || rmse < bestRMSE) {
           bestRMSE = rmse;
-          var bestEl = document.getElementById('fl-best');
-          if (bestEl) bestEl.textContent = 'Best: ' + rmse.toFixed(1);
+          if (bestEl) bestEl.textContent = 'Best: ' + rmse.toFixed(1) + ' m';
         }
       }
     }
@@ -1948,34 +1782,44 @@
     setInterval(step, 25);
 
     function loop() {
-      renderer.render(state, simT, de_rad, simStatus, null, flHRef);
+      renderer.render(state, simT, de_rad, simStatus);
       drawStatePlot(flStatePlot, stateHist);
       drawContribPlot(flPidPlot, [
-        { label: 'δe (°)', color: cssVar('--viz-1'), data: ctrlHist }
-      ], rad2deg(ELEV_MAX_RAD), 'δe (°)');
+        { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
+        { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
+        { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
+        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+      ], rad2deg(ELEV_MAX_RAD), 'δe cmd (°)');
       requestAnimationFrame(loop);
     }
     loop();
   })();
 
   /* ================================================================
-     Demo 3 — Cart-Pole PPO
+     Demo 3 — Cart-Pole PID
+     One PID loop on the pole angle θ commands the cart force F. Each
+     trial starts with the pole upright plus a small random tilt. Angle
+     feedback alone can't also hold the cart's position, so the track is
+     unbounded and the camera follows the cart; a trial ends only when
+     the pole falls.
   ================================================================ */
-  (function sysidDemo() {
-    var canvas = document.getElementById('sysid-canvas');
+  (function cartPoleDemo() {
+    var canvas = document.getElementById('cp-canvas');
     if (!canvas) return;
+    var pid = bindPidPanel('cp', { noiseFmt: function (v) { return v.toFixed(2) + '°'; } });
 
     /* ---- Cart-pole plant ----
-       state = [x, ẋ, θ, θ̇]  (m, m/s, rad, rad/s); θ measured from straight up.
-       Control u = horizontal force F (N) on the cart. The upright θ=0 is an
-       UNSTABLE equilibrium — the whole point of the demo. */
+       state = [x, ẋ, θ, θ̇]  (m, m/s, rad, rad/s); θ measured from straight up,
+       positive = leaning right. Control u = horizontal force F (N) on the cart.
+       Upright θ = 0 is an UNSTABLE equilibrium — the whole point of the demo. */
     var M_CART = 0.4, M_POLE = 0.4, L_POLE = 0.9;
     var G = 9.81, TOTAL_M = M_CART + M_POLE, PML = M_POLE * L_POLE;
-    var FMAX = 8;
+    var CART_FRICTION = 1.2;       // N·s/m viscous cart damping
+    var FMAX = 10;                 // N — actuator saturation
+    var PUSH_F = 4;                // N — arrow-key nudge (added after saturation)
     var CP_DT = 0.005, SUBSTEPS = 5;
-    var FALL_ANGLE = deg2rad(55), X_LIMIT = 5.0;
-    var X_TARGET = 0;
-    var CART_FRICTION = 1.2;   // N·s/m viscous cart damping
+    var FALL_ANGLE = deg2rad(45);
+    var TILT0_MIN = deg2rad(1), TILT0_MAX = deg2rad(4);
 
     function cpDeriv(t, s, F) {
       var th = s[2], w = s[3];
@@ -1994,41 +1838,17 @@
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
-    // ---- PPO hyperparameters ----
-    var PPO_LOG_STD = -0.5;   // fixed log σ; σ ≈ 0.6 × FMAX ≈ 15 N spread
-    var PPO_ROLLOUT = 512, PPO_GAMMA = 0.99, PPO_LAMBDA = 0.95;
-    var PPO_CLIP = 0.2, PPO_EPOCHS = 4, PPO_BATCH = 64, PPO_LR = 2e-4;
-    var PPO_MAX_UPDATES = 500; // kept for reference; active limit is PPO_FINETUNE
+    var state, simT, uForce, simStatus, pidState, forceBuf;
+    var keyForce = 0, resetTimer = null;
+    // RMS θ over the last 10 s; "best" only counts once a full window stayed up.
+    var errRing = [], RING = 400, CHIST = 300, bestRMS = null;
+    var stateHist, pidContrib;
 
-    // ---- Simulation state ----
-    var state, simT, uForce;
-    var pushF = 0, keyForce = 0;
-    var simStatus3 = 'ok';
-    var resetTimer3 = null;
-    var nnActive3 = false, nnNet3 = null;   // deployed actor
-    var ppoCriticNet = null;
-    var ppoActorAdam = null, ppoCriticAdam = null;
-    var ppoTraining = false, ppoTrainTimer = null;
-    var ppoRewardHist = [];
-    var ppoUpdateCount = 0;
-    var ppoEverBalanced = false;   // true once pole reaches near-upright after activation
-    var ppoActivatedSimT = 0;     // simT when policy was last activated
-    var errRing = [], RING = 1200, CHIST = 300;
-    var stateHist = { x: [], xd: [], th: [], thd: [] };
-
-    // ---- NN architecture ----
-    var nnLayers3 = 2, nnNeurons3 = 32;
-
-    // ---- DOM handles ----
-    var sidStatePlot   = document.getElementById('sid-state-plot');
-    var forceSlider    = document.getElementById('sid-force');
-    var forceVal       = document.getElementById('sid-force-val');
-    var scoreEl        = document.getElementById('sid-score');
-    var ppoBtnEl       = document.getElementById('sid-ppo-train-btn');
-    var ppoStatusEl    = document.getElementById('sid-ppo-status');
-    var nnActivateBtn3 = document.getElementById('sid-nn-activate-btn');
-    var nnNetviz3      = document.getElementById('sid-netviz');
-    var resetBtn       = document.getElementById('sid-reset');
+    var scoreEl    = document.getElementById('cp-score');
+    var bestEl     = document.getElementById('cp-best');
+    var resetBtn   = document.getElementById('cp-reset');
+    var cpStatePlot = document.getElementById('cp-state-plot');
+    var cpPidPlot   = document.getElementById('cp-pid-plot');
 
     var CP_STATE_SPEC = [
       { key: 'x',   label: 'x (m)',    color: cssVar('--viz-1') },
@@ -2037,401 +1857,90 @@
       { key: 'thd', label: 'θ̇ (°/s)',  color: cssVar('--viz-4') }
     ];
 
-    // ---- NN utility functions ----
-    function getLayerSizes3() {
-      var s = [5];   // [x, xdot, cos θ, sin θ, thetadot]
-      for (var i = 0; i < nnLayers3; i++) s.push(nnNeurons3);
-      s.push(1); return s;
-    }
-    function initNet3(sizes) {
-      var W = [], b = [];
-      for (var l = 0; l < sizes.length - 1; l++) {
-        var ni = sizes[l], no = sizes[l+1];
-        var w = new Float64Array(ni * no);
-        var sc = Math.sqrt(2 / ni);
-        for (var k = 0; k < w.length; k++) {
-          var u1 = Math.random() + 1e-10, u2 = Math.random();
-          w[k] = sc * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-        }
-        W.push(w); b.push(new Float64Array(no));
-      }
-      return { sizes: sizes, W: W, b: b };
-    }
-    function fwdNetCP(nn, xRaw) {
-      var inp = xRaw.map(function (v) { return clamp(v / 1.0, -3, 3); });
-      var a = [new Float64Array(inp)];
-      for (var l = 0; l < nn.W.length; l++) {
-        var ni = nn.sizes[l], no = nn.sizes[l+1];
-        var z = new Float64Array(no);
-        for (var i = 0; i < no; i++) {
-          var sum = nn.b[l][i];
-          for (var j = 0; j < ni; j++) sum += nn.W[l][i*ni+j] * a[l][j];
-          z[i] = (l < nn.W.length - 1) ? Math.tanh(sum) : sum;
-        }
-        a.push(z);
-      }
-      return { out: a[a.length-1][0], a: a };
-    }
-    function bwdNetCP(nn, cache, target) {
-      var nL = nn.W.length;
-      var dW = nn.W.map(function (w) { return new Float64Array(w.length); });
-      var db = nn.b.map(function (bi) { return new Float64Array(bi.length); });
-      var delta = [cache.out - target];
-      for (var l = nL - 1; l >= 0; l--) {
-        var ni = nn.sizes[l], no = nn.sizes[l+1];
-        for (var i = 0; i < no; i++) {
-          var d = delta[i];
-          if (l < nL - 1) d *= (1 - cache.a[l+1][i] * cache.a[l+1][i]);
-          db[l][i] += d;
-          for (var j = 0; j < ni; j++) dW[l][i*ni+j] += d * cache.a[l][j];
-        }
-        if (l > 0) {
-          var dp = new Float64Array(ni);
-          for (var j = 0; j < ni; j++) {
-            var s = 0;
-            for (var i = 0; i < no; i++) {
-              var d2 = delta[i];
-              if (l < nL - 1) d2 *= (1 - cache.a[l+1][i] * cache.a[l+1][i]);
-              s += nn.W[l][i*ni+j] * d2;
-            }
-            dp[j] = s;
-          }
-          delta = Array.prototype.slice.call(dp);
-        }
-      }
-      return { dW: dW, db: db };
-    }
-    function initAdam3(nn) {
-      return {
-        mW: nn.W.map(function (w) { return new Float64Array(w.length); }),
-        vW: nn.W.map(function (w) { return new Float64Array(w.length); }),
-        mb: nn.b.map(function (bi) { return new Float64Array(bi.length); }),
-        vb: nn.b.map(function (bi) { return new Float64Array(bi.length); }),
-        t: 0
-      };
-    }
-    function adamStep3(nn, grads, am, lr) {
-      var b1 = 0.9, b2 = 0.999, eps = 1e-8;
-      am.t++;
-      var bc1 = 1 - Math.pow(b1, am.t), bc2 = 1 - Math.pow(b2, am.t);
-      for (var l = 0; l < nn.W.length; l++) {
-        for (var k = 0; k < nn.W[l].length; k++) {
-          am.mW[l][k] = b1*am.mW[l][k] + (1-b1)*grads.dW[l][k];
-          am.vW[l][k] = b2*am.vW[l][k] + (1-b2)*grads.dW[l][k]*grads.dW[l][k];
-          nn.W[l][k] -= lr*(am.mW[l][k]/bc1) / (Math.sqrt(am.vW[l][k]/bc2)+eps);
-        }
-        for (var k = 0; k < nn.b[l].length; k++) {
-          am.mb[l][k] = b1*am.mb[l][k] + (1-b1)*grads.db[l][k];
-          am.vb[l][k] = b2*am.vb[l][k] + (1-b2)*grads.db[l][k]*grads.db[l][k];
-          nn.b[l][k] -= lr*(am.mb[l][k]/bc1) / (Math.sqrt(am.vb[l][k]/bc2)+eps);
-        }
-      }
-    }
-
-    // ---- Expert controller (energy-shaping swing-up + LQR balance) ----
-    function expertController(s) {
-      var th = s[2], thdot = s[3], costh = Math.cos(th);
-      if (Math.abs(th) < deg2rad(22)) {
-        // LQR near upright: F = k_th·θ + k_thd·θ̇ - k_x·x - k_xd·ẋ
-        return clamp(18.0*th + 4.0*thdot - 0.4*s[0] - 0.9*s[1], -FMAX, FMAX);
-      }
-      // Energy-shaping swing-up
-      var KE = 0.5*(M_CART+M_POLE)*s[1]*s[1]
-             + 0.5*M_POLE*L_POLE*s[1]*thdot*costh
-             + (1/6)*M_POLE*L_POLE*L_POLE*thdot*thdot;
-      var PE   = M_POLE*G*(L_POLE/2)*costh;
-      var Eref = M_POLE*G*(L_POLE/2);
-      return clamp(3.0*(KE+PE-Eref)*thdot*costh, -FMAX, FMAX);
-    }
-
-    function collectExpertDemos(nEps, maxSteps) {
-      var demos = [];
-      for (var ep = 0; ep < nEps; ep++) {
-        // small kick so energy shaping has non-zero θ̇ to work with
-        var ts = [(Math.random()-0.5)*0.2, 0, Math.PI, 0.4+(Math.random()-0.5)*0.3];
-        for (var step = 0; step < maxSteps; step++) {
-          var obs = ppoObs(ts);
-          var F = expertController(ts);
-          demos.push({ obs: obs, action: F });
-          var Fc = F;
-          for (var sub = 0; sub < SUBSTEPS; sub++) {
-            ts = rk4(ts, 0, CP_DT, function(t,s_){ return cpDeriv(t,s_,Fc); });
-          }
-          if (Math.abs(ts[0]) > X_LIMIT) break;
-        }
-      }
-      return demos;
-    }
-
-    // ---- PPO functions ----
-    function ppoObs(s) {
-      // cos/sin encoding avoids the ±π discontinuity — hanging is (-1, ~0) regardless of direction
-      return [s[0]/X_LIMIT, s[1]/3.5, Math.cos(s[2]), Math.sin(s[2]), s[3]/6.0];
-    }
-
-    function ppoRewardFn(s, F, done) {
-      if (done) return -1;
-      var xdot = s[1], costh = Math.cos(s[2]), thdot = s[3];
-      // Total mechanical energy of the uniform-rod cart-pole
-      var KE = 0.5*(M_CART+M_POLE)*xdot*xdot
-             + 0.5*M_POLE*L_POLE*xdot*thdot*costh
-             + (1/6)*M_POLE*L_POLE*L_POLE*thdot*thdot;
-      var PE   = M_POLE*G*(L_POLE/2)*costh;
-      var E    = KE + PE;
-      // Reference: upright + stopped (cart position is free)
-      var Eref  = M_POLE*G*(L_POLE/2);
-      var Escale = 2*Eref;   // bottom-stopped error normalises to ±1
-      var dE = (E - Eref) / Escale;
-      var xPen = (s[0]/X_LIMIT) * (s[0]/X_LIMIT);
-      return 1 - dE*dE - 0.1*xPen;
-    }
-
-    function ppoActSample(obs, deterministic) {
-      var result = fwdNetCP(nnNet3, obs);
-      var tanhOut = Math.tanh(result.out);
-      var mu = tanhOut * FMAX;
-      var std = Math.exp(PPO_LOG_STD) * FMAX;
-      var noise = deterministic ? 0 : gaussian();
-      var action = clamp(mu + std * noise, -FMAX, FMAX);
-      var logProb = -0.5 * Math.pow((action - mu)/std, 2) - Math.log(std) - 0.9189;
-      return { action: action, logProb: logProb, result: result, tanhOut: tanhOut };
-    }
-
-    function collectRollout() {
-      var obs_buf = [], act_buf = [], rew_buf = [], done_buf = [], logp_buf = [], val_buf = [];
-      var episodeRews = [], epRew = 0;
-      // 50/50 mix: hanging start for swing-up, upright start for balance robustness.
-      // Only terminate on X_LIMIT — never for pole angle — so upright starts don't
-      // immediately look like a "done" state.
-      function randomStart() {
-        if (Math.random() < 0.5) {
-          return [(Math.random()-0.5)*0.3, 0, Math.PI, 0];           // hanging
-        } else {
-          return [(Math.random()-0.5)*0.2, 0, (Math.random()-0.5)*deg2rad(10), 0]; // near-upright
-        }
-      }
-      var ts = randomStart();
-      for (var step = 0; step < PPO_ROLLOUT; step++) {
-        var obs = ppoObs(ts);
-        var act = ppoActSample(obs, false);
-        var val = fwdNetCP(ppoCriticNet, obs).out;
-        var F = act.action;
-        for (var sub = 0; sub < SUBSTEPS; sub++) {
-          ts = rk4(ts, 0, CP_DT, function(t, s) { return cpDeriv(t, s, F); });
-        }
-        var done = Math.abs(ts[0]) > X_LIMIT;
-        var rew = ppoRewardFn(ts, F, done);
-        epRew += rew;
-        obs_buf.push(obs); act_buf.push(F); rew_buf.push(rew);
-        done_buf.push(done ? 1 : 0); logp_buf.push(act.logProb); val_buf.push(val);
-        if (done) {
-          episodeRews.push(epRew); epRew = 0;
-          ts = randomStart();
-        }
-      }
-      var lastVal = done_buf[PPO_ROLLOUT-1] ? 0 : fwdNetCP(ppoCriticNet, ppoObs(ts)).out;
-      var advantages = new Array(PPO_ROLLOUT);
-      var returns = new Array(PPO_ROLLOUT);
-      var gae = 0;
-      for (var t = PPO_ROLLOUT - 1; t >= 0; t--) {
-        var nextV = (t === PPO_ROLLOUT-1) ? lastVal : val_buf[t+1];
-        var delta = rew_buf[t] + PPO_GAMMA * nextV * (1 - done_buf[t]) - val_buf[t];
-        gae = delta + PPO_GAMMA * PPO_LAMBDA * (1 - done_buf[t]) * gae;
-        advantages[t] = gae;
-        returns[t] = gae + val_buf[t];
-      }
-      var advMean = 0;
-      for (var i = 0; i < PPO_ROLLOUT; i++) advMean += advantages[i];
-      advMean /= PPO_ROLLOUT;
-      var advVar = 0;
-      for (var i = 0; i < PPO_ROLLOUT; i++) advVar += (advantages[i]-advMean)*(advantages[i]-advMean);
-      var advStd = Math.sqrt(advVar/PPO_ROLLOUT + 1e-8);
-      for (var i = 0; i < PPO_ROLLOUT; i++) advantages[i] = (advantages[i]-advMean)/advStd;
-      var meanRew = episodeRews.length > 0
-        ? episodeRews.reduce(function(a,b){return a+b;},0)/episodeRews.length : epRew;
-      return { obs: obs_buf, acts: act_buf, logProbs: logp_buf,
-               advantages: advantages, returns: returns, meanRew: meanRew };
-    }
-
-    function ppoUpdate(rollout) {
-      var N = PPO_ROLLOUT;
-      var indices = [];
-      for (var i = 0; i < N; i++) indices.push(i);
-      for (var epoch = 0; epoch < PPO_EPOCHS; epoch++) {
-        for (var i = N-1; i > 0; i--) {
-          var j = Math.floor(Math.random()*(i+1));
-          var tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
-        }
-        for (var b = 0; b < N; b += PPO_BATCH) {
-          var bEnd = Math.min(b+PPO_BATCH, N);
-          var bSize = bEnd - b;
-          var aGrads = {
-            dW: nnNet3.W.map(function(w){return new Float64Array(w.length);}),
-            db: nnNet3.b.map(function(bi){return new Float64Array(bi.length);})
-          };
-          var cGrads = {
-            dW: ppoCriticNet.W.map(function(w){return new Float64Array(w.length);}),
-            db: ppoCriticNet.b.map(function(bi){return new Float64Array(bi.length);})
-          };
-          for (var k = b; k < bEnd; k++) {
-            var idx = indices[k];
-            var obs = rollout.obs[idx];
-            var act = rollout.acts[idx];
-            var oldLogP = rollout.logProbs[idx];
-            var adv = rollout.advantages[idx];
-            var ret = rollout.returns[idx];
-            // Actor: PPO clipped policy gradient
-            var aResult = fwdNetCP(nnNet3, obs);
-            var tanhOut = Math.tanh(aResult.out);
-            var mu = tanhOut * FMAX;
-            var std = Math.exp(PPO_LOG_STD) * FMAX;
-            var newLogP = -0.5*Math.pow((act-mu)/std,2) - Math.log(std) - 0.9189;
-            var ratio = Math.exp(Math.min(newLogP - oldLogP, 5));
-            var clipped = (adv > 0 && ratio > 1+PPO_CLIP) || (adv < 0 && ratio < 1-PPO_CLIP);
-            var dLoss_dLogP = clipped ? 0 : -ratio * adv;
-            var sech2 = 1 - tanhOut*tanhOut;
-            var dLogP_dMu = (act - mu) / (std * std);
-            var dLoss_dOut = dLoss_dLogP * dLogP_dMu * sech2 * FMAX / bSize;
-            var aG = bwdNetCP(nnNet3, aResult, aResult.out - dLoss_dOut);
-            for (var l = 0; l < nnNet3.W.length; l++) {
-              for (var ki = 0; ki < nnNet3.W[l].length; ki++) aGrads.dW[l][ki] += aG.dW[l][ki];
-              for (var ki = 0; ki < nnNet3.b[l].length; ki++) aGrads.db[l][ki] += aG.db[l][ki];
-            }
-            // Critic: MSE on return
-            var cResult = fwdNetCP(ppoCriticNet, obs);
-            var cG = bwdNetCP(ppoCriticNet, cResult, ret);
-            for (var l = 0; l < ppoCriticNet.W.length; l++) {
-              for (var ki = 0; ki < ppoCriticNet.W[l].length; ki++) cGrads.dW[l][ki] += cG.dW[l][ki]/bSize;
-              for (var ki = 0; ki < ppoCriticNet.b[l].length; ki++) cGrads.db[l][ki] += cG.db[l][ki]/bSize;
-            }
-          }
-          adamStep3(nnNet3, aGrads, ppoActorAdam, PPO_LR);
-          adamStep3(ppoCriticNet, cGrads, ppoCriticAdam, PPO_LR * 3);
-        }
-      }
-    }
-
-    // ---- Reward history chart ----
-    function drawRewardChart() {
-      var lc = document.getElementById('sid-nn-loss-canvas');
-      if (!lc || !ppoRewardHist.length) return;
-      var dpr2 = Math.min(window.devicePixelRatio||1,2);
-      var LW = lc.offsetWidth||200, LH = 60;
-      lc.width = Math.round(LW*dpr2); lc.height = Math.round(LH*dpr2);
-      var lctx = lc.getContext('2d');
-      lctx.setTransform(dpr2,0,0,dpr2,0,0);
-      lctx.fillStyle = cssVar('--bg-soft'); lctx.fillRect(0,0,LW,LH);
-      var n = ppoRewardHist.length;
-      var maxR = Math.max.apply(null, ppoRewardHist);
-      var minR = Math.min.apply(null, ppoRewardHist);
-      var rng = Math.max(maxR - minR, 1);
-      lctx.strokeStyle = cssVar('--accent'); lctx.lineWidth = 1.5; lctx.beginPath();
-      for (var i = 0; i < n; i++) {
-        var x = (i/Math.max(n-1,1))*LW;
-        var y = LH-4 - ((ppoRewardHist[i]-minR)/rng)*(LH-8);
-        if (i===0) lctx.moveTo(x,y); else lctx.lineTo(x,y);
-      }
-      lctx.stroke();
-      lctx.fillStyle = cssVar('--text-muted'); lctx.font = '10px monospace';
-      lctx.textAlign = 'left'; lctx.textBaseline = 'top';
-      lctx.fillText('mean episode reward', 4, 3);
-      lctx.textAlign = 'right'; lctx.textBaseline = 'bottom';
-      lctx.fillText(ppoRewardHist[n-1].toFixed(1), LW-4, LH-2);
-    }
-
-    // ---- Sim management ----
-    function resetSim() {
-      if (resetTimer3) { clearTimeout(resetTimer3); resetTimer3 = null; }
-      state = [0, 0, Math.PI, 0];
+    // New trial: pole upright with a small random tilt, cart at rest.
+    function newTrial() {
+      if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
+      var tilt = (Math.random() < 0.5 ? -1 : 1) * (TILT0_MIN + Math.random() * (TILT0_MAX - TILT0_MIN));
+      state = [0, 0, tilt, 0];
       simT = 0; uForce = 0;
-      nnActive3 = false;
-      ppoEverBalanced = false;
-      ppoActivatedSimT = 0;
-      stateHist = { x: [], xd: [], th: [], thd: [] };
+      pidState = { intE: 0, prevE: tilt };
+      forceBuf = [];
       errRing = [];
-      simStatus3 = 'ok';
-      if (nnActivateBtn3) { nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
+      stateHist  = { x: [], xd: [], th: [], thd: [] };
+      pidContrib = { p: [], i: [], d: [], total: [] };
+      simStatus = 'ok';
     }
+    newTrial();
 
-    resetSim();
-
-    if (forceSlider) forceSlider.addEventListener('input', function () {
-      pushF = parseFloat(forceSlider.value) || 0;
-      if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
+    if (resetBtn) resetBtn.addEventListener('click', function () {
+      bestRMS = null;
+      if (bestEl) bestEl.textContent = '';
+      if (scoreEl) scoreEl.textContent = '—';
+      newTrial();
     });
-    (function () {
-      var ri = document.getElementById('sid-force-range');
-      if (!ri || !forceSlider) return;
-      ri.addEventListener('input', function () {
-        var r = Math.max(1, parseFloat(ri.value) || 1);
-        var prev = parseFloat(forceSlider.value);
-        forceSlider.min = -r; forceSlider.max = r; forceSlider.step = r / 40;
-        forceSlider.value = clamp(prev, -r, r);
-        pushF = parseFloat(forceSlider.value) || 0;
-        if (forceVal) forceVal.textContent = pushF.toFixed(1) + ' N';
-      });
-    })();
-
-    if (resetBtn) resetBtn.addEventListener('click', resetSim);
 
     document.addEventListener('keydown', function (e) {
-      var sec = document.getElementById('sec-sysid');
+      var sec = document.getElementById('sec-cartpole');
       if (!sec || !sec.classList.contains('active')) return;
-      if (nnActive3) return;
-      if (e.key === 'ArrowLeft')  { keyForce = -8; e.preventDefault(); }
-      if (e.key === 'ArrowRight') { keyForce =  8; e.preventDefault(); }
+      if (e.key === 'ArrowLeft')  { keyForce = -PUSH_F; e.preventDefault(); }
+      if (e.key === 'ArrowRight') { keyForce =  PUSH_F; e.preventDefault(); }
     });
     document.addEventListener('keyup', function (e) {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') keyForce = 0;
     });
 
-    // ---- Simulation step (25 ms) ----
     function step() {
-      if (!document.getElementById('sec-sysid').classList.contains('active')) return;
-      if (simStatus3 !== 'ok') return;
-
-      var uCtrl;
-      if (nnActive3 && nnNet3) {
-        uCtrl = ppoActSample(ppoObs(state), true).action;
-      } else {
-        uCtrl = keyForce;
-      }
-      uForce = clamp(uCtrl + pushF, -FMAX, FMAX);
-
+      if (!document.getElementById('sec-cartpole').classList.contains('active')) return;
+      if (simStatus !== 'ok') return;
+      var P_t = 0, I_t = 0, D_t = 0, cmd = 0;
+      var delaySamples = Math.round(pid.delay / CP_DT);
       for (var i = 0; i < SUBSTEPS; i++) {
+        // Controller sees a noisy angle; the reference is upright (θ = 0), so the
+        // error is just the measured tilt. Positive gains push the cart under the pole.
+        var e = state[2] + (pid.noise > 0 ? deg2rad(pid.noise) * gaussian() : 0);
+        pidState.intE = clamp(pidState.intE + e * CP_DT, -2, 2);
+        P_t = pid.kp * e;
+        I_t = pid.ki * pidState.intE;
+        D_t = pid.kd * (e - pidState.prevE) / CP_DT;
+        pidState.prevE = e;
+        cmd = clamp(P_t + I_t + D_t, -FMAX, FMAX);
+        // Transport delay: the cart feels the command from `delay` seconds ago.
+        forceBuf.push(cmd);
+        var Fapplied = (forceBuf.length > delaySamples) ? forceBuf.shift() : 0;
+        uForce = Fapplied + keyForce;
         state = rk4(state, simT, CP_DT, function (t, s) { return cpDeriv(t, s, uForce); });
         simT += CP_DT;
       }
 
-      if (Math.abs(state[0]) > X_LIMIT) {
-        simStatus3 = 'offtrack';
-        if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2000);
+      if (Math.abs(state[2]) > FALL_ANGLE) {
+        simStatus = 'fell';
+        if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; newTrial(); }, 1500);
         return;
-      }
-      if (nnActive3) {
-        if (Math.abs(state[2]) < deg2rad(25)) ppoEverBalanced = true;
-        var swingTimeout = !ppoEverBalanced && (simT - ppoActivatedSimT) > 5.0;
-        if (swingTimeout || (ppoEverBalanced && Math.abs(state[2]) > FALL_ANGLE)) {
-          simStatus3 = 'fell';
-          if (!resetTimer3) resetTimer3 = setTimeout(function () { resetTimer3 = null; resetSim(); }, 2000);
-          return;
-        }
       }
 
       stateHist.x.push(state[0]); stateHist.xd.push(state[1]);
       stateHist.th.push(rad2deg(state[2])); stateHist.thd.push(rad2deg(state[3]));
-      if (stateHist.x.length > CHIST) { stateHist.x.shift(); stateHist.xd.shift(); stateHist.th.shift(); stateHist.thd.shift(); }
+      if (stateHist.x.length > CHIST) {
+        stateHist.x.shift(); stateHist.xd.shift(); stateHist.th.shift(); stateHist.thd.shift();
+      }
+      pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(cmd);
+      if (pidContrib.p.length > CHIST) {
+        pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift();
+      }
 
       errRing.push(Math.pow(rad2deg(state[2]), 2));
       if (errRing.length > RING) errRing.shift();
-      if (scoreEl && errRing.length > 0) {
-        scoreEl.textContent = Math.sqrt(errRing.reduce(function(a,b){return a+b;},0)/errRing.length).toFixed(2);
+      var rms = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
+      if (scoreEl) scoreEl.textContent = rms.toFixed(2);
+      if (errRing.length === RING && (bestRMS === null || rms < bestRMS)) {
+        bestRMS = rms;
+        if (bestEl) bestEl.textContent = 'Best: ' + rms.toFixed(2) + '°';
       }
     }
 
     setInterval(step, 25);
 
-    // ---- Cart-pole renderer ----
+    // ---- Renderer: camera follows the cart along an unbounded track ----
     function drawCartPole() {
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.width;
@@ -2450,29 +1959,31 @@
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
       var trackY = H * 0.72;
-      var scale = (W * 0.5) / (X_LIMIT + 0.6);
+      var scale = clamp(W * 0.09, 40, 70);   // px per metre
       var cx = W / 2;
-      function sx(xm) { return cx + xm * scale; }
+      var camX = state[0];
+      function sx(xm) { return cx + (xm - camX) * scale; }
 
+      // Track + scrolling metre ticks
       ctx.strokeStyle = border; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(20, trackY); ctx.lineTo(W - 20, trackY); ctx.stroke();
-      ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
-      [-X_LIMIT, X_LIMIT].forEach(function (xm) {
-        ctx.beginPath(); ctx.moveTo(sx(xm), trackY - 12); ctx.lineTo(sx(xm), trackY + 12); ctx.stroke();
-      });
-      ctx.strokeStyle = accent; ctx.setLineDash([4, 4]);
-      ctx.beginPath(); ctx.moveTo(sx(X_TARGET), trackY - 60); ctx.lineTo(sx(X_TARGET), trackY + 14); ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(0, trackY); ctx.lineTo(W, trackY); ctx.stroke();
       ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
-      ctx.fillText('target', sx(X_TARGET), trackY + 28);
+      ctx.lineWidth = 1;
+      var halfSpan = cx / scale + 1;
+      for (var m = Math.ceil((camX - halfSpan) * 2) / 2; m <= camX + halfSpan; m += 0.5) {
+        var tx = sx(m), whole = Math.abs(m - Math.round(m)) < 1e-6;
+        ctx.strokeStyle = whole ? muted : border;
+        ctx.beginPath(); ctx.moveTo(tx, trackY); ctx.lineTo(tx, trackY + (whole ? 10 : 5)); ctx.stroke();
+        if (whole) ctx.fillText(Math.round(m) + ' m', tx, trackY + 24);
+      }
 
       var cartX = sx(state[0]);
       var cartW = 60, cartH = 26;
 
       if (Math.abs(uForce) > 0.2) {
-        var fl = clamp(uForce / FMAX, -1, 1) * 46;
+        var fl = clamp(uForce / FMAX, -1.5, 1.5) * 46;
         ctx.strokeStyle = poleColor; ctx.fillStyle = poleColor; ctx.lineWidth = 3;
-        var ay = trackY + 40;
+        var ay = trackY + 44;
         ctx.beginPath(); ctx.moveTo(cartX, ay); ctx.lineTo(cartX + fl, ay); ctx.stroke();
         var fsign = fl >= 0 ? 1 : -1;
         ctx.beginPath();
@@ -2483,14 +1994,19 @@
       }
 
       ctx.fillStyle = accent;
-      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(cartX - cartW/2, trackY - cartH, cartW, cartH, 5); ctx.fill(); }
-      else ctx.fillRect(cartX - cartW/2, trackY - cartH, cartW, cartH);
+      ctx.beginPath(); ctx.roundRect(cartX - cartW/2, trackY - cartH, cartW, cartH, 5); ctx.fill();
       ctx.fillStyle = bg;
       ctx.beginPath(); ctx.arc(cartX - cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
       ctx.beginPath(); ctx.arc(cartX + cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
 
+      // Upright reference (dashed)
       var pivotX = cartX, pivotY = trackY - cartH;
       var poleLenPx = L_POLE * 2 * scale * 0.9;
+      ctx.strokeStyle = accent; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(pivotX, pivotY - poleLenPx - 16); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+
       var tipX = pivotX + poleLenPx * Math.sin(state[2]);
       var tipY = pivotY - poleLenPx * Math.cos(state[2]);
       ctx.strokeStyle = poleColor; ctx.lineWidth = 6; ctx.lineCap = 'round';
@@ -2503,197 +2019,26 @@
 
       ctx.textAlign = 'left'; ctx.font = '600 13px ' + cssVar('--font');
       var label, col;
-      if (simStatus3 === 'fell')          { label = 'Pole fell — resetting…'; col = poleColor; }
-      else if (simStatus3 === 'offtrack') { label = 'Cart hit the rail — resetting…'; col = poleColor; }
-      else if (nnActive3)                 { label = 'PPO policy in control'; col = accent; }
-      else if (ppoTraining)               { label = 'Training PPO in background…'; col = accent; }
-      else                                { label = 'Pole hanging — use ←→ keys or slider'; col = muted; }
+      if (simStatus === 'fell')                   { label = 'Pole fell — new trial…'; col = poleColor; }
+      else if (!pid.kp && !pid.ki && !pid.kd)     { label = 'No control — raise Kp to catch the pole'; col = muted; }
+      else                                        { label = 'PID balancing · up ' + simT.toFixed(1) + ' s'; col = accent; }
       ctx.fillStyle = col; ctx.fillText(label, 18, 26);
       ctx.fillStyle = muted; ctx.font = '11px ' + mono;
-      ctx.fillText('θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m', 18, 44);
+      ctx.fillText('θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m   ←→ to push', 18, 44);
     }
 
     function loop() {
       drawCartPole();
-      drawStatePlot(sidStatePlot, stateHist, CP_STATE_SPEC);
+      drawStatePlot(cpStatePlot, stateHist, CP_STATE_SPEC);
+      drawContribPlot(cpPidPlot, [
+        { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
+        { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
+        { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
+        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+      ], FMAX, 'F (N)');
       requestAnimationFrame(loop);
     }
     loop();
-
-    function parseRGB3(str) {
-      if (!str) return [128, 128, 128];
-      str = str.trim();
-      if (str.charAt(0) === '#') {
-        var h = str.slice(1);
-        if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-        return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
-      }
-      var m = str.match(/(\d+(?:\.\d+)?)/g);
-      if (m && m.length >= 3) return [+m[0], +m[1], +m[2]];
-      return [128, 128, 128];
-    }
-    function mixRGB3(a, b, t) {
-      return [Math.round(a[0]+(b[0]-a[0])*t), Math.round(a[1]+(b[1]-a[1])*t), Math.round(a[2]+(b[2]-a[2])*t)];
-    }
-
-    function drawNetViz3(nn, cache) {
-      var nc = document.getElementById('sid-net-canvas');
-      if (!nc || !nn) return;
-      var dpr2 = Math.min(window.devicePixelRatio || 1, 2);
-      var W3 = nc.parentElement ? nc.parentElement.clientWidth : 640;
-      if (!W3) W3 = 640;
-      var sizes = nn.sizes, nL = sizes.length, MAX_N = 16;
-      var PAD_X = Math.max(48, W3 * 0.07), PAD_TOP = 26, PAD_BOT = 34;
-      var maxShown = 1;
-      for (var l = 0; l < nL; l++) maxShown = Math.max(maxShown, Math.min(sizes[l], MAX_N));
-      var gap = 30, R = Math.max(6, Math.min(gap * 0.36, 16));
-      var H3 = Math.max(200, Math.round(PAD_TOP + PAD_BOT + (maxShown-1)*gap));
-      nc.width = Math.round(W3 * dpr2); nc.height = Math.round(H3 * dpr2);
-      nc.style.width = '100%'; nc.style.height = H3 + 'px';
-      var nctx = nc.getContext('2d');
-      nctx.setTransform(dpr2, 0, 0, dpr2, 0, 0);
-      var bgSoft = cssVar('--bg-soft'), muted = cssVar('--text-muted'), mono = cssVar('--mono');
-      var actNeg = parseRGB3(cssVar('--nn-act-neg')), actZero = parseRGB3(cssVar('--nn-act-zero'));
-      var actPos = parseRGB3(cssVar('--nn-act-pos')), accRGB = parseRGB3(cssVar('--accent'));
-      nctx.fillStyle = bgSoft; nctx.fillRect(0, 0, W3, H3);
-      var innerW = W3 - PAD_X * 2, colX = [];
-      for (var l = 0; l < nL; l++) colX.push(nL > 1 ? Math.round(PAD_X + innerW * l / (nL-1)) : Math.round(W3/2));
-      var INPUT_LABELS3 = ['x', 'ẋ', 'θ', 'θ̇'], OUTPUT_LABELS3 = ['F'];
-      function nodeY3(l, i, n) {
-        var shown = Math.min(n, MAX_N), totalH = (shown-1)*gap;
-        return ((H3 - PAD_BOT + PAD_TOP) / 2 - totalH/2) + i * gap;
-      }
-      function actAt3(l, i) { return (cache && cache.a && cache.a[l]) ? cache.a[l][i] : 0; }
-      function actColor3(t) { return t >= 0 ? mixRGB3(actZero, actPos, t) : mixRGB3(actZero, actNeg, -t); }
-      for (var l = 0; l < nL - 1; l++) {
-        var ni = sizes[l], no = sizes[l+1], shownI = Math.min(ni, MAX_N), shownO = Math.min(no, MAX_N);
-        for (var ii = 0; ii < shownI; ii++) {
-          for (var oi = 0; oi < shownO; oi++) {
-            var w = nn.W[l][oi*ni+ii], mag = Math.min(Math.abs(w), 1.5)/1.5;
-            var alpha = 0.06 + mag * 0.5, c = w >= 0 ? accRGB : actNeg;
-            nctx.strokeStyle = 'rgba('+c[0]+','+c[1]+','+c[2]+','+alpha.toFixed(3)+')';
-            nctx.lineWidth = 0.5 + mag * 2; nctx.beginPath();
-            nctx.moveTo(colX[l]+R, nodeY3(l, ii, ni)); nctx.lineTo(colX[l+1]-R, nodeY3(l+1, oi, no)); nctx.stroke();
-          }
-        }
-      }
-      for (var l = 0; l < nL; l++) {
-        var n = sizes[l], shown = Math.min(n, MAX_N);
-        for (var ii = 0; ii < shown; ii++) {
-          var cy = nodeY3(l, ii, n), t = Math.tanh(actAt3(l, ii)), rgb = actColor3(t), glow = Math.abs(t);
-          nctx.save();
-          if (glow > 0.05) { nctx.shadowColor = 'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+(0.55*glow).toFixed(3)+')'; nctx.shadowBlur = R*1.4*glow; }
-          nctx.beginPath(); nctx.arc(colX[l], cy, R, 0, Math.PI*2);
-          nctx.fillStyle = 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')'; nctx.fill(); nctx.restore();
-          nctx.beginPath(); nctx.arc(colX[l], cy, R, 0, Math.PI*2);
-          nctx.strokeStyle = muted; nctx.lineWidth = 1; nctx.stroke();
-        }
-        var lbl = l === 0 ? 'input' : l === nL-1 ? 'output' : 'hidden '+l;
-        nctx.fillStyle = muted; nctx.font = '600 12px '+mono; nctx.textAlign = 'center';
-        nctx.fillText(lbl+' ('+n+')', colX[l], H3-12);
-        if (l === 0) {
-          nctx.font = '11px '+mono; nctx.textAlign = 'right'; nctx.fillStyle = muted;
-          for (var k = 0; k < Math.min(n, INPUT_LABELS3.length); k++)
-            nctx.fillText(INPUT_LABELS3[k], colX[l]-R-6, nodeY3(l, k, n)+4);
-        } else if (l === nL-1) {
-          nctx.font = '11px '+mono; nctx.textAlign = 'left'; nctx.fillStyle = muted;
-          nctx.fillText(OUTPUT_LABELS3[0], colX[l]+R+6, nodeY3(l, 0, n)+4);
-        }
-      }
-    }
-
-    // ---- Architecture sliders ----
-    var nnLayersSlider3  = document.getElementById('sid-nn-layers');
-    var nnNeuronsSlider3 = document.getElementById('sid-nn-neurons');
-    var nnLayersVal3     = document.getElementById('sid-nn-layers-val');
-    var nnNeuronsVal3    = document.getElementById('sid-nn-neurons-val');
-    var nnLastCache3     = null;
-
-    if (nnLayersSlider3) nnLayersSlider3.addEventListener('input', function () {
-      nnLayers3 = parseInt(nnLayersSlider3.value);
-      if (nnLayersVal3) nnLayersVal3.textContent = nnLayers3;
-      nnNet3 = initNet3(getLayerSizes3());
-      ppoCriticNet = initNet3(getLayerSizes3());
-      ppoRewardHist = [];
-      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
-      if (ppoStatusEl) ppoStatusEl.textContent = 'Architecture changed — retrain';
-    });
-    if (nnNeuronsSlider3) nnNeuronsSlider3.addEventListener('input', function () {
-      nnNeurons3 = parseInt(nnNeuronsSlider3.value);
-      if (nnNeuronsVal3) nnNeuronsVal3.textContent = nnNeurons3;
-      nnNet3 = initNet3(getLayerSizes3());
-      ppoCriticNet = initNet3(getLayerSizes3());
-      ppoRewardHist = [];
-      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
-      if (ppoStatusEl) ppoStatusEl.textContent = 'Architecture changed — retrain';
-    });
-    nnNet3 = initNet3(getLayerSizes3());
-    ppoCriticNet = initNet3(getLayerSizes3());
-
-    // ---- PPO train button ----
-    if (ppoBtnEl) ppoBtnEl.addEventListener('click', function () {
-      if (ppoTraining) {
-        ppoTraining = false;
-        if (ppoTrainTimer) { clearTimeout(ppoTrainTimer); ppoTrainTimer = null; }
-        ppoBtnEl.textContent = 'Train PPO';
-        if (ppoStatusEl) ppoStatusEl.textContent = 'Stopped at update ' + ppoUpdateCount;
-        return;
-      }
-      ppoTraining = true;
-      ppoUpdateCount = 0;
-      ppoRewardHist = [];
-      nnNet3 = initNet3(getLayerSizes3());
-      ppoCriticNet = initNet3(getLayerSizes3());
-      ppoActorAdam = initAdam3(nnNet3);
-      ppoCriticAdam = initAdam3(ppoCriticNet);
-      nnActive3 = false;
-      if (nnActivateBtn3) { nnActivateBtn3.disabled = true; nnActivateBtn3.textContent = 'Activate Policy'; nnActivateBtn3.classList.remove('active'); }
-      ppoBtnEl.textContent = 'Stop Training';
-      if (ppoStatusEl) ppoStatusEl.textContent = 'Training…';
-      (function trainStep() {
-        if (!ppoTraining) return;
-        var rollout = collectRollout();
-        ppoUpdate(rollout);
-        ppoUpdateCount++;
-        ppoRewardHist.push(rollout.meanRew);
-        drawRewardChart();
-        if (ppoStatusEl) ppoStatusEl.textContent =
-          'Update ' + ppoUpdateCount + ' / ' + PPO_MAX_UPDATES + ' — avg reward ' + rollout.meanRew.toFixed(1);
-        if (ppoUpdateCount >= PPO_MAX_UPDATES) {
-          ppoTraining = false;
-          ppoBtnEl.textContent = 'Retrain PPO';
-          if (ppoStatusEl) ppoStatusEl.textContent = 'Done (' + PPO_MAX_UPDATES + ' updates) — activate to deploy';
-          if (nnActivateBtn3) nnActivateBtn3.disabled = false;
-          if (nnNetviz3) nnNetviz3.style.display = '';
-          return;
-        }
-        ppoTrainTimer = setTimeout(trainStep, 0);
-      })();
-    });
-
-    // ---- Activate trained policy ----
-    if (nnActivateBtn3) nnActivateBtn3.addEventListener('click', function () {
-      if (!nnNet3) return;
-      nnActive3 = !nnActive3;
-      if (nnActive3) {
-        state = [0, 0, Math.PI, 0];
-        simStatus3 = 'ok'; simT = 0; uForce = 0;
-        ppoEverBalanced = false;
-        ppoActivatedSimT = 0;
-      }
-      nnActivateBtn3.textContent = nnActive3 ? 'Deactivate Policy' : 'Activate Policy';
-      nnActivateBtn3.classList.toggle('active', nnActive3);
-      if (nnNetviz3) nnNetviz3.style.display = '';
-    });
-
-    // Separate RAF loop for NN visualisation
-    (function vizLoop() {
-      if (nnNet3 && nnNetviz3 && nnNetviz3.style.display !== 'none') {
-        nnLastCache3 = fwdNetCP(nnNet3, ppoObs(state));
-        drawNetViz3(nnNet3, nnLastCache3);
-      }
-      requestAnimationFrame(vizLoop);
-    })();
   })();
 
   /* ================================================================
