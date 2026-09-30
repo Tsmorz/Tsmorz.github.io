@@ -1,5 +1,6 @@
 # Add a project by copying a block below. Only `name` and `blurb` are required.
-# `featured: true` puts it on the homepage. `image:` is optional (path or URL).
+# `featured: true` lists it on /projects/. `about: true` lists it on /about/.
+# `image:` is optional (path or URL).
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
 - name: UAV Design Optimization
@@ -9,10 +10,27 @@
   year: "2024 – present"
   tags: [Python, Aerospace, Optimization]
   featured: true
+  about: true
   on_cv: true
   links:
     - label: GitHub
       url: https://github.com/Tsmorz/UAV-Code
+
+- name: n-cartpole
+  blurb: >-
+    Reinforcement learning for a double pendulum on a cart. One goal-conditioned
+    TQC policy swings both poles up, folds either one over the other, and moves
+    between every up/down pose. It runs live in the browser on this site.
+  year: "2026"
+  tags: [Python, Reinforcement Learning, Controls]
+  featured: true
+  about: true
+  on_cv: false
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/n-cartpole
+    - label: Live demo
+      url: /controls/swingup/
 
 - name: EKF-SLAM
   blurb: >-
@@ -21,31 +39,49 @@
   year: "2025"
   tags: [Python, State Estimation, SLAM]
   featured: true
+  about: true
   on_cv: true
   links:
     - label: GitHub
       url: https://github.com/Tsmorz/ekf-slam
 
-- name: Joy Cam
+- name: VQF GPS Vibes
   blurb: >-
-    Joystick-controlled camera rig — drives pan, tilt, and shutter from a
-    USB gamepad instead of a phone app.
+    Real-time orientation and position on an ESP32-S3. VQF handles attitude, a
+    9-state EKF fuses the accelerometer with GPS for position, and the board
+    streams it all to a browser over its own Wi-Fi.
   year: "2026"
-  tags: [Python, Hardware]
+  tags: [C++, ESP32, State Estimation]
   featured: true
+  about: true
   on_cv: false
   links:
     - label: GitHub
-      url: https://github.com/Tsmorz/joy-cam
+      url: https://github.com/Tsmorz/vqf-gps-vibes
 
-- name: ESP32 Home
+- name: ESP32 Cam
   blurb: >-
-    ESP32-based home automation and monitoring — sensors and controls
-    talking to each other without a cloud subscription in the loop.
+    Wrist-camera firmware for an ESP32-S3. It streams MJPEG video, detects
+    AprilTags with their pose and distance, runs OV5640 autofocus, and tracks
+    orientation from an optional IMU, all from a dashboard on the camera's own hotspot.
   year: "2026"
-  tags: [ESP32, IoT, Embedded]
+  tags: [C++, ESP32, Computer Vision]
   featured: true
+  about: true
   on_cv: false
   links:
     - label: GitHub
-      url: https://github.com/Tsmorz/esp32-home
+      url: https://github.com/Tsmorz/esp32-cam
+
+- name: RC Plane Design
+  blurb: >-
+    Aerodynamic design, mass and CG budget, and 3D-printable rib export for a
+    sub-250 g, ESP32-S3-controlled trainer, built on AeroSandbox and NeuralFoil.
+  year: "2026"
+  tags: [Python, Aerospace, CAD]
+  featured: true
+  about: true
+  on_cv: false
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/rc-plane-design

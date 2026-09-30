@@ -22,8 +22,14 @@ out="$root/assets/img/photos"
 mkdir -p "$out/thumbs"
 
 if command -v sips >/dev/null 2>&1; then
-  sips -Z 1800 -s format jpeg -s formatOptions 72 "$src" --out "$out/$slug.jpg" >/dev/null
-  sips -Z 700  -s format jpeg -s formatOptions 65 "$src" --out "$out/thumbs/$slug.jpg" >/dev/null
+  # sips -Z also *enlarges*, so cap each size at the source's long edge.
+  w=$(sips -g pixelWidth "$src" | awk '/pixelWidth/ {print $2}')
+  h=$(sips -g pixelHeight "$src" | awk '/pixelHeight/ {print $2}')
+  long=$(( w > h ? w : h ))
+  web=$(( long < 1800 ? long : 1800 ))
+  thumb=$(( long < 700 ? long : 700 ))
+  sips -Z "$web"   -s format jpeg -s formatOptions 72 "$src" --out "$out/$slug.jpg" >/dev/null
+  sips -Z "$thumb" -s format jpeg -s formatOptions 65 "$src" --out "$out/thumbs/$slug.jpg" >/dev/null
 elif command -v magick >/dev/null 2>&1; then
   magick "$src" -auto-orient -resize 1800x1800\> -quality 82 "$out/$slug.jpg"
   magick "$src" -auto-orient -resize 700x700\>   -quality 78 "$out/thumbs/$slug.jpg"

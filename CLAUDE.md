@@ -34,16 +34,16 @@ Append a block to `_data/projects.yml`. Only `name` and `blurb` are required:
     One or two sentences. Plain language beats buzzwords.
   year: "2026"
   tags: [Python, Robotics]      # feeds the filter buttons on /projects/ automatically
-  featured: true                # shows it on the homepage AND on /projects/ — the projects
-                                 # page only lists featured=true, so this is what controls
-                                 # who makes the cut, not just what's on top
+  featured: true                # lists it on /projects/, which only shows featured=true —
+                                 # so this is what controls who makes the cut
+  about: true                   # also lists it in the Projects section of /about/
   on_cv: true                   # renders the "On my CV" badge
   image: /assets/img/projects/foo.jpg   # optional, 16:9 crops best
   links:
     - label: GitHub
       url: https://github.com/Tsmorz/foo
-    - label: Paper                      # any label/url pairs work
-      url: https://...
+    - label: Paper                      # any label/url pairs work; a site path
+      url: https://...                  # like /controls/swingup/ gets relative_url
 ```
 
 The **first** link is what the card title links to. Tag filter buttons on `/projects/` are
@@ -55,7 +55,7 @@ derived from the union of all `tags` — no separate list to maintain.
 script/add-photo "images/DSC_1234.jpg" sunrise-ridge
 ```
 
-That writes an 1800px web version to `assets/img/photos/<slug>.jpg` and a 700px thumbnail
+That writes a web version (long edge 1800px, never enlarged) to `assets/img/photos/<slug>.jpg` and a 700px thumbnail
 to `assets/img/photos/thumbs/<slug>.jpg` (macOS `sips`, or ImageMagick if present). Then
 add the block it prints to `_data/photos.yml`:
 
@@ -71,7 +71,7 @@ add the block it prints to `_data/photos.yml`:
 **Never reference the originals in `images/` from a page.** They are 5–21 MB each and
 `_config.yml` excludes that directory from the build. Always go through `script/add-photo`.
 
-The homepage shows the first 4 entries, so put the strongest shot first.
+The gallery shows entries in file order, so put the strongest shot first.
 
 ## Architecture
 
@@ -103,6 +103,13 @@ script/                  serve, check, add-photo, test-data, test-swingup
   `:root:not([data-theme="light"])`, and again under `:root[data-theme="dark"]` so the
   manual toggle wins both ways. If you add a color, define it in all three places or the
   toggle breaks in one direction.
+- **Sim canvases get their size from CSS, never JS.** Each demo is a `.sim-stack` (sim on
+  top, state plot below, two equal rows) that stretches to its control panel's height;
+  `/controls/` tabs share one `min-height` so every sim is the same size. There the bottom
+  half is a `.sim-cell-pair`: state plot over PID (control-input) plot, equal rows. Canvases are absolutely positioned in `.sim-cell`s and
+  the JS only sizes the pixel buffer from `clientWidth/clientHeight`. Don't set
+  `style.height` from JS or give a flex/grid canvas `min-width: auto`: at 2x DPR the
+  buffer feeds back into the layout and the canvas grows every frame.
 - **Includes take explicit params** (`{% include project-card.html project=foo %}`), never
   reaching into `site.data` themselves. Keeps them reusable across pages.
 - **Liquid on GitHub Pages is Liquid 4.** `uniq`, `concat`, `slice`, and `where` exist;
@@ -120,7 +127,9 @@ hides the target column and the target is all-up. The policy only works on the
 plant it was trained on, so **`swingup.js` hard-codes no physical constants**: masses, lengths,
 friction, dt, force limit, slew, rail length, and the "swung up" tolerances all come from
 `assets/models/swingup-tqc.json`, which `task export-web` in n-cartpole writes from the
-checkpoint's own config. The equations of motion are a line-for-line port of
+checkpoint's own config. The one deliberate exception is the rail: `RAIL_HALF` in `swingup.js`
+widens it to ±1 m on the page (the net trained on ±0.5 m, so past that it's extrapolating);
+random starts stay inside the trained range. `SwingupCore` and the tests use the exported value. The equations of motion are a line-for-line port of
 `n_cartpole/env/dynamics.py` (RK4 with dt/4 substeps stands in for its RK45 with
 `max_step=dt/4`). The weights (`.bin`, ~2 MB float16, normalizer pre-folded) load only when a
 visitor first picks TQC.

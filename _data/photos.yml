@@ -1,6 +1,6 @@
-# Add a photo: drop the full-size file in /images/, run the resize command in
-# CLAUDE.md to make /assets/img/photos/<slug>.jpg and thumbs/<slug>.jpg,
-# then add a block here. `tall: true` makes it span two rows in the grid.
+# Add a photo: drop the full-size file in /images/, run
+# `script/add-photo images/<file> <slug>` to make /assets/img/photos/<slug>.jpg
+# and thumbs/<slug>.jpg, then add a block here. The gallery shows file order. `tall: true` makes it span two rows in the grid.
 
 - slug: van-life
   title: Van Life
@@ -24,3 +24,36 @@
   title: Green Sea Turtle
   caption: A turtle surfacing for air.
   year: "2019"
+
+- slug: horseshoe-bend
+  title: Horseshoe Bend
+  caption: The Colorado River looping around a sandstone horseshoe.
+  location: Page, Arizona, USA
+  year: "2020"
+
+- slug: saguaro-milky-way
+  title: Saguaro
+  caption: A saguaro reaching into the Milky Way.
+  location: Sonoran Desert
+  year: "2019"
+  tall: true
+
+- slug: astana-tower
+  title: Astana Tower
+  caption: Bayterek Tower caught inside a soap bubble.
+  location: Astana, Kazakhstan
+  year: "2018"
+
+- slug: lake-geneva
+  title: Lake Geneva
+  caption: Limestone ridges and alpine pasture, with the lake in the distance.
+  year: "2022"
+
+- slug: forest-road
+  title: From Above
+  caption: A gravel road and a creek through spruce forest, straight down from a drone.
+  year: "2019"
+
+- slug: alpine-valley
+  title: Alpine Valley
+  caption: A limestone range above a valley of farms and pasture.

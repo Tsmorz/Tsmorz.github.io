@@ -21,6 +21,7 @@
   --viz-2: #eb6834;  /* orange */
   --viz-3: #1baf7a;  /* aqua   */
   --viz-4: #eda100;  /* yellow */
+  --viz-7: #4a3aa7;  /* violet — reference-palette slot 7; slots 5–6 unused so far */
   --viz-total: #6b7280;  /* neutral gray — aggregate / total lines */
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
@@ -49,6 +50,7 @@
     --viz-2: #d95926;
     --viz-3: #199e70;
     --viz-4: #c98500;
+    --viz-7: #9085e9;
     --viz-total: #9aa6b4;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
@@ -72,6 +74,7 @@
   --viz-2: #d95926;
   --viz-3: #199e70;
   --viz-4: #c98500;
+  --viz-7: #9085e9;
   --viz-total: #9aa6b4;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
@@ -92,7 +95,10 @@ body {
   font-size: 17px;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  /* Short pages (the hero-only homepage) keep the footer at the bottom. */
+  min-height: 100vh; display: flex; flex-direction: column;
 }
+body > main { flex: 1 0 auto; }
 
 img { max-width: 100%; display: block; }
 
@@ -201,10 +207,17 @@ pre code { background: none; border: 0; padding: 0; }
 /* ---------------------------------------------------------------
    Hero
    --------------------------------------------------------------- */
-.hero { padding: clamp(4.5rem, 14vw, 9rem) 0 4.5rem; position: relative; overflow: hidden; }
+/* The hero grows to fill <main>, so the symbol field reaches the footer. */
+main:has(> .hero) { display: flex; flex-direction: column; }
+.hero { flex: 1 0 auto; padding: clamp(4.5rem, 14vw, 9rem) 0 4.5rem; position: relative; overflow: hidden; }
+/* The symbol field is a band wider than the text column (.hero-inner is wrapped)
+   but not full-bleed; its sides fade out so it has no hard edge. */
 .hero-field {
-  position: absolute; inset: 0; z-index: 0;
-  width: 100%; height: 100%;
+  position: absolute; top: 0; bottom: 0; left: 50%; z-index: 0;
+  width: min(100%, 1400px); height: 100%;
+  transform: translateX(-50%);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
   pointer-events: none;
   contain: paint;
 }
@@ -246,17 +259,8 @@ pre code { background: none; border: 0; padding: 0; }
   :root:not([data-theme="light"]) .btn-primary { color: #0b0f14; }
 }
 
-/* ---------------------------------------------------------------
-   Sections
-   --------------------------------------------------------------- */
+/* Page body block (projects, photos). */
 .section { padding: 3rem 0; }
-.section + .section { border-top: 1px solid var(--border); }
-.section-head {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 1rem; margin-bottom: 1.75rem; flex-wrap: wrap;
-}
-.section-head h2 { margin: 0; }
-.section-head .more { font-size: .95rem; font-weight: 500; }
 
 .page-head { padding: clamp(2.5rem, 6vw, 4rem) 1.25rem 1.5rem; }
 .page-title { margin-bottom: .35rem; }
@@ -298,6 +302,9 @@ pre code { background: none; border: 0; padding: 0; }
 .card-links a { font-size: .9rem; font-weight: 550; display: inline-flex; align-items: center; gap: .3rem; }
 .card-links a::after { content: "→"; font-size: .9em; transition: transform .14s ease; }
 .card-links a:hover { text-decoration: none; }
+/* Cards inside a .prose page (about.md): undo the prose list indent and spacing. */
+.prose .card-grid ul { padding-left: 0; }
+.prose .card-grid li + li { margin-top: 0; }
 .card-links a:hover::after { transform: translateX(3px); }
 
 .cv-flag {
@@ -446,7 +453,7 @@ pre code { background: none; border: 0; padding: 0; }
 .sim-section.active { display: block; }
 
 .sim-layout {
-  display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap;
+  display: flex; gap: 1.25rem; align-items: stretch; flex-wrap: wrap;
 }
 .sim-canvas-wrap { flex: 1 1 480px; min-width: 0; }
 .sim-canvas {
@@ -454,21 +461,53 @@ pre code { background: none; border: 0; padding: 0; }
   border: 1px solid var(--border); background: var(--bg-soft);
 }
 
-/* Mass-spring-damper: compact animation on the left, wide plot beside it,
-   and a larger gain plot stacked below. */
-.msd-stage { display: flex; gap: .6rem; align-items: stretch; flex-wrap: wrap; }
-.msd-anim { flex: 0 0 220px; max-width: 100%; }
-.msd-ts   { flex: 1 1 300px; min-width: 0; }
-.msd-gain {
-  display: block; width: 100%; margin-top: .6rem; border-radius: var(--radius);
+/* Sim on top, its plots below, each exactly half the column. The bottom half
+   is split again: state plot over the PID (control-input) plot. The column
+   stretches to the control panel's height, so the pair lines up with the
+   panel top and bottom. On /controls/ every tab shares one minimum (just over
+   the tallest panel), so all the sims come out the same size. Canvases sit
+   absolutely inside their cells: the JS sizes their pixel buffers from the
+   CSS box, and that buffer must never feed back into the layout. */
+.sim-stack {
+  display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: .6rem;
+}
+.sim-section .sim-stack { min-height: 646px; }
+.sim-cell { position: relative; min-height: 0; }
+.sim-cell-pair {
+  display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: .6rem; min-height: 0;
+}
+.sim-cell > canvas, .sim-cell > .msd-stage {
+  position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box;
+}
+.sim-states {
+  display: block; border-radius: var(--radius);
   border: 1px solid var(--border); background: var(--bg);
 }
+/* Once the panel wraps below, nothing sets the height: give the sim 300px,
+   and on /controls/ give each of the two plots under it about 190px. */
+@media (max-width: 760px) {
+  .sim-stack { min-height: calc(600px + .6rem); }
+  .sim-section .sim-stack { min-height: calc(760px + .6rem); }
+}
+
+/* Mass-spring-damper: compact animation on the left, tracking plot beside it. */
+.msd-stage { display: flex; gap: .6rem; align-items: stretch; }
+/* min-width: 0 on both, or a canvas's pixel buffer (2x its CSS width on
+   high-DPI screens) becomes its minimum flex width and it grows every resize. */
+.msd-anim { flex: 0 0 min(220px, 36%); min-width: 0; height: 100%; box-sizing: border-box; }
+.msd-ts   { flex: 1 1 0; min-width: 0; height: 100%; box-sizing: border-box; }
 .sim-panel {
   flex: 0 0 220px; display: flex; flex-direction: column; gap: 1rem;
   padding: 1.1rem; border: 1px solid var(--border); border-radius: var(--radius);
   background: var(--surface);
 }
 .sim-panel h3 { margin: 0 0 .25rem; font-size: 1rem; }
+/* /controls/ panels: tighter rhythm so sim + panel fit on a laptop screen. */
+.sim-section .sim-panel { gap: .6rem; padding: .95rem 1rem; }
+.sim-section .sim-panel h3 { margin: .2rem 0 0; }
+.sim-section .sim-panel h3:first-child { margin-top: 0; }
+.sim-section .score-block { padding: .1rem 0; }
+.sim-section .score-value { font-size: 1.6rem; }
 
 /* Full-width neural-network activation diagram */
 .nn-netviz {
@@ -502,16 +541,28 @@ pre code { background: none; border: 0; padding: 0; }
   font-size: .78rem; color: var(--text-muted); margin-left: .1rem;
 }
 
-.pid-group { display: flex; flex-direction: column; gap: .2rem; }
-.pid-group label {
-  display: flex; justify-content: space-between; align-items: baseline;
+/* Slider group: name + value on top; slider with its ± range box on one line. */
+.pid-group {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: .5rem; row-gap: .15rem; align-items: center;
+}
+.pid-group > label {
+  grid-column: 1 / -1; display: flex; align-items: baseline;
   font-size: .85rem; font-weight: 550; color: var(--text-muted);
 }
-.pid-group label span {
+/* The value is pushed right; "K" and its <sub> stay together on the left. */
+.pid-group > label span {
+  margin-left: auto;
   font-family: var(--mono); font-size: .82rem; color: var(--accent); font-weight: 400;
 }
 .pid-group input[type="range"] {
   width: 100%; accent-color: var(--accent); cursor: pointer;
+}
+.pid-group > input[type="range"]:last-child { grid-column: 1 / -1; }
+
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
 .score-block { text-align: center; padding: .5rem 0; }
@@ -541,6 +592,7 @@ pre code { background: none; border: 0; padding: 0; }
 }
 .telemetry .t-key { color: var(--text-muted); }
 .telemetry .t-val { color: var(--accent); text-align: right; }
+.telemetry .t-head { grid-column: 1 / -1; }
 
 .elev-indicator {
   display: flex; flex-direction: column; align-items: center; gap: .3rem;
@@ -613,18 +665,14 @@ pre code { background: none; border: 0; padding: 0; }
 .su-crumb { margin: 0 0 .5rem; font-size: .88rem; }
 .su-canvas { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 .su-canvas:active { cursor: grabbing; }
-.su-plot {
-  display: block; width: 100%; margin-top: .6rem; border-radius: var(--radius);
-  border: 1px solid var(--border); background: var(--bg);
-}
 .su-model-status:empty { display: none; }
 .sim-panel .panel-hint { margin: 0; }
 .su-targets { display: flex; flex-direction: column; gap: .4rem; }
 .su-targets[hidden] { display: none; }
-.goal-list { display: flex; flex-direction: column; gap: .35rem; }
+.goal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
 .goal-btn {
-  display: flex; align-items: center; gap: .6rem; width: 100%;
-  padding: .1rem .6rem .1rem .3rem; text-align: left; font: inherit;
+  display: flex; align-items: center; justify-content: center; gap: .35rem;
+  padding: .1rem .4rem; font: inherit;
   border: 1px solid var(--border); border-radius: 8px;
   background: var(--surface); color: var(--text); cursor: pointer;
   transition: background .12s ease, border-color .12s ease;
@@ -632,15 +680,20 @@ pre code { background: none; border: 0; padding: 0; }
 .goal-btn:hover { background: var(--bg-soft); border-color: var(--border-strong); }
 .goal-btn.active { background: var(--accent-soft); border-color: var(--accent); }
 .goal-btn.active .goal-label { color: var(--accent); }
-.goal-btn-random { border-style: dashed; }
+.goal-btn-random { grid-column: 1 / -1; border-style: dashed; padding: .3rem .4rem; }
 .goal-icon {
-  flex: 0 0 32px; height: 52px; display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-weight: 700; font-size: 1.1rem; color: var(--text-muted);
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-weight: 700; font-size: .95rem; color: var(--text-muted);
 }
-.goal-icon svg { display: block; width: 32px; height: 52px; }
-.goal-text { display: flex; flex-direction: column; line-height: 1.25; }
+.goal-icon svg { display: block; width: 28px; height: 46px; }
 .goal-label { font-family: var(--mono); font-weight: 700; font-size: .88rem; }
-.goal-desc { font-size: .74rem; color: var(--text-muted); }
+.su-reset-row { display: flex; gap: .4rem; }
+.su-reset-row .sim-btn { padding: .45rem .3rem; font-size: .8rem; white-space: nowrap; }
+.su-layout .sim-panel { gap: .8rem; }
+.su-layout .score-block { padding: .2rem 0; }
+.su-layout .mode-btn { white-space: nowrap; padding-inline: .3rem; }
+/* The label changes with the pose ("UD → UU time"); keep it one line so the panel height never moves. */
+.su-layout .score-label { white-space: nowrap; }
 .gi-rail { stroke: var(--border-strong); stroke-width: 1.5; }
 .gi-cart { fill: var(--accent); }
 .gi-rod { stroke: var(--text); stroke-width: 2; stroke-linecap: round; }

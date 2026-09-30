@@ -22,8 +22,8 @@ Or use [Task](https://taskfile.dev): `task serve`, `task check`, `task build`,
 
 Everything that repeats lives in `_data/`:
 
-- **A project** — add a block to `_data/projects.yml`. `featured: true` puts it on the
-  homepage; `on_cv: true` badges it as formal work; `tags` feed the filter buttons.
+- **A project** — add a block to `_data/projects.yml`. `featured: true` lists it on
+  /projects/; `about: true` on /about/; `on_cv: true` badges it as formal work; `tags` feed the filter buttons.
 - **A photo** — `script/add-photo <source-image> <slug>` makes the web-sized versions,
   then add a block to `_data/photos.yml`.
 

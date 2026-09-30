@@ -263,8 +263,7 @@
   var scoreLblEl = document.getElementById('su-score-label');
   var bestManEl  = document.getElementById('su-best-manual');
   var bestTqcEl  = document.getElementById('su-best-tqc');
-  var bestManKey = document.getElementById('su-best-manual-key');
-  var bestTqcKey = document.getElementById('su-best-tqc-key');
+  var bestHeadEl = document.getElementById('su-best-head');
   var targetsEl  = document.getElementById('su-targets');
   var goalBtns   = Array.prototype.slice.call(document.querySelectorAll('.goal-btn[data-goal]'));
   var randomGoalBtn = document.getElementById('su-goal-random');
@@ -278,12 +277,18 @@
   var PUSH_F = 5;                     // N — arrow-key shove in TQC mode (a disturbance)
   var HIST = 600;                     // telemetry samples (6 s at 100 Hz)
   var MAX_STEPS_PER_FRAME = 8;
+  var RANDOM_DWELL = 100;             // steps (1 s) held at a reached target before Random moves on
+  // The one deliberate departure from the exported plant: a longer rail than the
+  // network trained on (meta.physics.x_lim, kept as trainedXLim) so there's room to
+  // play by hand. Past ±trainedXLim the policy is outside its training data.
+  var RAIL_HALF = 1.0;                // m
+  var trainedXLim = null;
 
   var meta = null, plant = null, actuator = null, policy = null, policyLoading = false;
   var state = null, mode = 'manual', status = 'loading';
   // goal: U/D label, base link first; target: its angles (null = all upright, for a
   // plain swing-up export). fromLabel: the pose the clock started at, if any.
-  var goal = 'UU', target = null, fromLabel = null;
+  var goal = 'UU', target = null, fromLabel = null, randomOn = false;
   var simT = 0, segT = 0, settled = 0, reachTime = null, modesUsed = {};
   var applied = 0, crashTimer = null;
   var best = {};                      // goal label → { manual, tqc } in seconds
@@ -295,6 +300,8 @@
     .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function (m) {
       meta = m;
+      trainedXLim = meta.physics.x_lim;
+      meta.physics.x_lim = Math.max(RAIL_HALF, trainedXLim);
       plant = Core.createPlant(meta);
       actuator = Core.createActuator(meta);
       renderParams();
@@ -317,7 +324,7 @@
       'Cart M = ' + p.M + ' kg, bobs m = ' + p.masses.join(' / ') + ' kg on massless rods l = ' +
       p.lengths.join(' / ') + ' m, cart friction b = ' + p.b + ' N·s/m, joint friction ' +
       p.joint_friction.join(' / ') + ' N·m·s/rad. Force limit ±' + p.force_max + ' N, slew ' +
-      meta.force_slew + ' N/s, rail ±' + p.x_lim + ' m, ' + Math.round(1 / p.dt) +
+      meta.force_slew + ' N/s, rail ±' + p.x_lim + ' m (trained on ±' + trainedXLim + ' m), ' + Math.round(1 / p.dt) +
       ' Hz control, RK4 with ' + meta.integrator.substeps + ' substeps per step. ' +
       'Network: ' + meta.network.blocks + ' residual blocks, width ' + meta.network.hidden +
       ', trained ' + (meta.source.step / 1000) + 'k steps.';
@@ -379,10 +386,22 @@
     if (handOff && mode !== 'tqc') setMode('tqc');
   }
 
-  function randomGoal() {
+  // handOff: a click hands control to the network; Random's own later picks don't,
+  // so a visitor who switched back to Manual keeps it.
+  function randomGoal(handOff) {
     if (!meta || !meta.goals) return;
     var others = meta.goals.labels.filter(function (l) { return l !== goal; });
-    selectGoal(others[Math.floor(Math.random() * others.length)], true);
+    selectGoal(others[Math.floor(Math.random() * others.length)], handOff);
+  }
+
+  // Random stays on, picking a new target each time the last one is reached,
+  // until a specific target is chosen.
+  function setRandom(on) {
+    randomOn = on;
+    if (randomGoalBtn) {
+      randomGoalBtn.classList.toggle('active', on);
+      randomGoalBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
   }
 
   function reset(kind) {
@@ -391,7 +410,8 @@
     var n = meta.n_links, s = new Float64Array(plant.dim), i;
     if (kind === 'random') {
       // Like NPendulumCartpole._random_state: anywhere, modest velocities.
-      s[0] = uniform(0.5 * meta.physics.x_lim); s[1] = uniform(2);
+      // Positions stay within the trained rail so TQC starts in familiar territory.
+      s[0] = uniform(0.5 * trainedXLim); s[1] = uniform(2);
       for (i = 0; i < n; i++) { s[2 + 2 * i] = uniform(Math.PI); s[3 + 2 * i] = uniform(2); }
     } else {
       // Like eval_swingup.py: near hanging, low energy.
@@ -419,7 +439,7 @@
   function loadPolicy() {
     if (policyLoading || !meta) return;
     policyLoading = true;
-    if (tqcBtn) { tqcBtn.disabled = true; tqcBtn.textContent = 'TQC · loading…'; }
+    if (tqcBtn) { tqcBtn.disabled = true; tqcBtn.textContent = 'Loading…'; }
     fetch(canvas.dataset.weights)
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
       .then(function (buf) {
@@ -442,9 +462,11 @@
   document.getElementById('su-reset').addEventListener('click', function () { reset('hanging'); });
   document.getElementById('su-random').addEventListener('click', function () { reset('random'); });
   goalBtns.forEach(function (b) {
-    b.addEventListener('click', function () { selectGoal(b.dataset.goal, true); });
+    b.addEventListener('click', function () { setRandom(false); selectGoal(b.dataset.goal, true); });
   });
-  if (randomGoalBtn) randomGoalBtn.addEventListener('click', randomGoal);
+  if (randomGoalBtn) {
+    randomGoalBtn.addEventListener('click', function () { setRandom(true); randomGoal(true); });
+  }
 
   /* ---- Input ---- */
   function pointerToX(e) {
@@ -498,7 +520,7 @@
     state = plant.step(state, applied + shove);
     simT += p.dt; segT += p.dt;
 
-    if (Math.abs(state[0]) > p.x_lim) {          // the rail end — training terminates here too
+    if (Math.abs(state[0]) > p.x_lim) {          // the rail end (training terminated at ±trainedXLim)
       status = 'crashed';
       crashTimer = setTimeout(function () { crashTimer = null; reset('hanging'); }, 1500);
       return;
@@ -514,6 +536,9 @@
       if (who && fromLabel !== goal && (rec[who] === null || reachTime < rec[who])) rec[who] = reachTime;
       updateScore();
     }
+    if (randomOn && reachTime !== null && settled >= meta.success.settle_steps + RANDOM_DWELL) {
+      randomGoal(false);
+    }
 
     hist.x.push(state[0]);
     hist.th1.push(Core.wrapAngle(state[2]) * 180 / Math.PI);
@@ -527,20 +552,20 @@
     function secs(v) { return v == null ? '—' : v.toFixed(2) + ' s'; }
     if (scoreEl) scoreEl.textContent = reachTime === null ? '—' : reachTime.toFixed(2);
     if (scoreLblEl) scoreLblEl.textContent = (fromLabel ? fromLabel + ' ' : '') + '→ ' + goal + ' time (s)';
-    if (bestManKey) bestManKey.textContent = 'Best → ' + goal + ', manual';
-    if (bestTqcKey) bestTqcKey.textContent = 'Best → ' + goal + ', TQC';
+    // The goal lives in its own header row so the rows below never change length and wrap.
+    if (bestHeadEl) bestHeadEl.textContent = 'Best → ' + goal;
     if (bestManEl) bestManEl.textContent = secs(rec.manual);
     if (bestTqcEl) bestTqcEl.textContent = secs(rec.tqc);
   }
 
   /* ---- Rendering ---- */
-  function sizeCanvas(cv, H) {
+  // The layout sets each canvas's CSS box (half the panel height each); only
+  // the pixel buffer is sized here.
+  function sizeCanvas(cv) {
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W = cv.parentElement ? cv.parentElement.clientWidth : 720;
-    if (!W) W = 720;
+    var W = cv.clientWidth || 720, H = cv.clientHeight || 300;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-      cv.style.height = H + 'px';
     }
     var ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -548,8 +573,7 @@
   }
 
   function drawScene() {
-    var W0 = canvas.parentElement ? canvas.parentElement.clientWidth : 720;
-    var c = sizeCanvas(canvas, Math.round(clamp(W0 * 0.62, 300, 440)));
+    var c = sizeCanvas(canvas);
     var ctx = c.ctx, W = c.W, H = c.H;
     var bg = cssVar('--bg-soft'), border = cssVar('--border'), strong = cssVar('--border-strong');
     var text = cssVar('--text'), muted = cssVar('--text-muted'), accent = cssVar('--accent');
@@ -565,7 +589,9 @@
 
     var p = meta.physics, reach = p.lengths.reduce(function (a, b) { return a + b; }, 0);
     var cartHalf = 0.08;
-    var scale = Math.min((W - 40) / (2 * (p.x_lim + cartHalf) + 0.1), (H - 64) / (2 * reach + 0.08));
+    // Fit the rail across, and the full reach both straight up and straight down,
+    // with just enough margin that a bob (and its target ring) stays inside.
+    var scale = Math.min((W - 40) / (2 * (p.x_lim + cartHalf) + 0.1), (H - 28) / (2 * reach + 0.04));
     var cx = W / 2, trackY = Math.round(H / 2 + 6);
     view = { W: W, H: H, scale: scale, cx: cx, trackY: trackY };
     function sx(xm) { return cx + xm * scale; }
@@ -649,6 +675,7 @@
     else if (reachTime !== null)         { label = 'Knocked out of ' + goal + ' — recovering'; colr = accent; }
     else if (mode === 'tqc')             { label = 'TQC network → ' + goal; colr = accent; }
     else                                 { label = 'Manual → ' + goal + ' — drag the cart or hold ← →'; }
+    if (randomOn && status !== 'crashed') label += '  · random';
     ctx.textAlign = 'left'; ctx.font = '600 13px ' + font; ctx.fillStyle = colr;
     ctx.fillText(label, 14, 24);
     ctx.font = '11px ' + mono; ctx.fillStyle = muted;
@@ -662,15 +689,30 @@
     { key: 'F',   label: 'F (N)',  lim: 20 }
   ];
 
+  // Hover: a crosshair snaps to the nearest sample and the margin values show
+  // that sample instead of the live one (they stay visible without hovering).
+  var plotHoverX = null;
+  if (plotCanvas) {
+    plotCanvas.style.cursor = 'crosshair';
+    plotCanvas.addEventListener('pointermove', function (e) {
+      plotHoverX = e.clientX - plotCanvas.getBoundingClientRect().left;
+    });
+    plotCanvas.addEventListener('pointerleave', function () { plotHoverX = null; });
+  }
+
   function drawPlot() {
     if (!plotCanvas) return;
-    var c = sizeCanvas(plotCanvas, 170), ctx = c.ctx, W = c.W, H = c.H;
+    var c = sizeCanvas(plotCanvas), ctx = c.ctx, W = c.W, H = c.H;
     var bg = cssVar('--bg'), border = cssVar('--border'), muted = cssVar('--text-muted');
-    var mono = cssVar('--mono');
+    var text = cssVar('--text'), mono = cssVar('--mono');
     var colors = [cssVar('--accent'), cssVar('--viz-1'), cssVar('--viz-2'), cssVar('--viz-4')];
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
     var PAD_L = 70, PAD_R = 8, PAD_T = 4, PAD_B = 4;
     var rowH = (H - PAD_T - PAD_B) / PLOT_SPEC.length, pw = W - PAD_L - PAD_R;
+    var xStep = pw / (HIST - 1);
+    var hk = plotHoverX === null || plotHoverX < PAD_L || plotHoverX > PAD_L + pw ? -1
+           : Math.round((plotHoverX - PAD_L) / xStep);
+    var dots = [];
     if (meta) PLOT_SPEC[0].lim = meta.physics.x_lim;
     if (meta) PLOT_SPEC[3].lim = meta.physics.force_max;
     PLOT_SPEC.forEach(function (s, si) {
@@ -680,12 +722,11 @@
         ctx.strokeStyle = border; ctx.lineWidth = 0.5;
         ctx.beginPath(); ctx.moveTo(PAD_L, yTop); ctx.lineTo(W - PAD_R, yTop); ctx.stroke();
       }
-      ctx.strokeStyle = border; ctx.setLineDash([2, 3]); ctx.lineWidth = 0.5;
+      ctx.strokeStyle = border; ctx.lineWidth = 0.5;      // zero line: solid hairline
       ctx.beginPath(); ctx.moveTo(PAD_L, mid); ctx.lineTo(W - PAD_R, mid); ctx.stroke();
-      ctx.setLineDash([]);
       ctx.strokeStyle = colors[si]; ctx.lineWidth = 1.4;
       ctx.beginPath();
-      var xStep = pw / (HIST - 1), off = HIST - vals.length, prev = null;
+      var off = HIST - vals.length, prev = null;
       for (var i = 0; i < vals.length; i++) {
         var xp = PAD_L + (i + off) * xStep, yp = yPx(vals[i]);
         // Break the line where a wrapped angle jumps across ±180°.
@@ -694,14 +735,30 @@
         prev = vals[i];
       }
       ctx.stroke();
-      ctx.fillStyle = colors[si]; ctx.font = 'bold 10px ' + mono;
-      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-      var cur = vals.length ? vals[vals.length - 1] : 0;
-      ctx.fillText(s.label, PAD_L - 6, mid - 6);
-      ctx.fillStyle = muted; ctx.font = '10px ' + mono;
+
+      // Label (swatch + text-colored name) and value, live or at the crosshair.
+      var hj = hk - off, hovered = hk >= 0 && hj >= 0 && hj < vals.length;
+      var cur = hovered ? vals[hj] : vals.length ? vals[vals.length - 1] : 0;
+      if (hovered) dots.push({ y: yPx(cur), color: colors[si] });
+      ctx.font = '10px ' + mono; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      var lw = ctx.measureText(s.label).width;
+      ctx.fillStyle = colors[si];
+      ctx.fillRect(PAD_L - 6 - lw - 12, mid - 7 - 1.5, 8, 3);
+      ctx.fillStyle = muted;
+      ctx.fillText(s.label, PAD_L - 6, mid - 7);
+      ctx.fillStyle = text;
       ctx.fillText(cur.toFixed(s.lim === 180 ? 0 : 2), PAD_L - 6, mid + 7);
-      ctx.textBaseline = 'alphabetic';
     });
+    if (hk >= 0 && dots.length) {
+      var cx = PAD_L + hk * xStep;
+      ctx.strokeStyle = muted; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx, PAD_T); ctx.lineTo(cx, H - PAD_B); ctx.stroke();
+      ctx.globalAlpha = 1;
+      dots.forEach(function (d) {
+        ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(cx, d.y, 5, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(cx, d.y, 3.5, 0, 2 * Math.PI); ctx.fill();
+      });
+    }
   }
 
   /* ---- Loop: fixed 100 Hz physics inside requestAnimationFrame ---- */
