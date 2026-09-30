@@ -414,7 +414,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .footer-inner {
   display: flex; flex-wrap: wrap; gap: .75rem 1.5rem;
   align-items: center; justify-content: space-between;
-  padding-block: 1.75rem; color: var(--text-muted); font-size: .9rem;
+  padding-block: .55rem; color: var(--text-muted); font-size: .9rem;
 }
 .footer-inner p { margin: 0; }
 .footer-links { display: flex; align-items: center; gap: 1.1rem; list-style: none; margin: 0; padding: 0; }
@@ -643,7 +643,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 }
 
 .controls-intro {
-  max-width: 70ch; color: var(--text-muted); font-size: 1rem; margin-bottom: 2rem;
+  max-width: none; color: var(--text-muted); font-size: 1rem; margin-bottom: 2rem;
 }
 .controls-intro + * { }
 
