@@ -1,5 +1,6 @@
 // Controls page — four interactive demos, all driven by the same PID panel.
 // Tab switcher, mass-spring-damper, tilt table, nonlinear flight sim, cart-pole.
+// Each tab is deep-linkable (/controls/#flight); hidden demos neither step nor draw.
 (function () {
   'use strict';
 
@@ -25,6 +26,13 @@
   function rad2deg(r) { return r * 180 / Math.PI; }
 
   // Read a CSS token as a string
+  // True when the demo's tab is showing. Hidden demos skip both physics and
+  // drawing, so only the visible one costs anything per frame.
+  function isActive(sectionId) {
+    var sec = document.getElementById(sectionId);
+    return !!sec && sec.classList.contains('active');
+  }
+
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
@@ -56,9 +64,27 @@
     });
   }
 
+  // Deep links: each tab's hash is its section id minus "sec-" (#tilt, #flight,
+  // #cartpole). The first tab is the default, so it clears the hash instead.
+  function tabName(tab) { return tab.getAttribute('aria-controls').replace(/^sec-/, ''); }
+
+  function activateFromHash() {
+    var want = location.hash.slice(1), idx = 0;
+    tabs.forEach(function (t, i) { if (tabName(t) === want) idx = i; });
+    activateTab(idx);
+  }
+
   tabs.forEach(function (tab, i) {
-    tab.addEventListener('click', function () { activateTab(i); });
+    tab.addEventListener('click', function () {
+      activateTab(i);
+      // replaceState: switching tabs shouldn't pile up Back-button entries.
+      history.replaceState(null, '', i === 0
+        ? location.pathname + location.search
+        : '#' + tabName(tab));
+    });
   });
+  window.addEventListener('hashchange', activateFromHash);
+  activateFromHash();
 
   /* ================================================================
      Demo 1 — Mass-Spring-Damper PID
@@ -410,17 +436,18 @@
 
     var msdPidCanvas = document.getElementById('msd-pid-plot');
 
-    var rafId = null;
     function loop() {
-      renderAnim();
-      renderPlot();
-      drawContribPlot(msdPidCanvas, [
-        { label: 'P', color: cssVar('--viz-1'),    data: pidContrib.p },
-        { label: 'I', color: cssVar('--viz-2'),    data: pidContrib.i },
-        { label: 'D', color: cssVar('--viz-3'),    data: pidContrib.d },
-        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
-      ], null, 'F (N)');
-      rafId = requestAnimationFrame(loop);
+      if (isActive('sec-msd')) {
+        renderAnim();
+        renderPlot();
+        drawContribPlot(msdPidCanvas, [
+          { label: 'P', color: cssVar('--viz-1'),    data: pidContrib.p },
+          { label: 'I', color: cssVar('--viz-2'),    data: pidContrib.i },
+          { label: 'D', color: cssVar('--viz-3'),    data: pidContrib.d },
+          { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+        ], null, 'F (N)');
+      }
+      requestAnimationFrame(loop);
     }
     loop();
   })();
@@ -998,7 +1025,7 @@
     var CD0t = AC.CD0 + AC.k * CL0t * CL0t;
     var D0   = qbar * AC.S * CD0t;
     var T0   = D0 / Math.cos(alpha0);
-    return { V: V0, gamma: 0, alpha: alpha0, q: 0, de: de0, h: 300, x: 0, T: T0 };
+    return { V: V0, gamma: 0, alpha: alpha0, q: 0, de: de0, h: 50, x: 0, T: T0 };
   }
 
   var TRIM = computeTrim();
@@ -1047,7 +1074,7 @@
   var WORLD_LO = 0;     // m — ground
 
   // Shared reference trajectory constants (used by all flight demos + renderer)
-  var H_CENTER  = 300;   // m — reference altitude centre
+  var H_CENTER  = 60;   // m — reference altitude centre
   var REF_AMP   = 25;    // m — sine amplitude → 50 m peak-to-peak height delta
   var REF_OMEGA = 2 * Math.PI / 16;  // rad/s — period = 16 s
   // Seconds of reference shown across the full canvas width (determines how many cycles appear)
@@ -1071,7 +1098,8 @@
     // Bottom 36 px are always the ground strip; the viewport shows VIEW_RANGE metres
     // centred on the plane's current altitude — the world zooms in rather than scrolling.
     var GROUND_PX = 36;
-    var VIEW_RANGE = 200;  // metres of altitude shown (was full 600 m)
+    var VIEW_RANGE = 100;  // metres of altitude shown — smaller = altitude changes look bigger
+    var PLANE_PX   = 78;   // sprite width in px, fixed so zooming doesn't also shrink/grow the plane
 
     // hToY maps world altitude to canvas y for the current viewport [viewLo, viewHi].
     // Defined as a var so render() can rebind it each frame without parameter-passing.
@@ -1132,7 +1160,8 @@
 
     function drawTrees(W, horizonY, downrange, isDarkMode) {
       var spacing = 55;
-      var scroll  = downrange % (spacing * 40);
+      var TREE_SPEED = 3;   // 1 = original, 2 = twice as fast
+      var scroll  = (downrange * TREE_SPEED) % (spacing * 40);
       var count   = Math.ceil(W / spacing) + 3;
       var base    = Math.floor(scroll / spacing) - 1;
       for (var ti = base; ti < base + count; ti++) {
@@ -1189,7 +1218,7 @@
       ctx.rotate(-theta_rad);  // negative: CCW = nose up
       var ci = cessna.get();
       if (ci) {
-        var dispW = Math.round(26 * WORLD_HI / VIEW_RANGE);  // scales with viewport zoom
+        var dispW = PLANE_PX;
         var dispH = dispW * ci.height / ci.width;
         ctx.drawImage(ci, -dispW * 0.5, -dispH * 0.5, dispW, dispH);
       } else {
@@ -1235,11 +1264,12 @@
         return (H - GROUND_PX) * (1 - (altH - viewLo) / VIEW_RANGE);
       };
 
-      // Horizon at h=0 — always (H - GROUND_PX) pixels from canvas top
-      var horizonY = H - GROUND_PX;  // ground strip is always fixed at the bottom
+      // Horizon sits at h=0 on the altitude scale, so it moves with the plane's altitude
+      // (off-canvas once the viewport is above the ground).
+      var horizonY = hToY(0, H);
 
       // Full-canvas sky gradient
-      var grad = ctx.createLinearGradient(0, 0, 0, horizonY);
+      var grad = ctx.createLinearGradient(0, 0, 0, H - GROUND_PX);
       if (isDark) {
         grad.addColorStop(0, '#05090f');
         grad.addColorStop(1, '#0e1e2e');
@@ -1248,10 +1278,10 @@
         grad.addColorStop(1, '#dceef8');
       }
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, horizonY);
+      ctx.fillRect(0, 0, W, Math.min(horizonY, H));
 
       // Clouds always in upper portion of canvas (sky only)
-      drawClouds(W, horizonY, downrange, isDark);
+      drawClouds(W, H - GROUND_PX, downrange, isDark);
 
       // Ground strip — always visible at bottom
       ctx.fillStyle = isDark ? '#0d1a0d' : '#b8d4a0';
@@ -1351,7 +1381,7 @@
       ctx.font = '11px ' + cssVar('--mono');
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
-      var tickStep = 25;
+      var tickStep = 10;
       var tickStart = Math.ceil(viewLo / tickStep) * tickStep;
       for (var ah = tickStart; ah <= viewHi; ah += tickStep) {
         var ay = hToY(ah, H);
@@ -1782,14 +1812,16 @@
     setInterval(step, 25);
 
     function loop() {
-      renderer.render(state, simT, de_rad, simStatus);
-      drawStatePlot(flStatePlot, stateHist);
-      drawContribPlot(flPidPlot, [
-        { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
-        { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
-        { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
-        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
-      ], rad2deg(ELEV_MAX_RAD), 'δe cmd (°)');
+      if (isActive('sec-flight')) {
+        renderer.render(state, simT, de_rad, simStatus);
+        drawStatePlot(flStatePlot, stateHist);
+        drawContribPlot(flPidPlot, [
+          { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
+          { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
+          { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
+          { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+        ], rad2deg(ELEV_MAX_RAD), 'δe cmd (°)');
+      }
       requestAnimationFrame(loop);
     }
     loop();
@@ -2028,1092 +2060,19 @@
     }
 
     function loop() {
-      drawCartPole();
-      drawStatePlot(cpStatePlot, stateHist, CP_STATE_SPEC);
-      drawContribPlot(cpPidPlot, [
-        { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
-        { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
-        { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
-        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
-      ], FMAX, 'F (N)');
+      if (isActive('sec-cartpole')) {
+        drawCartPole();
+        drawStatePlot(cpStatePlot, stateHist, CP_STATE_SPEC);
+        drawContribPlot(cpPidPlot, [
+          { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
+          { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
+          { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
+          { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+        ], FMAX, 'F (N)');
+      }
       requestAnimationFrame(loop);
     }
     loop();
-  })();
-
-  /* ================================================================
-     [Removed: nnDemo race car — NN now lives in sysidDemo above]
-  ================================================================ */
-  if (false) (function nnDemo() {
-    var canvas = document.getElementById('nn-canvas');
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
-
-    /* ── Track geometry (its own single-loop B-spline oval — kept simple, with
-       no crossovers, so the cloned network has a clean racing line to imitate;
-       the Race Track demo uses a harder multi-loop trefoil circuit) ── */
-    var VW = 700, VH = 420;
-    var TW = 36;            // track half-width (virtual px)
-    var WB = 28;            // wheelbase (virtual px)
-    var MAX_STEER = 0.48;   // max steer angle (rad)
-    var LA = 70;            // pure-pursuit lookahead (virtual px)
-    var NS = 500;           // path samples
-
-    var RAW = [
-      [130, 355], [310, 355], [490, 355],
-      [565, 305], [600, 245], [590, 188],
-      [555, 150], [500, 133], [455, 152],
-      [425, 110], [330, 78],  [210, 74],
-      [148, 106], [110, 165], [86,  237],
-      [105, 305]
-    ];
-
-    function bspline4(p0, p1, p2, p3, t) {
-      var t2 = t * t, t3 = t2 * t;
-      var b0 = (-t3 + 3*t2 - 3*t + 1) / 6;
-      var b1 = ( 3*t3 - 6*t2       + 4) / 6;
-      var b2 = (-3*t3 + 3*t2 + 3*t + 1) / 6;
-      var b3 = t3 / 6;
-      return [
-        b0*p0[0] + b1*p1[0] + b2*p2[0] + b3*p3[0],
-        b0*p0[1] + b1*p1[1] + b2*p2[1] + b3*p3[1]
-      ];
-    }
-
-    var path = [];
-    (function buildPath() {
-      var n = RAW.length;
-      for (var ii = 0; ii < NS; ii++) {
-        var u   = ii / NS * n;
-        var si  = Math.floor(u) % n;
-        var t   = u - Math.floor(u);
-        var p0 = RAW[(si-1+n)%n], p1 = RAW[si], p2 = RAW[(si+1)%n], p3 = RAW[(si+2)%n];
-        var pt  = bspline4(p0, p1, p2, p3, t);
-        var u2  = (ii / NS + 0.001) * n;
-        var si2 = Math.floor(u2) % n;
-        var t2  = u2 - Math.floor(u2);
-        var pt2 = bspline4(RAW[(si2-1+n)%n], RAW[si2], RAW[(si2+1)%n], RAW[(si2+2)%n], t2);
-        var tx  = pt2[0] - pt[0], ty = pt2[1] - pt[1];
-        var tl  = Math.hypot(tx, ty) || 1;
-        path.push({ x: pt[0], y: pt[1], nx: -ty/tl, ny: tx/tl, tx: tx/tl, ty: ty/tl });
-      }
-    })();
-
-    /* ── Canvas sizing + virtual→screen transform ─────────────── */
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W = 700, H = 380, vScale = 1, vOx = 0, vOy = 0;
-
-    function resizeCanvas() {
-      W = canvas.parentElement.clientWidth || 700;
-      H = Math.max(300, Math.min(400, Math.round(W * 0.55)));
-      canvas.width  = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      canvas.style.width  = W + 'px';
-      canvas.style.height = H + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      vScale = Math.min(W / VW, H / VH) * 0.92;
-      vOx    = (W - VW * vScale) / 2;
-      vOy    = (H - VH * vScale) / 2;
-    }
-    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
-    resizeCanvas();
-    function sx(x) { return x * vScale + vOx; }
-    function sy(y) { return y * vScale + vOy; }
-
-    /* ── Car kinematics (bicycle model) ───────────────────────── */
-    function makeCar() {
-      var p0 = path[0], p1 = path[1];
-      return {
-        x: p0.x, y: p0.y,
-        heading: Math.atan2(p1.y - p0.y, p1.x - p0.x),
-        steer: 0, speed: 52, pathIdx: 0
-      };
-    }
-    function stepCar(car, dt) {
-      var delta = car.steer * MAX_STEER;
-      car.x       += car.speed * Math.cos(car.heading) * dt;
-      car.y       += car.speed * Math.sin(car.heading) * dt;
-      car.heading += (car.speed / WB) * Math.tan(delta) * dt;
-      while (car.heading >  Math.PI) car.heading -= 2 * Math.PI;
-      while (car.heading < -Math.PI) car.heading += 2 * Math.PI;
-    }
-    function nearestIdx(car) {
-      var n = NS, best = car.pathIdx, bestD = Infinity;
-      for (var i = -20; i <= 80; i++) {
-        var idx = (car.pathIdx + i + n) % n;
-        var d   = Math.hypot(path[idx].x - car.x, path[idx].y - car.y);
-        if (d < bestD) { bestD = d; best = idx; }
-      }
-      car.pathIdx = best;
-      return best;
-    }
-    function getErrors(car) {
-      var idx = nearestIdx(car), p = path[idx];
-      var dx = car.x - p.x, dy = car.y - p.y;
-      var ey = dx * p.nx + dy * p.ny;
-      var eth = Math.atan2(p.ty, p.tx) - car.heading;
-      while (eth >  Math.PI) eth -= 2 * Math.PI;
-      while (eth < -Math.PI) eth += 2 * Math.PI;
-      return { ey: ey, eth: eth };
-    }
-    // Signed angle from the car to the centreline point `dist` px ahead.
-    function previewAngle(car, dist) {
-      var walked = 0, idx = car.pathIdx;
-      while (walked < dist) {
-        var next = (idx + 1) % NS;
-        walked += Math.hypot(path[next].x - path[idx].x, path[next].y - path[idx].y);
-        idx = next;
-        if (idx === car.pathIdx) break;
-      }
-      var tgt = path[idx];
-      var a = Math.atan2(tgt.y - car.y, tgt.x - car.x) - car.heading;
-      while (a >  Math.PI) a -= 2 * Math.PI;
-      while (a < -Math.PI) a += 2 * Math.PI;
-      return a;
-    }
-    var PREVIEW = [35, 70, 105, 140];
-    // Observation vector fed to the network (6 inputs).
-    function observe(car) {
-      var e = getErrors(car);   // also refreshes car.pathIdx
-      var x = [e.ey, e.eth];
-      for (var i = 0; i < PREVIEW.length; i++) x.push(previewAngle(car, PREVIEW[i]));
-      return { x: x, errs: e };
-    }
-    // Pure-pursuit expert we clone: steer toward the lookahead point.
-    function expertSteer(car) {
-      nearestIdx(car);
-      return clamp(previewAngle(car, LA) * 2.2, -1, 1);
-    }
-
-    /* ── Episode state ────────────────────────────────────────── */
-    var car, expertCar, steerCmd, manual, simStatus, resetTimer;
-    var lastErrs = { ey: 0, eth: 0 };
-    var CHIST = 300, RING = 900;
-    var cteRing = [];
-    var lastNNCache = null;
-    var stateHist = { ey: [], eth: [] };
-    var outHist   = { nn: [], exp: [] };
-
-    function resetSim() {
-      if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
-      car = makeCar();
-      car.x += path[0].nx * 11; car.y += path[0].ny * 11;
-      expertCar = makeCar();
-      expertCar.x -= path[0].nx * 11; expertCar.y -= path[0].ny * 11;
-      expertCar.speed = 50;
-      steerCmd = 0; manual = false; simStatus = 'ok';
-      lastErrs = { ey: 0, eth: 0 };
-      cteRing = [];
-      stateHist = { ey: [], eth: [] };
-      outHist   = { nn: [], exp: [] };
-      lastNNCache = null;
-      if (steerSlider) { steerSlider.value = '0'; if (steerVal) steerVal.textContent = '0.00'; }
-    }
-
-    /* ── Neural network (arbitrary depth feedforward, tanh) ───── */
-    // Input normalisation: eᵧ (px), e_θ (rad), four preview angles (rad).
-    var INPUT_SCALES = [22, 0.5, 0.8, 0.8, 0.8, 0.8];
-    var nLayers = 1, nNeurons = 16;
-    var net = null, adam = null, nnActive = false;
-    var lossHistory = [], trainingData = null;
-
-    function getLayerSizes() {
-      var s = [6];
-      for (var i = 0; i < nLayers; i++) s.push(nNeurons);
-      s.push(1);
-      return s;
-    }
-    function initNet(sizes) {
-      var W = [], b = [];
-      for (var l = 0; l < sizes.length-1; l++) {
-        var ni = sizes[l], no = sizes[l+1];
-        var w = new Float64Array(ni*no);
-        var sc = Math.sqrt(2/ni);
-        for (var k = 0; k < w.length; k++) {
-          var u1 = Math.random()+1e-10, u2 = Math.random();
-          w[k] = sc * Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
-        }
-        W.push(w); b.push(new Float64Array(no));
-      }
-      return { sizes: sizes, W: W, b: b };
-    }
-    function fwdNet(nn, xRaw) {
-      var inp = xRaw.map(function(v,i) { return clamp(v/INPUT_SCALES[i],-3,3); });
-      var a = [new Float64Array(inp)];
-      for (var l = 0; l < nn.W.length; l++) {
-        var ni = nn.sizes[l], no = nn.sizes[l+1];
-        var z = new Float64Array(no);
-        for (var i = 0; i < no; i++) {
-          var sum = nn.b[l][i];
-          for (var j = 0; j < ni; j++) sum += nn.W[l][i*ni+j] * a[l][j];
-          z[i] = (l < nn.W.length-1) ? Math.tanh(sum) : sum;
-        }
-        a.push(z);
-      }
-      return { out: a[a.length-1][0], a: a };
-    }
-    function bwdNet(nn, cache, target) {
-      var nL = nn.W.length;
-      var dW = nn.W.map(function(w) { return new Float64Array(w.length); });
-      var db = nn.b.map(function(bi) { return new Float64Array(bi.length); });
-      var delta = [cache.out - target];
-      for (var l = nL-1; l >= 0; l--) {
-        var ni = nn.sizes[l], no = nn.sizes[l+1];
-        for (var i = 0; i < no; i++) {
-          var d = delta[i];
-          if (l < nL-1) d *= (1 - cache.a[l+1][i]*cache.a[l+1][i]);
-          db[l][i] += d;
-          for (var j = 0; j < ni; j++) dW[l][i*ni+j] += d * cache.a[l][j];
-        }
-        if (l > 0) {
-          var dp = new Float64Array(ni);
-          for (var j = 0; j < ni; j++) {
-            var s = 0;
-            for (var i = 0; i < no; i++) {
-              var d2 = delta[i];
-              if (l < nL-1) d2 *= (1 - cache.a[l+1][i]*cache.a[l+1][i]);
-              s += nn.W[l][i*ni+j] * d2;
-            }
-            dp[j] = s;
-          }
-          delta = Array.prototype.slice.call(dp);
-        }
-      }
-      return { dW: dW, db: db };
-    }
-    function initAdam(nn) {
-      return {
-        mW: nn.W.map(function(w) { return new Float64Array(w.length); }),
-        vW: nn.W.map(function(w) { return new Float64Array(w.length); }),
-        mb: nn.b.map(function(bi) { return new Float64Array(bi.length); }),
-        vb: nn.b.map(function(bi) { return new Float64Array(bi.length); }),
-        t: 0
-      };
-    }
-    function adamStep(nn, grads, am, lr) {
-      var b1=0.9, b2=0.999, eps=1e-8;
-      am.t++;
-      var bc1 = 1-Math.pow(b1,am.t), bc2 = 1-Math.pow(b2,am.t);
-      for (var l = 0; l < nn.W.length; l++) {
-        for (var k = 0; k < nn.W[l].length; k++) {
-          am.mW[l][k] = b1*am.mW[l][k] + (1-b1)*grads.dW[l][k];
-          am.vW[l][k] = b2*am.vW[l][k] + (1-b2)*grads.dW[l][k]*grads.dW[l][k];
-          nn.W[l][k] -= lr*(am.mW[l][k]/bc1) / (Math.sqrt(am.vW[l][k]/bc2)+eps);
-        }
-        for (var k = 0; k < nn.b[l].length; k++) {
-          am.mb[l][k] = b1*am.mb[l][k] + (1-b1)*grads.db[l][k];
-          am.vb[l][k] = b2*am.vb[l][k] + (1-b2)*grads.db[l][k]*grads.db[l][k];
-          nn.b[l][k] -= lr*(am.mb[l][k]/bc1) / (Math.sqrt(am.vb[l][k]/bc2)+eps);
-        }
-      }
-    }
-
-    /* ── Training data: expert rollouts with perturbations ────── */
-    function genData() {
-      var data = [];
-      var c = makeCar();
-      for (var i = 0; i < 2400; i++) {
-        // Periodically knock the car off the racing line so the net sees
-        // recovery states, not just the perfect trajectory.
-        if (i % 45 === 0) {
-          var p = path[c.pathIdx];
-          var off = (Math.random()-0.5) * 2 * TW * 0.85;
-          c.x = p.x + p.nx * off; c.y = p.y + p.ny * off;
-          c.heading = Math.atan2(p.ty, p.tx) + (Math.random()-0.5) * 0.8;
-        }
-        var o = observe(c);
-        var steer = expertSteer(c);
-        data.push({ x: o.x, y: steer });
-        c.steer = steer;
-        stepCar(c, 0.03);
-      }
-      return data;
-    }
-
-    /* ── Loss canvas ─────────────────────────────────────────── */
-    var lossCanvas = document.getElementById('nn-loss-canvas');
-    var lossCtx    = lossCanvas && lossCanvas.getContext('2d');
-    function drawLoss() {
-      if (!lossCtx || !lossHistory.length) return;
-      var LW = lossCanvas.offsetWidth || 200, LH = 72;
-      lossCanvas.width  = Math.round(LW * (window.devicePixelRatio || 1));
-      lossCanvas.height = Math.round(LH * (window.devicePixelRatio || 1));
-      lossCtx.setTransform(window.devicePixelRatio||1, 0, 0, window.devicePixelRatio||1, 0, 0);
-      lossCtx.fillStyle = cssVar('--bg-soft');
-      lossCtx.fillRect(0, 0, LW, LH);
-      var maxL = Math.max.apply(null, lossHistory), n = lossHistory.length;
-      lossCtx.strokeStyle = cssVar('--accent');
-      lossCtx.lineWidth = 1.5;
-      lossCtx.beginPath();
-      for (var i = 0; i < n; i++) {
-        var x = (i / Math.max(n-1, 1)) * LW;
-        var y = LH - 4 - (lossHistory[i] / Math.max(maxL, 1e-9)) * (LH-8);
-        if (i === 0) lossCtx.moveTo(x, y); else lossCtx.lineTo(x, y);
-      }
-      lossCtx.stroke();
-      lossCtx.fillStyle = cssVar('--text-muted');
-      lossCtx.font = '10px monospace';
-      lossCtx.textAlign = 'left'; lossCtx.textBaseline = 'top';
-      lossCtx.fillText('MSE loss', 4, 3);
-    }
-
-    /* ── Training loop (async via setTimeout) ────────────────── */
-    function runEpoch(data, batchSize) {
-      for (var i = data.length-1; i > 0; i--) {
-        var j = Math.floor(Math.random()*(i+1));
-        var tmp = data[i]; data[i] = data[j]; data[j] = tmp;
-      }
-      var totalLoss = 0;
-      for (var b = 0; b < data.length; b += batchSize) {
-        var batch = data.slice(b, b+batchSize);
-        var accDW = net.W.map(function(w) { return new Float64Array(w.length); });
-        var accDb = net.b.map(function(bi) { return new Float64Array(bi.length); });
-        for (var s = 0; s < batch.length; s++) {
-          var cache = fwdNet(net, batch[s].x);
-          var err = cache.out - batch[s].y;
-          totalLoss += err*err;
-          var g = bwdNet(net, cache, batch[s].y);
-          for (var l = 0; l < net.W.length; l++) {
-            for (var k = 0; k < net.W[l].length; k++) accDW[l][k] += g.dW[l][k] / batch.length;
-            for (var k = 0; k < net.b[l].length; k++) accDb[l][k] += g.db[l][k] / batch.length;
-          }
-        }
-        adamStep(net, { dW: accDW, db: accDb }, adam, 0.001);
-      }
-      return totalLoss / data.length;
-    }
-
-    var trainStatusEl = document.getElementById('nn-train-status');
-    var activateBtnEl = document.getElementById('nn-activate-btn');
-    function trainLoop(epoch, maxEpochs) {
-      if (epoch >= maxEpochs) {
-        if (trainStatusEl) trainStatusEl.textContent = 'Done — ' + maxEpochs + ' epochs';
-        if (activateBtnEl) activateBtnEl.disabled = false;
-        return;
-      }
-      var loss = runEpoch(trainingData, 32);
-      lossHistory.push(loss);
-      if (trainStatusEl) trainStatusEl.textContent = 'Epoch ' + (epoch+1) + '/' + maxEpochs
-        + '  loss ' + loss.toFixed(5);
-      drawLoss();
-      setTimeout(function() { trainLoop(epoch+1, maxEpochs); }, 0);
-    }
-
-    /* ── DOM wiring ──────────────────────────────────────────── */
-    var layersSlider  = document.getElementById('nn-layers');
-    var neuronsSlider = document.getElementById('nn-neurons');
-    var layersVal     = document.getElementById('nn-layers-val');
-    var neuronsVal    = document.getElementById('nn-neurons-val');
-    var genBtn        = document.getElementById('nn-gen-btn');
-    var genStatus     = document.getElementById('nn-gen-status');
-    var trainBtn      = document.getElementById('nn-train-btn');
-    var scoreEl       = document.getElementById('nn-score');
-    var resetBtn      = document.getElementById('nn-reset');
-    var steerSlider   = document.getElementById('nn-steer');
-    var steerVal      = document.getElementById('nn-steer-val');
-    var nnStatePlot   = document.getElementById('nn-state-plot');
-    var nnPidPlot     = document.getElementById('nn-pid-plot');
-    var nnNetCanvas   = document.getElementById('nn-net-canvas');
-
-    resetSim();
-
-    if (steerSlider) steerSlider.addEventListener('input', function() {
-      manual = true;
-      if (!nnActive) steerCmd = parseFloat(steerSlider.value);
-      if (steerVal) steerVal.textContent = parseFloat(steerSlider.value).toFixed(2);
-    });
-
-    // Keyboard steering (manual mode only): ←/→
-    document.addEventListener('keydown', function(e) {
-      var sec = document.getElementById('sec-nn');
-      if (!sec || !sec.classList.contains('active')) return;
-      if (nnActive) return;
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        manual = true;
-        var step = (e.key === 'ArrowLeft') ? -0.06 : 0.06;
-        steerCmd = clamp(steerCmd + step, -1, 1);
-        if (steerSlider) { steerSlider.value = steerCmd.toFixed(2); if (steerVal) steerVal.textContent = steerCmd.toFixed(2); }
-      }
-    });
-
-    function archChanged() {
-      nLayers  = parseInt(layersSlider.value);
-      nNeurons = parseInt(neuronsSlider.value);
-      if (layersVal)  layersVal.textContent  = nLayers;
-      if (neuronsVal) neuronsVal.textContent = nNeurons;
-      // Keep an (untrained) net so the diagram always shows the current
-      // architecture; training reinitialises it. Activation stays gated on
-      // the button's disabled state, so an untrained net can't take control.
-      net = initNet(getLayerSizes()); nnActive = false; lossHistory = [];
-      if (activateBtnEl) { activateBtnEl.disabled = true; activateBtnEl.textContent = 'Activate NN'; activateBtnEl.classList.remove('active'); }
-      if (trainStatusEl) trainStatusEl.textContent = 'Architecture changed — retrain';
-      if (lossCtx) lossCtx.clearRect(0, 0, lossCanvas.width, lossCanvas.height);
-    }
-    if (layersSlider)  layersSlider.addEventListener('input', archChanged);
-    if (neuronsSlider) neuronsSlider.addEventListener('input', archChanged);
-    net = initNet(getLayerSizes());  // show the architecture before training
-
-    if (genBtn) genBtn.addEventListener('click', function() {
-      genBtn.disabled = true;
-      if (genStatus) genStatus.textContent = 'Generating…';
-      setTimeout(function() {
-        trainingData = genData();
-        genBtn.disabled = false;
-        if (genStatus) genStatus.textContent = trainingData.length + ' samples ready';
-        if (trainBtn) trainBtn.disabled = false;
-      }, 20);
-    });
-
-    if (trainBtn) trainBtn.addEventListener('click', function() {
-      if (!trainingData) return;
-      net = initNet(getLayerSizes());
-      adam = initAdam(net);
-      lossHistory = [];
-      nnActive = false;
-      if (activateBtnEl) { activateBtnEl.disabled = true; activateBtnEl.textContent = 'Activate NN'; activateBtnEl.classList.remove('active'); }
-      trainLoop(0, 150);
-    });
-
-    if (activateBtnEl) activateBtnEl.addEventListener('click', function() {
-      if (!net) return;
-      nnActive = !nnActive;
-      activateBtnEl.textContent = nnActive ? 'Deactivate NN' : 'Activate NN';
-      activateBtnEl.classList.toggle('active', nnActive);
-    });
-
-    if (resetBtn) resetBtn.addEventListener('click', resetSim);
-
-    /* ── Simulation step ─────────────────────────────────────── */
-    var STEER_RATE = 0.14;  // max steer-command change per substep
-    setInterval(function() {
-      var sec = document.getElementById('sec-nn');
-      if (!sec || !sec.classList.contains('active')) return;
-      if (simStatus !== 'ok') return;
-
-      var dt = 0.03, SUBS = 3;
-      for (var i = 0; i < SUBS; i++) {
-        // Expert reference car (always pure-pursuit)
-        expertCar.steer = expertSteer(expertCar);
-        stepCar(expertCar, dt);
-
-        // Learner car
-        var o = observe(car);
-        lastErrs = o.errs;
-        if (net) lastNNCache = fwdNet(net, o.x);   // always light the diagram
-        if (nnActive && net) {
-          var target = clamp(lastNNCache.out, -1, 1);
-          steerCmd += clamp(target - steerCmd, -STEER_RATE, STEER_RATE);
-        } else if (!manual) {
-          // Before the net drives (and until you take over), shadow the
-          // expert so the car laps cleanly instead of driving off.
-          steerCmd = expertSteer(car);
-        }
-        car.steer = steerCmd;
-        stepCar(car, dt);
-
-        if (Math.abs(o.errs.ey) > TW * 2.2) {
-          simStatus = 'off';
-          if (!resetTimer) resetTimer = setTimeout(function() { resetTimer = null; resetSim(); }, 1600);
-          break;
-        }
-        cteRing.push(o.errs.ey * o.errs.ey);
-        if (cteRing.length > RING) cteRing.shift();
-      }
-
-      if (nnActive && steerSlider) { steerSlider.value = car.steer.toFixed(2); if (steerVal) steerVal.textContent = car.steer.toFixed(2); }
-
-      // History
-      stateHist.ey.push(lastErrs.ey); stateHist.eth.push(lastErrs.eth);
-      outHist.nn.push(car.steer);     outHist.exp.push(expertSteer(car));
-      if (stateHist.ey.length > CHIST) { stateHist.ey.shift(); stateHist.eth.shift(); }
-      if (outHist.nn.length   > CHIST) { outHist.nn.shift();   outHist.exp.shift(); }
-
-      if (scoreEl && cteRing.length > 0) {
-        var rmse = Math.sqrt(cteRing.reduce(function(a,b){return a+b;},0) / cteRing.length);
-        scoreEl.textContent = rmse.toFixed(1);
-      }
-    }, 25);
-
-    /* ── Rendering ───────────────────────────────────────────── */
-    function darkMode() {
-      return document.documentElement.getAttribute('data-theme') === 'dark' ||
-        (!document.documentElement.getAttribute('data-theme') &&
-         window.matchMedia('(prefers-color-scheme: dark)').matches);
-    }
-    function drawTrack() {
-      var n = NS, dark = darkMode(), tw = TW * vScale;
-      ctx.beginPath();
-      for (var i = 0; i < n; i++) { var p = path[i]; if (i===0) ctx.moveTo(sx(p.x), sy(p.y)); else ctx.lineTo(sx(p.x), sy(p.y)); }
-      ctx.closePath();
-      ctx.lineWidth = tw * 2; ctx.strokeStyle = dark ? '#1c1c2e' : '#2c2c2c';
-      ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
-      [1, -1].forEach(function(side) {
-        ctx.beginPath();
-        for (var i = 0; i < n; i++) {
-          var p = path[i];
-          var ex = sx(p.x + p.nx * TW * 0.90 * side), ey = sy(p.y + p.ny * TW * 0.90 * side);
-          if (i===0) ctx.moveTo(ex, ey); else ctx.lineTo(ex, ey);
-        }
-        ctx.closePath(); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,0.60)'; ctx.lineJoin = 'round'; ctx.stroke();
-      });
-      ctx.beginPath();
-      for (var i = 0; i < n; i++) { var p = path[i]; if (i===0) ctx.moveTo(sx(p.x), sy(p.y)); else ctx.lineTo(sx(p.x), sy(p.y)); }
-      ctx.closePath();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = cssVar('--accent');
-      ctx.setLineDash([6 * vScale, 8 * vScale]); ctx.stroke(); ctx.setLineDash([]);
-      var sp = path[0];
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(sx(sp.x + sp.nx * TW * 0.92), sy(sp.y + sp.ny * TW * 0.92));
-      ctx.lineTo(sx(sp.x - sp.nx * TW * 0.92), sy(sp.y - sp.ny * TW * 0.92));
-      ctx.stroke();
-    }
-    function drawCar(car, bodyColor, label) {
-      var csx = sx(car.x), csy = sy(car.y);
-      var cl = 20 * vScale, cw = 8 * vScale;
-      ctx.save();
-      ctx.translate(csx, csy); ctx.rotate(car.heading);
-      ctx.fillStyle = bodyColor;
-      ctx.beginPath(); ctx.roundRect(-cl*0.5, -cw*0.5, cl, cw, 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.beginPath();
-      ctx.moveTo(cl*0.5, 0); ctx.lineTo(cl*0.5 - cw*0.8, -cw*0.45); ctx.lineTo(cl*0.5 - cw*0.8, cw*0.45);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = bodyColor;
-      ctx.fillRect(cl*0.26, -cw*0.75, cw*0.6, cw*1.5);
-      ctx.fillRect(-cl*0.50, -cw*0.75, cw*0.5, cw*1.5);
-      ctx.restore();
-      ctx.fillStyle = bodyColor;
-      ctx.font = 'bold ' + Math.max(9, Math.round(10 * vScale)) + 'px ' + cssVar('--mono');
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.fillText(label, csx, csy - cw * 0.6);
-    }
-    function raceRender() {
-      var dark = darkMode();
-      ctx.fillStyle = dark ? '#0c1a0c' : '#4a8040';
-      ctx.fillRect(0, 0, W, H);
-      drawTrack();
-      drawCar(expertCar, '#e74c3c', 'Expert');
-      drawCar(car, cssVar('--accent'), nnActive ? 'NN' : (manual ? 'Manual' : 'Shadow'));
-      ctx.save();
-      ctx.font = 'bold 11px ' + cssVar('--mono');
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      if (nnActive) { ctx.fillStyle = 'rgba(80,200,120,0.95)'; ctx.fillText('● NN driving', 12, 10); }
-      if (simStatus === 'off') { ctx.fillStyle = 'rgba(231,76,60,0.95)'; ctx.fillText('Off track — resetting…', 12, 26); }
-      ctx.restore();
-    }
-
-    /* ── NN architecture visualisation ──────────────────────── */
-    function parseRGB(str) {
-      if (!str) return [128, 128, 128];
-      str = str.trim();
-      if (str.charAt(0) === '#') {
-        var h = str.slice(1);
-        if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
-        return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
-      }
-      var m = str.match(/(\d+(?:\.\d+)?)/g);
-      if (m && m.length >= 3) return [+m[0], +m[1], +m[2]];
-      return [128, 128, 128];
-    }
-    function mixRGB(a, b, t) {
-      return [ Math.round(a[0]+(b[0]-a[0])*t), Math.round(a[1]+(b[1]-a[1])*t), Math.round(a[2]+(b[2]-a[2])*t) ];
-    }
-    function drawNetViz(canvas, nn, cache, isDark) {
-      if (!canvas || !nn) return;
-      var dpr = Math.min(window.devicePixelRatio || 1, 2);
-      var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
-      if (!W) W = 640;
-
-      var sizes  = nn.sizes;
-      var nL     = sizes.length;
-      var MAX_N  = 16;
-      var PAD_X  = Math.max(48, W * 0.07);
-      var PAD_TOP = 26, PAD_BOT = 34;
-
-      // Derive the height from the tallest layer so every node fits. The old code
-      // read canvas.clientHeight, which fought the CSS box (width:100%, no height)
-      // and left the lower rows and labels clipped. Set an explicit style height,
-      // matching how the other demo canvases size themselves.
-      var maxShown = 1;
-      for (var l = 0; l < nL; l++) maxShown = Math.max(maxShown, Math.min(sizes[l], MAX_N));
-      var gap = 30;                                   // vertical spacing between nodes
-      var R = Math.max(6, Math.min(gap * 0.36, 16));
-      var H = Math.max(200, Math.round(PAD_TOP + PAD_BOT + (maxShown - 1) * gap));
-
-      canvas.width  = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      canvas.style.width = '100%';
-      canvas.style.height = H + 'px';
-      var ctx = canvas.getContext('2d');
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      var bgSoft = cssVar('--bg-soft');
-      var muted  = cssVar('--text-muted');
-      var mono   = cssVar('--mono');
-      var actNeg  = parseRGB(cssVar('--nn-act-neg'));
-      var actZero = parseRGB(cssVar('--nn-act-zero'));
-      var actPos  = parseRGB(cssVar('--nn-act-pos'));
-      var accRGB  = parseRGB(cssVar('--accent'));
-      ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
-
-      var innerW = W - PAD_X * 2;
-      var colX   = [];
-      for (var l = 0; l < nL; l++) {
-        colX.push(nL > 1 ? Math.round(PAD_X + innerW * l / (nL - 1)) : Math.round(W / 2));
-      }
-      var INPUT_LABELS  = ['eᵧ', 'e_θ', 'ψ₁', 'ψ₂', 'ψ₃', 'ψ₄'];
-      var OUTPUT_LABELS = ['δ'];
-
-      function nodeY(l, i, n) {
-        var shown = Math.min(n, MAX_N);
-        var totalH = (shown - 1) * gap;
-        return ((H - PAD_BOT + PAD_TOP) / 2 - totalH / 2) + i * gap;
-      }
-      function actAt(l, i) { return (cache && cache.a && cache.a[l]) ? cache.a[l][i] : 0; }
-      function actColor(t) { return (t >= 0) ? mixRGB(actZero, actPos, t) : mixRGB(actZero, actNeg, -t); }
-
-      for (var l = 0; l < nL - 1; l++) {
-        var ni = sizes[l], no = sizes[l+1];
-        var shownI = Math.min(ni, MAX_N), shownO = Math.min(no, MAX_N);
-        for (var ii = 0; ii < shownI; ii++) {
-          for (var oi = 0; oi < shownO; oi++) {
-            var w = nn.W[l][oi * ni + ii];
-            var mag = Math.min(Math.abs(w), 1.5) / 1.5;
-            var alpha = 0.06 + mag * 0.5;
-            var c = (w >= 0) ? accRGB : actNeg;
-            ctx.strokeStyle = 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + alpha.toFixed(3) + ')';
-            ctx.lineWidth = 0.5 + mag * 2;
-            ctx.beginPath();
-            ctx.moveTo(colX[l] + R, nodeY(l, ii, ni));
-            ctx.lineTo(colX[l+1] - R, nodeY(l+1, oi, no));
-            ctx.stroke();
-          }
-        }
-      }
-
-      for (var l = 0; l < nL; l++) {
-        var n = sizes[l];
-        var shown = Math.min(n, MAX_N);
-        for (var ii = 0; ii < shown; ii++) {
-          var cy = nodeY(l, ii, n);
-          var t = Math.tanh(actAt(l, ii));
-          var rgb = actColor(t);
-          var glow = Math.abs(t);
-          ctx.save();
-          if (glow > 0.05) {
-            ctx.shadowColor = 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + (0.55 * glow).toFixed(3) + ')';
-            ctx.shadowBlur = R * 1.4 * glow;
-          }
-          ctx.beginPath();
-          ctx.arc(colX[l], cy, R, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
-          ctx.fill();
-          ctx.restore();
-          ctx.beginPath();
-          ctx.arc(colX[l], cy, R, 0, Math.PI * 2);
-          ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.stroke();
-        }
-        if (n > MAX_N) {
-          ctx.fillStyle = muted; ctx.font = (R + 4) + 'px ' + mono; ctx.textAlign = 'center';
-          ctx.fillText('⋯', colX[l], nodeY(l, shown - 1, n) + gap * 0.7);
-        }
-        var lbl = l === 0 ? 'input' : l === nL - 1 ? 'output' : 'hidden ' + l;
-        ctx.fillStyle = muted; ctx.font = '600 12px ' + mono; ctx.textAlign = 'center';
-        ctx.fillText(lbl + ' (' + n + ')', colX[l], H - 12);
-        if (l === 0) {
-          var shownL = Math.min(n, INPUT_LABELS.length);
-          ctx.font = '11px ' + mono; ctx.textAlign = 'right'; ctx.fillStyle = muted;
-          for (var k = 0; k < shownL; k++) {
-            ctx.fillText(INPUT_LABELS[k], colX[l] - R - 6, nodeY(l, k, n) + 4);
-          }
-        } else if (l === nL - 1) {
-          ctx.font = '11px ' + mono; ctx.textAlign = 'left'; ctx.fillStyle = muted;
-          ctx.fillText(OUTPUT_LABELS[0], colX[l] + R + 6, nodeY(l, 0, n) + 4);
-        }
-      }
-    }
-
-    /* ── Render loop ─────────────────────────────────────────── */
-    (function loop() {
-      var isDark = darkMode();
-      raceRender();
-      drawContribPlot(nnStatePlot, [
-        { label: 'eᵧ CTE (px)',  color: cssVar('--viz-1'), data: stateHist.ey  },
-        { label: 'e_θ hdg (rad)', color: cssVar('--viz-2'), data: stateHist.eth }
-      ], null, 'state');
-      drawContribPlot(nnPidPlot, [
-        { label: 'δ NN',     color: cssVar('--viz-1'), data: outHist.nn  },
-        { label: 'δ expert', color: cssVar('--viz-2'), data: outHist.exp }
-      ], 1.0, 'steer δ');
-      drawNetViz(nnNetCanvas, net, lastNNCache, isDark);
-      requestAnimationFrame(loop);
-    })();
-  })();
-
-  /* ================================================================
-     [Removed: reactDemo — tab removed from site]
-  ================================================================ */
-  if (false) (function reactDemo() {
-    var canvas = document.getElementById('react-canvas');
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W = 720, H = 380;
-
-    function resize() {
-      W = canvas.parentElement.clientWidth;
-      canvas.width  = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      canvas.style.width  = W + 'px';
-      canvas.style.height = H + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    new ResizeObserver(resize).observe(canvas.parentElement);
-    resize();
-
-    var R_TARGET = 26, R_DWELL = 34;
-    function corners() {
-      var m = Math.max(48, Math.min(90, W * 0.16));
-      return [
-        { x: m,     y: 60      },
-        { x: W - m, y: 60      },
-        { x: W - m, y: H - 60  },
-        { x: m,     y: H - 60  }
-      ];
-    }
-
-    // ── Pointer tracking (mouse + touch via Pointer Events) ──────
-    var ptr = { x: W / 2, y: H / 2, active: false };
-    function setPtr(clientX, clientY) {
-      var r = canvas.getBoundingClientRect();
-      ptr.x = clientX - r.left;
-      ptr.y = clientY - r.top;
-      ptr.active = true;
-    }
-    canvas.style.touchAction = 'none';
-    canvas.addEventListener('pointermove', function (e) { setPtr(e.clientX, e.clientY); });
-    canvas.addEventListener('pointerdown', function (e) { setPtr(e.clientX, e.clientY); });
-
-    // ── State machine ────────────────────────────────────────────
-    var phase = 'idle';          // idle · wait_dwell · wait_jump · active · done
-    var startIdx = 0, tgtIdx = 2;
-    var dwellStart = null;
-    var jumpAt = 0, t0 = 0;
-    var samples = [];            // {t, x, y} recorded during the active phase
-    var bestReaction = null;
-    var lastFit = { user: [], pid: [], setp: [] };
-
-    function el(id) { return document.getElementById(id); }
-    var statusEl  = el('react-status');
-    var startBtn  = el('react-start');
-    var resetBtn  = el('react-reset');
-    var resultsBox = el('react-results');
-    var reactPlot = el('react-plot');
-
-    function setStatus(t) { if (statusEl) statusEl.textContent = t; }
-    function setTxt(id, t) { var e = el(id); if (e) e.textContent = t; }
-
-    function randCornerExcept(i) {
-      var c; do { c = Math.floor(Math.random() * 4); } while (c === i);
-      return c;
-    }
-
-    function beginTrial() {
-      startIdx = Math.floor(Math.random() * 4);
-      tgtIdx   = startIdx;
-      phase    = 'wait_dwell';
-      dwellStart = null;
-      samples  = [];
-      if (resultsBox) resultsBox.style.display = 'none';
-      setStatus('Move onto the glowing dot and hold still…');
-    }
-    if (startBtn) startBtn.addEventListener('click', beginTrial);
-    if (resetBtn) resetBtn.addEventListener('click', function () {
-      phase = 'idle'; samples = []; bestReaction = null;
-      lastFit = { user: [], pid: [], setp: [] };
-      if (resultsBox) resultsBox.style.display = 'none';
-      setTxt('react-reaction', '—');
-      setTxt('react-best', '');
-      setStatus('Press “Start trial”, then chase the dot the instant it jumps.');
-    });
-
-    function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
-
-    function update(now) {
-      var cs = corners();
-      if (phase === 'wait_dwell') {
-        var c = cs[startIdx];
-        if (ptr.active && dist(ptr.x, ptr.y, c.x, c.y) < R_DWELL) {
-          if (dwellStart === null) dwellStart = now;
-          if (now - dwellStart > 400) {
-            jumpAt = now + 700 + Math.random() * 1900;   // unpredictable delay
-            phase  = 'wait_jump';
-            setStatus('Hold steady… stay ready.');
-          }
-        } else {
-          dwellStart = null;
-        }
-      } else if (phase === 'wait_jump') {
-        if (now >= jumpAt) {
-          tgtIdx  = randCornerExcept(startIdx);
-          t0      = now;
-          samples = [];
-          dwellStart = null;
-          phase   = 'active';
-          setStatus('GO! Chase the dot.');
-        }
-      } else if (phase === 'active') {
-        var B = cs[tgtIdx];
-        samples.push({ t: (now - t0) / 1000, x: ptr.x, y: ptr.y });
-        var onTgt = ptr.active && dist(ptr.x, ptr.y, B.x, B.y) < R_TARGET;
-        if (onTgt) { if (dwellStart === null) dwellStart = now; }
-        else dwellStart = null;
-        var elapsed = (now - t0) / 1000;
-        if ((dwellStart && now - dwellStart > 350) || elapsed > 4.5) {
-          phase = 'done';
-          analyze(cs[startIdx], cs[tgtIdx]);
-        }
-      }
-    }
-
-    // ── Linear solve for the 3×3 normal equations ────────────────
-    function solve3(M, b) {
-      var a = [M[0].slice(), M[1].slice(), M[2].slice()], y = b.slice();
-      for (var i = 0; i < 3; i++) {
-        var p = i;
-        for (var r = i + 1; r < 3; r++) if (Math.abs(a[r][i]) > Math.abs(a[p][i])) p = r;
-        if (p !== i) { var tt = a[p]; a[p] = a[i]; a[i] = tt; var ty = y[p]; y[p] = y[i]; y[i] = ty; }
-        if (Math.abs(a[i][i]) < 1e-12) return null;
-        for (var r2 = i + 1; r2 < 3; r2++) {
-          var f = a[r2][i] / a[i][i];
-          for (var cc = i; cc < 3; cc++) a[r2][cc] -= f * a[i][cc];
-          y[r2] -= f * y[i];
-        }
-      }
-      var x = [0, 0, 0];
-      for (var k = 2; k >= 0; k--) {
-        var s = y[k];
-        for (var c2 = k + 1; c2 < 3; c2++) s -= a[k][c2] * x[c2];
-        x[k] = s / a[k][k];
-      }
-      return x;
-    }
-
-    function interp(xs, ys, x) {
-      if (x <= xs[0]) return ys[0];
-      if (x >= xs[xs.length - 1]) return ys[ys.length - 1];
-      for (var i = 1; i < xs.length; i++) {
-        if (x <= xs[i]) {
-          var f = (x - xs[i - 1]) / ((xs[i] - xs[i - 1]) || 1);
-          return ys[i - 1] + f * (ys[i] - ys[i - 1]);
-        }
-      }
-      return ys[ys.length - 1];
-    }
-
-    // Simulate a PID velocity-controller with pure dead time L, sampled on `grid`.
-    function simulatePID(Kp, Ki, Kd, L, grid) {
-      var h = 0.008, d = 0, integ = 0, prevE = 1, t = 0, out = [], gi = 0;
-      var Tend = grid[grid.length - 1];
-      while (gi < grid.length) {
-        while (gi < grid.length && grid[gi] <= t) { out.push(d); gi++; }
-        if (t > Tend) break;
-        var e = 1 - d;
-        var v = 0;
-        if (t >= L) {
-          integ += e * h;
-          var de = (e - prevE) / h;
-          v = Kp * e + Ki * integ + Kd * de;
-          prevE = e;
-        }
-        d += v * h;
-        if (d > 3) d = 3; if (d < -2) d = -2;
-        t += h;
-      }
-      while (out.length < grid.length) out.push(d);
-      return out;
-    }
-
-    function characterRead(overshoot, finalE, L) {
-      var parts = ['Your hand added ' + Math.round(L * 1000) + ' ms of dead time before reacting.'];
-      if (overshoot > 12)      parts.push('You overshot by ' + overshoot.toFixed(0) + '% — proportional-heavy and underdamped; more Kd would settle it faster.');
-      else if (overshoot > 3)  parts.push('Slight overshoot (' + overshoot.toFixed(0) + '%) — close to critically damped.');
-      else                     parts.push('Almost no overshoot — nicely damped.');
-      if (Math.abs(finalE) > 0.06) parts.push('You settled short of the mark, like a controller with too little integral action.');
-      return parts.join(' ');
-    }
-
-    function showFail() {
-      phase = 'idle';
-      setStatus('Not enough motion to fit — press “Start trial” and chase the dot a bit more.');
-    }
-
-    function analyze(A, B) {
-      var ux = B.x - A.x, uy = B.y - A.y;
-      var D = Math.hypot(ux, uy) || 1;
-      ux /= D; uy /= D;
-      var S = samples;
-      if (S.length < 6) { showFail(); return; }
-
-      var d = [], tt = [];
-      for (var i = 0; i < S.length; i++) {
-        d.push(((S[i].x - A.x) * ux + (S[i].y - A.y) * uy) / D);   // normalized progress 0→1
-        tt.push(S[i].t);
-      }
-
-      // Reaction delay: first sample that has moved appreciably from the start.
-      var d0 = d[0], Lidx = -1;
-      for (var j = 1; j < d.length; j++) {
-        if (Math.abs(d[j] - d0) > 0.06) { Lidx = j; break; }
-      }
-      if (Lidx < 0) Lidx = 1;
-      var L = tt[Lidx];
-
-      // Build regression rows (post-reaction) for ẋ = Kp·e + Ki·∫e + Kd·ė.
-      var integ = 0, rows = [];
-      for (var m = 1; m < d.length; m++) {
-        var dtt = tt[m] - tt[m - 1];
-        if (dtt <= 0) continue;
-        var e = 1 - d[m];
-        integ += e * dtt;
-        var de = (e - (1 - d[m - 1])) / dtt;
-        var v  = (d[m] - d[m - 1]) / dtt;
-        if (tt[m] >= L) rows.push([e, integ, de, v]);
-      }
-      if (rows.length < 4) { showFail(); return; }
-
-      var XtX = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], Xty = [0, 0, 0];
-      rows.forEach(function (r) {
-        var phi = [r[0], r[1], r[2]];
-        for (var a1 = 0; a1 < 3; a1++) {
-          for (var b1 = 0; b1 < 3; b1++) XtX[a1][b1] += phi[a1] * phi[b1];
-          Xty[a1] += phi[a1] * r[3];
-        }
-      });
-      var tr = XtX[0][0] + XtX[1][1] + XtX[2][2];
-      var lam = 1e-4 * (tr / 3 || 1);            // ridge term for numerical stability
-      XtX[0][0] += lam; XtX[1][1] += lam; XtX[2][2] += lam;
-      var k = solve3(XtX, Xty) || [0, 0, 0];
-      var Kp = k[0], Ki = k[1], Kd = k[2];
-
-      // R² of the velocity fit.
-      var meanV = 0; rows.forEach(function (r) { meanV += r[3]; }); meanV /= rows.length;
-      var ssr = 0, sst = 0;
-      rows.forEach(function (r) {
-        var pred = Kp * r[0] + Ki * r[1] + Kd * r[2];
-        ssr += (r[3] - pred) * (r[3] - pred);
-        sst += (r[3] - meanV) * (r[3] - meanV);
-      });
-      var r2 = sst > 1e-9 ? Math.max(0, 1 - ssr / sst) : 0;
-
-      var maxD = Math.max.apply(null, d);
-      var overshoot = Math.max(0, maxD - 1) * 100;
-      var finalE = 1 - d[d.length - 1];
-
-      // Overlay data: user path, fitted-PID replay, and the unit setpoint.
-      var Tend = tt[tt.length - 1], N = 140, grid = [];
-      for (var g = 0; g < N; g++) grid.push(Tend * g / (N - 1));
-      lastFit = {
-        user: grid.map(function (gt) { return interp(tt, d, gt); }),
-        pid:  simulatePID(Kp, Ki, Kd, L, grid),
-        setp: grid.map(function () { return 1; })
-      };
-
-      // Fill the panel.
-      setTxt('react-reaction', Math.round(L * 1000));
-      if (bestReaction === null || L < bestReaction) {
-        bestReaction = L;
-        setTxt('react-best', 'Best: ' + Math.round(L * 1000) + ' ms');
-      }
-      setTxt('react-kp', Kp.toFixed(2));
-      setTxt('react-ki', Ki.toFixed(2));
-      setTxt('react-kd', Kd.toFixed(2));
-      setTxt('react-L',  Math.round(L * 1000) + ' ms');
-      setTxt('react-os', overshoot.toFixed(0) + ' %');
-      setTxt('react-r2', r2.toFixed(2));
-      setTxt('react-read', characterRead(overshoot, finalE, L));
-      if (resultsBox) resultsBox.style.display = 'flex';
-      setStatus('Nice — press “Start trial” to go again.');
-    }
-
-    // ── Rendering ────────────────────────────────────────────────
-    function draw() {
-      var cs = corners();
-      ctx.clearRect(0, 0, W, H);
-
-      var muted  = cssVar('--text-muted');
-      var accent = cssVar('--accent');
-      var border = cssVar('--border');
-      var text   = cssVar('--text');
-
-      // Box outline + corner markers
-      ctx.strokeStyle = border;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(cs[0].x, cs[0].y, cs[1].x - cs[0].x, cs[3].y - cs[0].y);
-      cs.forEach(function (c) {
-        ctx.beginPath(); ctx.arc(c.x, c.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = muted; ctx.fill();
-      });
-
-      // User's recorded trail
-      if (samples.length > 1) {
-        ctx.strokeStyle = accent;
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        for (var i = 0; i < samples.length; i++) {
-          if (i === 0) ctx.moveTo(samples[i].x, samples[i].y);
-          else ctx.lineTo(samples[i].x, samples[i].y);
-        }
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-
-      // Active target dot (pulsing)
-      var tgt = (phase === 'wait_dwell' || phase === 'wait_jump') ? cs[startIdx]
-              : (phase === 'active' || phase === 'done') ? cs[tgtIdx] : null;
-      if (tgt) {
-        var pulse = 0.5 + 0.5 * Math.sin(Date.now() / 180);
-        ctx.fillStyle = accent;
-        ctx.globalAlpha = 0.25;
-        ctx.beginPath(); ctx.arc(tgt.x, tgt.y, R_TARGET, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.beginPath(); ctx.arc(tgt.x, tgt.y, 8 + 3 * pulse, 0, Math.PI * 2); ctx.fill();
-      }
-
-      // User pointer marker
-      if (ptr.active) {
-        ctx.strokeStyle = text; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(ptr.x, ptr.y, 8, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = text;
-        ctx.beginPath(); ctx.arc(ptr.x, ptr.y, 2.5, 0, Math.PI * 2); ctx.fill();
-      }
-
-      // Centre prompt for idle state
-      if (phase === 'idle') {
-        ctx.fillStyle = muted;
-        ctx.font = '14px ' + cssVar('--font');
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('Press “Start trial”, then chase the dot when it jumps.', W / 2, H / 2);
-      }
-    }
-
-    function loop(now) {
-      var sec = document.getElementById('sec-react');
-      if (sec && sec.classList.contains('active')) {
-        update(now);
-        draw();
-        drawContribPlot(reactPlot, [
-          { label: 'setpoint',   color: cssVar('--viz-total'), data: lastFit.setp },
-          { label: 'you',        color: cssVar('--viz-1'),     data: lastFit.user },
-          { label: 'fitted PID', color: cssVar('--viz-2'),     data: lastFit.pid  }
-        ], null, 'position');
-      }
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
   })();
 
 })();

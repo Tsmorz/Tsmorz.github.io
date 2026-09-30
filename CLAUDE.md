@@ -84,7 +84,8 @@ _layouts/page.html       default + a title header and .prose wrapper (used by ab
 _includes/               project-card.html, photo-grid.html — take params, not globals
 assets/css/main.css      hand-written, token-based, no build step
 assets/js/site.js        three small IIFEs: theme toggle, tag filter, lightbox
-assets/js/controls.js    the /controls/ PID demos
+assets/js/controls.js    the /controls/ PID demos; each tab deep-links as #<section id minus
+                         "sec-"> (#tilt, #flight, #cartpole), and hidden tabs skip physics + drawing
 assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + TQC policy in
                          vanilla JS — SwingupCore (no DOM, Node-testable) + the page
 assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture

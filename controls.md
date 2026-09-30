@@ -16,11 +16,15 @@ permalink: /controls/
 </section>
 
 <div class="wrap" style="padding-bottom:3rem">
-  <div class="sim-tabs" role="tablist" aria-label="Demo selector">
-    <button class="sim-tab active" role="tab" aria-selected="true"  aria-controls="sec-msd"    id="tab-msd"    type="button">Intro</button>
-    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-tilt"   id="tab-tilt"   type="button">Tilt Table</button>
-    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
-    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-cartpole" id="tab-cartpole" type="button">Cart-Pole</button>
+  <div class="sim-tabs-row">
+    <div class="sim-tabs" role="tablist" aria-label="Demo selector">
+      <button class="sim-tab active" role="tab" aria-selected="true"  aria-controls="sec-msd"    id="tab-msd"    type="button">Intro</button>
+      <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-tilt"   id="tab-tilt"   type="button">Tilt Table</button>
+      <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
+      <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-cartpole" id="tab-cartpole" type="button">Cart-Pole</button>
+    </div>
+    <!-- Its own page, not a tab — so not .sim-tab, which controls.js wires up as one. -->
+    <a class="sim-tab-link" href="{{ '/controls/swingup/' | relative_url }}">Double Swing-Up &#8594;</a>
   </div>
 
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
