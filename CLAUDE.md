@@ -86,8 +86,8 @@ assets/css/main.css      hand-written, token-based, no build step
 assets/js/site.js        three small IIFEs: theme toggle, tag filter, lightbox
 assets/js/controls.js    the /controls/ PID demos; each tab deep-links as #<section id minus
                          "sec-"> (#tilt, #flight, #cartpole), and hidden tabs skip physics + drawing
-assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + TQC policy in
-                         vanilla JS — SwingupCore (no DOM, Node-testable) + the page
+assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + goal-conditioned
+                         TQC policy in vanilla JS — SwingupCore (no DOM, Node-testable) + the page
 assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture
                          is test-only and excluded from the build
 script/                  serve, check, add-photo, test-data, test-swingup
@@ -110,8 +110,13 @@ script/                  serve, check, add-photo, test-data, test-swingup
 
 ### The swing-up demo
 
-`/controls/swingup/` runs the TQC swing-up policy from
-[n-cartpole](https://github.com/Tsmorz/n-cartpole) in the browser. The policy only works on the
+`/controls/swingup/` runs the goal-conditioned TQC policy from
+[n-cartpole](https://github.com/Tsmorz/n-cartpole) (`checkpoints/double/tqc-goal/`) in the
+browser: the visitor picks a target pose — UU, UD, DU, DD (one U/D per link, base first) or
+Random — and one network drives there from wherever the rig is. The JSON's `goals` block
+(labels + target angles) switches that on; the net sees `cos` of each target angle appended
+after the 8 kinematic inputs. Without a `goals` block (a plain swing-up export) the page
+hides the target column and the target is all-up. The policy only works on the
 plant it was trained on, so **`swingup.js` hard-codes no physical constants**: masses, lengths,
 friction, dt, force limit, slew, rail length, and the "swung up" tolerances all come from
 `assets/models/swingup-tqc.json`, which `task export-web` in n-cartpole writes from the
@@ -121,7 +126,9 @@ checkpoint's own config. The equations of motion are a line-for-line port of
 visitor first picks TQC.
 
 `script/test-swingup` (`task check:swingup`, part of `task check`) guards this: JS vs torch
-actions, JS vs Python RK45 trajectory, and a closed-loop JS swing-up from every fixture start.
+actions (max < 0.2 N — float16 rounding alone reaches ~0.14 N on the goal net — and mean
+< 0.01 N), JS vs Python RK45 trajectory, and a closed-loop JS run of every start → goal
+transition in the fixture.
 If it fails after a re-export, the port in `swingup.js` has drifted from n-cartpole.
 
 ## Running and checking

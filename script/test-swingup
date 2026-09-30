@@ -3,7 +3,8 @@
 // ported from, using the fixture n-cartpole's `task export-web` writes:
 //   1. network parity: JS actions match torch on 64 observations
 //   2. physics parity: JS RK4 tracks the Python RK45 trajectory for 1 s
-//   3. closed loop: JS physics + JS policy actually swing up from every start
+//   3. closed loop: JS physics + JS policy reach the target from every start
+//      (a swing-up, or for a goal-conditioned net every start → goal transition)
 // Pure Node, no dependencies, no build.
 
 'use strict';
@@ -19,7 +20,11 @@ const fixture = JSON.parse(fs.readFileSync(path.join(models, 'swingup-tqc-fixtur
 const bin = fs.readFileSync(path.join(models, 'swingup-tqc.bin'));
 const buffer = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
 
-const NET_TOL = 0.05;   // N — float16 weights vs float32 torch
+// float16 weights vs float32 torch. Rounding alone costs the goal net up to ~0.14 N
+// on its most sensitive inputs (mean ~0.004 N); a real porting bug is off by
+// newtons everywhere, which the mean check catches even if the max is lucky.
+const NET_TOL = 0.2;         // N, worst case (1% of force_max)
+const NET_MEAN_TOL = 0.01;   // N, mean over the fixture
 const PHYS_TOL = 1e-3;  // max abs state error over the 1 s open-loop run
 let failed = false;
 function check(ok, msg) {
@@ -29,11 +34,15 @@ function check(ok, msg) {
 
 // 1. Network parity
 const policy = Core.createPolicy(meta, buffer);
-let netErr = 0;
+let netErr = 0, netSum = 0;
 for (const c of fixture.net) {
-  netErr = Math.max(netErr, Math.abs(policy.act(Float32Array.from(c.obs)) - c.action));
+  const e = Math.abs(policy.act(Float32Array.from(c.obs)) - c.action);
+  netErr = Math.max(netErr, e); netSum += e;
 }
-check(netErr < NET_TOL, `network: max |JS − torch| = ${netErr.toFixed(4)} N over ${fixture.net.length} obs (< ${NET_TOL})`);
+const netMean = netSum / fixture.net.length;
+check(netErr < NET_TOL && netMean < NET_MEAN_TOL,
+  `network: |JS − torch| max ${netErr.toFixed(4)} N, mean ${netMean.toFixed(4)} N over ` +
+  `${fixture.net.length} obs (< ${NET_TOL}, < ${NET_MEAN_TOL})`);
 
 const reps = 300, obs0 = Float32Array.from(fixture.net[0].obs), t0 = process.hrtime.bigint();
 for (let i = 0; i < reps; i++) policy.act(obs0);
@@ -53,17 +62,19 @@ check(physErr < PHYS_TOL, `physics: max state error vs RK45 = ${physErr.toExpone
 // 3. Closed loop — the same loop the page runs in TQC mode.
 const p = meta.physics, steps = Math.round(fixture.swingup.seconds / p.dt);
 fixture.swingup.starts.forEach((start, idx) => {
+  const target = start.goal ? meta.goals.targets[meta.goals.labels.indexOf(start.goal)] : null;
   const act = Core.createActuator(meta);
   let st = Float64Array.from(start.state), settled = 0, upAt = null, crashed = false;
   for (let k = 1; k <= steps; k++) {
-    st = plant.step(st, act.apply(policy.act(Core.encodeObs(st, meta.n_links))));
+    st = plant.step(st, act.apply(policy.act(Core.encodeObs(st, meta.n_links, target))));
     if (Math.abs(st[0]) > p.x_lim) { crashed = true; break; }
-    settled = Core.atGoal(st, meta) ? settled + 1 : 0;
+    settled = Core.atGoal(st, meta, target) ? settled + 1 : 0;
     if (settled >= meta.success.settle_steps) { upAt = (k - meta.success.settle_steps + 1) * p.dt; break; }
   }
   const py = start.python_swingup_s === null ? 'never' : start.python_swingup_s.toFixed(2) + ' s';
   const js = crashed ? 'hit the rail' : upAt === null ? 'never' : upAt.toFixed(2) + ' s';
-  check(upAt !== null, `swing-up start ${idx}: JS ${js} (Python ${py})`);
+  const name = start.goal ? `${start.from} → ${start.goal}` : `swing-up start ${idx}`;
+  check(upAt !== null, `${name}: JS ${js} (Python ${py})`);
 });
 
 if (failed) {

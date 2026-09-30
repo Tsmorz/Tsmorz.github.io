@@ -1,4 +1,5 @@
-/* Double cart-pole swing-up: by hand, or by a TQC policy trained in n-cartpole.
+/* Double cart-pole: swing it up by hand, or command a goal-conditioned TQC
+   policy trained in n-cartpole to move between UU / UD / DU / DD.
 
    Two parts:
    - SwingupCore — physics, actuator, and the policy network. No DOM, so
@@ -8,7 +9,9 @@
    Every physical constant comes from assets/models/swingup-tqc.json, which
    n-cartpole's `task export-web` writes from the checkpoint's own training
    config. Don't hard-code any of them here: the policy only works on the
-   plant it was trained on. */
+   plant it was trained on. The JSON's optional "goals" block (labels and
+   target angles) marks a goal-conditioned net; without it the net is a plain
+   swing-up policy and the target is always all-up. */
 (function (root) {
   'use strict';
 
@@ -130,12 +133,15 @@
     }
 
     // [x, ẋ, cos θ₀, sin θ₀, θ̇₀, …] — matches n_cartpole.env.cartpole.encode_obs.
-    function encodeObs(state, n) {
-      var o = new Float32Array(2 + 3 * n);
+    // A goal net also gets cos of each link's target angle after the kinematics
+    // (NPendulumCartpole._make_obs); pass target = null for a plain swing-up net.
+    function encodeObs(state, n, target) {
+      var o = new Float32Array(2 + 3 * n + (target ? n : 0));
       o[0] = state[0]; o[1] = state[1];
       for (var k = 0; k < n; k++) {
         var th = state[2 + 2 * k];
         o[2 + 3 * k] = Math.cos(th); o[3 + 3 * k] = Math.sin(th); o[4 + 3 * k] = state[3 + 2 * k];
+        if (target) o[2 + 3 * n + k] = Math.cos(target[k]);
       }
       return o;
     }
@@ -146,13 +152,15 @@
       return a - Math.PI;
     }
 
-    // Every link within tol_angle of upright and slower than tol_vel — the same
-    // "at goal" test eval_swingup.py uses (held for settle_steps in a row).
-    function atGoal(state, meta) {
+    // Every link within tol_angle of its target (default upright) and slower than
+    // tol_vel — NPendulumCartpole._at_goal (held for settle_steps in a row).
+    function atGoal(state, meta, target) {
       var sc = meta.success;
       for (var k = 0; k < meta.n_links; k++) {
-        if (Math.abs(wrapAngle(state[2 + 2 * k])) >= sc.tol_angle) return false;
-        if (Math.abs(state[3 + 2 * k]) >= sc.tol_vel) return false;
+        var th = state[2 + 2 * k] - (target ? target[k] : 0);
+        // Written as !(… < tol) so a NaN state never counts as reached.
+        if (!(Math.abs(wrapAngle(th)) < sc.tol_angle)) return false;
+        if (!(Math.abs(state[3 + 2 * k]) < sc.tol_vel)) return false;
       }
       return true;
     }
@@ -252,8 +260,14 @@
   var modeBtns   = Array.prototype.slice.call(document.querySelectorAll('.mode-btn[data-mode]'));
   var tqcBtn     = document.querySelector('.mode-btn[data-mode="tqc"]');
   var scoreEl    = document.getElementById('su-score');
+  var scoreLblEl = document.getElementById('su-score-label');
   var bestManEl  = document.getElementById('su-best-manual');
   var bestTqcEl  = document.getElementById('su-best-tqc');
+  var bestManKey = document.getElementById('su-best-manual-key');
+  var bestTqcKey = document.getElementById('su-best-tqc-key');
+  var targetsEl  = document.getElementById('su-targets');
+  var goalBtns   = Array.prototype.slice.call(document.querySelectorAll('.goal-btn[data-goal]'));
+  var randomGoalBtn = document.getElementById('su-goal-random');
   var modelEl    = document.getElementById('su-model-status');
   var paramsEl   = document.getElementById('su-params');
 
@@ -267,9 +281,12 @@
 
   var meta = null, plant = null, actuator = null, policy = null, policyLoading = false;
   var state = null, mode = 'manual', status = 'loading';
-  var simT = 0, settled = 0, swingTime = null, modesUsed = {};
+  // goal: U/D label, base link first; target: its angles (null = all upright, for a
+  // plain swing-up export). fromLabel: the pose the clock started at, if any.
+  var goal = 'UU', target = null, fromLabel = null;
+  var simT = 0, segT = 0, settled = 0, reachTime = null, modesUsed = {};
   var applied = 0, crashTimer = null;
-  var best = { manual: null, tqc: null };
+  var best = {};                      // goal label → { manual, tqc } in seconds
   var dragX = null, keyL = false, keyR = false;
   var hist = { x: [], th1: [], th2: [], F: [] };
   var view = { W: 0, H: 0, scale: 1, cx: 0, trackY: 0 };
@@ -281,6 +298,11 @@
       plant = Core.createPlant(meta);
       actuator = Core.createActuator(meta);
       renderParams();
+      if (meta.goals) {
+        goalBtns.forEach(function (b) { b.querySelector('.goal-icon').innerHTML = goalIcon(b.dataset.goal); });
+        if (targetsEl) targetsEl.hidden = false;
+        selectGoal('UU', false);
+      }
       reset('hanging');
     })
     .catch(function () {
@@ -301,6 +323,68 @@
       ', trained ' + (meta.source.step / 1000) + 'k steps.';
   }
 
+  // Pictogram of a target pose: cart on a rail, link 1 then link 2. The splay is
+  // only for legibility (wider where a link folds back); in UD / DU the real
+  // poles fold exactly onto each other.
+  function goalIcon(label) {
+    var cx = 16, cy = 26, L = 12, x = cx, y = cy, tilt = -0.1;
+    var out = '<svg viewBox="0 0 32 52" focusable="false">' +
+      '<line class="gi-rail" x1="2" y1="' + (cy + 3) + '" x2="30" y2="' + (cy + 3) + '"/>' +
+      '<rect class="gi-cart" x="11" y="' + (cy - 2.5) + '" width="10" height="5" rx="1.5"/>';
+    for (var k = 0; k < label.length; k++) {
+      if (k > 0) tilt += label[k] === label[k - 1] ? 0.4 : 0.8;
+      var th = (label[k] === 'D' ? Math.PI : 0) + tilt;
+      var nx = x + L * Math.sin(th), ny = y - L * Math.cos(th);
+      out += '<line class="gi-rod" x1="' + x.toFixed(1) + '" y1="' + y.toFixed(1) +
+             '" x2="' + nx.toFixed(1) + '" y2="' + ny.toFixed(1) + '"/>' +
+             '<circle class="gi-bob-' + (k % 2) + '" cx="' + nx.toFixed(1) + '" cy="' + ny.toFixed(1) + '" r="3"/>';
+      x = nx; y = ny;
+    }
+    return out + '</svg>';
+  }
+
+  function targetOf(label) {
+    return meta.goals ? meta.goals.targets[meta.goals.labels.indexOf(label)] : null;
+  }
+
+  // The pose the rig is resting in right now (within the "reached" tolerances), or null.
+  function poseOf(s) {
+    if (!meta.goals) return Core.atGoal(s, meta, null) ? 'UU' : null;
+    for (var i = 0; i < meta.goals.labels.length; i++) {
+      if (Core.atGoal(s, meta, meta.goals.targets[i])) return meta.goals.labels[i];
+    }
+    return null;
+  }
+
+  // Restart the clock: from a reset, or from wherever the rig is when the target changes.
+  function startClock() {
+    fromLabel = state ? poseOf(state) : null;
+    segT = 0; settled = 0; reachTime = null;
+    modesUsed = {};
+    updateScore();
+  }
+
+  function selectGoal(label, handOff) {
+    if (!meta || !meta.goals || meta.goals.labels.indexOf(label) < 0) return;
+    if (label !== goal || target === null) {
+      goal = label;
+      target = targetOf(label);
+      goalBtns.forEach(function (b) {
+        var on = b.dataset.goal === goal;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      if (state) startClock();
+    }
+    if (handOff && mode !== 'tqc') setMode('tqc');
+  }
+
+  function randomGoal() {
+    if (!meta || !meta.goals) return;
+    var others = meta.goals.labels.filter(function (l) { return l !== goal; });
+    selectGoal(others[Math.floor(Math.random() * others.length)], true);
+  }
+
   function reset(kind) {
     if (!meta) return;
     if (crashTimer) { clearTimeout(crashTimer); crashTimer = null; }
@@ -316,11 +400,10 @@
     }
     state = s;
     actuator.reset();
-    applied = 0; simT = 0; settled = 0; swingTime = null;
-    modesUsed = {};
+    applied = 0; simT = 0;
     hist = { x: [], th1: [], th2: [], F: [] };
     status = 'running';
-    updateScore();
+    startClock();
   }
 
   function setMode(next) {
@@ -358,6 +441,10 @@
   });
   document.getElementById('su-reset').addEventListener('click', function () { reset('hanging'); });
   document.getElementById('su-random').addEventListener('click', function () { reset('random'); });
+  goalBtns.forEach(function (b) {
+    b.addEventListener('click', function () { selectGoal(b.dataset.goal, true); });
+  });
+  if (randomGoalBtn) randomGoalBtn.addEventListener('click', randomGoal);
 
   /* ---- Input ---- */
   function pointerToX(e) {
@@ -394,14 +481,14 @@
   function simStep() {
     var p = meta.physics, keys = (keyR ? 1 : 0) - (keyL ? 1 : 0), cmd, shove = 0;
     if (mode === 'tqc' && policy) {
-      cmd = policy.act(Core.encodeObs(state, meta.n_links));
+      cmd = policy.act(Core.encodeObs(state, meta.n_links, meta.goals ? target : null));
       shove = keys * PUSH_F;
       modesUsed.tqc = true;
     } else {
       cmd = keys * MANUAL_F;
       if (dragX !== null) {
-        var target = clamp(dragX, -p.x_lim, p.x_lim);
-        cmd += DRAG_K * (target - state[0]) - DRAG_C * state[1];
+        var dragTo = clamp(dragX, -p.x_lim, p.x_lim);
+        cmd += DRAG_K * (dragTo - state[0]) - DRAG_C * state[1];
       }
       cmd = clamp(cmd, -MANUAL_F, MANUAL_F);
       // Idle manual time (e.g. while the weights load) doesn't disqualify a TQC run.
@@ -409,22 +496,23 @@
     }
     applied = actuator.apply(cmd);
     state = plant.step(state, applied + shove);
-    simT += p.dt;
+    simT += p.dt; segT += p.dt;
 
     if (Math.abs(state[0]) > p.x_lim) {          // the rail end — training terminates here too
       status = 'crashed';
       crashTimer = setTimeout(function () { crashTimer = null; reset('hanging'); }, 1500);
       return;
     }
-    if (swingTime === null) {
-      settled = Core.atGoal(state, meta) ? settled + 1 : 0;
-      if (settled >= meta.success.settle_steps) {
-        swingTime = simT - (meta.success.settle_steps - 1) * p.dt;
-        var who = modesUsed.manual && !modesUsed.tqc ? 'manual'
-                : modesUsed.tqc && !modesUsed.manual ? 'tqc' : null;
-        if (who && (best[who] === null || swingTime < best[who])) best[who] = swingTime;
-        updateScore();
-      }
+    // Keep counting after the target is reached, so the status can tell holding from recovering.
+    settled = Core.atGoal(state, meta, target) ? settled + 1 : 0;
+    if (reachTime === null && settled >= meta.success.settle_steps) {
+      reachTime = segT - (meta.success.settle_steps - 1) * p.dt;
+      var who = modesUsed.manual && !modesUsed.tqc ? 'manual'
+              : modesUsed.tqc && !modesUsed.manual ? 'tqc' : null;
+      var rec = best[goal] || (best[goal] = { manual: null, tqc: null });
+      // Starting already at the target is no record.
+      if (who && fromLabel !== goal && (rec[who] === null || reachTime < rec[who])) rec[who] = reachTime;
+      updateScore();
     }
 
     hist.x.push(state[0]);
@@ -435,9 +523,14 @@
   }
 
   function updateScore() {
-    if (scoreEl) scoreEl.textContent = swingTime === null ? '—' : swingTime.toFixed(2);
-    if (bestManEl) bestManEl.textContent = best.manual === null ? '—' : best.manual.toFixed(2) + ' s';
-    if (bestTqcEl) bestTqcEl.textContent = best.tqc === null ? '—' : best.tqc.toFixed(2) + ' s';
+    var rec = best[goal] || {};
+    function secs(v) { return v == null ? '—' : v.toFixed(2) + ' s'; }
+    if (scoreEl) scoreEl.textContent = reachTime === null ? '—' : reachTime.toFixed(2);
+    if (scoreLblEl) scoreLblEl.textContent = (fromLabel ? fromLabel + ' ' : '') + '→ ' + goal + ' time (s)';
+    if (bestManKey) bestManKey.textContent = 'Best → ' + goal + ', manual';
+    if (bestTqcKey) bestTqcKey.textContent = 'Best → ' + goal + ', TQC';
+    if (bestManEl) bestManEl.textContent = secs(rec.manual);
+    if (bestTqcEl) bestTqcEl.textContent = secs(rec.tqc);
   }
 
   /* ---- Rendering ---- */
@@ -501,9 +594,19 @@
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
 
-    // Upright reference
-    ctx.strokeStyle = accent; ctx.globalAlpha = 0.35; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cartX, trackY); ctx.lineTo(cartX, trackY - reach * scale - 10); ctx.stroke();
+    // Target pose ghost, hung from the cart: dashed rods and hollow bobs.
+    var gx = cartX, gy = trackY, gk, gth, gnx, gny;
+    ctx.globalAlpha = 0.45; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5;
+    for (gk = 0; gk < meta.n_links; gk++) {
+      gth = target ? target[gk] : 0;
+      gnx = gx + p.lengths[gk] * scale * Math.sin(gth); gny = gy - p.lengths[gk] * scale * Math.cos(gth);
+      ctx.strokeStyle = accent;
+      ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gnx, gny); ctx.stroke();
+      ctx.setLineDash([]); ctx.strokeStyle = gk % 2 ? col2 : col1;
+      ctx.beginPath(); ctx.arc(gnx, gny, Math.max(6, 0.028 * scale * Math.sqrt(p.masses[gk] / 0.15)) + 2, 0, 2 * Math.PI); ctx.stroke();
+      ctx.setLineDash([4, 4]);
+      gx = gnx; gy = gny;
+    }
     ctx.setLineDash([]); ctx.globalAlpha = 1;
 
     // Cart
@@ -539,10 +642,13 @@
 
     // Status
     var label, colr = muted;
-    if (status === 'crashed')      { label = 'Hit the end of the rail — resetting…'; colr = col2; }
-    else if (swingTime !== null)   { label = 'Swung up in ' + swingTime.toFixed(2) + ' s — holding'; colr = accent; }
-    else if (mode === 'tqc')       { label = 'TQC network in control'; colr = accent; }
-    else                           { label = 'Manual — drag the cart or hold ← →'; }
+    if (status === 'crashed')            { label = 'Hit the end of the rail — resetting…'; colr = col2; }
+    else if (reachTime !== null && settled > 0) {
+      label = 'Reached ' + goal + ' in ' + reachTime.toFixed(2) + ' s — holding'; colr = accent;
+    }
+    else if (reachTime !== null)         { label = 'Knocked out of ' + goal + ' — recovering'; colr = accent; }
+    else if (mode === 'tqc')             { label = 'TQC network → ' + goal; colr = accent; }
+    else                                 { label = 'Manual → ' + goal + ' — drag the cart or hold ← →'; }
     ctx.textAlign = 'left'; ctx.font = '600 13px ' + font; ctx.fillStyle = colr;
     ctx.fillText(label, 14, 24);
     ctx.font = '11px ' + mono; ctx.fillStyle = muted;

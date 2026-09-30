@@ -1,8 +1,8 @@
 {
-  "format": 1,
+  "format": 2,
   "source": {
-    "checkpoint": "checkpoints/double/tqc/tqc_latest.pt",
-    "step": 200000
+    "checkpoint": "checkpoints/double/tqc-goal/tqc_latest.pt",
+    "step": 375000
   },
   "n_links": 2,
   "physics": {
@@ -36,8 +36,8 @@
     "settle_steps": 50
   },
   "network": {
-    "obs": "x, xd, then cos(th), sin(th), thd per link (th = 0 upright)",
-    "obs_dim": 8,
+    "obs": "x, xd, then cos(th), sin(th), thd per link (th = 0 upright), then cos(target th) per link",
+    "obs_dim": 10,
     "hidden": 256,
     "expand": 4,
     "blocks": 2,
@@ -48,7 +48,7 @@
         "name": "in_w",
         "shape": [
           256,
-          8
+          10
         ],
         "offset": 0
       },
@@ -57,21 +57,21 @@
         "shape": [
           256
         ],
-        "offset": 2048
+        "offset": 2560
       },
       {
         "name": "b0_ln_w",
         "shape": [
           256
         ],
-        "offset": 2304
+        "offset": 2816
       },
       {
         "name": "b0_ln_b",
         "shape": [
           256
         ],
-        "offset": 2560
+        "offset": 3072
       },
       {
         "name": "b0_fc1_w",
@@ -79,14 +79,14 @@
           1024,
           256
         ],
-        "offset": 2816
+        "offset": 3328
       },
       {
         "name": "b0_fc1_b",
         "shape": [
           1024
         ],
-        "offset": 264960
+        "offset": 265472
       },
       {
         "name": "b0_fc2_w",
@@ -94,28 +94,28 @@
           256,
           1024
         ],
-        "offset": 265984
+        "offset": 266496
       },
       {
         "name": "b0_fc2_b",
         "shape": [
           256
         ],
-        "offset": 528128
+        "offset": 528640
       },
       {
         "name": "b1_ln_w",
         "shape": [
           256
         ],
-        "offset": 528384
+        "offset": 528896
       },
       {
         "name": "b1_ln_b",
         "shape": [
           256
         ],
-        "offset": 528640
+        "offset": 529152
       },
       {
         "name": "b1_fc1_w",
@@ -123,14 +123,14 @@
           1024,
           256
         ],
-        "offset": 528896
+        "offset": 529408
       },
       {
         "name": "b1_fc1_b",
         "shape": [
           1024
         ],
-        "offset": 791040
+        "offset": 791552
       },
       {
         "name": "b1_fc2_w",
@@ -138,28 +138,28 @@
           256,
           1024
         ],
-        "offset": 792064
+        "offset": 792576
       },
       {
         "name": "b1_fc2_b",
         "shape": [
           256
         ],
-        "offset": 1054208
+        "offset": 1054720
       },
       {
         "name": "final_ln_w",
         "shape": [
           256
         ],
-        "offset": 1054464
+        "offset": 1054976
       },
       {
         "name": "final_ln_b",
         "shape": [
           256
         ],
-        "offset": 1054720
+        "offset": 1055232
       },
       {
         "name": "out_w",
@@ -167,15 +167,41 @@
           1,
           256
         ],
-        "offset": 1054976
+        "offset": 1055488
       },
       {
         "name": "out_b",
         "shape": [
           1
         ],
-        "offset": 1055232
+        "offset": 1055744
       }
+    ]
+  },
+  "goals": {
+    "labels": [
+      "UU",
+      "DU",
+      "UD",
+      "DD"
+    ],
+    "targets": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        3.141592653589793,
+        0.0
+      ],
+      [
+        0.0,
+        3.141592653589793
+      ],
+      [
+        3.141592653589793,
+        3.141592653589793
+      ]
     ]
   }
 }
