@@ -4,9 +4,9 @@ title: Home
 description: Tony Smoragiewicz — robotics software engineer at Agile Robots working on fleet connectivity, teleoperation, and autonomous aerial vehicles.
 ---
 
-<section class="hero wrap">
+<section class="hero">
   <canvas class="hero-field" aria-hidden="true"></canvas>
-  <div class="hero-inner">
+  <div class="hero-inner wrap">
     <div>
       <span class="hero-eyebrow">48.1351&deg; N, 11.5820&deg; E &mdash; Munich, DE</span>
       <h1>Hi, I'm Tony &mdash;<br>I build <span class="accent">robots that know where they are.</span></h1>
@@ -27,23 +27,3 @@ description: Tony Smoragiewicz — robotics software engineer at Agile Robots wo
   </div>
 </section>
 
-<section class="section wrap">
-  <div class="section-head">
-    <h2>Selected projects</h2>
-    <a class="more" href="{{ '/projects/' | relative_url }}">All projects &rarr;</a>
-  </div>
-  <div class="card-grid">
-    {%- for project in site.data.projects %}
-      {%- if project.featured %}{% include project-card.html project=project %}{% endif %}
-    {%- endfor %}
-  </div>
-</section>
-
-<section class="section wrap">
-  <div class="section-head">
-    <h2>Photography</h2>
-    <a class="more" href="{{ '/photos/' | relative_url }}">Full gallery &rarr;</a>
-  </div>
-  {% assign recent = site.data.photos | slice: 0, 4 %}
-  {% include photo-grid.html photos=recent %}
-</section>

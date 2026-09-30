@@ -131,6 +131,8 @@
     // Scrolling time-series buffer (last ~8 s of display)
     var HIST = 600;
     var hist = { xArr: [], refArr: [], time: [] };
+    // State plot history (same length as the PID plot's).
+    var stateHist = { x: [], xd: [], e: [], F: [] };
 
     // PID contribution history for contribution plot
     var CHIST = 300;
@@ -203,6 +205,7 @@
       errRing = [];
       forceBuf.length = 0;
       hist.xArr = []; hist.refArr = []; hist.time = [];
+      stateHist = { x: [], xd: [], e: [], F: [] };
       pidContrib.p = []; pidContrib.i = []; pidContrib.d = []; pidContrib.total = [];
       bestScore = null;
       if (bestEl) bestEl.textContent = '';
@@ -242,6 +245,7 @@
           return [s2[1], (Fapplied - C_damp * s2[1] - K_spring * s2[0]) / M];
         });
         sim.x = s[0]; sim.v = s[1];
+        sim.F = Fapplied;
         sim.t += DT;
         var err = ref - sim.x;
         errRing.push(err * err);
@@ -255,10 +259,15 @@
       if (hist.xArr.length > HIST) {
         hist.xArr.shift(); hist.refArr.shift(); hist.time.shift();
       }
-      // PID contribution history
+      // PID contribution + state history
       pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(F);
+      stateHist.x.push(sim.x); stateHist.xd.push(sim.v);
+      stateHist.e.push(refNow - sim.x); stateHist.F.push(sim.F || 0);
       if (pidContrib.p.length > CHIST) {
         pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift();
+      }
+      if (stateHist.x.length > CHIST) {
+        stateHist.x.shift(); stateHist.xd.shift(); stateHist.e.shift(); stateHist.F.shift();
       }
       // Score
       if (errRing.length > 0) {
@@ -293,43 +302,51 @@
     }
 
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var ANIM_H = 320, TS_H = 320;
+    var ANIM_H = 320, TS_H = 320;   // refreshed from the CSS layout on resize
     var tsCanvas = document.getElementById('msd-ts-plot');
     var tsCtx = tsCanvas ? tsCanvas.getContext('2d') : null;
+    trackHover(tsCanvas);
 
-    function sizeOne(cv, cx2, h) {
-      var w = cv.clientWidth || parseInt(cv.getAttribute('width'), 10) || 200;
+    // Size the pixel buffer to the CSS box (the layout sets both dimensions).
+    function sizeOne(cv, cx2) {
+      var w = cv.clientWidth || 200, h = cv.clientHeight || 320;
       cv.width  = Math.round(w * dpr);
       cv.height = Math.round(h * dpr);
-      cv.style.height = h + 'px';
       cx2.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return h;
     }
     function resizeCanvas() {
-      sizeOne(canvas, ctx, ANIM_H);
-      if (tsCtx) sizeOne(tsCanvas, tsCtx, TS_H);
+      ANIM_H = sizeOne(canvas, ctx);
+      if (tsCtx) TS_H = sizeOne(tsCanvas, tsCtx);
     }
     var wrapEl = canvas.closest('.sim-canvas-wrap') || canvas.parentElement;
     new ResizeObserver(resizeCanvas).observe(wrapEl);
     resizeCanvas();
 
     // === Compact spring-mass animation (left) ===
+    // Colors follow the entity across both canvases: the mass and its trace are
+    // --viz-7, the reference is the accent (dashed), and the control force arrow
+    // is --viz-total like the "Total" line in the PID contribution plot below.
     function renderAnim() {
       var W = canvas.clientWidth, H = ANIM_H;
       if (!W) return;
       ctx.clearRect(0, 0, W, H);
 
-      var textColor  = cssVar('--text');
-      var mutedColor = cssVar('--text-muted');
+      var mutedColor  = cssVar('--text-muted');
       var accentColor = cssVar('--accent');
-      var borderColor = cssVar('--border');
-      var bgSoft = cssVar('--bg-soft');
+      var strongColor = cssVar('--border-strong');
+      var bgSoft      = cssVar('--bg-soft');
+      var massColor   = cssVar('--viz-7');
+      var forceColor  = cssVar('--viz-total');
 
       var cx = W / 2;
       var anchorY = 26;
       var massH = 42, massW = 54;
       var scale = ANIM_SCALE;  // 1 m = 80px
       var massY = H / 2 + sim.x * scale;
+      var massTop = massY - massH / 2;
       var refY  = H / 2 + AMP_REF * Math.sin(OMEGA_REF * sim.t) * scale;
+      var springX = cx - 13, damperX = cx + 14;
 
       // Reference dashed line
       ctx.save();
@@ -337,36 +354,70 @@
       ctx.setLineDash([6, 4]);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(cx - 38, refY);
-      ctx.lineTo(cx + 38, refY);
+      ctx.moveTo(cx - 44, refY);
+      ctx.lineTo(cx + 44, refY);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
 
       // Anchor bar
       ctx.fillStyle = mutedColor;
-      ctx.fillRect(cx - 32, anchorY - 8, 64, 8);
+      ctx.fillRect(cx - 36, anchorY - 8, 72, 8);
 
       // Spring
       ctx.strokeStyle = mutedColor;
       ctx.lineWidth = 1.5;
-      drawSpring(ctx, cx, anchorY, cx, massY - massH / 2, 7);
+      drawSpring(ctx, springX, anchorY, springX, massTop, 7);
 
-      // Mass block
+      // Damper: a cylinder hung from the anchor, a piston rod up from the mass.
+      var cylH = 46, cylW = 14;
       ctx.fillStyle = bgSoft;
-      ctx.strokeStyle = borderColor;
+      ctx.strokeStyle = strongColor;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.roundRect(cx - massW / 2, massY - massH / 2, massW, massH, 6);
-      ctx.fill();
+      ctx.moveTo(damperX, anchorY); ctx.lineTo(damperX, anchorY + 6);
+      ctx.stroke();
+      ctx.fillRect(damperX - cylW / 2, anchorY + 6, cylW, cylH);
+      ctx.beginPath();
+      ctx.moveTo(damperX - cylW / 2, anchorY + 6); ctx.lineTo(damperX - cylW / 2, anchorY + 6 + cylH);
+      ctx.moveTo(damperX + cylW / 2, anchorY + 6); ctx.lineTo(damperX + cylW / 2, anchorY + 6 + cylH);
+      ctx.moveTo(damperX - cylW / 2, anchorY + 6); ctx.lineTo(damperX + cylW / 2, anchorY + 6);
+      ctx.stroke();
+      var pistonY = clamp(massTop - 36, anchorY + 10, anchorY + 2 + cylH);
+      ctx.strokeStyle = mutedColor;
+      ctx.beginPath();
+      ctx.moveTo(damperX, pistonY); ctx.lineTo(damperX, massTop);
+      ctx.moveTo(damperX - cylW / 2 + 2, pistonY); ctx.lineTo(damperX + cylW / 2 - 2, pistonY);
       ctx.stroke();
 
-      // "m" label on mass
-      ctx.fillStyle = textColor;
+      // Mass block
+      ctx.fillStyle = massColor;
+      ctx.beginPath();
+      ctx.roundRect(cx - massW / 2, massTop, massW, massH, 6);
+      ctx.fill();
+
+      // "m" label on mass: the page background reads on the violet in both themes.
+      ctx.fillStyle = cssVar('--bg');
       ctx.font = '600 13px ' + cssVar('--font');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('m', cx, massY);
+
+      // Control force on the mass (positive F pushes down, like positive x).
+      var F = sim.F || 0;
+      if (Math.abs(F) > 0.05) {
+        var len = 46 * Math.tanh(Math.abs(F) / 4), dir = F > 0 ? 1 : -1;
+        var ax = cx + massW / 2 + 12, ay0 = massY, ay1 = massY + dir * len;
+        ctx.strokeStyle = forceColor; ctx.fillStyle = forceColor; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(ax, ay0); ctx.lineTo(ax, ay1 - dir * 5); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(ax, ay1); ctx.lineTo(ax - 5, ay1 - dir * 7); ctx.lineTo(ax + 5, ay1 - dir * 7);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = mutedColor;
+        ctx.font = '10px ' + cssVar('--mono');
+        ctx.textAlign = 'left';
+        ctx.fillText('F', ax + 7, massY);
+      }
     }
 
     // === Wide reference-tracking time-series plot (right) ===
@@ -376,10 +427,11 @@
       if (!W) return;
       tsCtx.clearRect(0, 0, W, H);
 
-      var textColor  = cssVar('--text');
-      var mutedColor = cssVar('--text-muted');
+      var textColor   = cssVar('--text');
+      var mutedColor  = cssVar('--text-muted');
       var accentColor = cssVar('--accent');
       var borderColor = cssVar('--border');
+      var massColor   = cssVar('--viz-7');
 
       var px0 = 38, py0 = 16, pw = W - px0 - 14, ph = H - 38;
       var yMap = function (v) { return py0 + ph / 2 - v * (ph / 2 - 12) / AMP_REF; };
@@ -391,41 +443,68 @@
       tsCtx.textBaseline = 'top';
       tsCtx.fillText('x (m)', px0 + 2, py0);
 
-      // Grid line at 0
+      // Grid line at 0 (solid hairline)
       tsCtx.strokeStyle = borderColor;
-      tsCtx.setLineDash([3, 3]);
+      tsCtx.lineWidth = 1;
       tsCtx.beginPath();
       tsCtx.moveTo(px0, yMap(0));
       tsCtx.lineTo(px0 + pw, yMap(0));
       tsCtx.stroke();
-      tsCtx.setLineDash([]);
+
+      // Readout sample: the hovered one, else the newest.
+      var hk = hoverIndex(tsCanvas, px0, pw, HIST + 1), rk = hist.xArr.length - 1;
+      if (hk >= 0) rk = hk - (HIST - hist.xArr.length);
+      var hasRk = rk >= 0 && rk < hist.xArr.length;
 
       if (hist.xArr.length > 1) {
-        var xStep = pw / HIST;
+        var xStep = pw / HIST, n = hist.xArr.length, off = HIST - n;
+        var xAt = function (i) { return px0 + (i + off) * xStep; };
+
+        // Tracking error: the band between reference and actual (what RMSE measures).
+        tsCtx.fillStyle = massColor;
+        tsCtx.globalAlpha = 0.14;
+        tsCtx.beginPath();
+        for (var a = 0; a < n; a++) {
+          if (a === 0) tsCtx.moveTo(xAt(a), yMap(hist.refArr[a])); else tsCtx.lineTo(xAt(a), yMap(hist.refArr[a]));
+        }
+        for (var bI = n - 1; bI >= 0; bI--) tsCtx.lineTo(xAt(bI), yMap(hist.xArr[bI]));
+        tsCtx.closePath();
+        tsCtx.fill();
+        tsCtx.globalAlpha = 1;
 
         // Reference (dashed accent)
         tsCtx.strokeStyle = accentColor;
         tsCtx.lineWidth = 1.5;
         tsCtx.setLineDash([5, 4]);
         tsCtx.beginPath();
-        for (var i = 0; i < hist.refArr.length; i++) {
-          var xx = px0 + (i - hist.refArr.length + HIST) * xStep;
-          var yy = yMap(hist.refArr[i]);
-          if (i === 0) tsCtx.moveTo(xx, yy); else tsCtx.lineTo(xx, yy);
+        for (var i = 0; i < n; i++) {
+          if (i === 0) tsCtx.moveTo(xAt(i), yMap(hist.refArr[i])); else tsCtx.lineTo(xAt(i), yMap(hist.refArr[i]));
         }
         tsCtx.stroke();
         tsCtx.setLineDash([]);
 
-        // Actual position (solid)
-        tsCtx.strokeStyle = textColor;
-        tsCtx.lineWidth = 1.8;
+        // Actual position (solid, the mass's color)
+        tsCtx.strokeStyle = massColor;
+        tsCtx.lineWidth = 2;
+        tsCtx.lineJoin = 'round';
         tsCtx.beginPath();
-        for (var j = 0; j < hist.xArr.length; j++) {
-          var xx2 = px0 + (j - hist.xArr.length + HIST) * xStep;
-          var yy2 = yMap(hist.xArr[j]);
-          if (j === 0) tsCtx.moveTo(xx2, yy2); else tsCtx.lineTo(xx2, yy2);
+        for (var j = 0; j < n; j++) {
+          if (j === 0) tsCtx.moveTo(xAt(j), yMap(hist.xArr[j])); else tsCtx.lineTo(xAt(j), yMap(hist.xArr[j]));
         }
         tsCtx.stroke();
+
+        if (hk >= 0 && hasRk) {
+          drawCrosshair(tsCtx, xAt(rk), py0, py0 + ph,
+            [{ y: yMap(hist.refArr[rk]), color: accentColor }, { y: yMap(hist.xArr[rk]), color: massColor }],
+            cssVar('--bg-soft'), mutedColor);
+        } else {
+          // End-point marker with a surface ring, so the live value is easy to find.
+          var lx = xAt(n - 1), ly = yMap(hist.xArr[n - 1]);
+          tsCtx.fillStyle = cssVar('--bg-soft');
+          tsCtx.beginPath(); tsCtx.arc(lx, ly, 6, 0, 2 * Math.PI); tsCtx.fill();
+          tsCtx.fillStyle = massColor;
+          tsCtx.beginPath(); tsCtx.arc(lx, ly, 4, 0, 2 * Math.PI); tsCtx.fill();
+        }
       }
 
       // Y-axis ticks
@@ -437,14 +516,48 @@
       tsCtx.fillText('0', px0 - 4, yMap(0));
       tsCtx.fillText((-AMP_REF).toFixed(1), px0 - 4, yMap(-AMP_REF));
 
-      // Legend
+      // Legend: colored swatch + text-colored label (text never wears the series color).
       tsCtx.font = '11px ' + cssVar('--mono');
-      tsCtx.textAlign = 'right';
-      tsCtx.textBaseline = 'bottom';
-      tsCtx.fillStyle = accentColor;
-      tsCtx.fillText('— reference', px0 + pw, H - 4);
+      tsCtx.textAlign = 'left';
+      tsCtx.textBaseline = 'middle';
+      var xa = hasRk ? hist.xArr[rk] : null, xr = hasRk ? hist.refArr[rk] : null;
+      function fmt(v) { return v === null ? '—' : v.toFixed(2); }
+      var items = [
+        { label: 'actual',    value: fmt(xa),           color: massColor,   dash: [],     w: 2,   band: false },
+        { label: 'reference', value: fmt(xr),           color: accentColor, dash: [5, 4], w: 1.5, band: false },
+        { label: 'error',     value: fmt(xa === null ? null : Math.abs(xr - xa)), color: massColor, dash: [], w: 0, band: true }
+      ];
+      var widths = items.map(function (it) {
+        return 22 + tsCtx.measureText(it.label + ' ' + it.value).width + 14;
+      });
+      // Right-aligned rows, wrapping onto a line above when a narrow plot can't fit
+      // them all (on a phone the three items need two lines).
+      var rows = [[]], rowW = [0], avail = W - 8;
+      items.forEach(function (it, k) {
+        var r = rows.length - 1;
+        if (rows[r].length && rowW[r] + widths[k] - 14 > avail) { rows.push([]); rowW.push(0); r++; }
+        rows[r].push(k); rowW[r] += widths[k];
+      });
+      rows.forEach(function (row, r) {
+        var lx0 = px0 + pw - rowW[r] + 14, ly0 = H - 10 - (rows.length - 1 - r) * 16;
+        row.forEach(function (k) {
+          var it = items[k];
+          if (it.band) {
+            tsCtx.globalAlpha = 0.22; tsCtx.fillStyle = it.color;
+            tsCtx.fillRect(lx0, ly0 - 5, 16, 10); tsCtx.globalAlpha = 1;
+          } else {
+            tsCtx.strokeStyle = it.color; tsCtx.lineWidth = it.w; tsCtx.setLineDash(it.dash);
+            tsCtx.beginPath(); tsCtx.moveTo(lx0, ly0); tsCtx.lineTo(lx0 + 16, ly0); tsCtx.stroke();
+            tsCtx.setLineDash([]);
+          }
+          tsCtx.fillStyle = mutedColor;
+          tsCtx.fillText(it.label, lx0 + 22, ly0);
+          tsCtx.fillStyle = textColor;
+          tsCtx.fillText(it.value, lx0 + 22 + tsCtx.measureText(it.label + ' ').width, ly0);
+          lx0 += widths[k];
+        });
+      });
       tsCtx.fillStyle = textColor;
-      tsCtx.fillText('— actual', px0 + pw - 92, H - 4);
     }
 
     var stepTimer = setInterval(function () {
@@ -452,11 +565,19 @@
     }, 25);
 
     var msdPidCanvas = document.getElementById('msd-pid-plot');
+    var msdStatePlot = document.getElementById('msd-state-plot');
+    var MSD_STATE_SPEC = [
+      { key: 'x',  label: 'x (m)',   color: cssVar('--viz-7') },
+      { key: 'xd', label: 'ẋ (m/s)', color: cssVar('--viz-1') },
+      { key: 'e',  label: 'e (m)',   color: cssVar('--viz-2') },
+      { key: 'F',  label: 'F (N)',   color: cssVar('--viz-total') }
+    ];
 
     function loop() {
       if (isActive('sec-msd')) {
         renderAnim();
         renderPlot();
+        drawStatePlot(msdStatePlot, stateHist, MSD_STATE_SPEC);
         drawContribPlot(msdPidCanvas, [
           { label: 'P', color: cssVar('--viz-1'),    data: pidContrib.p },
           { label: 'I', color: cssVar('--viz-2'),    data: pidContrib.i },
@@ -470,10 +591,11 @@
   })();
 
   /* ================================================================
-     Demo 1.5 — Tilt Table 2-D: PID beam balancing + stabilisation heatmap
+     Demo 1.5 — Tilt Table 2-D: PID beam balancing
      Ball starts in the inner half of the beam with a small random velocity;
-     table starts flat. Each trial runs until stable or failed. Results
-     accumulate in a (initial distance, initial speed) heatmap.
+     table starts flat. Each trial runs until stable or failed, then the next
+     starts. The PID output is a *commanded* tilt; a servo slews the beam toward
+     it at a limited rate, so the table can't jump to a new angle in one step.
   ================================================================ */
   (function tiltTableDemo() {
     var canvas = document.getElementById('tilt-canvas');
@@ -485,31 +607,22 @@
     var DAMP = 0.28;
     var T    = 1.0;           // beam half-length (m)
     var TILT_LIM = 20 * Math.PI / 180;
+    // Servo slew limit (rad/s) for PID and manual alike: a hobby servo through a
+    // linkage manages roughly this under load, so a full ±20° swing takes ~0.7 s.
+    var SERVO_SLEW = 60 * Math.PI / 180;
 
-    // Heatmap grid
-    var HM_COLS = 8;
-    var HM_ROWS = 8;
-    var HM_MAX_D = T / 2;     // 0.25 m — inner half
-    var HM_MAX_V = 0.50;      // m/s
+    // Trial starts
+    var START_MAX_D = T / 2;  // m — inner half of the beam
+    var START_MAX_V = 0.50;   // m/s
     var TRIAL_TIMEOUT = 8;    // sim seconds
 
-    var STABLE_X = 0.008;     // m — 8 mm; must be smaller than any heatmap cell start
+    var STABLE_X = 0.008;     // m — 8 mm; must be smaller than the minimum trial start distance
     var STABLE_V = 0.04;      // m/s
     var STABLE_T = 0.5;       // s sustained
 
-    // hmData[row][col] = array of settle times; Infinity = failed
-    var hmData = (function makeGrid() {
-      var g2 = [];
-      for (var r = 0; r < HM_ROWS; r++) {
-        var row = [];
-        for (var c = 0; c < HM_COLS; c++) row.push([]);
-        g2.push(row);
-      }
-      return g2;
-    }());
     var trialCount = 0;
 
-    var bx = 0, vx = 0, tiltX = 0;
+    var bx = 0, vx = 0, tiltX = 0, tiltRate = 0;
     var trialTime = 0, stableCountdown = 0;
     var trialInitDist = 0, trialInitSpeed = 0;
     var pidState = { intE: 0, prevE: 0 };
@@ -518,8 +631,21 @@
     var errRing = [], bestRMSE = null;
     var RING = 400;
 
+    // History for the state and PID-contribution plots (one sample per frame).
+    var CHIST = 300;
+    var stateHist = { x: [], xd: [], th: [], thd: [] };
+    var pidContrib = { p: [], i: [], d: [], total: [] };
+    var pidLast = { p: 0, i: 0, d: 0, total: 0 };
+    var stateSpec = [
+      { key: 'x',   label: 'x (m)',    color: cssVar('--viz-1') },
+      { key: 'xd',  label: 'ẋ (m/s)',  color: cssVar('--viz-2') },
+      { key: 'th',  label: 'θ (°)',    color: cssVar('--viz-3') },
+      { key: 'thd', label: 'θ̇ (°/s)',  color: cssVar('--viz-4') }
+    ];
+    var statePlot = document.getElementById('tilt-state-plot');
+    var pidPlot   = document.getElementById('tilt-pid-plot');
+
     // Manual mode: drag a beam end and the beam swings to follow the pointer.
-    var MAN_SLEW = 90 * Math.PI / 180;   // rad/s
     var man = bindManual('tilt', canvas, function () {
       pidState.intE = 0; pidState.prevE = 0; delayBuf = [];
       errRing = []; bestRMSE = null;
@@ -529,12 +655,10 @@
     var W = 700, H = 300;
 
     function resizeCanvas() {
-      W = canvas.parentElement.clientWidth || 700;
-      H = Math.max(180, Math.min(300, Math.round(W * 0.42)));
+      W = canvas.clientWidth || 700;       // the layout sets the canvas box
+      H = canvas.clientHeight || 300;
       canvas.width  = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
-      canvas.style.width  = W + 'px';
-      canvas.style.height = H + 'px';
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
@@ -547,39 +671,22 @@
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
-    // Pick the grid cell with the fewest completed trials so the heatmap fills evenly.
     function newTrial() {
-      var minN = Infinity;
-      for (var r = 0; r < HM_ROWS; r++)
-        for (var c = 0; c < HM_COLS; c++)
-          if (hmData[r][c].length < minN) minN = hmData[r][c].length;
-      var pool = [];
-      for (var r = 0; r < HM_ROWS; r++)
-        for (var c = 0; c < HM_COLS; c++)
-          if (hmData[r][c].length <= minN + 1) pool.push([r, c]);
-      var cell = pool[Math.floor(Math.random() * pool.length)];
-      var cr = cell[0], cc = cell[1];
-
-      // Guarantee start outside stable zone; each cell spans [0, HM_MAX_D/HM_COLS] per step
-      trialInitDist  = Math.max(STABLE_X * 2.5, (cc + Math.random()) / HM_COLS * HM_MAX_D);
-      trialInitSpeed = Math.max(STABLE_V * 0.5,  (cr + Math.random()) / HM_ROWS * HM_MAX_V);
+      // Always start outside the stable zone.
+      trialInitDist  = Math.max(STABLE_X * 2.5, Math.random() * START_MAX_D);
+      trialInitSpeed = Math.max(STABLE_V * 0.5, Math.random() * START_MAX_V);
       var sx = Math.random() < 0.5 ? 1 : -1;
       bx = sx * trialInitDist;
       // Velocity always outward (toward edge) — inward would passively cross
       // the stable zone under damping alone, registering false successes.
       vx = sx * trialInitSpeed;
-      tiltX = 0;
+      tiltX = 0; tiltRate = 0;
       pidState.intE = 0; pidState.prevE = 0;
       delayBuf = [];
       trialTime = 0; stableCountdown = 0;
     }
 
-    function recordResult(settleTime) {
-      var dc = clamp(Math.floor(trialInitDist / HM_MAX_D * HM_COLS), 0, HM_COLS - 1);
-      var rc = clamp(Math.floor(trialInitSpeed / HM_MAX_V * HM_ROWS), 0, HM_ROWS - 1);
-      // Manual runs would muddy a map of how well the PID gains do.
-      if (man.manual) { newTrial(); return; }
-      hmData[rc][dc].push(settleTime);
+    function recordResult() {
       trialCount++;
       newTrial();
     }
@@ -644,6 +751,7 @@
       var SUBS = Math.max(1, Math.round(dt / DT_INNER));
       var sdt  = dt / SUBS;
 
+      var tilt0 = tiltX;
       for (var i = 0; i < SUBS; i++) {
         if (man.manual) {
           // Angle of the beam-centre → pointer line; the tilt holds where it was left.
@@ -651,7 +759,7 @@
             var ddx = man.drag.x - W / 2, ddy = man.drag.y - H * 0.52;
             if (Math.abs(ddx) > W * 0.05) {
               var tgt = clamp(Math.atan(ddy / ddx), -TILT_LIM, TILT_LIM);
-              tiltX += clamp(tgt - tiltX, -MAN_SLEW * sdt, MAN_SLEW * sdt);
+              tiltX += clamp(tgt - tiltX, -SERVO_SLEW * sdt, SERVO_SLEW * sdt);
             }
           }
           var axm = ROLL * g * Math.sin(tiltX) - DAMP * vx;
@@ -664,12 +772,16 @@
         pidState.intE = clamp(pidState.intE + err * sdt, -2, 2);
         var de = sdt > 0 ? (err - pidState.prevE) / sdt : 0;
         pidState.prevE = err;
-        var cmd = pidGains.kp * err + pidGains.ki * pidState.intE + pidGains.kd * de;
+        var pT = pidGains.kp * err, iT = pidGains.ki * pidState.intE, dT = pidGains.kd * de;
+        var cmd = pT + iT + dT;
+        pidLast.p = pT; pidLast.i = iT; pidLast.d = dT; pidLast.total = cmd;
 
         var tNow = trialTime + i * sdt;
         delayBuf.push({ t: tNow, v: cmd });
         while (delayBuf.length > 1 && delayBuf[0].t < tNow - delay) delayBuf.shift();
-        tiltX = clamp(delayBuf[0].v, -TILT_LIM, TILT_LIM);
+        // The servo chases the (delayed, clamped) command at a limited rate.
+        var tiltCmd = clamp(delayBuf[0].v, -TILT_LIM, TILT_LIM);
+        tiltX += clamp(tiltCmd - tiltX, -SERVO_SLEW * sdt, SERVO_SLEW * sdt);
 
         // Rolling ball on tilted beam: positive tiltX → right side down → ax > 0
         var ax = ROLL * g * Math.sin(tiltX) - DAMP * vx;
@@ -678,18 +790,31 @@
       }
 
       trialTime += dt;
+      tiltRate = dt > 0 ? (tiltX - tilt0) / dt : 0;
       errRing.push(bx * bx);
       if (errRing.length > RING) errRing.shift();
 
+      stateHist.x.push(bx); stateHist.xd.push(vx);
+      stateHist.th.push(tiltX * 180 / Math.PI); stateHist.thd.push(tiltRate * 180 / Math.PI);
+      var manNow = man.manual;
+      pidContrib.p.push(manNow ? 0 : pidLast.p * 180 / Math.PI);
+      pidContrib.i.push(manNow ? 0 : pidLast.i * 180 / Math.PI);
+      pidContrib.d.push(manNow ? 0 : pidLast.d * 180 / Math.PI);
+      pidContrib.total.push(manNow ? 0 : pidLast.total * 180 / Math.PI);
+      if (stateHist.x.length > CHIST) {
+        stateHist.x.shift(); stateHist.xd.shift(); stateHist.th.shift(); stateHist.thd.shift();
+        pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift();
+      }
+
       if (Math.abs(bx) < STABLE_X && Math.abs(vx) < STABLE_V) {
         stableCountdown += dt;
-        if (stableCountdown >= STABLE_T) { recordResult(trialTime - STABLE_T); return; }
+        if (stableCountdown >= STABLE_T) { recordResult(); return; }
       } else {
         stableCountdown = 0;
       }
 
       if (Math.abs(bx) >= T || trialTime >= TRIAL_TIMEOUT) {
-        recordResult(Infinity);
+        recordResult();
       }
     }
 
@@ -804,154 +929,11 @@
       }
     }
 
-    function drawHeatmap() {
-      var hc = document.getElementById('tilt-heatmap');
-      if (!hc) return;
-      var dpr2 = Math.min(window.devicePixelRatio || 1, 2);
-      var HW = (hc.parentElement ? hc.parentElement.clientWidth : 0) || 600;
-      var HH = hc.clientHeight || 200;
-      if (!HW) return;
-      hc.width  = Math.round(HW * dpr2);
-      hc.height = Math.round(HH * dpr2);
-      var hx = hc.getContext('2d');
-      hx.setTransform(dpr2, 0, 0, dpr2, 0, 0);
-
-      var isDark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-        (!document.documentElement.getAttribute('data-theme') &&
-         window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-      hx.fillStyle = cssVar('--bg');
-      hx.fillRect(0, 0, HW, HH);
-
-      var mono  = cssVar('--mono');
-      var muted = cssVar('--text-muted');
-      var bdr   = cssVar('--border');
-
-      var PAD_L = 50, PAD_B = 34, PAD_T = 26, PAD_R = 88;
-      var gw = HW - PAD_L - PAD_R;
-      var gh = HH - PAD_T - PAD_B;
-      var cellW = gw / HM_COLS;
-      var cellH = gh / HM_ROWS;
-
-      // Colour: empty=grey, 0–timeout=green→red, failed=dark red
-      function cellColor(t) {
-        if (t === undefined) return isDark ? 'hsl(220,18%,16%)' : 'hsl(220,18%,88%)';
-        if (!isFinite(t))    return isDark ? 'hsl(0,80%,22%)'   : 'hsl(0,72%,60%)';
-        var frac = Math.min(1, t / TRIAL_TIMEOUT);
-        var hue  = Math.round(120 * (1 - frac));
-        return 'hsl(' + hue + ',72%,' + (isDark ? 40 : 46) + '%)';
-      }
-
-      for (var row = 0; row < HM_ROWS; row++) {
-        for (var col = 0; col < HM_COLS; col++) {
-          var times = hmData[row][col];
-          var cx2   = PAD_L + col * cellW;
-          var cy2   = PAD_T + (HM_ROWS - 1 - row) * cellH;
-
-          var med;
-          if (times.length === 0) {
-            med = undefined;
-          } else {
-            var sorted = times.slice().sort(function (a, b) {
-              return (isFinite(a) ? a : 999) - (isFinite(b) ? b : 999);
-            });
-            med = sorted[Math.floor(sorted.length / 2)];
-          }
-
-          hx.fillStyle = cellColor(med);
-          hx.fillRect(cx2 + 1, cy2 + 1, cellW - 2, cellH - 2);
-
-          if (times.length > 0) {
-            hx.fillStyle    = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
-            hx.font         = '8px ' + mono;
-            hx.textAlign    = 'center';
-            hx.textBaseline = 'middle';
-            hx.fillText(times.length, cx2 + cellW / 2, cy2 + cellH / 2);
-          }
-        }
-      }
-
-      // Grid
-      hx.strokeStyle = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
-      hx.lineWidth = 0.5;
-      for (var c = 0; c <= HM_COLS; c++) {
-        var gx3 = PAD_L + c * cellW;
-        hx.beginPath(); hx.moveTo(gx3, PAD_T); hx.lineTo(gx3, PAD_T + gh); hx.stroke();
-      }
-      for (var r = 0; r <= HM_ROWS; r++) {
-        var gy3 = PAD_T + r * cellH;
-        hx.beginPath(); hx.moveTo(PAD_L, gy3); hx.lineTo(PAD_L + gw, gy3); hx.stroke();
-      }
-
-      // X-axis (initial distance)
-      hx.fillStyle    = muted;
-      hx.font         = '10px ' + mono;
-      hx.textAlign    = 'center';
-      hx.textBaseline = 'top';
-      for (var c = 0; c <= HM_COLS; c++)
-        hx.fillText((c / HM_COLS * HM_MAX_D * 100).toFixed(0), PAD_L + c * cellW, PAD_T + gh + 4);
-      hx.fillText('initial |x₀| (cm)', PAD_L + gw / 2, PAD_T + gh + 18);
-
-      // Y-axis (initial speed)
-      hx.textAlign    = 'right';
-      hx.textBaseline = 'middle';
-      for (var r = 0; r <= HM_ROWS; r++)
-        hx.fillText((r / HM_ROWS * HM_MAX_V * 100).toFixed(0), PAD_L - 5, PAD_T + (HM_ROWS - r) * cellH);
-      hx.save();
-      hx.translate(13, PAD_T + gh / 2);
-      hx.rotate(-Math.PI / 2);
-      hx.textAlign = 'center'; hx.textBaseline = 'middle';
-      hx.font = '10px ' + mono; hx.fillStyle = muted;
-      hx.fillText('initial |ẋ₀| (cm/s)', 0, 0);
-      hx.restore();
-
-      // Colour legend
-      var legX = PAD_L + gw + 10, legY = PAD_T, legH2 = gh, legW = 13;
-      for (var ly = 0; ly < legH2; ly++) {
-        hx.fillStyle = cellColor((1 - ly / legH2) * TRIAL_TIMEOUT);
-        hx.fillRect(legX, legY + ly, legW, 1.5);
-      }
-      hx.strokeStyle = bdr; hx.lineWidth = 1;
-      hx.strokeRect(legX, legY, legW, legH2);
-
-      hx.fillStyle = muted; hx.font = '9px ' + mono; hx.textAlign = 'left';
-      [0, 2, 4, 6, 8].forEach(function (tv) {
-        var ly2 = legY + (1 - tv / TRIAL_TIMEOUT) * legH2;
-        hx.beginPath(); hx.moveTo(legX + legW, ly2); hx.lineTo(legX + legW + 3, ly2);
-        hx.strokeStyle = muted; hx.lineWidth = 0.8; hx.stroke();
-        hx.textBaseline = 'middle';
-        hx.fillText(tv + 's', legX + legW + 5, ly2);
-      });
-
-      // Failed swatch above legend
-      var failY = legY - 16;
-      hx.fillStyle = cellColor(Infinity);
-      hx.fillRect(legX, failY, legW, 12);
-      hx.strokeStyle = bdr; hx.lineWidth = 0.8;
-      hx.strokeRect(legX, failY, legW, 12);
-      hx.fillStyle = muted; hx.textBaseline = 'middle';
-      hx.fillText('fail', legX + legW + 5, failY + 6);
-
-      // Title
-      hx.fillStyle    = cssVar('--text');
-      hx.font         = '11px ' + mono;
-      hx.textAlign    = 'center';
-      hx.textBaseline = 'bottom';
-      hx.fillText('Stabilisation heatmap  (' + trialCount + ' trials)', PAD_L + gw / 2, PAD_T - 4);
-    }
-
     var resetBtn = document.getElementById('tilt-reset');
     if (resetBtn) resetBtn.addEventListener('click', function () {
-      hmData = (function makeGrid() {
-        var g2 = [];
-        for (var r = 0; r < HM_ROWS; r++) {
-          var row = [];
-          for (var c = 0; c < HM_COLS; c++) row.push([]);
-          g2.push(row);
-        }
-        return g2;
-      }());
       trialCount = 0;
+      stateHist = { x: [], xd: [], th: [], thd: [] };
+      pidContrib = { p: [], i: [], d: [], total: [] };
       errRing = []; bestRMSE = null;
       var bestEl = document.getElementById('tilt-best');
       if (bestEl) bestEl.textContent = '';
@@ -982,7 +964,13 @@
       }
 
       render();
-      drawHeatmap();
+      drawStatePlot(statePlot, stateHist, stateSpec);
+      drawContribPlot(pidPlot, [
+        { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
+        { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
+        { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
+        { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
+      ], TILT_LIM * 180 / Math.PI, 'θ cmd (°)');
       requestAnimationFrame(loop);
     }
 
@@ -1125,11 +1113,9 @@
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     function resize() {
-      var w = canvas.parentElement.clientWidth || parseInt(canvas.getAttribute('width'), 10) || 720;
+      var w = canvas.clientWidth || 720, h = canvas.clientHeight || 380;   // set by the layout
       canvas.width  = Math.round(w * dpr);
-      canvas.height = Math.round(380 * dpr);
-      canvas.style.width  = w + 'px';
-      canvas.style.height = '380px';
+      canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     new ResizeObserver(resize).observe(canvas.parentElement);
@@ -1276,7 +1262,7 @@
 
     // status: 'ok' | 'crashed' | 'stalled' | 'too_high' | 'over_top'
     function render(state, simT, de_rad, status, extraFn, hRefTarget) {
-      var W = canvas.clientWidth, H = 380;
+      var W = canvas.clientWidth, H = canvas.clientHeight || 380;
       ctx.clearRect(0, 0, W, H);
 
       var h      = state[4];
@@ -1507,14 +1493,48 @@
   // series: [{label, color, data}]  data: rolling array of numbers
   // limitVal: optional ± dotted boundary (in the same units as data)
   // yLabel: optional y-axis title string
+  // Hover layer for the time-series canvases. Draw functions read canvas._hoverX
+  // (CSS px, or null) every frame and snap it to the nearest sample; the plot's
+  // own value labels then show that sample instead of the live one, so the
+  // readout never covers the traces and values stay visible without hovering.
+  function trackHover(canvas) {
+    if (!canvas || canvas._hoverBound) return;
+    canvas._hoverBound = true;
+    canvas._hoverX = null;
+    canvas.style.cursor = 'crosshair';
+    canvas.addEventListener('pointermove', function (e) {
+      canvas._hoverX = e.clientX - canvas.getBoundingClientRect().left;
+    });
+    canvas.addEventListener('pointerleave', function () { canvas._hoverX = null; });
+  }
+
+  // Nearest sample index (0..n-1, in the plot's shared x frame) under the
+  // pointer, or -1 when not hovering the plot area.
+  function hoverIndex(canvas, x0, pw, n) {
+    var hx = canvas._hoverX;
+    if (hx == null || n < 2 || hx < x0 || hx > x0 + pw) return -1;
+    return Math.max(0, Math.min(n - 1, Math.round((hx - x0) / (pw / (n - 1)))));
+  }
+
+  // Crosshair hairline + a dot with a surface ring on each series at sample k.
+  function drawCrosshair(ctx, x, yTop, yBot, dots, surface, muted) {
+    ctx.strokeStyle = muted; ctx.globalAlpha = 0.6; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yBot); ctx.stroke();
+    ctx.globalAlpha = 1;
+    dots.forEach(function (d) {
+      ctx.fillStyle = surface; ctx.beginPath(); ctx.arc(x, d.y, 5, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(x, d.y, 3.5, 0, 2 * Math.PI); ctx.fill();
+    });
+  }
+
   function drawContribPlot(canvas, series, limitVal, yLabel) {
     if (!canvas) return;
+    trackHover(canvas);
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
-    if (!W) W = 400;
+    // The CSS box sets both dimensions; only the pixel buffer is sized here.
+    var W = canvas.clientWidth || 400, H = canvas.clientHeight || 120;
     canvas.width  = Math.round(W * dpr);
-    canvas.height = Math.round(canvas.clientHeight * dpr || 120 * dpr);
-    var H = canvas.clientHeight || 120;
+    canvas.height = Math.round(H * dpr);
     var ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -1542,13 +1562,13 @@
     function yPx(v) { return PAD_T + ph * (1 - (v + yMax) / (2 * yMax)); }
     var n = Math.max.apply(null, series.map(function(s) { return s.data.length; }));
 
-    // Zero axis
+    // Zero axis (solid hairline; dashes are kept for the limit thresholds)
     ctx.strokeStyle = border;
-    ctx.lineWidth = 0.8;
-    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PAD_L, yPx(0)); ctx.lineTo(PAD_L + pw, yPx(0)); ctx.stroke();
 
     // Limit lines
+    ctx.setLineDash([3, 3]);
     if (limitVal) {
       ctx.strokeStyle = isDark ? 'rgba(255,180,80,0.35)' : 'rgba(200,140,40,0.45)';
       ctx.lineWidth = 1;
@@ -1588,21 +1608,44 @@
       ctx.restore();
     }
 
-    // Legend (bottom row)
-    var lx = PAD_L;
+    // Crosshair at the hovered sample.
+    var hk = hoverIndex(canvas, PAD_L, pw, n);
+    function valAt(s2) {
+      var j = (hk < 0 ? n - 1 : hk) - (n - s2.data.length);
+      return j >= 0 && j < s2.data.length ? s2.data[j] : null;
+    }
+    if (hk >= 0) {
+      drawCrosshair(ctx, PAD_L + hk * pw / Math.max(n - 1, 1), PAD_T, PAD_T + ph,
+        series.filter(function (s2) { return valAt(s2) !== null; })
+              .map(function (s2) { return { y: yPx(valAt(s2)), color: s2.color }; }),
+        bg, muted);
+    }
+
+    // Legend (bottom row) doubles as the readout: swatch, muted name, then the
+    // value (live, or at the crosshair) in text color.
+    var text = cssVar('--text');
+    var lx = PAD_L, ly = H - PAD_B / 2 + 1;
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'bottom';
+    ctx.textBaseline = 'middle';
     ctx.font = '9px ' + mono;
     series.forEach(function(s) {
+      var v = valAt(s), vs = v === null ? '—' : v.toFixed(Math.abs(v) < 10 ? 2 : 1);
       ctx.fillStyle = s.color;
-      ctx.fillRect(lx, H - PAD_B + 4, 12, 3);
+      ctx.fillRect(lx, ly - 1.5, 12, 3);
       ctx.fillStyle = muted;
-      ctx.fillText(s.label, lx + 14, H - 2);
-      lx += ctx.measureText(s.label).width + 22;
+      ctx.fillText(s.label, lx + 16, ly);
+      var nw = ctx.measureText(s.label + ' ').width;
+      ctx.fillStyle = text;
+      ctx.fillText(vs, lx + 16 + nw, ly);
+      lx += 16 + nw + ctx.measureText('-00.00').width + 12;
     });
     if (limitVal) {
-      ctx.fillStyle = isDark ? 'rgba(255,180,80,0.7)' : 'rgba(200,140,40,0.8)';
-      ctx.fillText('±' + limitVal.toFixed(0) + ' limit', lx, H - 2);
+      ctx.strokeStyle = isDark ? 'rgba(255,180,80,0.7)' : 'rgba(200,140,40,0.8)';
+      ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(lx + 12, ly); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = muted;
+      ctx.fillText('±' + limitVal.toFixed(0) + ' limit', lx + 16, ly);
     }
   }
 
@@ -1612,6 +1655,7 @@
   // spec (optional): [{key, label, color}] — defaults to the flight states.
   function drawStatePlot(canvas, stateHist, spec) {
     if (!canvas) return;
+    trackHover(canvas);
     var SERIES = spec || [
       { key: 'h',         label: 'h (m)',   color: cssVar('--viz-1') },
       { key: 'V',         label: 'V (m/s)', color: cssVar('--viz-2') },
@@ -1622,11 +1666,10 @@
     // Use independent y-scales: normalise each to [-1,1] in a shared space isn't ideal;
     // instead overlay each on its own sub-row within the canvas.
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.offsetWidth;
-    if (!W) W = 400;
+    // The CSS box sets both dimensions; only the pixel buffer is sized here.
+    var W = canvas.clientWidth || 400, H = canvas.clientHeight || 150;
     canvas.width  = Math.round(W * dpr);
-    canvas.height = Math.round(canvas.clientHeight * dpr || 150 * dpr);
-    var H = canvas.clientHeight || 150;
+    canvas.height = Math.round(H * dpr);
     var ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -1649,9 +1692,11 @@
       ctx.fillText('no data yet', W/2, H/2); return;
     }
 
-    var PAD_L = 38, PAD_R = 8, PAD_T = 6, PAD_B = 18;
+    var PAD_L = 70, PAD_R = 8, PAD_T = 4, PAD_B = 4;
     var rowH = (H - PAD_T - PAD_B) / series.length;
     var pw = W - PAD_L - PAD_R;
+    var text = cssVar('--text');
+    var hk = hoverIndex(canvas, PAD_L, pw, n), dots = [];
 
     series.forEach(function(s, si) {
       var yTop = PAD_T + si * rowH;
@@ -1662,17 +1707,17 @@
       if (vRange < 0.01) vRange = 1;
       var vMid = (vMin + vMax) / 2;
 
-      function yPx(v) { return yTop + rowH * (0.9 - 0.8 * (v - vMid) / (vRange * 0.5)); }
+      // Each row autoscales into the middle 80% of its own band.
+      function yPx(v) { return yTop + rowH * (0.5 - 0.4 * (v - vMid) / (vRange * 0.5)); }
 
       // Row background separator
       if (si > 0) {
         ctx.strokeStyle = border; ctx.lineWidth = 0.5;
         ctx.beginPath(); ctx.moveTo(PAD_L, yTop); ctx.lineTo(PAD_L + pw, yTop); ctx.stroke();
       }
-      // Zero / mid line
-      ctx.strokeStyle = border; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
+      // Mid line (solid hairline)
+      ctx.strokeStyle = border; ctx.lineWidth = 0.5;
       ctx.beginPath(); ctx.moveTo(PAD_L, yPx(vMid)); ctx.lineTo(PAD_L + pw, yPx(vMid)); ctx.stroke();
-      ctx.setLineDash([]);
 
       // Data line
       ctx.strokeStyle = s.color; ctx.lineWidth = 1.4;
@@ -1685,12 +1730,21 @@
       }
       ctx.stroke();
 
-      // Label + current value
-      ctx.fillStyle = s.color; ctx.font = 'bold 9px ' + mono;
-      ctx.textAlign = 'right'; ctx.textBaseline = 'top';
-      var cur = vals[vals.length - 1];
-      ctx.fillText(s.label + ' ' + cur.toFixed(1), PAD_L - 2, yTop + 2);
+      // Label (swatch + text-colored name) and value, live or at the crosshair.
+      var hj = hk - (n - vals.length);
+      var cur = hk >= 0 && hj >= 0 ? vals[hj] : vals[vals.length - 1], mid = yTop + rowH / 2;
+      if (hk >= 0 && hj >= 0) dots.push({ y: yPx(cur), color: s.color });
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.font = '9px ' + mono;
+      var lw = ctx.measureText(s.label).width;
+      ctx.fillStyle = s.color;
+      ctx.fillRect(PAD_L - 6 - lw - 12, mid - 6 - 1.5, 8, 3);
+      ctx.fillStyle = muted;
+      ctx.fillText(s.label, PAD_L - 6, mid - 6);
+      ctx.fillStyle = text;
+      ctx.fillText(cur.toFixed(Math.abs(cur) < 10 ? 2 : 1), PAD_L - 6, mid + 6);
     });
+    if (hk >= 0) drawCrosshair(ctx, PAD_L + hk * pw / Math.max(n - 1, 1), PAD_T, H - PAD_B, dots, bg, muted);
   }
 
   /* ================================================================
@@ -2095,13 +2149,9 @@
     // ---- Renderer: camera follows the cart along an unbounded track ----
     function drawCartPole() {
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
-      var W = canvas.parentElement ? canvas.parentElement.clientWidth : canvas.width;
-      if (!W) W = 720;
-      var H = 380;
+      var W = canvas.clientWidth || 720, H = canvas.clientHeight || 380;   // set by the layout
       canvas.width = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
-      canvas.style.width = '100%';
-      canvas.style.height = H + 'px';
       var ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 

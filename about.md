@@ -53,6 +53,16 @@ purely because the idea was too good to leave alone.
 - **Learning for control** — vision-based policies for flight
 - **Teaching** — a hands-on undergraduate course in quadcopter design
 
+## Projects
+
+A few things I've built, at work and on weekends. More on the
+[projects page]({{ '/projects/' | relative_url }}).
+
+{% assign about_projects = site.data.projects | where: "about", true %}
+<div class="card-grid about-projects">
+  {%- for project in about_projects %}{% include project-card.html project=project %}{% endfor %}
+</div>
+
 ## Hardware design
 
 Software is most of what I do, but not all of it. When a project needs a physical part

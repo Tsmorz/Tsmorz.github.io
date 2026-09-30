@@ -87,7 +87,7 @@
     'q̇ = J⁺(q) ẋ', // inverse kinematics (Jacobian pseudoinverse)
     'M(q)q̈ + C(q,q̇)q̇ + G(q) = τ' // manipulator dynamics
   ];
-  var params = { K: 25, DAMPING_RATIO: 1.15, REPEL_R: 135, REPEL_STRENGTH: 240000, CURRENT_PUSH: 3, size: 18, count: 90 };
+  var params = { K: 25, DAMPING_RATIO: 1.15, REPEL_R: 135, REPEL_STRENGTH: 240000, CURRENT_PUSH: 3, size: 18, AREA_PER_SYMBOL: 2700, MIN_COUNT: 120, MAX_COUNT: 500 };
 
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
   var w = 0, h = 0;
@@ -133,15 +133,17 @@
 
   function initSymbols() {
     symbols = [];
-    var eqCount = Math.min(equations.length, params.count);
-    var glyphCount = params.count - eqCount;
+    // Scale with the hero's area so density stays even from phone to ultrawide.
+    var count = clamp(Math.round(w * h / params.AREA_PER_SYMBOL), params.MIN_COUNT, params.MAX_COUNT);
+    var eqCount = Math.min(equations.length, count);
+    var glyphCount = count - eqCount;
     var i;
     for (i = 0; i < eqCount; i++) symbols.push(makeItem(equations[i], true));
     for (i = 0; i < glyphCount; i++) symbols.push(makeItem(glyphs[i % glyphs.length], false));
   }
 
   function resize() {
-    var rect = hero.getBoundingClientRect();
+    var rect = canvas.getBoundingClientRect();
     w = rect.width; h = rect.height;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
@@ -155,7 +157,7 @@
   }
 
   function onPointerMove(e) {
-    var rect = hero.getBoundingClientRect();
+    var rect = canvas.getBoundingClientRect();
     var x = e.clientX - rect.left, y = e.clientY - rect.top;
     var now = performance.now();
     if (lastPT !== null) {
@@ -233,7 +235,7 @@
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
   }
 
-  new ResizeObserver(resize).observe(hero);
+  new ResizeObserver(resize).observe(canvas);
   resize();
 
   var io = new IntersectionObserver(function (entries) {

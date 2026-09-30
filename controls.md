@@ -30,12 +30,17 @@ permalink: /controls/
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
   <section class="sim-section active" id="sec-msd" role="tabpanel" aria-labelledby="tab-msd">
     <div class="sim-layout">
-      <div class="sim-canvas-wrap">
-        <div class="msd-stage">
-          <canvas class="sim-canvas msd-anim" id="msd-canvas" width="220" height="320" aria-label="Mass-spring-damper simulation"></canvas>
-          <canvas class="sim-canvas msd-ts" id="msd-ts-plot" width="480" height="320" aria-label="Position vs reference time series"></canvas>
+      <div class="sim-canvas-wrap sim-stack">
+        <div class="sim-cell">
+          <div class="msd-stage">
+            <canvas class="sim-canvas msd-anim" id="msd-canvas" aria-label="Mass-spring-damper simulation"></canvas>
+            <canvas class="sim-canvas msd-ts" id="msd-ts-plot" aria-label="Position vs reference time series"></canvas>
+          </div>
         </div>
-        <canvas class="msd-gain" id="msd-pid-plot" height="240" aria-label="PID contribution chart"></canvas>
+        <div class="sim-cell-pair">
+          <div class="sim-cell"><canvas class="sim-states" id="msd-state-plot" aria-label="State history: position, velocity, tracking error, applied force"></canvas></div>
+          <div class="sim-cell"><canvas class="sim-states" id="msd-pid-plot" aria-label="PID contribution chart"></canvas></div>
+        </div>
       </div>
       <div class="sim-panel">
         <h3>Controller</h3>
@@ -48,30 +53,28 @@ permalink: /controls/
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="msd-kp-val">0.0</span></label>
           <input type="range" id="msd-kp" min="-50" max="50" step="0.5" value="0">
-          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="msd-kp-range" class="range-input" value="50" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="msd-kp-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="msd-kp-range" class="range-input" value="50" min="1" step="1"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>i</sub> <span id="msd-ki-val">0.0</span></label>
           <input type="range" id="msd-ki" min="-20" max="20" step="0.1" value="0">
-          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="msd-ki-range" class="range-input" value="20" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="msd-ki-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="msd-ki-range" class="range-input" value="20" min="1" step="1"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>d</sub> <span id="msd-kd-val">0.0</span></label>
           <input type="range" id="msd-kd" min="-10" max="10" step="0.05" value="0">
-          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="msd-kd-range" class="range-input" value="10" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="msd-kd-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="msd-kd-range" class="range-input" value="10" min="1" step="1"></div>
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <h3>Disturbances</h3>
         <div class="pid-group">
           <label>Delay <span id="msd-delay-val">0 ms</span></label>
           <input type="range" id="msd-delay" min="0" max="1000" step="10" value="0">
-          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="msd-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
+          <div class="range-row"><label class="range-lbl visually-hidden" for="msd-delay-amt">Delay amount (ms)</label><input type="number" id="msd-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
         </div>
         <div class="pid-group">
           <label>Sensor noise &#963; <span id="msd-noise-val">0.00</span></label>
           <input type="range" id="msd-noise" min="0" max="0.5" step="0.01" value="0">
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="score-block">
           <span class="score-value" id="msd-score">&#8212;</span>
           <span class="score-label">RMSE (m)</span>
@@ -100,9 +103,12 @@ permalink: /controls/
   <!-- ── Demo 2: Tilt Table ─────────────────────────────────────── -->
   <section class="sim-section" id="sec-tilt" role="tabpanel" aria-labelledby="tab-tilt">
     <div class="sim-layout">
-      <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="tilt-canvas" width="700" height="300" aria-label="Ball-balancing tilt table"></canvas>
-        <canvas id="tilt-heatmap" height="200" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="Stabilisation heatmap by initial conditions"></canvas>
+      <div class="sim-canvas-wrap sim-stack">
+        <div class="sim-cell"><canvas class="sim-canvas" id="tilt-canvas" aria-label="Ball-balancing tilt table"></canvas></div>
+        <div class="sim-cell-pair">
+          <div class="sim-cell"><canvas class="sim-states" id="tilt-state-plot" aria-label="State history: ball position, ball velocity, beam angle, beam rate"></canvas></div>
+          <div class="sim-cell"><canvas class="sim-states" id="tilt-pid-plot" aria-label="PID contribution chart"></canvas></div>
+        </div>
       </div>
       <div class="sim-panel">
         <h3>Controller</h3>
@@ -115,30 +121,28 @@ permalink: /controls/
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="tilt-kp-val">0.0</span></label>
           <input type="range" id="tilt-kp" min="-10" max="10" step="0.1" value="0">
-          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="tilt-kp-range" class="range-input" value="10" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="tilt-kp-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="tilt-kp-range" class="range-input" value="10" min="1" step="1"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>i</sub> <span id="tilt-ki-val">0.0</span></label>
           <input type="range" id="tilt-ki" min="-5" max="5" step="0.05" value="0">
-          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="tilt-ki-range" class="range-input" value="5" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="tilt-ki-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="tilt-ki-range" class="range-input" value="5" min="1" step="1"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>d</sub> <span id="tilt-kd-val">0.0</span></label>
           <input type="range" id="tilt-kd" min="-5" max="5" step="0.05" value="0">
-          <div class="range-row"><label class="range-lbl">Range ±</label><input type="number" id="tilt-kd-range" class="range-input" value="5" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="tilt-kd-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="tilt-kd-range" class="range-input" value="5" min="1" step="1"></div>
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <h3>Disturbances</h3>
         <div class="pid-group">
           <label>Delay <span id="tilt-delay-val">0 ms</span></label>
           <input type="range" id="tilt-delay" min="0" max="1000" step="10" value="0">
-          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="tilt-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
+          <div class="range-row"><label class="range-lbl visually-hidden" for="tilt-delay-amt">Delay amount (ms)</label><input type="number" id="tilt-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
         </div>
         <div class="pid-group">
           <label>Sensor noise &#963; <span id="tilt-noise-val">0.00</span></label>
           <input type="range" id="tilt-noise" min="0" max="0.5" step="0.01" value="0">
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="score-block">
           <span class="score-value" id="tilt-score">&#8212;</span>
           <span class="score-label">RMSE (m)</span>
@@ -153,12 +157,12 @@ permalink: /controls/
         A <strong>PID controller</strong> tilts a beam to balance a rolling ball at the centre.
         Each trial starts with the ball at a random position in the <em>inner half</em> of the beam
         and a small outward velocity; the table starts flat. A trial succeeds when the ball holds
-        within 8 mm of centre at under 4 cm/s for 0.5 s, and fails if it reaches the edge or 8 s elapse.
-        The <strong>stabilisation heatmap</strong> below accumulates results across trials:
-        x-axis = initial distance from centre, y-axis = initial speed, colour = time to stabilise
-        (green = fast, red = slow, dark = failed, grey = no data). Start with K<sub>p</sub> alone
-        &#8212; the ball oscillates; add K<sub>d</sub> to damp it; a small K<sub>i</sub> removes any
-        residual offset. Watch the green region expand as the gains improve. &#8594;
+        within 8 mm of centre at under 4 cm/s for 0.5 s, and fails if it reaches the edge or 8 s elapse;
+        either way the next trial starts. The controller outputs a <em>commanded</em> tilt, and a
+        servo moves the beam toward it at no more than 60&nbsp;&#176;/s (the same limit applies when
+        you tilt it by hand), so a large correction takes time to happen &#8212; watch &#952;&#775;
+        saturate in the state plot. Start with K<sub>p</sub> alone &#8212; the ball oscillates; add
+        K<sub>d</sub> to damp it; a small K<sub>i</sub> removes any residual offset. &#8594;
         <a href="https://en.wikipedia.org/wiki/Ball_and_beam" target="_blank" rel="noopener">Ball and beam &#8212; Wikipedia</a>
       </p>
     </div>
@@ -167,10 +171,12 @@ permalink: /controls/
   <!-- ── Demo 3: Flight Sim ──────────────────────────────────────── -->
   <section class="sim-section" id="sec-flight" role="tabpanel" aria-labelledby="tab-flight">
     <div class="sim-layout">
-      <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="flight-canvas" width="720" height="380" aria-label="2D flight simulator"></canvas>
-        <canvas id="fl-state-plot" height="150" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history"></canvas>
-        <canvas id="fl-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
+      <div class="sim-canvas-wrap sim-stack">
+        <div class="sim-cell"><canvas class="sim-canvas" id="flight-canvas" aria-label="2D flight simulator"></canvas></div>
+        <div class="sim-cell-pair">
+          <div class="sim-cell"><canvas class="sim-states" id="fl-state-plot" aria-label="State history: altitude, airspeed, angle of attack, flight-path angle"></canvas></div>
+          <div class="sim-cell"><canvas class="sim-states" id="fl-pid-plot" aria-label="PID contribution chart"></canvas></div>
+        </div>
       </div>
       <div class="sim-panel">
         <h3>Controller</h3>
@@ -183,30 +189,28 @@ permalink: /controls/
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="fl-kp-val">0.000</span></label>
           <input type="range" id="fl-kp" min="-0.5" max="0.5" step="0.005" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kp-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
+          <div class="range-row"><label class="range-lbl" for="fl-kp-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="fl-kp-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>i</sub> <span id="fl-ki-val">0.000</span></label>
           <input type="range" id="fl-ki" min="-0.5" max="0.5" step="0.005" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-ki-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
+          <div class="range-row"><label class="range-lbl" for="fl-ki-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="fl-ki-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>d</sub> <span id="fl-kd-val">0.000</span></label>
           <input type="range" id="fl-kd" min="-0.5" max="0.5" step="0.005" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kd-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
+          <div class="range-row"><label class="range-lbl" for="fl-kd-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="fl-kd-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <h3>Disturbances</h3>
         <div class="pid-group">
           <label>Delay <span id="fl-delay-val">0 ms</span></label>
           <input type="range" id="fl-delay" min="0" max="1000" step="10" value="0">
-          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="fl-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
+          <div class="range-row"><label class="range-lbl visually-hidden" for="fl-delay-amt">Delay amount (ms)</label><input type="number" id="fl-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
         </div>
         <div class="pid-group">
           <label>Sensor noise &#963; <span id="fl-noise-val">0.00</span></label>
           <input type="range" id="fl-noise" min="0" max="0.5" step="0.01" value="0">
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="score-block">
           <span class="score-value" id="fl-score">&#8212;</span>
           <span class="score-label">RMSE (m)</span>
@@ -256,10 +260,12 @@ permalink: /controls/
   <!-- ── Demo 4: Cart-Pole PID ────────────────────────────────────── -->
   <section class="sim-section" id="sec-cartpole" role="tabpanel" aria-labelledby="tab-cartpole">
     <div class="sim-layout">
-      <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="cp-canvas" width="720" height="380" aria-label="Cart-pole balancing simulation"></canvas>
-        <canvas id="cp-state-plot" height="160" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history: cart position, velocity, pole angle, pole rate"></canvas>
-        <canvas id="cp-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
+      <div class="sim-canvas-wrap sim-stack">
+        <div class="sim-cell"><canvas class="sim-canvas" id="cp-canvas" aria-label="Cart-pole balancing simulation"></canvas></div>
+        <div class="sim-cell-pair">
+          <div class="sim-cell"><canvas class="sim-states" id="cp-state-plot" aria-label="State history: cart position, velocity, pole angle, pole rate"></canvas></div>
+          <div class="sim-cell"><canvas class="sim-states" id="cp-pid-plot" aria-label="PID contribution chart"></canvas></div>
+        </div>
       </div>
       <div class="sim-panel">
         <h3>Controller</h3>
@@ -272,30 +278,28 @@ permalink: /controls/
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="cp-kp-val">0.00</span></label>
           <input type="range" id="cp-kp" min="-100" max="100" step="1" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="cp-kp-range" class="range-input" value="100" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="cp-kp-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kp-range" class="range-input" value="100" min="1" step="1"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>i</sub> <span id="cp-ki-val">0.00</span></label>
           <input type="range" id="cp-ki" min="-50" max="50" step="0.5" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="cp-ki-range" class="range-input" value="50" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="cp-ki-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-ki-range" class="range-input" value="50" min="1" step="1"></div>
         </div>
         <div class="pid-group">
           <label>K<sub>d</sub> <span id="cp-kd-val">0.00</span></label>
           <input type="range" id="cp-kd" min="-20" max="20" step="0.2" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="cp-kd-range" class="range-input" value="20" min="1" step="1"></div>
+          <div class="range-row"><label class="range-lbl" for="cp-kd-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kd-range" class="range-input" value="20" min="1" step="1"></div>
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <h3>Disturbances</h3>
         <div class="pid-group">
           <label>Delay <span id="cp-delay-val">0 ms</span></label>
           <input type="range" id="cp-delay" min="0" max="1000" step="10" value="0">
-          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="cp-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
+          <div class="range-row"><label class="range-lbl visually-hidden" for="cp-delay-amt">Delay amount (ms)</label><input type="number" id="cp-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
         </div>
         <div class="pid-group">
           <label>Sensor noise &#963; <span id="cp-noise-val">0.00&#176;</span></label>
           <input type="range" id="cp-noise" min="0" max="2" step="0.05" value="0">
         </div>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="score-block">
           <span class="score-value" id="cp-score">&#8212;</span>
           <span class="score-label">RMS &#952; (&#176;)</span>
@@ -346,9 +350,9 @@ permalink: /controls/
 .eqn-lhs{min-width:2.4rem;text-align:right;font-weight:600}
 .eqn-eq{min-width:1rem}
 .eqn-rhs{color:var(--text-muted)}
-.range-row{display:flex;align-items:center;gap:.35rem;margin-top:.2rem}
+.range-row{display:flex;align-items:center;gap:.25rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
-.range-input{width:5rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
+.range-input{width:3.6rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
 .trial-status-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin:.3rem 0 .2rem;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;padding:.35rem .55rem}
 .trial-status-text{font-size:.82rem;color:var(--text-muted)}
 .trial-status-text.success{color:#22c55e;font-weight:600}
