@@ -61,6 +61,11 @@ tasks:
         fi
         echo "OK — all JS files are referenced."
 
+  check:swingup:
+    desc: Check the swing-up page's JS physics + network against n-cartpole's exported fixture (Node, no build)
+    cmds:
+      - script/test-swingup
+
   check:links:
     desc: Check internal links with html-proofer
     cmds:
@@ -70,6 +75,7 @@ tasks:
     desc: Build, verify JS is referenced, and check internal links — the CI check
     cmds:
       - task: check:data
+      - task: check:swingup
       - task: build
       - task: check:js
       - task: check:links

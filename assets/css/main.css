@@ -592,3 +592,23 @@ pre code { background: none; border: 0; padding: 0; }
   font-family: var(--font);
 }
 .demo-sub { font-size: .88rem; color: var(--text-muted); margin: 0 0 1.25rem; max-width: 65ch; }
+
+/* Demo notes + hints — shared by /controls/ and /controls/swingup/ */
+.demo-note{margin:.55rem 0 .85rem;border:1px solid var(--border);border-radius:8px;padding:.65rem .85rem;background:var(--bg-soft)}
+.demo-note-title{margin:0 0 .35rem;font-size:.8rem;font-weight:600;color:var(--text);letter-spacing:.01em}
+.demo-note>p{margin:.15rem 0;font-size:.82rem;line-height:1.55}
+.demo-note>p+p{margin-top:.5rem}
+.panel-hint{font-size:.75rem;line-height:1.45;color:var(--text-muted);margin:.1rem 0 .5rem}
+.eqn-note{margin:.5rem 0 0;font-size:.74rem;color:var(--text-muted);font-family:var(--font);font-style:italic}
+
+/* Swing-up page */
+.su-crumb { margin: 0 0 .5rem; font-size: .88rem; }
+.su-canvas { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.su-canvas:active { cursor: grabbing; }
+.su-plot {
+  display: block; width: 100%; margin-top: .6rem; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--bg);
+}
+.su-model-status:empty { display: none; }
+.sim-panel .panel-hint { margin: 0; }
+@media (max-width: 720px) { .su-layout .sim-panel { flex-basis: 100%; } }

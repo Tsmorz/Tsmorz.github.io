@@ -10,6 +10,8 @@ permalink: /controls/
     Four interactive demos, one controller. Tune the same <strong>PID</strong> panel on a
     mass-spring, a ball-balancing tilt table, a nonlinear aircraft autopilot, and an inverted
     pendulum on a cart &#8212; then add delay and sensor noise to see what breaks it.
+    Past what PID can do: <a href="{{ '/controls/swingup/' | relative_url }}">swing up a double
+    pendulum</a> by hand, or hand it to a reinforcement-learning policy.
   </p>
 </section>
 
@@ -307,11 +309,6 @@ permalink: /controls/
 <script src="{{ '/assets/js/controls.js' | relative_url }}"></script>
 
 <style>
-.demo-note{margin:.55rem 0 .85rem;border:1px solid var(--border);border-radius:8px;padding:.65rem .85rem;background:var(--bg-soft)}
-.demo-note-title{margin:0 0 .35rem;font-size:.8rem;font-weight:600;color:var(--text);letter-spacing:.01em}
-.demo-note>p{margin:.15rem 0;font-size:.82rem;line-height:1.55}
-.demo-note>p+p{margin-top:.5rem}
-.panel-hint{font-size:.75rem;line-height:1.45;color:var(--text-muted);margin:.1rem 0 .5rem}
 .ctrl-row{display:flex;flex-direction:column;gap:.2rem;margin:.35rem 0}
 .ctrl-row label{display:flex;justify-content:space-between;align-items:baseline;font-size:.85rem;font-weight:550;color:var(--text-muted)}
 .ctrl-row label span{font-family:var(--mono);font-size:.82rem;color:var(--accent);font-weight:400}
@@ -321,7 +318,6 @@ permalink: /controls/
 .eqn-lhs{min-width:2.4rem;text-align:right;font-weight:600}
 .eqn-eq{min-width:1rem}
 .eqn-rhs{color:var(--text-muted)}
-.eqn-note{margin:.5rem 0 0;font-size:.74rem;color:var(--text-muted);font-family:var(--font);font-style:italic}
 .range-row{display:flex;align-items:center;gap:.35rem;margin-top:.2rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
 .range-input{width:5rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}

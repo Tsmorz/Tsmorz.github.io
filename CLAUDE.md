@@ -22,6 +22,7 @@ includes. **To change what the site says, edit YAML — not HTML.**
 | Bio prose, education timeline | `about.md` |
 | Hero headline / intro paragraph | `index.html` |
 | Colors, spacing, type | `assets/css/main.css` (tokens at the top) |
+| Swing-up network or its physics | re-run `task export-web` in `../n-cartpole` (never hand-edit `assets/models/`) |
 
 ### Adding a project
 
@@ -83,7 +84,12 @@ _layouts/page.html       default + a title header and .prose wrapper (used by ab
 _includes/               project-card.html, photo-grid.html — take params, not globals
 assets/css/main.css      hand-written, token-based, no build step
 assets/js/site.js        three small IIFEs: theme toggle, tag filter, lightbox
-script/                  serve, check, add-photo
+assets/js/controls.js    the /controls/ PID demos
+assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + TQC policy in
+                         vanilla JS — SwingupCore (no DOM, Node-testable) + the page
+assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture
+                         is test-only and excluded from the build
+script/                  serve, check, add-photo, test-data, test-swingup
 ```
 
 ### Conventions worth keeping
@@ -101,6 +107,22 @@ script/                  serve, check, add-photo
 - **Liquid on GitHub Pages is Liquid 4.** `uniq`, `concat`, `slice`, and `where` exist;
   `push` does not. Watch out for that when aggregating lists.
 
+### The swing-up demo
+
+`/controls/swingup/` runs the TQC swing-up policy from
+[n-cartpole](https://github.com/Tsmorz/n-cartpole) in the browser. The policy only works on the
+plant it was trained on, so **`swingup.js` hard-codes no physical constants**: masses, lengths,
+friction, dt, force limit, slew, rail length, and the "swung up" tolerances all come from
+`assets/models/swingup-tqc.json`, which `task export-web` in n-cartpole writes from the
+checkpoint's own config. The equations of motion are a line-for-line port of
+`n_cartpole/env/dynamics.py` (RK4 with dt/4 substeps stands in for its RK45 with
+`max_step=dt/4`). The weights (`.bin`, ~2 MB float16, normalizer pre-folded) load only when a
+visitor first picks TQC.
+
+`script/test-swingup` (`task check:swingup`, part of `task check`) guards this: JS vs torch
+actions, JS vs Python RK45 trajectory, and a closed-loop JS swing-up from every fixture start.
+If it fails after a re-export, the port in `swingup.js` has drifted from n-cartpole.
+
 ## Running and checking
 
 ```sh
@@ -113,15 +135,15 @@ Needs Ruby ≥ 2.7 — **system Ruby on this Mac is 2.6.10 and cannot run Jekyll
 on CI to build.
 
 `Taskfile.yml` is the single entrypoint (`task --list`: `serve`, `build`, `check`,
-`check:data`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
+`check:data`, `check:swingup`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
 validates `_data/*.yml` — required fields, and that each photo's full-size + thumbnail and
 each local project image actually exist (the full-size lives in a `data-full` attribute
 that html-proofer never sees, so this is the only thing guarding it). It's pure Ruby
 stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
-Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → build →
-JS → links); that build is the uploaded deploy artifact. `serve` and `add-photo` still wrap
+Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → swingup →
+build → JS → links; the swingup check uses the runner's preinstalled Node); that build is the uploaded deploy artifact. `serve` and `add-photo` still wrap
 the `script/` files (`task add-photo -- <source-image> <slug>`).
 
 ## Deployment
