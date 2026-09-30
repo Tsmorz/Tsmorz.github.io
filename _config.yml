@@ -40,4 +40,5 @@ exclude:
   - vendor
   - images
   - script
+  - assets/models/swingup-tqc-fixture.json   # test data for script/test-swingup, not served
   - "*.gemspec"

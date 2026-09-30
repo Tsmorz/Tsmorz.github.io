@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+// Check the in-browser swing-up (assets/js/swingup.js) against the Python it was
+// ported from, using the fixture n-cartpole's `task export-web` writes:
+//   1. network parity: JS actions match torch on 64 observations
+//   2. physics parity: JS RK4 tracks the Python RK45 trajectory for 1 s
+//   3. closed loop: JS physics + JS policy actually swing up from every start
+// Pure Node, no dependencies, no build.
+
+'use strict';
+const fs = require('fs');
+const path = require('path');
+
+const root = path.resolve(__dirname, '..');
+const models = path.join(root, 'assets/models');
+const Core = require(path.join(root, 'assets/js/swingup.js'));
+
+const meta = JSON.parse(fs.readFileSync(path.join(models, 'swingup-tqc.json'), 'utf8'));
+const fixture = JSON.parse(fs.readFileSync(path.join(models, 'swingup-tqc-fixture.json'), 'utf8'));
+const bin = fs.readFileSync(path.join(models, 'swingup-tqc.bin'));
+const buffer = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
+
+const NET_TOL = 0.05;   // N — float16 weights vs float32 torch
+const PHYS_TOL = 1e-3;  // max abs state error over the 1 s open-loop run
+let failed = false;
+function check(ok, msg) {
+  console.log((ok ? 'ok    ' : 'FAIL  ') + msg);
+  if (!ok) failed = true;
+}
+
+// 1. Network parity
+const policy = Core.createPolicy(meta, buffer);
+let netErr = 0;
+for (const c of fixture.net) {
+  netErr = Math.max(netErr, Math.abs(policy.act(Float32Array.from(c.obs)) - c.action));
+}
+check(netErr < NET_TOL, `network: max |JS − torch| = ${netErr.toFixed(4)} N over ${fixture.net.length} obs (< ${NET_TOL})`);
+
+const reps = 300, obs0 = Float32Array.from(fixture.net[0].obs), t0 = process.hrtime.bigint();
+for (let i = 0; i < reps; i++) policy.act(obs0);
+const ms = Number(process.hrtime.bigint() - t0) / 1e6 / reps;
+console.log(`      inference ${ms.toFixed(2)} ms/step (${(ms * 100 / 10).toFixed(0)}% of a core at 100 Hz)`);
+
+// 2. Physics parity
+const plant = Core.createPlant(meta);
+const ol = fixture.open_loop;
+let s = Float64Array.from(ol.states[0]), physErr = 0;
+ol.forces.forEach((F, k) => {
+  s = plant.step(s, F);
+  ol.states[k + 1].forEach((v, i) => { physErr = Math.max(physErr, Math.abs(s[i] - v)); });
+});
+check(physErr < PHYS_TOL, `physics: max state error vs RK45 = ${physErr.toExponential(2)} over ${ol.forces.length} steps (< ${PHYS_TOL})`);
+
+// 3. Closed loop — the same loop the page runs in TQC mode.
+const p = meta.physics, steps = Math.round(fixture.swingup.seconds / p.dt);
+fixture.swingup.starts.forEach((start, idx) => {
+  const act = Core.createActuator(meta);
+  let st = Float64Array.from(start.state), settled = 0, upAt = null, crashed = false;
+  for (let k = 1; k <= steps; k++) {
+    st = plant.step(st, act.apply(policy.act(Core.encodeObs(st, meta.n_links))));
+    if (Math.abs(st[0]) > p.x_lim) { crashed = true; break; }
+    settled = Core.atGoal(st, meta) ? settled + 1 : 0;
+    if (settled >= meta.success.settle_steps) { upAt = (k - meta.success.settle_steps + 1) * p.dt; break; }
+  }
+  const py = start.python_swingup_s === null ? 'never' : start.python_swingup_s.toFixed(2) + ' s';
+  const js = crashed ? 'hit the rail' : upAt === null ? 'never' : upAt.toFixed(2) + ' s';
+  check(upAt !== null, `swing-up start ${idx}: JS ${js} (Python ${py})`);
+});
+
+if (failed) {
+  console.error('\nswingup.js no longer matches n-cartpole. If the model was re-exported, re-run');
+  console.error('`task export-web` there so the weights, meta, and fixture stay in sync.');
+  process.exit(1);
+}

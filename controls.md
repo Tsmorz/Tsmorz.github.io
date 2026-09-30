@@ -1,16 +1,17 @@
 ---
 layout: default
 title: Controls
-description: Interactive control-systems demos — PID tuning, tilt table, flight sim, cart-pole PPO.
+description: Interactive control-systems demos — tune one PID controller on a mass-spring, tilt table, flight sim, and cart-pole.
 permalink: /controls/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
-    Four interactive demos spanning classical and modern control. Tune a PID controller on a
-    mass-spring, a ball-balancing tilt table, and a nonlinear aircraft autopilot, then identify a
-    cart-pole balance it with a <strong>PPO policy network</strong>, and train a neural
-    network to take over.
+    Four interactive demos, one controller. Tune the same <strong>PID</strong> panel on a
+    mass-spring, a ball-balancing tilt table, a nonlinear aircraft autopilot, and an inverted
+    pendulum on a cart &#8212; then add delay and sensor noise to see what breaks it.
+    Past what PID can do: <a href="{{ '/controls/swingup/' | relative_url }}">swing up a double
+    pendulum</a> by hand, or hand it to a reinforcement-learning policy.
   </p>
 </section>
 
@@ -19,7 +20,7 @@ permalink: /controls/
     <button class="sim-tab active" role="tab" aria-selected="true"  aria-controls="sec-msd"    id="tab-msd"    type="button">Intro</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-tilt"   id="tab-tilt"   type="button">Tilt Table</button>
     <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-flight" id="tab-flight" type="button">Flight Sim</button>
-    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-sysid"  id="tab-sysid"  type="button">Cart-Pole PPO</button>
+    <button class="sim-tab"        role="tab" aria-selected="false" aria-controls="sec-cartpole" id="tab-cartpole" type="button">Cart-Pole</button>
   </div>
 
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
@@ -156,25 +157,34 @@ permalink: /controls/
         <canvas id="fl-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
       </div>
       <div class="sim-panel">
-        <h3>System Identification</h3>
-        <p class="panel-hint">Excite the aircraft with a PRBS elevator signal (&#177;5&#176;) for 15 s, then fit a discrete-time linear model by least squares.</p>
-        <button class="sim-btn" id="fl-record-btn" type="button">Record Excitation (15 s)</button>
-        <div class="sysid-count" id="fl-sysid-status">Press Record to begin</div>
-        <button class="sim-btn" id="fl-fit-btn" type="button" disabled style="margin-top:.3rem">Fit Linear Model</button>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.5rem 0">
-        <h3>LQR Design</h3>
-        <p class="panel-hint">Tune cost weights, then solve the discrete Riccati equation (DARE) to get the optimal feedback gain K.</p>
+        <h3>PID Gains</h3>
         <div class="pid-group">
-          <label>Q (state cost weight) <span id="fl-q-val">1.00</span></label>
-          <input type="range" id="fl-q" min="0.1" max="10" step="0.1" value="1">
+          <label>K<sub>p</sub> <span id="fl-kp-val">0.000</span></label>
+          <input type="range" id="fl-kp" min="-0.5" max="0.5" step="0.005" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kp-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
         </div>
         <div class="pid-group">
-          <label>R (control cost) <span id="fl-r-val">1.00</span></label>
-          <input type="range" id="fl-r" min="0.1" max="20" step="0.1" value="1">
+          <label>K<sub>i</sub> <span id="fl-ki-val">0.000</span></label>
+          <input type="range" id="fl-ki" min="-0.5" max="0.5" step="0.005" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-ki-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
         </div>
-        <button class="sim-btn" id="fl-lqr-btn" type="button" disabled>Compute LQR</button>
-        <button class="sim-btn" id="fl-activate-btn" type="button" disabled style="margin-top:.3rem">Activate LQR</button>
-        <hr style="border:0;border-top:1px solid var(--border);margin:.5rem 0">
+        <div class="pid-group">
+          <label>K<sub>d</sub> <span id="fl-kd-val">0.000</span></label>
+          <input type="range" id="fl-kd" min="-0.5" max="0.5" step="0.005" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="fl-kd-range" class="range-input" value="0.5" min="0.05" step="0.05"></div>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
+        <h3>Disturbances</h3>
+        <div class="pid-group">
+          <label>Delay <span id="fl-delay-val">0 ms</span></label>
+          <input type="range" id="fl-delay" min="0" max="1000" step="10" value="0">
+          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="fl-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
+        </div>
+        <div class="pid-group">
+          <label>Sensor noise &#963; <span id="fl-noise-val">0.00</span></label>
+          <input type="range" id="fl-noise" min="0" max="0.5" step="0.01" value="0">
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
         <div class="score-block">
           <span class="score-value" id="fl-score">&#8212;</span>
           <span class="score-label">RMSE (m)</span>
@@ -187,16 +197,15 @@ permalink: /controls/
       <h4 class="demo-note-title">About this demo</h4>
       <p>
         A nonlinear 6-state longitudinal aircraft model (V, &#947;, &#945;, q, h, x) with a sigmoid
-        stall model. Each trial starts the plane at a random altitude and pitch offset from a random
-        flat reference altitude (dashed line). The workflow mirrors the tilt table but uses
-        data-driven control: (1) <strong>record</strong> a PRBS elevator excitation to collect
-        input&#8211;output data; (2) <strong>fit</strong> a discrete-time linear model
-        &#916;x<sub>k+1</sub> = F<sub>d</sub>&#916;x<sub>k</sub> + G<sub>d</sub>&#916;u<sub>k</sub>
-        around the trim point; (3) <strong>design</strong> an LQR controller by solving the
-        discrete algebraic Riccati equation; (4) <strong>activate</strong> &#8212; the plane then
-        corrects any random starting condition to the reference. &#8594;
-        <a href="https://en.wikipedia.org/wiki/System_identification" target="_blank" rel="noopener">System identification &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Linear%E2%80%93quadratic_regulator" target="_blank" rel="noopener">LQR &#8212; Wikipedia</a>
+        stall model &#8212; C<sub>L</sub> rises linearly to ~16&#176; angle of attack, then drops
+        sharply. A <strong>PID autopilot</strong> tracks a sinusoidal altitude reference by
+        commanding elevator deflection about trim: altitude error in, nose-up elevator (&#176;) out.
+        The aircraft only reaches altitude <em>through</em> pitch and flight-path angle, so
+        K<sub>p</sub> alone oscillates; K<sub>d</sub> (which acts on climb rate) is what damps it.
+        Push too hard and the wing stalls. Delay and sensor noise work as in the other demos
+        (noise &#963; in metres). &#8594;
+        <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics &#8212; Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/Autopilot" target="_blank" rel="noopener">Autopilot &#8212; Wikipedia</a>
       </p>
     </div>
     <div class="demo-note">
@@ -212,94 +221,85 @@ permalink: /controls/
       </div>
     </div>
     <div class="demo-note">
-      <h4 class="demo-note-title">System ID &amp; LQR</h4>
+      <h4 class="demo-note-title">PID autopilot</h4>
       <div class="eqn-block">
-        <div class="eqn-row"><span class="eqn-lhs">&#916;x<sub>k+1</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">F<sub>d</sub>&#160;&#916;x<sub>k</sub> + G<sub>d</sub>&#160;&#916;u<sub>k</sub>&#160;&#160;&#160;(fit by least squares from PRBS data)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">J</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#8721;<sub>k</sub> (&#916;x<sub>k</sub><sup>T</sup> Q &#916;x<sub>k</sub> + R&#160;&#916;u<sub>k</sub><sup>2</sup>)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">P</span><span class="eqn-eq">=</span><span class="eqn-rhs">Q + F<sub>d</sub><sup>T</sup> P F<sub>d</sub> &#8722; F<sub>d</sub><sup>T</sup> P G<sub>d</sub> (R + G<sub>d</sub><sup>T</sup> P G<sub>d</sub>)<sup>&#8722;1</sup> G<sub>d</sub><sup>T</sup> P F<sub>d</sub>&#160;&#160;&#160;(DARE)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs">(R + G<sub>d</sub><sup>T</sup> P G<sub>d</sub>)<sup>&#8722;1</sup> G<sub>d</sub><sup>T</sup> P F<sub>d</sub></span></div>
-        <div class="eqn-row"><span class="eqn-lhs">&#916;u<sub>k</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#8722;K&#160;&#916;x<sub>k</sub>&#160;&#160;&#160;&#916;x = [&#916;h, &#916;&#947;, &#916;&#945;, &#916;q]</span></div>
-        <p class="eqn-note">State: perturbation from trim. Q = diag(Q<sub>h</sub>, 2Q<sub>h</sub>, 5, 0.5). Elevator clamped &#177;15&#176;.</p>
+        <div class="eqn-row"><span class="eqn-lhs">e</span><span class="eqn-eq">=</span><span class="eqn-rhs">h<sub>ref</sub>(t) &#8722; h<sub>meas</sub>,&#160;&#160; h<sub>ref</sub> = 300 + 25 sin(2&#960;t / 16)&#160;m</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">u</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>e + K<sub>i</sub>&#8747;e&#8202;dt + K<sub>d</sub>&#8202;&#279;&#160;&#160;&#160;(nose-up command, &#176;)</span></div>
+        <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>e,trim</sub> &#8722; u</span></div>
+        <p class="eqn-note">Elevator clamped &#177;15&#176; and slew-limited to 40&#176;/s. The run resets on a crash, stall, or loop.</p>
       </div>
     </div>
   </section>
 
-  <!-- ── Demo 4: Cart-Pole System ID + LQR + Neural Net ──────────── -->
-  <section class="sim-section" id="sec-sysid" role="tabpanel" aria-labelledby="tab-sysid">
+  <!-- ── Demo 4: Cart-Pole PID ────────────────────────────────────── -->
+  <section class="sim-section" id="sec-cartpole" role="tabpanel" aria-labelledby="tab-cartpole">
     <div class="sim-layout">
       <div class="sim-canvas-wrap">
-        <canvas class="sim-canvas" id="sysid-canvas" width="720" height="380" aria-label="Cart-pole balancing simulation"></canvas>
-        <canvas id="sid-state-plot" height="160" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history: cart position, velocity, pole angle, pole rate"></canvas>
+        <canvas class="sim-canvas" id="cp-canvas" width="720" height="380" aria-label="Cart-pole balancing simulation"></canvas>
+        <canvas id="cp-state-plot" height="160" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="State history: cart position, velocity, pole angle, pole rate"></canvas>
+        <canvas id="cp-pid-plot"   height="180" style="display:block;width:100%;border-top:1px solid var(--border)" aria-label="PID contribution chart"></canvas>
       </div>
       <div class="sim-panel">
-        <h3>PPO Training</h3>
-        <p class="panel-hint">Trains a policy network with <strong>Proximal Policy Optimisation</strong>. The agent learns from simulated experience &#8212; no demonstrations needed. Click Train to start; activate when done to hand it the controls.</p>
+        <h3>PID Gains</h3>
         <div class="pid-group">
-          <label>Hidden layers <span id="sid-nn-layers-val">2</span></label>
-          <input type="range" id="sid-nn-layers" min="1" max="4" step="1" value="2">
+          <label>K<sub>p</sub> <span id="cp-kp-val">0.00</span></label>
+          <input type="range" id="cp-kp" min="-100" max="100" step="1" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="cp-kp-range" class="range-input" value="100" min="1" step="1"></div>
         </div>
         <div class="pid-group">
-          <label>Neurons / layer <span id="sid-nn-neurons-val">32</span></label>
-          <input type="range" id="sid-nn-neurons" min="8" max="64" step="8" value="32">
+          <label>K<sub>i</sub> <span id="cp-ki-val">0.00</span></label>
+          <input type="range" id="cp-ki" min="-50" max="50" step="0.5" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="cp-ki-range" class="range-input" value="50" min="1" step="1"></div>
         </div>
-        <button class="sim-btn" id="sid-ppo-train-btn" type="button">Train PPO</button>
-        <div class="sysid-count" id="sid-ppo-status">Click Train to start learning from scratch</div>
-        <canvas id="sid-nn-loss-canvas" height="60" style="width:100%;margin-top:.3rem" aria-label="Episode reward history"></canvas>
-        <button class="sim-btn" id="sid-nn-activate-btn" type="button" disabled style="margin-top:.35rem">Activate Policy</button>
-
-        <hr style="border:0;border-top:1px solid var(--border);margin:.5rem 0">
-        <div class="pid-group" style="margin-top:.25rem">
-          <label>Push the cart <span id="sid-force-val">0.0 N</span></label>
-          <input type="range" id="sid-force" min="-8" max="8" step="0.5" value="0">
-          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="sid-force-range" class="range-input" value="8" min="1" step="1"></div>
+        <div class="pid-group">
+          <label>K<sub>d</sub> <span id="cp-kd-val">0.00</span></label>
+          <input type="range" id="cp-kd" min="-20" max="20" step="0.2" value="0">
+          <div class="range-row"><label class="range-lbl">Range &#177;</label><input type="number" id="cp-kd-range" class="range-input" value="20" min="1" step="1"></div>
         </div>
-
         <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
-        <div class="score-block" style="padding-top:.25rem">
-          <span class="score-value" id="sid-score">&#8212;</span>
+        <h3>Disturbances</h3>
+        <div class="pid-group">
+          <label>Delay <span id="cp-delay-val">0 ms</span></label>
+          <input type="range" id="cp-delay" min="0" max="1000" step="10" value="0">
+          <div class="range-row"><label class="range-lbl">Amount (ms)</label><input type="number" id="cp-delay-amt" class="range-input" value="0" min="0" max="1000" step="10"></div>
+        </div>
+        <div class="pid-group">
+          <label>Sensor noise &#963; <span id="cp-noise-val">0.00&#176;</span></label>
+          <input type="range" id="cp-noise" min="0" max="2" step="0.05" value="0">
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:.25rem 0">
+        <div class="score-block">
+          <span class="score-value" id="cp-score">&#8212;</span>
           <span class="score-label">RMS &#952; (&#176;)</span>
+          <div class="score-best" id="cp-best"></div>
         </div>
-        <button class="sim-btn" id="sid-reset" type="button">Reset</button>
+        <button class="sim-btn" id="cp-reset" type="button">Reset</button>
       </div>
-    </div>
-
-    <div class="nn-netviz" id="sid-netviz" style="display:none">
-      <div class="nn-netviz-head">
-        <h3>Network activations</h3>
-        <div class="nn-legend" aria-hidden="true">
-          <span class="nn-legend-cap">&#8722;</span>
-          <span class="nn-legend-bar"></span>
-          <span class="nn-legend-cap">+</span>
-          <span class="nn-legend-txt">neuron activation</span>
-        </div>
-      </div>
-      <canvas id="sid-net-canvas" height="440" aria-label="Neural network diagram with color-coded neuron activations"></canvas>
     </div>
 
     <div class="demo-note">
       <h4 class="demo-note-title">About this demo</h4>
       <p>
         The <strong>cart-pole</strong> is the classic unstable plant: a pole hinged on a cart that
-        can only be pushed left or right. The pole starts hanging down; use &#8592;&#8594; arrow keys
-        or the force slider to shove the cart. Click <em>Train PPO</em> to run
-        <strong>Proximal Policy Optimisation</strong> entirely in the browser &#8212; the agent
-        simulates thousands of episodes in the background, collects advantage-weighted rollouts,
-        and updates a small actor&#8211;critic network via Adam. Once training finishes, press
-        <em>Activate Policy</em> to deploy the learned controller and watch it balance from a
-        random hanging start. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Proximal_policy_optimization" target="_blank" rel="noopener">PPO &#8212; Wikipedia</a>
+        can only be pushed left or right. Each trial starts with the pole <em>upright</em> plus a
+        small random tilt, and with no control it falls within a second or two. A
+        <strong>PID controller</strong> on the pole angle drives the cart under the pole. Start
+        with K<sub>p</sub> &#8212; it has to beat gravity before anything happens &#8212; then add
+        K<sub>d</sub> to stop the wobble. With P and D alone the pole stays up, but the cart
+        slowly speeds up until the pole falls. That drift is a real limit of a single loop on
+        &#952;: nothing is measuring the cart. A K<sub>i</sub> above roughly b&#183;g &#8776; 12 cancels
+        it by supplying the force that friction eats. The track is unbounded and the camera follows
+        the cart. Use the &#8592;&#8594; arrow keys to shove the cart and test your tune. &#8594;
+        <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum &#8212; Wikipedia</a>
       </p>
     </div>
     <div class="demo-note">
-      <h4 class="demo-note-title">Equations of motion &amp; PPO</h4>
+      <h4 class="demo-note-title">Equations of motion &amp; control law</h4>
       <div class="eqn-block">
         <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
         <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">r</span><span class="eqn-eq">=</span><span class="eqn-rhs">cos&#952; &#8722; 0.1(x/x<sub>max</sub>)&#178; &#8722; 0.001(F/F<sub>max</sub>)&#178; + 1</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">L<sub>CLIP</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">E[min(r<sub>t</sub>&#8239;A&#770;<sub>t</sub>, clip(r<sub>t</sub>, 1&#8722;&#949;, 1+&#949;)&#8239;A&#770;<sub>t</sub>)],&#160; &#949; = 0.2</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">r<sub>t</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#960;&#952;(a<sub>t</sub>|s<sub>t</sub>) / &#960;<sub>&#952;&#8320;</sub>(a<sub>t</sub>|s<sub>t</sub>)&#160; (importance ratio)</span></div>
-        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, b = 1.2 N&#183;s/m cart friction, g = 9.8 m/s&#178;. GAE advantages (&#947; = 0.99, &#955; = 0.95), rollout 512 steps, 4 epochs per update, minibatch 64. Actor: Gaussian policy &#956;(s) = tanh(net(s))&#183;F<sub>max</sub>, fixed &#963; &#8776; 15 N; critic: separate value network.</p>
+        <div class="eqn-row"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>&#952; + K<sub>i</sub>&#8747;&#952;&#8202;dt + K<sub>d</sub>&#952;&#775;&#160;&#160;&#160;(&#952; in rad, measured from vertical)</span></div>
+        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, b = 1.2 N&#183;s/m cart friction, g = 9.8 m/s&#178;. Force saturates at &#177;10 N; arrow-key pushes add &#177;4 N on top. The trial ends when |&#952;| &gt; 45&#176;. RK4 at 200 Hz.</p>
       </div>
     </div>
   </section>
@@ -309,11 +309,6 @@ permalink: /controls/
 <script src="{{ '/assets/js/controls.js' | relative_url }}"></script>
 
 <style>
-.demo-note{margin:.55rem 0 .85rem;border:1px solid var(--border);border-radius:8px;padding:.65rem .85rem;background:var(--bg-soft)}
-.demo-note-title{margin:0 0 .35rem;font-size:.8rem;font-weight:600;color:var(--text);letter-spacing:.01em}
-.demo-note>p{margin:.15rem 0;font-size:.82rem;line-height:1.55}
-.demo-note>p+p{margin-top:.5rem}
-.panel-hint{font-size:.75rem;line-height:1.45;color:var(--text-muted);margin:.1rem 0 .5rem}
 .ctrl-row{display:flex;flex-direction:column;gap:.2rem;margin:.35rem 0}
 .ctrl-row label{display:flex;justify-content:space-between;align-items:baseline;font-size:.85rem;font-weight:550;color:var(--text-muted)}
 .ctrl-row label span{font-family:var(--mono);font-size:.82rem;color:var(--accent);font-weight:400}
@@ -323,7 +318,6 @@ permalink: /controls/
 .eqn-lhs{min-width:2.4rem;text-align:right;font-weight:600}
 .eqn-eq{min-width:1rem}
 .eqn-rhs{color:var(--text-muted)}
-.eqn-note{margin:.5rem 0 0;font-size:.74rem;color:var(--text-muted);font-family:var(--font);font-style:italic}
 .range-row{display:flex;align-items:center;gap:.35rem;margin-top:.2rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
 .range-input{width:5rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}

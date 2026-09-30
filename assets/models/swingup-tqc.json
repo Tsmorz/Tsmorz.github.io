@@ -1,0 +1,181 @@
+{
+  "format": 1,
+  "source": {
+    "checkpoint": "checkpoints/double/tqc/tqc_latest.pt",
+    "step": 200000
+  },
+  "n_links": 2,
+  "physics": {
+    "M": 1.0,
+    "g": 9.81,
+    "dt": 0.01,
+    "force_max": 20.0,
+    "x_lim": 0.5,
+    "b": 0.1,
+    "masses": [
+      0.2,
+      0.15
+    ],
+    "lengths": [
+      0.25,
+      0.25
+    ],
+    "joint_friction": [
+      0.002,
+      0.002
+    ]
+  },
+  "force_slew": 800.0,
+  "integrator": {
+    "method": "rk4",
+    "substeps": 4
+  },
+  "success": {
+    "tol_angle": 0.3,
+    "tol_vel": 1.5,
+    "settle_steps": 50
+  },
+  "network": {
+    "obs": "x, xd, then cos(th), sin(th), thd per link (th = 0 upright)",
+    "obs_dim": 8,
+    "hidden": 256,
+    "expand": 4,
+    "blocks": 2,
+    "ln_eps": 1e-05,
+    "dtype": "float16",
+    "tensors": [
+      {
+        "name": "in_w",
+        "shape": [
+          256,
+          8
+        ],
+        "offset": 0
+      },
+      {
+        "name": "in_b",
+        "shape": [
+          256
+        ],
+        "offset": 2048
+      },
+      {
+        "name": "b0_ln_w",
+        "shape": [
+          256
+        ],
+        "offset": 2304
+      },
+      {
+        "name": "b0_ln_b",
+        "shape": [
+          256
+        ],
+        "offset": 2560
+      },
+      {
+        "name": "b0_fc1_w",
+        "shape": [
+          1024,
+          256
+        ],
+        "offset": 2816
+      },
+      {
+        "name": "b0_fc1_b",
+        "shape": [
+          1024
+        ],
+        "offset": 264960
+      },
+      {
+        "name": "b0_fc2_w",
+        "shape": [
+          256,
+          1024
+        ],
+        "offset": 265984
+      },
+      {
+        "name": "b0_fc2_b",
+        "shape": [
+          256
+        ],
+        "offset": 528128
+      },
+      {
+        "name": "b1_ln_w",
+        "shape": [
+          256
+        ],
+        "offset": 528384
+      },
+      {
+        "name": "b1_ln_b",
+        "shape": [
+          256
+        ],
+        "offset": 528640
+      },
+      {
+        "name": "b1_fc1_w",
+        "shape": [
+          1024,
+          256
+        ],
+        "offset": 528896
+      },
+      {
+        "name": "b1_fc1_b",
+        "shape": [
+          1024
+        ],
+        "offset": 791040
+      },
+      {
+        "name": "b1_fc2_w",
+        "shape": [
+          256,
+          1024
+        ],
+        "offset": 792064
+      },
+      {
+        "name": "b1_fc2_b",
+        "shape": [
+          256
+        ],
+        "offset": 1054208
+      },
+      {
+        "name": "final_ln_w",
+        "shape": [
+          256
+        ],
+        "offset": 1054464
+      },
+      {
+        "name": "final_ln_b",
+        "shape": [
+          256
+        ],
+        "offset": 1054720
+      },
+      {
+        "name": "out_w",
+        "shape": [
+          1,
+          256
+        ],
+        "offset": 1054976
+      },
+      {
+        "name": "out_b",
+        "shape": [
+          1
+        ],
+        "offset": 1055232
+      }
+    ]
+  }
+}
