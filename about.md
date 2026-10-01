@@ -4,11 +4,11 @@ title: About
 permalink: /about/
 ---
 I'm a **Robotics Software Engineer at Agile Robots SE** in Munich, building the software
-that keeps a fleet of robots connected and controllable — remote over-the-air updates and
+that keeps a fleet of robots connected and controllable - remote over-the-air updates and
 low-latency teleoperation for machines deployed around the world.
 
 Before Agile Robots I was a PhD candidate at the **Technical University of Munich**,
-working under **Prof. Lorenzo Masia** on sensor fusion for soft exosuits — turning noisy
+working under **Prof. Lorenzo Masia** on sensor fusion for soft exosuits - turning noisy
 wearable sensor data into a reliable read on how a joint is actually moving.
 
 <div class="about-photos">
@@ -17,8 +17,7 @@ wearable sensor data into a reliable read on how a joint is actually moving.
 </div>
 
 Before that, an **MSc in Robotics** at Northeastern University and a **BSc in Aerospace
-Engineering** at the University of Michigan. The aerospace background still shows — most
-of what I build flies.
+Engineering** at the University of Michigan.
 
 Outside of work I'm usually outside: photography, travel, and the occasional robot built
 purely because the idea was too good to leave alone.
@@ -27,7 +26,7 @@ purely because the idea was too good to leave alone.
 
 <ul class="timeline">
   <li>
-    <span class="t-when">2025 – 2026 (dropout) </span>
+    <span class="t-when">2025 - 2026 (dropout) </span>
     <p class="t-what">PhD Candidate, Robotics</p>
     <p class="t-where">Technical University of Munich · Munich, Germany</p>
   </li>
@@ -53,10 +52,15 @@ purely because the idea was too good to leave alone.
 
 ## Racing
 
-Before robotics was the day job, I raced as a professional triathlete for Team USA. At one point I was ranked top 40 in the world. The 2019 and 202 seasons were the
+Before robotics was the day job, I raced as a professional triathlete for Team USA. At one point I was ranked top 40 in the world. The 2019 and 2020 seasons were the
 highlight - top finishes on the World Cup circuit, on an actual hardware setup I'd designed and built
 myself (see the hardware design on my
 [projects page]({{ '/projects/' | relative_url }})). I raced and trained in 25 countries and loved the adventure but I'm more than happy that my income is more reliable than during this time.
+
+<div class="about-photos about-photos-3x2">
+  <img src="{{ '/assets/img/about/cape-town-finish-line.jpg' | relative_url }}" alt="Sprinting to the finish at the Cape Town triathlon World Cup" loading="lazy">
+  <img src="{{ '/assets/img/about/cape-town-world-cup.jpg' | relative_url }}" alt="Celebrating on the podium at the Cape Town triathlon World Cup" loading="lazy">
+</div>
 
 ## Elsewhere
 

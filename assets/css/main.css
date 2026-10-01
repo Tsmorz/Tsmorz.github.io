@@ -265,6 +265,8 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .page-head { padding: clamp(2.5rem, 6vw, 4rem) 1.25rem 1.5rem; }
 .page-title { margin-bottom: .35rem; }
 .page-sub { color: var(--text-muted); font-size: 1.08rem; margin: 0; max-width: 60ch; }
+/* No single word stranded on the last line of a blurb or caption. */
+.card p, .page-sub, .about-caption { text-wrap: pretty; }
 
 /* ---------------------------------------------------------------
    Project cards
@@ -388,16 +390,13 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 }
 .about-photos { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .about-photos img { border-radius: var(--radius); aspect-ratio: 4 / 3; object-fit: cover; }
+.about-photos-3x2 img { aspect-ratio: 3 / 2; }
+.photo-row { display: flex; flex-wrap: nowrap; gap: .75rem; margin-top: 1.25rem; align-items: flex-start; }
+/* Width follows each photo's aspect ratio (--r), so all three share one height and fill the row. */
+.photo-row img { flex: var(--r) 1 0; min-width: 0; width: 100%; height: auto; aspect-ratio: var(--r); object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border); }
+.about-caption { margin-top: 1rem; }
 @media (max-width: 560px) {
   .about-photos { grid-template-columns: 1fr; }
-}
-.about-figure { margin: 1.5rem 0 0; max-width: 360px; }
-.about-figure img {
-  width: 100%; border-radius: var(--radius);
-  border: 1px solid var(--border); background: var(--surface);
-}
-.about-figure figcaption {
-  margin-top: .6rem; font-size: .88rem; color: var(--text-muted); line-height: 1.5;
 }
 
 .prose table { width: 100%; border-collapse: collapse; font-size: .95rem; }
