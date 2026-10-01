@@ -250,6 +250,20 @@
   var canvas = document.getElementById('su-canvas');
   if (!canvas) return;
 
+  // Polyfill ctx.roundRect for older Safari / Firefox (same as controls.js, which
+  // this page doesn't load).
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+      var rad = Math.min(r, Math.min(w, h) / 2);
+      this.moveTo(x + rad, y);
+      this.arcTo(x + w, y,     x + w, y + h, rad);
+      this.arcTo(x + w, y + h, x,     y + h, rad);
+      this.arcTo(x,     y + h, x,     y,     rad);
+      this.arcTo(x,     y,     x + w, y,     rad);
+      this.closePath();
+    };
+  }
+
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
@@ -285,6 +299,7 @@
   var trainedXLim = null;
 
   var meta = null, plant = null, actuator = null, policy = null, policyLoading = false;
+  var wantTqc = false;   // TQC clicked while the weights were still downloading
   var state = null, mode = 'manual', status = 'loading';
   // goal: U/D label, base link first; target: its angles (null = all upright, for a
   // plain swing-up export). fromLabel: the pose the clock started at, if any.
@@ -427,7 +442,8 @@
   }
 
   function setMode(next) {
-    if (next === 'tqc' && !policy) { loadPolicy(); return; }
+    if (next === 'tqc' && !policy) { wantTqc = true; loadPolicy(); return; }
+    wantTqc = false;
     mode = next;
     modeBtns.forEach(function (b) {
       var on = b.dataset.mode === mode;
@@ -445,7 +461,8 @@
       .then(function (buf) {
         policy = Core.createPolicy(meta, buf);
         if (modelEl) modelEl.textContent = '';
-        setMode('tqc');
+        // Only take over if the visitor hasn't picked another mode in the meantime.
+        if (wantTqc) setMode('tqc');
       })
       .catch(function () {
         if (modelEl) modelEl.textContent = 'Could not load the network weights.';

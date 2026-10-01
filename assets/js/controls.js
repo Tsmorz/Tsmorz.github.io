@@ -238,7 +238,9 @@
         // Transport delay: the plant feels the command from `delay` ms ago.
         forceBuf.push(F);
         var delaySamples = Math.round((pid.delay / 1000) / DT);
-        var Fapplied = (forceBuf.length > delaySamples) ? forceBuf.shift() : 0;
+        // `while`, not `if`: when the delay is lowered the buffer must shrink too.
+        var Fapplied = 0;
+        while (forceBuf.length > delaySamples) Fapplied = forceBuf.shift();
         if (man.manual) { forceBuf.length = 0; Fapplied = F; }
         // Fapplied is constant over this step (zero-order hold on control)
         var s = rk4([sim.x, sim.v], sim.t, DT, function (t2, s2) {
@@ -273,7 +275,8 @@
       if (errRing.length > 0) {
         var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
         scoreEl.textContent = rmse.toFixed(3);
-        if (!man.manual && (bestScore === null || rmse < bestScore)) {
+        // Only a full window counts: right after a reset the error is ~0 and would stick.
+        if (!man.manual && errRing.length === RING && (bestScore === null || rmse < bestScore)) {
           bestScore = rmse;
           if (bestEl) bestEl.textContent = 'Best: ' + rmse.toFixed(3) + ' m';
         }
@@ -567,10 +570,10 @@
     var msdPidCanvas = document.getElementById('msd-pid-plot');
     var msdStatePlot = document.getElementById('msd-state-plot');
     var MSD_STATE_SPEC = [
-      { key: 'x',  label: 'x (m)',   color: cssVar('--viz-7') },
-      { key: 'xd', label: 'ẋ (m/s)', color: cssVar('--viz-1') },
-      { key: 'e',  label: 'e (m)',   color: cssVar('--viz-2') },
-      { key: 'F',  label: 'F (N)',   color: cssVar('--viz-total') }
+      { key: 'x',  label: 'x (m)',   token: '--viz-7' },
+      { key: 'xd', label: 'ẋ (m/s)', token: '--viz-1' },
+      { key: 'e',  label: 'e (m)',   token: '--viz-2' },
+      { key: 'F',  label: 'F (N)',   token: '--viz-total' }
     ];
 
     function loop() {
@@ -637,10 +640,10 @@
     var pidContrib = { p: [], i: [], d: [], total: [] };
     var pidLast = { p: 0, i: 0, d: 0, total: 0 };
     var stateSpec = [
-      { key: 'x',   label: 'x (m)',    color: cssVar('--viz-1') },
-      { key: 'xd',  label: 'ẋ (m/s)',  color: cssVar('--viz-2') },
-      { key: 'th',  label: 'θ (°)',    color: cssVar('--viz-3') },
-      { key: 'thd', label: 'θ̇ (°/s)',  color: cssVar('--viz-4') }
+      { key: 'x',   label: 'x (m)',    token: '--viz-1' },
+      { key: 'xd',  label: 'ẋ (m/s)',  token: '--viz-2' },
+      { key: 'th',  label: 'θ (°)',    token: '--viz-3' },
+      { key: 'thd', label: 'θ̇ (°/s)',  token: '--viz-4' }
     ];
     var statePlot = document.getElementById('tilt-state-plot');
     var pidPlot   = document.getElementById('tilt-pid-plot');
@@ -956,7 +959,7 @@
         var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
         var scoreEl = document.getElementById('tilt-score');
         if (scoreEl) scoreEl.textContent = rmse.toFixed(3);
-        if (bestRMSE === null || rmse < bestRMSE) {
+        if (!man.manual && errRing.length === RING && (bestRMSE === null || rmse < bestRMSE)) {
           bestRMSE = rmse;
           var bestEl2 = document.getElementById('tilt-best');
           if (bestEl2) bestEl2.textContent = 'Best: ' + rmse.toFixed(3);
@@ -982,26 +985,44 @@
      Shared flight physics engine (used by Demo 2 and Demo 3)
   ================================================================ */
 
-  // Cessna sprite — loaded once, white background stripped via pixel manipulation
+  // Cessna sprite — loaded once, white background stripped via pixel manipulation.
+  // The plane itself is white, so only near-white pixels connected to the image edge
+  // (flood fill) are cleared; the outlined body keeps its paint.
   var cessna = (function () {
     var raw = new Image();
     var processed = null;
     raw.onload = function () {
       var oc = document.createElement('canvas');
-      oc.width = raw.naturalWidth;
-      oc.height = raw.naturalHeight;
+      var w = oc.width = raw.naturalWidth;
+      var h = oc.height = raw.naturalHeight;
       var oc2d = oc.getContext('2d');
       oc2d.drawImage(raw, 0, 0);
-      var id = oc2d.getImageData(0, 0, oc.width, oc.height);
+      var id = oc2d.getImageData(0, 0, w, h);
       var d = id.data;
-      for (var i = 0; i < d.length; i += 4) {
-        // Make near-white pixels fully transparent
-        if (d[i] > 220 && d[i+1] > 220 && d[i+2] > 220) d[i+3] = 0;
+      var seen = new Uint8Array(w * h);
+      var stack = [];
+      function visit(p) {
+        if (seen[p]) return;
+        seen[p] = 1;
+        var i = p * 4;
+        if (d[i] > 235 && d[i+1] > 235 && d[i+2] > 235) { d[i+3] = 0; stack.push(p); }
+      }
+      for (var x = 0; x < w; x++) { visit(x); visit((h - 1) * w + x); }
+      for (var y = 0; y < h; y++) { visit(y * w); visit(y * w + w - 1); }
+      while (stack.length) {
+        var p = stack.pop(), px = p % w;
+        if (px > 0)     visit(p - 1);
+        if (px < w - 1) visit(p + 1);
+        if (p >= w)     visit(p - w);
+        if (p < w * (h - 1)) visit(p + w);
       }
       oc2d.putImageData(id, 0, 0);
       processed = oc;
     };
-    raw.src = '/assets/img/cessna.png';
+    // The page passes the URL through relative_url so a non-empty baseurl still resolves.
+    var fc = document.getElementById('flight-canvas');
+    var src = fc && fc.getAttribute('data-sprite');
+    if (src) raw.src = src;
     return { get: function () { return processed; } };
   }());
 
@@ -1053,7 +1074,7 @@
     var CD0t = AC.CD0 + AC.k * CL0t * CL0t;
     var D0   = qbar * AC.S * CD0t;
     var T0   = D0 / Math.cos(alpha0);
-    return { V: V0, gamma: 0, alpha: alpha0, q: 0, de: de0, h: 50, x: 0, T: T0 };
+    return { V: V0, gamma: 0, alpha: alpha0, q: 0, de: de0, x: 0, T: T0 };
   }
 
   var TRIM = computeTrim();
@@ -1102,11 +1123,16 @@
   var WORLD_LO = 0;     // m — ground
 
   // Shared reference trajectory constants (used by all flight demos + renderer)
-  var H_CENTER  = 60;   // m — reference altitude centre
-  var REF_AMP   = 25;    // m — sine amplitude → 50 m peak-to-peak height delta
+  // The band (17–29 m) sits just above the 5–12 m trees and inside the ground-anchored
+  // view, so the trees stay on screen while the autopilot tracks.
+  var H_CENTER  = 23;   // m — reference altitude centre
+  var REF_AMP   = 6;    // m — sine amplitude → 12 m peak-to-peak
   var REF_OMEGA = 2 * Math.PI / 16;  // rad/s — period = 16 s
-  // Seconds of reference shown across the full canvas width (determines how many cycles appear)
-  var REF_DISPLAY_SPAN = 24;   // ≈ 3 cycles of the 8 s wave stay legible
+  // World scale, px per metre, on BOTH axes: the altitude view, the plane and trees,
+  // and the scroll speed of the ground marks, trees and reference path all derive
+  // from it, so sizes agree with the altitude labels.
+  var PX_PER_M = 8;
+  var PLANE_LEN_M = 8.3;   // Cessna 172 overall length
 
   function makeFlightRenderer(canvas) {
     var ctx = canvas.getContext('2d');
@@ -1121,11 +1147,12 @@
     new ResizeObserver(resize).observe(canvas.parentElement);
     resize();
 
-    // Bottom 36 px are always the ground strip; the viewport shows VIEW_RANGE metres
-    // centred on the plane's current altitude — the world zooms in rather than scrolling.
+    // The viewport follows the plane's altitude at PX_PER_M; the bottom GROUND_PX px
+    // show the ground strip when the view reaches h = 0.
     var GROUND_PX = 36;
-    var VIEW_RANGE = 100;  // metres of altitude shown — smaller = altitude changes look bigger
-    var PLANE_PX   = 78;   // sprite width in px, fixed so zooming doesn't also shrink/grow the plane
+    var PLANE_PX  = PLANE_LEN_M * PX_PER_M;   // sprite width = the plane's true length
+    var VIEW_HEADROOM = 3;   // m kept above the plane before the view starts to rise
+    var trail = [];        // past {t, x}: where the plane was at each sim time, for the ref tail
 
     // hToY maps world altitude to canvas y for the current viewport [viewLo, viewHi].
     // Defined as a var so render() can rebind it each frame without parameter-passing.
@@ -1184,17 +1211,21 @@
       ctx.fill();
     }
 
-    function drawTrees(W, horizonY, downrange, isDarkMode) {
-      var spacing = 55;
-      var TREE_SPEED = 3;   // 1 = original, 2 = twice as fast
-      var scroll  = (downrange * TREE_SPEED) % (spacing * 40);
+    // One row of trees. Two rows are drawn: row 0 behind the plane, row 1 in front of
+    // it (based a little lower on the ground strip). Both scroll at PX_PER_M, ~10 m
+    // apart per row, so ~5 m apart overall.
+    function drawTrees(W, horizonY, downrange, isDarkMode, row) {
+      var spacing = 10 * PX_PER_M;
+      var scroll  = downrange * PX_PER_M;
       var count   = Math.ceil(W / spacing) + 3;
       var base    = Math.floor(scroll / spacing) - 1;
+      var k       = row * 101;   // decorrelates the two rows' seeds
       for (var ti = base; ti < base + count; ti++) {
-        var sx  = (ti - scroll / spacing) * spacing + seedRand(ti * 7 + 1) * spacing * 0.35;
-        var sz  = 0.65 + seedRand(ti * 19 + 2) * 0.65;   // 0.65–1.3 scale
-        var ht  = (42 + seedRand(ti * 13 + 3) * 32) * sz; // 27–96 px tall
-        var yOff= seedRand(ti * 11 + 5) * 4;
+        var sx  = (ti - scroll / spacing) * spacing + seedRand(ti * 7 + 1 + k) * spacing * 0.6;
+        // 3–16 m, mid sizes most common (mean of two uniforms), a few very small/large.
+        var r   = (seedRand(ti * 13 + 3 + k) + seedRand(ti * 17 + 9 + k)) / 2;
+        var ht  = (3 + r * 13) * PX_PER_M;
+        var yOff= row ? 8 + seedRand(ti * 11 + 5 + k) * 8 : seedRand(ti * 11 + 5 + k) * 4;
         drawTree(sx, horizonY + yOff + 2, ht, isDarkMode);
       }
     }
@@ -1282,9 +1313,11 @@
         (!document.documentElement.getAttribute('data-theme') &&
          window.matchMedia('(prefers-color-scheme: dark)').matches);
 
-      // Zoomed viewport: VIEW_RANGE metres centred on the plane, clamped to world bounds.
+      // Viewport: as many metres as fit at PX_PER_M, anchored at the ground so the trees
+      // stay in view; it only rises if the plane climbs within VIEW_HEADROOM of the top.
       // hToY is rebound each frame so everything else (ref line, ticks, plane) just calls it.
-      var viewLo = Math.max(WORLD_LO, Math.min(h - VIEW_RANGE / 2, WORLD_HI - VIEW_RANGE));
+      var VIEW_RANGE = (H - GROUND_PX) / PX_PER_M;
+      var viewLo = Math.max(WORLD_LO, Math.min(h + VIEW_HEADROOM - VIEW_RANGE, WORLD_HI - VIEW_RANGE));
       var viewHi = viewLo + VIEW_RANGE;
       hToY = function (altH, H) {
         return (H - GROUND_PX) * (1 - (altH - viewLo) / VIEW_RANGE);
@@ -1317,7 +1350,7 @@
       ctx.strokeStyle = isDark ? '#1a2e1a' : '#a0c080';
       ctx.lineWidth = 1;
       var markSpacing = 120;
-      var offset = (downrange % markSpacing) / markSpacing * markSpacing;
+      var offset = (downrange * PX_PER_M) % markSpacing;
       for (var mx = -offset; mx < W + markSpacing; mx += markSpacing) {
         ctx.beginPath();
         ctx.moveTo(mx, horizonY);
@@ -1326,18 +1359,29 @@
       }
 
       // Trees always visible at horizon
-      drawTrees(W, horizonY, downrange, isDark);
+      drawTrees(W, horizonY, downrange, isDark, 0);   // back row; front row after the plane
 
-      // Reference altitude path.
-      // tOffset maps a canvas x-pixel to a time offset so REF_DISPLAY_SPAN seconds of
-      // the sine wave span the canvas. The plane sits at planeScreenX, so pixels to its
-      // LEFT are the past reference (older in time) and pixels to its RIGHT are the future.
+      // Reference altitude path, drawn in world space at PX_PER_M so it moves with the
+      // trees. The reference is a function of time, so each screen x needs a time:
+      // LEFT of the plane (past) uses the downrange the plane actually had at each
+      // past time (`trail`), so that part is pinned to the ground exactly; RIGHT
+      // (future) extrapolates at the current ground speed.
       var planeScreenX = W * 0.35;
       var isFlat = (typeof hRefTarget !== 'undefined');
+      var groundSpeed = Math.max(state[0] * Math.cos(gamma), 1);
+      function refH(t) { return H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t); }
+      function xToScreen(xw) { return planeScreenX + (xw - downrange) * PX_PER_M; }
       function refYAt(px) {
         if (isFlat) return hToY(hRefTarget, H);
-        var tOffset = (px - planeScreenX) / W * REF_DISPLAY_SPAN;
-        return hToY(H_CENTER + REF_AMP * Math.sin(REF_OMEGA * (simT + tOffset)), H);
+        return hToY(refH(simT + (px - planeScreenX) / (PX_PER_M * groundSpeed)), H);
+      }
+      if (!isFlat) {
+        var last = trail[trail.length - 1];
+        if (last && simT < last.t) trail.length = 0;   // sim was reset
+        if (!last || simT > last.t) trail.push({ t: simT, x: downrange });
+        // Keep only what's on screen (plus one point past the left edge).
+        var xMin = downrange - planeScreenX / PX_PER_M;
+        while (trail.length > 2 && trail[1].x < xMin) trail.shift();
       }
 
       if (isFlat) {
@@ -1373,13 +1417,15 @@
         ctx.save();
         ctx.strokeStyle = accentColor;
         ctx.lineCap = 'round';
-        for (var px = planeScreenX; px > 0; px -= 4) {
-          var age = (planeScreenX - px) / planeScreenX;
+        for (var ti = trail.length - 1; ti > 0; ti--) {
+          var pxA = xToScreen(trail[ti].x), pxB = xToScreen(trail[ti - 1].x);
+          var age = (planeScreenX - pxA) / planeScreenX;
+          if (age >= 1) break;
           ctx.globalAlpha = Math.max(0, 1 - age);
           ctx.lineWidth = 0.5 + 2.2 * (1 - age);
           ctx.beginPath();
-          ctx.moveTo(px, refYAt(px));
-          ctx.lineTo(px - 4, refYAt(px - 4));
+          ctx.moveTo(pxA, hToY(refH(trail[ti].t), H));
+          ctx.lineTo(pxB, hToY(refH(trail[ti - 1].t), H));
           ctx.stroke();
         }
         ctx.restore();
@@ -1401,29 +1447,35 @@
 
       // Cessna sprite
       drawPlane(planeScreenX, hToY(h, H), theta, isDark);
+      drawTrees(W, horizonY, downrange, isDark, 1);   // front row passes in front of the plane
 
-      // Altitude scale (right side) — ticks every 25 m across the zoomed viewport
+      // Altitude scale (left side, clear of the δe bar) — ticks every 10 m
       ctx.fillStyle = mutedColor;
       ctx.font = '11px ' + cssVar('--mono');
-      ctx.textAlign = 'right';
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       var tickStep = 10;
       var tickStart = Math.ceil(viewLo / tickStep) * tickStep;
       for (var ah = tickStart; ah <= viewHi; ah += tickStep) {
         var ay = hToY(ah, H);
         if (ay < 12 || ay > H - 12) continue;
-        ctx.fillText(ah + 'm', W - 8, ay);
+        // Pill behind the label so it stays legible over the trees.
+        ctx.fillStyle = isDark ? 'rgba(11,15,20,0.72)' : 'rgba(245,246,248,0.82)';
+        ctx.beginPath(); ctx.roundRect(4, ay - 8, 38, 16, 4); ctx.fill();
+        ctx.fillStyle = mutedColor;
+        ctx.fillText(ah + 'm', 8, ay);
         ctx.strokeStyle = borderColor;
         ctx.lineWidth = 0.5;
         ctx.beginPath();
-        ctx.moveTo(W - 45, ay);
-        ctx.lineTo(W - 55, ay);
+        ctx.moveTo(45, ay);
+        ctx.lineTo(55, ay);
         ctx.stroke();
       }
 
       // Elevator indicator bar (right edge).
-      // Positive de_rad → plane pitches up → thumb moves UP.
-      var eiFrac = (de_rad / deg2rad(15) + 1) / 2;  // 0 = full down, 1 = full up
+      // Shows the nose-up command about trim: Cmde < 0, so de below trim pitches the
+      // nose up and the thumb moves UP; centred at trim.
+      var eiFrac = clamp(((TRIM.de - de_rad) / deg2rad(15) + 1) / 2, 0, 1);  // 0 = full nose-down, 1 = full nose-up
       var eiX = W - 22, eiTop = 50, eiH = 80;
       ctx.fillStyle = bgSoft;
       ctx.strokeStyle = borderColor;
@@ -1443,10 +1495,11 @@
       ctx.textBaseline = 'bottom';
       ctx.fillText('δe', eiX, eiTop - 2);
 
-      // Telemetry overlay (bottom-left)
+      // Telemetry overlay (bottom-right; the altitude scale owns the left edge)
+      var tx = W - 206;
       ctx.fillStyle = isDark ? 'rgba(11,15,20,0.72)' : 'rgba(245,246,248,0.82)';
       ctx.beginPath();
-      ctx.roundRect(10, H - 76, 196, 66, 8);
+      ctx.roundRect(tx, H - 76, 196, 66, 8);
       ctx.fill();
       ctx.strokeStyle = borderColor;
       ctx.lineWidth = 1;
@@ -1455,10 +1508,10 @@
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillStyle = mutedColor;
-      ctx.fillText('h   ' + h.toFixed(0) + ' m', 18, H - 70);
-      ctx.fillText('V   ' + V.toFixed(1) + ' m/s', 18, H - 56);
-      ctx.fillText('α   ' + rad2deg(alpha).toFixed(1) + '°', 18, H - 42);
-      ctx.fillText('q   ' + rad2deg(q).toFixed(2) + '°/s', 18, H - 28);
+      ctx.fillText('h   ' + h.toFixed(0) + ' m', tx + 8, H - 70);
+      ctx.fillText('V   ' + V.toFixed(1) + ' m/s', tx + 8, H - 56);
+      ctx.fillText('α   ' + rad2deg(alpha).toFixed(1) + '°', tx + 8, H - 42);
+      ctx.fillText('q   ' + rad2deg(q).toFixed(2) + '°/s', tx + 8, H - 28);
 
       // Stop-condition overlay
       if (status && status !== 'ok') {
@@ -1482,7 +1535,7 @@
       if (typeof extraFn === 'function') extraFn(ctx, W, H, WORLD_LO, WORLD_HI);
     }
 
-    return { render: render, resetViewport: function () { /* fixed viewport — no-op */ } };
+    return { render: render, resetViewport: function () { trail.length = 0; } };
   }
 
   /* ================================================================
@@ -1652,17 +1705,18 @@
   // Draw a stacked state-history plot: one sub-row per state, each on its own
   // auto-scaled y-axis with a direct label + current value.
   // stateHist: an object of arrays keyed by `spec[i].key`.
-  // spec (optional): [{key, label, color}] — defaults to the flight states.
+  // spec (optional): [{key, label, token}] — defaults to the flight states.
+  // `token` is a CSS color var, resolved per draw so the theme toggle takes effect.
   function drawStatePlot(canvas, stateHist, spec) {
     if (!canvas) return;
     trackHover(canvas);
     var SERIES = spec || [
-      { key: 'h',         label: 'h (m)',   color: cssVar('--viz-1') },
-      { key: 'V',         label: 'V (m/s)', color: cssVar('--viz-2') },
-      { key: 'alpha_deg', label: 'α (°)',   color: cssVar('--viz-3') },
-      { key: 'gamma_deg', label: 'γ (°)',   color: cssVar('--viz-4') }
+      { key: 'h',         label: 'h (m)',   token: '--viz-1' },
+      { key: 'V',         label: 'V (m/s)', token: '--viz-2' },
+      { key: 'alpha_deg', label: 'α (°)',   token: '--viz-3' },
+      { key: 'gamma_deg', label: 'γ (°)',   token: '--viz-4' }
     ];
-    var series = SERIES.map(function(s) { return { label: s.label, color: s.color, data: stateHist[s.key] || [] }; });
+    var series = SERIES.map(function(s) { return { label: s.label, color: cssVar(s.token), data: stateHist[s.key] || [] }; });
     // Use independent y-scales: normalise each to [-1,1] in a shared space isn't ideal;
     // instead overlay each on its own sub-row within the canvas.
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -1894,9 +1948,9 @@
 
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
-      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, TRIM.h, TRIM.x];
+      state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, H_CENTER, TRIM.x];
       simT = 0; de_rad = TRIM.de;
-      pidState = { intE: 0, prevE: hRefAt(0) - TRIM.h };
+      pidState = { intE: 0, prevE: 0 };
       measBuf = [];
       errRing = [];
       pidContrib = { p: [], i: [], d: [], total: [] };
@@ -2048,10 +2102,10 @@
     var cpPidPlot   = document.getElementById('cp-pid-plot');
 
     var CP_STATE_SPEC = [
-      { key: 'x',   label: 'x (m)',    color: cssVar('--viz-1') },
-      { key: 'xd',  label: 'ẋ (m/s)',  color: cssVar('--viz-2') },
-      { key: 'th',  label: 'θ (°)',    color: cssVar('--viz-3') },
-      { key: 'thd', label: 'θ̇ (°/s)',  color: cssVar('--viz-4') }
+      { key: 'x',   label: 'x (m)',    token: '--viz-1' },
+      { key: 'xd',  label: 'ẋ (m/s)',  token: '--viz-2' },
+      { key: 'th',  label: 'θ (°)',    token: '--viz-3' },
+      { key: 'thd', label: 'θ̇ (°/s)',  token: '--viz-4' }
     ];
 
     // New trial: pole upright with a small random tilt, cart at rest.
@@ -2079,6 +2133,9 @@
     document.addEventListener('keydown', function (e) {
       var sec = document.getElementById('sec-cartpole');
       if (!sec || !sec.classList.contains('active')) return;
+      // Leave arrows alone in sliders and number inputs (gain fine-tuning, caret).
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (e.key === 'ArrowLeft')  { keyForce = -PUSH_F; e.preventDefault(); }
       if (e.key === 'ArrowRight') { keyForce =  PUSH_F; e.preventDefault(); }
     });
@@ -2111,7 +2168,8 @@
         }
         // Transport delay: the cart feels the command from `delay` seconds ago.
         forceBuf.push(cmd);
-        var Fapplied = (forceBuf.length > delaySamples) ? forceBuf.shift() : 0;
+        var Fapplied = 0;
+        while (forceBuf.length > delaySamples) Fapplied = forceBuf.shift();
         if (man.manual) { forceBuf.length = 0; Fapplied = cmd; }
         uForce = Fapplied + keyForce;
         state = rk4(state, simT, CP_DT, function (t, s) { return cpDeriv(t, s, uForce); });

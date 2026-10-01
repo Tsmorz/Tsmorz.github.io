@@ -175,7 +175,8 @@ permalink: /controls/
   <section class="sim-section" id="sec-flight" role="tabpanel" aria-labelledby="tab-flight">
     <div class="sim-layout">
       <div class="sim-canvas-wrap sim-stack">
-        <div class="sim-cell"><canvas class="sim-canvas" id="flight-canvas" aria-label="2D flight simulator"></canvas></div>
+        <div class="sim-cell"><canvas class="sim-canvas" id="flight-canvas" aria-label="2D flight simulator"
+                data-sprite="{{ '/assets/img/cessna.png' | relative_url }}"></canvas></div>
         <div class="sim-cell-pair">
           <div class="sim-cell"><canvas class="sim-states" id="fl-state-plot" aria-label="State history: altitude, airspeed, angle of attack, flight-path angle"></canvas></div>
           <div class="sim-cell"><canvas class="sim-states" id="fl-pid-plot" aria-label="PID contribution chart"></canvas></div>
