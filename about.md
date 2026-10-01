@@ -7,9 +7,8 @@ I'm a **Robotics Software Engineer at Agile Robots SE** in Munich, building the 
 that keeps a fleet of robots connected and controllable - remote over-the-air updates and
 low-latency teleoperation for machines deployed around the world.
 
-Before Agile Robots I was a PhD candidate at the **Technical University of Munich**,
-working under **Prof. Lorenzo Masia** on sensor fusion for soft exosuits - turning noisy
-wearable sensor data into a reliable read on how a joint is actually moving.
+Before Agile Robots I was briefly a PhD candidate at the **Technical University of Munich**,
+working under **Prof. Lorenzo Masia** on sensor fusion for soft exosuits.
 
 <div class="about-photos">
   <img src="{{ '/assets/img/about/exosuit-1.jpg' | relative_url }}" alt="Soft exosuit research at TU Munich">
@@ -48,7 +47,7 @@ purely because the idea was too good to leave alone.
 - **State estimation & sensor fusion** - Kalman filtering, IMU fusion, SLAM
 - **Autonomous aerial vehicles** - still trying to get a drone to fly from scratch
 - **Learning for control** - vision-based policies for flight and other underactuated systems
-- **Teaching** - actively mentoring for Polygence and have taught at middle schools
+- **Teaching** - actively mentoring for [Polygence](https://www.polygence.org/) and previously with the [Boston Youth Farm Project](https://bostonyfp.org/)
 
 ## Racing
 

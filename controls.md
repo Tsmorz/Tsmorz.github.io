@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Controls
-description: Interactive control-systems demos — tune PID controllers on a mass-spring, tilt table, and flight sim, and state-feedback (LQR) gains on a cart-pole.
+description: Interactive control-systems demos - tune PID controllers on a mass-spring, tilt table, and flight sim, and state-feedback (LQR) gains on a cart-pole.
 permalink: /controls/
 ---
 <section class="wrap page-head">
@@ -10,8 +10,9 @@ permalink: /controls/
     Four live simulations. Tune a <strong>PID</strong> controller on a mass-spring, a
     ball-balancing tilt table, and a nonlinear aircraft autopilot. On the inverted pendulum on a
     cart, set the four gains of a <strong>state-feedback (LQR)</strong> controller instead. Then add
-    transport delay and sensor noise to see what breaks it. Switch any demo to
-    <strong>Manual</strong> and drag the plant yourself to feel how hard the job is. The plots
+    transport delay and sensor noise to see what breaks it. Every demo starts in
+    <strong>Manual</strong>, so drag the plant yourself to feel how hard the job is, then switch to
+    the controller and let it try. The plots
     under each sim show the plant's states and what each term of the controller is contributing.
     For a problem past what PID can do, <a href="{{ '/controls/swingup/' | relative_url }}">swing
     up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy.
@@ -34,12 +35,7 @@ permalink: /controls/
   <section class="sim-section active" id="sec-msd" role="tabpanel" aria-labelledby="tab-msd">
     <div class="sim-layout">
       <div class="sim-canvas-wrap sim-stack">
-        <div class="sim-cell">
-          <div class="msd-stage">
-            <canvas class="sim-canvas msd-anim" id="msd-canvas" aria-label="Mass-spring-damper simulation"></canvas>
-            <canvas class="sim-canvas msd-ts" id="msd-ts-plot" aria-label="Position vs reference time series"></canvas>
-          </div>
-        </div>
+        <div class="sim-cell"><canvas class="sim-canvas" id="msd-canvas" aria-label="Mass-spring-damper simulation with the reference trajectory ahead"></canvas></div>
         <div class="sim-cell-pair">
           <div class="sim-cell"><canvas class="sim-states" id="msd-state-plot" aria-label="State history: position, velocity, tracking error, applied force"></canvas></div>
           <div class="sim-cell"><canvas class="sim-states" id="msd-pid-plot" aria-label="PID contribution chart"></canvas></div>
@@ -48,10 +44,19 @@ permalink: /controls/
       <div class="sim-panel">
         <h3>Controller</h3>
         <div class="mode-toggle" id="msd-mode" role="group" aria-label="Who is in control">
-          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
-          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+          <button class="mode-btn active" type="button" data-mode="manual" aria-pressed="true">Manual</button>
+          <button class="mode-btn" type="button" data-mode="pid" aria-pressed="false">PID</button>
         </div>
         <p class="panel-hint"><strong>Manual:</strong> drag the mass up or down. Delay and noise apply to PID only.</p>
+        <h3>Reference</h3>
+        <div class="mode-toggle" id="msd-ref" role="group" aria-label="Reference signal">
+          <button class="mode-btn active" type="button" data-ref="wave" aria-pressed="true">Wave</button>
+          <button class="mode-btn" type="button" data-ref="step" aria-pressed="false">Step</button>
+        </div>
+        <div class="hint-box" hidden id="msd-hint" data-prefix="msd" data-gains="kp:40,ki:5,kd:6">
+          <p class="hint-text"><strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;40, K<sub>i</sub>&#8201;=&#8201;5, K<sub>d</sub>&#8201;=&#8201;6. A high K<sub>p</sub> tracks the sine closely, K<sub>d</sub> stops the spring from ringing, and a little K<sub>i</sub> removes the offset.</p>
+          <div class="hint-row"><button class="sim-btn hint-apply" type="button">Try it</button></div>
+        </div>
         <h3>PID Gains</h3>
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="msd-kp-val">0.0</span></label>
@@ -79,7 +84,7 @@ permalink: /controls/
           <input type="range" id="msd-noise" min="0" max="0.5" step="0.01" value="0">
         </div>
         <div class="score-block">
-          <span class="score-value" id="msd-score">&#8212;</span>
+          <span class="score-value" id="msd-score">-</span>
           <span class="score-label">RMSE (m)</span>
           <div class="score-best" id="msd-best"></div>
         </div>
@@ -90,7 +95,9 @@ permalink: /controls/
       <h4 class="demo-note-title">About this demo</h4>
       <p>
         A <strong>PID controller</strong> pushes a lightly damped mass on a spring
-        (&#950; &#8776; 0.1) to track a slow sine reference. The <em>proportional</em> term
+        (&#950; &#8776; 0.1) to track a reference: a slow sine wave, or a <strong>step</strong>
+        that jumps to the opposite position every half period. The line ahead of the mass shows
+        where the reference is going. The <em>proportional</em> term
         reacts to the current error, the <em>integral</em> term removes steady-state offset, and
         the <em>derivative</em> term damps oscillation. The score is RMSE over the last 5 s.
         Start with K<sub>p</sub> alone, add K<sub>d</sub> to cut the overshoot, then a small
@@ -98,7 +105,7 @@ permalink: /controls/
         command or <strong>sensor noise</strong> to the measurement: delay eats phase margin, and
         the derivative term amplifies noise the most. In Manual mode, drag the mass to follow the
         reference yourself. &#8594;
-        <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller &#8212; Wikipedia</a>
+        <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller - Wikipedia</a>
       </p>
     </div>
   </section>
@@ -116,10 +123,19 @@ permalink: /controls/
       <div class="sim-panel">
         <h3>Controller</h3>
         <div class="mode-toggle" id="tilt-mode" role="group" aria-label="Who is in control">
-          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
-          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+          <button class="mode-btn active" type="button" data-mode="manual" aria-pressed="true">Manual</button>
+          <button class="mode-btn" type="button" data-mode="pid" aria-pressed="false">PID</button>
         </div>
         <p class="panel-hint"><strong>Manual:</strong> drag the beam ends to tilt it. Delay and noise apply to PID only.</p>
+        <h3>Reference</h3>
+        <div class="mode-toggle" id="tilt-ref" role="group" aria-label="Reference signal">
+          <button class="mode-btn active" type="button" data-ref="wave" aria-pressed="true">Wave</button>
+          <button class="mode-btn" type="button" data-ref="step" aria-pressed="false">Step</button>
+        </div>
+        <div class="hint-box" hidden id="tilt-hint" data-prefix="tilt" data-gains="kp:3,ki:0,kd:2">
+          <p class="hint-text"><strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;3, K<sub>i</sub>&#8201;=&#8201;0, K<sub>d</sub>&#8201;=&#8201;2. Enough K<sub>p</sub> to chase the reference, and K<sub>d</sub> to brake the ball before it overshoots.</p>
+          <div class="hint-row"><button class="sim-btn hint-apply" type="button">Try it</button></div>
+        </div>
         <h3>PID Gains</h3>
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="tilt-kp-val">0.0</span></label>
@@ -147,7 +163,7 @@ permalink: /controls/
           <input type="range" id="tilt-noise" min="0" max="0.5" step="0.01" value="0">
         </div>
         <div class="score-block">
-          <span class="score-value" id="tilt-score">&#8212;</span>
+          <span class="score-value" id="tilt-score">-</span>
           <span class="score-label">RMSE (m)</span>
           <div class="score-best" id="tilt-best"></div>
         </div>
@@ -157,17 +173,16 @@ permalink: /controls/
     <div class="demo-note">
       <h4 class="demo-note-title">About this demo</h4>
       <p>
-        A <strong>PID controller</strong> tilts a beam to bring a rolling ball to rest at the
-        centre. Each trial starts with the table flat and the ball somewhere in the
-        <em>inner half</em> of the beam, rolling outward. A trial succeeds when the ball stays
-        within 8 mm of centre, slower than 4 cm/s, for 0.5 s. It fails if the ball rolls off the
-        end or 8 s pass. Either way, the next trial starts. The controller outputs a
+        A <strong>PID controller</strong> tilts a beam so a rolling ball tracks a reference
+        position: a sine wave, or a <strong>step</strong> that jumps to the other side of the beam
+        every half period (the dashed ring on the beam is where the ball should be). The run
+        restarts if the ball rolls off an end. The controller outputs a
         <em>commanded</em> tilt, and a servo turns the beam toward it at no more than
         60&nbsp;&#176;/s, so a big correction takes time. Watch &#952;&#775; saturate in the state
         plot. K<sub>p</sub> alone makes the ball oscillate, K<sub>d</sub> damps it, and a small
         K<sub>i</sub> removes any leftover offset. In Manual mode, drag either end of the beam to
         tilt it. The same servo limit applies to you. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Ball_and_beam" target="_blank" rel="noopener">Ball and beam &#8212; Wikipedia</a>
+        <a href="https://en.wikipedia.org/wiki/Ball_and_beam" target="_blank" rel="noopener">Ball and beam - Wikipedia</a>
       </p>
     </div>
   </section>
@@ -186,10 +201,19 @@ permalink: /controls/
       <div class="sim-panel">
         <h3>Controller</h3>
         <div class="mode-toggle" id="fl-mode" role="group" aria-label="Who is in control">
-          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
-          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+          <button class="mode-btn active" type="button" data-mode="manual" aria-pressed="true">Manual</button>
+          <button class="mode-btn" type="button" data-mode="pid" aria-pressed="false">PID</button>
         </div>
         <p class="panel-hint"><strong>Manual:</strong> drag up to pitch the nose up, down for nose down; release to return to trim. Delay and noise apply to PID only.</p>
+        <h3>Reference</h3>
+        <div class="mode-toggle" id="fl-ref" role="group" aria-label="Reference signal">
+          <button class="mode-btn active" type="button" data-ref="wave" aria-pressed="true">Wave</button>
+          <button class="mode-btn" type="button" data-ref="step" aria-pressed="false">Step</button>
+        </div>
+        <div class="hint-box" hidden id="fl-hint" data-prefix="fl" data-gains="kp:0.5,ki:0.1,kd:0.35">
+          <p class="hint-text"><strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;0.5, K<sub>i</sub>&#8201;=&#8201;0.1, K<sub>d</sub>&#8201;=&#8201;0.35. K<sub>d</sub> damps the climb rate, and K<sub>i</sub> holds the altitude against drift.</p>
+          <div class="hint-row"><button class="sim-btn hint-apply" type="button">Try it</button></div>
+        </div>
         <h3>PID Gains</h3>
         <div class="pid-group">
           <label>K<sub>p</sub> <span id="fl-kp-val">0.000</span></label>
@@ -217,7 +241,7 @@ permalink: /controls/
           <input type="range" id="fl-noise" min="0" max="0.5" step="0.01" value="0">
         </div>
         <div class="score-block">
-          <span class="score-value" id="fl-score">&#8212;</span>
+          <span class="score-value" id="fl-score">-</span>
           <span class="score-label">RMSE (m)</span>
           <div class="score-best" id="fl-best"></div>
         </div>
@@ -229,15 +253,16 @@ permalink: /controls/
       <p>
         A nonlinear longitudinal aircraft model with six states (V, &#947;, &#945;, q, h, x) and
         a smooth stall: C<sub>L</sub> rises linearly up to about 16&#176; angle of attack, then
-        drops sharply. A <strong>PID autopilot</strong> tracks a sine-wave altitude reference by
-        moving the elevator away from trim. Altitude error goes in, and a nose-up elevator command
+        drops sharply. A <strong>PID autopilot</strong> tracks an altitude reference, a sine wave or a
+        <strong>step</strong> that jumps up and down every half period, by moving the elevator
+        away from trim. Altitude error goes in, and a nose-up elevator command
         in degrees comes out. The aircraft can only change altitude <em>through</em> its pitch and
         flight-path angle, so K<sub>p</sub> alone oscillates. K<sub>d</sub> acts on climb rate,
         and it is what damps the oscillation. Push too hard and the wing stalls. Delay and sensor
         noise work as in the other demos, with noise &#963; in metres. In Manual mode the canvas
         is a control stick: drag up to pitch the nose up, and let go to return to trim. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics &#8212; Wikipedia</a>,
-        <a href="https://en.wikipedia.org/wiki/Autopilot" target="_blank" rel="noopener">Autopilot &#8212; Wikipedia</a>
+        <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics - Wikipedia</a>,
+        <a href="https://en.wikipedia.org/wiki/Autopilot" target="_blank" rel="noopener">Autopilot - Wikipedia</a>
       </p>
     </div>
     <div class="demo-note">
@@ -276,10 +301,19 @@ permalink: /controls/
       <div class="sim-panel">
         <h3>Controller</h3>
         <div class="mode-toggle" id="cp-mode" role="group" aria-label="Who is in control">
-          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">LQR</button>
-          <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
+          <button class="mode-btn active" type="button" data-mode="manual" aria-pressed="true">Manual</button>
+          <button class="mode-btn" type="button" data-mode="pid" aria-pressed="false">LQR</button>
         </div>
-        <p class="panel-hint"><strong>Manual:</strong> drag the cart, or hold &#8592; &#8594;. Delay and noise apply to the controller only.</p>
+        <p class="panel-hint"><strong>Manual:</strong> drag the cart. Delay and noise apply to the controller only.</p>
+        <h3>Reference</h3>
+        <div class="mode-toggle" id="cp-ref" role="group" aria-label="Reference signal">
+          <button class="mode-btn active" type="button" data-ref="wave" aria-pressed="true">Wave</button>
+          <button class="mode-btn" type="button" data-ref="step" aria-pressed="false">Step</button>
+        </div>
+        <div class="hint-box" hidden id="cp-hint" data-prefix="cp" data-gains="kx:3.1,kv:5.9,kth:43.5,kw:18.1">
+          <p class="hint-text"><strong>Stuck?</strong> A good solution is k<sub>x</sub>&#8201;=&#8201;3.1, k<sub>&#7819;</sub>&#8201;=&#8201;5.9, k<sub>&#952;</sub>&#8201;=&#8201;43.5, k<sub>&#952;&#775;</sub>&#8201;=&#8201;18.1. These are the LQR gains. The pole terms keep it up and the cart terms pull it back to the middle.</p>
+          <div class="hint-row"><button class="sim-btn hint-apply" type="button">Try it</button></div>
+        </div>
         <h3>State-feedback gains</h3>
         <div class="mx-line" aria-label="Force equals the gain row times the state column">
           <span class="mx-f">F =</span>
@@ -298,12 +332,12 @@ permalink: /controls/
         </div>
         <div class="pid-group">
           <label>k<sub>&#952;</sub>&nbsp;&middot;&nbsp;pole angle <span id="cp-kth-val">0.0</span></label>
-          <input type="range" id="cp-kth" min="-100" max="100" step="1" value="0">
+          <input type="range" id="cp-kth" min="-100" max="100" step="0.5" value="0">
           <div class="range-row"><label class="range-lbl" for="cp-kth-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kth-range" class="range-input" value="100" min="1" step="1"></div>
         </div>
         <div class="pid-group">
           <label>k<sub>&#952;&#775;</sub>&nbsp;&middot;&nbsp;pole rate <span id="cp-kw-val">0.0</span></label>
-          <input type="range" id="cp-kw" min="-40" max="40" step="0.4" value="0">
+          <input type="range" id="cp-kw" min="-40" max="40" step="0.1" value="0">
           <div class="range-row"><label class="range-lbl" for="cp-kw-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kw-range" class="range-input" value="40" min="1" step="1"></div>
         </div>
         <button class="sim-btn" id="cp-lqr" type="button">Load LQR gains</button>
@@ -318,8 +352,8 @@ permalink: /controls/
           <input type="range" id="cp-noise" min="0" max="2" step="0.05" value="0">
         </div>
         <div class="score-block">
-          <span class="score-value" id="cp-score">&#8212;</span>
-          <span class="score-label">RMS &#952; (&#176;)</span>
+          <span class="score-value" id="cp-score">-</span>
+          <span class="score-label">RMSE (m)</span>
           <div class="score-best" id="cp-best"></div>
         </div>
         <button class="sim-btn" id="cp-reset" type="button">Reset</button>
@@ -336,16 +370,17 @@ permalink: /controls/
         <strong>full-state feedback</strong> instead of a single PID loop: the force is a weighted
         sum of cart position, cart velocity, pole angle and pole rate. Start with
         k<sub>&#952;</sub> and k<sub>&#952;&#775;</sub>. They keep the pole up, but the cart then drifts away
-        and eventually the pole falls. Adding k<sub>x</sub> and k<sub>&#7819;</sub> pulls the cart back to
-        0 m. Their sign looks backwards at first: to bring the cart left, it must first be pushed
-        right so the pole tips left. Hand-tuning four gains is hard, so
+        and eventually the pole falls. Adding k<sub>x</sub> and k<sub>&#7819;</sub> makes the cart follow
+        the reference position (the dashed marker on the rail), which is a sine wave or a
+        <strong>step</strong> that jumps to the other side every half period. Their sign looks
+        backwards at first: to bring the cart left, it must first be pushed right so the pole tips
+        left. Hand-tuning four gains is hard, so
         <strong>Load LQR gains</strong> fills in the optimal set, found by solving a Riccati
         equation for this plant. LQR picks the gains by trading off state error against force use
-        (here Q&#8201;=&#8201;diag(1, 0.1, 10, 0.1), R&#8201;=&#8201;0.1). The track has no ends and the
-        camera follows the cart. The score is RMS pole angle over the last 10 s. Hold the
-        &#8592;&#8594; arrow keys to shove the cart and test your gains, or switch to Manual and drag
-        the cart to balance the pole yourself. &#8594;
-        <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum &#8212; Wikipedia</a>
+        (here Q&#8201;=&#8201;diag(1, 0.1, 10, 0.1), R&#8201;=&#8201;0.1). The rail is 8 m long with hard stops, and
+        running into an end ends the trial. Sensor noise perturbs all four measurements the controller sees (sigma degrees on the angle, sigma centimetres on the cart position, and the same amount per 0.2 s on the two rates), never the force. The score is the RMS position error over the last 10 s. Switch to
+        Manual and drag the cart to balance the pole yourself. &#8594;
+        <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum - Wikipedia</a>
       </p>
     </div>
     <div class="demo-note">
@@ -354,13 +389,18 @@ permalink: /controls/
         <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
         <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
         <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>k<sub>x</sub></span><span>k<sub>&#7819;</sub></span><span>k<sub>&#952;</sub></span><span>k<sub>&#952;&#775;</sub></span></span><span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span>&#160;&#160;=&#160;&#160;&#8722;K&#8201;<b>s</b>,&#160;&#160; <b>s</b> =<span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span></span></div>
-        <p class="eqn-note">M = 0.3 kg cart, m = 0.3 kg pole, &#8467; = 1.5 m half-length, b = 0.8 N&#183;s/m cart friction, g = 9.81 m/s&#178;. Force saturates at &#177;10 N; arrow-key pushes add &#177;4 N on top. LQR's K comes out negative in every entry (u = &#8722;K<b>s</b>), so the sliders show &#8722;K and all four gains are positive. &#952; is in rad, measured from vertical. The trial ends when |&#952;| &gt; 45&#176;. RK4 at 200 Hz.</p>
+        <p class="eqn-note">Linearised about upright (small &#952;), with this cart-pole's numbers. Q and R weight state error against force; the Riccati solution for them gives K.</p>
+        <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">s&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-grid" style="grid-template-columns:repeat(4,auto)"><span>0</span><span>1</span><span>0</span><span>0</span><span>0</span><span>&#8722;2.13</span><span>&#8722;5.89</span><span>0</span><span>0</span><span>0</span><span>0</span><span>1</span><span>0</span><span>1.07</span><span>7.85</span><span>0</span></span><span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span> + <span class="mx mx-col"><span>0</span><span>2.67</span><span>0</span><span>&#8722;1.33</span></span>F</span></div>
+        <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">Q</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-grid" style="grid-template-columns:repeat(4,auto)"><span>1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0.1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>10</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0.1</span></span>,&#160;&#160; R = 0.1</span></div>
+        <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>&#8722;3.1</span><span>&#8722;5.9</span><span>&#8722;43.5</span><span>&#8722;18.1</span></span>,&#160;&#160; F = &#8722;K<b>s</b></span></div>
+        <p class="eqn-note">M = 0.3 kg cart, m = 0.3 kg pole, &#8467; = 1.5 m half-length, b = 0.8 N&#183;s/m cart friction, g = 9.81 m/s&#178;. Force saturates at &#177;10 N; LQR's K comes out negative in every entry (u = &#8722;K<b>s</b>), so the sliders show &#8722;K and all four gains are positive. &#952; is in rad, measured from vertical. The trial ends when |&#952;| &gt; 45&#176; or the cart hits a rail end at &#177;4 m. RK4 at 200 Hz.</p>
       </div>
     </div>
   </section>
 
 </div>
 
+<script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/controls.js' | relative_url }}"></script>
 
 <style>

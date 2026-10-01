@@ -288,7 +288,6 @@
   // (ζ ≈ 0.7 on the 1.35 kg cart+bobs), then the same ±Fmax / slew limits as the robot.
   var DRAG_K = 150, DRAG_C = 20;
   var MANUAL_F = 10;   // manual force cap (N); the plant's own limit stays as exported
-  var PUSH_F = 5;                     // N — arrow-key shove in TQC mode (a disturbance)
   var HIST = 600;                     // telemetry samples (6 s at 100 Hz)
   var MAX_STEPS_PER_FRAME = 8;
   var RANDOM_DWELL = 100;             // steps (1 s) held at a reached target before Random moves on
@@ -299,6 +298,15 @@
   var trainedXLim = null;
 
   var meta = null, plant = null, actuator = null, policy = null, policyLoading = false;
+
+  // Disturbances (sliders): transport delay on the command, noise on the measurements.
+  var delayMs = 0, noiseSigma = 0, cmdBuf = [];
+  function gaussian() {
+    var u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
   var wantTqc = false;   // TQC clicked while the weights were still downloading
   var state = null, mode = 'manual', status = 'loading';
   // goal: U/D label, base link first; target: its angles (null = all upright, for a
@@ -307,7 +315,7 @@
   var simT = 0, segT = 0, settled = 0, reachTime = null, modesUsed = {};
   var applied = 0, crashTimer = null;
   var best = {};                      // goal label → { manual, tqc } in seconds
-  var dragX = null, keyL = false, keyR = false;
+  var dragX = null;
   var hist = { x: [], th1: [], th2: [], F: [] };
   var view = { W: 0, H: 0, scale: 1, cx: 0, trackY: 0 };
 
@@ -435,11 +443,33 @@
     }
     state = s;
     actuator.reset();
+    cmdBuf.length = 0;
     applied = 0; simT = 0;
     hist = { x: [], th1: [], th2: [], F: [] };
     status = 'running';
     startClock();
   }
+
+  // Disturbance sliders
+  (function () {
+    var delaySl = document.getElementById('su-delay'), delayAmt = document.getElementById('su-delay-amt');
+    var delayVal = document.getElementById('su-delay-val');
+    var noiseSl = document.getElementById('su-noise'), noiseVal = document.getElementById('su-noise-val');
+    function sync() {
+      var ms = delaySl ? (parseFloat(delaySl.value) || 0) : 0;
+      delayMs = ms;
+      noiseSigma = noiseSl ? (parseFloat(noiseSl.value) || 0) : 0;
+      if (delayVal) delayVal.textContent = Math.round(ms) + ' ms';
+      if (noiseVal) noiseVal.textContent = noiseSigma.toFixed(3);
+    }
+    if (delaySl) delaySl.addEventListener('input', function () { if (delayAmt) delayAmt.value = delaySl.value; sync(); });
+    if (delaySl && delayAmt) delayAmt.addEventListener('input', function () {
+      delaySl.value = clamp(parseFloat(delayAmt.value) || 0, 0, parseFloat(delaySl.max) || 100);
+      sync();
+    });
+    if (noiseSl) noiseSl.addEventListener('input', sync);
+    sync();
+  })();
 
   function setMode(next) {
     if (next === 'tqc' && !policy) { wantTqc = true; loadPolicy(); return; }
@@ -501,30 +531,19 @@
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
 
-  function typing(e) {
-    var t = e.target;
-    return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
-  }
-  document.addEventListener('keydown', function (e) {
-    if (typing(e)) return;
-    if (e.key === 'ArrowLeft')  { keyL = true; e.preventDefault(); }
-    if (e.key === 'ArrowRight') { keyR = true; e.preventDefault(); }
-  });
-  document.addEventListener('keyup', function (e) {
-    if (e.key === 'ArrowLeft')  keyL = false;
-    if (e.key === 'ArrowRight') keyR = false;
-  });
-  window.addEventListener('blur', function () { keyL = keyR = false; dragX = null; });
+  window.addEventListener('blur', function () { dragX = null; });
 
   /* ---- Simulation step (100 Hz) ---- */
   function simStep() {
-    var p = meta.physics, keys = (keyR ? 1 : 0) - (keyL ? 1 : 0), cmd, shove = 0;
+    var p = meta.physics, cmd;
     if (mode === 'tqc' && policy) {
-      cmd = policy.act(Core.encodeObs(state, meta.n_links, meta.goals ? target : null));
-      shove = keys * PUSH_F;
+      // The network sees noisy measurements of every state; the plant itself is untouched.
+      var seen = state;
+      if (noiseSigma > 0) seen = Array.prototype.map.call(state, function (v) { return v + noiseSigma * gaussian(); });
+      cmd = policy.act(Core.encodeObs(seen, meta.n_links, meta.goals ? target : null));
       modesUsed.tqc = true;
     } else {
-      cmd = keys * MANUAL_F;
+      cmd = 0;
       if (dragX !== null) {
         var dragTo = clamp(dragX, -p.x_lim, p.x_lim);
         cmd += DRAG_K * (dragTo - state[0]) - DRAG_C * state[1];
@@ -533,8 +552,13 @@
       // Idle manual time (e.g. while the weights load) doesn't disqualify a TQC run.
       if (cmd !== 0) modesUsed.manual = true;
     }
-    applied = actuator.apply(cmd);
-    state = plant.step(state, applied + shove);
+    // Transport delay: the actuator receives the command from `delaySteps` steps ago.
+    var delaySteps = Math.round(delayMs / 1000 / p.dt);
+    cmdBuf.push(cmd);
+    var sent = 0;
+    while (cmdBuf.length > delaySteps) sent = cmdBuf.shift();
+    applied = actuator.apply(sent);
+    state = plant.step(state, applied);
     simT += p.dt; segT += p.dt;
 
     if (Math.abs(state[0]) > p.x_lim) {          // the rail end (training terminated at ±trainedXLim)
@@ -560,14 +584,14 @@
     hist.x.push(state[0]);
     hist.th1.push(Core.wrapAngle(state[2]) * 180 / Math.PI);
     hist.th2.push(Core.wrapAngle(state[4]) * 180 / Math.PI);
-    hist.F.push(applied + shove);
+    hist.F.push(applied);
     if (hist.x.length > HIST) { hist.x.shift(); hist.th1.shift(); hist.th2.shift(); hist.F.shift(); }
   }
 
   function updateScore() {
     var rec = best[goal] || {};
-    function secs(v) { return v == null ? '—' : v.toFixed(2) + ' s'; }
-    if (scoreEl) scoreEl.textContent = reachTime === null ? '—' : reachTime.toFixed(2);
+    function secs(v) { return v == null ? '-' : v.toFixed(2) + ' s'; }
+    if (scoreEl) scoreEl.textContent = reachTime === null ? '-' : reachTime.toFixed(2);
     if (scoreLblEl) scoreLblEl.textContent = (fromLabel ? fromLabel + ' ' : '') + '→ ' + goal + ' time (s)';
     // The goal lives in its own header row so the rows below never change length and wrap.
     if (bestHeadEl) bestHeadEl.textContent = 'Best → ' + goal;
@@ -685,18 +709,29 @@
 
     // Status
     var label, colr = muted;
-    if (status === 'crashed')            { label = 'Hit the end of the rail — resetting…'; colr = col2; }
+    if (status === 'crashed')            { label = 'Hit the end of the rail - resetting…'; colr = col2; }
     else if (reachTime !== null && settled > 0) {
-      label = 'Reached ' + goal + ' in ' + reachTime.toFixed(2) + ' s — holding'; colr = accent;
+      label = 'Reached ' + goal + ' in ' + reachTime.toFixed(2) + ' s - holding'; colr = accent;
     }
-    else if (reachTime !== null)         { label = 'Knocked out of ' + goal + ' — recovering'; colr = accent; }
+    else if (reachTime !== null)         { label = 'Knocked out of ' + goal + ' - recovering'; colr = accent; }
     else if (mode === 'tqc')             { label = 'TQC network → ' + goal; colr = accent; }
-    else                                 { label = 'Manual → ' + goal + ' — drag the cart or hold ← →'; }
+    else                                 { label = 'Manual → ' + goal + ' - drag the cart'; }
     if (randomOn && status !== 'crashed') label += '  · random';
     ctx.textAlign = 'left'; ctx.font = '600 13px ' + font; ctx.fillStyle = colr;
     ctx.fillText(label, 14, 24);
     ctx.font = '11px ' + mono; ctx.fillStyle = muted;
-    ctx.fillText('t = ' + simT.toFixed(1) + ' s   F = ' + applied.toFixed(1) + ' N', 14, 42);
+    ctx.fillText('t = ' + simT.toFixed(1) + ' s', 14, 42);
+
+    // State box, lower right (the shared panel from statebox.js)
+    var rows = [
+      { label: 'x', value: state[0], decimals: 2, unit: 'm' },
+      { label: 'ẋ', value: state[1], decimals: 2, unit: 'm/s' }
+    ];
+    for (var li = 0; li < meta.n_links; li++) {
+      rows.push({ label: 'θ' + (li + 1), value: state[2 + 2 * li] * 180 / Math.PI, decimals: 0, unit: '°' });
+    }
+    rows.push({ label: 'F', value: applied, decimals: 1, unit: 'N' });
+    window.drawStateBox(ctx, W, H, rows);
   }
 
   var PLOT_SPEC = [

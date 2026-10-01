@@ -85,7 +85,12 @@ assets/css/main.css      hand-written, token-based, no build step
 assets/js/site.js        three small IIFEs: theme toggle, tag filter, lightbox
 assets/js/controls.js    the /controls/ demos (PID, except the cart-pole, which uses
                          state-feedback gains + an offline-solved LQR preset); each tab deep-links as #<section id minus
-                         "sec-"> (#tilt, #flight, #cartpole), and hidden tabs skip physics + drawing
+                         "sec-"> (#tilt, #flight, #cartpole), and hidden tabs skip physics + drawing.
+                         Every sim starts in Manual and tracks a reference that the Wave | Step
+                         toggle switches between a sine and a same-period square wave
+                         (`refValue`); noise is always added to measurements, never to force
+assets/js/statebox.js    `drawStateBox`: the lower-right state/units panel (decimal points and
+                         units aligned), shared by controls.js and swingup.js; load it first
 assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + goal-conditioned
                          TQC policy in vanilla JS — SwingupCore (no DOM, Node-testable) + the page
 assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture

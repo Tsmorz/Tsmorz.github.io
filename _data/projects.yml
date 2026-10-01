@@ -6,7 +6,7 @@
 - name: UAV Design Optimization
   blurb: >-
     Preliminary design optimization for a tiltrotor drone under 25 kg and
-    slower than 45 m/s — sizing, aerodynamics, and propulsion in one loop.
+    slower than 45 m/s - sizing, aerodynamics, and propulsion in one loop.
   year: "2024 – present"
   tags: [Python, Aerospace, Optimization]
   featured: true

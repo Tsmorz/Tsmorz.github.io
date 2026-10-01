@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Photos
-description: Photography from the road — landscapes, night skies, and life outside the lab.
+description: Photography from the road - landscapes, night skies, and life outside the lab.
 permalink: /photos/
 ---
 
