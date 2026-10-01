@@ -1,17 +1,18 @@
 ---
 layout: default
 title: Controls
-description: Interactive control-systems demos — tune one PID controller on a mass-spring, tilt table, flight sim, and cart-pole.
+description: Interactive control-systems demos — tune PID controllers on a mass-spring, tilt table, and flight sim, and state-feedback (LQR) gains on a cart-pole.
 permalink: /controls/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
-    Four live simulations, one controller. Tune the same <strong>PID</strong> panel on a
-    mass-spring, a ball-balancing tilt table, a nonlinear aircraft autopilot, and an inverted
-    pendulum on a cart, then add transport delay and sensor noise to see what breaks it. Switch
-    any demo to <strong>Manual</strong> and drag the plant yourself to feel how hard the job is.
-    The plots under each sim show the plant's states and what each of P, I, and D is contributing.
+    Four live simulations. Tune a <strong>PID</strong> controller on a mass-spring, a
+    ball-balancing tilt table, and a nonlinear aircraft autopilot. On the inverted pendulum on a
+    cart, set the four gains of a <strong>state-feedback (LQR)</strong> controller instead. Then add
+    transport delay and sensor noise to see what breaks it. Switch any demo to
+    <strong>Manual</strong> and drag the plant yourself to feel how hard the job is. The plots
+    under each sim show the plant's states and what each term of the controller is contributing.
     For a problem past what PID can do, <a href="{{ '/controls/swingup/' | relative_url }}">swing
     up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy.
   </p>
@@ -269,32 +270,43 @@ permalink: /controls/
         <div class="sim-cell"><canvas class="sim-canvas" id="cp-canvas" aria-label="Cart-pole balancing simulation"></canvas></div>
         <div class="sim-cell-pair">
           <div class="sim-cell"><canvas class="sim-states" id="cp-state-plot" aria-label="State history: cart position, velocity, pole angle, pole rate"></canvas></div>
-          <div class="sim-cell"><canvas class="sim-states" id="cp-pid-plot" aria-label="PID contribution chart"></canvas></div>
+          <div class="sim-cell"><canvas class="sim-states" id="cp-pid-plot" aria-label="Controller contribution chart"></canvas></div>
         </div>
       </div>
       <div class="sim-panel">
         <h3>Controller</h3>
         <div class="mode-toggle" id="cp-mode" role="group" aria-label="Who is in control">
-          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">PID</button>
+          <button class="mode-btn active" type="button" data-mode="pid" aria-pressed="true">LQR</button>
           <button class="mode-btn" type="button" data-mode="manual" aria-pressed="false">Manual</button>
         </div>
-        <p class="panel-hint"><strong>Manual:</strong> drag the cart, or hold &#8592; &#8594;. Delay and noise apply to PID only.</p>
-        <h3>PID Gains</h3>
-        <div class="pid-group">
-          <label>K<sub>p</sub> <span id="cp-kp-val">0.00</span></label>
-          <input type="range" id="cp-kp" min="-100" max="100" step="1" value="0">
-          <div class="range-row"><label class="range-lbl" for="cp-kp-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kp-range" class="range-input" value="100" min="1" step="1"></div>
+        <p class="panel-hint"><strong>Manual:</strong> drag the cart, or hold &#8592; &#8594;. Delay and noise apply to the controller only.</p>
+        <h3>State-feedback gains</h3>
+        <div class="mx-line" aria-label="Force equals the gain row times the state column">
+          <span class="mx-f">F =</span>
+          <span class="mx mx-row"><span id="cp-mx-kx">0.0</span><span id="cp-mx-kv">0.0</span><span id="cp-mx-kth">0.0</span><span id="cp-mx-kw">0.0</span></span>
+          <span class="mx mx-col mx-state"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span>
         </div>
         <div class="pid-group">
-          <label>K<sub>i</sub> <span id="cp-ki-val">0.00</span></label>
-          <input type="range" id="cp-ki" min="-50" max="50" step="0.5" value="0">
-          <div class="range-row"><label class="range-lbl" for="cp-ki-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-ki-range" class="range-input" value="50" min="1" step="1"></div>
+          <label>k<sub>x</sub>&nbsp;&middot;&nbsp;position <span id="cp-kx-val">0.0</span></label>
+          <input type="range" id="cp-kx" min="-20" max="20" step="0.1" value="0">
+          <div class="range-row"><label class="range-lbl" for="cp-kx-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kx-range" class="range-input" value="20" min="1" step="1"></div>
         </div>
         <div class="pid-group">
-          <label>K<sub>d</sub> <span id="cp-kd-val">0.00</span></label>
-          <input type="range" id="cp-kd" min="-20" max="20" step="0.2" value="0">
-          <div class="range-row"><label class="range-lbl" for="cp-kd-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kd-range" class="range-input" value="20" min="1" step="1"></div>
+          <label>k<sub>&#7819;</sub>&nbsp;&middot;&nbsp;velocity <span id="cp-kv-val">0.0</span></label>
+          <input type="range" id="cp-kv" min="-20" max="20" step="0.1" value="0">
+          <div class="range-row"><label class="range-lbl" for="cp-kv-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kv-range" class="range-input" value="20" min="1" step="1"></div>
         </div>
+        <div class="pid-group">
+          <label>k<sub>&#952;</sub>&nbsp;&middot;&nbsp;pole angle <span id="cp-kth-val">0.0</span></label>
+          <input type="range" id="cp-kth" min="-100" max="100" step="1" value="0">
+          <div class="range-row"><label class="range-lbl" for="cp-kth-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kth-range" class="range-input" value="100" min="1" step="1"></div>
+        </div>
+        <div class="pid-group">
+          <label>k<sub>&#952;&#775;</sub>&nbsp;&middot;&nbsp;pole rate <span id="cp-kw-val">0.0</span></label>
+          <input type="range" id="cp-kw" min="-40" max="40" step="0.4" value="0">
+          <div class="range-row"><label class="range-lbl" for="cp-kw-range"><span class="visually-hidden">Range </span>±</label><input type="number" id="cp-kw-range" class="range-input" value="40" min="1" step="1"></div>
+        </div>
+        <button class="sim-btn" id="cp-lqr" type="button">Load LQR gains</button>
         <h3>Disturbances</h3>
         <div class="pid-group">
           <label>Delay <span id="cp-delay-val">0 ms</span></label>
@@ -319,16 +331,20 @@ permalink: /controls/
       <p>
         The <strong>cart-pole</strong> is the classic unstable plant: a pole hinged on a cart that
         can only be pushed left or right. Each trial starts with the pole <em>upright</em>, tilted
-        1&#8211;4&#176; at random, and with no control it falls within a second or two. A
-        <strong>PID controller</strong> on the pole angle drives the cart back under the pole.
-        Start with K<sub>p</sub>. Nothing happens until it is strong enough to beat gravity. Then
-        add K<sub>d</sub> to stop the wobble. With P and D alone the pole stays up, but the cart
-        slowly speeds up until the pole falls. That drift is a real limit of a single loop on
-        &#952;, because nothing is measuring the cart. A K<sub>i</sub> above roughly
-        b&#183;g &#8776; 12 cancels it by supplying the force that friction takes away. The track
-        has no ends and the camera follows the cart. The score is RMS pole angle over the last
-        10 s. Hold the &#8592;&#8594; arrow keys to shove the cart and test your tune, or switch to
-        Manual and drag the cart to balance the pole yourself. &#8594;
+        1&#8211;4&#176; at random, and with no control it falls within a second or two. One force has to
+        hold two things at once, the pole angle and the cart position, so this demo uses
+        <strong>full-state feedback</strong> instead of a single PID loop: the force is a weighted
+        sum of cart position, cart velocity, pole angle and pole rate. Start with
+        k<sub>&#952;</sub> and k<sub>&#952;&#775;</sub>. They keep the pole up, but the cart then drifts away
+        and eventually the pole falls. Adding k<sub>x</sub> and k<sub>&#7819;</sub> pulls the cart back to
+        0 m. Their sign looks backwards at first: to bring the cart left, it must first be pushed
+        right so the pole tips left. Hand-tuning four gains is hard, so
+        <strong>Load LQR gains</strong> fills in the optimal set, found by solving a Riccati
+        equation for this plant. LQR picks the gains by trading off state error against force use
+        (here Q&#8201;=&#8201;diag(1, 0.1, 10, 0.1), R&#8201;=&#8201;0.1). The track has no ends and the
+        camera follows the cart. The score is RMS pole angle over the last 10 s. Hold the
+        &#8592;&#8594; arrow keys to shove the cart and test your gains, or switch to Manual and drag
+        the cart to balance the pole yourself. &#8594;
         <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum &#8212; Wikipedia</a>
       </p>
     </div>
@@ -337,8 +353,8 @@ permalink: /controls/
       <div class="eqn-block">
         <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
         <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
-        <div class="eqn-row"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>&#952; + K<sub>i</sub>&#8747;&#952;&#8202;dt + K<sub>d</sub>&#952;&#775;&#160;&#160;&#160;(&#952; in rad, measured from vertical)</span></div>
-        <p class="eqn-note">M = 0.4 kg cart, m = 0.4 kg pole, &#8467; = 0.9 m half-length, b = 1.2 N&#183;s/m cart friction, g = 9.81 m/s&#178;. Force saturates at &#177;10 N; arrow-key pushes add &#177;4 N on top. The trial ends when |&#952;| &gt; 45&#176;. RK4 at 200 Hz.</p>
+        <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>k<sub>x</sub></span><span>k<sub>&#7819;</sub></span><span>k<sub>&#952;</sub></span><span>k<sub>&#952;&#775;</sub></span></span><span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span>&#160;&#160;=&#160;&#160;&#8722;K&#8201;<b>s</b>,&#160;&#160; <b>s</b> =<span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span></span></div>
+        <p class="eqn-note">M = 0.3 kg cart, m = 0.3 kg pole, &#8467; = 1.5 m half-length, b = 0.8 N&#183;s/m cart friction, g = 9.81 m/s&#178;. Force saturates at &#177;10 N; arrow-key pushes add &#177;4 N on top. LQR's K comes out negative in every entry (u = &#8722;K<b>s</b>), so the sliders show &#8722;K and all four gains are positive. &#952; is in rad, measured from vertical. The trial ends when |&#952;| &gt; 45&#176;. RK4 at 200 Hz.</p>
       </div>
     </div>
   </section>
