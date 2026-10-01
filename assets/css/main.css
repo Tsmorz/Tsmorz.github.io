@@ -302,9 +302,6 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .card-links a { font-size: .9rem; font-weight: 550; display: inline-flex; align-items: center; gap: .3rem; }
 .card-links a::after { content: "→"; font-size: .9em; transition: transform .14s ease; }
 .card-links a:hover { text-decoration: none; }
-/* Cards inside a .prose page (about.md): undo the prose list indent and spacing. */
-.prose .card-grid ul { padding-left: 0; }
-.prose .card-grid li + li { margin-top: 0; }
 .card-links a:hover::after { transform: translateX(3px); }
 
 .cv-flag {
@@ -394,7 +391,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 @media (max-width: 560px) {
   .about-photos { grid-template-columns: 1fr; }
 }
-.about-figure { margin: 1.5rem 0 0; }
+.about-figure { margin: 1.5rem 0 0; max-width: 360px; }
 .about-figure img {
   width: 100%; border-radius: var(--radius);
   border: 1px solid var(--border); background: var(--surface);
