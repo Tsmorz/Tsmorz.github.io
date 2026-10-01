@@ -1811,9 +1811,10 @@
     opts = opts || {};
     var gainDigits = opts.gainDigits != null ? opts.gainDigits : 2;
     var noiseFmt   = opts.noiseFmt || function (v) { return v.toFixed(2); };
-    var p = { kp: 0, ki: 0, kd: 0, delay: 0, noise: 0 };
+    var GAINS = opts.gains || ['kp', 'ki', 'kd'];
+    var p = { delay: 0, noise: 0 };
+    GAINS.forEach(function (k) { p[k] = 0; });
     function el(id) { return document.getElementById(prefix + '-' + id); }
-    var GAINS = ['kp', 'ki', 'kd'];
     var delaySl = el('delay'), delayAmt = el('delay-amt'), delayVal = el('delay-val');
     var noiseSl = el('noise'), noiseVal = el('noise-val');
 
@@ -2047,20 +2048,26 @@
   (function cartPoleDemo() {
     var canvas = document.getElementById('cp-canvas');
     if (!canvas) return;
-    var pid = bindPidPanel('cp', { noiseFmt: function (v) { return v.toFixed(2) + '°'; } });
+    var pid = bindPidPanel('cp', { gains: ['kx', 'kv', 'kth', 'kw'], gainDigits: 1,
+                                   noiseFmt: function (v) { return v.toFixed(2) + '°'; } });
 
     /* ---- Cart-pole plant ----
        state = [x, ẋ, θ, θ̇]  (m, m/s, rad, rad/s); θ measured from straight up,
        positive = leaning right. Control u = horizontal force F (N) on the cart.
-       Upright θ = 0 is an UNSTABLE equilibrium — the whole point of the demo. */
-    var M_CART = 0.4, M_POLE = 0.4, L_POLE = 0.9;
+       Upright θ = 0 is an UNSTABLE equilibrium — the whole point of the demo.
+       Control law (full-state feedback, the form an LQR design produces):
+         F = kx·x + kẋ·ẋ + kθ·θ + kθ̇·θ̇     (= −K·state with the sign flipped, so all gains > 0)
+       LQR_GAINS below is the optimal K for Q = diag(1, 0.1, 10, 0.1), R = 0.1 on the
+       linearised plant (friction included), found offline with a Riccati solve. */
+    var M_CART = 0.3, M_POLE = 0.3, L_POLE = 1.5;   // light cart, long pole: slow enough to balance by hand
     var G = 9.81, TOTAL_M = M_CART + M_POLE, PML = M_POLE * L_POLE;
-    var CART_FRICTION = 1.2;       // N·s/m viscous cart damping
+    var CART_FRICTION = 0.8;       // N·s/m viscous cart damping
     var FMAX = 10;                 // N — actuator saturation
     var PUSH_F = 4;                // N — arrow-key nudge (added after saturation)
     var CP_DT = 0.005, SUBSTEPS = 5;
     var FALL_ANGLE = deg2rad(45);
     var TILT0_MIN = deg2rad(1), TILT0_MAX = deg2rad(4);
+    var LQR_GAINS = { kx: 3.1, kv: 5.9, kth: 43.5, kw: 18.1 };
 
     function cpDeriv(t, s, F) {
       var th = s[2], w = s[3];
@@ -2079,7 +2086,7 @@
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
-    var state, simT, uForce, simStatus, pidState, forceBuf;
+    var state, simT, uForce, simStatus, forceBuf;
     var keyForce = 0, resetTimer = null;
     // RMS θ over the last 10 s; "best" only counts once a full window stayed up.
     var errRing = [], RING = 400, CHIST = 300, bestRMS = null;
@@ -2090,7 +2097,7 @@
     var DRAG_K = 30, DRAG_C = 8;
     var view = { cx: 360, scale: 60, camX: 0 };
     var man = bindManual('cp', canvas, function () {
-      pidState = { intE: 0, prevE: state[2] }; forceBuf = [];
+      forceBuf = [];
       errRing = []; bestRMS = null;
       if (bestEl) bestEl.textContent = '';
     });
@@ -2098,6 +2105,7 @@
     var scoreEl    = document.getElementById('cp-score');
     var bestEl     = document.getElementById('cp-best');
     var resetBtn   = document.getElementById('cp-reset');
+    var lqrBtn     = document.getElementById('cp-lqr');
     var cpStatePlot = document.getElementById('cp-state-plot');
     var cpPidPlot   = document.getElementById('cp-pid-plot');
 
@@ -2114,11 +2122,10 @@
       var tilt = (Math.random() < 0.5 ? -1 : 1) * (TILT0_MIN + Math.random() * (TILT0_MAX - TILT0_MIN));
       state = [0, 0, tilt, 0];
       simT = 0; uForce = 0;
-      pidState = { intE: 0, prevE: tilt };
       forceBuf = [];
       errRing = [];
       stateHist  = { x: [], xd: [], th: [], thd: [] };
-      pidContrib = { p: [], i: [], d: [], total: [] };
+      pidContrib = { x: [], v: [], th: [], w: [], total: [] };
       simStatus = 'ok';
     }
     newTrial();
@@ -2128,6 +2135,18 @@
       if (bestEl) bestEl.textContent = '';
       if (scoreEl) scoreEl.textContent = '—';
       newTrial();
+    });
+
+    // Drop the four sliders onto the LQR solution (widening a range box if it is too small).
+    if (lqrBtn) lqrBtn.addEventListener('click', function () {
+      Object.keys(LQR_GAINS).forEach(function (k) {
+        var sl = document.getElementById('cp-' + k), ri = document.getElementById('cp-' + k + '-range');
+        if (!sl) return;
+        var need = Math.ceil(LQR_GAINS[k] * 1.5);
+        if (ri && parseFloat(ri.value) < need) { ri.value = need; ri.dispatchEvent(new Event('input')); }
+        sl.value = LQR_GAINS[k];
+        sl.dispatchEvent(new Event('input'));
+      });
     });
 
     document.addEventListener('keydown', function (e) {
@@ -2146,20 +2165,17 @@
     function step() {
       if (!document.getElementById('sec-cartpole').classList.contains('active')) return;
       if (simStatus !== 'ok') return;
-      var P_t = 0, I_t = 0, D_t = 0, cmd = 0;
+      var cx = 0, cv = 0, cth = 0, cw = 0, cmd = 0;
       var delaySamples = Math.round(pid.delay / CP_DT);
       for (var i = 0; i < SUBSTEPS; i++) {
-        // Controller sees a noisy angle; the reference is upright (θ = 0), so the
-        // error is just the measured tilt. Positive gains push the cart under the pole.
-        var e = state[2] + (pid.noise > 0 ? deg2rad(pid.noise) * gaussian() : 0);
-        pidState.intE = clamp(pidState.intE + e * CP_DT, -2, 2);
-        P_t = pid.kp * e;
-        I_t = pid.ki * pidState.intE;
-        D_t = pid.kd * (e - pidState.prevE) / CP_DT;
-        pidState.prevE = e;
-        cmd = clamp(P_t + I_t + D_t, -FMAX, FMAX);
+        // Full-state feedback toward the origin. The angle reading carries the noise;
+        // cart position/velocity and pole rate are taken as clean measurements.
+        var thMeas = state[2] + (pid.noise > 0 ? deg2rad(pid.noise) * gaussian() : 0);
+        cx = pid.kx * state[0]; cv = pid.kv * state[1];
+        cth = pid.kth * thMeas; cw = pid.kw * state[3];
+        cmd = clamp(cx + cv + cth + cw, -FMAX, FMAX);
         if (man.manual) {
-          P_t = I_t = D_t = 0;
+          cx = cv = cth = cw = 0;
           cmd = 0;
           if (man.drag) {
             var xt = view.camX + (man.drag.x - view.cx) / view.scale;
@@ -2187,9 +2203,10 @@
       if (stateHist.x.length > CHIST) {
         stateHist.x.shift(); stateHist.xd.shift(); stateHist.th.shift(); stateHist.thd.shift();
       }
-      pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(cmd);
-      if (pidContrib.p.length > CHIST) {
-        pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift();
+      pidContrib.x.push(cx); pidContrib.v.push(cv); pidContrib.th.push(cth); pidContrib.w.push(cw);
+      pidContrib.total.push(cmd);
+      if (pidContrib.x.length > CHIST) {
+        pidContrib.x.shift(); pidContrib.v.shift(); pidContrib.th.shift(); pidContrib.w.shift(); pidContrib.total.shift();
       }
 
       errRing.push(Math.pow(rad2deg(state[2]), 2));
@@ -2213,138 +2230,109 @@
       var ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      var dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
-        (!document.documentElement.getAttribute('data-theme') &&
-         window.matchMedia('(prefers-color-scheme: dark)').matches);
-      var border = cssVar('--border'), muted = cssVar('--text-muted');
-      var accent = cssVar('--accent'), mono = cssVar('--mono');
-      var poleColor = cssVar('--viz-2');
-      var railFill = dark ? '#162030' : '#c8d8e8', railEdge = dark ? '#4a8aaa' : '#3a6a9a';
+      // Same look as the double cart-pole on /controls/swingup/: flat panel, thick rail,
+      // accent cart, dark rod, coloured bob, yellow force arrow.
+      var bg = cssVar('--bg-soft'), border = cssVar('--border'), strong = cssVar('--border-strong');
+      var text = cssVar('--text'), muted = cssVar('--text-muted'), accent = cssVar('--accent');
+      var mono = cssVar('--mono'), font = cssVar('--font');
+      var col1 = cssVar('--viz-1'), col2 = cssVar('--viz-2'), colF = cssVar('--viz-4');
+      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-      // Backdrop: same soft sky as the tilt table, with a darker floor under the rail.
-      var trackY = H * 0.72;
-      var sky = ctx.createLinearGradient(0, 0, 0, H);
-      sky.addColorStop(0, dark ? '#0a1020' : '#f2f4f8');
-      sky.addColorStop(1, dark ? '#111b30' : '#e2e8f1');
-      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = dark ? 'rgba(0,0,0,0.22)' : 'rgba(40,70,110,0.07)';
-      ctx.fillRect(0, trackY + 8, W, H - trackY - 8);
-
+      var trackY = Math.round(H * 0.7);
       var scale = clamp(W * 0.09, 40, 70);   // px per metre
       var cx = W / 2;
       var camX = state[0];
       view.cx = cx; view.scale = scale; view.camX = camX;
       function sx(xm) { return cx + (xm - camX) * scale; }
 
-      // Rail (a beam like the tilt table's) + scrolling metre ticks and sleepers
-      var railH = 8;
-      ctx.fillStyle = railFill; ctx.strokeStyle = railEdge; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.roundRect(-4, trackY, W + 8, railH, 3); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      // Rail (no ends) with scrolling metre ticks
+      ctx.strokeStyle = strong; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-4, trackY); ctx.lineTo(W + 4, trackY); ctx.stroke();
+      ctx.lineCap = 'butt';
+      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
       ctx.lineWidth = 1;
       var halfSpan = cx / scale + 1;
-      for (var m = Math.ceil((camX - halfSpan) * 2) / 2; m <= camX + halfSpan; m += 0.5) {
+      for (var m = Math.ceil((camX - halfSpan) * 4) / 4; m <= camX + halfSpan; m += 0.25) {
         var tx = sx(m), whole = Math.abs(m - Math.round(m)) < 1e-6;
         ctx.strokeStyle = whole ? muted : border;
-        ctx.beginPath(); ctx.moveTo(tx, trackY + railH); ctx.lineTo(tx, trackY + railH + (whole ? 9 : 4)); ctx.stroke();
-        if (whole) ctx.fillText(Math.round(m) + ' m', tx, trackY + railH + 23);
+        ctx.beginPath(); ctx.moveTo(tx, trackY + 8); ctx.lineTo(tx, trackY + (whole ? 16 : 13)); ctx.stroke();
+        if (whole) ctx.fillText(Math.round(m) + ' m', tx, trackY + 30);
       }
 
       var cartX = sx(state[0]);
-      var cartW = 64, cartH = 28, wheelR = 6;
-      var cartTop = trackY - cartH + 2;
+      var cartW = 52, cartH = 24;
+      var poleLenPx = L_POLE * 2 * scale * 0.9;
+      var bobR = Math.max(6, 0.028 * scale * Math.sqrt(M_POLE / 0.15));
 
-      // Drive force arrow, under the rail
-      if (Math.abs(uForce) > 0.2) {
-        var fl = clamp(uForce / FMAX, -1.5, 1.5) * 46;
-        ctx.strokeStyle = poleColor; ctx.fillStyle = poleColor; ctx.lineWidth = 3; ctx.lineCap = 'round';
-        var ay = trackY + railH + 42;
-        ctx.beginPath(); ctx.moveTo(cartX, ay); ctx.lineTo(cartX + fl, ay); ctx.stroke();
-        var fsign = fl >= 0 ? 1 : -1;
-        ctx.beginPath();
-        ctx.moveTo(cartX + fl + 3*fsign, ay); ctx.lineTo(cartX + fl - 6*fsign, ay - 5);
-        ctx.lineTo(cartX + fl - 6*fsign, ay + 5); ctx.closePath(); ctx.fill();
-        ctx.lineCap = 'butt';
-        ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
-        ctx.fillText('F = ' + uForce.toFixed(1) + ' N', cartX, ay + 18);
+      // Manual drag: dashed target line and a spring from the cart to the pointer
+      if (man.manual && man.drag) {
+        ctx.strokeStyle = accent; ctx.globalAlpha = 0.5; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(man.drag.x, trackY - 30); ctx.lineTo(man.drag.x, trackY + 30); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cartX, trackY); ctx.lineTo(man.drag.x, trackY); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 1;
       }
 
-      // Cart: soft shadow on the rail, gradient body, top highlight, two wheels
-      ctx.fillStyle = 'rgba(0,0,0,0.20)';
-      ctx.beginPath(); ctx.ellipse(cartX, trackY + railH, cartW * 0.55, 3, 0, 0, 2 * Math.PI); ctx.fill();
-      var cg = ctx.createLinearGradient(0, cartTop, 0, trackY);
-      cg.addColorStop(0, accent); cg.addColorStop(1, dark ? 'rgba(20,50,110,0.95)' : 'rgba(14,46,138,0.90)');
-      ctx.fillStyle = cg;
-      ctx.beginPath(); ctx.roundRect(cartX - cartW/2, cartTop, cartW, cartH - 4, 6); ctx.fill();
-      ctx.strokeStyle = dark ? 'rgba(160,200,255,0.40)' : 'rgba(20,60,160,0.45)'; ctx.lineWidth = 1; ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.22)';
-      ctx.beginPath(); ctx.roundRect(cartX - cartW/2 + 4, cartTop + 3, cartW - 8, 3, 1.5); ctx.fill();
-      [-1, 1].forEach(function (d) {
-        var wx = cartX + d * cartW * 0.28;
-        ctx.fillStyle = dark ? '#0a1020' : '#f2f4f8';
-        ctx.strokeStyle = railEdge; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(wx, trackY - wheelR + 3, wheelR, 0, 2*Math.PI); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = railEdge;
-        ctx.beginPath(); ctx.arc(wx, trackY - wheelR + 3, 1.8, 0, 2*Math.PI); ctx.fill();
-      });
+      // Upright target ghost: dashed rod and a hollow bob
+      ctx.globalAlpha = 0.45; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = accent;
+      ctx.beginPath(); ctx.moveTo(cartX, trackY); ctx.lineTo(cartX, trackY - poleLenPx); ctx.stroke();
+      ctx.setLineDash([]); ctx.strokeStyle = col1;
+      ctx.beginPath(); ctx.arc(cartX, trackY - poleLenPx, bobR + 2, 0, 2 * Math.PI); ctx.stroke();
+      ctx.globalAlpha = 1;
 
-      // Upright reference (dashed)
-      var pivotX = cartX, pivotY = cartTop;
-      var poleLenPx = L_POLE * 2 * scale * 0.9;
-      ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
-      ctx.globalAlpha = 0.55;
-      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(pivotX, pivotY - poleLenPx - 18); ctx.stroke();
-      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      // Cart
+      ctx.fillStyle = accent;
+      ctx.beginPath(); ctx.roundRect(cartX - cartW / 2, trackY - cartH / 2, cartW, cartH, 5); ctx.fill();
 
-      // Pole: a rod with a lit edge, ending in a glossy bob like the tilt table's ball
-      var tipX = pivotX + poleLenPx * Math.sin(state[2]);
-      var tipY = pivotY - poleLenPx * Math.cos(state[2]);
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = dark ? '#4a8aaa' : '#3a6a9a'; ctx.lineWidth = 7;
-      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
-      ctx.strokeStyle = poleColor; ctx.lineWidth = 4.5;
-      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
+      // Pole (hinged at the cart centre, bob x = x + l sin θ, height = l cos θ)
+      var tipX = cartX + poleLenPx * Math.sin(state[2]);
+      var tipY = trackY - poleLenPx * Math.cos(state[2]);
+      ctx.strokeStyle = text; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cartX, trackY); ctx.lineTo(tipX, tipY); ctx.stroke();
       ctx.lineCap = 'butt';
-      var bobR = 14;
-      var bg2 = ctx.createRadialGradient(tipX - bobR*0.3, tipY - bobR*0.3, bobR*0.08, tipX, tipY, bobR);
-      bg2.addColorStop(0, '#ffffff'); bg2.addColorStop(0.25, poleColor);
-      bg2.addColorStop(1, dark ? 'rgba(10,20,50,0.9)' : 'rgba(10,30,90,0.75)');
-      ctx.fillStyle = bg2;
-      ctx.beginPath(); ctx.arc(tipX, tipY, bobR, 0, 2*Math.PI); ctx.fill();
-      ctx.strokeStyle = dark ? 'rgba(160,200,255,0.45)' : 'rgba(20,60,160,0.40)'; ctx.lineWidth = 1; ctx.stroke();
-      // Hinge
-      ctx.fillStyle = dark ? '#0a1020' : '#f2f4f8'; ctx.strokeStyle = railEdge; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(pivotX, pivotY, 5, 0, 2*Math.PI); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = col1;
+      ctx.beginPath(); ctx.arc(tipX, tipY, bobR, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.arc(cartX, trackY, 3, 0, 2 * Math.PI); ctx.fill();
 
-      // HUD panel (top-left), same treatment as the tilt table
-      var label, col;
-      if (simStatus === 'fell')                   { label = 'Pole fell — new trial…'; col = poleColor; }
-      else if (man.manual)                        { label = 'Manual · up ' + simT.toFixed(1) + ' s'; col = accent; }
-      else if (!pid.kp && !pid.ki && !pid.kd)     { label = 'No control — raise Kp to catch the pole'; col = muted; }
-      else                                        { label = 'PID balancing · up ' + simT.toFixed(1) + ' s'; col = accent; }
-      var hud2 = 'θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m   ←→ to push';
-      ctx.font = '600 13px ' + cssVar('--font');
-      var hudW = Math.max(ctx.measureText(label).width, 0) + 28;
-      ctx.font = '11px ' + mono;
-      hudW = Math.min(W - 20, Math.max(hudW, ctx.measureText(hud2).width + 28));
-      ctx.fillStyle   = dark ? 'rgba(10,18,32,0.74)' : 'rgba(242,244,248,0.86)';
-      ctx.strokeStyle = border; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(10, 10, hudW, 50, 6); ctx.fill(); ctx.stroke();
-      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-      ctx.font = '600 13px ' + cssVar('--font');
-      ctx.fillStyle = col; ctx.fillText(label, 20, 29);
-      ctx.fillStyle = muted; ctx.font = '11px ' + mono;
-      ctx.fillText(hud2, 20, 47);
+      // Force arrow under the rail
+      if (Math.abs(uForce) > 0.2) {
+        var fl = clamp(uForce / FMAX, -1.5, 1.5) * 60, ay = trackY + 48, fs = fl >= 0 ? 1 : -1;
+        ctx.strokeStyle = colF; ctx.fillStyle = colF; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(cartX, ay); ctx.lineTo(cartX + fl, ay); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cartX + fl + 3 * fs, ay);
+        ctx.lineTo(cartX + fl - 6 * fs, ay - 5); ctx.lineTo(cartX + fl - 6 * fs, ay + 5);
+        ctx.closePath(); ctx.fill();
+      }
+
+      // Status
+      var label, colr = muted;
+      if (simStatus === 'fell')                   { label = 'Pole fell — new trial…'; colr = col2; }
+      else if (man.manual)                        { label = 'Manual — drag the cart or hold ← →'; colr = accent; }
+      else if (!pid.kx && !pid.kv && !pid.kth && !pid.kw) { label = 'No control — set the gains or load LQR'; }
+      else                                        { label = 'LQR balancing'; colr = accent; }
+      ctx.textAlign = 'left'; ctx.font = '600 13px ' + font; ctx.fillStyle = colr;
+      ctx.fillText(label, 14, 24);
+      ctx.font = '11px ' + mono; ctx.fillStyle = muted;
+      ctx.fillText('t = ' + simT.toFixed(1) + ' s   F = ' + uForce.toFixed(1) + ' N   θ = ' +
+                   rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m', 14, 42);
+    }
+
+    // Live numbers in the panel's gain matrix.
+    var mxEls = ['kx', 'kv', 'kth', 'kw'].map(function (k) { return [k, document.getElementById('cp-mx-' + k)]; });
+    function syncMatrix() {
+      mxEls.forEach(function (p) { if (p[1]) p[1].textContent = pid[p[0]].toFixed(1); });
     }
 
     function loop() {
       if (isActive('sec-cartpole')) {
+        syncMatrix();
         drawCartPole();
         drawStatePlot(cpStatePlot, stateHist, CP_STATE_SPEC);
         drawContribPlot(cpPidPlot, [
-          { label: 'P',     color: cssVar('--viz-1'),     data: pidContrib.p },
-          { label: 'I',     color: cssVar('--viz-2'),     data: pidContrib.i },
-          { label: 'D',     color: cssVar('--viz-3'),     data: pidContrib.d },
+          { label: 'x',     color: cssVar('--viz-1'),     data: pidContrib.x },
+          { label: 'ẋ',     color: cssVar('--viz-2'),     data: pidContrib.v },
+          { label: 'θ',     color: cssVar('--viz-3'),     data: pidContrib.th },
+          { label: 'θ̇',     color: cssVar('--viz-4'),     data: pidContrib.w },
           { label: 'Total', color: cssVar('--viz-total'), data: pidContrib.total }
         ], FMAX, 'F (N)');
       }
