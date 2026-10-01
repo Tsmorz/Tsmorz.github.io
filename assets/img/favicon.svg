@@ -1,0 +1,14 @@
+<!-- Based on the UD goal pictogram (dark-theme colours, always) from /controls/swingup/ (goalIcon in swingup.js), with link 2 swung more horizontal. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 5 32 32">
+  <rect x="0" y="5" width="32" height="32" rx="7" fill="#0b0f14"/>
+  <line x1="2" y1="29" x2="30" y2="29" stroke="#33404f" stroke-width="1.5"/>
+  <g transform="translate(4.5 0)">
+    <rect x="11" y="23.5" width="10" height="5" rx="1.5" fill="#3ecfc4"/>
+    <g stroke="#e7ecf3" stroke-width="2" stroke-linecap="round">
+      <line x1="16.0" y1="26.0" x2="14.8" y2="14.1"/>
+      <line x1="14.8" y1="14.1" x2="4.4" y2="20.1"/>
+    </g>
+    <circle cx="14.8" cy="14.1" r="3" fill="#3987e5"/>
+    <circle cx="4.4" cy="20.1" r="3" fill="#d95926"/>
+  </g>
+</svg>

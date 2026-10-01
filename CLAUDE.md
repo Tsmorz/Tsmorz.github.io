@@ -36,7 +36,6 @@ Append a block to `_data/projects.yml`. Only `name` and `blurb` are required:
   tags: [Python, Robotics]      # feeds the filter buttons on /projects/ automatically
   featured: true                # lists it on /projects/, which only shows featured=true —
                                  # so this is what controls who makes the cut
-  about: true                   # also lists it in the Projects section of /about/
   on_cv: true                   # renders the "On my CV" badge
   image: /assets/img/projects/foo.jpg   # optional, 16:9 crops best
   links:

@@ -2213,80 +2213,128 @@
       var ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      var bg = cssVar('--bg'), border = cssVar('--border'), muted = cssVar('--text-muted');
+      var dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+        (!document.documentElement.getAttribute('data-theme') &&
+         window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var border = cssVar('--border'), muted = cssVar('--text-muted');
       var accent = cssVar('--accent'), mono = cssVar('--mono');
       var poleColor = cssVar('--viz-2');
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+      var railFill = dark ? '#162030' : '#c8d8e8', railEdge = dark ? '#4a8aaa' : '#3a6a9a';
 
+      // Backdrop: same soft sky as the tilt table, with a darker floor under the rail.
       var trackY = H * 0.72;
+      var sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, dark ? '#0a1020' : '#f2f4f8');
+      sky.addColorStop(1, dark ? '#111b30' : '#e2e8f1');
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = dark ? 'rgba(0,0,0,0.22)' : 'rgba(40,70,110,0.07)';
+      ctx.fillRect(0, trackY + 8, W, H - trackY - 8);
+
       var scale = clamp(W * 0.09, 40, 70);   // px per metre
       var cx = W / 2;
       var camX = state[0];
       view.cx = cx; view.scale = scale; view.camX = camX;
       function sx(xm) { return cx + (xm - camX) * scale; }
 
-      // Track + scrolling metre ticks
-      ctx.strokeStyle = border; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(0, trackY); ctx.lineTo(W, trackY); ctx.stroke();
-      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
+      // Rail (a beam like the tilt table's) + scrolling metre ticks and sleepers
+      var railH = 8;
+      ctx.fillStyle = railFill; ctx.strokeStyle = railEdge; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(-4, trackY, W + 8, railH, 3); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.lineWidth = 1;
       var halfSpan = cx / scale + 1;
       for (var m = Math.ceil((camX - halfSpan) * 2) / 2; m <= camX + halfSpan; m += 0.5) {
         var tx = sx(m), whole = Math.abs(m - Math.round(m)) < 1e-6;
         ctx.strokeStyle = whole ? muted : border;
-        ctx.beginPath(); ctx.moveTo(tx, trackY); ctx.lineTo(tx, trackY + (whole ? 10 : 5)); ctx.stroke();
-        if (whole) ctx.fillText(Math.round(m) + ' m', tx, trackY + 24);
+        ctx.beginPath(); ctx.moveTo(tx, trackY + railH); ctx.lineTo(tx, trackY + railH + (whole ? 9 : 4)); ctx.stroke();
+        if (whole) ctx.fillText(Math.round(m) + ' m', tx, trackY + railH + 23);
       }
 
       var cartX = sx(state[0]);
-      var cartW = 60, cartH = 26;
+      var cartW = 64, cartH = 28, wheelR = 6;
+      var cartTop = trackY - cartH + 2;
 
+      // Drive force arrow, under the rail
       if (Math.abs(uForce) > 0.2) {
         var fl = clamp(uForce / FMAX, -1.5, 1.5) * 46;
-        ctx.strokeStyle = poleColor; ctx.fillStyle = poleColor; ctx.lineWidth = 3;
-        var ay = trackY + 44;
+        ctx.strokeStyle = poleColor; ctx.fillStyle = poleColor; ctx.lineWidth = 3; ctx.lineCap = 'round';
+        var ay = trackY + railH + 42;
         ctx.beginPath(); ctx.moveTo(cartX, ay); ctx.lineTo(cartX + fl, ay); ctx.stroke();
         var fsign = fl >= 0 ? 1 : -1;
         ctx.beginPath();
-        ctx.moveTo(cartX + fl, ay); ctx.lineTo(cartX + fl - 7*fsign, ay - 4);
-        ctx.lineTo(cartX + fl - 7*fsign, ay + 4); ctx.closePath(); ctx.fill();
+        ctx.moveTo(cartX + fl + 3*fsign, ay); ctx.lineTo(cartX + fl - 6*fsign, ay - 5);
+        ctx.lineTo(cartX + fl - 6*fsign, ay + 5); ctx.closePath(); ctx.fill();
+        ctx.lineCap = 'butt';
         ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
         ctx.fillText('F = ' + uForce.toFixed(1) + ' N', cartX, ay + 18);
       }
 
-      ctx.fillStyle = accent;
-      ctx.beginPath(); ctx.roundRect(cartX - cartW/2, trackY - cartH, cartW, cartH, 5); ctx.fill();
-      ctx.fillStyle = bg;
-      ctx.beginPath(); ctx.arc(cartX - cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
-      ctx.beginPath(); ctx.arc(cartX + cartW/4, trackY, 5, 0, 2*Math.PI); ctx.fill();
+      // Cart: soft shadow on the rail, gradient body, top highlight, two wheels
+      ctx.fillStyle = 'rgba(0,0,0,0.20)';
+      ctx.beginPath(); ctx.ellipse(cartX, trackY + railH, cartW * 0.55, 3, 0, 0, 2 * Math.PI); ctx.fill();
+      var cg = ctx.createLinearGradient(0, cartTop, 0, trackY);
+      cg.addColorStop(0, accent); cg.addColorStop(1, dark ? 'rgba(20,50,110,0.95)' : 'rgba(14,46,138,0.90)');
+      ctx.fillStyle = cg;
+      ctx.beginPath(); ctx.roundRect(cartX - cartW/2, cartTop, cartW, cartH - 4, 6); ctx.fill();
+      ctx.strokeStyle = dark ? 'rgba(160,200,255,0.40)' : 'rgba(20,60,160,0.45)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.beginPath(); ctx.roundRect(cartX - cartW/2 + 4, cartTop + 3, cartW - 8, 3, 1.5); ctx.fill();
+      [-1, 1].forEach(function (d) {
+        var wx = cartX + d * cartW * 0.28;
+        ctx.fillStyle = dark ? '#0a1020' : '#f2f4f8';
+        ctx.strokeStyle = railEdge; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(wx, trackY - wheelR + 3, wheelR, 0, 2*Math.PI); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = railEdge;
+        ctx.beginPath(); ctx.arc(wx, trackY - wheelR + 3, 1.8, 0, 2*Math.PI); ctx.fill();
+      });
 
       // Upright reference (dashed)
-      var pivotX = cartX, pivotY = trackY - cartH;
+      var pivotX = cartX, pivotY = cartTop;
       var poleLenPx = L_POLE * 2 * scale * 0.9;
-      ctx.strokeStyle = accent; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
-      ctx.globalAlpha = 0.6;
-      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(pivotX, pivotY - poleLenPx - 16); ctx.stroke();
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(pivotX, pivotY - poleLenPx - 18); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 1;
 
+      // Pole: a rod with a lit edge, ending in a glossy bob like the tilt table's ball
       var tipX = pivotX + poleLenPx * Math.sin(state[2]);
       var tipY = pivotY - poleLenPx * Math.cos(state[2]);
-      ctx.strokeStyle = poleColor; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = dark ? '#4a8aaa' : '#3a6a9a'; ctx.lineWidth = 7;
       ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
-      ctx.fillStyle = poleColor;
-      ctx.beginPath(); ctx.arc(tipX, tipY, 13, 0, 2*Math.PI); ctx.fill();
-      ctx.fillStyle = border;
-      ctx.beginPath(); ctx.arc(pivotX, pivotY, 4, 0, 2*Math.PI); ctx.fill();
+      ctx.strokeStyle = poleColor; ctx.lineWidth = 4.5;
+      ctx.beginPath(); ctx.moveTo(pivotX, pivotY); ctx.lineTo(tipX, tipY); ctx.stroke();
       ctx.lineCap = 'butt';
+      var bobR = 14;
+      var bg2 = ctx.createRadialGradient(tipX - bobR*0.3, tipY - bobR*0.3, bobR*0.08, tipX, tipY, bobR);
+      bg2.addColorStop(0, '#ffffff'); bg2.addColorStop(0.25, poleColor);
+      bg2.addColorStop(1, dark ? 'rgba(10,20,50,0.9)' : 'rgba(10,30,90,0.75)');
+      ctx.fillStyle = bg2;
+      ctx.beginPath(); ctx.arc(tipX, tipY, bobR, 0, 2*Math.PI); ctx.fill();
+      ctx.strokeStyle = dark ? 'rgba(160,200,255,0.45)' : 'rgba(20,60,160,0.40)'; ctx.lineWidth = 1; ctx.stroke();
+      // Hinge
+      ctx.fillStyle = dark ? '#0a1020' : '#f2f4f8'; ctx.strokeStyle = railEdge; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(pivotX, pivotY, 5, 0, 2*Math.PI); ctx.fill(); ctx.stroke();
 
-      ctx.textAlign = 'left'; ctx.font = '600 13px ' + cssVar('--font');
+      // HUD panel (top-left), same treatment as the tilt table
       var label, col;
       if (simStatus === 'fell')                   { label = 'Pole fell — new trial…'; col = poleColor; }
       else if (man.manual)                        { label = 'Manual · up ' + simT.toFixed(1) + ' s'; col = accent; }
       else if (!pid.kp && !pid.ki && !pid.kd)     { label = 'No control — raise Kp to catch the pole'; col = muted; }
       else                                        { label = 'PID balancing · up ' + simT.toFixed(1) + ' s'; col = accent; }
-      ctx.fillStyle = col; ctx.fillText(label, 18, 26);
+      var hud2 = 'θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m   ←→ to push';
+      ctx.font = '600 13px ' + cssVar('--font');
+      var hudW = Math.max(ctx.measureText(label).width, 0) + 28;
+      ctx.font = '11px ' + mono;
+      hudW = Math.min(W - 20, Math.max(hudW, ctx.measureText(hud2).width + 28));
+      ctx.fillStyle   = dark ? 'rgba(10,18,32,0.74)' : 'rgba(242,244,248,0.86)';
+      ctx.strokeStyle = border; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(10, 10, hudW, 50, 6); ctx.fill(); ctx.stroke();
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.font = '600 13px ' + cssVar('--font');
+      ctx.fillStyle = col; ctx.fillText(label, 20, 29);
       ctx.fillStyle = muted; ctx.font = '11px ' + mono;
-      ctx.fillText('θ = ' + rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m   ←→ to push', 18, 44);
+      ctx.fillText(hud2, 20, 47);
     }
 
     function loop() {
