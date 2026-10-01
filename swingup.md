@@ -5,8 +5,8 @@ description: Swing a double pendulum on a cart up by hand, or pick a target (bot
 permalink: /controls/swingup/
 ---
 <section class="wrap page-head">
-  <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <h1 class="page-title">Double Pendulum Swing-Up</h1>
+  <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
     Two poles hang from a cart on a two-metre rail. Push the cart to swing both poles up and
     balance them. That's hard by hand, so a <strong>TQC</strong> reinforcement-learning policy
@@ -34,9 +34,12 @@ permalink: /controls/swingup/
         <button class="mode-btn" type="button" data-mode="tqc" aria-pressed="false">TQC network</button>
       </div>
       <p class="panel-hint">
-        <strong>Manual:</strong> drag the cart, or hold &#8592; &#8594;.
-        <strong>TQC:</strong> the network drives to the target; &#8592; &#8594; shove the cart.
+        <strong>Manual:</strong> drag the cart.
+        <strong>TQC:</strong> the network drives to the target.
         Picking a target hands it control.
+      </p>
+      <p class="panel-hint">
+        Swinging both poles up by hand is very likely impossible, but you can try Manual.
       </p>
       <p class="panel-hint su-model-status" id="su-model-status" aria-live="polite"></p>
       <div class="su-targets" id="su-targets" hidden>
@@ -57,18 +60,29 @@ permalink: /controls/swingup/
           </button>
           <button class="goal-btn goal-btn-random" type="button" id="su-goal-random" aria-pressed="false"
                   title="Pick a new target each time one is reached, until you pick a specific target">
-            <span class="goal-icon" aria-hidden="true">?</span><span class="goal-label">Random</span>
+            <span class="goal-label">Random</span>
           </button>
         </div>
       </div>
+      <h3>Disturbances</h3>
+      <div class="pid-group">
+        <label>Delay <span id="su-delay-val">0 ms</span></label>
+        <input type="range" id="su-delay" min="0" max="100" step="10" value="0">
+        <div class="range-row"><label class="range-lbl visually-hidden" for="su-delay-amt">Delay amount (ms)</label><input type="number" id="su-delay-amt" class="range-input" value="0" min="0" max="100" step="10"></div>
+      </div>
+      <div class="pid-group">
+        <label>Sensor noise &#963; <span id="su-noise-val">0.000</span></label>
+        <input type="range" id="su-noise" min="0" max="0.06" step="0.005" value="0">
+      </div>
+      <p class="panel-hint">Delay holds back the force in both modes. Noise corrupts what the network measures (position, angles and both rates), never the force. The network was trained without either, so it is fragile: even 50 ms of delay usually breaks it, and noise above about 0.03 does too.</p>
       <div class="score-block">
-        <span class="score-value" id="su-score">&#8212;</span>
+        <span class="score-value" id="su-score">-</span>
         <span class="score-label" id="su-score-label">Time to target (s)</span>
       </div>
       <div class="telemetry">
         <span class="t-head" id="su-best-head">Best</span>
-        <span class="t-key">Manual</span><span class="t-val" id="su-best-manual">&#8212;</span>
-        <span class="t-key">TQC</span><span class="t-val" id="su-best-tqc">&#8212;</span>
+        <span class="t-key">Manual</span><span class="t-val" id="su-best-manual">-</span>
+        <span class="t-key">TQC</span><span class="t-val" id="su-best-tqc">-</span>
       </div>
       <div class="su-reset-row">
         <button class="sim-btn" id="su-reset" type="button" title="Restart hanging straight down">Reset</button>
@@ -100,7 +114,7 @@ permalink: /controls/swingup/
       "Reached" means both poles within 0.3&nbsp;rad of their targets and slower than
       1.5&nbsp;rad/s for half a second. That's the same test the training repo's evaluation
       uses. The clock restarts at every reset and every new target. A time counts as
-      <em>TQC</em> only if you never pushed the cart yourself (shoves in TQC mode are fine), and
+      <em>TQC</em> only if you never pushed the cart yourself, and
       as <em>manual</em> only if the network never drove. Hitting either end of the rail ends
       the run. The network trained on a &#177;0.5&nbsp;m rail; this one runs to &#177;1&nbsp;m
       so there's room to swing by hand, but past half a metre from centre the network is
@@ -112,4 +126,5 @@ permalink: /controls/swingup/
   </div>
 </div>
 
+<script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/swingup.js' | relative_url }}"></script>

@@ -2,6 +2,7 @@
    Tokens
    --------------------------------------------------------------- */
 :root {
+  color-scheme: light;
   --bg: #ffffff;
   --bg-soft: #f5f6f8;
   --surface: #ffffff;
@@ -34,6 +35,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #0b0f14;
     --bg-soft: #111721;
     --surface: #121821;
@@ -58,6 +60,7 @@
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0b0f14;
   --bg-soft: #111721;
   --surface: #121821;
@@ -96,7 +99,7 @@ body {
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   /* Short pages (the hero-only homepage) keep the footer at the bottom. */
-  min-height: 100vh; display: flex; flex-direction: column;
+  min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
 }
 body > main { flex: 1 0 auto; }
 
@@ -133,6 +136,7 @@ pre code { background: none; border: 0; padding: 0; }
   position: sticky; top: 0; z-index: 50;
   background: var(--bg);
   background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--border);
 }
@@ -260,7 +264,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 }
 
 /* Page body block (projects, photos). */
-.section { padding: 3rem 0; }
+.section { padding-block: 3rem; }   /* block only: `.wrap.section` keeps the wrap's side gutters */
 
 .page-head { padding: clamp(2.5rem, 6vw, 4rem) 1.25rem 1.5rem; }
 .page-title { margin-bottom: .35rem; }
@@ -472,7 +476,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .sim-cell-pair {
   display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: .6rem; min-height: 0;
 }
-.sim-cell > canvas, .sim-cell > .msd-stage {
+.sim-cell > canvas {
   position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box;
 }
 .sim-states {
@@ -486,12 +490,6 @@ main:has(> .hero) { display: flex; flex-direction: column; }
   .sim-section .sim-stack { min-height: calc(760px + .6rem); }
 }
 
-/* Mass-spring-damper: compact animation on the left, tracking plot beside it. */
-.msd-stage { display: flex; gap: .6rem; align-items: stretch; }
-/* min-width: 0 on both, or a canvas's pixel buffer (2x its CSS width on
-   high-DPI screens) becomes its minimum flex width and it grows every resize. */
-.msd-anim { flex: 0 0 min(220px, 36%); min-width: 0; height: 100%; box-sizing: border-box; }
-.msd-ts   { flex: 1 1 0; min-width: 0; height: 100%; box-sizing: border-box; }
 .sim-panel {
   flex: 0 0 220px; display: flex; flex-direction: column; gap: 1rem;
   padding: 1.1rem; border: 1px solid var(--border); border-radius: var(--radius);
@@ -659,6 +657,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
   border-left: 2px solid currentColor; border-right: 2px solid currentColor; border-radius: 4px;
   font-family: var(--mono); text-align: center; line-height: 1.35; }
 .mx-row { grid-auto-flow: column; }
+.mx-grid { grid-auto-flow: row; }
 .mx-col { grid-auto-flow: row; }
 .mx-line { display: flex; flex-wrap: nowrap; align-items: center; gap: .2rem; margin: .1rem 0 .6rem;
   font-size: .72rem; color: var(--text-muted); }
@@ -666,10 +665,24 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .mx-line .mx { margin: 0 .1rem; gap: .1rem .45rem; padding: .1rem .35rem; }
 .mx-line .mx-row { color: var(--accent); }
 .mx-line .mx-state { color: var(--text-muted); }
+/* Matrix equations never wrap mid-expression; a row scrolls sideways if it is wider than the screen. */
+.eqn-row:has(.mx) { overflow-x: auto; padding-bottom: .2rem; }
+.eqn-rhs:has(.mx) { display: flex; align-items: center; white-space: nowrap; }
+/* Phones: the CAD render goes full width on top, the two bike photos share the row below. */
+@media (max-width: 560px) {
+  .photo-row { display: grid; grid-template-columns: 1fr 1fr; }
+  .photo-row img { width: 100%; aspect-ratio: 3 / 4; }
+  .photo-row img:first-child { grid-column: 1 / -1; aspect-ratio: var(--r); }
+}
+@media (max-width: 720px) {
+  .sim-section .sim-panel { flex-basis: 100%; }
+  .mx { font-size: .74rem; padding: .1rem .35rem; margin: 0 .15rem; gap: .1rem .4rem; }
+}
 .eqn-note{margin:.5rem 0 0;font-size:.74rem;color:var(--text-muted);font-family:var(--font);font-style:italic}
 
 /* Swing-up page */
-.su-crumb { margin: 0 0 .5rem; font-size: .88rem; }
+.su-crumb { margin: 0 0 .9rem; font-size: .88rem; }
+.su-layout .sim-stack { min-height: 646px; }   /* same sim size as the /controls/ tabs */
 .su-canvas { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 .su-canvas:active { cursor: grabbing; }
 .su-model-status:empty { display: none; }
@@ -687,7 +700,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .goal-btn:hover { background: var(--bg-soft); border-color: var(--border-strong); }
 .goal-btn.active { background: var(--accent-soft); border-color: var(--accent); }
 .goal-btn.active .goal-label { color: var(--accent); }
-.goal-btn-random { grid-column: 1 / -1; border-style: dashed; padding: .3rem .4rem; }
+.goal-btn-random { grid-column: 1 / -1; padding: .3rem .4rem; }
 .goal-icon {
   flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
   font-family: var(--mono); font-weight: 700; font-size: .95rem; color: var(--text-muted);
@@ -707,3 +720,29 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .gi-bob-0 { fill: var(--viz-1); }
 .gi-bob-1 { fill: var(--viz-2); }
 @media (max-width: 720px) { .su-layout .sim-panel { flex-basis: 100%; } }
+
+/* ---------------------------------------------------------------
+   Touch polish: 44px hit areas, no iOS focus-zoom, no double-tap zoom.
+   Desktop (fine pointer) is untouched.
+   --------------------------------------------------------------- */
+@media (pointer: coarse) {
+  a, button, input, select, summary, [role="tab"] { touch-action: manipulation; }
+  button, .btn, [role="tab"] { -webkit-tap-highlight-color: transparent; }
+  .nav-links a { padding-top: .6rem; padding-bottom: .6rem; }
+  .theme-toggle::after { content: ""; position: absolute; inset: -10px -6px; }
+  .footer-links a { padding: .75rem .4rem; margin: -.75rem -.4rem; }
+  .mode-btn, .sim-btn, .goal-btn, .btn { min-height: 44px; }
+  input[type="number"], input[type="text"], select, .range-input { font-size: 16px; min-height: 40px; }
+  input[type="range"] { min-height: 32px; }
+  .card-links a { padding: .6rem 0; }
+}
+
+/* Hint box: a recommended solution, shown until the visitor has tried things themselves. */
+.hint-box {
+  border: 1px solid var(--accent); border-radius: 8px; background: var(--accent-soft);
+  padding: .55rem .7rem; font-size: .8rem; line-height: 1.5; color: var(--text);
+}
+.hint-box[hidden] { display: none; }
+.hint-text { margin: 0 0 .45rem; }
+.hint-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.hint-row .sim-btn { padding: .25rem .7rem; }

@@ -1,13 +1,13 @@
 ---
 layout: default
 title: Projects
-description: Robotics, aerospace, and software projects — from CV research work to weekend builds.
+description: Robotics, aerospace, and software projects - from CV research work to weekend builds.
 permalink: /projects/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Projects</h1>
   <p class="page-sub">
-    A few things I've built — research work and weekend projects alike.
+    A few things I've built - research work and weekend projects alike.
   </p>
 </section>
 

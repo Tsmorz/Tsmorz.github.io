@@ -37,6 +37,58 @@
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
+  function isDarkTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    return t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+
+  // Reference signal shared by every demo: a wave (sine), or a square wave of the same
+  // period that jumps to the opposite value every half period.
+  function refValue(type, t, amp, omega) {
+    var s = Math.sin(omega * t);
+    return type === 'step' ? amp * (s >= 0 ? 1 : -1) : amp * s;
+  }
+
+  // d/dt of refValue: the reference's own velocity (zero between the jumps of a Step).
+  function refRate(type, t, amp, omega) {
+    return type === 'step' ? 0 : amp * omega * Math.cos(omega * t);
+  }
+
+  // Binds the "Reference: Wave | Step" toggle (#<prefix>-ref). Returns a live { type }
+  // (the optional `target` object is updated in place, for state shared with a renderer).
+  function bindRefToggle(prefix, onChange, target) {
+    var ref = target || { type: 'wave' };
+    var box = document.getElementById(prefix + '-ref');
+    var btns = box ? Array.prototype.slice.call(box.querySelectorAll('.mode-btn')) : [];
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        ref.type = b.dataset.ref === 'step' ? 'step' : 'wave';
+        btns.forEach(function (o) {
+          var on = o === b;
+          o.classList.toggle('active', on);
+          o.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        if (onChange) onChange(ref.type);
+      });
+    });
+    return ref;
+  }
+
+  // '#rrggbb' + alpha -> 'rgba(...)' (falls back to the colour unchanged).
+  function withAlpha(color, a) {
+    var m = /^#([0-9a-f]{6})$/i.exec(color);
+    if (!m) return color;
+    var n = parseInt(m[1], 16);
+    return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  // Cap a score readout: unstable runs would otherwise show absurd RMSE values.
+  var SCORE_CAP = 100;
+  function capScore(v) { return Math.min(v, SCORE_CAP); }
+  // Tracking errors are clipped to +-ERR_CLIP so P, I and D (and the integrator) can't blow up.
+  var ERR_CLIP = 100;
+  function clipErr(e) { return clamp(e, -ERR_CLIP, ERR_CLIP); }
+
   // RK4 integrator: state[], fn(t, state) -> deriv[], dt -> new state[]
   function rk4(state, t, dt, fn) {
     var k1 = fn(t, state);
@@ -99,10 +151,17 @@
     var OMEGA_REF = 0.5, AMP_REF = 1.0;
 
     // Simulation state
-    var sim = { x: 0, v: 0, t: 0, intE: 0, prevE: 0 };
+    var sim = { x: 0, v: 0, t: 0, intE: 0, prevE: 0, prevM: 0 };
 
     // PID gains + disturbances (from sliders)
     var pid = { kp: 0, ki: 0, kd: 0, delay: 0, noise: 0 };
+
+    // Reference: a wave (sine), or a square wave of the same period (Step).
+    var refSel = bindRefToggle('msd', function () {
+      sim.prevE = 0; sim.prevM = sim.x; sim.intE = 0;
+      errRing = []; bestScore = null;
+      if (bestEl) bestEl.textContent = '';
+    });
 
     // Transport-delay buffer: commanded forces awaiting application
     var forceBuf = [];
@@ -110,7 +169,7 @@
     // Manual mode: drag the mass; a damped virtual spring to the pointer, ±FMAN.
     var FMAN = 10, DRAG_K = 40, DRAG_C = 8, ANIM_SCALE = 80;
     var man = bindManual('msd', canvas, function () {
-      forceBuf.length = 0; sim.intE = 0; sim.prevE = 0;
+      forceBuf.length = 0; sim.intE = 0; sim.prevE = 0; sim.prevM = 0;
       errRing = []; bestScore = null;
       if (bestEl) bestEl.textContent = '';
     });
@@ -128,9 +187,6 @@
     var errRing = [];
     var bestScore = null;
 
-    // Scrolling time-series buffer (last ~8 s of display)
-    var HIST = 600;
-    var hist = { xArr: [], refArr: [], time: [] };
     // State plot history (same length as the PID plot's).
     var stateHist = { x: [], xd: [], e: [], F: [] };
 
@@ -201,10 +257,9 @@
 
     function resetSim() {
       sim.x = 0; sim.v = 0; sim.t = 0;
-      sim.intE = 0; sim.prevE = 0;
+      sim.intE = 0; sim.prevE = 0; sim.prevM = 0;
       errRing = [];
       forceBuf.length = 0;
-      hist.xArr = []; hist.refArr = []; hist.time = [];
       stateHist = { x: [], xd: [], e: [], F: [] };
       pidContrib.p = []; pidContrib.i = []; pidContrib.d = []; pidContrib.total = [];
       bestScore = null;
@@ -218,12 +273,15 @@
       // 5 physics steps per timer tick (step called at 40 Hz → 200 Hz effective)
       var P_t = 0, I_t = 0, D_t = 0, F = 0;
       for (var i = 0; i < 5; i++) {
-        var ref = AMP_REF * Math.sin(OMEGA_REF * sim.t);
+        var ref = refValue(refSel.type, sim.t, AMP_REF, OMEGA_REF);
         // Controller sees a noisy measurement of position, not the true state.
         var xMeas = sim.x + (pid.noise > 0 ? gaussian() * pid.noise : 0);
-        var e   = ref - xMeas;
+        var e   = clipErr(ref - xMeas);
         sim.intE  = clamp(sim.intE + e * DT, -20, 20);
-        var de  = (e - sim.prevE) / DT;
+        // Sine: derivative of the error. Step: the reference jumps, so differentiate the
+        // measurement alone (otherwise D spikes on every jump).
+        var de  = refSel.type === 'step' ? -(xMeas - sim.prevM) / DT : (e - sim.prevE) / DT;
+        sim.prevM = xMeas;
         P_t = pid.kp * e; I_t = pid.ki * sim.intE; D_t = pid.kd * de;
         F   = P_t + I_t + D_t;
         sim.prevE = e;
@@ -249,18 +307,12 @@
         sim.x = s[0]; sim.v = s[1];
         sim.F = Fapplied;
         sim.t += DT;
-        var err = ref - sim.x;
+        var err = clipErr(ref - sim.x);
         errRing.push(err * err);
         if (errRing.length > RING) errRing.shift();
       }
       // History for plot
-      var refNow = AMP_REF * Math.sin(OMEGA_REF * sim.t);
-      hist.xArr.push(sim.x);
-      hist.refArr.push(refNow);
-      hist.time.push(sim.t);
-      if (hist.xArr.length > HIST) {
-        hist.xArr.shift(); hist.refArr.shift(); hist.time.shift();
-      }
+      var refNow = refValue(refSel.type, sim.t, AMP_REF, OMEGA_REF);
       // PID contribution + state history
       pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(F);
       stateHist.x.push(sim.x); stateHist.xd.push(sim.v);
@@ -273,7 +325,7 @@
       }
       // Score
       if (errRing.length > 0) {
-        var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
+        var rmse = capScore(Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length));
         scoreEl.textContent = rmse.toFixed(3);
         // Only a full window counts: right after a reset the error is ~0 and would stick.
         if (!man.manual && errRing.length === RING && (bestScore === null || rmse < bestScore)) {
@@ -305,10 +357,7 @@
     }
 
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var ANIM_H = 320, TS_H = 320;   // refreshed from the CSS layout on resize
-    var tsCanvas = document.getElementById('msd-ts-plot');
-    var tsCtx = tsCanvas ? tsCanvas.getContext('2d') : null;
-    trackHover(tsCanvas);
+    var ANIM_H = 320;   // refreshed from the CSS layout on resize
 
     // Size the pixel buffer to the CSS box (the layout sets both dimensions).
     function sizeOne(cv, cx2) {
@@ -320,7 +369,6 @@
     }
     function resizeCanvas() {
       ANIM_H = sizeOne(canvas, ctx);
-      if (tsCtx) TS_H = sizeOne(tsCanvas, tsCtx);
     }
     var wrapEl = canvas.closest('.sim-canvas-wrap') || canvas.parentElement;
     new ResizeObserver(resizeCanvas).observe(wrapEl);
@@ -342,25 +390,49 @@
       var massColor   = cssVar('--viz-7');
       var forceColor  = cssVar('--viz-total');
 
-      var cx = W / 2;
+      // The rig sits left of centre, like the plane: the reference path runs through it,
+      // with the future ahead (right) and a fading tail behind (left).
+      var cx = clamp(W * 0.35, 110, 300);
       var anchorY = 26;
       var massH = 42, massW = 54;
       var scale = ANIM_SCALE;  // 1 m = 80px
       var massY = H / 2 + sim.x * scale;
       var massTop = massY - massH / 2;
-      var refY  = H / 2 + AMP_REF * Math.sin(OMEGA_REF * sim.t) * scale;
+      var refNow = refValue(refSel.type, sim.t, AMP_REF, OMEGA_REF);
+      var refY  = H / 2 + refNow * scale;
       var springX = cx - 13, damperX = cx + 14;
 
-      // Reference dashed line
+      // Reference path, drawn like the plane's: a faint dashed guide ahead, a fading tail
+      // behind, and a soft dot where the reference is right now.
+      var LOOK = 8;                                        // s of future shown
+      var pxPerSec = Math.max(20, (W - 16 - cx) / LOOK);
+      function refPy(tt) { return H / 2 + refValue(refSel.type, tt, AMP_REF, OMEGA_REF) * scale; }
       ctx.save();
-      ctx.strokeStyle = accentColor;
-      ctx.setLineDash([6, 4]);
-      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.32; ctx.strokeStyle = accentColor; ctx.lineWidth = 1.2; ctx.setLineDash([8, 5]);
       ctx.beginPath();
-      ctx.moveTo(cx - 44, refY);
-      ctx.lineTo(cx + 44, refY);
+      for (var fx = cx; fx <= W; fx += 3) {
+        var fy = refPy(sim.t + (fx - cx) / pxPerSec);
+        if (fx === cx) ctx.moveTo(fx, fy); else ctx.lineTo(fx, fy);
+      }
       ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = accentColor; ctx.lineCap = 'round';
+      for (var tx = cx; tx > 6; tx -= 3) {
+        var tauA = (cx - tx) / pxPerSec, tauB = (cx - tx + 3) / pxPerSec;
+        if (tauB > sim.t) break;                           // nothing happened before t = 0
+        var age = (cx - tx) / cx;
+        if (age >= 1) break;
+        ctx.globalAlpha = Math.max(0, 1 - age);
+        ctx.lineWidth = 0.5 + 2.2 * (1 - age);
+        ctx.beginPath(); ctx.moveTo(tx, refPy(sim.t - tauA)); ctx.lineTo(tx - 3, refPy(sim.t - tauB)); ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = 0.35; ctx.fillStyle = accentColor;
+      ctx.beginPath(); ctx.arc(cx, refY, 9, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
 
       // Anchor bar
@@ -421,146 +493,14 @@
         ctx.textAlign = 'left';
         ctx.fillText('F', ax + 7, massY);
       }
-    }
 
-    // === Wide reference-tracking time-series plot (right) ===
-    function renderPlot() {
-      if (!tsCtx) return;
-      var W = tsCanvas.clientWidth, H = TS_H;
-      if (!W) return;
-      tsCtx.clearRect(0, 0, W, H);
-
-      var textColor   = cssVar('--text');
-      var mutedColor  = cssVar('--text-muted');
-      var accentColor = cssVar('--accent');
-      var borderColor = cssVar('--border');
-      var massColor   = cssVar('--viz-7');
-
-      var px0 = 38, py0 = 16, pw = W - px0 - 14, ph = H - 38;
-      var yMap = function (v) { return py0 + ph / 2 - v * (ph / 2 - 12) / AMP_REF; };
-
-      // Axis label
-      tsCtx.fillStyle = mutedColor;
-      tsCtx.font = '11px ' + cssVar('--mono');
-      tsCtx.textAlign = 'left';
-      tsCtx.textBaseline = 'top';
-      tsCtx.fillText('x (m)', px0 + 2, py0);
-
-      // Grid line at 0 (solid hairline)
-      tsCtx.strokeStyle = borderColor;
-      tsCtx.lineWidth = 1;
-      tsCtx.beginPath();
-      tsCtx.moveTo(px0, yMap(0));
-      tsCtx.lineTo(px0 + pw, yMap(0));
-      tsCtx.stroke();
-
-      // Readout sample: the hovered one, else the newest.
-      var hk = hoverIndex(tsCanvas, px0, pw, HIST + 1), rk = hist.xArr.length - 1;
-      if (hk >= 0) rk = hk - (HIST - hist.xArr.length);
-      var hasRk = rk >= 0 && rk < hist.xArr.length;
-
-      if (hist.xArr.length > 1) {
-        var xStep = pw / HIST, n = hist.xArr.length, off = HIST - n;
-        var xAt = function (i) { return px0 + (i + off) * xStep; };
-
-        // Tracking error: the band between reference and actual (what RMSE measures).
-        tsCtx.fillStyle = massColor;
-        tsCtx.globalAlpha = 0.14;
-        tsCtx.beginPath();
-        for (var a = 0; a < n; a++) {
-          if (a === 0) tsCtx.moveTo(xAt(a), yMap(hist.refArr[a])); else tsCtx.lineTo(xAt(a), yMap(hist.refArr[a]));
-        }
-        for (var bI = n - 1; bI >= 0; bI--) tsCtx.lineTo(xAt(bI), yMap(hist.xArr[bI]));
-        tsCtx.closePath();
-        tsCtx.fill();
-        tsCtx.globalAlpha = 1;
-
-        // Reference (dashed accent)
-        tsCtx.strokeStyle = accentColor;
-        tsCtx.lineWidth = 1.5;
-        tsCtx.setLineDash([5, 4]);
-        tsCtx.beginPath();
-        for (var i = 0; i < n; i++) {
-          if (i === 0) tsCtx.moveTo(xAt(i), yMap(hist.refArr[i])); else tsCtx.lineTo(xAt(i), yMap(hist.refArr[i]));
-        }
-        tsCtx.stroke();
-        tsCtx.setLineDash([]);
-
-        // Actual position (solid, the mass's color)
-        tsCtx.strokeStyle = massColor;
-        tsCtx.lineWidth = 2;
-        tsCtx.lineJoin = 'round';
-        tsCtx.beginPath();
-        for (var j = 0; j < n; j++) {
-          if (j === 0) tsCtx.moveTo(xAt(j), yMap(hist.xArr[j])); else tsCtx.lineTo(xAt(j), yMap(hist.xArr[j]));
-        }
-        tsCtx.stroke();
-
-        if (hk >= 0 && hasRk) {
-          drawCrosshair(tsCtx, xAt(rk), py0, py0 + ph,
-            [{ y: yMap(hist.refArr[rk]), color: accentColor }, { y: yMap(hist.xArr[rk]), color: massColor }],
-            cssVar('--bg-soft'), mutedColor);
-        } else {
-          // End-point marker with a surface ring, so the live value is easy to find.
-          var lx = xAt(n - 1), ly = yMap(hist.xArr[n - 1]);
-          tsCtx.fillStyle = cssVar('--bg-soft');
-          tsCtx.beginPath(); tsCtx.arc(lx, ly, 6, 0, 2 * Math.PI); tsCtx.fill();
-          tsCtx.fillStyle = massColor;
-          tsCtx.beginPath(); tsCtx.arc(lx, ly, 4, 0, 2 * Math.PI); tsCtx.fill();
-        }
-      }
-
-      // Y-axis ticks
-      tsCtx.fillStyle = mutedColor;
-      tsCtx.font = '10px ' + cssVar('--mono');
-      tsCtx.textAlign = 'right';
-      tsCtx.textBaseline = 'middle';
-      tsCtx.fillText(AMP_REF.toFixed(1), px0 - 4, yMap(AMP_REF));
-      tsCtx.fillText('0', px0 - 4, yMap(0));
-      tsCtx.fillText((-AMP_REF).toFixed(1), px0 - 4, yMap(-AMP_REF));
-
-      // Legend: colored swatch + text-colored label (text never wears the series color).
-      tsCtx.font = '11px ' + cssVar('--mono');
-      tsCtx.textAlign = 'left';
-      tsCtx.textBaseline = 'middle';
-      var xa = hasRk ? hist.xArr[rk] : null, xr = hasRk ? hist.refArr[rk] : null;
-      function fmt(v) { return v === null ? '—' : v.toFixed(2); }
-      var items = [
-        { label: 'actual',    value: fmt(xa),           color: massColor,   dash: [],     w: 2,   band: false },
-        { label: 'reference', value: fmt(xr),           color: accentColor, dash: [5, 4], w: 1.5, band: false },
-        { label: 'error',     value: fmt(xa === null ? null : Math.abs(xr - xa)), color: massColor, dash: [], w: 0, band: true }
-      ];
-      var widths = items.map(function (it) {
-        return 22 + tsCtx.measureText(it.label + ' ' + it.value).width + 14;
-      });
-      // Right-aligned rows, wrapping onto a line above when a narrow plot can't fit
-      // them all (on a phone the three items need two lines).
-      var rows = [[]], rowW = [0], avail = W - 8;
-      items.forEach(function (it, k) {
-        var r = rows.length - 1;
-        if (rows[r].length && rowW[r] + widths[k] - 14 > avail) { rows.push([]); rowW.push(0); r++; }
-        rows[r].push(k); rowW[r] += widths[k];
-      });
-      rows.forEach(function (row, r) {
-        var lx0 = px0 + pw - rowW[r] + 14, ly0 = H - 10 - (rows.length - 1 - r) * 16;
-        row.forEach(function (k) {
-          var it = items[k];
-          if (it.band) {
-            tsCtx.globalAlpha = 0.22; tsCtx.fillStyle = it.color;
-            tsCtx.fillRect(lx0, ly0 - 5, 16, 10); tsCtx.globalAlpha = 1;
-          } else {
-            tsCtx.strokeStyle = it.color; tsCtx.lineWidth = it.w; tsCtx.setLineDash(it.dash);
-            tsCtx.beginPath(); tsCtx.moveTo(lx0, ly0); tsCtx.lineTo(lx0 + 16, ly0); tsCtx.stroke();
-            tsCtx.setLineDash([]);
-          }
-          tsCtx.fillStyle = mutedColor;
-          tsCtx.fillText(it.label, lx0 + 22, ly0);
-          tsCtx.fillStyle = textColor;
-          tsCtx.fillText(it.value, lx0 + 22 + tsCtx.measureText(it.label + ' ').width, ly0);
-          lx0 += widths[k];
-        });
-      });
-      tsCtx.fillStyle = textColor;
+      // State box, lower right (same panel as the flight sim)
+      drawStateBox(ctx, W, H, [
+        { label: 'x',   value: sim.x, decimals: 2, unit: 'm' },
+        { label: 'ẋ',   value: sim.v, decimals: 2, unit: 'm/s' },
+        { label: 'ref', value: refNow, decimals: 2, unit: 'm' },
+        { label: 'F',   value: F, decimals: 1, unit: 'N' }
+      ]);
     }
 
     var stepTimer = setInterval(function () {
@@ -579,7 +519,6 @@
     function loop() {
       if (isActive('sec-msd')) {
         renderAnim();
-        renderPlot();
         drawStatePlot(msdStatePlot, stateHist, MSD_STATE_SPEC);
         drawContribPlot(msdPidCanvas, [
           { label: 'P', color: cssVar('--viz-1'),    data: pidContrib.p },
@@ -614,21 +553,16 @@
     // linkage manages roughly this under load, so a full ±20° swing takes ~0.7 s.
     var SERVO_SLEW = 60 * Math.PI / 180;
 
-    // Trial starts
-    var START_MAX_D = T / 2;  // m — inner half of the beam
-    var START_MAX_V = 0.50;   // m/s
-    var TRIAL_TIMEOUT = 8;    // sim seconds
+    // The ball tracks a reference position along the beam: a sine wave, or a square
+    // wave of the same period (Step) that jumps to the opposite side of the beam.
+    var REF_AMP_T = 0.5;                    // m
+    var REF_OMEGA_T = 2 * Math.PI / 12;     // rad/s: 12 s period
 
-    var STABLE_X = 0.008;     // m — 8 mm; must be smaller than the minimum trial start distance
-    var STABLE_V = 0.04;      // m/s
-    var STABLE_T = 0.5;       // s sustained
-
-    var trialCount = 0;
+    var falls = 0;            // times the ball rolled off the end
 
     var bx = 0, vx = 0, tiltX = 0, tiltRate = 0;
-    var trialTime = 0, stableCountdown = 0;
-    var trialInitDist = 0, trialInitSpeed = 0;
-    var pidState = { intE: 0, prevE: 0 };
+    var simT = 0;
+    var pidState = { intE: 0, prevE: 0, prevM: 0 };
     var pidGains = { kp: 0, ki: 0, kd: 0 };
     var delayBuf = [];
     var errRing = [], bestRMSE = null;
@@ -650,8 +584,14 @@
 
     // Manual mode: drag a beam end and the beam swings to follow the pointer.
     var man = bindManual('tilt', canvas, function () {
-      pidState.intE = 0; pidState.prevE = 0; delayBuf = [];
+      pidState.intE = 0; pidState.prevE = 0; pidState.prevM = bx; delayBuf = [];
       errRing = []; bestRMSE = null;
+    });
+    var refSel = bindRefToggle('tilt', function () {
+      pidState.intE = 0; pidState.prevE = 0; pidState.prevM = bx;
+      errRing = []; bestRMSE = null;
+      var bestEl0 = document.getElementById('tilt-best');
+      if (bestEl0) bestEl0.textContent = '';
     });
 
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -674,24 +614,12 @@
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
-    function newTrial() {
-      // Always start outside the stable zone.
-      trialInitDist  = Math.max(STABLE_X * 2.5, Math.random() * START_MAX_D);
-      trialInitSpeed = Math.max(STABLE_V * 0.5, Math.random() * START_MAX_V);
-      var sx = Math.random() < 0.5 ? 1 : -1;
-      bx = sx * trialInitDist;
-      // Velocity always outward (toward edge) — inward would passively cross
-      // the stable zone under damping alone, registering false successes.
-      vx = sx * trialInitSpeed;
-      tiltX = 0; tiltRate = 0;
-      pidState.intE = 0; pidState.prevE = 0;
+    // Start (or restart) a run: ball at rest in the middle, reference clock at zero.
+    function restart() {
+      bx = 0; vx = 0; tiltX = 0; tiltRate = 0;
+      pidState.intE = 0; pidState.prevE = 0; pidState.prevM = 0;
       delayBuf = [];
-      trialTime = 0; stableCountdown = 0;
-    }
-
-    function recordResult() {
-      trialCount++;
-      newTrial();
+      simT = 0;
     }
 
     var kpSlider = document.getElementById('tilt-kp');
@@ -771,15 +699,21 @@
           continue;
         }
         var bxM = bx + (noise > 0 ? noise * gaussian() : 0);
-        var err = -bxM;    // reference = 0
+        var refT = refValue(refSel.type, simT + i * sdt, REF_AMP_T, REF_OMEGA_T);
+        var err = clipErr(refT - bxM);
         pidState.intE = clamp(pidState.intE + err * sdt, -2, 2);
-        var de = sdt > 0 ? (err - pidState.prevE) / sdt : 0;
+        // Sine: derivative of the error. Step: differentiate the measurement alone, so D
+        // doesn't spike on each jump of the reference.
+        var de = sdt > 0
+          ? (refSel.type === 'step' ? -(bxM - pidState.prevM) / sdt : (err - pidState.prevE) / sdt)
+          : 0;
+        pidState.prevM = bxM;
         pidState.prevE = err;
         var pT = pidGains.kp * err, iT = pidGains.ki * pidState.intE, dT = pidGains.kd * de;
         var cmd = pT + iT + dT;
         pidLast.p = pT; pidLast.i = iT; pidLast.d = dT; pidLast.total = cmd;
 
-        var tNow = trialTime + i * sdt;
+        var tNow = simT + i * sdt;
         delayBuf.push({ t: tNow, v: cmd });
         while (delayBuf.length > 1 && delayBuf[0].t < tNow - delay) delayBuf.shift();
         // The servo chases the (delayed, clamped) command at a limited rate.
@@ -792,9 +726,10 @@
         bx += vx * sdt;
       }
 
-      trialTime += dt;
+      simT += dt;
       tiltRate = dt > 0 ? (tiltX - tilt0) / dt : 0;
-      errRing.push(bx * bx);
+      var trackErr = clipErr(refValue(refSel.type, simT, REF_AMP_T, REF_OMEGA_T) - bx);
+      errRing.push(trackErr * trackErr);
       if (errRing.length > RING) errRing.shift();
 
       stateHist.x.push(bx); stateHist.xd.push(vx);
@@ -809,16 +744,8 @@
         pidContrib.p.shift(); pidContrib.i.shift(); pidContrib.d.shift(); pidContrib.total.shift();
       }
 
-      if (Math.abs(bx) < STABLE_X && Math.abs(vx) < STABLE_V) {
-        stableCountdown += dt;
-        if (stableCountdown >= STABLE_T) { recordResult(); return; }
-      } else {
-        stableCountdown = 0;
-      }
-
-      if (Math.abs(bx) >= T || trialTime >= TRIAL_TIMEOUT) {
-        recordResult();
-      }
+      // Rolling off the end restarts the run.
+      if (Math.abs(bx) >= T) { falls++; restart(); }
     }
 
     function render() {
@@ -839,20 +766,6 @@
       var beamHalfPx  = T * scale;
       var beamThick   = 12;
       var ballR = Math.max(8, Math.min(13, W * 0.017));
-
-      // Vertical centre reference (dashed)
-      ctx.save();
-      ctx.strokeStyle = accent;
-      ctx.setLineDash([5, 4]);
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.55;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - beamHalfPx * 0.65);
-      ctx.lineTo(cx, cy + beamHalfPx * 0.65);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
-      ctx.restore();
 
       // Pivot fulcrum
       ctx.save();
@@ -889,6 +802,14 @@
         ctx.stroke();
       });
 
+      // Reference: a dashed ring on the beam where the ball should be right now
+      var refNow = refValue(refSel.type, simT, REF_AMP_T, REF_OMEGA_T);
+      var refPx = refNow * scale, refCy = -beamThick / 2 - ballR;
+      ctx.save();
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.arc(refPx, refCy, ballR + 3, 0, 2 * Math.PI); ctx.stroke();
+      ctx.restore();
+
       // Ball
       var bxPx  = bx * scale;
       var ballCy = -beamThick / 2 - ballR;
@@ -908,39 +829,33 @@
 
       ctx.restore();
 
-      // HUD overlay (top-left)
-      ctx.fillStyle   = dark ? 'rgba(10,18,32,0.74)' : 'rgba(242,244,248,0.86)';
-      ctx.strokeStyle = border;
-      ctx.lineWidth   = 1;
-      ctx.beginPath(); ctx.roundRect(10, 10, 168, 62, 6); ctx.fill(); ctx.stroke();
-      ctx.fillStyle    = muted;
-      ctx.font         = '11px ' + cssVar('--mono');
-      ctx.textAlign    = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillText('θ  = ' + (tiltX * 180 / Math.PI).toFixed(1) + '°', 18, 16);
-      ctx.fillText('x  = ' + (bx * 100).toFixed(1) + ' cm', 18, 30);
-      ctx.fillText('t  = ' + trialTime.toFixed(1) + ' s  [#' + (trialCount + 1) + ']', 18, 44);
-
-      // Stable progress bar
-      if (stableCountdown > 0) {
-        var frac2 = Math.min(1, stableCountdown / STABLE_T);
-        ctx.fillStyle   = 'rgba(0,200,100,0.18)';
-        ctx.beginPath(); ctx.roundRect(10, 76, 168 * frac2, 8, 3); ctx.fill();
-        ctx.strokeStyle = dark ? '#00cc64' : '#008040';
-        ctx.lineWidth   = 1;
-        ctx.beginPath(); ctx.roundRect(10, 76, 168, 8, 3); ctx.stroke();
-      }
+      // Status (top-left) and the shared state box (lower right)
+      var stLabel, stCol = muted;
+      if (man.manual)                                    { stLabel = 'Manual - drag a beam end'; stCol = accent; }
+      else if (!pidGains.kp && !pidGains.ki && !pidGains.kd) { stLabel = 'No control - raise Kp'; }
+      else                                               { stLabel = 'PID tracking'; stCol = accent; }
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.font = '600 13px ' + cssVar('--font'); ctx.fillStyle = stCol;
+      ctx.fillText(stLabel, 14, 24);
+      ctx.font = '11px ' + cssVar('--mono'); ctx.fillStyle = muted;
+      ctx.fillText('t = ' + simT.toFixed(1) + ' s   falls = ' + falls, 14, 42);
+      drawStateBox(ctx, W, H, [
+        { label: 'x',   value: bx, decimals: 2, unit: 'm' },
+        { label: 'ẋ',   value: vx, decimals: 2, unit: 'm/s' },
+        { label: 'ref', value: refNow, decimals: 2, unit: 'm' },
+        { label: 'θ',   value: tiltX * 180 / Math.PI, decimals: 1, unit: '°' }
+      ]);
     }
 
     var resetBtn = document.getElementById('tilt-reset');
     if (resetBtn) resetBtn.addEventListener('click', function () {
-      trialCount = 0;
+      falls = 0;
       stateHist = { x: [], xd: [], th: [], thd: [] };
       pidContrib = { p: [], i: [], d: [], total: [] };
       errRing = []; bestRMSE = null;
       var bestEl = document.getElementById('tilt-best');
       if (bestEl) bestEl.textContent = '';
-      newTrial();
+      restart();
     });
 
     var lastNow = null;
@@ -956,7 +871,7 @@
       simStep(dt);
 
       if (errRing.length > 0) {
-        var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
+        var rmse = capScore(Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length));
         var scoreEl = document.getElementById('tilt-score');
         if (scoreEl) scoreEl.textContent = rmse.toFixed(3);
         if (!man.manual && errRing.length === RING && (bestRMSE === null || rmse < bestRMSE)) {
@@ -977,7 +892,7 @@
       requestAnimationFrame(loop);
     }
 
-    newTrial();
+    restart();
     requestAnimationFrame(loop);
   })();
 
@@ -1128,6 +1043,7 @@
   var H_CENTER  = 23;   // m — reference altitude centre
   var REF_AMP   = 6;    // m — sine amplitude → 12 m peak-to-peak
   var REF_OMEGA = 2 * Math.PI / 16;  // rad/s — period = 16 s
+  var flightRef = { type: 'wave' };  // 'wave' | 'step' (set by the Reference toggle)
   // World scale, px per metre, on BOTH axes: the altitude view, the plane and trees,
   // and the scroll speed of the ground marks, trees and reference path all derive
   // from it, so sizes agree with the altitude labels.
@@ -1369,7 +1285,7 @@
       var planeScreenX = W * 0.35;
       var isFlat = (typeof hRefTarget !== 'undefined');
       var groundSpeed = Math.max(state[0] * Math.cos(gamma), 1);
-      function refH(t) { return H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t); }
+      function refH(t) { return H_CENTER + refValue(flightRef.type, t, REF_AMP, REF_OMEGA); }
       function xToScreen(xw) { return planeScreenX + (xw - downrange) * PX_PER_M; }
       function refYAt(px) {
         if (isFlat) return hToY(hRefTarget, H);
@@ -1496,22 +1412,13 @@
       ctx.fillText('δe', eiX, eiTop - 2);
 
       // Telemetry overlay (bottom-right; the altitude scale owns the left edge)
-      var tx = W - 206;
-      ctx.fillStyle = isDark ? 'rgba(11,15,20,0.72)' : 'rgba(245,246,248,0.82)';
-      ctx.beginPath();
-      ctx.roundRect(tx, H - 76, 196, 66, 8);
-      ctx.fill();
-      ctx.strokeStyle = borderColor;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.font = '12px ' + cssVar('--mono');
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = mutedColor;
-      ctx.fillText('h   ' + h.toFixed(0) + ' m', tx + 8, H - 70);
-      ctx.fillText('V   ' + V.toFixed(1) + ' m/s', tx + 8, H - 56);
-      ctx.fillText('α   ' + rad2deg(alpha).toFixed(1) + '°', tx + 8, H - 42);
-      ctx.fillText('q   ' + rad2deg(q).toFixed(2) + '°/s', tx + 8, H - 28);
+      drawStateBox(ctx, W, H, [
+        { label: 'ref', value: refH(simT), decimals: 1, unit: 'm' },
+        { label: 'h',   value: h, decimals: 1, unit: 'm' },
+        { label: 'V',   value: V, decimals: 1, unit: 'm/s' },
+        { label: 'α',   value: rad2deg(alpha), decimals: 1, unit: '°' },
+        { label: 'q',   value: rad2deg(q), decimals: 2, unit: '°/s' }
+      ]);
 
       // Stop-condition overlay
       if (status && status !== 'ok') {
@@ -1682,7 +1589,7 @@
     ctx.textBaseline = 'middle';
     ctx.font = '9px ' + mono;
     series.forEach(function(s) {
-      var v = valAt(s), vs = v === null ? '—' : v.toFixed(Math.abs(v) < 10 ? 2 : 1);
+      var v = valAt(s), vs = v === null ? '-' : v.toFixed(Math.abs(v) < 10 ? 2 : 1);
       ctx.fillStyle = s.color;
       ctx.fillRect(lx, ly - 1.5, 12, 3);
       ctx.fillStyle = muted;
@@ -1859,6 +1766,44 @@
   }
 
   /* ================================================================
+     Hint boxes — a recommended set of gains, revealed once the visitor has
+     released a gain slider HINT_ADJUSTMENTS times. "Try it" fills the sliders
+     in, switches to the controller, and restarts, without counting as an
+     adjustment. Markup: .hint-box[data-prefix][data-gains="kp:40,ki:5,..."].
+  ================================================================ */
+  var HINT_ADJUSTMENTS = 10;
+  function bindHint(box) {
+    var prefix = box.dataset.prefix, gains = {};
+    (box.dataset.gains || '').split(',').forEach(function (kv) {
+      var p = kv.split(':'); if (p.length === 2) gains[p[0]] = parseFloat(p[1]);
+    });
+    var applyBtn = box.querySelector('.hint-apply');
+    var count = 0;
+    // The hint stays hidden until the visitor has tried it themselves; once shown it stays.
+    function show() { if (count >= HINT_ADJUSTMENTS) box.hidden = false; }
+    Object.keys(gains).forEach(function (k) {
+      var sl = document.getElementById(prefix + '-' + k);
+      // `change` fires once per released drag or key press, not on every pixel of a drag.
+      if (sl) sl.addEventListener('change', function () { count++; show(); });
+    });
+    if (applyBtn) applyBtn.addEventListener('click', function () {
+      Object.keys(gains).forEach(function (k) {
+        var sl = document.getElementById(prefix + '-' + k), ri = document.getElementById(prefix + '-' + k + '-range');
+        if (!sl) return;
+        // Only widen the range box when the gain doesn't fit (a wider range coarsens the step).
+        if (ri && Math.abs(gains[k]) > parseFloat(ri.value)) { ri.value = Math.ceil(Math.abs(gains[k])); ri.dispatchEvent(new Event('input')); }
+        sl.value = gains[k];
+        sl.dispatchEvent(new Event('input'));
+      });
+      var ctl = document.querySelector('#' + prefix + '-mode [data-mode="pid"]');
+      if (ctl) ctl.click();
+      var rst = document.getElementById(prefix + '-reset');
+      if (rst) rst.click();
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.hint-box[data-prefix]'), bindHint);
+
+  /* ================================================================
      Manual mode — shared PID/Manual toggle + pointer drag for a demo canvas.
      Returns a live { manual, drag } object; `drag` is null when idle, else
      { x, y, x0, y0 } in CSS px relative to the canvas (x0/y0 = where it began).
@@ -1881,6 +1826,14 @@
         canvas.style.cursor = m.manual ? 'grab' : '';
         if (onChange) onChange(m.manual);
       });
+    });
+    // Start in whichever mode the markup marks active (the demos ship in Manual).
+    btns.forEach(function (b) {
+      if (b.classList.contains('active') && b.dataset.mode === 'manual') {
+        m.manual = true;
+        canvas.style.touchAction = 'none';
+        canvas.style.cursor = 'grab';
+      }
     });
     function at(e) {
       var r = canvas.getBoundingClientRect();
@@ -1945,13 +1898,18 @@
       return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
-    function hRefAt(t) { return H_CENTER + REF_AMP * Math.sin(REF_OMEGA * t); }
+    function hRefAt(t) { return H_CENTER + refValue(flightRef.type, t, REF_AMP, REF_OMEGA); }
+    var refSel = bindRefToggle('fl', function () {
+      if (pidState) { pidState.intE = 0; pidState.prevE = 0; pidState.prevM = state ? state[4] : 0; }
+      errRing = []; bestRMSE = null;
+      if (bestEl) bestEl.textContent = '';
+    }, flightRef);
 
     function resetSim() {
       if (resetTimer) { clearTimeout(resetTimer); resetTimer = null; }
       state = [TRIM.V, TRIM.gamma, TRIM.alpha, TRIM.q, H_CENTER, TRIM.x];
       simT = 0; de_rad = TRIM.de;
-      pidState = { intE: 0, prevE: 0 };
+      pidState = { intE: 0, prevE: 0, prevM: H_CENTER };
       measBuf = [];
       errRing = [];
       pidContrib = { p: [], i: [], d: [], total: [] };
@@ -1972,11 +1930,16 @@
         var hMeas = state[4] + (pid.noise > 0 ? pid.noise * gaussian() : 0);
         measBuf.push({ t: simT, v: hMeas });
         while (measBuf.length > 1 && measBuf[0].t < simT - pid.delay) measBuf.shift();
-        var e = hRefAt(simT) - measBuf[0].v;
+        var e = clipErr(hRefAt(simT) - measBuf[0].v);
         pidState.intE = clamp(pidState.intE + e * FLIGHT_DT, -200, 200);
         P_t = pid.kp * e;
         I_t = pid.ki * pidState.intE;
-        D_t = pid.kd * (e - pidState.prevE) / FLIGHT_DT;
+        // Sine: derivative of the error. Step: differentiate the measurement alone, so D
+        // doesn't spike on each jump of the reference.
+        D_t = pid.kd * (refSel.type === 'step'
+          ? -(measBuf[0].v - pidState.prevM) / FLIGHT_DT
+          : (e - pidState.prevE) / FLIGHT_DT);
+        pidState.prevM = measBuf[0].v;
         pidState.prevE = e;
         u_deg = P_t + I_t + D_t;   // nose-up elevator command (°) about trim
         if (man.manual) {
@@ -1997,7 +1960,7 @@
           if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; resetSim(); }, 2500);
           return;
         }
-        errRing.push(Math.pow(hRefAt(simT) - state[4], 2));
+        errRing.push(Math.pow(clipErr(hRefAt(simT) - state[4]), 2));
         if (errRing.length > RING) errRing.shift();
       }
       pidContrib.p.push(P_t); pidContrib.i.push(I_t); pidContrib.d.push(D_t); pidContrib.total.push(u_deg);
@@ -2010,7 +1973,7 @@
         stateHist.h.shift(); stateHist.V.shift(); stateHist.alpha_deg.shift(); stateHist.gamma_deg.shift();
       }
       if (scoreEl && errRing.length > 0) {
-        var rmse = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
+        var rmse = capScore(Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length));
         scoreEl.textContent = rmse.toFixed(1);
         if (!man.manual && (bestRMSE === null || rmse < bestRMSE)) {
           bestRMSE = rmse;
@@ -2055,6 +2018,7 @@
        state = [x, ẋ, θ, θ̇]  (m, m/s, rad, rad/s); θ measured from straight up,
        positive = leaning right. Control u = horizontal force F (N) on the cart.
        Upright θ = 0 is an UNSTABLE equilibrium — the whole point of the demo.
+       The rail is finite (±X_LIM) and the view is fixed, like the double cart-pole.
        Control law (full-state feedback, the form an LQR design produces):
          F = kx·x + kẋ·ẋ + kθ·θ + kθ̇·θ̇     (= −K·state with the sign flipped, so all gains > 0)
        LQR_GAINS below is the optimal K for Q = diag(1, 0.1, 10, 0.1), R = 0.1 on the
@@ -2063,9 +2027,13 @@
     var G = 9.81, TOTAL_M = M_CART + M_POLE, PML = M_POLE * L_POLE;
     var CART_FRICTION = 0.8;       // N·s/m viscous cart damping
     var FMAX = 10;                 // N — actuator saturation
-    var PUSH_F = 4;                // N — arrow-key nudge (added after saturation)
     var CP_DT = 0.005, SUBSTEPS = 5;
     var FALL_ANGLE = deg2rad(45);
+    var X_LIM = 4;                 // m — rail ends; running into one ends the trial
+    // The cart tracks a position reference: a sine wave, or a square wave of the same
+    // period (Step) that jumps to the opposite side of the rail.
+    var REF_AMP_C = 1.0;                   // m
+    var REF_OMEGA_C = 2 * Math.PI / 12;    // rad/s: 12 s period
     var TILT0_MIN = deg2rad(1), TILT0_MAX = deg2rad(4);
     var LQR_GAINS = { kx: 3.1, kv: 5.9, kth: 43.5, kw: 18.1 };
 
@@ -2087,7 +2055,7 @@
     }
 
     var state, simT, uForce, simStatus, forceBuf;
-    var keyForce = 0, resetTimer = null;
+    var resetTimer = null;
     // RMS θ over the last 10 s; "best" only counts once a full window stayed up.
     var errRing = [], RING = 400, CHIST = 300, bestRMS = null;
     var stateHist, pidContrib;
@@ -2098,6 +2066,11 @@
     var view = { cx: 360, scale: 60, camX: 0 };
     var man = bindManual('cp', canvas, function () {
       forceBuf = [];
+      errRing = []; bestRMS = null;
+      if (bestEl) bestEl.textContent = '';
+    });
+
+    var refSel = bindRefToggle('cp', function () {
       errRing = []; bestRMS = null;
       if (bestEl) bestEl.textContent = '';
     });
@@ -2133,7 +2106,7 @@
     if (resetBtn) resetBtn.addEventListener('click', function () {
       bestRMS = null;
       if (bestEl) bestEl.textContent = '';
-      if (scoreEl) scoreEl.textContent = '—';
+      if (scoreEl) scoreEl.textContent = '-';
       newTrial();
     });
 
@@ -2149,36 +2122,33 @@
       });
     });
 
-    document.addEventListener('keydown', function (e) {
-      var sec = document.getElementById('sec-cartpole');
-      if (!sec || !sec.classList.contains('active')) return;
-      // Leave arrows alone in sliders and number inputs (gain fine-tuning, caret).
-      var t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (e.key === 'ArrowLeft')  { keyForce = -PUSH_F; e.preventDefault(); }
-      if (e.key === 'ArrowRight') { keyForce =  PUSH_F; e.preventDefault(); }
-    });
-    document.addEventListener('keyup', function (e) {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') keyForce = 0;
-    });
-
     function step() {
       if (!document.getElementById('sec-cartpole').classList.contains('active')) return;
       if (simStatus !== 'ok') return;
-      var cx = 0, cv = 0, cth = 0, cw = 0, cmd = 0;
+      var cx = 0, cv = 0, cth = 0, cw = 0, cmd = 0, xRef = 0;
       var delaySamples = Math.round(pid.delay / CP_DT);
       for (var i = 0; i < SUBSTEPS; i++) {
-        // Full-state feedback toward the origin. The angle reading carries the noise;
-        // cart position/velocity and pole rate are taken as clean measurements.
-        var thMeas = state[2] + (pid.noise > 0 ? deg2rad(pid.noise) * gaussian() : 0);
-        cx = pid.kx * state[0]; cv = pid.kv * state[1];
-        cth = pid.kth * thMeas; cw = pid.kw * state[3];
+        // Full-state feedback. The controller works from noisy *measurements* of all four
+        // states (the force and the plant are never noised): the slider sigma is degrees on
+        // the angle and centimetres on the cart position, and the two rates carry the same
+        // noise per 0.2 s, as if they were differenced from the positions.
+        var nz = pid.noise;
+        var xMeas  = state[0] + (nz > 0 ? 0.01 * nz * gaussian() : 0);
+        var vMeas  = state[1] + (nz > 0 ? 0.05 * nz * gaussian() : 0);
+        var thMeas = state[2] + (nz > 0 ? deg2rad(nz) * gaussian() : 0);
+        var wMeas  = state[3] + (nz > 0 ? deg2rad(nz) / 0.2 * gaussian() : 0);
+        // The cart's error is measured from the reference position and velocity; the pole
+        // states aim for zero. (Feeding the reference velocity in halves the lag on a Wave.)
+        xRef = refValue(refSel.type, simT, REF_AMP_C, REF_OMEGA_C);
+        cx = pid.kx * (xMeas - xRef);
+        cv = pid.kv * (vMeas - refRate(refSel.type, simT, REF_AMP_C, REF_OMEGA_C));
+        cth = pid.kth * thMeas; cw = pid.kw * wMeas;
         cmd = clamp(cx + cv + cth + cw, -FMAX, FMAX);
         if (man.manual) {
           cx = cv = cth = cw = 0;
           cmd = 0;
           if (man.drag) {
-            var xt = view.camX + (man.drag.x - view.cx) / view.scale;
+            var xt = clamp(view.camX + (man.drag.x - view.cx) / view.scale, -X_LIM, X_LIM);
             cmd = clamp(DRAG_K * (xt - state[0]) - DRAG_C * state[1], -FMAX, FMAX);
           }
         }
@@ -2187,13 +2157,13 @@
         var Fapplied = 0;
         while (forceBuf.length > delaySamples) Fapplied = forceBuf.shift();
         if (man.manual) { forceBuf.length = 0; Fapplied = cmd; }
-        uForce = Fapplied + keyForce;
+        uForce = Fapplied;
         state = rk4(state, simT, CP_DT, function (t, s) { return cpDeriv(t, s, uForce); });
         simT += CP_DT;
       }
 
-      if (Math.abs(state[2]) > FALL_ANGLE) {
-        simStatus = 'fell';
+      if (Math.abs(state[2]) > FALL_ANGLE || Math.abs(state[0]) > X_LIM) {
+        simStatus = Math.abs(state[2]) > FALL_ANGLE ? 'fell' : 'crashed';
         if (!resetTimer) resetTimer = setTimeout(function () { resetTimer = null; newTrial(); }, 1500);
         return;
       }
@@ -2209,13 +2179,14 @@
         pidContrib.x.shift(); pidContrib.v.shift(); pidContrib.th.shift(); pidContrib.w.shift(); pidContrib.total.shift();
       }
 
-      errRing.push(Math.pow(rad2deg(state[2]), 2));
+      var trackErr = clipErr(refValue(refSel.type, simT, REF_AMP_C, REF_OMEGA_C) - state[0]);
+      errRing.push(trackErr * trackErr);
       if (errRing.length > RING) errRing.shift();
-      var rms = Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length);
+      var rms = capScore(Math.sqrt(errRing.reduce(function (a, b) { return a + b; }, 0) / errRing.length));
       if (scoreEl) scoreEl.textContent = rms.toFixed(2);
       if (!man.manual && errRing.length === RING && (bestRMS === null || rms < bestRMS)) {
         bestRMS = rms;
-        if (bestEl) bestEl.textContent = 'Best: ' + rms.toFixed(2) + '°';
+        if (bestEl) bestEl.textContent = 'Best: ' + rms.toFixed(2) + ' m';
       }
     }
 
@@ -2238,39 +2209,51 @@
       var col1 = cssVar('--viz-1'), col2 = cssVar('--viz-2'), colF = cssVar('--viz-4');
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-      var trackY = Math.round(H * 0.7);
-      var scale = clamp(W * 0.09, 40, 70);   // px per metre
+      // Fixed view, like the double cart-pole: the rail and its end stops stay put and the
+      // cart moves along them. The scale fits both the rail's width and the pole's height.
+      var trackY = Math.round(H * 0.72);
+      var cartW = 52, cartH = 24;
+      var scale = Math.min((W - 40 - cartW) / (2 * X_LIM), (trackY - 56) / (2 * L_POLE + 0.2));
       var cx = W / 2;
-      var camX = state[0];
-      view.cx = cx; view.scale = scale; view.camX = camX;
-      function sx(xm) { return cx + (xm - camX) * scale; }
+      view.cx = cx; view.scale = scale; view.camX = 0;
+      function sx(xm) { return cx + xm * scale; }
 
-      // Rail (no ends) with scrolling metre ticks
+      // Rail with hard stops where the cart centre reaches ±X_LIM, and metre ticks
+      var railL = sx(-X_LIM) - cartW / 2, railR = sx(X_LIM) + cartW / 2;
       ctx.strokeStyle = strong; ctx.lineWidth = 4; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(-4, trackY); ctx.lineTo(W + 4, trackY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(railL, trackY); ctx.lineTo(railR, trackY); ctx.stroke();
       ctx.lineCap = 'butt';
-      ctx.fillStyle = muted; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
+      ctx.fillStyle = muted;
+      [railL, railR].forEach(function (xp) { ctx.fillRect(xp - 3, trackY - 14, 6, 28); });
+      ctx.font = '10px ' + mono; ctx.textAlign = 'center';
       ctx.lineWidth = 1;
-      var halfSpan = cx / scale + 1;
-      for (var m = Math.ceil((camX - halfSpan) * 4) / 4; m <= camX + halfSpan; m += 0.25) {
+      var labelEvery = scale < 45 ? 2 : 1;
+      for (var m = -X_LIM; m <= X_LIM + 1e-9; m += 0.5) {
         var tx = sx(m), whole = Math.abs(m - Math.round(m)) < 1e-6;
         ctx.strokeStyle = whole ? muted : border;
         ctx.beginPath(); ctx.moveTo(tx, trackY + 8); ctx.lineTo(tx, trackY + (whole ? 16 : 13)); ctx.stroke();
-        if (whole) ctx.fillText(Math.round(m) + ' m', tx, trackY + 30);
+        if (whole && Math.round(m) % labelEvery === 0) ctx.fillText(Math.round(m) + ' m', tx, trackY + 30);
       }
 
       var cartX = sx(state[0]);
-      var cartW = 52, cartH = 24;
-      var poleLenPx = L_POLE * 2 * scale * 0.9;
+      var poleLenPx = L_POLE * 2 * scale;
       var bobR = Math.max(6, 0.028 * scale * Math.sqrt(M_POLE / 0.15));
 
       // Manual drag: dashed target line and a spring from the cart to the pointer
       if (man.manual && man.drag) {
         ctx.strokeStyle = accent; ctx.globalAlpha = 0.5; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(man.drag.x, trackY - 30); ctx.lineTo(man.drag.x, trackY + 30); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cartX, trackY); ctx.lineTo(man.drag.x, trackY); ctx.stroke();
+        var dragPx = sx(clamp((man.drag.x - cx) / scale, -X_LIM, X_LIM));
+        ctx.beginPath(); ctx.moveTo(dragPx, trackY - 30); ctx.lineTo(dragPx, trackY + 30); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cartX, trackY); ctx.lineTo(dragPx, trackY); ctx.stroke();
         ctx.setLineDash([]); ctx.globalAlpha = 1;
       }
+
+      // Reference position on the rail: a dashed marker where the cart should be right now
+      var refNowC = refValue(refSel.type, simT, REF_AMP_C, REF_OMEGA_C);
+      ctx.save();
+      ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(sx(refNowC), trackY - 38); ctx.lineTo(sx(refNowC), trackY + 22); ctx.stroke();
+      ctx.restore();
 
       // Upright target ghost: dashed rod and a hollow bob
       ctx.globalAlpha = 0.45; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5; ctx.strokeStyle = accent;
@@ -2306,15 +2289,21 @@
 
       // Status
       var label, colr = muted;
-      if (simStatus === 'fell')                   { label = 'Pole fell — new trial…'; colr = col2; }
-      else if (man.manual)                        { label = 'Manual — drag the cart or hold ← →'; colr = accent; }
-      else if (!pid.kx && !pid.kv && !pid.kth && !pid.kw) { label = 'No control — set the gains or load LQR'; }
+      if (simStatus === 'fell')                   { label = 'Pole fell - new trial…'; colr = col2; }
+      else if (simStatus === 'crashed')           { label = 'Hit the end of the rail - new trial…'; colr = col2; }
+      else if (man.manual)                        { label = 'Manual - drag the cart'; colr = accent; }
+      else if (!pid.kx && !pid.kv && !pid.kth && !pid.kw) { label = 'No control - set the gains or load LQR'; }
       else                                        { label = 'LQR balancing'; colr = accent; }
       ctx.textAlign = 'left'; ctx.font = '600 13px ' + font; ctx.fillStyle = colr;
       ctx.fillText(label, 14, 24);
       ctx.font = '11px ' + mono; ctx.fillStyle = muted;
-      ctx.fillText('t = ' + simT.toFixed(1) + ' s   F = ' + uForce.toFixed(1) + ' N   θ = ' +
-                   rad2deg(state[2]).toFixed(1) + '°   x = ' + state[0].toFixed(2) + ' m', 14, 42);
+      ctx.fillText('t = ' + simT.toFixed(1) + ' s   F = ' + uForce.toFixed(1) + ' N', 14, 42);
+      drawStateBox(ctx, W, H, [
+        { label: 'x',   value: state[0], decimals: 2, unit: 'm' },
+        { label: 'ẋ',   value: state[1], decimals: 2, unit: 'm/s' },
+        { label: 'ref', value: refNowC, decimals: 2, unit: 'm' },
+        { label: 'θ',   value: rad2deg(state[2]), decimals: 1, unit: '°' }
+      ]);
     }
 
     // Live numbers in the panel's gain matrix.
