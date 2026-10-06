@@ -1,0 +1,49 @@
+{%- comment -%}
+  The lab template. A page sets `lab: <name>` in its front matter and includes this file;
+  everything comes from _data/labs/<name>.yml: the labs (plant + controller + settings) and the
+  tabs (which lab, which view in each of the three canvas slots, which panel controls, and the
+  note underneath). assets/js/lab/lab.js builds the panels and draws the views. Links in notes
+  are written root-relative ("/controls/") and get the baseurl here.
+{%- endcomment -%}
+{%- assign L = site.data.labs[page.lab] -%}
+{%- assign base_href = 'href="' | append: site.baseurl | append: '/' -%}
+<div class="wrap" style="padding-bottom:3rem">
+  <div class="sim-tabs-row">
+    <div class="sim-tabs" role="tablist" aria-label="Demo selector">
+      {%- for t in L.tabs %}
+      <button class="sim-tab{% if forloop.first %} active{% endif %}" role="tab" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" aria-controls="sec-{{ t.id }}" id="tab-{{ t.id }}" type="button">{{ t.label }}</button>
+      {%- endfor %}
+    </div>
+  </div>
+  {%- for t in L.tabs %}
+  <section class="sim-section{% if forloop.first %} active{% endif %}" id="sec-{{ t.id }}" role="tabpanel" aria-labelledby="tab-{{ t.id }}">
+    <div class="sim-layout">
+      <div class="sim-canvas-wrap sim-stack">
+        <div class="sim-cell"><canvas class="sim-canvas lab-canvas" id="{{ t.id }}-top" aria-label="{{ t.aria[0] }}"></canvas></div>
+        <div class="sim-cell-pair">
+          <div class="sim-cell"><canvas class="sim-states lab-canvas" id="{{ t.id }}-row1" aria-label="{{ t.aria[1] }}"></canvas></div>
+          <div class="sim-cell"><canvas class="sim-states lab-canvas" id="{{ t.id }}-row2" aria-label="{{ t.aria[2] }}"></canvas></div>
+        </div>
+      </div>
+      <div class="sim-panel" id="{{ t.id }}-panel"></div>
+    </div>
+    {%- if t.note %}
+    <div class="demo-note">
+      <h4 class="demo-note-title">{{ t.note_title | default: 'About this demo' }}</h4>
+      {{ t.note | replace: 'href="/', base_href }}
+    </div>
+    {%- endif %}
+  </section>
+  {%- endfor %}
+</div>
+<script type="application/json" id="lab-config">{"page": {{ page.lab | jsonify }}, "assets": {"net": {{ '/assets/models/verify-net.json' | relative_url | jsonify }}}, "labs": {{ L.labs | jsonify }}, "tabs": {{ L.tabs | jsonify }}}</script>
+<script src="{{ '/assets/js/lab/lab-core.js' | relative_url }}"></script>
+<script src="{{ '/assets/js/lab/lab-plants.js' | relative_url }}"></script>
+<script src="{{ '/assets/js/lab/lab.js' | relative_url }}"></script>
+<style>
+.telemetry .t-key,.telemetry .t-val{white-space:nowrap}
+.telemetry .t-val.lab-bad{color:var(--nn-act-neg);font-weight:600}
+.lab-canvas{touch-action:none}
+.sim-panel .mode-toggle{margin-bottom:.6rem}
+.sim-panel .sim-btn{margin-bottom:.5rem}
+</style>

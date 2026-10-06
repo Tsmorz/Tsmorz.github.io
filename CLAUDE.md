@@ -102,15 +102,10 @@ assets/js/statebox.js    `drawStateBox`: the lower-right state/units panel (deci
                          units aligned), shared by controls.js and swingup.js; load it first
 assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + goal-conditioned
                          TQC policy in vanilla JS — SwingupCore (no DOM, Node-testable) + the page
-assets/js/bode.js        /controls/bode/ (bode.md): Bode plots of the MSD plant, its PID loop,
-                         and the cart-pole LQR loop. BodeCore (no DOM, Node-testable) does the
-                         maths; its plant constants and LQR gains must match controls.js
-assets/js/modern-core.js /controls/modern/ maths, no DOM (ModernCore): CBF filter, interval bounds
-                         for both policy nets, the spinning-satellite MIMO example
-assets/js/modern.js      /controls/modern/ (modern.md) page code; load modern-core.js first
+assets/js/lab/           the lab template behind /controls/{stability,sysid,design,modern}/ (see below)
 assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture
                          is test-only and excluded from the build
-script/                  serve, check, add-photo, test-data, test-swingup, test-bode, test-modern,
+script/                  serve, check, add-photo, test-data, test-swingup, test-lab,
                          train-verify-net (writes assets/models/verify-net.json)
 ```
 
@@ -161,46 +156,35 @@ actions (max < 0.2 N — float16 rounding alone reaches ~0.14 N on the goal net 
 transition in the fixture.
 If it fails after a re-export, the port in `swingup.js` has drifted from n-cartpole.
 
-### The Bode page
+### The lab template (`/controls/stability|sysid|design|modern/`)
 
-`/controls/bode/` has three tabs (deep links `#pid`, `#lqr`): the mass-spring-damper on
-its own, the same plant in the PID loop from the Intro demo (L = C·G·e^(−sT)), and the
-cart-pole's state-feedback loop cut at the force input (L = K(sI − A)⁻¹B). Each shows a
-sine-wave experiment on top (traces replay at a fixed 0.5 cycles/s whatever ω is, with the
-real period noted) and, below it, a **View** toggle: Bode (gain + phase), Nyquist (L(jω) in the
-complex plane, |L| > 1 log-compressed so the unit circle and −1 keep their true places), or
-Poles (open-loop poles/zeros, closed-loop poles easing to their new spots, and a root locus
-over all gains ×0–3; the Intro tab instead draws the pole-to-jω distances that make the
-resonance). The transfer function, written with the current numbers, sits above Nyquist and
-Poles. Delay is a 2nd-order Padé approximation in the Poles view only. Stability comes from a Nyquist encirclement
-count on a contour just right of the imaginary axis, not from the margins, because the
-cart-pole is open-loop unstable and the loop can carry delay. **If you change the MSD or
-cart-pole constants or `LQR_GAINS` in `controls.js`, change `MSD`, `CP` and `CP_LQR` in
-`bode.js` too.** `script/test-bode` (`task check:bode`, part of `task check`) checks A and B
-against the matrices printed on /controls/, LQR's guaranteed margins, Nyquist against
-closed-loop eigenvalues for random gains, that the delay margin is where the loop breaks,
-that the num/den polynomials reproduce L(jω), and that the Padé poles agree with Nyquist.
+These pages share one engine; a page differs only in its data. **To add or change one, edit its
+`_data/labs/<page>.yml`, not code.** The pieces:
 
-### The modern-methods page
+- `<page>.md`: front matter `lab: <page>`, a title and intro, then `{% include lab.html %}`.
+- `_data/labs/<page>.yml`: `labs` (a plant from `lab-plants.js`, a controller key, and optional
+  `params` for the simulated plant, `model` for the analysed one, `gains`, `refs`, `cbf`, `net`,
+  `requirements`, `sysid`, `limit`) and `tabs` (`lab`, a view for each of `top`, `row1`, `row2`,
+  the panel `controls`, and a `note` in HTML; write links root-relative, the include adds the baseurl).
+  Tabs may share a lab: the design page walks one lab through six steps.
+- `assets/js/lab/lab-plants.js`: one entry per /controls/ sim (mass-spring, cart-pole, aircraft):
+  constants, `deriv`, equilibrium, limits, the controllers it supports, and its `draw`. **Constants
+  must match controls.js.** The aircraft's trim is solved numerically: the closed form in controls.js
+  treats the stall blend as 1 (it's ≈ 0.92 at trim), so that "trim" slowly sinks and slows.
+- `assets/js/lab/lab-core.js` (LabCore, no DOM): linearisation; the closed loop as one state-space
+  model with each gain as a feedback row (so the loop gain, root locus and pole placement are linear
+  algebra); margins; a Nyquist count that handles delay and unstable plants; Padé poles; the CBF
+  filter; interval bounds on the small net; ARX identification refined with instrumental variables
+  (plain least squares is biased by sensor noise); the nonlinear simulator.
+- `assets/js/lab/lab.js`: the views and panel controls, listed at the top of the file. Poles views
+  let you drag closed-loop poles (gains are solved) when one input has as many gains as states.
 
-`/controls/modern/` has three tabs (`#cbf`, `#verify`, `#mimo`):
-
-- **Safety Filter:** a robot in the plane (ṗ = u) with a goal-seeking or wandering controller
-  underneath a CBF filter. h = d² − r² per obstacle; the filter solves the small QP
-  min |u − u_nom|² s.t. ∇h·u ≥ −αh (Hildreth's method). The bottom row draws h(t) and the
-  velocity-space half-planes the QP works in.
-- **Verifying Networks:** interval bound propagation + branch and bound on
-  `assets/models/verify-net.json`, a 4·16·16·1 ReLU net trained to copy the cart-pole LQR. The
-  query is local robustness to sensor error (ε on θ, 5ε on θ̇, the /controls/ noise ratio). The
-  "Try the swing-up network" button loads the 2 MB TQC net and shows the bound exploding layer
-  by layer. **Never hand-edit `verify-net.json`**: change `script/train-verify-net` and re-run it
-  (it's seeded, so the output is reproducible).
-- **Many Loops:** Doyle's spinning satellite (a = 10). Each loop alone: 90° PM, no gain limit;
-  both at once fail at 1/√(1 + a²) ≈ 9.95%. The stability test is closed form (2 × 2 trace/det).
-
-`script/test-modern` (`task check:modern`, part of `task check`) checks that the CBF keeps the
-robot out of obstacles in random scenes, that the interval bounds are sound for both nets, that
-proofs never beat attacks, and the satellite's textbook numbers.
+`script/test-lab` (`task check:lab`, part of `task check`) checks the plants against /controls/,
+the textbook margins, Nyquist against eigenvalues, pole placement, the filter, sound network bounds,
+that identification recovers the mass-spring, and that every `_data/labs` page only names plants,
+views and controls that exist. `assets/models/verify-net.json` is written by
+`script/train-verify-net` (seeded; never hand-edit it). Next step: port the four /controls/ demos
+onto the template.
 
 ## Running and checking
 
@@ -214,14 +198,14 @@ Needs Ruby ≥ 2.7 — **system Ruby on this Mac is 2.6.10 and cannot run Jekyll
 on CI to build.
 
 `Taskfile.yml` is the single entrypoint (`task --list`: `serve`, `build`, `check`,
-`check:data`, `check:swingup`, `check:bode`, `check:modern`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
+`check:data`, `check:swingup`, `check:lab`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
 validates `_data/*.yml` — required fields, and that each photo's full-size + thumbnail and
 each local project image actually exist (the full-size lives in a `data-full` attribute
 that html-proofer never sees, so this is the only thing guarding it). It's pure Ruby
 stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
-Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → swingup → bode → modern →
+Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → swingup → lab →
 build → JS → links; the swingup check uses the runner's preinstalled Node); that build is the uploaded deploy artifact. `serve` and `add-photo` still wrap
 the `script/` files (`task add-photo -- <source-image> <slug>`).
 

@@ -1,0 +1,29 @@
+# /controls/sysid/ — system identification on the /controls/ mass-spring-damper.
+labs:
+  msd_id: { plant: msd, controller: pid, params: { M: 1, k: 4, c: 0.4 }, sysid: { exc: chirp, noise: 0.01, T: 30, order: 2, amp: 2 } }
+tabs:
+  - id: msd
+    label: Mass-spring-damper
+    lab: msd_id
+    top: sysid-replay
+    row1: sysid-data
+    row2: sysid-bode
+    controls: [sysid]
+    aria: ["The mass replaying the identification experiment", "The input, the noisy measurement, and the fitted model's prediction", "Bode plot of the true plant and the fitted model"]
+    note: |
+      <p>Every other page starts from a model. Here is where models come from. <strong>System
+      identification</strong> means: push on the real thing, record what it does, and fit equations to the
+      record. Choose an input signal, press <strong>Run experiment</strong>, and the mass is pushed while its
+      position is measured with sensor noise. A least-squares fit then finds the model
+      y[k]&#8201;=&#8201;&#8722;a&#8321;y[k&#8722;1]&#8201;&#8722;&#8201;a&#8322;y[k&#8722;2]&#8201;+&#8201;b&#8321;u[k&#8722;1]&#8201;+&#8201;b&#8322;u[k&#8722;2]
+      that best predicts each sample from the ones before. With a 2nd-order model the fit can be read back as a
+      mass, a damper and a spring (right), to compare with the true 1&nbsp;kg, 0.4 and 4. One catch: plain least
+      squares is biased by sensor noise, because the noisy past outputs sit inside its own regressors. The fit here
+      refines itself with <strong>instrumental variables</strong>, using the model's own noise-free prediction in
+      place of the noisy outputs, which removes the bias.</p>
+      <p>Things to try. A <strong>step</strong> barely excites the resonance, so the fit gets the spring right
+      and the damping wrong. A <strong>chirp</strong> or <strong>random</strong> input shakes it at every
+      frequency and nails all three. Turn the noise up and the fit wanders; record longer and it settles back.
+      Pick <strong>1st order</strong> and no setting helps: the model can't resonate, and the Bode plot shows
+      exactly where it's wrong. Pick 4th and it fits the noise too. The right model is the simplest one the
+      data can't tell apart from the truth.</p>

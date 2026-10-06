@@ -1,0 +1,75 @@
+# /controls/modern/ — safety filters, verifying a network, and two loops at once, on the /controls/ sims.
+labs:
+  msd_cbf: { plant: msd, controller: pid, cbf: { lim: 1.2, stops: 1.4, lambda: 2 }, refs: [{ amp: 1.8 }] }
+  cp_net:  { plant: cartpole, controller: lqr, net: true }
+  fl_mimo: { plant: flight, controller: both }
+tabs:
+  - id: cbf
+    label: Safety Filter
+    lab: msd_cbf
+    top: sim
+    row1: time
+    row2: cbf
+    refAmp: [0.5, 2.5]
+    controls: [cbf, reference, gains, restart]
+    aria: ["The mass-spring-damper between two hard stops, chasing a reference that goes past them", "Position, reference and force over time", "Phase plane with the safe set, and the requested versus allowed force"]
+    note: |
+      <p>The Intro demo's mass, now with hard stops at &#177;1.4&nbsp;m, and a reference that goes past them.
+      The PID does exactly what it's told and slams into the stops. Turn the <strong>safety filter</strong>
+      on and every force passes through a <strong>control barrier function</strong> (CBF) first: the mass
+      comes up to the stops and stops short, every time, whatever the controller asks for.</p>
+      <p>The barrier is h&#8201;=&#8201;limit&#8201;&#8722;&#8201;|x|, positive while safe. The rule is that h
+      may shrink, but only slower as it gets small; since force sets acceleration, that becomes
+      &#7723;&#7723;&#8201;+&#8201;2&#955;&#7723;&#8201;+&#8201;&#955;&#178;h&#8201;&#8805;&#8201;0, a band of
+      allowed forces (teal, right). The filter sends the allowed force nearest the request. In the
+      <strong>phase plane</strong> (left) the teal region is the safe set: positions <em>and</em> speeds
+      from which it can still stop in time. The filter never lets the state leave it. This is how a learned
+      or untrusted controller can run safely: it proposes, a filter with a proof disposes.</p>
+      <p>On the cart-pole the same filter keeps the cart off the rail but makes the pole fall, because
+      stopping the cart hard means not balancing: a barrier on one state of an underactuated plant isn't
+      enough. That case needs a barrier over the whole state, or a filter on the reference instead.</p>
+  - id: verify
+    label: Verifying a Network
+    lab: cp_net
+    top: sim
+    row1: verify-map
+    row2: verify-proof
+    controls: [controller, noise, verify]
+    noiseMax: 0.03
+    aria: ["The cart-pole, balanced by the LQR or the neural network", "The network's force over pole angle and rate, and where its robustness is proved", "The proof against sampled inputs, the split box, and the bound's width by layer"]
+    note: |
+      <p>The cart-pole again, and the small network trained to copy its LQR (switch <strong>Controller</strong>
+      to Neural net). Watching it balance says it <em>looks</em> fine. Verification proves something for
+      <em>every</em> input in a region, including ones no test tried. The question here: can a sensor error up
+      to &#949; on the angle (and 5&#949; on the rate) move the force by more than &#948;? The box on the map
+      follows the live state.</p>
+      <p><strong>Interval bound propagation</strong> pushes the whole box through the network layer by layer,
+      keeping each neuron's lowest and highest possible value. The result is guaranteed to contain every real
+      output, but each layer adds slack, so it's wider than what trying inputs finds. Three answers:
+      <strong>proved</strong>, <strong>disproved</strong> (with a counterexample) or <strong>unknown</strong>.
+      Split the box and bound each piece to tighten it: that's <strong>branch and bound</strong>, the core of
+      real network verifiers. The right map runs the proof at every state: teal where large errors are
+      provably harmless, red where the force changes steeply. On the 1-million-weight swing-up policy the same
+      bound covers the whole &#177;20&nbsp;N range even for a thousandth of a radian, which is why big
+      policies get a safety filter rather than a proof.</p>
+  - id: mimo
+    label: Two Loops at Once
+    lab: fl_mimo
+    top: sim
+    row1: time
+    row2: mimo
+    channels: [0, 1]
+    window: 20
+    mimoRange: [-0.9, 1.5]
+    mimoNote: "Here the coloured region fills the box: the elevator and throttle loops barely interact at these gains, so checking each loop alone was enough. That is something to check, not assume: on strongly coupled plants (a spinning satellite is the textbook case) loops that each have huge margins fail together at 10%."
+    controls: [mimo, gains]
+    aria: ["The aircraft with both loops closed", "Altitude and airspeed errors over time", "Map of which pairs of gain errors keep both loops stable"]
+    note: |
+      <p>Real hardware errs in every channel at once: the elevator a bit weaker than modelled, the engine a bit
+      stronger. A single-loop margin only tests one channel while the other is perfect. Drag the dot on the map
+      to give each loop a gain error and watch the aircraft. The <strong>dashed box</strong> is what each loop's
+      own gain margins predict; the <strong>coloured map</strong> is the truth, both errors checked together.</p>
+      <p>When the two disagree, the loops interact: pulling the nose up to climb also bleeds airspeed, and the
+      throttle's answer changes the climb. The multivariable tools for that (singular values, disk margins, the
+      structured singular value &#956;) all ask the question this map answers by brute force: what's the
+      smallest <em>simultaneous</em> error that breaks the loop?</p>

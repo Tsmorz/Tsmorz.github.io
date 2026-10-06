@@ -1,0 +1,153 @@
+#!/usr/bin/env node
+// Check the lab template (assets/js/lab/): the maths every template page relies on, run on
+// the same plants as /controls/.
+//   1. plants: the cart-pole linearises to the A, B printed on /controls/; the aircraft's trim
+//      is an equilibrium; every plant's default controller holds it for 20 s in simulation
+//   2. loops: the textbook margins (PID 53°, LQR ≥ 60° and −6 dB, ∞ up); Nyquist agrees with
+//      closed-loop eigenvalues for random gains; the delay margin is where it breaks
+//   3. pole placement round-trips; Padé poles agree with Nyquist away from the edge
+//   4. safety filter keeps the mass inside its stops; network bounds are sound
+//   5. system identification recovers the mass-spring-damper from noisy data
+//   6. every _data/labs/*.yml names plants, controllers, views and controls that exist
+// Pure Node, no dependencies, no build.
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const root = path.resolve(__dirname, '..');
+const C = require(path.join(root, 'assets/js/lab/lab-core.js'));
+const P = require(path.join(root, 'assets/js/lab/lab-plants.js'));
+
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+let seed = 2024;
+function rand() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+const W = C.logspace(0.01, 100, 500);
+function setup(plant, key, gains, params) {
+  const p = Object.assign({}, plant.params, params || {}), ctrl = plant.controllers[key];
+  const m = C.loopModel(plant, p, ctrl), K = m.K(gains || ctrl.channels.map((c) => c.gains));
+  return { p, ctrl, m, K };
+}
+function mg(s, ci, T) { return C.margins(C.freqResponse((x) => C.loopAt(s.m, s.K, ci, T || 0, x), W)); }
+
+console.log('1. plants');
+{
+  const L = C.linearize(P.cartpole, P.cartpole.params);
+  const A = [[0, 1, 0, 0], [0, -2.13, -5.89, 0], [0, 0, 0, 1], [0, 1.07, 7.85, 0]], B = [0, 2.67, 0, -1.33];
+  let err = 0; L.A.forEach((r, i) => r.forEach((v, j) => { err = Math.max(err, Math.abs(v - A[i][j])); })); L.B.forEach((r, i) => { err = Math.max(err, Math.abs(r[0] - B[i])); });
+  check(err < 0.006, `cart-pole A, B match /controls/ (max diff ${err.toFixed(4)})`);
+  const f = P.flight, d = f.deriv(f.x0(f.params), f.u0(f.params), f.params);
+  check(d.every((v) => Math.abs(v) < 1e-8), `aircraft trim is an equilibrium (largest rate ${Math.max(...d.map(Math.abs)).toExponential(1)})`);
+  [['msd', 'pid'], ['cartpole', 'lqr'], ['flight', 'both']].forEach(([pk, ck]) => {
+    const plant = P[pk], ctrl = JSON.parse(JSON.stringify(plant.controllers[ck]));
+    const lab = { p: Object.assign({}, plant.params), controller: ctrl, gains: ctrl.channels.map((c) => Object.assign({}, c.gains)),
+      refs: plant.refs.map((r) => Object.assign({}, r)), noise: 0, delay: 0 };
+    const sim = C.createSim(plant, lab, rand); let bad = false;
+    for (let k = 0; k < Math.round(20 / plant.dt); k++) { sim.step(); if (sim.failed || !sim.x.every(isFinite)) { bad = true; break; } }
+    check(!bad, `${pk}: default controller runs 20 s without failing`);
+  });
+}
+
+console.log('2. loops');
+{
+  const pid = setup(P.msd, 'pid'), m1 = mg(pid, 0);
+  check(Math.abs(m1.pm - 53.4) < 0.5, `mass-spring PID: phase margin ${m1.pm.toFixed(1)}° (53.4° expected)`);
+  const lqr = setup(P.cartpole, 'lqr'), m2 = mg(lqr, 0);
+  check(m2.pm >= 60 && m2.gmUp === null && m2.gmDown <= -6, `cart-pole LQR: PM ${m2.pm.toFixed(1)}°, no upper limit, down ${m2.gmDown.toFixed(1)} dB`);
+  check(C.nyquistCount(lqr.m, lqr.K, 0, 0).P === 1 && C.nyquistCount(lqr.m, lqr.K, 0, 0).Z === 0, 'cart-pole: one open-loop unstable pole, none closed-loop');
+  let bad = 0;
+  for (let n = 0; n < 80; n++) {
+    const g = { kp: 100 * rand() - 50, ki: 40 * rand() - 20, kd: 20 * rand() - 10 }, s = setup(P.msd, 'pid', [g]);
+    if ((C.nyquistCount(s.m, s.K, 0, 0).Z === 0) !== C.eig(C.closedA(s.m, s.K)).every((z) => z[0] < 1e-3)) bad++;
+    const k = { kx: 40 * rand() - 20, kv: 40 * rand() - 20, kth: 120 * rand() - 20, kw: 50 * rand() - 10 }, t = setup(P.cartpole, 'lqr', [k]);
+    if ((C.nyquistCount(t.m, t.K, 0, 0).Z === 0) !== C.eig(C.closedA(t.m, t.K)).every((z) => z[0] < 1e-3)) bad++;
+  }
+  check(bad === 0, `Nyquist agrees with eigenvalues for 160 random gain sets (${bad} mismatches)`);
+  [[pid, 'PID'], [lqr, 'LQR']].forEach(([s, nm]) => {
+    const dm = mg(s, 0).delayMargin;
+    check(C.nyquistCount(s.m, s.K, 0, 0.9 * dm).Z === 0 && C.nyquistCount(s.m, s.K, 0, 1.1 * dm).Z > 0, `${nm}: stable at 0.9×, unstable at 1.1× the ${(dm * 1000).toFixed(0)} ms delay margin`);
+  });
+  const fl = setup(P.flight, 'both');
+  check([0, 1].every((ci) => C.nyquistCount(fl.m, fl.K, ci, 0).Z === 0), 'aircraft: both loops stable, cut at either input');
+}
+
+console.log('3. poles');
+{
+  [[P.msd, 'pid'], [P.cartpole, 'lqr']].forEach(([plant, key]) => {
+    const s = setup(plant, key), poles = C.eig(C.closedA(s.m, s.K)), g = C.placePoles(s.m, poles), want = plant.controllers[key].channels[0].gains;
+    const err = Math.max(...Object.keys(want).map((k) => Math.abs(g[k] - want[k])));
+    check(C.placeable(s.m) && err < 1e-3, `${plant.id}: placing its own poles returns its gains (max error ${err.toExponential(1)})`);
+  });
+  check(!C.placeable(setup(P.flight, 'both').m), 'aircraft: two inputs, not placeable by dragging (as the page says)');
+  let dis = 0;
+  [[P.msd, 'pid'], [P.cartpole, 'lqr']].forEach(([plant, key]) => {
+    const s = setup(plant, key);
+    [0, 0.03, 0.06, 0.2, 0.3].forEach((T) => {
+      if (C.eig(C.closedAWithDelay(s.m, s.K, T)).every((z) => z[0] < 0) !== (C.nyquistCount(s.m, s.K, 0, T).Z === 0)) dis++;
+    });
+  });
+  check(dis === 0, `Padé poles agree with Nyquist on stability away from the margin (${dis} disagreements)`);
+}
+
+console.log('4. safety filter and verification');
+{
+  let worst = 0;
+  for (let n = 0; n < 20; n++) {
+    const plant = P.msd, ctrl = JSON.parse(JSON.stringify(plant.controllers.pid));
+    const lab = { p: Object.assign({}, plant.params), controller: ctrl, gains: [{ kp: 20 + 30 * rand(), ki: 5 * rand(), kd: 2 + 6 * rand() }],
+      refs: [{ type: rand() < 0.5 ? 'wave' : 'step', amp: 1.5 + rand(), omega: 0.5 }], noise: 0, delay: 0,
+      cbf: { on: true, input: 0, pos: 0, vel: 1, lim: 1.2, lambda: 0.5 + 4 * rand() } };
+    const sim = C.createSim(plant, lab, rand);
+    for (let k = 0; k < 3000; k++) { sim.step(); worst = Math.max(worst, Math.abs(sim.x[0])); }
+  }
+  check(worst <= 1.2 + 1e-3, `filter keeps the mass inside ±1.2 m with a reference up to 2.5 m (worst ${worst.toFixed(4)} m)`);
+  const net = JSON.parse(fs.readFileSync(path.join(root, 'assets/models/verify-net.json'), 'utf8'));
+  let unsound = 0, order = 0;
+  for (let k = 0; k < 200; k++) {
+    const e = [0.3 * (2 * rand() - 1), 0.3 * (2 * rand() - 1), 0.4 * (2 * rand() - 1), 1.2 * (2 * rand() - 1)], eps = 0.002 + 0.05 * rand();
+    const b = C.queryBox(e, eps), F = C.netBounds(net, b.lo, b.hi);
+    for (let j = 0; j < 20; j++) { const f = C.netForward(net, b.lo.map((l, i) => l + rand() * (b.hi[i] - l))); if (f < F[0] - 1e-9 || f > F[1] + 1e-9) unsound++; }
+    if (C.attack(net, e, eps).dev > C.certify(net, e, eps, 2).dev + 1e-9) order++;
+  }
+  check(unsound === 0, `network bounds contain every sampled output (${unsound} outside)`);
+  check(order === 0, `no counterexample ever beats a proof (${order} cases)`);
+}
+
+console.log('5. system identification');
+{
+  [[P.msd.params, 'textbook'], [{ M: 1.6, c: 0.9, k: 6.5 }, 'design-page "real"']].forEach(([pp, nm]) => {
+    const p = Object.assign({}, P.msd.params, pp), dt = 0.05, u = [], y = []; let x = [0, 0];
+    for (let k = 0; k < 600; k++) {
+      const t = k * dt, uk = 2 * Math.sin(0.2 * t + 9.8 * t * t / 60);
+      u.push(uk); y.push(x[0] + 0.01 * C.gaussian(rand));
+      for (let j = 0; j < 5; j++) {
+        const h = 0.01, f = (xx) => P.msd.deriv(xx, [uk], p);
+        const k1 = f(x), k2 = f(x.map((v, i) => v + k1[i] * h / 2)), k3 = f(x.map((v, i) => v + k2[i] * h / 2)), k4 = f(x.map((v, i) => v + k3[i] * h));
+        x = x.map((v, i) => v + (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]) * h / 6);
+      }
+    }
+    const est = C.arxToMsd(C.arxFitIV(u, y, 2, 2), dt);
+    const err = Math.max(Math.abs(est.M / p.M - 1), Math.abs(est.c / p.c - 1), Math.abs(est.k / p.k - 1));
+    check(err < 0.06, `${nm} plant recovered from 10 mm noise to within ${(err * 100).toFixed(1)}%`);
+  });
+}
+
+console.log('6. page data');
+{
+  const dir = path.join(root, '_data/labs'), views = ['sim', 'time', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
+  check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
+  check(controls.every((c) => src.includes('CTRL.' + c + ' =')), 'every control name is implemented in lab.js');
+  let problems = [];
+  fs.readdirSync(dir).filter((f) => f.endsWith('.yml')).forEach((f) => {
+    const txt = fs.readFileSync(path.join(dir, f), 'utf8');
+    (txt.match(/(?:^\s*|[{,]\s*)plant: (\w+)/gm) || []).forEach((m) => { const k = m.trim().split(' ').pop(); if (!P[k]) problems.push(f + ': plant ' + k); });
+    (txt.match(/(top|row1|row2): ([\w-]+)/g) || []).forEach((m) => { const v = m.split(': ')[1]; if (!views.includes(v)) problems.push(f + ': view ' + v); });
+    (txt.match(/controls: \[([^\]]*)\]/g) || []).forEach((m) => m.slice(11, -1).split(',').map((s) => s.trim()).forEach((c) => { if (!controls.includes(c)) problems.push(f + ': control ' + c); }));
+    if (!fs.existsSync(path.join(root, f.replace('.yml', '.md')))) problems.push(f + ': no page ' + f.replace('.yml', '.md'));
+  });
+  check(problems.length === 0, 'all _data/labs pages use known plants, views and controls' + (problems.length ? ': ' + problems.join('; ') : ''));
+}
+
+if (failed) { console.log('\ntest-lab: FAILED'); process.exit(1); }
+console.log('\ntest-lab: all checks passed');

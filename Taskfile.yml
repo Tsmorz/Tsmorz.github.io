@@ -66,15 +66,10 @@ tasks:
     cmds:
       - script/test-swingup
 
-  check:bode:
-    desc: Check the Bode page's maths (margins, Nyquist stability vs eigenvalues, cart-pole model) (Node, no build)
+  check:lab:
+    desc: Check the lab template (assets/js/lab/) and every _data/labs page (Node, no build)
     cmds:
-      - script/test-bode
-
-  check:modern:
-    desc: Check the modern-methods page's maths (CBF safety, sound network bounds, satellite margins) (Node, no build)
-    cmds:
-      - script/test-modern
+      - script/test-lab
 
   check:links:
     desc: Check internal links with html-proofer
@@ -86,8 +81,7 @@ tasks:
     cmds:
       - task: check:data
       - task: check:swingup
-      - task: check:bode
-      - task: check:modern
+      - task: check:lab
       - task: build
       - task: check:js
       - task: check:links

@@ -15,11 +15,13 @@ permalink: /controls/
     the controller and let it try. The plots
     under each sim show the plant's states and what each term of the controller is contributing.
     For a problem past what PID can do, <a href="{{ '/controls/swingup/' | relative_url }}">swing
-    up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy. To see
-    <em>why</em> delay breaks a loop, open the PID and LQR loops up as
-    <a href="{{ '/controls/bode/' | relative_url }}">Bode plots</a>. And for newer ideas, safety filters,
-    proving what a neural network will do, and loops that interact, see
-    <a href="{{ '/controls/modern/' | relative_url }}">modern methods</a>.
+    up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy. Then follow
+    the same sims through the rest of the craft: where models come from
+    (<a href="{{ '/controls/sysid/' | relative_url }}">system identification</a>), how to tell a loop is
+    stable and by how much (<a href="{{ '/controls/stability/' | relative_url }}">stability</a>), how the
+    steps fit together (<a href="{{ '/controls/design/' | relative_url }}">the design process</a>), and
+    newer ideas like safety filters and verified neural networks
+    (<a href="{{ '/controls/modern/' | relative_url }}">modern methods</a>).
   </p>
 </section>
 
@@ -33,7 +35,9 @@ permalink: /controls/
     </div>
     <!-- Its own page, not a tab — so not .sim-tab, which controls.js wires up as one. -->
     <a class="sim-tab-link" href="{{ '/controls/swingup/' | relative_url }}">Double Swing-Up &#8594;</a>
-    <a class="sim-tab-link" href="{{ '/controls/bode/' | relative_url }}">Bode Plots &#8594;</a>
+    <a class="sim-tab-link" href="{{ '/controls/stability/' | relative_url }}">Stability &#8594;</a>
+    <a class="sim-tab-link" href="{{ '/controls/sysid/' | relative_url }}">System ID &#8594;</a>
+    <a class="sim-tab-link" href="{{ '/controls/design/' | relative_url }}">Design Process &#8594;</a>
     <a class="sim-tab-link" href="{{ '/controls/modern/' | relative_url }}">Modern Methods &#8594;</a>
   </div>
 
