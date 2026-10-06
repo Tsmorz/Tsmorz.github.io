@@ -555,6 +555,90 @@
     return path;
   }
 
+  /* ---- Ho–Kalman / ERA: a state-space model from the impulse response ----
+     Markov parameters h₁, h₂, … (the sampled impulse response) are stacked into a Hankel
+     matrix H[i][j] = h(i+j+1). Its rank is the number of states, so its singular values show
+     the model order. Keeping the n largest, A = S^-½ Uᵀ H↑ V S^-½, B = first column of S^½ Vᵀ,
+     C = first row of U S^½ (H↑ is H shifted one step). With noise, small singular values
+     become a noise floor and the truncation is what ERA adds to Ho–Kalman. */
+
+  // Singular value decomposition by one-sided Jacobi (fine for the small matrices here).
+  function svd(Ain) {
+    var m = Ain.length, n = Ain[0].length, U = Ain.map(function (r) { return r.slice(); }), V = zeros(n, n), i, j, k;
+    for (i = 0; i < n; i++) V[i][i] = 1;
+    for (var sweep = 0; sweep < 60; sweep++) {
+      var off = 0;
+      for (j = 0; j < n - 1; j++) for (k = j + 1; k < n; k++) {
+        var a = 0, b = 0, g = 0;
+        for (i = 0; i < m; i++) { a += U[i][j] * U[i][j]; b += U[i][k] * U[i][k]; g += U[i][j] * U[i][k]; }
+        if (Math.abs(g) <= 1e-15 * Math.sqrt(a * b)) continue;
+        off = Math.max(off, Math.abs(g) / Math.sqrt(a * b));
+        var zeta = (b - a) / (2 * g), t = (zeta >= 0 ? 1 : -1) / (Math.abs(zeta) + Math.sqrt(1 + zeta * zeta)), cs = 1 / Math.sqrt(1 + t * t), sn = cs * t;
+        for (i = 0; i < m; i++) { var x = U[i][j], y = U[i][k]; U[i][j] = cs * x - sn * y; U[i][k] = sn * x + cs * y; }
+        for (i = 0; i < n; i++) { var vx = V[i][j], vy = V[i][k]; V[i][j] = cs * vx - sn * vy; V[i][k] = sn * vx + cs * vy; }
+      }
+      if (off < 1e-12) break;
+    }
+    var S = [];
+    for (j = 0; j < n; j++) { var nn = 0; for (i = 0; i < m; i++) nn += U[i][j] * U[i][j]; nn = Math.sqrt(nn); S.push(nn); for (i = 0; i < m; i++) U[i][j] = nn > 1e-300 ? U[i][j] / nn : 0; }
+    var order = S.map(function (_, q) { return q; }).sort(function (p1, p2) { return S[p2] - S[p1]; });
+    return { U: U.map(function (r) { return order.map(function (q) { return r[q]; }); }), S: order.map(function (q) { return S[q]; }),
+             V: V.map(function (r) { return order.map(function (q) { return r[q]; }); }) };
+  }
+
+  // Impulse response (Markov parameters) from arbitrary input/output data by least squares:
+  // y[k] = Σ h_i u[k−i], i = 1…L. This is how ERA is used on data that isn't an impulse test.
+  function firFit(u, y, L) {
+    var M = zeros(L, L + 1);
+    for (var k = L; k < y.length; k++) {
+      for (var i = 0; i < L; i++) { var ui = u[k - 1 - i]; for (var j = 0; j < L; j++) M[i][j] += ui * u[k - 1 - j]; M[i][L] += ui * y[k]; }
+    }
+    var tr = 0; for (i = 0; i < L; i++) tr += M[i][i];
+    for (i = 0; i < L; i++) M[i][i] += 1e-6 * tr / L;   // a whisper of ridge for short records
+    for (var a = 0; a < L; a++) {
+      var pv = a; for (var r = a + 1; r < L; r++) if (Math.abs(M[r][a]) > Math.abs(M[pv][a])) pv = r;
+      var t = M[pv]; M[pv] = M[a]; M[a] = t;
+      for (r = a + 1; r < L; r++) { var f = M[r][a] / M[a][a]; for (var q = a; q <= L; q++) M[r][q] -= f * M[a][q]; }
+    }
+    var h = new Array(L);
+    for (a = L - 1; a >= 0; a--) { var sm = M[a][L]; for (q = a + 1; q < L; q++) sm -= M[a][q] * h[q]; h[a] = sm / M[a][a]; }
+    return h;                                            // h[0] = h₁ (one sample after the input)
+  }
+
+  function era(h, rows, order) {
+    var nr = rows, nc = rows, H = zeros(nr, nc), H2 = zeros(nr, nc), i, j;
+    for (i = 0; i < nr; i++) for (j = 0; j < nc; j++) { H[i][j] = h[i + j] || 0; H2[i][j] = h[i + j + 1] || 0; }
+    var sv = svd(H), n = order, Ur = sv.U.map(function (r) { return r.slice(0, n); }), Vr = sv.V.map(function (r) { return r.slice(0, n); });
+    var sq = sv.S.slice(0, n).map(Math.sqrt);
+    var A = zeros(n, n), a, b;
+    for (a = 0; a < n; a++) for (b = 0; b < n; b++) {
+      var sm = 0; for (i = 0; i < nr; i++) for (j = 0; j < nc; j++) sm += Ur[i][a] * H2[i][j] * Vr[j][b];
+      A[a][b] = sm / (sq[a] * sq[b]);
+    }
+    var B = [], Cr = [];
+    for (a = 0; a < n; a++) { B.push(sq[a] * Vr[0][a]); Cr.push(sq[a] * Ur[0][a]); }
+    return { A: A, B: B, C: Cr, S: sv.S, H: H, n: n };
+  }
+  function ssSim(m, u) {                               // discrete state-space free run, x₀ = 0
+    var x = m.B.map(function () { return 0; }), y = [];
+    for (var k = 0; k < u.length; k++) {
+      var yk = 0; for (var i = 0; i < x.length; i++) yk += m.C[i] * x[i]; y.push(yk);
+      x = m.A.map(function (row, r) { var s2 = m.B[r] * u[k]; for (var q = 0; q < row.length; q++) s2 += row[q] * x[q]; return s2; });
+    }
+    return y;
+  }
+  // A 2-state realization read back as a mass-spring-damper (poles z → s = ln z / dt).
+  function ssToMsd(m, dt) {
+    if (m.n !== 2) return null;
+    var zs = eig(m.A), ss = zs.map(function (z) { return [Math.log(cabs(z)) / dt, carg(z) / dt]; });
+    var IA = [[1 - m.A[0][0], -m.A[0][1]], [-m.A[1][0], 1 - m.A[1][1]]], det = IA[0][0] * IA[1][1] - IA[0][1] * IA[1][0];
+    var x0 = (IA[1][1] * m.B[0] - IA[0][1] * m.B[1]) / det, x1 = (-IA[1][0] * m.B[0] + IA[0][0] * m.B[1]) / det, dc = m.C[0] * x0 + m.C[1] * x1;
+    var w2 = cabs(ss[0]) * cabs(ss[1]), twoZw = -(ss[0][0] + ss[1][0]);
+    if (!(dc > 0) || !(w2 > 0)) return null;
+    var k = 1 / dc, M = k / w2;
+    return { M: M, c: twoZw * M, k: k, poles: ss };
+  }
+
   // Free-run a mass-spring-damper with given constants on an input sequence (validation).
   function simMsd(plant, pBase, consts, u, dt) {
     var p = Object.assign({}, pBase, consts), x = plant.x0(p).slice(), sub = Math.max(1, Math.round(dt / plant.dt)), h = dt / sub, y = [];
@@ -626,6 +710,8 @@
         u[ch.input] = u0[ch.input] + du * (lab.scale ? lab.scale[ci] : 1);
       });
       if (manualU) manualU.forEach(function (v, i) { if (v !== null && v !== undefined) u[i] = v; });
+      // Extra excitation on input 0 (a tap or a random shaker, for identification experiments).
+      if (lab.excite) u[0] += lab.excite(sim.t);
       // Shaker (frequency-response experiments): a sine added to one input.
       if (lab.shake) { sim.phase = (sim.phase || 0) + lab.w * dt; u[lab.shake.input] += lab.shake.amp * Math.sin(sim.phase); }
       sim.prevY = ctrl.channels.map(function (ch) { return ch.type === 'pid' ? meas[ch.out] : 0; });
@@ -665,7 +751,7 @@
     certifiedRadius: certifiedRadius, netGains: netGains, RATE_PER_ANGLE: RATE_PER_ANGLE,
     arxFit: arxFit, arxFitIV: arxFitIV, arxSim: arxSim, arxFreq: arxFreq, arxToMsd: arxToMsd,
     experiment: experiment, stepEstimate: stepEstimate, freqPoint: freqPoint, levyFit: levyFit, greyBoxFit: greyBoxFit,
-    simMsd: simMsd, fitPercent: fitPercent,
+    simMsd: simMsd, fitPercent: fitPercent, svd: svd, firFit: firFit, era: era, ssSim: ssSim, ssToMsd: ssToMsd,
     createSim: createSim, refValue: refValue, gaussian: gaussian
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = LabCore;

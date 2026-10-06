@@ -145,17 +145,24 @@ console.log('6. identification methods');
   const prbs = (t) => levels[Math.floor(t / 0.4)];
   const dg = C.experiment(P.msd, p, prbs, 30, dt, 0.01, rand), path = C.greyBoxFit(P.msd, p, dg, ['M', 'c', 'k'], { M: 2.5, c: 1.5, k: 1.5 }, 25), gb = path[path.length - 1].p;
   check(rel(gb) < 0.03 && path.every((q, i) => i === 0 || q.cost <= path[i - 1].cost + 1e-15), `grey-box fit within ${(rel(gb) * 100).toFixed(1)}% from a 2.5× guess, error never rising`);
+  const tap = C.experiment(P.msd, p, (t) => (t < dt ? 20 : 0), 20, dt, 0, rand), hk = tap.y.slice(1).map((v) => v / 20), er = C.era(hk, 20, 2), ee = C.ssToMsd(er, dt);
+  check(er.S[2] / er.S[1] < 1e-10 && rel(ee) < 0.01, `Ho–Kalman: singular values drop ${(er.S[1] / er.S[2]).toExponential(0)}× after the 2nd, plant within ${(rel(ee) * 100).toFixed(2)}%`);
+  const dr = C.experiment(P.msd, p, prbs, 60, dt, 0.01, rand), em = C.ssToMsd(C.era(C.firFit(dr.u, dr.y, 160), 30, 2), dt);
+  check(rel(em) < 0.06, `ERA from random data (impulse response fitted first): within ${(rel(em) * 100).toFixed(1)}%`);
+  const sv = C.svd([[3, 0], [4, 5]]).S;
+  check(Math.abs(sv[0] - Math.sqrt(45)) < 1e-9 && Math.abs(sv[1] - Math.sqrt(5)) < 1e-9, 'SVD matches a known 2×2 (√45, √5)');
   const dv = C.experiment(P.msd, p, prbs, 30, dt, 0, rand);
   check(C.fitPercent(dv.y, C.simMsd(P.msd, p, gb, dv.u, dt)) > 95, 'validation: the grey-box model predicts fresh data at > 95% fit');
 }
 
 console.log('7. page data');
 {
-  const dir = path.join(root, '_data/labs'), views = ['id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
-  const controls = ['idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const dir = path.join(root, '_data/labs'), views = ['rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
   const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
   check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
-  check(controls.every((c) => src.includes('CTRL.' + c + ' =')), 'every control name is implemented in lab.js');
+  const missing = controls.filter((c) => !src.includes('CTRL.' + c + ' =') && !new RegExp('var CTRL = \\{[^}]*\\b' + c + ':').test(src));
+  check(missing.length === 0, 'every control name is implemented in lab.js' + (missing.length ? ': missing ' + missing.join(', ') : ''));
   let problems = [];
   fs.readdirSync(dir).filter((f) => f.endsWith('.yml')).forEach((f) => {
     const txt = fs.readFileSync(path.join(dir, f), 'utf8');

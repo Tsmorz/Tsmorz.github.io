@@ -6,9 +6,10 @@
 //
 // Views:    sim, time, states, contrib, analysis (toggle of bode | nyquist | poles), step, cbf,
 //           verify-map, verify-proof, mimo, sysid-replay, sysid-data, sysid-bode, checklist,
-//           id-replay, id-step, id-freq, id-grey, id-result, id-compare, id-validate
+//           id-replay, id-step, id-freq, id-era, id-grey, id-result, id-compare, id-validate,
+//           rec-data, rec-fit
 // Controls: mode, hint, freq, view, channel, reference, gains, controller, delay, noise, limit,
-//           margins, cbf, verify, mimo, sysid, idrun, requirements, score, reset, restart
+//           margins, cbf, verify, mimo, sysid, idrun, record, requirements, score, reset, restart
 // All maths is in LabCore (lab-core.js); plants and their pictures in LabPlants.
 (function () {
   'use strict';
@@ -771,8 +772,8 @@
   };
 
   /* ---- identification methods: step, frequency sweep, grey-box, compare ---- */
-  var ID_DT = 0.05, ID_NAMES = ['M', 'c', 'k'], ID_LABEL = { step: 'Step response', freq: 'Frequency sweep', arx: 'Least squares (ARX)', grey: 'Grey-box fit' };
-  function idState(lab) { return lab.idm || (lab.idm = { noise: 0.01, points: 12, guess: { M: 2.5, c: 1.5, k: 1.5 } }); }
+  var ID_DT = 0.05, ID_NAMES = ['M', 'c', 'k'], ID_LABEL = { step: 'Step response', freq: 'Frequency sweep', arx: 'Least squares (ARX)', era: 'Ho–Kalman (ERA)', grey: 'Grey-box fit' };
+  function idState(lab) { return lab.idm || (lab.idm = { noise: 0.01, points: 12, guess: { M: 2.5, c: 1.5, k: 1.5 }, eraOrder: 2 }); }
   function seeded(seed) { return function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }; }
   // A random ±A square wave, switching every 0.2–1 s, as a plain function of time.
   function randomInput(A, T, seed) {
@@ -784,6 +785,7 @@
     var I = idState(lab);
     if (method === 'arx') return lab.sysid && lab.sysid.msd ? { M: lab.sysid.msd.M, c: lab.sysid.msd.c, k: lab.sysid.msd.k } : null;
     if (method === 'grey') return I.grey ? I.grey.path[I.grey.path.length - 1].p : null;
+    if (method === 'era') return I.era && I.era.est ? I.era.est : null;
     return I[method] && I[method].est && I[method].est.M ? I[method].est : null;
   }
   function runId(lab, method) {
@@ -801,9 +803,13 @@
     } else if (method === 'grey') {
       var dg = C.experiment(plant, p, randomInput(2, 30, 77), 30, ID_DT, I.noise, rng);
       I.grey = { data: dg, path: C.greyBoxFit(plant, p, dg, ID_NAMES, I.guess, 25), t0: performance.now() };
+    } else if (method === 'era') {
+      // A hammer tap: 20 N for one sample. The sampled response divided by the tap is the impulse response.
+      var A = 20, de = C.experiment(plant, p, function (t) { return t < ID_DT ? A : 0; }, 20, ID_DT, I.noise, rng);
+      I.era = { data: de, t0: performance.now() }; eraFit(I.era, de.y.slice(1).map(function (v) { return v / A; }), I.eraOrder);
     } else if (method === 'compare') {
       var dv = C.experiment(plant, p, randomInput(2, 30, 991 + Math.floor(Math.random() * 1e4)), 30, ID_DT, I.noise, rng), rows = [];
-      ['step', 'freq', 'arx', 'grey'].forEach(function (m) {
+      ['step', 'freq', 'arx', 'era', 'grey'].forEach(function (m) {
         var e = idEstimate(lab, m); if (!e) { rows.push({ m: m, est: null }); return; }
         var yh = C.simMsd(plant, p, e, dv.u, ID_DT);
         rows.push({ m: m, est: e, yh: yh, fit: C.fitPercent(dv.y, yh) });
@@ -811,8 +817,14 @@
       I.compare = { data: dv, rows: rows, t0: performance.now() };
     }
   }
+  // ERA on a set of Markov parameters, at a chosen order; keeps everything the views draw.
+  function eraFit(E, h, order) {
+    E.h = h; E.order = order; E.rows = Math.min(30, Math.floor(h.length / 2));
+    E.model = C.era(h, E.rows, order); E.est = C.ssToMsd(E.model, ID_DT);
+    E.hhat = C.ssSim(E.model, [1].concat(new Array(h.length - 1).fill(0)));      // the realization's own impulse response
+  }
   function age(o) { return o ? (performance.now() - o.t0) / 1000 : 0; }
-  var M_COLORS = function () { return { step: col.viz1, freq: col.viz3, arx: col.viz4, grey: col.viz2 }; };
+  var M_COLORS = function () { return { step: col.viz1, freq: col.viz3, arx: col.viz4, era: cssVar('--viz-7') || col.accent, grey: col.viz2 }; };
 
   V['id-replay'] = function (c, lab, tab) {
     var I = idState(lab), m = tab.method, d = null, label = '', k = 0;
@@ -820,7 +832,7 @@
       var per = 1.6, n = I.freq.pts.length, a = age(I.freq), i = Math.min(n - 1, Math.floor(a / per)), q = I.freq.pts[i];
       d = q.tail; k = Math.floor(((a % per) / per) * (d.t.length - 1)); label = 'Shaking at ω = ' + fmtW(q.w) + ' rad/s (' + (i + 1) + ' of ' + n + ')';
     } else {
-      var src = m === 'step' ? I.step : m === 'grey' ? I.grey : I.compare; if (!src) { text(c.ctx, 'Press Run experiment', 14, 14, col.muted); return; }
+      var src = m === 'step' ? I.step : m === 'grey' ? I.grey : m === 'era' ? I.era : I.compare; if (!src) { text(c.ctx, 'Press Run experiment', 14, 14, col.muted); return; }
       d = src.data; k = Math.min(d.t.length - 1, Math.floor(age(src) * 3 / d.dt));
       label = (m === 'compare' ? 'Fresh validation data' : 'Replaying the experiment') + ': t = ' + fmt(d.t[k], 1) + ' s (3× speed)';
     }
@@ -910,12 +922,53 @@
     ]);
   };
 
+  // ERA: the Hankel matrix, its singular values (the order), and the realized response.
+  function drawEra(c, lab, E, title) {
+    var ctx = c.ctx, narrow = c.W < 560, gap = 18, x = 8;
+    var w1 = narrow ? 0 : Math.min(c.H - 30, c.W * 0.22), w2 = narrow ? c.W * 0.42 : c.W * 0.3, w3 = c.W - 8 - (x + w1 + (w1 ? gap : 0) + w2 + gap);
+    if (w1) {                                           // Hankel heatmap
+      var H = E.model.H, n = H.length, cell = w1 / n, mx = 1e-12;
+      H.forEach(function (r) { r.forEach(function (v) { mx = Math.max(mx, Math.abs(v)); }); });
+      var neg = hexRgb(col.bad), zer = hexRgb(col.zero), pos = hexRgb(col.pos);
+      for (var i = 0; i < n; i++) for (var j = 0; j < n; j++) {
+        var v = H[i][j] / mx, cc = v < 0 ? mix(zer, neg, Math.min(1, -v)) : mix(zer, pos, Math.min(1, v));
+        ctx.fillStyle = 'rgb(' + cc.join(',') + ')'; ctx.fillRect(x + j * cell, 22 + i * cell, cell + 0.5, cell + 0.5);
+      }
+      text(ctx, 'Hankel matrix', x, 4, col.text, { size: 11 });
+      x += w1 + gap;
+    }
+    // singular values, log scale
+    var S = E.model.S.slice(0, 10), lo = -6, hi = 1, y0 = 22, y1 = c.H - 22;
+    var Y = function (v) { var l = Math.log10(Math.max(v / S[0], 1e-12)); return y1 - (clamp(l, lo, 0) - lo) / (hi - lo) * (y1 - y0); };
+    text(ctx, 'Singular values of H (log)', x, 4, col.text, { size: 11 });
+    var bw = w2 / S.length;
+    S.forEach(function (v, i) {
+      var keep = i < E.order; ctx.fillStyle = keep ? col.accent : withAlpha(col.muted, 0.45);
+      ctx.fillRect(x + i * bw + 2, Y(v), bw - 4, y1 - Y(v));
+      text(ctx, String(i + 1), x + i * bw + bw / 2, y1 + 3, col.muted, { align: 'center', size: 10, mono: true, w: '400' });
+    });
+    ctx.save(); ctx.strokeStyle = col.accent; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(x + E.order * bw, y0); ctx.lineTo(x + E.order * bw, y1); ctx.stroke(); ctx.restore();
+    text(ctx, 'keep ' + E.order, x + E.order * bw + 4, y0 + 2, col.accent, { size: 10 });
+    x += w2 + gap;
+    if (w3 < 90) return;
+    // measured vs realized impulse response
+    var h = E.h.slice(0, Math.min(E.h.length, 240)), hh = E.hhat.slice(1, h.length + 1), m2 = 1e-9;
+    h.forEach(function (v) { m2 = Math.max(m2, Math.abs(v)); });
+    var X = function (i) { return x + i / (h.length - 1) * w3; }, Yh = function (v) { return (y0 + y1) / 2 - clamp(v / m2, -1.1, 1.1) * (y1 - y0) / 2; };
+    text(ctx, title, x, 4, col.text, { size: 11 });
+    ctx.strokeStyle = withAlpha(col.muted, 0.8); ctx.lineWidth = 1; ctx.beginPath(); h.forEach(function (v, i) { if (i) ctx.lineTo(X(i), Yh(v)); else ctx.moveTo(X(i), Yh(v)); }); ctx.stroke();
+    ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = col.accent; ctx.lineWidth = 2; ctx.beginPath(); hh.forEach(function (v, i) { if (i) ctx.lineTo(X(i), Yh(v)); else ctx.moveTo(X(i), Yh(v)); }); ctx.stroke(); ctx.restore();
+    text(ctx, 'grey: measured   dashed: order-' + E.order + ' model', x, y1 + 3, col.muted, { size: 10, w: '400' });
+  }
+  V['id-era'] = function (c, lab) { var E = idState(lab).era; if (E) drawEra(c, lab, E, 'Impulse response: the tap, measured'); };
+
   // Estimated constants against the true ones, as bars.
   V['id-result'] = function (c, lab, tab) {
     var ctx = c.ctx, e = idEstimate(lab, tab.method), trueP = lab.p;
     var done = tab.method === 'freq' ? idState(lab).freq && age(idState(lab).freq) > 1.6 * idState(lab).freq.pts.length
              : tab.method === 'grey' ? idState(lab).grey && age(idState(lab).grey) > 0.6 * idState(lab).grey.path.length
              : tab.method === 'step' ? idState(lab).step && age(idState(lab).step) * 3 > 25 : true;
+    if (tab.method === 'era' && idState(lab).era && !e) { text(ctx, 'Order ' + idState(lab).era.order + ' can\'t be read as a mass, damper and spring: pick 2 to compare, or validate it on the last tab.', 12, 26, col.muted, { size: 12 }); return; }
     text(ctx, 'What it found vs the truth (the sim knows the real m = 1, c = 0.4, k = 4)', 12, 4, col.text, { size: 11 });
     if (!e || !done) { text(ctx, e ? 'Working…' : 'Run the experiment', 12, 26, col.muted, { size: 12 }); return; }
     var rows = ID_NAMES, bw = (c.W - 40) / rows.length, y1 = c.H - 30, y0 = 34;
@@ -932,7 +985,7 @@
   V['id-compare'] = function (c, lab) {
     var ctx = c.ctx, I = idState(lab), C2 = I.compare, cols = M_COLORS();
     text(ctx, c.W < 560 ? 'Each model on fresh data' : 'Every method\'s model, tested on fresh data none of them was fitted to', 12, 6, col.text, { size: 12 });
-    var rowsDef = ['step', 'freq', 'arx', 'grey'], x = [12, c.W * 0.32, c.W * 0.45, c.W * 0.58, c.W * 0.71, c.W - 14], y = 26, rh = clamp((c.H - 50) / 5, 16, 30);
+    var rowsDef = ['step', 'freq', 'arx', 'era', 'grey'], x = [12, c.W * 0.32, c.W * 0.45, c.W * 0.58, c.W * 0.71, c.W - 14], y = 26, rh = clamp((c.H - 50) / 6, 16, 30);
     var narrow = c.W < 560;
     if (narrow) x = [10, c.W * 0.38, c.W * 0.54, c.W * 0.7, -1, c.W - 12];
     ['Method', 'm', 'c', 'k', 'worst error', narrow ? 'fit' : 'fit on new data'].forEach(function (h, i) { if (x[i] >= 0) text(ctx, h, x[i], y, col.muted, { size: 11, align: i === 5 ? 'right' : 'left' }); });
@@ -956,6 +1009,88 @@
     var ser = [{ data: d.y, cap: n, color: withAlpha(col.muted, 0.8), width: 1, name: 'measured' }];
     C2.rows.forEach(function (r) { if (r.est) ser.push({ data: r.yh, cap: n, color: cols[r.m], width: 1.6, name: ID_LABEL[r.m].split(' (')[0] }); });
     timePlot(ctx, 44, 4, c.W - 10, c.H - 6, ser, range([d.y], 0.2), 'Fresh input, and what each model predicts');
+  };
+
+  /* ---- your own data: record from the live sim, then identify ---- */
+  function recState(lab) { return lab.rec || (lab.rec = { on: false, u: [], y: [], acc: 0, noise: 0.01, shaker: false, res: null }); }
+  function recordTick(lab) {                         // called every plant step while recording
+    var R = recState(lab); if (!R.on) return;
+    R.acc += lab.plant.dt; if (R.acc + 1e-9 < ID_DT) return; R.acc = 0;
+    R.u.push(lab.sim.u[0]); R.y.push(lab.sim.x[0] + R.noise * C.gaussian(Math.random));
+    if (R.u.length * ID_DT >= 120) R.on = false;
+  }
+  function identifyRecording(lab) {
+    recState(lab).on = false;                          // identifying ends the recording
+    var R = recState(lab), N = R.u.length, cut = Math.floor(N * 0.7), res = { rows: [], cut: cut, n: N };
+    if (N * ID_DT < 10) { R.res = { error: 'Record at least 10 s (longer is better).' }; return; }
+    var uf = R.u.slice(0, cut), yf = R.y.slice(0, cut), base = Object.assign({}, lab.p), plant = lab.plant;
+    function add(m, est, yh) { res.rows.push({ m: m, est: est, yh: yh, fit: yh ? C.fitPercent(R.y.slice(cut), yh.slice(cut)) : null }); }
+    var ax = C.arxFitIV(uf, yf, 2, 2), am = C.arxToMsd(ax, ID_DT);
+    add('arx', am, C.arxSim(ax, R.u));
+    var L = Math.min(160, Math.floor(cut / 4)), h = C.firFit(uf, yf, L), E = {}; eraFit(E, h, 2);
+    add('era', E.est, C.ssSim(E.model, R.u)); res.era = E; res.L = L;
+    var path = C.greyBoxFit(plant, base, { u: uf, y: yf, dt: ID_DT }, ID_NAMES, { M: 2.5, c: 1.5, k: 1.5 }, 20), gb = path[path.length - 1].p;
+    add('grey', gb, C.simMsd(plant, base, gb, R.u, ID_DT));
+    var energy = uf.reduce(function (a, v) { return a + v * v; }, 0) / uf.length;
+    res.weak = energy < 0.05;
+    R.res = res;
+  }
+  // Excitation the visitor can switch on while recording.
+  function exciteFn(lab) {
+    var R = recState(lab), tapUntil = -1, lvl = 0, next = 0;
+    return function (t) {
+      var v = 0;
+      if (R.tapAt !== undefined && R.tapAt !== null) { tapUntil = t + ID_DT; R.tapAt = null; }
+      if (t < tapUntil) v += 20;
+      if (R.shaker) { if (t >= next) { lvl = Math.random() < 0.5 ? 2 : -2; next = t + 0.2 + 0.8 * Math.random(); } v += lvl; }
+      return v;
+    };
+  }
+  V['rec-data'] = function (c, lab) {
+    var R = recState(lab), ctx = c.ctx, n = R.u.length;
+    if (!n) { wrapText(ctx, 'Press Record, then excite the mass: drag it (Manual), tap it, or switch on the random shaker. You can also let the PID run while you record.', 12, 12, c.W - 24, col.muted, { size: 12 }); return; }
+    var mid = c.H * 0.4, cap = Math.max(n, 200);
+    timePlot(ctx, 44, 4, c.W - 10, mid - 4, [{ data: R.u, cap: cap, color: col.viz2, name: 'force F (N)' }], range([R.u], 1), (R.on ? '● Recording ' : 'Recorded ') + fmt(n * ID_DT, 1) + ' s');
+    timePlot(ctx, 44, mid + 4, c.W - 10, c.H - 6, [{ data: R.y, cap: cap, color: col.viz1, name: 'measured x (m)' }], range([R.y], 0.1), 'Position, as the sensor sees it');
+    if (R.res && R.res.cut) { var xc = 44 + R.res.cut / (cap - 1) * (c.W - 54); ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = col.text; ctx.beginPath(); ctx.moveTo(xc, 4); ctx.lineTo(xc, c.H - 6); ctx.stroke(); ctx.restore();
+      text(ctx, 'fit ← | → check', xc, c.H - 18, col.text, { align: 'center', size: 10 }); }
+  };
+  V['rec-fit'] = function (c, lab) {
+    var R = recState(lab), ctx = c.ctx, res = R.res, cols = M_COLORS();
+    if (!res) { wrapText(ctx, 'When you have a recording, press Identify. The first 70% is used to fit each model, the last 30% to check it.', 12, 12, c.W - 24, col.muted, { size: 12 }); return; }
+    if (res.error) { text(ctx, res.error, 12, 12, col.bad, { size: 12 }); return; }
+    var narrow = c.W < 560, tw = narrow ? c.W - 16 : c.W * 0.5, x = [10, tw * 0.42, tw * 0.58, tw * 0.74, tw - 4], y = 6;
+    text(ctx, 'Identified from your data', 10, y, col.text, { size: 12 }); y += 20;
+    ['Method', 'm', 'c', 'k', 'check fit'].forEach(function (hh, i) { text(ctx, hh, x[i], y, col.muted, { size: 11, align: i === 4 ? 'right' : 'left' }); }); y += 18;
+    res.rows.forEach(function (r) {
+      text(ctx, ID_LABEL[r.m].split(' (')[0], x[0], y, cols[r.m], { size: 12 });
+      if (r.est) ID_NAMES.forEach(function (nm, i) { text(ctx, fmt(r.est[nm], 2), x[i + 1], y, col.text, { size: 12, mono: true }); });
+      else text(ctx, 'no 2nd-order reading', x[1], y, col.muted, { size: 11, w: '400' });
+      text(ctx, r.fit === null ? '-' : fmt(r.fit, 0) + '%', x[4], y, r.fit > 90 ? col.accent : col.text, { size: 12, mono: true, align: 'right' });
+      y += 20;
+    });
+    text(ctx, 'true', x[0], y, col.muted, { size: 12 }); ID_NAMES.forEach(function (nm, i) { text(ctx, fmt(lab.p[nm], 2), x[i + 1], y, col.muted, { size: 12, mono: true }); }); y += 22;
+    if (res.weak) wrapText(ctx, 'Your input was gentle: push harder or longer, or switch on the shaker, so the data has something to say.', 10, y, tw - 10, col.viz3, { size: 11 });
+    if (narrow) return;
+    // the held-out part, measured vs each model
+    var x0 = tw + 30, n = res.n, k0 = res.cut, ys = R.y.slice(k0), ser = [{ data: ys, cap: ys.length, color: withAlpha(col.muted, 0.8), width: 1, name: 'measured' }];
+    res.rows.forEach(function (r) { if (r.yh) ser.push({ data: r.yh.slice(k0), cap: ys.length, color: cols[r.m], width: 1.6 }); });
+    timePlot(ctx, x0, 4, c.W - 10, c.H - 6, ser, range([ys], 0.1), 'The last 30%: never used for fitting');
+  };
+  var ctrlRecord = function (panel, lab, tab) {
+    var R = recState(lab);
+    lab.excite = exciteFn(lab);
+    h3(panel, 'Record');
+    var recBtn = button(panel, 'Record', function () {
+      if (R.on) { R.on = false; } else { R.on = true; R.u = []; R.y = []; R.acc = 0; R.res = null; }
+      recBtn.textContent = R.on ? '■ Stop recording' : 'Record';
+    });
+    tab.syncRec = function () { var t = R.on ? '■ Stop recording (' + fmt(R.u.length * ID_DT, 0) + ' s)' : 'Record'; if (recBtn.textContent !== t) recBtn.textContent = t; };
+    h3(panel, 'Excite it');
+    button(panel, 'Tap the mass', function () { R.tapAt = lab.sim.t; });
+    toggle(panel, 'Random shaker', [[false, 'Shaker off'], [true, 'Shaker on']], false, function (v) { R.shaker = v; });
+    slider(panel, tab.id + '-rnoise', 'Sensor noise', 0, 0.05, 0.001, R.noise, function (v) { return fmt(v * 1000, 0) + ' mm'; }, function (v) { R.noise = v; });
+    button(panel, 'Identify', function () { identifyRecording(lab); });
   };
 
   /* ---- the design checklist ---- */
@@ -1011,7 +1146,7 @@
   }
   function setV(span, v, bad) { if (!span) return; if (span.textContent !== v) span.textContent = v; span.classList.toggle('lab-bad', !!bad); }
 
-  var CTRL = {};
+  var CTRL = { record: ctrlRecord };
   CTRL.freq = function (panel, lab, tab) {
     h3(panel, tab.shake ? 'Shake it' : 'Frequency');
     var a = Math.log10(GRID[0]), b = Math.log10(GRID[GRID.length - 1]);
@@ -1149,6 +1284,10 @@
     h3(panel, m === 'compare' ? 'Validation' : 'Experiment');
     slider(panel, tab.id + '-idnoise', 'Sensor noise', 0, 0.1, 0.002, I.noise, function (v) { return fmt(v * 1000, 0) + ' mm'; }, function (v) { I.noise = v; });
     if (m === 'freq') toggle(panel, 'Frequencies measured', [[4, '4'], [8, '8'], [12, '12'], [20, '20']], I.points, function (v) { I.points = v; });
+    if (m === 'era') {
+      h3(panel, 'Model order (bars kept)');
+      toggle(panel, 'Model order', [[1, '1'], [2, '2'], [3, '3'], [4, '4']], I.eraOrder, function (v) { I.eraOrder = v; if (I.era) eraFit(I.era, I.era.h, v); });
+    }
     if (m === 'grey') {
       h3(panel, 'Starting guess');
       [['M', 'm', 0.2, 5], ['c', 'c', 0.05, 3], ['k', 'k', 0.5, 12]].forEach(function (g) {
@@ -1156,7 +1295,7 @@
       });
       hint(panel, 'Start far from the truth and it still gets there; start in a silly place and it can stop in the wrong valley.');
     }
-    button(panel, m === 'compare' ? 'Validate on fresh data' : 'Run experiment', function () { runId(lab, m); });
+    button(panel, m === 'compare' ? 'Validate on fresh data' : m === 'era' ? 'Tap it' : 'Run experiment', function () { runId(lab, m); });
     if (m !== 'compare') {
       var t = telemetry(panel, [['M', 'Mass m'], ['c', 'Damping c'], ['k', 'Spring k']]);
       tab.syncId = function () { var e = idEstimate(lab, m); ID_NAMES.forEach(function (nm) { setV(t[nm], e ? fmt(e[nm], 3) : '-'); }); };
@@ -1256,6 +1395,7 @@
       }
       if (lab.sim.failed && lab.failT === null) { lab.failT = lab.sim.t; lab.trials++; lab.ring = []; }
       lab.tick = (lab.tick || 0) + 1;
+      if (lab.rec) recordTick(lab);
       if (lab.tick % every === 0) {
         var x0 = plant.x0(lab.p), u0 = plant.u0(lab.p), xs = lab.sim.x;
         lab.refs.forEach(function (r, ci) { (lab.hist.y[ci] = lab.hist.y[ci] || []); push(lab.hist.y[ci], xs[r.idx] - x0[r.idx], CAP); (lab.hist.r[ci] = lab.hist.r[ci] || []); push(lab.hist.r[ci], C.refValue(r, lab.sim.t), CAP); });
@@ -1296,9 +1436,9 @@
         V[vname](fit(cv), lab, tab, cv);
       });
       if (tab.method === 'compare' && !idState(lab).compare && lab.sysid && lab.sysid.msd) {
-        ['step', 'freq', 'grey'].forEach(function (mm) { if (!idState(lab)[mm]) runId(lab, mm); }); runId(lab, 'compare');
+        ['step', 'freq', 'era', 'grey'].forEach(function (mm) { if (!idState(lab)[mm]) runId(lab, mm); }); runId(lab, 'compare');
       }
-      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId'].forEach(function (f) { if (tab[f]) tab[f](); });
+      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec'].forEach(function (f) { if (tab[f]) tab[f](); });
     });
     requestAnimationFrame(frame);
   }
