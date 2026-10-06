@@ -153,7 +153,15 @@ actions (max < 0.2 N — float16 rounding alone reaches ~0.14 N on the goal net 
 transition in the fixture.
 If it fails after a re-export, the port in `swingup.js` has drifted from n-cartpole.
 
-### The lab template (`/controls/` and `/controls/stability|sysid|design|modern/`)
+### The learning path
+
+`_data/learning_path.yml` lists the controls pages in reading order, each with `needs` (step ids).
+`_includes/learning-path.html` draws it as a map (on /controls/) or a strip (top of every other
+controls page, swing-up included), and `_includes/lab.html` uses it for "You'll need:" on a page's
+first tab and the final "Next:" link on its last tab (other tabs link to the next tab). **A new
+controls page must be added there**, or it won't appear in the path.
+
+### The lab template (`/controls/` and `/controls/stability|sysid|estimation|design|modern/`)
 
 These pages share one engine; a page differs only in its data. **To add or change one, edit its
 `_data/labs/<page>.yml`, not code.** The pieces:
@@ -180,6 +188,12 @@ These pages share one engine; a page differs only in its data. **To add or chang
   /controls/ demos use `mode` (Manual | controller), `hint` (shown after 10 gain adjustments),
   `score` (RMS tracking error and best), `reset`, and the `states` / `contrib` plots. Poles views
   let you drag closed-loop poles (gains are solved) when one input has as many gains as states.
+
+State estimation (`/controls/estimation/`) uses the cart-pole's `lqg` controller: an `obs` channel that
+measures only x and θ and runs LQR on an estimate, made by differencing (`estimator: diff`) or a
+discrete Kalman filter (`estimator: kalman`; `LabCore.buildEstimator`, trust = process-noise level
+`logQ`). For analysis the controller becomes a dynamic system from measurements to force, so
+margins, Nyquist and poles all include the filter (the separation principle and Doyle's LQG result).
 
 `script/test-lab` (`task check:lab`, part of `task check`) checks the plants against /controls/,
 the textbook margins, Nyquist against eigenvalues, pole placement, the filter, sound network bounds,

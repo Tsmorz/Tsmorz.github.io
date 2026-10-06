@@ -1,16 +1,5 @@
 # /controls/ — the four original demos, on the lab template (see _includes/lab.html).
 # Notes and hints carried over from the hand-built page; edit them here.
-links:
-- label: Double Swing-Up
-  href: /controls/swingup/
-- label: Stability
-  href: /controls/stability/
-- label: System ID
-  href: /controls/sysid/
-- label: Design Process
-  href: /controls/design/
-- label: Modern Methods
-  href: /controls/modern/
 labs:
   msd:
     plant: msd

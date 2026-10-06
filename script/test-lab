@@ -155,10 +155,37 @@ console.log('6. identification methods');
   check(C.fitPercent(dv.y, C.simMsd(P.msd, p, gb, dv.u, dt)) > 95, 'validation: the grey-box model predicts fresh data at > 95% fit');
 }
 
-console.log('7. page data');
+console.log('7. state estimation');
 {
-  const dir = path.join(root, '_data/labs'), views = ['rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
-  const controls = ['record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const pl = P.cartpole, p = Object.assign({}, pl.params);
+  function lqg(logQ, noise) {
+    const ctrl = JSON.parse(JSON.stringify(pl.controllers.lqg)), ch = ctrl.channels[0], E = C.buildEstimator(pl, p, ch, noise, logQ, pl.dt);
+    ch.Lo = E.L; return { ctrl, ch, E, m: C.loopModel(pl, p, ctrl) };
+  }
+  function run(estimator, noise, logQ) {
+    const { ctrl, ch, E } = lqg(logQ, noise);
+    const lab = { p, controller: ctrl, gains: [Object.assign({}, ch.gains)], refs: pl.refs.map((r) => Object.assign({}, r)), noise, delay: 0, estimator, est: E };
+    const sim = C.createSim(pl, lab, rand); let falls = 0, e = 0, n = 0;
+    for (let k = 0; k < 2400; k++) { sim.step(); if (sim.failed) { falls++; sim.reset(); continue; } if (k > 200) { e += (sim.xhat[3] - sim.x[3]) ** 2; n++; } }
+    return { falls, rate: Math.sqrt(e / n) * 180 / Math.PI };
+  }
+  const d = run('diff', 2, 0), k = run('kalman', 2, 0);
+  check(d.falls > 5 && k.falls === 0 && k.rate < d.rate / 10, `2° noise: differencing drops the pole ${d.falls}× (rate error ${d.rate.toFixed(0)}°/s); the Kalman filter never does (${k.rate.toFixed(1)}°/s)`);
+  const W2 = C.logspace(0.01, 100, 600);
+  const pm = (logQ) => { const { m, ch } = lqg(logQ, 0.5), K = m.K([ch.gains]); return C.margins(C.freqResponse((s) => C.loopAt(m, K, 0, 0, s), W2)); };
+  const slow = pm(-2), fast = pm(4);
+  check(slow.gmDown > -6 && slow.pm < 30, `LQG trusting the model loses LQR's guarantee: PM ${slow.pm.toFixed(0)}°, gain can only drop ${slow.gmDown.toFixed(1)} dB`);
+  check(fast.pm > 55 && fast.gmDown < -9, `trusting the sensors recovers most of it: PM ${fast.pm.toFixed(0)}°, down ${fast.gmDown.toFixed(1)} dB`);
+  const { m, ch } = lqg(1, 0.5), cl = C.eig(C.closedA(m, m.K([ch.gains]))), lqrM = C.loopModel(pl, p, pl.controllers.lqr);
+  const want = C.eig(C.closedA(lqrM, lqrM.K([ch.gains]))).concat(m.obsPoles);
+  const sep = want.every((w) => cl.some((z) => Math.hypot(z[0] - w[0], z[1] - w[1]) < 1e-4));
+  check(sep, 'separation principle: closed-loop poles = LQR poles ∪ estimator poles');
+}
+
+console.log('8. page data');
+{
+  const dir = path.join(root, '_data/labs'), views = ['est-states', 'rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
   const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
   check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
   const missing = controls.filter((c) => !src.includes('CTRL.' + c + ' =') && !new RegExp('var CTRL = \\{[^}]*\\b' + c + ':').test(src));

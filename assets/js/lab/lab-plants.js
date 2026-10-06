@@ -226,6 +226,11 @@
     controllers: {
       lqr: { label: 'LQR', channels: [{ type: 'sf', input: 0, rows: [0, 1, 2, 3], names: ['kx', 'kv', 'kth', 'kw'],
              gains: { kx: 3.1, kv: 5.9, kth: 43.5, kw: 18.1 },
+             ranges: { kx: [-20, 20], kv: [-20, 20], kth: [-100, 100], kw: [-40, 40] } }] },
+      // LQR on an estimate: only the cart position and pole angle are measured; the rates come
+      // from differencing them or from a Kalman filter (State Estimation page).
+      lqg: { label: 'LQR', channels: [{ type: 'obs', input: 0, rows: [0, 1, 2, 3], names: ['kx', 'kv', 'kth', 'kw'], meas: [0, 2], rates: [[0, 1], [2, 3]],
+             gains: { kx: 3.1, kv: 5.9, kth: 43.5, kw: 18.1 },
              ranges: { kx: [-20, 20], kv: [-20, 20], kth: [-100, 100], kw: [-40, 40] } }] }
     },
     refs: [{ type: 'wave', amp: 1, omega: 2 * Math.PI / 12, label: 'x', unit: 'm', idx: 0 }],

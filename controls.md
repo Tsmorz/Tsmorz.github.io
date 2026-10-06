@@ -16,14 +16,11 @@ lab: controls
     the controller and let it try. The plots
     under each sim show the plant's states and what each term of the controller is contributing.
     For a problem past what PID can do, <a href="{{ '/controls/swingup/' | relative_url }}">swing
-    up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy. Then follow
-    the same sims through the rest of the craft: where models come from
-    (<a href="{{ '/controls/sysid/' | relative_url }}">system identification</a>), how to tell a loop is
-    stable and by how much (<a href="{{ '/controls/stability/' | relative_url }}">stability</a>), how the
-    steps fit together (<a href="{{ '/controls/design/' | relative_url }}">the design process</a>), and
-    newer ideas like safety filters and verified neural networks
-    (<a href="{{ '/controls/modern/' | relative_url }}">modern methods</a>).
+    up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy. The map below shows where to go
+    from here: the same sims carry you through models, stability, estimation and design.
   </p>
 </section>
+
+{% include learning-path.html mode="map" %}
 
 {% include lab.html %}

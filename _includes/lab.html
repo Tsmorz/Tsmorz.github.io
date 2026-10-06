@@ -7,6 +7,11 @@
 {%- endcomment -%}
 {%- assign L = site.data.labs[page.lab] -%}
 {%- assign base_href = 'href="' | append: site.baseurl | append: '/' -%}
+{%- comment -%} Where this page sits on the learning path: "You'll need" and the last "Next". {%- endcomment -%}
+{%- assign lp = site.data.learning_path -%}
+{%- assign here = nil -%}{%- assign next_step = nil -%}
+{%- for st in lp -%}{%- if st.url == page.url -%}{%- assign here = st -%}{%- assign next_step = lp[forloop.index] -%}{%- endif -%}{%- endfor -%}
+{%- unless page.url == '/controls/' %}{% include learning-path.html mode="strip" %}{% endunless %}
 <div class="wrap" style="padding-bottom:3rem">
   <div class="sim-tabs-row">
     <div class="sim-tabs" role="tablist" aria-label="Demo selector">
@@ -19,6 +24,7 @@
     {%- endfor %}
   </div>
   {%- for t in L.tabs %}
+  {%- assign is_first = forloop.first -%}{%- assign is_last = forloop.last -%}{%- assign idx = forloop.index -%}
   <section class="sim-section{% if forloop.first %} active{% endif %}" id="sec-{{ t.id }}" role="tabpanel" aria-labelledby="tab-{{ t.id }}">
     <div class="sim-layout">
       <div class="sim-canvas-wrap sim-stack">
@@ -36,6 +42,17 @@
       {{ t.note | replace: 'href="/', base_href }}
     </div>
     {%- endif %}
+    <div class="lab-next">
+      {%- if is_first and here and here.needs.size > 0 %}
+      <span class="lab-needs">You'll need:
+        {%- for nid in here.needs %}{% assign ns = lp | where: 'id', nid | first %} <a href="{{ ns.url | relative_url }}">{{ ns.title }}</a>{% unless forloop.last %},{% endunless %}{% endfor %}</span>
+      {%- endif %}
+      {%- unless is_last %}
+      <a class="lab-next-link" href="#{{ L.tabs[idx].id }}">Next: {{ L.tabs[idx].label }} &#8594;</a>
+      {%- else %}{% if next_step %}
+      <a class="lab-next-link" href="{{ next_step.url | relative_url }}">Next: {{ next_step.title }} &#8594;</a>
+      {%- endif %}{% endunless %}
+    </div>
   </section>
   {%- endfor %}
 </div>
@@ -51,6 +68,10 @@
 .lab-canvas{touch-action:none}
 .sim-panel .mode-toggle{margin-bottom:.6rem}
 .sim-panel .sim-btn{margin-bottom:.5rem}
+.lab-next{display:flex;flex-wrap:wrap;gap:.6rem 1.2rem;align-items:center;justify-content:space-between;margin:.8rem 0 0;font-size:.88rem}
+.lab-needs{color:var(--text-muted)}
+.lab-next-link{margin-left:auto;font-weight:600;padding:.35rem .8rem;border:1px solid var(--accent);border-radius:999px;text-decoration:none}
+.lab-next-link:hover{background:var(--accent);color:var(--bg)}
 .ctrl-row{display:flex;flex-direction:column;gap:.2rem;margin:.35rem 0}
 .ctrl-row label{display:flex;justify-content:space-between;align-items:baseline;font-size:.85rem;font-weight:550;color:var(--text-muted)}
 .ctrl-row label span{font-family:var(--mono);font-size:.82rem;color:var(--accent);font-weight:400}

@@ -1,0 +1,83 @@
+# /controls/estimation/ — state estimation on the /controls/ cart-pole: differencing, a Kalman
+# filter, and what estimation does to LQR's guaranteed margins (LQG).
+labs:
+  diff: { plant: cartpole, controller: lqg, estimator: diff, noise: 0.5 }
+  kf:   { plant: cartpole, controller: lqg, estimator: kalman, noise: 0.5, logQ: 0 }
+tabs:
+  - id: problem
+    label: The Problem
+    lab: diff
+    top: sim
+    row1: est-states
+    row2: contrib
+    noiseMax: 2
+    noiseUnit: '°'
+    fixedEstimator: "Rates by differencing: (this reading − last reading) ÷ 25 ms."
+    trust: false
+    controls: [estimator, noise, reference]
+    aria: ["The cart-pole balanced by LQR using rates computed by differencing noisy readings", "Measured and true pole angle, and estimated and true rates", "Each gain's contribution to the force"]
+    note_title: You can't control what you can't measure
+    note: |
+      <p>LQR needs all four states: cart position and velocity, pole angle and its rate. Real sensors rarely give
+      you all four. Here an encoder reads the cart's position and another reads the pole's angle, both with noise,
+      and the two rates have to be worked out. The obvious way is <strong>differencing</strong>: take this reading,
+      subtract the last one, divide by the 25&nbsp;ms between them. It's exactly how a derivative is defined, and
+      it's a disaster with noise. A reading that's off by half a degree, divided by 0.025&nbsp;s, is a rate that's off
+      by 20&nbsp;°/s, and the angle's tiny jitter (top lane) becomes a rate estimate (middle lane) buried in noise.</p>
+      <p>Raise the noise and watch it happen. The rate error climbs, the LQR multiplies that error by
+      k<sub>&#952;&#775;</sub>&#8201;=&#8201;18, the force (bottom) turns into chatter that hits the ±10&nbsp;N limit,
+      and at about 2° of noise the pole starts to fall. Nothing is wrong with the controller; it's being fed bad
+      numbers. The fix is an <strong>estimator</strong>: something that uses what you know about how the plant moves
+      to work out what you can't measure.</p>
+  - id: kalman
+    label: Kalman Filter
+    lab: kf
+    top: sim
+    row1: est-states
+    row2: contrib
+    noiseMax: 2
+    noiseUnit: '°'
+    controls: [estimator, noise, reference]
+    aria: ["The cart-pole balanced by LQR on Kalman-filtered estimates", "Measured and true pole angle, and estimated and true rates", "Each gain's contribution to the force"]
+    note_title: Predict, then correct
+    note: |
+      <p>A <strong>Kalman filter</strong> runs a copy of the plant's model alongside the real thing. Every 25&nbsp;ms
+      it does two things. <strong>Predict:</strong> push the estimate forward with the model and the force you just
+      applied (the model knows how a push moves the cart and tips the pole). <strong>Correct:</strong> compare the
+      predicted position and angle with what the sensors read, and nudge all four estimates toward agreement, the
+      unmeasured rates included, because the model knows how they're linked. How hard to nudge is the
+      <strong>Kalman gain</strong>, computed so the estimate's error is as small as it can be given how noisy the
+      sensors are and how far the model can be trusted.</p>
+      <p>Switch between <strong>Differencing</strong> and <strong>Kalman filter</strong>. At 0.5° of noise the rate
+      error drops from about 40 to about 2&nbsp;°/s and the force from chatter to a smooth push; at 2° differencing
+      drops the pole every few seconds and the filter never does. The <strong>trust</strong> slider is the filter's
+      one real design choice. Toward <em>model</em> it smooths hard and lags if the plant does something the model
+      didn't expect; toward <em>sensors</em> it reacts at once and lets more noise through. Any gain that makes the
+      estimate converge is an <strong>observer</strong> (Luenberger's name); the Kalman gain is the best one for a
+      given noise level.</p>
+  - id: lqg
+    label: LQG and Margins
+    lab: kf
+    top: analysis
+    analysis: [poles, nyquist, bode]
+    row1: sim
+    row2: est-states
+    compareLqr: true
+    noiseMax: 2
+    noiseUnit: '°'
+    controls: [estimator, view, noise, margins]
+    aria: ["Poles, Nyquist or Bode plot of the loop with the estimator in it", "The cart-pole with LQR on Kalman estimates", "Estimated and true rates"]
+    note_title: Estimation costs robustness — the LQG lesson
+    note: |
+      <p>LQR plus a Kalman filter is called <strong>LQG</strong>, and two facts about it are worth knowing. The good
+      one is the <strong>separation principle</strong>: you can design the controller and the estimator separately,
+      and the closed loop's poles are simply both sets together. In the <strong>Poles</strong> view all eight
+      closed-loop poles are dots; the four ringed in orange are the filter's and the other four are the LQR's. Slide
+      the trust and only the ringed ones move.</p>
+      <p>The bad one surprised everyone in 1978. The <a href="/controls/stability/#lqr">LQR page</a> showed that with
+      every state measured, LQR guarantees at least 60° of phase margin and a gain that can halve. Put a filter in
+      the loop and those guarantees are gone: John Doyle's paper on it, "Guaranteed margins for LQG regulators", has
+      a three-word abstract: "There are none." Watch the panel: trusting the model gives only about 20° of phase
+      margin and a gain that can barely drop 5&nbsp;dB, while trusting the sensors recovers most of LQR's margins,
+      and lets noise back in. Choosing that trade-off on purpose has a name, <strong>loop transfer recovery</strong>,
+      and it's why the trust setting is a robustness decision, not just a noise one.</p>

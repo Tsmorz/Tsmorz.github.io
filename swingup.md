@@ -16,6 +16,8 @@ permalink: /controls/swingup/
   </p>
 </section>
 
+{% include learning-path.html mode="strip" %}
+
 <div class="wrap" style="padding-bottom:3rem">
   <div class="sim-layout su-layout">
     <div class="sim-canvas-wrap sim-stack">

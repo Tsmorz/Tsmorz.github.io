@@ -1,0 +1,38 @@
+# The order the /controls/ pages are meant to be read in. _includes/learning-path.html draws it
+# as a map on /controls/ and as a strip on every page; _includes/lab.html uses it for each page's
+# last "Next:" link and for "You'll need:" on its first tab. `needs` lists step ids.
+- id: sims
+  title: Play with the sims
+  url: /controls/
+  blurb: Tune PID on a mass-spring, tilt table and aircraft, and state feedback on a cart-pole.
+  needs: []
+- id: sysid
+  title: Where models come from
+  url: /controls/sysid/
+  blurb: Push on a plant, record it, and fit a model, five different ways.
+  needs: [sims]
+- id: stability
+  title: Is it stable, and by how much?
+  url: /controls/stability/
+  blurb: Bode, Nyquist and poles of the same loops, margins, and dragging poles.
+  needs: [sims]
+- id: estimation
+  title: Estimating what you can't measure
+  url: /controls/estimation/
+  blurb: Noisy sensors, the Kalman filter, and why LQG loses LQR's margins.
+  needs: [sims, stability]
+- id: design
+  title: The design process
+  url: /controls/design/
+  blurb: One plant from requirements to a tested controller, step by step.
+  needs: [sysid, stability]
+- id: modern
+  title: Modern methods
+  url: /controls/modern/
+  blurb: Safety filters, verifying a neural network, and loops that interact.
+  needs: [stability]
+- id: swingup
+  title: Beyond linear control
+  url: /controls/swingup/
+  blurb: Swing a double pendulum up by hand, or watch a learned policy do it.
+  needs: [sims]

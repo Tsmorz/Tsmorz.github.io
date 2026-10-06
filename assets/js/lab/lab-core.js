@@ -126,6 +126,66 @@
     return { A: A, B: B };
   }
 
+  /* ---------------- state estimation: steady-state Kalman gain ----------------
+     Continuous-time filter for ẋ = Ax + Bu + w, y = Cx + v, with intensities Qw (process) and
+     R (sensor). P solves AP + PAᵀ − PCᵀR⁻¹CP + Qw = 0, found by running the Riccati
+     equation forward until it stops changing; the gain is Lo = PCᵀR⁻¹. */
+  function kalmanGain(A, C, Qw, R, hStep, B) {
+    // Robust route: discretise at a short step h and iterate the discrete Riccati recursion
+    //   P ← Ad P Adᵀ + Qw h − Ad P Cᵀ (C P Cᵀ + R/h)⁻¹ C P Adᵀ,
+    // which converges where integrating the continuous equation goes stiff (precise sensors).
+    var n = A.length, p = C.length, h = hStep || 0.002, i, j;
+    function mul(X, Y) { return X.map(function (r) { return Y[0].map(function (_, b) { var sm = 0; for (var q = 0; q < Y.length; q++) sm += r[q] * Y[q][b]; return sm; }); }); }
+    function tr(X) { return X[0].map(function (_, a) { return X.map(function (r) { return r[a]; }); }); }
+    function add(X, Y, k) { return X.map(function (r, a) { return r.map(function (v, b) { return v + (k === undefined ? 1 : k) * Y[a][b]; }); }); }
+    function inv(M) {                                   // small Gauss–Jordan inverse
+      var m = M.length, a = M.map(function (r, x) { return r.concat(r.map(function (_, y) { return x === y ? 1 : 0; })); });
+      for (var c = 0; c < m; c++) {
+        var pv = c; for (var r2 = c + 1; r2 < m; r2++) if (Math.abs(a[r2][c]) > Math.abs(a[pv][c])) pv = r2;
+        var t = a[pv]; a[pv] = a[c]; a[c] = t; var d = a[c][c];
+        for (var y = 0; y < 2 * m; y++) a[c][y] /= d;
+        for (r2 = 0; r2 < m; r2++) if (r2 !== c) { var f = a[r2][c]; for (y = 0; y < 2 * m; y++) a[r2][y] -= f * a[c][y]; }
+      }
+      return a.map(function (r) { return r.slice(m); });
+    }
+    var Ad = zeros(n, n), term = zeros(n, n);          // Ad = e^{Ah} by series
+    for (i = 0; i < n; i++) { Ad[i][i] = 1; term[i][i] = 1; }
+    for (var k = 1; k < 12; k++) { term = mul(term, A).map(function (r) { return r.map(function (v) { return v * h / k; }); }); Ad = add(Ad, term); }
+    var Qd = Qw.map(function (r) { return r.map(function (v) { return v * h; }); }), Rd = R.map(function (r) { return r.map(function (v) { return v / h; }); });
+    var P = zeros(n, n), Ct = tr(C);
+    for (i = 0; i < n; i++) P[i][i] = 1;
+    for (var it = 0; it < 200000; it++) {
+      var APA = mul(mul(Ad, P), tr(Ad)), APC = mul(mul(Ad, P), Ct), S = add(mul(mul(C, P), Ct), Rd);
+      var Pn = add(add(APA, Qd), mul(mul(APC, inv(S)), tr(APC)), -1), dmax = 0, mag = 0;
+      for (i = 0; i < n; i++) for (j = 0; j < n; j++) { dmax = Math.max(dmax, Math.abs(Pn[i][j] - P[i][j])); mag = Math.max(mag, Math.abs(Pn[i][j])); }
+      P = Pn.map(function (r, a) { return r.map(function (v, b) { return (v + Pn[b][a]) / 2; }); });
+      if (dmax < 1e-13 * (1 + mag)) break;
+    }
+    var Rinv = inv(R), out = { L: mul(mul(P, Ct), Rinv), P: P };
+    if (hStep) {
+      // Discrete filter at the controller's own rate: predict x̂⁻ = Ad x̂ + Bd u, then correct
+      // x̂ = x̂⁻ + Kd (y − C x̂⁻), with Kd = P⁻Cᵀ(CP⁻Cᵀ + R/h)⁻¹ from the same recursion.
+      out.Ad = Ad; out.Kd = mul(mul(P, Ct), inv(add(mul(mul(C, P), Ct), Rd)));
+      var Bd = zeros(n, 1), tk = zeros(n, n); for (i = 0; i < n; i++) tk[i][i] = h;      // ∫₀ʰ e^{As} ds by series
+      var Sint = tk.map(function (r) { return r.slice(); });
+      for (k = 1; k < 12; k++) { tk = mul(tk, A).map(function (r) { return r.map(function (v) { return v * h / (k + 1); }); }); Sint = add(Sint, tk); }
+      out.Bd = mul(Sint, B.map(function (r) { return [r[0]]; })).map(function (r) { return r[0]; });
+    }
+    return out;
+  }
+
+  // Build a lab's estimator: sensors measure cart position and pole angle with noise σ (as
+  // the plant scales it); the process noise is a random force of intensity 10^logQ.
+  function buildEstimator(plant, p, ch, noise, logQ, dt) {
+    var lin = linearize(plant, p), n = plant.n, sig = Math.max(noise, 0.05);
+    var Cm = ch.meas.map(function (si) { var r = zeros(1, n)[0]; r[si] = 1; return r; });
+    var R = ch.meas.map(function (si, a) { return ch.meas.map(function (_, b) { return a === b ? Math.pow(plant.noise[si] * sig, 2) : 0; }); });
+    var B = lin.B.map(function (r) { return r[ch.input]; }), q = Math.pow(10, logQ);
+    var Qw = B.map(function (a) { return B.map(function (b) { return q * a * b + 1e-9; }); });
+    var cont = kalmanGain(lin.A, Cm, Qw, R), disc = kalmanGain(lin.A, Cm, Qw, R, dt, lin.B.map(function (r) { return [r[ch.input]]; }));
+    return { L: cont.L, P: cont.P, Ad: disc.Ad, Bd: disc.Bd, Kd: disc.Kd };
+  }
+
   /* ---------------- the closed loop as one linear model ----------------
      Controller channels (lab.controller.channels), each driving one plant input:
        { type: 'pid', input, out (state index), sign, gains: {kp, ki, kd} }
@@ -136,6 +196,28 @@
      that's what makes the loop gain, the root locus and pole placement one-liners. */
   function loopModel(plant, p, ctrl) {
     var lin = linearize(plant, p), n = plant.n, nz = 0;
+    // State feedback on an observer's estimate (LQG): the controller is a dynamic system from
+    // the measured outputs to u. Augmented state [x, x̂]:
+    //   ẋ = Ax + Bu,   x̂̇ = A x̂ + Bu + Lo(Cx − Cx̂),   u = K x̂   (deviation variables)
+    var ob = ctrl.channels.filter(function (ch) { return ch.type === 'obs'; })[0];
+    if (ob) {
+      var N2 = 2 * n, Ao = zeros(N2, N2), Bo = zeros(N2, plant.m), Lo = ob.Lo, Cm = ob.meas, ii, jj;
+      for (ii = 0; ii < n; ii++) for (jj = 0; jj < n; jj++) { Ao[ii][jj] = lin.A[ii][jj]; Ao[n + ii][n + jj] = lin.A[ii][jj]; }
+      for (ii = 0; ii < n; ii++) {
+        for (var q = 0; q < Cm.length; q++) { Ao[n + ii][Cm[q]] += Lo[ii][q]; Ao[n + ii][n + Cm[q]] -= Lo[ii][q]; }
+        for (jj = 0; jj < plant.m; jj++) Bo[ii][jj] = lin.B[ii][jj];
+      }
+      // the observer's own copy of u = K x̂ (K enters through the feedback rows below)
+      var featsO = [], gF = {};
+      ob.rows.forEach(function (si, gi) { var r = zeros(1, N2)[0]; r[n + si] = 1; gF[ob.names[gi]] = r; featsO.push({ ch: 0, input: ob.input, name: ob.names[gi], F: r }); });
+      var model = { na: N2, n: n, A: Ao, B: Bo, lin: lin, chans: [{ input: ob.input, gainsF: gF }], feats: featsO, obs: true,
+        K: function (gl, scale) { var r = zeros(1, N2)[0], sc = scale ? scale[0] : 1; Object.keys(gF).forEach(function (g) { gF[g].forEach(function (f, k) { r[k] += sc * (gl[0][g] || 0) * f; }); }); return [r]; } };
+      // The observer copies u internally: add B·K to its block (so the loop cut is at the plant).
+      var Kr = model.K([ob.gains])[0];
+      for (ii = 0; ii < n; ii++) for (jj = 0; jj < N2; jj++) Ao[n + ii][jj] += lin.B[ii][ob.input] * Kr[jj];
+      model.obsPoles = eig(lin.A.map(function (r, a) { return r.map(function (v, b) { var s2 = v; for (var q2 = 0; q2 < Cm.length; q2++) if (Cm[q2] === b) s2 -= Lo[a][q2]; return s2; }); }));
+      return model;
+    }
     ctrl.channels.forEach(function (ch) { if (ch.type === 'pid' && ch.gains.ki !== undefined) nz++; });
     var na = n + nz, Aa = zeros(na, na), Ba = zeros(na, plant.m), feats = [], zi = n, i, j;
     for (i = 0; i < n; i++) { for (j = 0; j < n; j++) Aa[i][j] = lin.A[i][j]; for (j = 0; j < plant.m; j++) Ba[i][j] = lin.B[i][j]; }
@@ -676,7 +758,7 @@
     var sim = { t: 0, x: null, z: [], prevY: [], prevE: [], buf: [], u: plant.u0(lab.p), uReq: null, cbfActive: false, failed: false, contrib: [] };
     sim.reset = function (x) {
       sim.t = 0; sim.x = x || plant.start(lab.p, rng); sim.z = lab.controller.channels.map(function () { return 0; });
-      sim.prevY = null; sim.prevE = []; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
+      sim.prevY = null; sim.prevE = []; sim.xhat = null; sim.prevMeas = null; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
     };
     sim.reset();
     // One control period: measure, compute, filter, then integrate the plant.
@@ -700,6 +782,24 @@
           sim.prevE[ci] = e;
           terms = { p: ch.sign * (g.kp || 0) * e, i: ch.sign * (g.ki || 0) * sim.z[ci], d: ch.sign * (g.kd || 0) * dterm };
           du = terms.p + terms.i + terms.d;
+        } else if (ch.type === 'obs') {
+          // Only the listed outputs are measured. Rates come from differencing them, or from
+          // the Kalman filter (lab.estimator), whose estimate the state feedback then uses.
+          var est = lab.est, xh = sim.xhat || (sim.xhat = x0.map(function () { return 0; }));
+          if (lab.estimator === 'kalman' && est) {
+            var uPrev = sim.u[ch.input] - u0[ch.input];
+            var xp = est.Ad.map(function (row, a) { var s3 = est.Bd[a] * uPrev; for (var b = 0; b < row.length; b++) s3 += row[b] * xh[b]; return s3; });
+            var innov = ch.meas.map(function (si) { return (meas[si] - x0[si]) - xp[si]; });
+            xh = xp.map(function (v, a) { var s4 = v; for (var q3 = 0; q3 < innov.length; q3++) s4 += est.Kd[a][q3] * innov[q3]; return s4; });
+          } else {
+            var pm = sim.prevMeas || meas;
+            xh = x0.map(function () { return 0; });
+            ch.meas.forEach(function (si) { xh[si] = meas[si] - x0[si]; });
+            (ch.rates || []).forEach(function (pr) { xh[pr[1]] = (meas[pr[0]] - pm[pr[0]]) / dt; });
+          }
+          sim.xhat = xh; sim.prevMeas = meas.slice();
+          var dv = ch.rows.map(function (si, k) { return xh[si] - (k === 0 ? r[ci] : k === 1 ? rr[ci] : 0); });
+          terms = {}; du = 0; ch.names.forEach(function (nm, k) { terms[nm] = (g[nm] || 0) * dv[k]; du += terms[nm]; });
         } else if (ch.type === 'sf') {
           var dev = ch.rows.map(function (si, k) { return meas[si] - x0[si] - (k === 0 ? r[ci] : k === 1 ? rr[ci] : 0); });
           terms = {};
@@ -752,7 +852,7 @@
     arxFit: arxFit, arxFitIV: arxFitIV, arxSim: arxSim, arxFreq: arxFreq, arxToMsd: arxToMsd,
     experiment: experiment, stepEstimate: stepEstimate, freqPoint: freqPoint, levyFit: levyFit, greyBoxFit: greyBoxFit,
     simMsd: simMsd, fitPercent: fitPercent, svd: svd, firFit: firFit, era: era, ssSim: ssSim, ssToMsd: ssToMsd,
-    createSim: createSim, refValue: refValue, gaussian: gaussian
+    kalmanGain: kalmanGain, buildEstimator: buildEstimator, createSim: createSim, refValue: refValue, gaussian: gaussian
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = LabCore;
   root.LabCore = LabCore;

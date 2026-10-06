@@ -7,9 +7,9 @@
 // Views:    sim, time, states, contrib, analysis (toggle of bode | nyquist | poles), step, cbf,
 //           verify-map, verify-proof, mimo, sysid-replay, sysid-data, sysid-bode, checklist,
 //           id-replay, id-step, id-freq, id-era, id-grey, id-result, id-compare, id-validate,
-//           rec-data, rec-fit
+//           rec-data, rec-fit, est-states
 // Controls: mode, hint, freq, view, channel, reference, gains, controller, delay, noise, limit,
-//           margins, cbf, verify, mimo, sysid, idrun, record, requirements, score, reset, restart
+//           margins, cbf, verify, mimo, sysid, idrun, record, estimator, requirements, score, reset, restart
 // All maths is in LabCore (lab-core.js); plants and their pictures in LabPlants.
 (function () {
   'use strict';
@@ -96,11 +96,13 @@
       req: lc.requirements ? Object.assign({}, lc.requirements) : null,
       useNet: false, net: null, wantsNet: !!lc.net, dirty: true, acc: 0, failT: null, hits: 0, cbfFrames: 0, frames: 0,
       sysid: lc.sysid ? Object.assign({ exc: 'chirp', noise: 0.01, T: 20, order: 2 }, lc.sysid) : null,
-      ui: [], uiSync: [], manual: false, drag: null, trials: 0, ring: [], best: null, adjusts: 0
+      ui: [], uiSync: [], manual: false, drag: null, trials: 0, ring: [], best: null, adjusts: 0,
+      estimator: lc.estimator || null, logQ: lc.logQ !== undefined ? lc.logQ : 0, estDirty: true, estAt: 0
     };
     lab.manualInput = function (sim) { return lab.plant.manual ? lab.plant.manual(lab.drag, sim, lab) : null; };
     if (lc.limit) lab.p.Fmax = lc.limit;
     lab.sim = C.createSim(plant, lab);
+    if (lab.estimator) lab.est = C.buildEstimator(plant, lab.pm, ctrl.channels[0], lab.noise, lab.logQ, plant.dt);
     lab.hist = { r: [], y: [], u: [], x: [], s: [], c: {} };
     labs[id] = lab;
   });
@@ -128,7 +130,11 @@
       var Lf = function (s) { return C.loopAt(model, [row], 0, 0, s); };
       an.ch.push({ L: Lf, fr: C.freqResponse(Lf, GRID), nyq: NYQ.map(function (w) { return Lf([0, w]); }) });
     } else {
-      var m = C.loopModel(plant, lab.pm, lab.useNet && lab.net ? { channels: [lab.controller.channels[0]] } : lab.controller);
+      var ctl = lab.useNet && lab.net ? { channels: [lab.controller.channels[0]] } : lab.controller;
+      if (ctl.channels[0].type === 'obs') {          // LQG: the model needs the current gains and filter
+        ctl = { channels: [Object.assign({}, ctl.channels[0], { gains: Object.assign({}, lab.gains[0]), Lo: lab.est ? lab.est.L : ctl.channels[0].Lo })] };
+      }
+      var m = C.loopModel(plant, lab.pm, ctl);
       var K = m.K(effGains(lab), lab.scale);
       an.model = m; an.K = K;
       lab.controller.channels.forEach(function (ch, ci) {
@@ -142,6 +148,7 @@
       var num = C.charPoly(C.closedA(m, K)).map(function (v, i) { return v - C.charPoly(m.A)[i]; });
       an.num = num; an.zeros = lab.controller.channels.length === 1 && num.some(function (v) { return Math.abs(v) > 1e-9; }) ? C.roots(num) : [];
       an.placeable = C.placeable(m) && !(lab.delay > 0) && !lab.useNet;
+      an.obsPoles = m.obsPoles || null;
     }
     lab.an = an; lab.dirty = false;
     return an;
@@ -434,6 +441,7 @@
       text(ctx, 'jω', px + 8, Math.max(py, b.y0 + 5) - 6, col.viz2, { size: 11, mono: true });
     } else {
       an.cl.forEach(function (z) { if (!f.inside(z)) return; ctx.fillStyle = z[0] < -1e-6 ? col.accent : col.bad; ctx.beginPath(); ctx.arc(f.X(z[0]), f.Y(z[1]), 6.5, 0, 7); ctx.fill(); ctx.strokeStyle = col.bg; ctx.lineWidth = 1.5; ctx.stroke(); });
+      if (an.obsPoles) an.obsPoles.forEach(function (z) { if (!f.inside(z)) return; ctx.strokeStyle = col.viz2; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(f.X(z[0]), f.Y(z[1]), 10, 0, 7); ctx.stroke(); });
     }
     ctx.restore();
     var items = [];
@@ -445,8 +453,10 @@
     } else {
       var slow = null; an.cl.forEach(function (z) { if (!slow || z[0] > slow[0]) slow = z; });
       items.push(['1 + L(s) = 0  ⇒  ' + C.polyStr(C.charPoly(C.closedAWithDelay(an.model, an.K, lab.delay))) + ' = 0', col.text, '400']);
-      items.push(an.placeable ? ['Drag a closed-loop pole ●: the gains are solved so the poles land where you put them.', col.viz2]
+      if (an.obsPoles) items.push(['Separation principle: the closed loop\'s poles are the 4 LQR poles plus the 4 estimator poles (ringed, orange). Trusting the sensors more moves the rings left.', col.viz2]);
+      else items.push(an.placeable ? ['Drag a closed-loop pole ●: the gains are solved so the poles land where you put them.', col.viz2]
         : [lab.delay > 0 ? 'Delay on: poles use a Padé approximation and can\'t be dragged.' : 'More gains than one input can place: drag the gain sliders.', col.muted, '400']);
+      if (an.obsPoles) items.length = Math.min(items.length, 2);
       if (slow) items.push(slow[0] >= -1e-6 ? ['A pole in the right half-plane: the response grows like e^(' + fmt(slow[0], 2) + 't).', col.bad]
         : ['Slowest pole σ = ' + fmt(slow[0], 2) + ': settles in about ' + fmt(4 / -slow[0], 4 / -slow[0] < 10 ? 1 : 0) + ' s' + (Math.abs(slow[1]) > 0.05 ? ', ringing at ' + fmt(Math.abs(slow[1]), 1) + ' rad/s.' : '.'), col.accent]);
       if (c.W >= 560) items.push(['Faint trail: the root locus, every gain scaled 0–3×.', col.muted, '400']);
@@ -1093,6 +1103,63 @@
     button(panel, 'Identify', function () { identifyRecording(lab); });
   };
 
+  /* ---- state estimation ---- */
+  function updateEstimator(lab) {
+    var ch = lab.controller.channels[0];
+    lab.est = C.buildEstimator(lab.plant, lab.pm, ch, lab.noise, lab.logQ, lab.plant.dt);
+    lab.estDirty = false; lab.estAt = performance.now(); changed(lab);
+  }
+  // True vs estimated rates, and the noisy angle the estimator is given.
+  V['est-states'] = function (c, lab) {
+    var ctx = c.ctx, E = lab.hist.est || {}, lanes = [
+      ['Pole angle θ (°): measured vs true', E.thm, E.th, col.muted, col.text],
+      ['Pole rate θ̇ (°/s): estimate vs true', E.wh, E.w, col.viz2, col.text],
+      ['Cart velocity ẋ (m/s): estimate vs true', E.vh, E.v, col.viz2, col.text]], n = lanes.length, lh = (c.H - 6) / n, x0 = 10, x1 = c.W - 10;
+    lanes.forEach(function (ln, k) {
+      var a = ln[1] || [], b = ln[2] || [], y0 = 4 + k * lh, y1 = y0 + lh - 6, m = 1e-6;
+      b.forEach(function (v) { m = Math.max(m, Math.abs(v)); }); a.forEach(function (v) { m = Math.max(m, Math.min(Math.abs(v), 4 * m + 1e-6)); }); m *= 1.15;
+      var Y = function (v) { return (y0 + y1) / 2 + 8 - clamp(v / m, -1, 1) * (y1 - y0 - 16) / 2; };
+      [[a, ln[3], k === 0 ? 1 : 1.6], [b, ln[4], 1.4]].forEach(function (sr, si) {
+        ctx.strokeStyle = sr[1]; ctx.lineWidth = sr[2]; ctx.setLineDash(si === 1 ? [5, 3] : []); ctx.beginPath();
+        sr[0].forEach(function (v, i) { var x = x0 + (i + CAP - sr[0].length) / (CAP - 1) * (x1 - x0); if (i) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke(); ctx.setLineDash([]);
+      });
+      var err = 0; a.forEach(function (v, i) { err += Math.pow(v - (b[i] || 0), 2); }); err = a.length ? Math.sqrt(err / a.length) : 0;
+      text(ctx, ln[0], x0 + 4, y0, col.text, { size: 11 });
+      if (a.length) text(ctx, 'error ' + fmtG(err), x1 - 4, y0, k === 0 ? col.muted : err > 0.25 * m ? col.bad : col.accent, { size: 11, mono: true, align: 'right' });
+    });
+  };
+  function estStats(lab) {
+    var E = lab.hist.est || {}, w = E.w || [], wh = E.wh || [], u = lab.hist.u[0] || [], e = 0, uu = 0;
+    w.forEach(function (v, i) { e += Math.pow(wh[i] - v, 2); }); u.forEach(function (v) { uu += v * v; });
+    return { rate: w.length ? Math.sqrt(e / w.length) : null, force: u.length ? Math.sqrt(uu / u.length) : null };
+  }
+  var ctrlEstimator = function (panel, lab, tab) {
+    h3(panel, 'Where the rates come from');
+    if (!tab.fixedEstimator) toggle(panel, 'Estimator', [['diff', 'Differencing'], ['kalman', 'Kalman filter']], lab.estimator, function (v) { lab.estimator = v; lab.sim.xhat = null; });
+    else hint(panel, tab.fixedEstimator);
+    if (tab.trust !== false) {
+      slider(panel, tab.id + '-q', 'Trust: model ↔ sensors', -2, 4, 0.1, lab.logQ, function (v) { return v < 0.5 ? 'model' : v > 2.5 ? 'sensors' : 'balanced'; }, function (v) { lab.logQ = v; lab.estDirty = true; });
+      hint(panel, 'Left: the filter trusts its model and smooths hard. Right: it believes each new reading and reacts fast.');
+    }
+    var t = telemetry(panel, [['r', 'Rate error'], ['f', 'Force (RMS)'], ['falls', 'Falls']].concat(tab.compareLqr ? [['lqr', 'LQR, all measured'], ['now', 'With this estimator']] : []));
+    var lqrM = null;
+    if (tab.compareLqr) {
+      var lp = lab.plant, mm = C.loopModel(lp, lab.pm, lp.controllers.lqr), K = mm.K([lab.gains[0]]);
+      lqrM = C.margins(C.freqResponse(function (s2) { return C.loopAt(mm, K, 0, 0, s2); }, GRID));
+    }
+    tab.syncEst = function () {
+      var st = estStats(lab);
+      setV(t.r, st.rate === null ? '-' : fmt(st.rate, st.rate < 10 ? 1 : 0) + '°/s', st.rate > 20);
+      setV(t.f, st.force === null ? '-' : fmt(st.force, 1) + ' N', st.force > 5);
+      setV(t.falls, String(lab.trials), lab.trials > 0);
+      if (lqrM) {
+        setV(t.lqr, fmt(lqrM.pm, 0) + '°, ' + fmt(lqrM.gmDown, 1) + ' dB');
+        var an = analyze(lab), mg = an.ch[0].mg;
+        setV(t.now, an.stable && mg.pm !== null ? fmt(mg.pm, 0) + '°, ' + (mg.gmDown === null ? '∞' : fmt(mg.gmDown, 1)) + ' dB' : 'unstable', !an.stable || mg.gmDown > -6);
+      }
+    };
+  };
+
   /* ---- the design checklist ---- */
   V.checklist = function (c, lab, tab) {
     var ctx = c.ctx, r = lab.req, an = analyze(lab), s = stepResponse(lab, tab.stepT || 12), mg = an.ch[0] && an.ch[0].mg;
@@ -1146,7 +1213,7 @@
   }
   function setV(span, v, bad) { if (!span) return; if (span.textContent !== v) span.textContent = v; span.classList.toggle('lab-bad', !!bad); }
 
-  var CTRL = { record: ctrlRecord };
+  var CTRL = { record: ctrlRecord, estimator: ctrlEstimator };
   CTRL.freq = function (panel, lab, tab) {
     h3(panel, tab.shake ? 'Shake it' : 'Frequency');
     var a = Math.log10(GRID[0]), b = Math.log10(GRID[GRID.length - 1]);
@@ -1204,7 +1271,7 @@
   };
   CTRL.noise = function (panel, lab, tab) {
     var mx = tab.noiseMax || 0.05;
-    slider(panel, tab.id + '-noise', 'Sensor noise σ', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; changed(lab); });
+    slider(panel, tab.id + '-noise', 'Sensor noise σ', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; lab.estDirty = true; changed(lab); });
   };
   CTRL.limit = function (panel, lab, tab) {
     slider(panel, tab.id + '-limit', 'Force limit', 2, 60, 1, Math.min(lab.p.Fmax, 60), function (v) { return v >= 60 ? 'none' : fmt(v, 0) + ' N'; }, function (v) { lab.p.Fmax = v >= 60 ? 1e9 : v; changed(lab); });
@@ -1360,7 +1427,12 @@
   function activate(i) { tabEls.forEach(function (t, k) { t.classList.toggle('active', k === i); t.setAttribute('aria-selected', k === i ? 'true' : 'false'); }); secEls.forEach(function (s, k) { s.classList.toggle('active', k === i); }); }
   function fromHash() { var h = location.hash.slice(1), idx = 0; CFG.tabs.forEach(function (t, i) { if (t.id === h) idx = i; }); activate(idx); }
   tabEls.forEach(function (t, i) { t.addEventListener('click', function () { activate(i); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
-  window.addEventListener('hashchange', fromHash); fromHash();
+  window.addEventListener('hashchange', function () {
+    fromHash();
+    var row = document.querySelector('.sim-tabs-row');            // "Next:" links live at the bottom
+    if (row) row.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  });
+  fromHash();
 
   var tabs = CFG.tabs.map(function (tc) {
     var tab = Object.assign({}, tc), lab = labs[tc.lab];
@@ -1396,6 +1468,10 @@
       if (lab.sim.failed && lab.failT === null) { lab.failT = lab.sim.t; lab.trials++; lab.ring = []; }
       lab.tick = (lab.tick || 0) + 1;
       if (lab.rec) recordTick(lab);
+      if (lab.sim.xhat && lab.tick % every === 0) {
+        var E = lab.hist.est || (lab.hist.est = { th: [], thm: [], w: [], wh: [], v: [], vh: [] }), xs3 = lab.sim.x, xh3 = lab.sim.xhat, pm3 = lab.sim.prevMeas || xs3, r2d = 180 / Math.PI;
+        push(E.th, xs3[2] * r2d, CAP); push(E.thm, pm3[2] * r2d, CAP); push(E.w, xs3[3] * r2d, CAP); push(E.wh, xh3[3] * r2d, CAP); push(E.v, xs3[1], CAP); push(E.vh, xh3[1], CAP);
+      }
       if (lab.tick % every === 0) {
         var x0 = plant.x0(lab.p), u0 = plant.u0(lab.p), xs = lab.sim.x;
         lab.refs.forEach(function (r, ci) { (lab.hist.y[ci] = lab.hist.y[ci] || []); push(lab.hist.y[ci], xs[r.idx] - x0[r.idx], CAP); (lab.hist.r[ci] = lab.hist.r[ci] || []); push(lab.hist.r[ci], C.refValue(r, lab.sim.t), CAP); });
@@ -1428,8 +1504,9 @@
       var lab = tab.lab;
       if (tab.sweeping) { lab.w *= Math.pow(GRID[GRID.length - 1] / GRID[0], dt / 12); if (lab.w >= GRID[GRID.length - 1]) { lab.w = GRID[GRID.length - 1]; tab.sweeping = false; } }
       if (tab.syncFreq) tab.syncFreq();
+      if (lab.estimator && lab.estDirty && performance.now() - lab.estAt > 150) updateEstimator(lab);
       if (lab.sysid && lab.sysid.data) lab.sysid.replayT = Math.min(lab.sysid.replayT + dt * 4, lab.sysid.T);
-      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'cbf' || v === 'verify-map' || v === 'states' || v === 'contrib'; });
+      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'cbf' || v === 'verify-map' || v === 'states' || v === 'contrib' || v === 'est-states'; });
       if (simShown) stepLab(lab, dt, tab);
       [tab.top, tab.row1, tab.row2].forEach(function (vname, k) {
         var cv = tab.canvases[k]; if (!cv || !V[vname]) return;
@@ -1438,7 +1515,7 @@
       if (tab.method === 'compare' && !idState(lab).compare && lab.sysid && lab.sysid.msd) {
         ['step', 'freq', 'era', 'grey'].forEach(function (mm) { if (!idState(lab)[mm]) runId(lab, mm); }); runId(lab, 'compare');
       }
-      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec'].forEach(function (f) { if (tab[f]) tab[f](); });
+      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec', 'syncEst'].forEach(function (f) { if (tab[f]) tab[f](); });
     });
     requestAnimationFrame(frame);
   }
