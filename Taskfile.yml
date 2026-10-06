@@ -66,6 +66,11 @@ tasks:
     cmds:
       - script/test-swingup
 
+  check:bode:
+    desc: Check the Bode page's maths (margins, Nyquist stability vs eigenvalues, cart-pole model) (Node, no build)
+    cmds:
+      - script/test-bode
+
   check:links:
     desc: Check internal links with html-proofer
     cmds:
@@ -76,6 +81,7 @@ tasks:
     cmds:
       - task: check:data
       - task: check:swingup
+      - task: check:bode
       - task: build
       - task: check:js
       - task: check:links

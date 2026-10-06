@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+// Check the maths behind /controls/bode/ (assets/js/bode.js, BodeCore):
+//   1. the cart-pole A and B match the matrices printed on /controls/
+//   2. the LQR preset shows LQR's textbook guarantees (PM ≥ 60°, GM ≥ 6 dB down, ∞ up)
+//   3. the Nyquist stability count agrees with closed-loop eigenvalues for random gains
+//      (PID and state feedback, no delay, where eigenvalues are exact)
+//   4. delay: adding just under the reported delay margin stays stable, just over goes unstable
+// Pure Node, no dependencies, no build.
+
+'use strict';
+const path = require('path');
+const B = require(path.resolve(__dirname, '..', 'assets/js/bode.js'));
+
+let failed = false;
+function check(ok, msg) {
+  console.log((ok ? '  ok   ' : '  FAIL ') + msg);
+  if (!ok) failed = true;
+}
+
+// Seeded PRNG so a failure is reproducible.
+let seed = 12345;
+function rand() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+
+const W = B.logspace(0.05, 100, 500);
+function report(kind, p) { return B.summary(B.margins(B.freqResponse(B.LOOPS[kind], p, W))); }
+function rhpEig(A) { return B.polyRoots(B.charPoly(A)).filter((r) => r[0] > 1e-3).length; }
+
+console.log('1. cart-pole model matches /controls/');
+const printedA = [[0, 1, 0, 0], [0, -2.13, -5.89, 0], [0, 0, 0, 1], [0, 1.07, 7.85, 0]];
+const printedB = [0, 2.67, 0, -1.33];
+let maxErr = 0;
+B.CP_AB.A.forEach((r, i) => r.forEach((v, j) => { maxErr = Math.max(maxErr, Math.abs(v - printedA[i][j])); }));
+B.CP_AB.B.forEach((v, i) => { maxErr = Math.max(maxErr, Math.abs(v - printedB[i])); });
+check(maxErr < 0.006, `A and B within rounding of the printed matrices (max diff ${maxErr.toFixed(4)})`);
+check(B.unstableOpenLoopPoles('lqr') === 1, 'cart-pole has exactly one unstable open-loop pole');
+
+console.log('2. LQR preset margins');
+const lqr = { k: B.CP_LQR.slice(), delay: 0 };
+const s = report('lqr', lqr);
+check(B.closedLoopRhpPoles('lqr', lqr) === 0, 'closed loop is stable');
+check(s.pm >= 60, `phase margin ${s.pm.toFixed(1)}° ≥ 60°`);
+check(s.gmUp === null, 'no upper gain limit (infinite gain margin)');
+check(s.gmDown !== null && s.gmDown <= -6, `gain can drop ${s.gmDown && s.gmDown.toFixed(1)} dB ≤ −6 dB`);
+
+console.log('3. Nyquist count vs eigenvalues (200 random gain sets each)');
+let pidBad = 0, lqrBad = 0;
+for (let n = 0; n < 200; n++) {
+  // PID on M ẍ + c ẋ + k x: closed-loop poly M s³ + (c + kd) s² + (k + kp) s + ki
+  const p = { kp: (rand() * 2 - 1) * 50, ki: (rand() * 2 - 1) * 20, kd: (rand() * 2 - 1) * 10, delay: 0 };
+  const m = B.MSD;
+  const roots = B.polyRoots([1, (m.c + p.kd) / m.M, (m.k + p.kp) / m.M, p.ki / m.M]);
+  const eigUnstable = roots.filter((r) => r[0] > 1e-3).length;
+  if ((B.closedLoopRhpPoles('pid', p) === 0) !== (eigUnstable === 0)) pidBad++;
+
+  // State feedback: closed loop A + B k
+  const k = [(rand() * 2 - 1) * 20, (rand() * 2 - 1) * 20, rand() * 100 - 20, rand() * 40 - 10];
+  const Acl = B.CP_AB.A.map((r, i) => r.map((v, j) => v + B.CP_AB.B[i] * k[j]));
+  if ((B.closedLoopRhpPoles('lqr', { k, delay: 0 }) === 0) !== (rhpEig(Acl) === 0)) lqrBad++;
+}
+check(pidBad === 0, `PID: Nyquist and eigenvalues agree (${pidBad} mismatches)`);
+check(lqrBad === 0, `state feedback: Nyquist and eigenvalues agree (${lqrBad} mismatches)`);
+
+console.log('4. delay margin is where the loop breaks');
+[['pid', { kp: 40, ki: 5, kd: 6, delay: 0 }], ['lqr', { k: B.CP_LQR.slice(), delay: 0 }]].forEach(([kind, p]) => {
+  const dm = report(kind, p).delayMargin;
+  const under = Object.assign({}, p, { delay: dm * 0.9 });
+  const over = Object.assign({}, p, { delay: dm * 1.1 });
+  check(B.closedLoopRhpPoles(kind, under) === 0 && B.closedLoopRhpPoles(kind, over) > 0,
+    `${kind}: stable at 0.9× (${(dm * 900).toFixed(0)} ms), unstable at 1.1× the ${(dm * 1000).toFixed(0)} ms delay margin`);
+});
+
+if (failed) { console.log('\ntest-bode: FAILED'); process.exit(1); }
+console.log('\ntest-bode: all checks passed');

@@ -93,9 +93,12 @@ assets/js/statebox.js    `drawStateBox`: the lower-right state/units panel (deci
                          units aligned), shared by controls.js and swingup.js; load it first
 assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + goal-conditioned
                          TQC policy in vanilla JS — SwingupCore (no DOM, Node-testable) + the page
+assets/js/bode.js        /controls/bode/ (bode.md): Bode plots of the MSD plant, its PID loop,
+                         and the cart-pole LQR loop. BodeCore (no DOM, Node-testable) does the
+                         maths; its plant constants and LQR gains must match controls.js
 assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture
                          is test-only and excluded from the build
-script/                  serve, check, add-photo, test-data, test-swingup
+script/                  serve, check, add-photo, test-data, test-swingup, test-bode
 ```
 
 ### Conventions worth keeping
@@ -145,6 +148,20 @@ actions (max < 0.2 N — float16 rounding alone reaches ~0.14 N on the goal net 
 transition in the fixture.
 If it fails after a re-export, the port in `swingup.js` has drifted from n-cartpole.
 
+### The Bode page
+
+`/controls/bode/` has three tabs (deep links `#pid`, `#lqr`): the mass-spring-damper on
+its own, the same plant in the PID loop from the Intro demo (L = C·G·e^(−sT)), and the
+cart-pole's state-feedback loop cut at the force input (L = K(sI − A)⁻¹B). Each shows a
+sine-wave experiment on top (traces replay at a fixed 0.5 cycles/s whatever ω is, with the
+real period noted) and the Bode pair below. Stability comes from a Nyquist encirclement
+count on a contour just right of the imaginary axis, not from the margins, because the
+cart-pole is open-loop unstable and the loop can carry delay. **If you change the MSD or
+cart-pole constants or `LQR_GAINS` in `controls.js`, change `MSD`, `CP` and `CP_LQR` in
+`bode.js` too.** `script/test-bode` (`task check:bode`, part of `task check`) checks A and B
+against the matrices printed on /controls/, LQR's guaranteed margins, Nyquist against
+closed-loop eigenvalues for random gains, and that the delay margin is where the loop breaks.
+
 ## Running and checking
 
 ```sh
@@ -157,14 +174,14 @@ Needs Ruby ≥ 2.7 — **system Ruby on this Mac is 2.6.10 and cannot run Jekyll
 on CI to build.
 
 `Taskfile.yml` is the single entrypoint (`task --list`: `serve`, `build`, `check`,
-`check:data`, `check:swingup`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
+`check:data`, `check:swingup`, `check:bode`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
 validates `_data/*.yml` — required fields, and that each photo's full-size + thumbnail and
 each local project image actually exist (the full-size lives in a `data-full` attribute
 that html-proofer never sees, so this is the only thing guarding it). It's pure Ruby
 stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
-Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → swingup →
+Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → swingup → bode →
 build → JS → links; the swingup check uses the runner's preinstalled Node); that build is the uploaded deploy artifact. `serve` and `add-photo` still wrap
 the `script/` files (`task add-photo -- <source-image> <slug>`).
 

@@ -15,7 +15,9 @@ permalink: /controls/
     the controller and let it try. The plots
     under each sim show the plant's states and what each term of the controller is contributing.
     For a problem past what PID can do, <a href="{{ '/controls/swingup/' | relative_url }}">swing
-    up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy.
+    up a double pendulum</a> by hand, or hand it to a reinforcement-learning policy. To see
+    <em>why</em> delay breaks a loop, open the PID and LQR loops up as
+    <a href="{{ '/controls/bode/' | relative_url }}">Bode plots</a>.
   </p>
 </section>
 
@@ -29,6 +31,7 @@ permalink: /controls/
     </div>
     <!-- Its own page, not a tab — so not .sim-tab, which controls.js wires up as one. -->
     <a class="sim-tab-link" href="{{ '/controls/swingup/' | relative_url }}">Double Swing-Up &#8594;</a>
+    <a class="sim-tab-link" href="{{ '/controls/bode/' | relative_url }}">Bode Plots &#8594;</a>
   </div>
 
   <!-- ── Demo 1: Mass-Spring-Damper ─────────────────────────────── -->
