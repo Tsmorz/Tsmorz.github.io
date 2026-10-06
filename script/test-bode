@@ -5,6 +5,8 @@
 //   3. the Nyquist stability count agrees with closed-loop eigenvalues for random gains
 //      (PID and state feedback, no delay, where eigenvalues are exact)
 //   4. delay: adding just under the reported delay margin stays stable, just over goes unstable
+//   5. the transfer-function polynomials match L(jω), and the Padé closed-loop poles agree
+//      with Nyquist (the Poles view uses them)
 // Pure Node, no dependencies, no build.
 
 'use strict';
@@ -68,6 +70,36 @@ console.log('4. delay margin is where the loop breaks');
   check(B.closedLoopRhpPoles(kind, under) === 0 && B.closedLoopRhpPoles(kind, over) > 0,
     `${kind}: stable at 0.9× (${(dm * 900).toFixed(0)} ms), unstable at 1.1× the ${(dm * 1000).toFixed(0)} ms delay margin`);
 });
+
+console.log('5. transfer functions and poles');
+{
+  // num/den must be the same L(s) the frequency response uses (no delay).
+  let worst = 0;
+  const cases = [['pid', { kp: 40, ki: 5, kd: 6, delay: 0 }], ['pid', { kp: -7, ki: 0, kd: 2.5, delay: 0 }],
+                 ['lqr', { k: B.CP_LQR.slice(), delay: 0 }], ['lqr', { k: [0, 0, 43.5, 18.1], delay: 0 }]];
+  const ev = (c, s) => c.reduce((acc, v) => B.cmul(acc, s).map((x, i) => x + (i ? 0 : v)), [0, 0]);
+  cases.forEach(([kind, p]) => {
+    const { num, den } = B.loopParts(kind, p);
+    [0.3, 1, 4, 20].forEach((w) => {
+      const s = [0, w], a = B.LOOPS[kind](s, p), n = ev(num, s), d = ev(den, s);
+      const dd = d[0] * d[0] + d[1] * d[1];
+      const r = [(n[0] * d[0] + n[1] * d[1]) / dd, (n[1] * d[0] - n[0] * d[1]) / dd];
+      worst = Math.max(worst, Math.hypot(r[0] - a[0], r[1] - a[1]) / Math.max(1, B.cabs(a)));
+    });
+  });
+  check(worst < 1e-9, `num/den matches L(jω) (worst relative error ${worst.toExponential(1)})`);
+  check(B.polyStr([1, 6.4, 44, 5]) === 's³ + 6.4s² + 44s + 5', 'polyStr formats a cubic');
+  // Padé-approximated closed-loop poles agree with Nyquist away from the stability edge.
+  let disagree = 0;
+  [['pid', { kp: 40, ki: 5, kd: 6 }], ['lqr', { k: B.CP_LQR.slice() }]].forEach(([kind, base]) => {
+    [0, 0.03, 0.06, 0.2, 0.3].forEach((T) => {
+      const p = Object.assign({}, base, { delay: T });
+      const padeStable = B.closedLoopPoles(kind, p).every((z) => z[0] < 0);
+      if (padeStable !== (B.closedLoopRhpPoles(kind, p) === 0)) disagree++;
+    });
+  });
+  check(disagree === 0, `Padé poles and Nyquist agree on stability for delays away from the margin (${disagree} disagreements)`);
+}
 
 if (failed) { console.log('\ntest-bode: FAILED'); process.exit(1); }
 console.log('\ntest-bode: all checks passed');

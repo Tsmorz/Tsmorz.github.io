@@ -213,18 +213,113 @@
     return c;   // s^n + c1 s^(n−1) + … + cn
   }
 
+  // Roots of the monic s^n + c1 s^(n−1) + … + cn (c[0] is taken as 1).
   function polyRoots(c) {
     var n = c.length - 1, z = [], i, it;
-    for (i = 0; i < n; i++) z.push(cmul([0.4, 0.9], i === 0 ? [1, 0] : z[i - 1]));
+    if (n < 1) return [];
+    // Start on a circle that encloses every root (Fujiwara bound), off-axis so
+    // conjugate pairs can separate.
+    var R = 0;
+    for (i = 1; i <= n; i++) R = Math.max(R, Math.pow(Math.abs(c[i]), 1 / i));
+    R = 2 * R || 1;
+    for (i = 0; i < n; i++) { var a = 2 * Math.PI * i / n + 0.4; z.push([R * Math.cos(a), R * Math.sin(a)]); }
     function ev(x) { var r = [1, 0]; for (var k = 1; k <= n; k++) r = cadd(cmul(r, x), [c[k], 0]); return r; }
-    for (it = 0; it < 500; it++) {
+    for (it = 0; it < 800; it++) {
+      var moved = 0;
       for (i = 0; i < n; i++) {
         var den = [1, 0];
         for (var j = 0; j < n; j++) if (j !== i) den = cmul(den, csub(z[i], z[j]));
-        z[i] = csub(z[i], cdiv(ev(z[i]), den));
+        var dz = cdiv(ev(z[i]), den);
+        if (!isFinite(dz[0]) || !isFinite(dz[1])) continue;
+        z[i] = csub(z[i], dz);
+        moved = Math.max(moved, cabs(dz));
       }
+      if (moved < 1e-13 * R) break;
     }
     return z;
+  }
+
+  /* ---- Transfer functions as polynomials (coefficients, highest power first) ---- */
+  function padd(a, b) {
+    var n = Math.max(a.length, b.length), out = [];
+    for (var i = 0; i < n; i++) out.push((a[i - n + a.length] || 0) + (b[i - n + b.length] || 0));
+    return out;
+  }
+  function pmul(a, b) {
+    var out = []; for (var k = 0; k < a.length + b.length - 1; k++) out.push(0);
+    for (var i = 0; i < a.length; i++) for (var j = 0; j < b.length; j++) out[i + j] += a[i] * b[j];
+    return out;
+  }
+  function pscale(a, k) { return a.map(function (v) { return v * k; }); }
+  function ptrim(a) {
+    var big = 0; a.forEach(function (v) { big = Math.max(big, Math.abs(v)); });
+    var i = 0; while (i < a.length - 1 && Math.abs(a[i]) <= 1e-10 * big) i++;
+    return a.slice(i);
+  }
+  function rootsOf(p) {
+    p = ptrim(p);
+    if (p.length < 2 || p[0] === 0) return [];
+    var lead = p[0];
+    return polyRoots(p.map(function (v) { return v / lead; }));
+  }
+
+  // L(s) without its delay, as num/den. For the cart-pole the matrix determinant lemma
+  // gives num = det(sI − A − Bk) − det(sI − A), which is linear in the gains.
+  function loopParts(kind, p) {
+    if (kind === 'plant') return { num: [1], den: [MSD.M, MSD.c, MSD.k] };
+    if (kind === 'pid') return { num: ptrim([p.kd, p.kp, p.ki]), den: [MSD.M, MSD.c, MSD.k, 0] };
+    var A = CP_AB.A, B = CP_AB.B;
+    var Acl = A.map(function (r, i) { return r.map(function (v, j) { return v + B[i] * p.k[j]; }); });
+    var den = charPoly(A);
+    return { num: ptrim(padd(charPoly(Acl), pscale(den, -1))), den: den };
+  }
+
+  // Delay as a 2nd-order Padé approximation, e^(−sT) ≈ Nd(s)/Dd(s), so the closed loop
+  // has finitely many poles to draw. (Stability itself still comes from Nyquist.)
+  function pade(T) {
+    if (!(T > 0)) return { n: [1], d: [1] };
+    return { n: [T * T / 12, -T / 2, 1], d: [T * T / 12, T / 2, 1] };
+  }
+
+  // Closed-loop characteristic polynomial den·Dd + g·num·Nd, where g scales every gain
+  // at once (g = 1 is the controller as set; sweeping g gives the root locus).
+  function closedLoopPoly(kind, p, g) {
+    var parts = loopParts(kind, p), dl = pade(p.delay);
+    return padd(pmul(parts.den, dl.d), pscale(pmul(parts.num, dl.n), g === undefined ? 1 : g));
+  }
+  function closedLoopPoles(kind, p) { return rootsOf(closedLoopPoly(kind, p, 1)); }
+  function openLoopPolesZeros(kind, p) {
+    var parts = loopParts(kind, p);
+    var zeros = parts.num.every(function (v) { return v === 0; }) ? [] : rootsOf(parts.num);
+    return { poles: rootsOf(parts.den), zeros: zeros };
+  }
+  function rootLocus(kind, p, gMax, n) {
+    var out = [];
+    for (var i = 1; i <= n; i++) out.push(rootsOf(closedLoopPoly(kind, p, gMax * i / n)));
+    return out;
+  }
+
+  // "6s² + 40s + 5" from [6, 40, 5]. Coefficients to three significant figures.
+  var SUP = { 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶' };
+  function numStr(v) {
+    var a = Math.abs(v);
+    if (a >= 100) return a.toFixed(0);
+    if (a >= 10) return String(+a.toFixed(1));
+    return String(+a.toPrecision(3));
+  }
+  function polyStr(c) {
+    c = ptrim(c);
+    var n = c.length - 1, out = '';
+    c.forEach(function (v, i) {
+      var pw = n - i;
+      if (Math.abs(v) < 1e-9) return;
+      var mag = numStr(v), sign = v < 0 ? '−' : '+';
+      if (Math.abs(+mag - 1) < 1e-9 && pw > 0) mag = '';
+      var term = mag + (pw === 0 ? '' : pw === 1 ? 's' : 's' + SUP[pw]);
+      if (term === '') term = '1';
+      out += out === '' ? (v < 0 ? '−' : '') + term : ' ' + sign + ' ' + term;
+    });
+    return out || '0';
   }
 
   function unstableOpenLoopPoles(kind) {
@@ -303,11 +398,14 @@
     cabs: cabs, carg: carg, cmul: cmul, wrap180: wrap180, logspace: logspace,
     MSD: MSD, CP: CP, CP_AB: CP_AB, CP_LQR: CP_LQR, LOOPS: LOOPS,
     freqResponse: freqResponse, margins: margins, summary: summary,
-    charPoly: charPoly, polyRoots: polyRoots,
+    charPoly: charPoly, polyRoots: polyRoots, rootsOf: rootsOf, polyStr: polyStr,
+    loopParts: loopParts, closedLoopPoly: closedLoopPoly, closedLoopPoles: closedLoopPoles,
+    openLoopPolesZeros: openLoopPolesZeros, rootLocus: rootLocus,
     unstableOpenLoopPoles: unstableOpenLoopPoles, closedLoopRhpPoles: closedLoopRhpPoles,
     pidStep: pidStep, lqrTilt: lqrTilt
   };
 
+  BodeCore.pade = pade;
   if (typeof module !== 'undefined' && module.exports) module.exports = BodeCore;
   if (typeof document === 'undefined') return;
   root.BodeCore = BodeCore;
@@ -384,6 +482,7 @@
 
   /* ---- One demo per tab ---- */
 
+  var NYQ_PLOT_W = logspace(0.003, 300, 700);
   var CYCLES_SHOWN = 3;        // the time traces always show three periods…
   var CYCLES_PER_SEC = 0.5;    // …played at one cycle every two seconds, whatever ω is
   var SWEEP_SECONDS = 10;
@@ -443,11 +542,43 @@
       if (cfg.kind !== 'plant') {
         d.mg = margins(d.fr);
         d.sum = summary(d.mg);
-        d.stable = closedLoopRhpPoles(cfg.kind, d.p) === 0;
+        d.Z = closedLoopRhpPoles(cfg.kind, d.p);
+        d.P = unstableOpenLoopPoles(cfg.kind);
+        d.stable = d.Z === 0;
         d.step = cfg.step(d.p);
+        d.clPoles = closedLoopPoles(cfg.kind, d.p);
+        d.nyqL = NYQ_PLOT_W.map(function (w) { return LOOPS[cfg.kind]([0, w], d.p); });
       }
+      var pz = openLoopPolesZeros(cfg.kind, d.p);
+      d.olPoles = pz.poles;
+      d.olZeros = cfg.kind === 'plant' ? [] : pz.zeros;
+      d.locus = null;             // the root locus is computed lazily, only when it is shown
+      d.tfDirty = true;
       if (cfg.onRecompute) cfg.onRecompute(d);
     };
+
+    // View toggle (Bode | Nyquist | Poles) for the plot area under the experiment.
+    d.view = 'bode';
+    d.pair = $('pair'); d.altCell = $('alt-cell'); d.altC = $('alt'); d.tfBox = $('tf');
+    var viewBox = $('view');
+    if (viewBox) {
+      var vbtns = Array.prototype.slice.call(viewBox.querySelectorAll('.mode-btn'));
+      vbtns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          d.view = b.dataset.view;
+          vbtns.forEach(function (o) {
+            var on = o === b;
+            o.classList.toggle('active', on);
+            o.setAttribute('aria-pressed', on ? 'true' : 'false');
+          });
+          d.pair.hidden = d.view !== 'bode';
+          d.altCell.hidden = d.view === 'bode';
+          d.altC.setAttribute('aria-label', d.view === 'nyquist' ? cfg.nyqLabel : cfg.polesLabel);
+          d.shownPoles = null;
+          d.tfDirty = true;
+        });
+      });
+    }
 
     // Gain sliders: <id>-<name>, value readout <id>-<name>-val, optional ± range box.
     (cfg.sliders || []).forEach(function (sl) {
@@ -853,6 +984,346 @@
     }
   }
 
+  /* ---- Transfer-function line above the Nyquist / Poles plots ---- */
+
+  function denStr(kind, den) {
+    // The PID loop's denominator reads better factored: s(s² + 0.4s + 4).
+    if (kind === 'pid') return 's(' + BodeCore.polyStr(den.slice(0, 3)) + ')';
+    return BodeCore.polyStr(den);
+  }
+  function updateTf(d) {
+    if (!d.tfDirty || !d.tfBox) return;
+    d.tfDirty = false;
+    var cfg = d.cfg, parts = BodeCore.loopParts(cfg.kind, d.p), lines = [];
+    if (cfg.kind === 'plant') {
+      lines.push('G(s) = 1 / (' + BodeCore.polyStr(parts.den) + ')');
+      var pl = d.olPoles.filter(function (z) { return z[1] >= 0; })[0];
+      if (pl) lines.push('poles at s = ' + fmt(pl[0], 2) + ' ± ' + fmt(Math.abs(pl[1]), 2) + 'j');
+    } else {
+      var num = parts.num.every(function (v) { return Math.abs(v) < 1e-12; }) ? '0' : BodeCore.polyStr(parts.num);
+      var dl = d.p.delay > 0 ? ' · e^(−' + fmt(d.p.delay, 3).replace(/0+$/, '') + 's)' : '';
+      lines.push('L(s) = (' + num + ') / (' + denStr(cfg.kind, parts.den) + ')' + dl);
+      if (d.view === 'poles') {
+        lines.push('1 + L(s) = 0  ⇒  ' + BodeCore.polyStr(BodeCore.closedLoopPoly(cfg.kind, d.p, 1)) + ' = 0' +
+                   (d.p.delay > 0 ? '   (delay ≈ Padé)' : ''));
+      }
+    }
+    d.tfBox.innerHTML = '';
+    lines.forEach(function (t) { var el = document.createElement('div'); el.textContent = t; d.tfBox.appendChild(el); });
+  }
+
+  /* ---- A complex plane with equal scales on both axes ---- */
+
+  function niceStep(span) {
+    var raw = span / 6, e = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / e;
+    return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * e;
+  }
+
+  // Lay out a plot box plus a notes box: notes to the right on wide screens, underneath
+  // on narrow ones. `aspect` is the plot's preferred width / height.
+  // On narrow screens only the key notes (not the muted, explanatory ones, which the
+  // page text also covers) go under the plot, and the plot shrinks to fit them.
+  function planeLayout(c, top, aspect, items) {
+    var y0 = top + 6, y1 = c.H - 10;
+    items = items.filter(Boolean);
+    if (c.W >= 560) {
+      var pw = clamp((y1 - y0) * aspect, c.W * 0.42, c.W * 0.62);
+      return { plot: { x0: 12, x1: 12 + pw, y0: y0, y1: y1 },
+               notes: { x0: 12 + pw + 18, x1: c.W - 14, y0: y0 + 4, y1: y1 }, items: items };
+    }
+    var key = items.filter(function (it) { return it[2] !== '400'; });
+    var nb = { x0: 14, x1: c.W - 12, y0: 0, y1: 0 };
+    var nh = notes(c.ctx, nb, key, true) + 4;
+    return { plot: { x0: 12, x1: c.W - 12, y0: y0, y1: y1 - nh },
+             notes: { x0: 14, x1: c.W - 12, y0: y1 - nh + 8, y1: y1 }, items: key };
+  }
+
+  // A complex plane with equal scales on both axes, centred on the data, in `box`.
+  // opts.grid draws a labelled grid.
+  function plane(c, box, reMin, reMax, imMax, opts) {
+    var x0 = box.x0, x1 = box.x1, y0 = box.y0, y1 = box.y1;
+    var k = Math.min((x1 - x0) / (reMax - reMin), (y1 - y0) / (2 * imMax));
+    var mx = (x0 + x1) / 2, my = (y0 + y1) / 2, cre = (reMin + reMax) / 2;
+    var f = {
+      ctx: c.ctx, k: k, x0: x0, x1: x1, y0: y0, y1: y1,
+      X: function (re) { return mx + (re - cre) * k; },
+      Y: function (im) { return my - im * k; },
+      reAt: function (x) { return cre + (x - mx) / k; },
+      imAt: function (y) { return (my - y) / k; },
+      inside: function (z) { var x = f.X(z[0]), y = f.Y(z[1]); return x >= x0 && x <= x1 && y >= y0 && y <= y1; }
+    };
+    var ctx = c.ctx, ax = clamp(f.X(0), x0, x1), ay = clamp(f.Y(0), y0, y1);
+    ctx.lineWidth = 1; ctx.font = '10px ' + col.mono;
+    if (opts.grid) {
+      var step = niceStep(Math.max(f.reAt(x1) - f.reAt(x0), f.imAt(y0) - f.imAt(y1)));
+      for (var v = Math.ceil(f.reAt(x0) / step) * step; v <= f.reAt(x1); v += step) {
+        if (Math.abs(v) < 1e-9) continue;
+        var x = f.X(v);
+        ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
+        ctx.fillStyle = col.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(String(+v.toFixed(6)), x, ay + 3);
+      }
+      for (var u = Math.ceil(f.imAt(y1) / step) * step; u <= f.imAt(y0); u += step) {
+        if (Math.abs(u) < 1e-9) continue;
+        var y = f.Y(u);
+        ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+        ctx.fillStyle = col.muted; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText(+u.toFixed(6) + 'j', ax + 4, y);
+      }
+    }
+    // Real and imaginary axes.
+    ctx.strokeStyle = col.muted; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(x0, ay); ctx.lineTo(x1, ay); ctx.moveTo(ax, y0); ctx.lineTo(ax, y1); ctx.stroke();
+    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, y1 - y0 - 1);
+    ctx.fillStyle = col.muted; ctx.font = '10px ' + col.mono;
+    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText('Re', x1 - 2, ay - 2);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('Im', ax + 4, y0 + 2);
+    return f;
+  }
+
+  function cross(ctx, x, y, r, color, lw) {
+    ctx.strokeStyle = color; ctx.lineWidth = lw || 2;
+    ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke();
+  }
+  // Wrapped explanatory notes beside (or under) a plot. items: [text, color, weight].
+  // With dry set, only measures: returns the height the notes need.
+  function notes(ctx, box, items, dry) {
+    var y = box.y0, maxW = box.x1 - box.x0;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    items.forEach(function (it) {
+      if (!it) return;
+      ctx.font = (it[2] || '600') + ' 12px ' + col.font;
+      ctx.fillStyle = it[1] || col.text;
+      var words = it[0].split(' '), line = '';
+      words.forEach(function (w) {
+        var t = line ? line + ' ' + w : w;
+        if (ctx.measureText(t).width > maxW && line) { if (!dry) ctx.fillText(line, box.x0, y); y += 16; line = w; }
+        else line = t;
+      });
+      if (line) { if (!dry) ctx.fillText(line, box.x0, y); y += 16; }
+      y += 6;
+    });
+    return y - box.y0;
+  }
+
+  /* ---- Poles: where the system's natural motions live ---- */
+
+  var frameDt = 0;
+
+  function easePoles(d, targets) {
+    // Glide the drawn closed-loop poles toward the new ones so a slider drag reads as motion.
+    if (!d.shownPoles || d.shownPoles.length !== targets.length || reduceMotion) {
+      d.shownPoles = targets.map(function (z) { return z.slice(); });
+      return d.shownPoles;
+    }
+    var used = targets.map(function () { return false; }), a = Math.min(1, frameDt * 12);
+    d.shownPoles.forEach(function (sp) {
+      var best = -1, bd = Infinity;
+      targets.forEach(function (t, j) {
+        if (used[j]) return;
+        var dd = Math.hypot(t[0] - sp[0], t[1] - sp[1]);
+        if (dd < bd) { bd = dd; best = j; }
+      });
+      used[best] = true;
+      sp[0] += (targets[best][0] - sp[0]) * a;
+      sp[1] += (targets[best][1] - sp[1]) * a;
+    });
+    return d.shownPoles;
+  }
+
+  function drawPoles(d) {
+    var c = fit(d.altC), ctx = c.ctx, cfg = d.cfg, loop = cfg.kind !== 'plant';
+    var top = (d.tfBox ? d.tfBox.offsetHeight : 0) + 10;
+    if (loop && !d.locus) d.locus = BodeCore.rootLocus(cfg.kind, d.p, 3, 90);
+
+    // Fit the poles and zeros that matter (far-off delay-approximation poles excepted).
+    var pts = d.olPoles.concat(d.olZeros, loop ? d.clPoles : []).filter(function (z) { return cabs(z) < 25; });
+    var reMin = loop ? -2 : -3, reMax = 1, imMax = loop ? 2 : 4.2;
+    pts.forEach(function (z) { reMin = Math.min(reMin, z[0]); reMax = Math.max(reMax, z[0]); imMax = Math.max(imMax, Math.abs(z[1])); });
+    var span = reMax - reMin; reMin -= span * 0.1; reMax += span * 0.1; imMax *= 1.18;
+    var items = loop ? loopPoleNotes(d) : introPoleNotes(d);
+    var lay = planeLayout(c, top, (reMax - reMin) / (2 * imMax), items);
+    var f = plane(c, lay.plot, reMin, reMax, imMax, { grid: true });
+
+    // Right half-plane: anything there grows.
+    var xr = clamp(f.X(0), f.x0, f.x1);
+    ctx.fillStyle = withAlpha(col.bad, 0.07); ctx.fillRect(xr, f.y0, f.x1 - xr, f.y1 - f.y0);
+    ctx.font = '600 11px ' + col.font; ctx.textBaseline = 'top';
+    if (f.x1 - xr > 60) { ctx.fillStyle = col.bad; ctx.textAlign = 'right'; ctx.fillText('grows', f.x1 - 6, f.y0 + 4); }
+    if (xr - f.x0 > 60) { ctx.fillStyle = col.muted; ctx.textAlign = 'left'; ctx.fillText('dies away', f.x0 + 6, f.y0 + 4); }
+
+    ctx.save(); ctx.beginPath(); ctx.rect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0); ctx.clip();
+    // Root locus: every gain scaled together from 0 to 3×.
+    if (loop) {
+      ctx.fillStyle = withAlpha(col.accent, 0.28);
+      d.locus.forEach(function (rs) {
+        rs.forEach(function (z) { ctx.beginPath(); ctx.arc(f.X(z[0]), f.Y(z[1]), 1.6, 0, 7); ctx.fill(); });
+      });
+    }
+    // Open-loop poles × and zeros ○.
+    d.olPoles.forEach(function (z) { cross(ctx, f.X(z[0]), f.Y(z[1]), 6, loop ? col.muted : col.out, 2.2); });
+    d.olZeros.forEach(function (z) {
+      ctx.strokeStyle = col.muted; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(f.X(z[0]), f.Y(z[1]), 6, 0, 7); ctx.stroke();
+    });
+
+    if (!loop) {
+      // Intro: gain and phase at ω from the vectors joining each pole to the point jω.
+      var jy = f.Y(d.w), off = jy < f.y0;
+      var px = f.X(0), py = Math.max(jy, f.y0 + 6);
+      d.olPoles.forEach(function (z, i) {
+        ctx.strokeStyle = col.out; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(f.X(z[0]), f.Y(z[1])); ctx.lineTo(px, jy); ctx.stroke();
+        ctx.setLineDash([]);
+        var mx = (f.X(z[0]) + px) / 2, my = (f.Y(z[1]) + py) / 2;
+        ctx.fillStyle = col.out; ctx.font = '600 11px ' + col.mono; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText('d' + (i ? '₂' : '₁'), mx - 6, my);
+      });
+      dot(ctx, px, py);
+      ctx.fillStyle = col.out; ctx.font = '600 11px ' + col.mono; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText('jω = ' + fmtW(d.w) + 'j' + (off ? ' ↑ above view' : ''), px + 9, py);
+      ctx.restore();
+      notes(ctx, lay.notes, lay.items);
+      return;
+    }
+
+    // Closed-loop poles, where the controller has moved them.
+    var shown = easePoles(d, d.clPoles), offscreen = 0;
+    shown.forEach(function (z) {
+      if (!f.inside(z)) { offscreen++; return; }
+      ctx.fillStyle = z[0] < -1e-6 ? col.accent : col.bad;
+      ctx.beginPath(); ctx.arc(f.X(z[0]), f.Y(z[1]), 6, 0, 7); ctx.fill();
+      ctx.strokeStyle = col.surface; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+    ctx.restore();
+    d.offscreen = offscreen;      // reported in next frame's notes
+    notes(ctx, lay.notes, lay.items);
+  }
+
+  function introPoleNotes(d) {
+    var dists = [], angs = [];
+    d.olPoles.forEach(function (z) {
+      dists.push(Math.hypot(z[0], d.w - z[1])); angs.push(Math.atan2(d.w - z[1], -z[0]));
+    });
+    var g = 1 / (dists[0] * dists[1]);
+    return [
+      ['Each × is a pole: a natural motion of the mass. Its height (±1.99) is how fast it rings, its distance left of the axis how fast that dies away.', col.muted, '400'],
+      ['Shaking at ω means evaluating G at the point jω on the imaginary axis.', col.muted, '400'],
+      ['Gain = 1 / (d₁ · d₂) = 1 / (' + fmt(dists[0], 2) + ' × ' + fmt(dists[1], 2) + ') = ' + fmt(g, g < 0.01 ? 4 : 3)],
+      ['Phase = −(angle₁ + angle₂) = ' + fmt(-(angs[0] + angs[1]) * 180 / Math.PI, 0) + '°'],
+      ['Sweep the frequency: as jω slides past the upper pole, d₁ gets tiny and the gain peaks. That is the resonance on the Bode plot.', col.out]
+    ];
+  }
+
+  function loopPoleNotes(d) {
+    // The slowest pole sets how the step response settles.
+    var slow = null;
+    d.clPoles.forEach(function (z) { if (slow === null || z[0] > slow[0]) slow = z; });
+    var verdict = null;
+    if (slow) {
+      if (slow[0] >= -1e-6) verdict = ['A closed-loop pole is in the right half-plane, so the response grows like e^(' + fmt(slow[0], 2) + 't): unstable.', col.bad];
+      else verdict = ['Slowest closed-loop pole at σ = ' + fmt(slow[0], 2) + ', so the response settles in about ' + fmt(4 / -slow[0], 4 / -slow[0] < 10 ? 1 : 0) + ' s' +
+                      (Math.abs(slow[1]) > 0.05 ? ', ringing at ' + fmt(Math.abs(slow[1]), 1) + ' rad/s.' : '.'), col.accent];
+    }
+    return [
+      ['× open-loop poles (plant and controller), ○ zeros, ● closed-loop poles: the roots of 1 + L(s) = 0.', col.muted, '400'],
+      ['The faint trail is the root locus: where the closed-loop poles go as every gain is scaled from 0 to 3×. Drag a gain to watch them move.', col.muted, '400'],
+      verdict,
+      d.p.delay > 0 ? ['Delay has infinitely many poles; these use a Padé approximation, so near the edge trust Stability in the panel.', col.muted, '400'] : null,
+      d.offscreen ? [d.offscreen + ' pole' + (d.offscreen > 1 ? 's' : '') + ' off-screen, far to the left (fast, harmless).', col.muted, '400'] : null
+    ];
+  }
+
+  /* ---- Nyquist: the same L(jω) as one curve in the complex plane ---- */
+
+  // Magnitudes above 1 are log-compressed so the far part of the curve fits while the
+  // unit circle and the −1 point (where the action is) keep their true places.
+  function rho(r) { return r <= 1 ? r : 1 + 0.5 * Math.log10(r); }
+  function nyqPt(L) { var a = carg(L), q = rho(cabs(L)); return [q * Math.cos(a), q * Math.sin(a)]; }
+
+  function drawNyquist(d) {
+    var c = fit(d.altC), ctx = c.ctx, cfg = d.cfg;
+    var top = (d.tfBox ? d.tfBox.offsetHeight : 0) + 10;
+    var pts = d.nyqL.map(nyqPt), R = 2;
+    pts.forEach(function (q) { R = Math.max(R, Math.hypot(q[0], q[1])); });
+    R = Math.min(R, 2.6) + 0.15;
+    var lay = planeLayout(c, top, 1, nyquistNotes(d));
+    var f = plane(c, lay.plot, -R, R, R, {});
+
+    // Rings: |L| = 1 (the one that matters), 10 and 100.
+    [[1, '|L| = 1'], [1.5, '10'], [2, '100'], [2.5, '1000']].forEach(function (rg) {
+      if (rg[0] > R) return;
+      ctx.strokeStyle = rg[0] === 1 ? col.borderStrong : col.border; ctx.lineWidth = rg[0] === 1 ? 1.4 : 1;
+      ctx.setLineDash(rg[0] === 1 ? [5, 4] : [2, 4]);
+      ctx.beginPath(); ctx.arc(f.X(0), f.Y(0), rg[0] * f.k, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = col.muted; ctx.font = '10px ' + col.mono; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+      ctx.fillText(rg[1], f.X(0) + rg[0] * f.k * 0.71 + 3, f.Y(0) - rg[0] * f.k * 0.71 - 2);
+    });
+
+    ctx.save(); ctx.beginPath(); ctx.rect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0); ctx.clip();
+    function path(sign) {
+      ctx.beginPath();
+      pts.forEach(function (q, i) { var x = f.X(q[0]), y = f.Y(sign * q[1]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      ctx.stroke();
+    }
+    // Negative frequencies: the mirror image, faint.
+    ctx.strokeStyle = withAlpha(col.in, 0.35); ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); path(-1); ctx.setLineDash([]);
+    ctx.strokeStyle = col.in; ctx.lineWidth = 2.2; path(1);
+    // Arrows show which way ω increases.
+    for (var a = 1; a <= 5; a++) {
+      var i = Math.floor(pts.length * a / 6), q0 = pts[i - 2], q1 = pts[i + 2];
+      if (!q0 || !q1) continue;
+      var ang = Math.atan2(-(q1[1] - q0[1]), q1[0] - q0[0]), ax = f.X(pts[i][0]), ay = f.Y(pts[i][1]);
+      if (Math.hypot(q1[0] - q0[0], q1[1] - q0[1]) * f.k < 2) continue;
+      ctx.fillStyle = col.in; ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang);
+      ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-5, -4.5); ctx.lineTo(-5, 4.5); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+
+    // Margins as geometry: PM is an arc on the unit circle, GM a stretch of the negative real axis.
+    var s = d.sum;
+    if (d.stable && s.wc !== null) {
+      var Lc = LOOPS[cfg.kind]([0, s.wc], d.p), ac = carg(Lc);
+      var a0 = Math.PI, da = BodeCore.wrap180((ac - a0) * 180 / Math.PI) * Math.PI / 180;
+      ctx.strokeStyle = col.pm; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(f.X(0), f.Y(0), f.k, -a0, -(a0 + da), da > 0); ctx.stroke();
+      var mid = a0 + da / 2;
+      var tx = f.X(Math.cos(mid) * 1.25), ty = f.Y(Math.sin(mid) * 1.25);
+      tag(ctx, 'PM ' + fmt(s.pm, 0) + '°', tx + (Math.cos(mid) < 0 ? -4 : 4), ty, col.pm, Math.cos(mid) < 0 ? 'right' : 'left');
+    }
+    if (d.stable) [[s.wUp, s.gmUp], [s.wDown, s.gmDown]].forEach(function (g, gi) {
+      if (g[0] === null) return;
+      var r = rho(Math.pow(10, -g[1] / 20));
+      ctx.strokeStyle = col.gm; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(f.X(-r), f.Y(0)); ctx.lineTo(f.X(-1), f.Y(0)); ctx.stroke();
+      tag(ctx, 'GM ' + (g[1] > 0 ? '+' : '') + fmt(g[1], 1) + ' dB', f.X(-Math.max(r, 1)) - 6, f.Y(0) + (gi ? -14 : 14), col.gm, 'right');
+    });
+    ctx.restore();
+
+    // The critical point.
+    cross(ctx, f.X(-1), f.Y(0), 6, col.bad, 2.5);
+    ctx.fillStyle = col.bad; ctx.font = '600 11px ' + col.mono; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('−1', f.X(-1), f.Y(0) - 9);
+
+    // Where the frequency slider is.
+    var q = nyqPt(LOOPS[cfg.kind]([0, d.w], d.p));
+    if (f.inside([q[0], q[1]])) dot(ctx, f.X(q[0]), f.Y(q[1]));
+
+    notes(ctx, lay.notes, lay.items);
+  }
+
+  // Encirclement count: Z = P + N.
+  function nyquistNotes(d) {
+    var N = d.Z - d.P;
+    var circ = N === 0 ? 'The curve never circles −1.' : 'The curve circles −1 ' + (Math.abs(N) === 1 ? 'once ' : Math.abs(N) + ' times ') + (N > 0 ? 'clockwise.' : 'counterclockwise.');
+    return [
+      ['Each point is L(jω): the gain is its distance from the centre, the phase its angle. The arrows show ω rising; the dashed mirror is negative ω.', col.muted, '400'],
+      ['The loop oscillates on its own if the curve passes through −1 (gain 1, phase −180°). The margins measure how far it stays from that point.', col.muted, '400'],
+      [circ + (d.P ? ' The plant has ' + d.P + ' unstable pole of its own, and the loop only cancels it by circling −1 counterclockwise exactly that many times.' : '')],
+      ['Unstable closed-loop poles = ' + d.P + ' (plant) ' + (N >= 0 ? '+ ' : '− ') + Math.abs(N) + ' (circles) = ' + d.Z + (d.Z === 0 ? ': stable.' : ': unstable.'), d.Z === 0 ? col.accent : col.bad],
+      ['Gains above 1 are drawn on a log scale so the whole curve fits.', col.muted, '400']
+    ];
+  }
+
   /* ---- Readouts in the side panel ---- */
   function updateReadouts(d) {
     var $ = function (s) { return document.getElementById(d.cfg.id + '-' + s); };
@@ -878,12 +1349,15 @@
   var demos = [
     makeDemo({
       id: 'intro', kind: 'plant', wmin: 0.1, wmax: 30, w0: 0.3, reveal: true,
+      polesLabel: 'Poles of the mass-spring-damper in the complex plane, with lines from each pole to the point jω',
       params: function () { return {}; },
       draw: drawIntroTop,
       onRecompute: function () {}
     }),
     makeDemo({
       id: 'pid', kind: 'pid', wmin: 0.05, wmax: 100, w0: 1,
+      nyqLabel: 'Nyquist plot of the PID loop around the critical point −1',
+      polesLabel: 'Open- and closed-loop poles of the PID loop with its root locus',
       params: function () { return { kp: 40, ki: 5, kd: 6, delay: 0 }; },
       sliders: [
         { name: 'kp', signed: true, preset: 40, fmt: gainFmt1, set: function (p, v) { p.kp = v; } },
@@ -898,6 +1372,8 @@
     }),
     makeDemo({
       id: 'lqr', kind: 'lqr', wmin: 0.05, wmax: 100, w0: 1,
+      nyqLabel: 'Nyquist plot of the cart-pole state-feedback loop around the critical point −1',
+      polesLabel: 'Open- and closed-loop poles of the cart-pole loop with its root locus',
       params: function () { return { k: CP_LQR.slice(), delay: 0 }; },
       sliders: [
         { name: 'kx', signed: true, preset: CP_LQR[0], fmt: gainFmt1, set: function (p, v) { p.k[0] = v; } },
@@ -923,6 +1399,7 @@
   var last = null;
   function frame(ts) {
     var dt = last === null ? 0 : Math.min(0.1, (ts - last) / 1000);
+    frameDt = dt;
     last = ts;
     readColors();
     demos.forEach(function (d) {
@@ -931,7 +1408,8 @@
       d.phase += dt * CYCLES_PER_SEC;
       d.stepAge = (d.stepAge || 0) + dt;
       d.cfg.draw(d);
-      drawBode(d);
+      if (d.view === 'bode') drawBode(d);
+      else { updateTf(d); if (d.view === 'nyquist') drawNyquist(d); else drawPoles(d); }
     });
     requestAnimationFrame(frame);
   }

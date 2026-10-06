@@ -9,6 +9,15 @@ Tony Smoragiewicz's personal site — a custom Jekyll site deployed to GitHub Pa
 gone and the layouts, CSS, and JS here are the whole design. There is no theme gem to
 fall back on, so nothing is inherited from outside this repo.
 
+## What the controls pages are for
+
+The `/controls/` section should be the clearest way to *see* controls engineering. **Every
+piece of theory is explained with a figure or an animation the visitor can drive**, not with
+equations alone: a margin is a bar on a plot, a pole is a mark that moves when you drag a gain,
+stability is something you watch break. Equations are welcome as labels on a picture, written
+out with the visitor's current numbers. When adding a concept, ask what the visitor would drag
+to understand it, and build that.
+
 ## The one rule: content lives in `_data/`, not in markup
 
 Pages are thin. The projects list and the photo gallery are YAML files rendered through
@@ -154,13 +163,19 @@ If it fails after a re-export, the port in `swingup.js` has drifted from n-cartp
 its own, the same plant in the PID loop from the Intro demo (L = C·G·e^(−sT)), and the
 cart-pole's state-feedback loop cut at the force input (L = K(sI − A)⁻¹B). Each shows a
 sine-wave experiment on top (traces replay at a fixed 0.5 cycles/s whatever ω is, with the
-real period noted) and the Bode pair below. Stability comes from a Nyquist encirclement
+real period noted) and, below it, a **View** toggle: Bode (gain + phase), Nyquist (L(jω) in the
+complex plane, |L| > 1 log-compressed so the unit circle and −1 keep their true places), or
+Poles (open-loop poles/zeros, closed-loop poles easing to their new spots, and a root locus
+over all gains ×0–3; the Intro tab instead draws the pole-to-jω distances that make the
+resonance). The transfer function, written with the current numbers, sits above Nyquist and
+Poles. Delay is a 2nd-order Padé approximation in the Poles view only. Stability comes from a Nyquist encirclement
 count on a contour just right of the imaginary axis, not from the margins, because the
 cart-pole is open-loop unstable and the loop can carry delay. **If you change the MSD or
 cart-pole constants or `LQR_GAINS` in `controls.js`, change `MSD`, `CP` and `CP_LQR` in
 `bode.js` too.** `script/test-bode` (`task check:bode`, part of `task check`) checks A and B
 against the matrices printed on /controls/, LQR's guaranteed margins, Nyquist against
-closed-loop eigenvalues for random gains, and that the delay margin is where the loop breaks.
+closed-loop eigenvalues for random gains, that the delay margin is where the loop breaks,
+that the num/den polynomials reproduce L(jω), and that the Padé poles agree with Nyquist.
 
 ## Running and checking
 
