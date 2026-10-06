@@ -7,9 +7,10 @@
 // Views:    sim, time, states, contrib, analysis (toggle of bode | nyquist | poles), step, cbf,
 //           verify-map, verify-proof, mimo, sysid-replay, sysid-data, sysid-bode, checklist,
 //           id-replay, id-step, id-freq, id-era, id-grey, id-result, id-compare, id-validate,
-//           rec-data, rec-fit, est-states
+//           rec-data, rec-fit, est-states, samp-time, samp-fold, disc-z, disc-step, disc-bode, disc-loop
 // Controls: mode, hint, freq, view, channel, reference, gains, controller, delay, noise, limit,
-//           margins, cbf, verify, mimo, sysid, idrun, record, estimator, requirements, score, reset, restart
+//           margins, cbf, verify, mimo, sysid, idrun, record, estimator, sampling, discretize, ctrlrate,
+//           requirements, score, reset, restart
 // All maths is in LabCore (lab-core.js); plants and their pictures in LabPlants.
 (function () {
   'use strict';
@@ -1160,6 +1161,194 @@
     };
   };
 
+  /* ---- discretisation ---- */
+  var DM = { zoh: 'Zero-order hold', fe: 'Forward Euler', be: 'Backward Euler', tu: 'Tustin' };
+  function dmColors() { return { zoh: col.accent, fe: col.bad, be: col.viz1, tu: col.viz3 }; }
+  function sampState(lab) { return lab.samp || (lab.samp = { fs: 4, hold: 'zoh', bits: 0 }); }
+  // Least-squares sine at a known frequency through the recent trace: amplitude and phase.
+  function fitSine(t, y, w) {
+    var ss = 0, sc = 0, cc = 0, ys = 0, yc = 0;
+    t.forEach(function (tt, i) { var a = Math.sin(w * tt), b = Math.cos(w * tt); ss += a * a; sc += a * b; cc += b * b; ys += y[i] * a; yc += y[i] * b; });
+    var det = ss * cc - sc * sc; return det > 1e-12 ? [(ys * cc - yc * sc) / det, (yc * ss - ys * sc) / det] : [0, 0];
+  }
+  V['samp-time'] = function (c, lab) {
+    var S = sampState(lab), H = lab.hiRes || { t: [], y: [] }, ctx = c.ctx; if (H.t.length < 10) return;
+    var Ts = 1 / S.fs, w = lab.w, f = w / (2 * Math.PI), win = clamp(Math.max(4 / f, 10 * Ts), 2, 10);
+    var tEnd = H.t[H.t.length - 1], t0 = tEnd - win, idx = H.t.findIndex(function (tt) { return tt >= t0; });
+    var tt = H.t.slice(idx), yy = H.y.slice(idx), amp = 1e-6; yy.forEach(function (v) { amp = Math.max(amp, Math.abs(v)); });
+    var x0 = 44, x1 = c.W - 10, y0 = 22, y1 = c.H - 20, ymax = amp * 1.3;
+    var X = function (t) { return x0 + (t - t0) / win * (x1 - x0); }, Y = function (v) { return (y0 + y1) / 2 - v / ymax * (y1 - y0) / 2; };
+    ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke();
+    ctx.strokeStyle = withAlpha(col.muted, 0.7); ctx.lineWidth = 1.5; ctx.beginPath();
+    tt.forEach(function (t, i) { if (i) ctx.lineTo(X(t), Y(yy[i])); else ctx.moveTo(X(t), Y(yy[i])); }); ctx.stroke();
+    // samples on an absolute time grid, quantised like an ADC with a ±(1.2·amplitude) range
+    var levels = S.bits ? Math.pow(2, S.bits) : 0, full = amp * 1.2, samples = [];
+    for (var k = Math.ceil(t0 / Ts); k * Ts <= tEnd; k++) {
+      var ts = k * Ts, j = Math.min(tt.length - 1, Math.max(0, Math.round((ts - tt[0]) / (H.dt || 0.01)))), v = yy[j];
+      if (levels) { var q = 2 * full / (levels - 1); v = clamp(Math.round((v + full) / q) * q - full, -full, full); }
+      samples.push([ts, v]);
+    }
+    if (S.hold !== 'none' && samples.length > 1) {
+      ctx.strokeStyle = col.viz1; ctx.lineWidth = 2; ctx.beginPath();
+      samples.forEach(function (sp, i) {
+        if (!i) { ctx.moveTo(X(sp[0]), Y(sp[1])); return; }
+        if (S.hold === 'zoh') ctx.lineTo(X(sp[0]), Y(samples[i - 1][1]));
+        ctx.lineTo(X(sp[0]), Y(sp[1]));
+      });
+      if (S.hold === 'zoh') ctx.lineTo(X(Math.min(tEnd, samples[samples.length - 1][0] + Ts)), Y(samples[samples.length - 1][1]));
+      ctx.stroke();
+    }
+    samples.forEach(function (sp) { dot(ctx, X(sp[0]), Y(sp[1]), col.viz2); });
+    // the frequency the samples seem to show
+    var m = Math.round(f / S.fs), fa = f - m * S.fs, aliased = Math.abs(fa) < f - 1e-6 && f > S.fs / 2;
+    if (aliased) {
+      var ab = fitSine(tt, yy, w);
+      ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = col.bad; ctx.lineWidth = 2; ctx.beginPath();
+      for (var i = 0; i <= 300; i++) { var t = t0 + win * i / 300, wa = 2 * Math.PI * fa, yv = ab[0] * Math.sin(wa * t + (w - wa) * 0) + 0;
+        yv = ab[0] * Math.sin(w * t - 2 * Math.PI * m * S.fs * t) + ab[1] * Math.cos(w * t - 2 * Math.PI * m * S.fs * t);
+        if (i) ctx.lineTo(X(t), Y(yv)); else ctx.moveTo(X(t), Y(yv)); }
+      ctx.stroke(); ctx.restore();
+    }
+    text(ctx, 'Position: continuous (grey), samples every ' + (Ts < 1 ? fmt(Ts * 1000, 0) + ' ms' : fmt(Ts, 2) + ' s') + (S.hold === 'zoh' ? ', held (zero-order hold)' : S.hold === 'foh' ? ', joined by straight lines' : '') + (S.bits ? ', ' + S.bits + '-bit' : ''), x0 + 6, 2, col.text, { size: 11 });
+    if (aliased) text(ctx, 'Aliased: the samples trace a ' + fmt(Math.abs(fa), 2) + ' Hz wave (dashed) that isn\'t there', x0 + 6, c.H - 16, col.bad, { size: 11 });
+    else text(ctx, 'last ' + fmt(win, 1) + ' s', x1, c.H - 16, col.muted, { size: 10, align: 'right', w: '400' });
+  };
+  V['samp-fold'] = function (c, lab) {
+    var S = sampState(lab), ctx = c.ctx, f = lab.w / (2 * Math.PI), fs = S.fs, fmax = Math.max(1.5 * fs, f * 1.15), x0 = 20, x1 = c.W - 20, ya = c.H * 0.62;
+    var X = function (v) { return x0 + v / fmax * (x1 - x0); };
+    for (var b = 0; b * fs / 2 < fmax; b++) {                           // alternating bands of width fs/2
+      ctx.fillStyle = withAlpha(b === 0 ? col.accent : col.bad, b === 0 ? 0.12 : 0.05 + 0.04 * (b % 2));
+      ctx.fillRect(X(b * fs / 2), 26, X(Math.min(fmax, (b + 1) * fs / 2)) - X(b * fs / 2), ya - 26);
+      ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(X(b * fs / 2), 26); ctx.lineTo(X(b * fs / 2), ya); ctx.stroke();
+    }
+    ctx.strokeStyle = col.text; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x0, ya); ctx.lineTo(x1, ya); ctx.stroke();
+    // the fold: where each true frequency lands in 0 … fs/2
+    ctx.strokeStyle = withAlpha(col.muted, 0.6); ctx.lineWidth = 1; ctx.beginPath();
+    for (var i = 0; i <= 400; i++) { var fq = fmax * i / 400, r = fq % fs, fa = r > fs / 2 ? fs - r : r; var yy = ya - 6 - fa / (fs / 2) * (ya - 40); if (i) ctx.lineTo(X(fq), yy); else ctx.moveTo(X(fq), yy); }
+    ctx.stroke();
+    var r2 = f % fs, fal = r2 > fs / 2 ? fs - r2 : r2, yf = ya - 6 - fal / (fs / 2) * (ya - 40);
+    dot(ctx, X(f), ya, col.viz2); dot(ctx, X(f), yf, col.bad);
+    ctx.save(); ctx.strokeStyle = col.bad; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(X(f), yf); ctx.lineTo(X(fal), yf); ctx.lineTo(X(fal), ya); ctx.stroke(); ctx.restore();
+    dot(ctx, X(fal), ya, col.bad);
+    text(ctx, 'true ' + fmt(f, 2) + ' Hz', X(f), ya + 6, col.viz2, { align: 'center', size: 11 });
+    if (f > fs / 2) text(ctx, 'seen as ' + fmt(fal, 2) + ' Hz', X(fal), ya + 22, col.bad, { align: 'center', size: 11 });
+    text(ctx, 'fs/2 = ' + fmt(fs / 2, 2) + ' Hz', X(fs / 2) + 4, 28, col.accent, { size: 10 });
+    text(ctx, 'fs', X(fs) + 4, 28, col.muted, { size: 10, mono: true });
+    text(ctx, 'Frequency folding: everything above fs/2 lands somewhere in 0 … fs/2', x0, 4, col.text, { size: 11 });
+  };
+
+  V['disc-z'] = function (c, lab, tab) {
+    var D = lab.disc, ctx = c.ctx, cols = dmColors(), lin = C.linearize(lab.plant, lab.pm), poles = C.eig(lin.A), T = D.T;
+    var narrow = c.W < 560, R = 1.25, side = Math.min(c.H - 30, narrow ? c.W - 20 : c.W * 0.5), cx = 10 + side / 2, cy = c.H / 2 + 8, k = side / (2 * R) * 0.95;
+    var Xz = function (re) { return cx + re * k; }, Yz = function (im) { return cy - im * k; };
+    ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(cx - R * k, cy); ctx.lineTo(cx + R * k, cy); ctx.moveTo(cx, cy - R * k); ctx.lineTo(cx, cy + R * k); ctx.stroke();
+    ctx.fillStyle = withAlpha(col.accent, 0.07); ctx.beginPath(); ctx.arc(cx, cy, k, 0, 7); ctx.fill();
+    ctx.strokeStyle = col.text; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, k, 0, 7); ctx.stroke();
+    text(ctx, 'z-plane: inside the unit circle is stable', 10, 4, col.text, { size: 11 });
+    var show = D.method === 'all' ? ['zoh', 'fe', 'be', 'tu'] : [D.method];
+    // where each method sends the whole stable half-plane
+    ctx.save(); ctx.setLineDash([4, 4]); ctx.lineWidth = 1.2;
+    show.forEach(function (m) {
+      ctx.strokeStyle = withAlpha(cols[m], 0.7); ctx.beginPath();
+      if (m === 'fe') { ctx.moveTo(Xz(1), Yz(R)); ctx.lineTo(Xz(1), Yz(-R)); }
+      else if (m === 'be') ctx.arc(Xz(0.5), cy, 0.5 * k, 0, 7);
+      ctx.stroke();
+    });
+    ctx.restore();
+    poles.forEach(function (p0) {
+      show.forEach(function (m) { var z = C.mapPole(m, p0, T), x = Xz(clamp(z[0], -R, R)), y = Yz(clamp(z[1], -R, R)); ctx.fillStyle = cols[m]; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); ctx.strokeStyle = col.bg; ctx.lineWidth = 1.5; ctx.stroke(); });
+    });
+    if (narrow) return;
+    var items = [['Continuous poles −0.2 ± 2.0j, sampled every ' + fmt(T, 2) + ' s:', col.text]];
+    show.forEach(function (m) {
+      var z = C.mapPole(m, poles[0], T), mag = C.cabs(z);
+      items.push([DM[m] + ': |z| = ' + fmt(mag, 3) + (mag >= 1 ? '  unstable!' : ''), cols[m], mag >= 1 ? '600' : '400']);
+    });
+    items.push(['Dashed: where each method maps the whole stable left half-plane. Forward Euler maps it to everything left of z = 1, so lightly damped poles can land outside the circle. Backward Euler maps it into a small circle, adding damping that isn\'t there. Tustin and the hold map it exactly onto the unit disk.', col.muted, '400']);
+    notes(ctx, { x0: 30 + side, x1: c.W - 10, y: 18 }, items);
+  };
+  function discModels(lab) {
+    var D = lab.disc, T = D.T, p = lab.pm, num = [1], den = [p.M, p.c, p.k], lin = C.linearize(lab.plant, p), out = {};
+    var z = C.zohDiscretize(lin.A, lin.B, T);
+    out.zoh = { ss: z };
+    ['fe', 'be', 'tu'].forEach(function (m) { out[m] = { tf: C.tfDiscretize(num, den, m, T) }; });
+    return out;
+  }
+  V['disc-step'] = function (c, lab) {
+    var D = lab.disc, ctx = c.ctx, T = D.T, Tend = 12, cols = dmColors(), mods = discModels(lab), n = Math.floor(Tend / T) + 1, u = new Array(n).fill(1);
+    var lin = C.linearize(lab.plant, lab.pm), cont = C.zohDiscretize(lin.A, lin.B, 0.01), xs = [0, 0], yc = [];
+    for (var k = 0; k <= Tend / 0.01; k++) { yc.push(xs[0]); xs = [cont.Phi[0][0] * xs[0] + cont.Phi[0][1] * xs[1] + cont.Gam[0][0], cont.Phi[1][0] * xs[0] + cont.Phi[1][1] * xs[1] + cont.Gam[1][0]]; }
+    var resp = {};
+    resp.zoh = (function () { var x = [0, 0], y = []; for (var k = 0; k < n; k++) { y.push(x[0]); var P = mods.zoh.ss.Phi, G = mods.zoh.ss.Gam; x = [P[0][0] * x[0] + P[0][1] * x[1] + G[0][0], P[1][0] * x[0] + P[1][1] * x[1] + G[1][0]]; } return y; })();
+    ['fe', 'be', 'tu'].forEach(function (m) { resp[m] = C.dtfSim(mods[m].tf, u); });
+    var x0 = 44, x1 = c.W - 10, y0 = 20, y1 = c.H - 18, lo = -0.05, hi = 0.55;
+    var X = function (t) { return x0 + t / Tend * (x1 - x0); }, Y = function (v) { return y1 - (clamp(v, lo - 0.2, hi + 0.2) - lo) / (hi - lo) * (y1 - y0); };
+    ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, y0 - 4, x1 - x0, y1 - y0 + 8); ctx.clip();
+    ctx.strokeStyle = withAlpha(col.muted, 0.8); ctx.lineWidth = 3; ctx.beginPath(); yc.forEach(function (v, i) { if (i) ctx.lineTo(X(i * 0.01), Y(v)); else ctx.moveTo(X(0), Y(v)); }); ctx.stroke();
+    (D.method === 'all' ? ['zoh', 'fe', 'be', 'tu'] : [D.method]).forEach(function (m) {
+      ctx.strokeStyle = cols[m]; ctx.lineWidth = 1.6; ctx.beginPath();
+      resp[m].forEach(function (v, k) { if (k) { ctx.lineTo(X(k * T), Y(resp[m][k - 1])); ctx.lineTo(X(k * T), Y(v)); } else ctx.moveTo(X(0), Y(v)); }); ctx.stroke();
+      if (T > 0.08) resp[m].forEach(function (v, k) { ctx.fillStyle = cols[m]; ctx.beginPath(); ctx.arc(X(k * T), Y(v), 2.5, 0, 7); ctx.fill(); });
+    });
+    ctx.restore();
+    text(ctx, 'Step response: continuous (thick grey) vs each discrete model at T = ' + fmt(T, 2) + ' s', x0 + 6, 2, col.text, { size: 11 });
+    var lx = x0 + 6;
+    ['zoh', 'fe', 'be', 'tu'].forEach(function (m) { if (D.method !== 'all' && D.method !== m) return; ctx.font = '600 11px ' + col.font; ctx.fillStyle = cols[m]; ctx.fillText(DM[m], lx, y1 - 14); lx += ctx.measureText(DM[m]).width + 14; });
+  };
+  V['disc-bode'] = function (c, lab) {
+    var D = lab.disc, ctx = c.ctx, T = D.T, cols = dmColors(), mods = discModels(lab), wN = Math.PI / T, x0 = 46, x1 = c.W - 10, y0 = 20, y1 = c.H - 18;
+    var X = logX(x0, x1), Y = function (v) { return y1 - (clamp(v, -60, 20) + 60) / 80 * (y1 - y0); };
+    var p = lab.pm, w = GRID.filter(function (om) { return om > 0.05 && om < 50; });
+    ctx.strokeStyle = col.border; [-60, -40, -20, 0, 20].forEach(function (v) { ctx.beginPath(); ctx.moveTo(x0, Y(v)); ctx.lineTo(x1, Y(v)); ctx.stroke(); text(ctx, String(v), x0 - 4, Y(v) - 5, col.muted, { align: 'right', size: 10, mono: true, w: '400' }); });
+    ctx.strokeStyle = withAlpha(col.muted, 0.8); ctx.lineWidth = 3; ctx.beginPath();
+    w.forEach(function (om, i) { var g = 20 * Math.log10(C.cabs(C.cdiv([1, 0], [p.k - p.M * om * om, p.c * om]))); if (i) ctx.lineTo(X(om), Y(g)); else ctx.moveTo(X(om), Y(g)); }); ctx.stroke();
+    (D.method === 'all' ? ['zoh', 'fe', 'be', 'tu'] : [D.method]).forEach(function (m) {
+      ctx.strokeStyle = cols[m]; ctx.lineWidth = 1.6; ctx.beginPath(); var started = false;
+      w.forEach(function (om) {
+        if (om > wN) return;
+        var G = m === 'zoh' ? (function () { var P = mods.zoh.ss.Phi, Gm = mods.zoh.ss.Gam, z = [Math.cos(om * T), Math.sin(om * T)];
+            var a = [z[0] - P[0][0], z[1]], b = [-P[0][1], 0], cc = [-P[1][0], 0], d = [z[0] - P[1][1], z[1]], det = C.csub(C.cmul(a, d), C.cmul(b, cc));
+            var x0v = C.cdiv(C.csub(C.cmul(d, [Gm[0][0], 0]), C.cmul(b, [Gm[1][0], 0])), det); return x0v; })() : C.dtfFreq(mods[m].tf, om, T);
+        var g = 20 * Math.log10(C.cabs(G)); if (started) ctx.lineTo(X(om), Y(g)); else { ctx.moveTo(X(om), Y(g)); started = true; }
+      }); ctx.stroke();
+    });
+    ctx.save(); ctx.strokeStyle = col.bad; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(wN), y0); ctx.lineTo(X(wN), y1); ctx.stroke(); ctx.restore();
+    text(ctx, 'Nyquist ω = π/T', X(wN) - 4, y0 + 2, col.bad, { align: 'right', size: 10 });
+    text(ctx, 'Gain (dB): continuous (thick grey) vs discrete, up to the Nyquist frequency', x0 + 6, 2, col.text, { size: 11 });
+    [0.1, 1, 10].forEach(function (om) { text(ctx, String(om), X(om), c.H - 14, col.muted, { align: 'center', size: 10, mono: true, w: '400' }); });
+  };
+
+  // A sampled PID loop, exactly: closed-loop eigenvalues of the discrete map.
+  function loopInfo(lab) {
+    var key = JSON.stringify(lab.gains) + lab.ctrlPeriod; if (lab.loopKey === key) return lab.loopI;
+    var ch = lab.controller.channels[0], T = lab.ctrlPeriod, ev = C.sampledPidLoop(lab.plant, lab.pm, ch, lab.gains[0], T), mx = 0;
+    ev.forEach(function (z) { mx = Math.max(mx, C.cabs(z)); });
+    var lo = 0.002, hi = 1.0;                                    // exact critical period by bisection
+    function unstable(t) { return C.sampledPidLoop(lab.plant, lab.pm, ch, lab.gains[0], t).some(function (z) { return C.cabs(z) >= 1; }); }
+    if (unstable(lo)) hi = lo; else if (!unstable(hi)) lo = hi; else for (var it = 0; it < 30; it++) { var m = (lo + hi) / 2; if (unstable(m)) hi = m; else lo = m; }
+    var lab0 = Object.assign({}, lab, { delay: 0, ctrlPeriod: 0, dirty: true }); lab0.an = null;
+    var mg = analyze(lab0).ch[0].mg;
+    lab.loopI = { ev: ev, max: mx, Tcrit: hi, pm: mg.pm, wc: mg.wc, Trule: mg.pm !== null ? 2 * mg.pm * Math.PI / 180 / mg.wc : null };
+    lab.loopKey = key; return lab.loopI;
+  }
+  V['disc-loop'] = function (c, lab) {
+    var L = loopInfo(lab), ctx = c.ctx, narrow = c.W < 560, side = Math.min(c.H - 26, narrow ? c.W * 0.5 : c.W * 0.42), R = 1.2;
+    var cx = 10 + side / 2, cy = c.H / 2 + 8, k = side / (2 * R);
+    ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(cx - R * k, cy); ctx.lineTo(cx + R * k, cy); ctx.moveTo(cx, cy - R * k); ctx.lineTo(cx, cy + R * k); ctx.stroke();
+    ctx.fillStyle = withAlpha(col.accent, 0.07); ctx.beginPath(); ctx.arc(cx, cy, k, 0, 7); ctx.fill();
+    ctx.strokeStyle = col.text; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, k, 0, 7); ctx.stroke();
+    L.ev.forEach(function (z) { var x = cx + clamp(z[0], -R, R) * k, y = cy - clamp(z[1], -R, R) * k; ctx.fillStyle = C.cabs(z) < 1 ? col.accent : col.bad; ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); ctx.strokeStyle = col.bg; ctx.lineWidth = 1.5; ctx.stroke(); });
+    text(ctx, 'Closed-loop poles of the sampled loop (exact)', 10, 4, col.text, { size: 11 });
+    var T = lab.ctrlPeriod;
+    notes(ctx, { x0: narrow ? 14 + side : 30 + side, x1: c.W - 10, y: 18 }, [
+      [L.max < 1 ? 'Stable: every pole inside the circle (largest |z| = ' + fmt(L.max, 3) + ')' : 'Unstable: a pole outside the circle (|z| = ' + fmt(L.max, 3) + ')', L.max < 1 ? col.accent : col.bad],
+      ['Exact limit for these gains: T = ' + fmt(L.Tcrit * 1000, 0) + ' ms', col.text],
+      narrow ? null : ['Rule of thumb, a hold ≈ half a sample of delay: ' + (L.Trule ? 'T = 2·PM/ω_c = ' + fmt(L.Trule * 1000, 0) + ' ms' : '-') + '. Optimistic, because the derivative computed from two samples lags too.', col.muted, '400'],
+      narrow ? null : ['Sampling ' + fmt(2 * Math.PI / L.wc / T, 0) + '× per crossover period now; aim for 10–30×.', col.viz2]
+    ]);
+  };
+
   /* ---- the design checklist ---- */
   V.checklist = function (c, lab, tab) {
     var ctx = c.ctx, r = lab.req, an = analyze(lab), s = stepResponse(lab, tab.stepT || 12), mg = an.ch[0] && an.ch[0].mg;
@@ -1214,6 +1403,32 @@
   function setV(span, v, bad) { if (!span) return; if (span.textContent !== v) span.textContent = v; span.classList.toggle('lab-bad', !!bad); }
 
   var CTRL = { record: ctrlRecord, estimator: ctrlEstimator };
+  CTRL.sampling = function (panel, lab, tab) {
+    var S = sampState(lab); lab.hiRes = lab.hiRes || { t: [], y: [], dt: lab.plant.dt };
+    h3(panel, 'Sampling');
+    slider(panel, tab.id + '-fs', 'Sample rate', Math.log10(0.3), Math.log10(30), 0.01, Math.log10(S.fs), function (v) { var fs = Math.pow(10, v); return fmt(fs, fs < 10 ? 2 : 1) + ' Hz'; }, function (v) { S.fs = Math.pow(10, v); });
+    h3(panel, 'Rebuild with');
+    toggle(panel, 'Reconstruction', [['zoh', 'Hold'], ['foh', 'Lines'], ['none', 'Dots']], S.hold, function (v) { S.hold = v; });
+    h3(panel, 'ADC resolution');
+    toggle(panel, 'Bits', [[0, '∞'], [8, '8'], [4, '4'], [2, '2']], S.bits, function (v) { S.bits = v; });
+    var t = telemetry(panel, [['f', 'Signal'], ['n', 'Nyquist fs/2'], ['a', 'Looks like']]);
+    tab.syncSamp = function () { var f = lab.w / (2 * Math.PI), r = f % S.fs, fa = r > S.fs / 2 ? S.fs - r : r; setV(t.f, fmt(f, 2) + ' Hz'); setV(t.n, fmt(S.fs / 2, 2) + ' Hz'); setV(t.a, fmt(fa, 2) + ' Hz', f > S.fs / 2); };
+  };
+  CTRL.discretize = function (panel, lab, tab) {
+    lab.disc = lab.disc || { T: 0.2, method: 'all' }; var D = lab.disc;
+    h3(panel, 'Sample period');
+    slider(panel, tab.id + '-T', 'T', Math.log10(0.02), Math.log10(1.5), 0.01, Math.log10(D.T), function (v) { return fmt(Math.pow(10, v), 2) + ' s'; }, function (v) { D.T = Math.pow(10, v); });
+    h3(panel, 'Method');
+    toggle(panel, 'Method', [['all', 'All'], ['zoh', 'Hold'], ['fe', 'Fwd'], ['be', 'Bwd'], ['tu', 'Tustin']], D.method, function (v) { D.method = v; });
+  };
+  CTRL.ctrlrate = function (panel, lab, tab) {
+    lab.ctrlPeriod = lab.ctrlPeriod || 0.02;
+    h3(panel, 'Controller rate');
+    slider(panel, tab.id + '-Tc', 'Runs every', Math.log10(0.005), Math.log10(0.3), 0.005, Math.log10(lab.ctrlPeriod), function (v) { var T = Math.pow(10, v); return fmt(T * 1000, 0) + ' ms (' + fmt(1 / T, 1 / T < 10 ? 1 : 0) + ' Hz)'; },
+      function (v) { lab.ctrlPeriod = Math.pow(10, v); lab.stepCache = null; });
+    var t = telemetry(panel, [['v', 'Exact'], ['c', 'Limit'], ['r', 'Rule of thumb']]);
+    tab.syncRate = function () { var L = loopInfo(lab); setV(t.v, L.max < 1 ? 'stable' : 'unstable', L.max >= 1); setV(t.c, fmt(L.Tcrit * 1000, 0) + ' ms'); setV(t.r, L.Trule ? fmt(L.Trule * 1000, 0) + ' ms' : '-'); };
+  };
   CTRL.freq = function (panel, lab, tab) {
     h3(panel, tab.shake ? 'Shake it' : 'Frequency');
     var a = Math.log10(GRID[0]), b = Math.log10(GRID[GRID.length - 1]);
@@ -1468,6 +1683,7 @@
       if (lab.sim.failed && lab.failT === null) { lab.failT = lab.sim.t; lab.trials++; lab.ring = []; }
       lab.tick = (lab.tick || 0) + 1;
       if (lab.rec) recordTick(lab);
+      if (lab.hiRes) { push(lab.hiRes.t, lab.sim.t, 1200); push(lab.hiRes.y, lab.sim.x[0], 1200); }
       if (lab.sim.xhat && lab.tick % every === 0) {
         var E = lab.hist.est || (lab.hist.est = { th: [], thm: [], w: [], wh: [], v: [], vh: [] }), xs3 = lab.sim.x, xh3 = lab.sim.xhat, pm3 = lab.sim.prevMeas || xs3, r2d = 180 / Math.PI;
         push(E.th, xs3[2] * r2d, CAP); push(E.thm, pm3[2] * r2d, CAP); push(E.w, xs3[3] * r2d, CAP); push(E.wh, xh3[3] * r2d, CAP); push(E.v, xs3[1], CAP); push(E.vh, xh3[1], CAP);
@@ -1506,7 +1722,7 @@
       if (tab.syncFreq) tab.syncFreq();
       if (lab.estimator && lab.estDirty && performance.now() - lab.estAt > 150) updateEstimator(lab);
       if (lab.sysid && lab.sysid.data) lab.sysid.replayT = Math.min(lab.sysid.replayT + dt * 4, lab.sysid.T);
-      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'cbf' || v === 'verify-map' || v === 'states' || v === 'contrib' || v === 'est-states'; });
+      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'cbf' || v === 'verify-map' || v === 'states' || v === 'contrib' || v === 'est-states' || v === 'samp-time' || v === 'samp-fold'; });
       if (simShown) stepLab(lab, dt, tab);
       [tab.top, tab.row1, tab.row2].forEach(function (vname, k) {
         var cv = tab.canvases[k]; if (!cv || !V[vname]) return;
@@ -1515,7 +1731,7 @@
       if (tab.method === 'compare' && !idState(lab).compare && lab.sysid && lab.sysid.msd) {
         ['step', 'freq', 'era', 'grey'].forEach(function (mm) { if (!idState(lab)[mm]) runId(lab, mm); }); runId(lab, 'compare');
       }
-      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec', 'syncEst'].forEach(function (f) { if (tab[f]) tab[f](); });
+      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec', 'syncEst', 'syncSamp', 'syncRate'].forEach(function (f) { if (tab[f]) tab[f](); });
     });
     requestAnimationFrame(frame);
   }

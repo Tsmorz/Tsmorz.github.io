@@ -161,7 +161,7 @@ controls page, swing-up included), and `_includes/lab.html` uses it for "You'll 
 first tab and the final "Next:" link on its last tab (other tabs link to the next tab). **A new
 controls page must be added there**, or it won't appear in the path.
 
-### The lab template (`/controls/` and `/controls/stability|sysid|estimation|design|modern/`)
+### The lab template (`/controls/` and `/controls/stability|sysid|estimation|discrete|design|modern/`)
 
 These pages share one engine; a page differs only in its data. **To add or change one, edit its
 `_data/labs/<page>.yml`, not code.** The pieces:
@@ -194,6 +194,11 @@ measures only x and θ and runs LQR on an estimate, made by differencing (`estim
 discrete Kalman filter (`estimator: kalman`; `LabCore.buildEstimator`, trust = process-noise level
 `logQ`). For analysis the controller becomes a dynamic system from measurements to force, so
 margins, Nyquist and poles all include the filter (the separation principle and Doyle's LQG result).
+
+Discretisation (`/controls/discrete/`): a lab's `ctrlPeriod` makes the simulator run its controller
+once per period with a zero-order hold between (`LabCore.createSim`); `sampledPidLoop` gives the
+exact discrete-time closed loop for a sampled PID, and `mapPole` / `zohDiscretize` /
+`tfDiscretize` the four conversions (hold, forward and backward Euler, Tustin).
 
 `script/test-lab` (`task check:lab`, part of `task check`) checks the plants against /controls/,
 the textbook margins, Nyquist against eigenvalues, pole placement, the filter, sound network bounds,

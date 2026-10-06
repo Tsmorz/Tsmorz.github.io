@@ -733,6 +733,84 @@
     return 100 * (1 - Math.sqrt(e / v2));
   }
 
+  /* ---------------- discretisation ----------------
+     Continuous → discrete, four ways. For a pole p and sample period T:
+       zero-order hold (exact for a staircase input)  z = e^{pT}
+       forward Euler   s ≈ (z − 1)/T                  z = 1 + pT
+       backward Euler  s ≈ (z − 1)/(zT)               z = 1/(1 − pT)
+       Tustin          s ≈ (2/T)(z − 1)/(z + 1)       z = (1 + pT/2)/(1 − pT/2)            */
+  function mapPole(method, p, T) {
+    var pt = [p[0] * T, p[1] * T];
+    if (method === 'zoh') return cexp(pt);
+    if (method === 'fe') return [1 + pt[0], pt[1]];
+    if (method === 'be') return cdiv([1, 0], [1 - pt[0], -pt[1]]);
+    return cdiv([1 + pt[0] / 2, pt[1] / 2], [1 - pt[0] / 2, -pt[1] / 2]);
+  }
+  // e^{AT} and ∫₀ᵀ e^{As}ds B, by scaling and squaring a series.
+  function zohDiscretize(A, B, T) {
+    var n = A.length, sc = 0, nrm = 0, i, j, k;
+    A.forEach(function (r) { r.forEach(function (v) { nrm = Math.max(nrm, Math.abs(v)); }); });
+    while (nrm * T / Math.pow(2, sc) > 0.25) sc++;
+    var h = T / Math.pow(2, sc), Ph = zeros(n, n), Sg = zeros(n, n), term = zeros(n, n);
+    for (i = 0; i < n; i++) { Ph[i][i] = 1; term[i][i] = 1; Sg[i][i] = h; }
+    var tS = zeros(n, n); for (i = 0; i < n; i++) tS[i][i] = h;
+    function mul(X, Y) { return X.map(function (r) { return Y[0].map(function (_, b) { var sm = 0; for (var q = 0; q < Y.length; q++) sm += r[q] * Y[q][b]; return sm; }); }); }
+    for (k = 1; k < 16; k++) {
+      term = mul(term, A).map(function (r) { return r.map(function (v) { return v * h / k; }); });
+      tS = mul(tS, A).map(function (r) { return r.map(function (v) { return v * h / (k + 1); }); });
+      for (i = 0; i < n; i++) for (j = 0; j < n; j++) { Ph[i][j] += term[i][j]; Sg[i][j] += tS[i][j]; }
+    }
+    for (k = 0; k < sc; k++) {                         // e^{2hA} = (e^{hA})², ∫₀^{2h} = ∫₀^h (I + e^{hA})
+      var I2 = Ph.map(function (r, a) { return r.map(function (v, b) { return v + (a === b ? 1 : 0); }); });
+      Sg = mul(I2, Sg); Ph = mul(Ph, Ph);
+    }
+    return { Phi: Ph, Gam: mul(Sg, B.map(function (r) { return r.slice(); })) };
+  }
+  // The other three are substitutions s → (az + b)/(cz + d) into G(s) = num(s)/den(s).
+  function tfDiscretize(num, den, method, T) {
+    var sub = method === 'fe' ? [1, -1, 0, T] : method === 'be' ? [1, -1, T, 0] : [2, -2, T, T]; // (az+b)/(cz+d)
+    var n = den.length - 1;
+    function poly(c) {                                  // Σ c_k s^k (highest first) → polynomial in z
+      var out = new Array(n + 1).fill(0), deg = c.length - 1;
+      c.forEach(function (ck, idx) {
+        var k = deg - idx, t = [1];
+        for (var q = 0; q < k; q++) t = convolve(t, [sub[0], sub[1]]);
+        for (q = 0; q < n - k; q++) t = convolve(t, [sub[2], sub[3]]);
+        var off = out.length - t.length; t.forEach(function (v, i) { out[off + i] += ck * v; });
+      });
+      return out;
+    }
+    var a = poly(den), b = poly(num), lead = a[0];
+    return { num: b.map(function (v) { return v / lead; }), den: a.map(function (v) { return v / lead; }) };
+  }
+  function convolve(x, y) { var o = new Array(x.length + y.length - 1).fill(0); x.forEach(function (a, i) { y.forEach(function (b, j) { o[i + j] += a * b; }); }); return o; }
+  function dtfSim(m, u) {                               // num/den in z (highest first, monic den)
+    var n = m.den.length - 1, y = [];
+    for (var k = 0; k < u.length; k++) {
+      var v = 0;
+      for (var i = 1; i <= n; i++) v -= m.den[i] * (k - i >= 0 ? y[k - i] : 0);
+      for (i = 0; i < m.num.length; i++) { var d = n - (m.num.length - 1) + i; v += m.num[i] * (k - d >= 0 ? u[k - d] : 0); }
+      y.push(v);
+    }
+    return y;
+  }
+  function dtfFreq(m, w, T) {
+    var z = [Math.cos(w * T), Math.sin(w * T)];
+    function ev(c) { var r = [0, 0]; c.forEach(function (v) { r = cadd(cmul(r, z), [v, 0]); }); return r; }
+    return cdiv(ev(m.num), ev(m.den));
+  }
+  // A sampled PID (rate 1/T, zero-order hold on its output) around a plant: one exact discrete
+  // map for the state [x, ∫e, y(previous sample)]. Stable iff every eigenvalue is inside |z| = 1.
+  function sampledPidLoop(plant, p, ch, g, T) {
+    var lin = linearize(plant, p), n = plant.n, d = zohDiscretize(lin.A, lin.B, T), N = n + 2, M = zeros(N, N), out = ch.out, sg = ch.sign;
+    // u_k = σ(kp·e + ki·I − kd·(y_k − y_{k−1})/T), e = −y_k ; I_{k+1} = I_k + T·e ; yprev_{k+1} = y_k
+    var urow = zeros(1, N)[0];
+    urow[out] += sg * (-(g.kp || 0) - (g.kd || 0) / T); urow[n] += sg * (g.ki || 0); urow[n + 1] += sg * (g.kd || 0) / T;
+    for (var i = 0; i < n; i++) { for (var j = 0; j < n; j++) M[i][j] = d.Phi[i][j]; for (j = 0; j < N; j++) M[i][j] += d.Gam[i][ch.input] * urow[j]; }
+    M[n][n] = 1; M[n][out] -= T; M[n + 1][out] = 1;
+    return eig(M);
+  }
+
   /* ---------------- nonlinear simulator ----------------
      sim = createSim(plant, lab): the same plant equations as the sims on /controls/, with
      the controller run at the plant's control rate, measurement noise, a transport delay
@@ -758,12 +836,16 @@
     var sim = { t: 0, x: null, z: [], prevY: [], prevE: [], buf: [], u: plant.u0(lab.p), uReq: null, cbfActive: false, failed: false, contrib: [] };
     sim.reset = function (x) {
       sim.t = 0; sim.x = x || plant.start(lab.p, rng); sim.z = lab.controller.channels.map(function () { return 0; });
-      sim.prevY = null; sim.prevE = []; sim.xhat = null; sim.prevMeas = null; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
+      sim.prevY = null; sim.prevE = []; sim.xhat = null; sim.prevMeas = null; sim.uHeld = null; sim.holdLeft = 0; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
     };
     sim.reset();
     // One control period: measure, compute, filter, then integrate the plant.
     sim.step = function () {
       var p = lab.p, dt = plant.dt, x0 = plant.x0(p), u0 = plant.u0(p), ctrl = lab.controller;
+      // A controller running slower than the plant (lab.ctrlPeriod): it computes once per period
+      // and a zero-order hold keeps its output constant in between.
+      var Ts = lab.ctrlPeriod && lab.ctrlPeriod > dt + 1e-12 && !lab.manual ? lab.ctrlPeriod : dt;
+      if (Ts > dt && sim.uHeld && sim.holdLeft > 1e-9) { sim.holdLeft -= dt; return finish(sim.uHeld.slice(), null); }
       var meas = sim.x.map(function (v, i) { return v + (plant.noise[i] || 0) * lab.noise * gaussian(rng); });
       var r = lab.refs.map(function (ref) { return refValue(ref, sim.t); }), rr = lab.refs.map(function (ref) { return refRate(ref, sim.t); });
       var u = u0.slice();
@@ -774,11 +856,11 @@
         var g = lab.gains[ci], du, terms;
         if (ch.type === 'pid') {
           var y = meas[ch.out] - x0[ch.out], e = r[ci] - y;
-          sim.z[ci] += e * dt;
+          sim.z[ci] += e * Ts;
           if (ch.intClamp) sim.z[ci] = clamp(sim.z[ci], -ch.intClamp, ch.intClamp);
           // D on the error for a smooth reference; on the measurement alone for a step,
           // so the derivative doesn't spike at each jump (as on /controls/).
-          var dterm = !sim.prevY ? 0 : lab.refs[ci].type === 'wave' ? (e - sim.prevE[ci]) / dt : -(meas[ch.out] - sim.prevY[ci]) / dt;
+          var dterm = !sim.prevY ? 0 : lab.refs[ci].type === 'wave' ? (e - sim.prevE[ci]) / Ts : -(meas[ch.out] - sim.prevY[ci]) / Ts;
           sim.prevE[ci] = e;
           terms = { p: ch.sign * (g.kp || 0) * e, i: ch.sign * (g.ki || 0) * sim.z[ci], d: ch.sign * (g.kd || 0) * dterm };
           du = terms.p + terms.i + terms.d;
@@ -823,6 +905,11 @@
         u[lab.cbf.input] = clamp(u[lab.cbf.input], bd[0], bd[1]);
         sim.cbfActive = Math.abs(u[lab.cbf.input] - before) > 1e-9; sim.cbfBounds = bd;
       } else sim.cbfActive = false;
+      if (Ts > dt) { sim.uHeld = u.slice(); sim.holdLeft = Ts - dt; } else sim.uHeld = null;
+      return finish(u, manualU);
+    };
+    function finish(u, manualU) {
+      var p = lab.p, dt = plant.dt, u0 = plant.u0(p);
       u = u.map(function (v, i) { return clamp(v, plant.ulim(p)[i][0], plant.ulim(p)[i][1]); });
       // Delay applies to the controller's command only (a person dragging isn't delayed).
       var lag = manualU ? 0 : Math.round((lab.delay || 0) / dt);
@@ -838,7 +925,7 @@
       sim.status = plant.status ? plant.status(sim.x, p) : (plant.failed && plant.failed(sim.x, p) ? 'failed' : 'ok');
       sim.failed = sim.status !== 'ok';
       return sim;
-    };
+    }
     return sim;
   }
 
@@ -852,6 +939,7 @@
     arxFit: arxFit, arxFitIV: arxFitIV, arxSim: arxSim, arxFreq: arxFreq, arxToMsd: arxToMsd,
     experiment: experiment, stepEstimate: stepEstimate, freqPoint: freqPoint, levyFit: levyFit, greyBoxFit: greyBoxFit,
     simMsd: simMsd, fitPercent: fitPercent, svd: svd, firFit: firFit, era: era, ssSim: ssSim, ssToMsd: ssToMsd,
+    mapPole: mapPole, zohDiscretize: zohDiscretize, tfDiscretize: tfDiscretize, dtfSim: dtfSim, dtfFreq: dtfFreq, sampledPidLoop: sampledPidLoop,
     kalmanGain: kalmanGain, buildEstimator: buildEstimator, createSim: createSim, refValue: refValue, gaussian: gaussian
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = LabCore;

@@ -182,10 +182,28 @@ console.log('7. state estimation');
   check(sep, 'separation principle: closed-loop poles = LQR poles ∪ estimator poles');
 }
 
-console.log('8. page data');
+console.log('8. discretisation');
 {
-  const dir = path.join(root, '_data/labs'), views = ['est-states', 'rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
-  const controls = ['estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const pl = P.msd, p = Object.assign({}, pl.params), pole = C.eig(C.linearize(pl, p).A)[0];
+  const at = (m, T) => C.cabs(C.mapPole(m, pole, T));
+  check(at('fe', 0.05) < 1 && at('fe', 0.2) > 1, `forward Euler: stable model at 50 ms, unstable at 200 ms (|z| = ${at('fe', 0.2).toFixed(3)})`);
+  check([0.05, 0.2, 0.5, 1].every((T) => at('be', T) < at('zoh', T) && at('tu', T) < 1), 'backward Euler adds damping (|z| below the exact hold); Tustin always stays inside');
+  const d = C.tfDiscretize([1], [p.M, p.c, p.k], 'tu', 0.2), y = C.dtfSim(d, new Array(600).fill(1));
+  const zp = C.roots(d.den), want = C.mapPole('tu', pole, 0.2);
+  check(Math.abs(y[599] - 1 / p.k) < 1e-3 && zp.some((z) => Math.hypot(z[0] - want[0], Math.abs(z[1]) - Math.abs(want[1])) < 1e-6), 'Tustin model: poles where the map says, DC gain preserved');
+  const zz = C.zohDiscretize(C.linearize(pl, p).A, C.linearize(pl, p).B, 0.2), ze = C.eig(zz.Phi), zw = C.mapPole('zoh', pole, 0.2);
+  check(ze.some((z) => Math.hypot(z[0] - zw[0], Math.abs(z[1]) - Math.abs(zw[1])) < 1e-9), 'zero-order hold: e^{AT} has eigenvalues e^{pT}');
+  const ch = pl.controllers.pid.channels[0], uns = (T) => C.sampledPidLoop(pl, p, ch, ch.gains, T).some((z) => C.cabs(z) >= 1);
+  check(!uns(0.13) && uns(0.14), 'sampled PID (40/5/6): stable at 130 ms, unstable at 140 ms (exact)');
+  const simMax = (T) => { const ctrl = JSON.parse(JSON.stringify(pl.controllers.pid)); const lab = { p, controller: ctrl, gains: [Object.assign({}, ch.gains)], refs: [{ type: 'step', amp: 1, omega: 0.5 }], noise: 0, delay: 0, ctrlPeriod: T };
+    const sim = C.createSim(pl, lab, rand); let m = 0; for (let k = 0; k < 4000; k++) { sim.step(); if (k > 2000) m = Math.max(m, Math.abs(sim.x[0])); } return m; };
+  check(simMax(0.13) < 3 && simMax(0.14) > 100, 'the simulation with a real hold agrees: settles at 130 ms, diverges at 140 ms');
+}
+
+console.log('9. page data');
+{
+  const dir = path.join(root, '_data/labs'), views = ['samp-time', 'samp-fold', 'disc-z', 'disc-step', 'disc-bode', 'disc-loop', 'est-states', 'rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['sampling', 'discretize', 'ctrlrate', 'estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
   const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
   check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
   const missing = controls.filter((c) => !src.includes('CTRL.' + c + ' =') && !new RegExp('var CTRL = \\{[^}]*\\b' + c + ':').test(src));

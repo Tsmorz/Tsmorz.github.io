@@ -21,11 +21,16 @@
   url: /controls/estimation/
   blurb: Noisy sensors, the Kalman filter, and why LQG loses LQR's margins.
   needs: [sims, stability]
+- id: discrete
+  title: From continuous to discrete
+  url: /controls/discrete/
+  blurb: Sampling and aliasing, zero-order hold, Euler and Tustin, and how slow a controller can run.
+  needs: [stability]
 - id: design
   title: The design process
   url: /controls/design/
   blurb: One plant from requirements to a tested controller, step by step.
-  needs: [sysid, stability]
+  needs: [sysid, stability, discrete]
 - id: modern
   title: Modern methods
   url: /controls/modern/

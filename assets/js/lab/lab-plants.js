@@ -49,6 +49,7 @@
   // Who is driving, for the status line every sim shows top left.
   function who(lab, label) {
     if (lab.manual) return null;
+    if (!lab.controller.channels.length) return label;          // no controller by design (a shaker)
     var allZero = lab.controller.channels.every(function (ch, ci) { return Object.keys(lab.gains[ci]).every(function (k) { return !lab.gains[ci][k]; }); });
     return allZero && !lab.useNet ? 'none' : label;
   }

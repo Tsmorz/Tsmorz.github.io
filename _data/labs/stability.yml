@@ -14,12 +14,12 @@ tabs:
     row2: analysis
     analysis: [bode, poles]
     shake: true
-    shakeAmp: 2
+    shakeAmp: 1
     controls: [freq, view]
     aria: ["The mass on its spring, shaken by a sine-wave force", "Force in and position out over time", "Bode plot or poles of the mass-spring-damper"]
     note: |
       <p>The mass on a spring from the <a href="/controls/">Intro demo</a>, with no controller, shaken by a
-      2&nbsp;N sine-wave force. A Bode plot answers one question: shake a system at a frequency, and how big
+      1&nbsp;N sine-wave force. A Bode plot answers one question: shake a system at a frequency, and how big
       is the output, and how late? Drag &#969; or press <strong>Sweep</strong> and watch the dot trace the
       curve: the spring wins when slow (output in step), the mass resonates near 2&nbsp;rad/s, and the mass
       can't keep up when fast (output tiny, half a cycle late).</p>
