@@ -105,9 +105,13 @@ assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + goa
 assets/js/bode.js        /controls/bode/ (bode.md): Bode plots of the MSD plant, its PID loop,
                          and the cart-pole LQR loop. BodeCore (no DOM, Node-testable) does the
                          maths; its plant constants and LQR gains must match controls.js
+assets/js/modern-core.js /controls/modern/ maths, no DOM (ModernCore): CBF filter, interval bounds
+                         for both policy nets, the spinning-satellite MIMO example
+assets/js/modern.js      /controls/modern/ (modern.md) page code; load modern-core.js first
 assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture
                          is test-only and excluded from the build
-script/                  serve, check, add-photo, test-data, test-swingup, test-bode
+script/                  serve, check, add-photo, test-data, test-swingup, test-bode, test-modern,
+                         train-verify-net (writes assets/models/verify-net.json)
 ```
 
 ### Conventions worth keeping
@@ -177,6 +181,27 @@ against the matrices printed on /controls/, LQR's guaranteed margins, Nyquist ag
 closed-loop eigenvalues for random gains, that the delay margin is where the loop breaks,
 that the num/den polynomials reproduce L(jω), and that the Padé poles agree with Nyquist.
 
+### The modern-methods page
+
+`/controls/modern/` has three tabs (`#cbf`, `#verify`, `#mimo`):
+
+- **Safety Filter:** a robot in the plane (ṗ = u) with a goal-seeking or wandering controller
+  underneath a CBF filter. h = d² − r² per obstacle; the filter solves the small QP
+  min |u − u_nom|² s.t. ∇h·u ≥ −αh (Hildreth's method). The bottom row draws h(t) and the
+  velocity-space half-planes the QP works in.
+- **Verifying Networks:** interval bound propagation + branch and bound on
+  `assets/models/verify-net.json`, a 4·16·16·1 ReLU net trained to copy the cart-pole LQR. The
+  query is local robustness to sensor error (ε on θ, 5ε on θ̇, the /controls/ noise ratio). The
+  "Try the swing-up network" button loads the 2 MB TQC net and shows the bound exploding layer
+  by layer. **Never hand-edit `verify-net.json`**: change `script/train-verify-net` and re-run it
+  (it's seeded, so the output is reproducible).
+- **Many Loops:** Doyle's spinning satellite (a = 10). Each loop alone: 90° PM, no gain limit;
+  both at once fail at 1/√(1 + a²) ≈ 9.95%. The stability test is closed form (2 × 2 trace/det).
+
+`script/test-modern` (`task check:modern`, part of `task check`) checks that the CBF keeps the
+robot out of obstacles in random scenes, that the interval bounds are sound for both nets, that
+proofs never beat attacks, and the satellite's textbook numbers.
+
 ## Running and checking
 
 ```sh
@@ -189,14 +214,14 @@ Needs Ruby ≥ 2.7 — **system Ruby on this Mac is 2.6.10 and cannot run Jekyll
 on CI to build.
 
 `Taskfile.yml` is the single entrypoint (`task --list`: `serve`, `build`, `check`,
-`check:data`, `check:swingup`, `check:bode`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
+`check:data`, `check:swingup`, `check:bode`, `check:modern`, `check:js`, `check:links`, `install`, `clean`, `add-photo`). `check:data`
 validates `_data/*.yml` — required fields, and that each photo's full-size + thumbnail and
 each local project image actually exist (the full-size lives in a `data-full` attribute
 that html-proofer never sees, so this is the only thing guarding it). It's pure Ruby
 stdlib, no build. The build and the CI checks
 are **defined here once** — `script/check` and `.github/workflows/pages.yml` both delegate
 to these tasks, so there's no duplicated JS/link-check logic to keep in sync. CI installs
-Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → swingup → bode →
+Task and runs `task check BASEURL="${{ steps.pages.outputs.base_path }}"` (data → swingup → bode → modern →
 build → JS → links; the swingup check uses the runner's preinstalled Node); that build is the uploaded deploy artifact. `serve` and `add-photo` still wrap
 the `script/` files (`task add-photo -- <source-image> <slug>`).
 

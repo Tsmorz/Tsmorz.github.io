@@ -71,6 +71,11 @@ tasks:
     cmds:
       - script/test-bode
 
+  check:modern:
+    desc: Check the modern-methods page's maths (CBF safety, sound network bounds, satellite margins) (Node, no build)
+    cmds:
+      - script/test-modern
+
   check:links:
     desc: Check internal links with html-proofer
     cmds:
@@ -82,6 +87,7 @@ tasks:
       - task: check:data
       - task: check:swingup
       - task: check:bode
+      - task: check:modern
       - task: build
       - task: check:js
       - task: check:links
