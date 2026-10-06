@@ -132,10 +132,27 @@ console.log('5. system identification');
   });
 }
 
-console.log('6. page data');
+console.log('6. identification methods');
 {
-  const dir = path.join(root, '_data/labs'), views = ['sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
-  const controls = ['mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const p = Object.assign({}, P.msd.params), dt = 0.05;
+  const rel = (e) => Math.max(...['M', 'c', 'k'].map((n) => Math.abs(e[n] / p[n] - 1)));
+  const st = C.stepEstimate(C.experiment(P.msd, p, (t) => (t >= 1 ? 2 : 0), 25, dt, 0, rand), 2, 1);
+  check(st.ok && rel(st) < 0.05, `step response reads the plant to within ${(rel(st) * 100).toFixed(1)}% (noise-free)`);
+  const ws = C.logspace(0.3, 8, 12), Gs = ws.map((w) => { const T = 2 * Math.PI / w, ts = Math.max(25, 6 * T); return C.freqPoint(C.experiment(P.msd, p, (t) => 2 * Math.sin(w * t), ts + Math.max(4 * T, 10), 0.02, 0.01, rand), w, 2, ts); });
+  const fq = C.levyFit(ws, Gs);
+  check(rel(fq) < 0.05, `frequency sweep fit within ${(rel(fq) * 100).toFixed(1)}% with 10 mm noise`);
+  const levels = []; let s2 = 5; for (let i = 0; i < 700; i++) { s2 = (s2 * 1103515245 + 12345) % 2147483648; levels.push(s2 / 2147483648 < 0.5 ? 2 : -2); }
+  const prbs = (t) => levels[Math.floor(t / 0.4)];
+  const dg = C.experiment(P.msd, p, prbs, 30, dt, 0.01, rand), path = C.greyBoxFit(P.msd, p, dg, ['M', 'c', 'k'], { M: 2.5, c: 1.5, k: 1.5 }, 25), gb = path[path.length - 1].p;
+  check(rel(gb) < 0.03 && path.every((q, i) => i === 0 || q.cost <= path[i - 1].cost + 1e-15), `grey-box fit within ${(rel(gb) * 100).toFixed(1)}% from a 2.5× guess, error never rising`);
+  const dv = C.experiment(P.msd, p, prbs, 30, dt, 0, rand);
+  check(C.fitPercent(dv.y, C.simMsd(P.msd, p, gb, dv.u, dt)) > 95, 'validation: the grey-box model predicts fresh data at > 95% fit');
+}
+
+console.log('7. page data');
+{
+  const dir = path.join(root, '_data/labs'), views = ['id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
   const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
   check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
   check(controls.every((c) => src.includes('CTRL.' + c + ' =')), 'every control name is implemented in lab.js');

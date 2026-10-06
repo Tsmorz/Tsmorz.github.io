@@ -448,6 +448,125 @@
     return { M: M, c: twoZw * M, k: k, poles: ss };
   }
 
+  /* ---------------- more identification methods (2nd-order plants: M, c, k) ----------------
+     These read a mass-spring-damper's three constants back from experiments, each in the way
+     its method is usually taught. All take sampled data at spacing dt. */
+
+  // Run an open-loop experiment on a plant: input u(t), measured output with noise.
+  function experiment(plant, p, uFn, T, dt, noise, rng) {
+    var x = plant.x0(p).slice(), sub = Math.max(1, Math.round(dt / plant.dt)), h = dt / sub, n = Math.round(T / dt);
+    var out = { t: [], u: [], y: [], yTrue: [], dt: dt }, idx = 0;
+    for (var k = 0; k < n; k++) {
+      var t = k * dt, uk = uFn(t);
+      out.t.push(t); out.u.push(uk); out.yTrue.push(x[idx]); out.y.push(x[idx] + noise * gaussian(rng));
+      // The input acts continuously between samples (a shaker doesn't hold its value), so a
+      // sine isn't delayed half a sample; uFn must be a plain function of time.
+      for (var j = 0; j < sub; j++) x = rk4(plant, x, [uFn(t + (j + 0.5) * h)], p, h);
+    }
+    return out;
+  }
+
+  // Step response, read the classic way: gain from the final value, damping ratio from the
+  // overshoot, damped frequency from the time to the first peak.
+  function stepEstimate(d, A, t0) {
+    var y = d.y.map(function (v, i) {                  // light smoothing so noise doesn't fake a peak
+      var a = 0, n = 0; for (var j = Math.max(0, i - 2); j <= Math.min(d.y.length - 1, i + 2); j++) { a += d.y[j]; n++; } return a / n;
+    });
+    var tail = y.slice(Math.floor(y.length * 0.85)), yss = tail.reduce(function (a, v) { return a + v; }, 0) / tail.length;
+    var k0 = Math.ceil(t0 / d.dt), ipk = k0;
+    for (var i = k0; i < y.length; i++) { if (y[i] > y[ipk]) ipk = i; if (y[i] < y[ipk] - 0.3 * Math.abs(y[ipk] - yss) && i > ipk) break; }
+    // Refine the peak with a least-squares parabola through the raw samples around it: finds
+    // the true top between samples and averages the noise, where smoothing would flatten it.
+    var h = 3, S = [0, 0, 0, 0, 0], T = [0, 0, 0];
+    for (var q = -h; q <= h; q++) {
+      var ii = ipk + q; if (ii < 0 || ii >= d.y.length) continue;
+      var tt = q * d.dt, yy = d.y[ii];
+      S[0] += 1; S[1] += tt; S[2] += tt * tt; S[3] += tt * tt * tt; S[4] += tt * tt * tt * tt;
+      T[0] += yy; T[1] += yy * tt; T[2] += yy * tt * tt;
+    }
+    var Mq = [[S[4], S[3], S[2], T[2]], [S[3], S[2], S[1], T[1]], [S[2], S[1], S[0], T[0]]];
+    for (var a = 0; a < 3; a++) for (var b = a + 1; b < 3; b++) { var f = Mq[b][a] / Mq[a][a]; for (var cc = a; cc < 4; cc++) Mq[b][cc] -= f * Mq[a][cc]; }
+    var qc = Mq[2][3] / Mq[2][2], qb = (Mq[1][3] - Mq[1][2] * qc) / Mq[1][1], qa = (Mq[0][3] - Mq[0][2] * qc - Mq[0][1] * qb) / Mq[0][0];
+    var dtPk = qa < 0 ? clamp(-qb / (2 * qa), -h * d.dt, h * d.dt) : 0, ypk = qa < 0 ? qa * dtPk * dtPk + qb * dtPk + qc : y[ipk];
+    var os = (ypk - yss) / yss, tp = d.t[ipk] + dtPk - t0;
+    var K = yss / A, out = { yss: yss, overshoot: os, tp: tp, tpk: d.t[ipk] + dtPk, ypk: ypk, K: K };
+    if (!(os > 0.001) || !(tp > 0)) { out.ok = false; return out; }
+    var L = Math.log(os), zeta = -L / Math.sqrt(Math.PI * Math.PI + L * L), wd = Math.PI / tp, wn = wd / Math.sqrt(1 - zeta * zeta);
+    var k = 1 / K, M = k / (wn * wn);
+    out.ok = true; out.zeta = zeta; out.wn = wn; out.M = M; out.c = 2 * zeta * wn * M; out.k = k;
+    return out;
+  }
+
+  // One frequency-response point: correlate the settled output with sin and cos over whole periods.
+  function freqPoint(d, w, A, tSettle) {
+    var s = 0, c = 0, n = 0, T = 2 * Math.PI / w, tEnd = d.t[d.t.length - 1], periods = Math.floor((tEnd - tSettle) / T);
+    var t1 = tSettle + periods * T;
+    for (var i = 0; i < d.t.length; i++) { var t = d.t[i]; if (t < tSettle || t >= t1) continue; s += d.y[i] * Math.sin(w * t); c += d.y[i] * Math.cos(w * t); n++; }
+    var re = 2 * s / n / A, im = 2 * c / n / A;       // y ≈ A(re·sin + im·cos) ⇒ G = re + j·im
+    return [re, im];
+  }
+
+  // Fit 1/G(jω) = k − Mω² + j·cω (exactly linear in M, c, k for this plant) by least squares
+  // over the measured points: the real parts give k and M, the imaginary parts give c.
+  // Each equation is weighted by |G|², so the fit balances the error in G itself rather than in
+  // 1/G (where the small, noisy high-frequency points would dominate): one Sanathanan–Koerner step.
+  function levyFit(ws, Gs) {
+    var a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0, cn = 0, cd = 0;
+    ws.forEach(function (w, i) {
+      var inv = cdiv([1, 0], Gs[i]), r = [1, -w * w], q = Math.pow(cabs(Gs[i]), 2);
+      a11 += q * r[0] * r[0]; a12 += q * r[0] * r[1]; a22 += q * r[1] * r[1]; b1 += q * r[0] * inv[0]; b2 += q * r[1] * inv[0];
+      cn += q * w * inv[1]; cd += q * w * w;
+    });
+    var det = a11 * a22 - a12 * a12, k = (b1 * a22 - b2 * a12) / det, M = (a11 * b2 - a12 * b1) / det;
+    return { M: M, c: cn / cd, k: k };
+  }
+
+  // Grey-box (output-error) fit: simulate the physical model with candidate constants, compare
+  // with the measured output, and adjust the constants to shrink the squared error
+  // (Levenberg–Marquardt on log-parameters, so they stay positive). Returns every iterate.
+  function greyBoxFit(plant, pBase, d, names, guess, iters) {
+    function sim(th) {
+      var p = Object.assign({}, pBase); names.forEach(function (nm, i) { p[nm] = Math.exp(th[i]); });
+      var x = plant.x0(p).slice(), sub = Math.max(1, Math.round(d.dt / plant.dt)), h = d.dt / sub, y = [];
+      for (var k = 0; k < d.u.length; k++) { y.push(x[0]); for (var j = 0; j < sub; j++) x = rk4(plant, x, [d.u[k]], p, h); if (!isFinite(x[0]) || Math.abs(x[0]) > 1e3) { while (y.length < d.u.length) y.push(1e3); break; } }
+      return y;
+    }
+    function cost(y) { var e = 0; for (var i = 0; i < y.length; i++) e += Math.pow(d.y[i] - y[i], 2); return e / y.length; }
+    var th = names.map(function (nm) { return Math.log(guess[nm]); }), y = sim(th), J0 = cost(y), lam = 1e-2, path = [];
+    function rec() { var o = {}; names.forEach(function (nm, i) { o[nm] = Math.exp(th[i]); }); path.push({ p: o, cost: J0, y: y }); }
+    rec();
+    for (var it = 0; it < (iters || 25); it++) {
+      var r = d.y.map(function (v, i) { return v - y[i]; }), J = [];
+      names.forEach(function (_, j) { var tp = th.slice(); tp[j] += 1e-4; var yp = sim(tp); J.push(yp.map(function (v, i) { return (v - y[i]) / 1e-4; })); });
+      var n = names.length, H = zeros(n, n), g = new Array(n).fill(0);
+      for (var a = 0; a < n; a++) { for (var b = 0; b < n; b++) { var sm = 0; for (var i = 0; i < r.length; i++) sm += J[a][i] * J[b][i]; H[a][b] = sm; } for (i = 0; i < r.length; i++) g[a] += J[a][i] * r[i]; }
+      var improved = false;
+      for (var tries = 0; tries < 8 && !improved; tries++) {
+        var M = H.map(function (row, ai) { return row.map(function (v, bi) { return v + (ai === bi ? lam * (v + 1e-9) : 0); }).concat([g[ai]]); });
+        for (var c2 = 0; c2 < n; c2++) { var pv = c2; for (var q = c2 + 1; q < n; q++) if (Math.abs(M[q][c2]) > Math.abs(M[pv][c2])) pv = q; var tt = M[pv]; M[pv] = M[c2]; M[c2] = tt; for (q = c2 + 1; q < n; q++) { var f = M[q][c2] / M[c2][c2]; for (var z = c2; z <= n; z++) M[q][z] -= f * M[c2][z]; } }
+        var dth = new Array(n); for (c2 = n - 1; c2 >= 0; c2--) { var sm2 = M[c2][n]; for (q = c2 + 1; q < n; q++) sm2 -= M[c2][q] * dth[q]; dth[c2] = sm2 / M[c2][c2]; }
+        dth = dth.map(function (v) { return clamp(v, -1, 1); });
+        var thN = th.map(function (v, i2) { return v + dth[i2]; }), yN = sim(thN), JN = cost(yN);
+        if (JN < J0) { th = thN; y = yN; J0 = JN; lam = Math.max(lam / 3, 1e-6); improved = true; } else lam *= 4;
+      }
+      rec();
+      if (!improved || path.length > 2 && Math.abs(path[path.length - 2].cost - J0) < 1e-12 * (1 + J0)) break;
+    }
+    return path;
+  }
+
+  // Free-run a mass-spring-damper with given constants on an input sequence (validation).
+  function simMsd(plant, pBase, consts, u, dt) {
+    var p = Object.assign({}, pBase, consts), x = plant.x0(p).slice(), sub = Math.max(1, Math.round(dt / plant.dt)), h = dt / sub, y = [];
+    for (var k = 0; k < u.length; k++) { y.push(x[0]); for (var j = 0; j < sub; j++) x = rk4(plant, x, [u[k]], p, h); }
+    return y;
+  }
+  function fitPercent(yTrue, yhat) {
+    var m = yTrue.reduce(function (a, v) { return a + v; }, 0) / yTrue.length, e = 0, v2 = 0;
+    yTrue.forEach(function (v, i) { e += Math.pow(v - yhat[i], 2); v2 += Math.pow(v - m, 2); });
+    return 100 * (1 - Math.sqrt(e / v2));
+  }
+
   /* ---------------- nonlinear simulator ----------------
      sim = createSim(plant, lab): the same plant equations as the sims on /controls/, with
      the controller run at the plant's control rate, measurement noise, a transport delay
@@ -545,6 +664,8 @@
     cbfBounds: cbfBounds, netForward: netForward, netBounds: netBounds, queryBox: queryBox, certify: certify, attack: attack,
     certifiedRadius: certifiedRadius, netGains: netGains, RATE_PER_ANGLE: RATE_PER_ANGLE,
     arxFit: arxFit, arxFitIV: arxFitIV, arxSim: arxSim, arxFreq: arxFreq, arxToMsd: arxToMsd,
+    experiment: experiment, stepEstimate: stepEstimate, freqPoint: freqPoint, levyFit: levyFit, greyBoxFit: greyBoxFit,
+    simMsd: simMsd, fitPercent: fitPercent,
     createSim: createSim, refValue: refValue, gaussian: gaussian
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = LabCore;

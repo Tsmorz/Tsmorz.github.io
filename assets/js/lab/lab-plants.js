@@ -137,8 +137,9 @@
       }
       var w = who(lab, lab.shake ? 'Shaken by a sine-wave force' : 'PID tracking');
       statusLine(ctx, w === null ? 'Manual - drag the mass' : w === 'none' ? 'No control - raise Kp' : w, w === 'none' ? muted : accent, 't = ' + t.toFixed(1) + ' s', col);
-      stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], decimals: 2, unit: 'm' }, { label: 'ẋ', value: sim.x[1], decimals: 2, unit: 'm/s' },
-        { label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, decimals: 2, unit: lab.shake ? 'rad/s' : 'm' }, { label: 'F', value: F, decimals: 1, unit: 'N' }]);
+      stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], decimals: 2, unit: 'm' }, { label: 'ẋ', value: sim.x[1], decimals: 2, unit: 'm/s' }]
+        .concat(lab.replay ? [] : [{ label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, decimals: 2, unit: lab.shake ? 'rad/s' : 'm' }])
+        .concat([{ label: 'F', value: lab.replay ? F / 4 : F, decimals: 1, unit: 'N' }]));
     }
   };
 
