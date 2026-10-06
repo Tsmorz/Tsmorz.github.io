@@ -14,12 +14,15 @@
       <button class="sim-tab{% if forloop.first %} active{% endif %}" role="tab" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" aria-controls="sec-{{ t.id }}" id="tab-{{ t.id }}" type="button">{{ t.label }}</button>
       {%- endfor %}
     </div>
+    {%- for l in L.links %}
+    <a class="sim-tab-link" href="{{ l.href | relative_url }}">{{ l.label }} &#8594;</a>
+    {%- endfor %}
   </div>
   {%- for t in L.tabs %}
   <section class="sim-section{% if forloop.first %} active{% endif %}" id="sec-{{ t.id }}" role="tabpanel" aria-labelledby="tab-{{ t.id }}">
     <div class="sim-layout">
       <div class="sim-canvas-wrap sim-stack">
-        <div class="sim-cell"><canvas class="sim-canvas lab-canvas" id="{{ t.id }}-top" aria-label="{{ t.aria[0] }}"></canvas></div>
+        <div class="sim-cell"><canvas class="sim-canvas lab-canvas" id="{{ t.id }}-top" aria-label="{{ t.aria[0] }}"{% if t.sprite %} data-sprite="{{ t.sprite | relative_url }}"{% endif %}></canvas></div>
         <div class="sim-cell-pair">
           <div class="sim-cell"><canvas class="sim-states lab-canvas" id="{{ t.id }}-row1" aria-label="{{ t.aria[1] }}"></canvas></div>
           <div class="sim-cell"><canvas class="sim-states lab-canvas" id="{{ t.id }}-row2" aria-label="{{ t.aria[2] }}"></canvas></div>
@@ -39,6 +42,8 @@
 <script type="application/json" id="lab-config">{"page": {{ page.lab | jsonify }}, "assets": {"net": {{ '/assets/models/verify-net.json' | relative_url | jsonify }}}, "labs": {{ L.labs | jsonify }}, "tabs": {{ L.tabs | jsonify }}}</script>
 <script src="{{ '/assets/js/lab/lab-core.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/lab/lab-plants.js' | relative_url }}"></script>
+<script src="{{ '/assets/js/lab/lab-flight-render.js' | relative_url }}"></script>
+<script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/lab/lab.js' | relative_url }}"></script>
 <style>
 .telemetry .t-key,.telemetry .t-val{white-space:nowrap}
@@ -46,4 +51,22 @@
 .lab-canvas{touch-action:none}
 .sim-panel .mode-toggle{margin-bottom:.6rem}
 .sim-panel .sim-btn{margin-bottom:.5rem}
+.ctrl-row{display:flex;flex-direction:column;gap:.2rem;margin:.35rem 0}
+.ctrl-row label{display:flex;justify-content:space-between;align-items:baseline;font-size:.85rem;font-weight:550;color:var(--text-muted)}
+.ctrl-row label span{font-family:var(--mono);font-size:.82rem;color:var(--accent);font-weight:400}
+.ctrl-row input[type="range"]{width:100%;accent-color:var(--accent);cursor:pointer}
+.eqn-block{padding:.25rem 0 0;font-family:var(--mono);font-size:.8rem}
+.eqn-row{display:flex;gap:.4rem;margin:.18rem 0}
+.eqn-lhs{min-width:2.4rem;text-align:right;font-weight:600}
+.eqn-eq{min-width:1rem}
+.eqn-rhs{color:var(--text-muted)}
+.range-row{display:flex;align-items:center;gap:.25rem}
+.range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
+.range-input{width:3.6rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
+.trial-status-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin:.3rem 0 .2rem;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;padding:.35rem .55rem}
+.trial-status-text{font-size:.82rem;color:var(--text-muted)}
+.trial-status-text.success{color:#22c55e;font-weight:600}
+.trial-status-text.failed{color:#ef4444}
+.trial-timer{font-family:var(--mono);font-size:1.1rem;font-weight:700;color:var(--accent);min-width:4ch;text-align:right}
+.trial-timer.urgent{color:#ef4444}
 </style>

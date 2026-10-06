@@ -36,14 +36,15 @@ console.log('1. plants');
   let err = 0; L.A.forEach((r, i) => r.forEach((v, j) => { err = Math.max(err, Math.abs(v - A[i][j])); })); L.B.forEach((r, i) => { err = Math.max(err, Math.abs(r[0] - B[i])); });
   check(err < 0.006, `cart-pole A, B match /controls/ (max diff ${err.toFixed(4)})`);
   const f = P.flight, d = f.deriv(f.x0(f.params), f.u0(f.params), f.params);
-  check(d.every((v) => Math.abs(v) < 1e-8), `aircraft trim is an equilibrium (largest rate ${Math.max(...d.map(Math.abs)).toExponential(1)})`);
-  [['msd', 'pid'], ['cartpole', 'lqr'], ['flight', 'both']].forEach(([pk, ck]) => {
+  const dd = d.slice(0, 5);   // the 6th state is distance downrange, which grows at V
+  check(dd.every((v) => Math.abs(v) < 1e-8), `aircraft trim is an equilibrium (largest rate ${Math.max(...dd.map(Math.abs)).toExponential(1)})`);
+  [['msd', 'pid'], ['tilt', 'pid'], ['cartpole', 'lqr'], ['flight', 'alt'], ['flight', 'both']].forEach(([pk, ck]) => {
     const plant = P[pk], ctrl = JSON.parse(JSON.stringify(plant.controllers[ck]));
     const lab = { p: Object.assign({}, plant.params), controller: ctrl, gains: ctrl.channels.map((c) => Object.assign({}, c.gains)),
       refs: plant.refs.map((r) => Object.assign({}, r)), noise: 0, delay: 0 };
     const sim = C.createSim(plant, lab, rand); let bad = false;
     for (let k = 0; k < Math.round(20 / plant.dt); k++) { sim.step(); if (sim.failed || !sim.x.every(isFinite)) { bad = true; break; } }
-    check(!bad, `${pk}: default controller runs 20 s without failing`);
+    check(!bad, `${pk} (${ck}): suggested gains run 20 s without failing`);
   });
 }
 
@@ -133,8 +134,8 @@ console.log('5. system identification');
 
 console.log('6. page data');
 {
-  const dir = path.join(root, '_data/labs'), views = ['sim', 'time', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
-  const controls = ['freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const dir = path.join(root, '_data/labs'), views = ['sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
   const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
   check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
   check(controls.every((c) => src.includes('CTRL.' + c + ' =')), 'every control name is implemented in lab.js');

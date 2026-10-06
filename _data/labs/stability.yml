@@ -56,7 +56,8 @@ tabs:
     row2: analysis
     analysis: [bode, nyquist, poles]
     controls: [reference, gains, delay, noise, view, freq, margins]
-    noiseMax: 0.03
+    noiseMax: 2
+    noiseUnit: '°'
     aria: ["The cart-pole under LQR state feedback", "Cart position, reference and force over time", "Loop analysis: Bode, Nyquist or poles"]
     note: |
       <p>The <a href="/controls/#cartpole">cart-pole</a> with its LQR gains, cut open at the force:
@@ -71,6 +72,7 @@ tabs:
     label: Aircraft
     lab: fl
     top: sim
+    sprite: /assets/img/controls/cessna.png
     row1: time
     row2: analysis
     analysis: [bode, nyquist, poles]

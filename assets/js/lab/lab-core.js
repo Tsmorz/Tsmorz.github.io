@@ -470,10 +470,10 @@
 
   function createSim(plant, lab, rng) {
     rng = rng || Math.random;
-    var sim = { t: 0, x: null, z: [], prevY: [], buf: [], u: plant.u0(lab.p), uReq: null, cbfActive: false, failed: false };
+    var sim = { t: 0, x: null, z: [], prevY: [], prevE: [], buf: [], u: plant.u0(lab.p), uReq: null, cbfActive: false, failed: false, contrib: [] };
     sim.reset = function (x) {
       sim.t = 0; sim.x = x || plant.start(lab.p, rng); sim.z = lab.controller.channels.map(function () { return 0; });
-      sim.prevY = null; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false;
+      sim.prevY = null; sim.prevE = []; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
     };
     sim.reset();
     // One control period: measure, compute, filter, then integrate the plant.
@@ -482,23 +482,35 @@
       var meas = sim.x.map(function (v, i) { return v + (plant.noise[i] || 0) * lab.noise * gaussian(rng); });
       var r = lab.refs.map(function (ref) { return refValue(ref, sim.t); }), rr = lab.refs.map(function (ref) { return refRate(ref, sim.t); });
       var u = u0.slice();
+      // Manual mode: the page supplies the input (a drag), and the controller rests.
+      var manualU = lab.manual ? lab.manualInput && lab.manualInput(sim) : null;
       ctrl.channels.forEach(function (ch, ci) {
-        var g = lab.gains[ci], du;
+        if (manualU || (lab.chanOff && lab.chanOff[ci])) { sim.contrib[ci] = null; return; }
+        var g = lab.gains[ci], du, terms;
         if (ch.type === 'pid') {
           var y = meas[ch.out] - x0[ch.out], e = r[ci] - y;
           sim.z[ci] += e * dt;
-          var ydot = sim.prevY ? (meas[ch.out] - sim.prevY[ci]) / dt : 0;
-          du = ch.sign * ((g.kp || 0) * e + (g.ki || 0) * sim.z[ci] - (g.kd || 0) * ydot);
+          if (ch.intClamp) sim.z[ci] = clamp(sim.z[ci], -ch.intClamp, ch.intClamp);
+          // D on the error for a smooth reference; on the measurement alone for a step,
+          // so the derivative doesn't spike at each jump (as on /controls/).
+          var dterm = !sim.prevY ? 0 : lab.refs[ci].type === 'wave' ? (e - sim.prevE[ci]) / dt : -(meas[ch.out] - sim.prevY[ci]) / dt;
+          sim.prevE[ci] = e;
+          terms = { p: ch.sign * (g.kp || 0) * e, i: ch.sign * (g.ki || 0) * sim.z[ci], d: ch.sign * (g.kd || 0) * dterm };
+          du = terms.p + terms.i + terms.d;
         } else if (ch.type === 'sf') {
           var dev = ch.rows.map(function (si, k) { return meas[si] - x0[si] - (k === 0 ? r[ci] : k === 1 ? rr[ci] : 0); });
-          if (lab.useNet && lab.net) du = netForward(lab.net, dev);
-          else { du = 0; ch.names.forEach(function (nm, k) { du += (g[nm] || 0) * dev[k]; }); }
+          terms = {};
+          if (lab.useNet && lab.net) { du = netForward(lab.net, dev); terms.net = du; }
+          else { du = 0; ch.names.forEach(function (nm, k) { terms[nm] = (g[nm] || 0) * dev[k]; du += terms[nm]; }); }
         }
+        sim.contrib[ci] = terms;
         u[ch.input] = u0[ch.input] + du * (lab.scale ? lab.scale[ci] : 1);
       });
+      if (manualU) manualU.forEach(function (v, i) { if (v !== null && v !== undefined) u[i] = v; });
       // Shaker (frequency-response experiments): a sine added to one input.
       if (lab.shake) { sim.phase = (sim.phase || 0) + lab.w * dt; u[lab.shake.input] += lab.shake.amp * Math.sin(sim.phase); }
       sim.prevY = ctrl.channels.map(function (ch) { return ch.type === 'pid' ? meas[ch.out] : 0; });
+      if (!sim.prevE.length) sim.prevE = ctrl.channels.map(function () { return 0; });
       sim.uReq = u.slice();
       if (lab.cbf && lab.cbf.on) {
         var bd = cbfBounds(plant, p, sim.x, u, lab.cbf);
@@ -507,14 +519,19 @@
         sim.cbfActive = Math.abs(u[lab.cbf.input] - before) > 1e-9; sim.cbfBounds = bd;
       } else sim.cbfActive = false;
       u = u.map(function (v, i) { return clamp(v, plant.ulim(p)[i][0], plant.ulim(p)[i][1]); });
-      var lag = Math.round((lab.delay || 0) / dt);
+      // Delay applies to the controller's command only (a person dragging isn't delayed).
+      var lag = manualU ? 0 : Math.round((lab.delay || 0) / dt);
       sim.buf.push(u);
       var ua = sim.buf.length > lag ? sim.buf.shift() : u0;
+      if (manualU) sim.buf = [];
+      // Actuators that can't jump: a servo or an elevator moves at a limited rate.
+      if (plant.uRate) ua = ua.map(function (v, i) { var mr = plant.uRate[i]; return mr ? clamp(v, sim.u[i] - mr * dt, sim.u[i] + mr * dt) : v; });
       sim.u = ua;
       var sub = plant.substeps || 4, h = dt / sub, x = sim.x;
       for (var k = 0; k < sub; k++) x = rk4(plant, x, ua, p, h);
       sim.x = x; sim.t += dt;
-      sim.failed = plant.failed ? plant.failed(sim.x, p) : false;
+      sim.status = plant.status ? plant.status(sim.x, p) : (plant.failed && plant.failed(sim.x, p) ? 'failed' : 'ok');
+      sim.failed = sim.status !== 'ok';
       return sim;
     };
     return sim;

@@ -1,0 +1,264 @@
+# /controls/ — the four original demos, on the lab template (see _includes/lab.html).
+# Notes and hints carried over from the hand-built page; edit them here.
+links:
+- label: Double Swing-Up
+  href: /controls/swingup/
+- label: Stability
+  href: /controls/stability/
+- label: System ID
+  href: /controls/sysid/
+- label: Design Process
+  href: /controls/design/
+- label: Modern Methods
+  href: /controls/modern/
+labs:
+  msd:
+    plant: msd
+    controller: pid
+  tilt:
+    plant: tilt
+    controller: pid
+  flight:
+    plant: flight
+    controller: alt
+  cartpole:
+    plant: cartpole
+    controller: lqr
+tabs:
+- id: msd
+  label: Intro
+  lab: msd
+  top: sim
+  row1: states
+  row2: contrib
+  startManual: true
+  zeroGains: true
+  manualHint: <strong>Manual:</strong> drag the mass up or down. Delay and noise apply to PID only.
+  hint: |-
+    <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;40, K<sub>i</sub>&#8201;=&#8201;5, K<sub>d</sub>&#8201;=&#8201;6. A high K<sub>p</sub> tracks the sine closely, K<sub>d</sub> stops the spring from ringing, and a little K<sub>i</sub> removes the offset.
+  rangeBoxes: true
+  disturbances: true
+  delayMax: 1000
+  noiseMax: 0.5
+  noiseUnit: m
+  score:
+    window: 5
+    label: RMSE (m)
+    unit: m
+  controls:
+  - mode
+  - reference
+  - hint
+  - gains
+  - delay
+  - noise
+  - score
+  - reset
+  aria:
+  - Mass-spring-damper simulation with the reference trajectory ahead
+  - 'State history: position and velocity'
+  - PID contribution chart
+  note_title: About this demo
+  note: |-
+    <p>
+            A <strong>PID controller</strong> pushes a lightly damped mass on a spring
+            (&#950; &#8776; 0.1) to track a reference: a slow sine wave, or a <strong>step</strong>
+            that jumps to the opposite position every half period. The line ahead of the mass shows
+            where the reference is going. The <em>proportional</em> term
+            reacts to the current error, the <em>integral</em> term removes steady-state offset, and
+            the <em>derivative</em> term damps oscillation. The score is RMSE over the last 5 s.
+            Start with K<sub>p</sub> alone, add K<sub>d</sub> to cut the overshoot, then a small
+            K<sub>i</sub> to remove what's left. Then add a <strong>transport delay</strong> to the
+            command or <strong>sensor noise</strong> to the measurement: delay eats phase margin, and
+            the derivative term amplifies noise the most. In Manual mode, drag the mass to follow the
+            reference yourself. &#8594;
+            <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller - Wikipedia</a>
+          </p>
+- id: tilt
+  label: Tilt Table
+  lab: tilt
+  top: sim
+  row1: states
+  row2: contrib
+  startManual: true
+  zeroGains: true
+  manualHint: <strong>Manual:</strong> drag the beam ends to tilt it. Delay and noise apply to PID only.
+  hint: |-
+    <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;3, K<sub>i</sub>&#8201;=&#8201;0, K<sub>d</sub>&#8201;=&#8201;2. Enough K<sub>p</sub> to chase the reference, and K<sub>d</sub> to brake the ball before it overshoots.
+  rangeBoxes: true
+  disturbances: true
+  delayMax: 1000
+  noiseMax: 0.5
+  noiseUnit: m
+  score:
+    window: 8
+    label: RMSE (m)
+    unit: m
+  controls:
+  - mode
+  - reference
+  - hint
+  - gains
+  - delay
+  - noise
+  - score
+  - reset
+  aria:
+  - 'Tilt table: a ball on a beam tilted by a servo'
+  - 'State history: ball position and velocity, beam angle'
+  - PID contribution chart
+  note_title: About this demo
+  note: |-
+    <p>
+            A <strong>PID controller</strong> tilts a beam so a rolling ball tracks a reference
+            position: a sine wave, or a <strong>step</strong> that jumps to the other side of the beam
+            every half period (the dashed ring on the beam is where the ball should be). The run
+            restarts if the ball rolls off an end. The controller outputs a
+            <em>commanded</em> tilt, and a servo turns the beam toward it at no more than
+            60&nbsp;&#176;/s, so a big correction takes time. Watch &#952;&#775; saturate in the state
+            plot. K<sub>p</sub> alone makes the ball oscillate, K<sub>d</sub> damps it, and a small
+            K<sub>i</sub> removes any leftover offset. In Manual mode, drag either end of the beam to
+            tilt it. The same servo limit applies to you. &#8594;
+            <a href="https://en.wikipedia.org/wiki/Ball_and_beam" target="_blank" rel="noopener">Ball and beam - Wikipedia</a>
+          </p>
+- id: flight
+  label: Flight Sim
+  lab: flight
+  top: sim
+  row1: states
+  row2: contrib
+  startManual: true
+  zeroGains: true
+  manualHint: |-
+    <strong>Manual:</strong> drag up to pitch the nose up, down for nose down; release to return to trim. Delay and noise apply to PID only.
+  hint: |-
+    <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;0.5, K<sub>i</sub>&#8201;=&#8201;0.1, K<sub>d</sub>&#8201;=&#8201;0.35. K<sub>d</sub> damps the climb rate, and K<sub>i</sub> holds the altitude against drift.
+  rangeBoxes: true
+  disturbances: true
+  delayMax: 1000
+  noiseMax: 0.5
+  noiseUnit: m
+  score:
+    window: 6
+    label: RMSE (m)
+    unit: m
+  controls:
+  - mode
+  - reference
+  - hint
+  - gains
+  - delay
+  - noise
+  - score
+  - reset
+  aria:
+  - 2D flight simulator
+  - 'State history: altitude, airspeed, pitch and angle of attack'
+  - 'PID contribution chart: elevator command'
+  note_title: About this demo
+  note: |-
+    <p>
+            A nonlinear longitudinal aircraft model with six states (V, &#947;, &#945;, q, h, x) and
+            a smooth stall: C<sub>L</sub> rises linearly up to about 16&#176; angle of attack, then
+            drops sharply. A <strong>PID autopilot</strong> tracks an altitude reference, a sine wave or a
+            <strong>step</strong> that jumps up and down every half period, by moving the elevator
+            away from trim. Altitude error goes in, and a nose-up elevator command
+            in degrees comes out. The aircraft can only change altitude <em>through</em> its pitch and
+            flight-path angle, so K<sub>p</sub> alone oscillates. K<sub>d</sub> acts on climb rate,
+            and it is what damps the oscillation. Push too hard and the wing stalls. Delay and sensor
+            noise work as in the other demos, with noise &#963; in metres. In Manual mode the canvas
+            is a control stick: drag up to pitch the nose up, and let go to return to trim. &#8594;
+            <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics - Wikipedia</a>,
+            <a href="https://en.wikipedia.org/wiki/Autopilot" target="_blank" rel="noopener">Autopilot - Wikipedia</a>
+          </p>
+    </div>
+    <div class="demo-note">
+    <h4 class="demo-note-title">Equations of motion</h4>
+          <div class="eqn-block">
+            <div class="eqn-row"><span class="eqn-lhs">V&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T cos&#945; &#8722; D] / m &#8722; g sin&#947;</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">&#947;&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T sin&#945; + L &#8722; mg cos&#947;] / (mV)</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">&#945;&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">q &#8722; &#947;&#775;</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">q&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">M<sub>y</sub> / I<sub>yy</sub></span></div>
+            <div class="eqn-row"><span class="eqn-lhs">h&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V sin&#947;</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">x&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V cos&#947;</span></div>
+            <p class="eqn-note">L, D, M<sub>y</sub> from nonlinear aero (sigmoid stall ~16&#176;). T = trim thrust. RK4 at 200 Hz.</p>
+          </div>
+    </div>
+    <div class="demo-note">
+    <h4 class="demo-note-title">PID autopilot</h4>
+          <div class="eqn-block">
+            <div class="eqn-row"><span class="eqn-lhs">e</span><span class="eqn-eq">=</span><span class="eqn-rhs">h<sub>ref</sub>(t) &#8722; h<sub>meas</sub>,&#160;&#160; h<sub>ref</sub> = 23 + 6 sin(2&#960;t / 16)&#160;m</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">u</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>e + K<sub>i</sub>&#8747;e&#8202;dt + K<sub>d</sub>&#8202;&#279;&#160;&#160;&#160;(nose-up command, &#176;)</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>e,trim</sub> &#8722; u</span></div>
+            <p class="eqn-note">Elevator clamped &#177;15&#176; and slew-limited to 40&#176;/s. The run resets on a crash, a stall, a loop, or a climb past 590&#160;m. The score is altitude RMSE over the last 6 s.</p>
+          </div>
+  sprite: /assets/img/controls/cessna.png
+- id: cartpole
+  label: Cart-Pole
+  lab: cartpole
+  top: sim
+  row1: states
+  row2: contrib
+  startManual: true
+  zeroGains: true
+  manualHint: <strong>Manual:</strong> drag the cart. Delay and noise apply to the controller only.
+  hint: |-
+    <strong>Stuck?</strong> A good solution is k<sub>x</sub>&#8201;=&#8201;3.1, k<sub>&#7819;</sub>&#8201;=&#8201;5.9, k<sub>&#952;</sub>&#8201;=&#8201;43.5, k<sub>&#952;&#775;</sub>&#8201;=&#8201;18.1. These are the LQR gains. The pole terms keep it up and the cart terms pull it back to the middle.
+  rangeBoxes: true
+  disturbances: true
+  delayMax: 1000
+  noiseMax: 2
+  noiseUnit: °
+  score:
+    window: 10
+    label: RMSE (m)
+    unit: m
+  controls:
+  - mode
+  - reference
+  - hint
+  - gains
+  - delay
+  - noise
+  - score
+  - reset
+  aria:
+  - Cart-pole balancing simulation. With a controller running, drag to move the reference.
+  - 'State history: cart position and velocity, pole angle and rate'
+  - Each gain's contribution to the force
+  note_title: About this demo
+  note: |-
+    <p>
+            The <strong>cart-pole</strong> is the classic unstable plant: a pole hinged on a cart that
+            can only be pushed left or right. Each trial starts with the pole <em>upright</em>, tilted
+            1&#8211;4&#176; at random, and with no control it falls within a second or two. One force has to
+            hold two things at once, the pole angle and the cart position, so this demo uses
+            <strong>full-state feedback</strong> instead of a single PID loop: the force is a weighted
+            sum of cart position, cart velocity, pole angle and pole rate. Start with
+            k<sub>&#952;</sub> and k<sub>&#952;&#775;</sub>. They keep the pole up, but the cart then drifts away
+            and eventually the pole falls. Adding k<sub>x</sub> and k<sub>&#7819;</sub> makes the cart follow
+            the reference position (the dashed marker on the rail), which is a sine wave or a
+            <strong>step</strong> that jumps to the other side every half period. Their sign looks
+            backwards at first: to bring the cart left, it must first be pushed right so the pole tips
+            left. Hand-tuning four gains is hard, so
+            <strong>Load LQR gains</strong> fills in the optimal set, found by solving a Riccati
+            equation for this plant. LQR picks the gains by trading off state error against force use
+            (here Q&#8201;=&#8201;diag(1, 0.1, 10, 0.1), R&#8201;=&#8201;0.1). The rail is 8 m long with hard stops, and
+            running into an end ends the trial. Sensor noise perturbs all four measurements the controller sees (sigma degrees on the angle, sigma centimetres on the cart position, and the same amount per 0.2 s on the two rates), never the force. The score is the RMS position error over the last 10 s. Switch to
+            Manual and drag the cart to balance the pole yourself. &#8594;
+            <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum - Wikipedia</a>
+          </p>
+    </div>
+    <div class="demo-note">
+    <h4 class="demo-note-title">Equations of motion &amp; control law</h4>
+          <div class="eqn-block">
+            <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
+            <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>k<sub>x</sub></span><span>k<sub>&#7819;</sub></span><span>k<sub>&#952;</sub></span><span>k<sub>&#952;&#775;</sub></span></span><span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span>&#160;&#160;=&#160;&#160;&#8722;K&#8201;<b>s</b>,&#160;&#160; <b>s</b> =<span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span></span></div>
+            <p class="eqn-note">Linearised about upright (small &#952;), with this cart-pole's numbers. Q and R weight state error against force; the Riccati solution for them gives K.</p>
+            <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">s&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-grid" style="grid-template-columns:repeat(4,auto)"><span>0</span><span>1</span><span>0</span><span>0</span><span>0</span><span>&#8722;2.13</span><span>&#8722;5.89</span><span>0</span><span>0</span><span>0</span><span>0</span><span>1</span><span>0</span><span>1.07</span><span>7.85</span><span>0</span></span><span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span> + <span class="mx mx-col"><span>0</span><span>2.67</span><span>0</span><span>&#8722;1.33</span></span>F</span></div>
+            <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">Q</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-grid" style="grid-template-columns:repeat(4,auto)"><span>1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0.1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>10</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0.1</span></span>,&#160;&#160; R = 0.1</span></div>
+            <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>&#8722;3.1</span><span>&#8722;5.9</span><span>&#8722;43.5</span><span>&#8722;18.1</span></span>,&#160;&#160; F = &#8722;K<b>s</b></span></div>
+            <p class="eqn-note">M = 0.3 kg cart, m = 0.3 kg pole, &#8467; = 1.5 m half-length, b = 0.8 N&#183;s/m cart friction, g = 9.81 m/s&#178;. Force saturates at &#177;10 N; LQR's K comes out negative in every entry (u = &#8722;K<b>s</b>), so the sliders show &#8722;K and all four gains are positive. &#952; is in rad, measured from vertical. The trial ends when |&#952;| &gt; 45&#176; or the cart hits a rail end at &#177;4 m. RK4 at 200 Hz.</p>
+          </div>
+  loadLabel: Load LQR gains

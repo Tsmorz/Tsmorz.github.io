@@ -35,7 +35,8 @@ tabs:
     row1: verify-map
     row2: verify-proof
     controls: [controller, noise, verify]
-    noiseMax: 0.03
+    noiseMax: 2
+    noiseUnit: '°'
     aria: ["The cart-pole, balanced by the LQR or the neural network", "The network's force over pole angle and rate, and where its robustness is proved", "The proof against sampled inputs, the split box, and the bound's width by layer"]
     note: |
       <p>The cart-pole again, and the small network trained to copy its LQR (switch <strong>Controller</strong>
@@ -56,6 +57,7 @@ tabs:
     label: Two Loops at Once
     lab: fl_mimo
     top: sim
+    sprite: /assets/img/controls/cessna.png
     row1: time
     row2: mimo
     channels: [0, 1]

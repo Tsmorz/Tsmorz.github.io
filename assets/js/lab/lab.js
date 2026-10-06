@@ -4,15 +4,23 @@
 // the three canvas slots (top, row1, row2), and which controls the side panel gets.
 // Labs can be shared between tabs (the design page walks one lab through six steps).
 //
-// Views:    sim, time, analysis (toggle of bode | nyquist | poles), step, cbf, verify-map,
-//           verify-proof, mimo, sysid-replay, sysid-data, sysid-bode, checklist
-// Controls: freq, view, channel, reference, gains, controller, delay, noise, limit,
-//           margins, cbf, verify, mimo, sysid, requirements, restart
+// Views:    sim, time, states, contrib, analysis (toggle of bode | nyquist | poles), step, cbf,
+//           verify-map, verify-proof, mimo, sysid-replay, sysid-data, sysid-bode, checklist
+// Controls: mode, hint, freq, view, channel, reference, gains, controller, delay, noise, limit,
+//           margins, cbf, verify, mimo, sysid, requirements, score, reset, restart
 // All maths is in LabCore (lab-core.js); plants and their pictures in LabPlants.
 (function () {
   'use strict';
   if (typeof document === 'undefined') return;
   var C = window.LabCore, PL = window.LabPlants;
+  // ctx.roundRect for older Safari / Firefox (the flight renderer uses it).
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+      var rad = Math.min(r, Math.min(w, h) / 2);
+      this.moveTo(x + rad, y); this.arcTo(x + w, y, x + w, y + h, rad); this.arcTo(x + w, y + h, x, y + h, rad);
+      this.arcTo(x, y + h, x, y, rad); this.arcTo(x, y, x + w, y, rad); this.closePath();
+    };
+  }
   var cfgEl = document.getElementById('lab-config');
   if (!cfgEl) return;
   var CFG = JSON.parse(cfgEl.textContent);
@@ -86,11 +94,12 @@
       req: lc.requirements ? Object.assign({}, lc.requirements) : null,
       useNet: false, net: null, wantsNet: !!lc.net, dirty: true, acc: 0, failT: null, hits: 0, cbfFrames: 0, frames: 0,
       sysid: lc.sysid ? Object.assign({ exc: 'chirp', noise: 0.01, T: 20, order: 2 }, lc.sysid) : null,
-      ui: [], uiSync: []
+      ui: [], uiSync: [], manual: false, drag: null, trials: 0, ring: [], best: null, adjusts: 0
     };
+    lab.manualInput = function (sim) { return lab.plant.manual ? lab.plant.manual(lab.drag, sim, lab) : null; };
     if (lc.limit) lab.p.Fmax = lc.limit;
     lab.sim = C.createSim(plant, lab);
-    lab.hist = { r: [], y: [], u: [], x: [] };
+    lab.hist = { r: [], y: [], u: [], x: [], s: [], c: {} };
     labs[id] = lab;
   });
   // The cart-pole's network controller (the same file /controls/ loads).
@@ -161,9 +170,43 @@
 
   V.sim = function (c, lab) {
     lab.plant.draw(c.ctx, c.W, c.H, lab.sim, lab, col);
-    if (lab.cbf) text(c.ctx, lab.cbf.on ? 'Safety filter on' : 'Safety filter off', 10, 8, lab.cbf.on ? col.accent : col.muted);
-    if (lab.cbf && lab.sim.cbfActive) text(c.ctx, 'filter acting', 10, 24, col.viz2, { size: 11 });
-    if (lab.useNet) text(c.ctx, 'Neural-network controller', 10, lab.cbf ? 40 : 8, col.viz2, { size: 11 });
+    if (lab.cbf) text(c.ctx, (lab.cbf.on ? 'Safety filter on' : 'Safety filter off') + (lab.sim.cbfActive ? ' · acting' : ''), 14, 50, lab.cbf.on ? col.accent : col.muted, { size: 12 });
+  };
+
+  // State history: one lane per state the plant lists, each on its own scale.
+  V.states = function (c, lab, tab) {
+    var ctx = c.ctx, spec = lab.plant.states, n = spec.length, x0 = 70, x1 = c.W - 10, lh = (c.H - 8) / n;
+    var tokens = [col.viz1, col.viz2, col.viz3, col.viz4];
+    spec.forEach(function (sp, k) {
+      var d = lab.hist.s[k] || [], y0 = 4 + k * lh, y1 = y0 + lh - 4, m = 1e-6;
+      d.forEach(function (v) { m = Math.max(m, Math.abs(v)); }); m *= 1.15;
+      var Y = function (v) { return (y0 + y1) / 2 - v / m * (y1 - y0) / 2; };
+      ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke();
+      ctx.strokeStyle = tokens[k % 4]; ctx.lineWidth = 1.8; ctx.beginPath();
+      d.forEach(function (v, i) { var x = x0 + (i + CAP - d.length) / (CAP - 1) * (x1 - x0); if (i) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke();
+      text(ctx, sp.label, 6, y0 + 2, tokens[k % 4], { size: 11 });
+      if (d.length) text(ctx, fmtG(d[d.length - 1]), 6, y0 + 16, col.muted, { size: 10, mono: true, w: '400' });
+    });
+  };
+
+  // What each term of the controller is contributing (P, I, D, or one per state gain).
+  V.contrib = function (c, lab) {
+    var ctx = c.ctx, hc = lab.hist.c, keys = Object.keys(hc), x0 = 44, x1 = c.W - 10, y0 = 24, y1 = c.H - 6, m = 1e-6;
+    keys.forEach(function (k) { hc[k].forEach(function (v) { m = Math.max(m, Math.abs(v)); }); }); m *= 1.1;
+    var Y = function (v) { return (y0 + y1) / 2 - clamp(v / m, -1, 1) * (y1 - y0) / 2; };
+    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.stroke();
+    text(ctx, '+' + fmtG(m), x0 - 4, y0 - 2, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, '−' + fmtG(m), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    var names = { p: 'P', i: 'I', d: 'D', total: 'Total', kx: 'k·x', kv: 'k·ẋ', kth: 'k·θ', kw: 'k·θ̇', net: 'Network' };
+    var colors = [col.viz1, col.viz2, col.viz3, col.viz4], lx = x0 + 8;
+    keys.forEach(function (k, i) {
+      var d = hc[k], isT = k === 'total', cc = isT ? cssVar('--viz-total') || col.text : colors[i % 4];
+      ctx.strokeStyle = cc; ctx.lineWidth = isT ? 2.4 : 1.6; ctx.beginPath();
+      d.forEach(function (v, j) { var x = x0 + (j + CAP - d.length) / (CAP - 1) * (x1 - x0); if (j) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke();
+      ctx.font = '600 11px ' + col.font; ctx.fillStyle = cc; ctx.fillRect(lx, 9, 12, 3); ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(names[k] || k, lx + 16, 4);
+      lx += 30 + ctx.measureText(names[k] || k).width;
+    });
+    text(ctx, lab.manual ? 'Manual: no controller output' : lab.plant.contribUnit, x1, 4, col.muted, { align: 'right', size: 11 });
   };
 
   function timePlot(ctx, x0, y0, x1, y1, series, yr, title) {
@@ -769,6 +812,7 @@
       box.appendChild(b); return b;
     });
     panel.appendChild(box);
+    return function (val) { btns.forEach(function (x, i) { var on = opts[i][0] === val; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); }); };
   }
   function button(panel, label, onClick) { var b = el('button', 'sim-btn', label); b.type = 'button'; b.addEventListener('click', function () { onClick(b); }); panel.appendChild(b); return b; }
   function telemetry(panel, rows) {
@@ -803,16 +847,26 @@
   };
   CTRL.gains = function (panel, lab, tab) {
     var sliders = [];
+    if (tab.zeroGains && !lab.zeroed) { lab.zeroed = true; lab.gains.forEach(function (g) { Object.keys(g).forEach(function (k) { g[k] = 0; }); }); changed(lab); }
     lab.controller.channels.forEach(function (ch, ci) {
       h3(panel, lab.controller.channels.length > 1 ? (ch.label || 'Loop ' + (ci + 1)) : (lab.controller.label + ' gains'));
       Object.keys(ch.gains).forEach(function (g) {
         var rg = ch.ranges[g], step = (rg[1] - rg[0]) / 400;
         var labelTxt = { kp: 'K<sub>p</sub>', ki: 'K<sub>i</sub>', kd: 'K<sub>d</sub>', kx: 'k<sub>x</sub>', kv: 'k<sub>ẋ</sub>', kth: 'k<sub>θ</sub>', kw: 'k<sub>θ̇</sub>' }[g] || g;
         var s = slider(panel, tab.id + '-' + ci + '-' + g, labelTxt, rg[0], rg[1], step, lab.gains[ci][g], fmtG, function (v) { lab.gains[ci][g] = v; changed(lab); });
+        s.input.addEventListener('change', function () { lab.adjusts++; if (lab.onAdjust) lab.onAdjust(); });
+        if (tab.rangeBoxes && rg[0] < 0) {                // ± box: widen or narrow the slider's range
+          var rr = el('div', 'range-row'), lb = el('label', 'range-lbl', '<span class="visually-hidden">Range </span>±'), ri = el('input', 'range-input');
+          ri.type = 'number'; ri.min = 0.01; ri.step = 'any'; ri.value = rg[1]; ri.id = s.input.id + '-range'; lb.setAttribute('for', ri.id);
+          rr.appendChild(lb); rr.appendChild(ri); s.input.parentNode.appendChild(rr);
+          ri.addEventListener('input', function () { var r = Math.max(0.01, parseFloat(ri.value) || 0); s.input.min = -r; s.input.max = r; s.input.step = r / 200; lab.gains[ci][g] = clamp(lab.gains[ci][g], -r, r); s.set(lab.gains[ci][g]); changed(lab); });
+          var widen = function () { var a = Math.abs(lab.gains[ci][g]); if (a > parseFloat(s.input.max)) { ri.value = Math.ceil(a * 1.5 * 100) / 100; s.input.min = -ri.value; s.input.max = ri.value; } };
+          sliders.push(widen);
+        }
         sliders.push(function () { s.set(lab.gains[ci][g]); });
       });
     });
-    button(panel, 'Load suggested gains', function () { lab.suggested.forEach(function (g, ci) { Object.assign(lab.gains[ci], g); }); changed(lab); });
+    button(panel, tab.loadLabel || 'Load suggested gains', function () { lab.suggested.forEach(function (g, ci) { Object.assign(lab.gains[ci], g); }); changed(lab); });
     lab.uiSync.push(function () { sliders.forEach(function (f) { f(); }); });
   };
   CTRL.controller = function (panel, lab) {
@@ -821,11 +875,12 @@
     hint(panel, 'The network was trained to copy the LQR. It\'s the same file the cart-pole on /controls/ can run.');
   };
   CTRL.delay = function (panel, lab, tab) {
+    if (tab.disturbances) h3(panel, 'Disturbances');
     slider(panel, tab.id + '-delay', 'Delay', 0, tab.delayMax || 300, 5, (lab.delay || 0) * 1000, function (v) { return fmt(v, 0) + ' ms'; }, function (v) { lab.delay = v / 1000; changed(lab); });
   };
   CTRL.noise = function (panel, lab, tab) {
     var mx = tab.noiseMax || 0.05;
-    slider(panel, tab.id + '-noise', 'Sensor noise', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, 3); }, function (v) { lab.noise = v; changed(lab); });
+    slider(panel, tab.id + '-noise', 'Sensor noise σ', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; changed(lab); });
   };
   CTRL.limit = function (panel, lab, tab) {
     slider(panel, tab.id + '-limit', 'Force limit', 2, 60, 1, Math.min(lab.p.Fmax, 60), function (v) { return v >= 60 ? 'none' : fmt(v, 0) + ' N'; }, function (v) { lab.p.Fmax = v >= 60 ? 1e9 : v; changed(lab); });
@@ -908,7 +963,50 @@
       slider(panel, tab.id + '-' + q[0], q[1], q[2], q[3], q[4], r[q[0]], q[5], function (v) { r[q[0]] = v; lab.stepCache = null; });
     });
   };
+  function restart(lab) { lab.sim.reset(); lab.hist = { r: [], y: [], u: [], x: [], s: [], c: {} }; lab.ring = []; lab.hits = 0; lab.failT = null; lab.drag = null; }
+  CTRL.mode = function (panel, lab, tab) {
+    h3(panel, 'Controller');
+    lab.manual = tab.startManual !== false && !!lab.plant.manual;
+    tab.setMode = toggle(panel, 'Who is in control', [[true, 'Manual'], [false, lab.controller.label]], lab.manual, function (v) {
+      lab.manual = v; lab.drag = null; lab.sim.z = lab.sim.z.map(function () { return 0; }); lab.ring = []; lab.best = null;
+    });
+    if (tab.manualHint) panel.appendChild(el('p', 'panel-hint', tab.manualHint));
+  };
+  CTRL.hint = function (panel, lab, tab) {
+    var box = el('div', 'hint-box'); box.hidden = true;
+    box.appendChild(el('p', 'hint-text', tab.hint));
+    var row = el('div', 'hint-row'), b = el('button', 'sim-btn hint-apply', 'Try it'); b.type = 'button'; row.appendChild(b); box.appendChild(row);
+    panel.appendChild(box);
+    // Shown once the visitor has adjusted a gain 10 times (as on /controls/).
+    lab.onAdjust = function () { if (lab.adjusts >= 10) box.hidden = false; };
+    b.addEventListener('click', function () {
+      lab.suggested.forEach(function (g, ci) { Object.assign(lab.gains[ci], g); });
+      lab.manual = false; if (tab.setMode) tab.setMode(false); restart(lab); changed(lab);
+    });
+  };
+  CTRL.score = function (panel, lab, tab) {
+    var b = el('div', 'score-block'), v = el('span', 'score-value', '-'), best = el('div', 'score-best');
+    b.appendChild(v); b.appendChild(el('span', 'score-label', tab.score.label)); b.appendChild(best); panel.appendChild(b);
+    tab.syncScore = function () {
+      var r = lab.ring.length ? Math.sqrt(lab.ring.reduce(function (a, c) { return a + c; }, 0) / lab.ring.length) : null;
+      var t = r === null ? '-' : Math.min(r, 100).toFixed(tab.score.digits || 2); if (v.textContent !== t) v.textContent = t;
+      var bt = lab.best === null ? '' : 'Best: ' + lab.best.toFixed(tab.score.digits || 2) + ' ' + (tab.score.unit || ''); if (best.textContent !== bt) best.textContent = bt;
+    };
+  };
+  CTRL.reset = function (panel, lab) { button(panel, 'Reset', function () { restart(lab); lab.trials = 0; lab.best = null; }); };
   CTRL.restart = function (panel, lab) { button(panel, 'Restart', function () { lab.sim.reset(); lab.hist = { r: [], y: [], u: [], x: [] }; lab.hits = 0; }); };
+
+  // Manual mode: drag on the sim (the plant decides what a drag means).
+  function bindManualDrag(canvas, lab) {
+    function at(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    canvas.addEventListener('pointerdown', function (e) {
+      if (!lab.manual) return; var p = at(e); lab.drag = { x: p.x, y: p.y, x0: p.x, y0: p.y };
+      canvas.setPointerCapture(e.pointerId); canvas.style.cursor = 'grabbing'; e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', function (e) { if (!lab.drag) return; var p = at(e); lab.drag.x = p.x; lab.drag.y = p.y; });
+    function up() { lab.drag = null; canvas.style.cursor = lab.manual ? 'grab' : ''; }
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+  }
 
   /* ================= tabs ================= */
   var tabEls = Array.prototype.slice.call(document.querySelectorAll('.sim-tab')), secEls = Array.prototype.slice.call(document.querySelectorAll('.sim-section'));
@@ -930,6 +1028,7 @@
       if (vname === 'analysis' || vname === 'poles') bindPoleDrag(cv, lab);
       if (vname === 'verify-map') bindVerifyClick(cv, lab);
       if (vname === 'mimo') bindMimoDrag(cv, lab);
+      if (vname === 'sim' && lab.plant.manual) bindManualDrag(cv, lab);
     });
     return tab;
   });
@@ -947,17 +1046,31 @@
         var x = lab.sim.x, pi = lab.cbf.pos;
         if (Math.abs(x[pi]) > lab.stops) { x[pi] = Math.sign(x[pi]) * lab.stops; if (x[lab.cbf.vel] * Math.sign(x[pi]) > 0) { x[lab.cbf.vel] = 0; lab.hits++; lab.hitFlash = 20; } }
       }
-      if (lab.sim.failed && lab.failT === null) lab.failT = lab.sim.t;
+      if (lab.sim.failed && lab.failT === null) { lab.failT = lab.sim.t; lab.trials++; lab.ring = []; }
       lab.tick = (lab.tick || 0) + 1;
       if (lab.tick % every === 0) {
         var x0 = plant.x0(lab.p), u0 = plant.u0(lab.p), xs = lab.sim.x;
         lab.refs.forEach(function (r, ci) { (lab.hist.y[ci] = lab.hist.y[ci] || []); push(lab.hist.y[ci], xs[r.idx] - x0[r.idx], CAP); (lab.hist.r[ci] = lab.hist.r[ci] || []); push(lab.hist.r[ci], C.refValue(r, lab.sim.t), CAP); });
         for (var i = 0; i < plant.m; i++) { (lab.hist.u[i] = lab.hist.u[i] || []); push(lab.hist.u[i], lab.sim.u[i] - u0[i], CAP); }
         for (var j = 0; j < plant.n; j++) { (lab.hist.x[j] = lab.hist.x[j] || []); push(lab.hist.x[j], xs[j], 300); }
+        (plant.states || []).forEach(function (sp, k) { (lab.hist.s[k] = lab.hist.s[k] || []); push(lab.hist.s[k], sp.f(xs, lab.sim.u, lab.p), CAP); });
+        var cb = lab.sim.contrib[0], sc = plant.contribScale || 1, tot = 0;
+        if (cb) Object.keys(cb).forEach(function (k) { tot += cb[k]; (lab.hist.c[k] = lab.hist.c[k] || []); push(lab.hist.c[k], cb[k] * sc, CAP); });
+        if (cb && Object.keys(cb).length > 1) { (lab.hist.c.total = lab.hist.c.total || []); push(lab.hist.c.total, tot * sc, CAP); }
+        if (!cb) Object.keys(lab.hist.c).forEach(function (k) { push(lab.hist.c[k], 0, CAP); });
+      }
+      if (tab.score) {                                    // RMS tracking error over a window
+        var sv = tab.score.of === 'theta' ? xs2deg(lab.sim.x[2]) : clamp(C.refValue(lab.refs[0], lab.sim.t) - (lab.sim.x[lab.refs[0].idx] - plant.x0(lab.p)[lab.refs[0].idx]), -100, 100);
+        push(lab.ring, sv * sv, Math.round(tab.score.window / plant.dt));
+        if (lab.ring.length >= Math.round(tab.score.window / plant.dt) && !lab.manual && !lab.sim.failed) {
+          var rms = Math.sqrt(lab.ring.reduce(function (a, b) { return a + b; }, 0) / lab.ring.length);
+          if (lab.best === null || rms < lab.best) lab.best = rms;
+        }
       }
     }
     if (lab.hitFlash) lab.hitFlash--;
   }
+  function xs2deg(r) { return r * 180 / Math.PI; }
   var last = null;
   function frame(ts) {
     var dt = last === null ? 1 / 60 : Math.min(0.05, (ts - last) / 1000); last = ts;
@@ -968,13 +1081,13 @@
       if (tab.sweeping) { lab.w *= Math.pow(GRID[GRID.length - 1] / GRID[0], dt / 12); if (lab.w >= GRID[GRID.length - 1]) { lab.w = GRID[GRID.length - 1]; tab.sweeping = false; } }
       if (tab.syncFreq) tab.syncFreq();
       if (lab.sysid && lab.sysid.data) lab.sysid.replayT = Math.min(lab.sysid.replayT + dt * 4, lab.sysid.T);
-      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'cbf' || v === 'verify-map'; });
+      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'cbf' || v === 'verify-map' || v === 'states' || v === 'contrib'; });
       if (simShown) stepLab(lab, dt, tab);
       [tab.top, tab.row1, tab.row2].forEach(function (vname, k) {
         var cv = tab.canvases[k]; if (!cv || !V[vname]) return;
         V[vname](fit(cv), lab, tab, cv);
       });
-      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid'].forEach(function (f) { if (tab[f]) tab[f](); });
+      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore'].forEach(function (f) { if (tab[f]) tab[f](); });
     });
     requestAnimationFrame(frame);
   }

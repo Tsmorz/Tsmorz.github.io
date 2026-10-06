@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const K = [3.1, 5.9, 43.5, 18.1];          // controls.js LQR_GAINS (x, ẋ, θ, θ̇)
+const K = [3.1, 5.9, 43.5, 18.1];          // the cart-pole LQR gains (lab-plants.js) (x, ẋ, θ, θ̇)
 const FMAX = 10;                            // N, the cart-pole's force limit
 const RANGE = [1.5, 2.0, 0.5, 1.5];         // training box: |x|, |ẋ|, |θ|, |θ̇|
 const SIZES = [4, 16, 16, 1];

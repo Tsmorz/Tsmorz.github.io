@@ -92,17 +92,14 @@ _layouts/page.html       default + a title header and .prose wrapper (used by ab
 _includes/               project-card.html, photo-grid.html — take params, not globals
 assets/css/main.css      hand-written, token-based, no build step
 assets/js/site.js        three small IIFEs: theme toggle, tag filter, lightbox
-assets/js/controls.js    the /controls/ demos (PID, except the cart-pole, which uses
-                         state-feedback gains + an offline-solved LQR preset); each tab deep-links as #<section id minus
-                         "sec-"> (#tilt, #flight, #cartpole), and hidden tabs skip physics + drawing.
-                         Every sim starts in Manual and tracks a reference that the Wave | Step
-                         toggle switches between a sine and a same-period square wave
-                         (`refValue`); noise is always added to measurements, never to force
 assets/js/statebox.js    `drawStateBox`: the lower-right state/units panel (decimal points and
-                         units aligned), shared by controls.js and swingup.js; load it first
+                         units aligned), shared by the lab template and swingup.js; load it first
 assets/js/swingup.js     /controls/swingup/ (swingup.md): double cart-pole + goal-conditioned
                          TQC policy in vanilla JS — SwingupCore (no DOM, Node-testable) + the page
-assets/js/lab/           the lab template behind /controls/{stability,sysid,design,modern}/ (see below)
+assets/js/lab/           the lab template behind every /controls/ page except swingup (see below).
+                         Each tab deep-links as #<tab id> (#tilt, #flight, #cartpole); hidden tabs
+                         skip physics and drawing. The /controls/ demos start in Manual and track a
+                         Wave | Step reference; noise goes on measurements, never on the force
 assets/models/           swingup-tqc.{json,bin} exported from n-cartpole; the fixture
                          is test-only and excluded from the build
 script/                  serve, check, add-photo, test-data, test-swingup, test-lab,
@@ -156,7 +153,7 @@ actions (max < 0.2 N — float16 rounding alone reaches ~0.14 N on the goal net 
 transition in the fixture.
 If it fails after a re-export, the port in `swingup.js` has drifted from n-cartpole.
 
-### The lab template (`/controls/stability|sysid|design|modern/`)
+### The lab template (`/controls/` and `/controls/stability|sysid|design|modern/`)
 
 These pages share one engine; a page differs only in its data. **To add or change one, edit its
 `_data/labs/<page>.yml`, not code.** The pieces:
@@ -167,25 +164,28 @@ These pages share one engine; a page differs only in its data. **To add or chang
   `requirements`, `sysid`, `limit`) and `tabs` (`lab`, a view for each of `top`, `row1`, `row2`,
   the panel `controls`, and a `note` in HTML; write links root-relative, the include adds the baseurl).
   Tabs may share a lab: the design page walks one lab through six steps.
-- `assets/js/lab/lab-plants.js`: one entry per /controls/ sim (mass-spring, cart-pole, aircraft):
-  constants, `deriv`, equilibrium, limits, the controllers it supports, and its `draw`. **Constants
-  must match controls.js.** The aircraft's trim is solved numerically: the closed form in controls.js
-  treats the stall blend as 1 (it's ≈ 0.92 at trim), so that "trim" slowly sinks and slows.
+- `assets/js/lab/lab-plants.js`: one entry per sim (mass-spring, tilt table, cart-pole, aircraft):
+  constants, `deriv`, equilibrium, limits, actuator slew (`uRate`), failure `status`, the
+  controllers it supports, what a Manual drag means (`manual`), the state-plot lanes (`states`) and
+  its `draw` (the original /controls/ pictures). The aircraft's trim is solved numerically (the
+  old closed form treated the stall blend as 1; it's ≈ 0.92 at trim, so that "trim" sank and slowed).
+- `assets/js/lab/lab-flight-render.js`: the flight sim's sprite, trees and clouds, moved unchanged
+  from the old controls.js; `LabPlants.flight.draw` calls it.
 - `assets/js/lab/lab-core.js` (LabCore, no DOM): linearisation; the closed loop as one state-space
   model with each gain as a feedback row (so the loop gain, root locus and pole placement are linear
   algebra); margins; a Nyquist count that handles delay and unstable plants; Padé poles; the CBF
   filter; interval bounds on the small net; ARX identification refined with instrumental variables
   (plain least squares is biased by sensor noise); the nonlinear simulator.
-- `assets/js/lab/lab.js`: the views and panel controls, listed at the top of the file. Poles views
+- `assets/js/lab/lab.js`: the views and panel controls, listed at the top of the file. The
+  /controls/ demos use `mode` (Manual | controller), `hint` (shown after 10 gain adjustments),
+  `score` (RMS tracking error and best), `reset`, and the `states` / `contrib` plots. Poles views
   let you drag closed-loop poles (gains are solved) when one input has as many gains as states.
 
 `script/test-lab` (`task check:lab`, part of `task check`) checks the plants against /controls/,
 the textbook margins, Nyquist against eigenvalues, pole placement, the filter, sound network bounds,
 that identification recovers the mass-spring, and that every `_data/labs` page only names plants,
 views and controls that exist. `assets/models/verify-net.json` is written by
-`script/train-verify-net` (seeded; never hand-edit it). Next step: port the four /controls/ demos
-onto the template.
-
+`script/train-verify-net` (seeded; never hand-edit it). 
 ## Running and checking
 
 ```sh
