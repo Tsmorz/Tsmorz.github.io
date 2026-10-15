@@ -4,26 +4,26 @@
 :root {
   color-scheme: light;
   --bg: #ffffff;
-  --bg-soft: #f5f6f8;
+  --bg-soft: #f4f6f9;
   --surface: #ffffff;
-  --border: #e3e6ea;
-  --border-strong: #cfd4da;
-  --text: #14181d;
-  --text-muted: #5b636d;
-  --accent: #0d7a75;
-  --accent-soft: rgba(13, 122, 117, 0.10);
-  --nn-act-neg: #c9524b;
-  --nn-act-zero: #d3d8de;
-  --nn-act-pos: #0d7a75;
-  /* Data-viz series palette — validated categorical order (blue/orange/aqua/yellow),
-     colorblind-safe in both modes. Used by every controls plot for a shared color
+  --border: #e2e7ee;
+  --border-strong: #cdd5df;
+  --text: #0f1729;
+  --text-muted: #556070;
+  --accent: #1d5fb8;
+  --accent-soft: rgba(29, 95, 184, 0.1);
+  --nn-act-neg: #c4510d;
+  --nn-act-zero: #dde3ea;
+  --nn-act-pos: #1d5fb8;
+  /* Data-viz series palette ("Harbour") — categorical order teal/amber/umber/sky, checked
+     for contrast and deuteranopia separation in both modes. Used by every controls plot for a shared color
      language. Reference labels always accompany the color, so identity is never color-alone. */
-  --viz-1: #2a78d6;  /* blue   */
-  --viz-2: #eb6834;  /* orange */
-  --viz-3: #1baf7a;  /* aqua   */
-  --viz-4: #eda100;  /* yellow */
-  --viz-7: #4a3aa7;  /* violet — reference-palette slot 7; slots 5–6 unused so far */
-  --viz-total: #6b7280;  /* neutral gray — aggregate / total lines */
+  --viz-1: #0a8a76;  /* teal   */
+  --viz-2: #d98f00;  /* amber  */
+  --viz-3: #9c6644;  /* umber  */
+  --viz-4: #3b9ad6;  /* sky    */
+  --viz-7: #c0679a;  /* mauve — reference-palette slot 7; slots 5–6 unused so far */
+  --viz-total: #556070;  /* neutral gray — aggregate / total lines */
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -36,24 +36,24 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #0b0f14;
-    --bg-soft: #111721;
-    --surface: #121821;
-    --border: #232c38;
-    --border-strong: #33404f;
-    --text: #e7ecf3;
-    --text-muted: #9aa6b4;
-    --accent: #3ecfc4;
-    --accent-soft: rgba(62, 207, 196, 0.14);
-    --nn-act-neg: #e06a60;
-    --nn-act-zero: #2a3441;
-    --nn-act-pos: #3ecfc4;
-    --viz-1: #3987e5;
-    --viz-2: #d95926;
-    --viz-3: #199e70;
-    --viz-4: #c98500;
-    --viz-7: #9085e9;
-    --viz-total: #9aa6b4;
+    --bg: #0d1117;
+    --bg-soft: #141b24;
+    --surface: #141b24;
+    --border: #25303c;
+    --border-strong: #34414f;
+    --text: #e6edf3;
+    --text-muted: #9aa7b6;
+    --accent: #78aef7;
+    --accent-soft: rgba(120, 174, 247, 0.14);
+    --nn-act-neg: #ff8a45;
+    --nn-act-zero: #27313d;
+    --nn-act-pos: #78aef7;
+    --viz-1: #3fcfb2;
+    --viz-2: #f4b740;
+    --viz-3: #d4b483;
+    --viz-4: #7cc7f0;
+    --viz-7: #e59ac4;
+    --viz-total: #9aa7b6;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -61,24 +61,24 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0b0f14;
-  --bg-soft: #111721;
-  --surface: #121821;
-  --border: #232c38;
-  --border-strong: #33404f;
-  --text: #e7ecf3;
-  --text-muted: #9aa6b4;
-  --accent: #3ecfc4;
-  --accent-soft: rgba(62, 207, 196, 0.14);
-  --nn-act-neg: #e06a60;
-  --nn-act-zero: #2a3441;
-  --nn-act-pos: #3ecfc4;
-  --viz-1: #3987e5;
-  --viz-2: #d95926;
-  --viz-3: #199e70;
-  --viz-4: #c98500;
-  --viz-7: #9085e9;
-  --viz-total: #9aa6b4;
+  --bg: #0d1117;
+  --bg-soft: #141b24;
+  --surface: #141b24;
+  --border: #25303c;
+  --border-strong: #34414f;
+  --text: #e6edf3;
+  --text-muted: #9aa7b6;
+  --accent: #78aef7;
+  --accent-soft: rgba(120, 174, 247, 0.14);
+  --nn-act-neg: #ff8a45;
+  --nn-act-zero: #27313d;
+  --nn-act-pos: #78aef7;
+  --viz-1: #3fcfb2;
+  --viz-2: #f4b740;
+  --viz-3: #d4b483;
+  --viz-4: #7cc7f0;
+  --viz-7: #e59ac4;
+  --viz-total: #9aa7b6;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }
