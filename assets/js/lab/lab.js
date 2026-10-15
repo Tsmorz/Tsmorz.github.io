@@ -158,7 +158,7 @@
   /* ---- offline step response (on the real plant, with the current settings) ---- */
   function stepResponse(lab, T) {
     if (lab.stepCache) return lab.stepCache;
-    var fake = Object.assign({}, lab, { refs: lab.refs.map(function (r, i) { return Object.assign({}, r, { type: 'hold', hold: i === 0 ? 1 : 0 }); }), noise: 0, shake: null });
+    var fake = Object.assign({}, lab, { refs: lab.refs.map(function (r, i) { return Object.assign({}, r, { type: 'hold', hold: i === 0 ? 1 : 0 }); }), noise: 0, shake: null, manual: false, drag: null, excite: null });
     var sim = C.createSim(lab.plant, fake, function () { return 0.5; });
     sim.reset(lab.plant.x0(lab.p));
     var n = Math.round(T / lab.plant.dt), y = [], u = [], every = Math.max(1, Math.floor(n / 400)), x0 = lab.plant.x0(lab.p), u0 = lab.plant.u0(lab.p);
@@ -171,7 +171,7 @@
       if (!isFinite(v) || Math.abs(v) > 50) { failed = true; break; }
       sim.step();
     }
-    lab.stepCache = { y: y, u: u, T: T, overshoot: Math.max(0, os) * 100, settle: failed ? Infinity : last, umax: umax, failed: failed || last > T - 0.5 };
+    lab.stepCache = { y: y, u: u, T: T, overshoot: Math.max(0, os) * 100, settle: failed ? Infinity : last, umax: umax, failed: failed || last > T - 0.5, diverged: failed, final: y[y.length - 1] };
     return lab.stepCache;
   }
 
@@ -1102,7 +1102,18 @@
     toggle(panel, 'Random shaker', [[false, 'Shaker off'], [true, 'Shaker on']], false, function (v) { R.shaker = v; });
     slider(panel, tab.id + '-rnoise', 'Sensor noise', 0, 0.05, 0.001, R.noise, function (v) { return fmt(v * 1000, 0) + ' mm'; }, function (v) { R.noise = v; });
     button(panel, 'Identify', function () { identifyRecording(lab); });
+    button(panel, 'Download CSV', function () {
+      if (!R.u.length) return;
+      var rows = ['t_s,force_N,position_measured_m'];
+      R.u.forEach(function (u, k) { rows.push((k * ID_DT).toFixed(3) + ',' + u.toFixed(5) + ',' + R.y[k].toFixed(6)); });
+      download('mass-spring-recording.csv', rows.join('\n') + '\n', 'text/csv');
+    });
+    hint(panel, 'The CSV has time, the force on the mass, and the position the sensor read, sampled at ' + fmt(1 / ID_DT, 0) + ' Hz. Fit it with your own tools and compare.');
   };
+  function download(name, body, type) {
+    var url = URL.createObjectURL(new Blob([body], { type: type })), a = el('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
 
   /* ---- state estimation ---- */
   function updateEstimator(lab) {
@@ -1592,12 +1603,12 @@
       slider(panel, tab.id + '-' + q[0], q[1], q[2], q[3], q[4], r[q[0]], q[5], function (v) { r[q[0]] = v; lab.stepCache = null; });
     });
   };
-  function restart(lab) { lab.sim.reset(); lab.hist = { r: [], y: [], u: [], x: [], s: [], c: {} }; lab.ring = []; lab.hits = 0; lab.failT = null; lab.drag = null; }
+  function restart(lab) { lab.aliveMan = 0; lab.aliveAuto = 0; lab.sim.reset(); lab.hist = { r: [], y: [], u: [], x: [], s: [], c: {} }; lab.ring = []; lab.hits = 0; lab.failT = null; lab.drag = null; }
   CTRL.mode = function (panel, lab, tab) {
     h3(panel, 'Controller');
-    lab.manual = tab.startManual !== false && !!lab.plant.manual;
+    lab.manual = lab.urlMode ? lab.urlMode === 'manual' && !!lab.plant.manual : tab.startManual !== false && !!lab.plant.manual;
     tab.setMode = toggle(panel, 'Who is in control', [[true, 'Manual'], [false, lab.controller.label]], lab.manual, function (v) {
-      lab.manual = v; lab.drag = null; lab.sim.z = lab.sim.z.map(function () { return 0; }); lab.ring = []; lab.best = null;
+      lab.manual = v; lab.aliveMan = 0; lab.aliveAuto = 0; lab.drag = null; lab.sim.z = lab.sim.z.map(function () { return 0; }); lab.ring = []; lab.best = null;
     });
     if (tab.manualHint) panel.appendChild(el('p', 'panel-hint', tab.manualHint));
   };
@@ -1637,12 +1648,169 @@
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
   }
 
+  /* ================= predict, challenges, share links ================= */
+  // Browser storage is a convenience only: every read and write is guarded, and the page works without it.
+  function stored(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* private mode: forget it */ } }
+
+  // A share link is "#<tab>?kp=40&kd=6&delay=120": the tab, then the settings.
+  function hashTab() { return location.hash.slice(1).split('?')[0]; }
+  function hashParams() {
+    var h = location.hash.slice(1), q = h.indexOf('?'), out = {};
+    if (q >= 0) h.slice(q + 1).split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) out[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || ''); });
+    return out;
+  }
+  function gainKey(g, ci) { return ci ? g + (ci + 1) : g; }
+  // Each setting a link can carry: read it from the lab, write it back. Units chosen to read well in a URL.
+  var PARAMS = {
+    delay: { get: function (l) { return Math.round(l.delay * 1000); }, set: function (l, v) { l.delay = v / 1000; } },
+    noise: { get: function (l) { return l.noise; }, set: function (l, v) { l.noise = v; l.estDirty = true; } },
+    ref: { get: function (l) { return l.refs[0].type; }, set: function (l, v) { if (v === 'wave' || v === 'step') l.refs[0].type = v; }, str: true },
+    amp: { get: function (l) { return l.refs[0].amp; }, set: function (l, v) { l.refs[0].amp = v; } },
+    mode: { get: function (l) { return l.manual ? 'manual' : 'auto'; }, set: function (l, v) { l.urlMode = v; }, str: true },
+    est: { get: function (l) { return l.estimator; }, set: function (l, v) { if (v === 'diff' || v === 'kalman') { l.estimator = v; l.sim.xhat = null; } }, str: true, only: 'estimator' },
+    trust: { get: function (l) { return l.logQ; }, set: function (l, v) { l.logQ = v; l.estDirty = true; }, only: 'estimator' },
+    rate: { get: function (l) { return Math.round(l.ctrlPeriod * 1000); }, set: function (l, v) { l.ctrlPeriod = v / 1000; }, only: 'ctrlrate' },
+    limit: { get: function (l) { return l.p.Fmax > 1e6 ? 0 : l.p.Fmax; }, set: function (l, v) { l.p.Fmax = v > 0 ? v : 1e9; }, only: 'limit' }
+  };
+  var SHAREABLE = ['gains', 'delay', 'noise', 'estimator', 'ctrlrate', 'limit'];
+  function applyParams(lab, tab, P) {
+    var keys = Object.keys(P); if (!keys.length) return;
+    lab.gains.forEach(function (g, ci) {
+      Object.keys(g).forEach(function (k) { var v = parseFloat(P[gainKey(k, ci)]); if (isFinite(v)) { g[k] = v; lab.zeroed = true; } });
+    });
+    Object.keys(PARAMS).forEach(function (k) {
+      if (!(k in P)) return; var d = PARAMS[k], v = d.str ? P[k] : parseFloat(P[k]);
+      if (d.str || isFinite(v)) d.set(lab, v);
+    });
+    lab.fromUrl = true;
+  }
+  function shareUrl(lab, tab) {
+    var ctl = tab.controls || [], q = [];
+    function add(k, v) { q.push(k + '=' + encodeURIComponent(typeof v === 'number' ? +v.toPrecision(4) : v)); }
+    if (ctl.indexOf('gains') >= 0) lab.gains.forEach(function (g, ci) { Object.keys(g).forEach(function (k) { add(gainKey(k, ci), g[k]); }); });
+    if (ctl.indexOf('mode') >= 0) add('mode', PARAMS.mode.get(lab));
+    if (ctl.indexOf('reference') >= 0) { add('ref', PARAMS.ref.get(lab)); if (tab.refAmp) add('amp', PARAMS.amp.get(lab)); }
+    ['delay', 'noise'].forEach(function (k) { if (ctl.indexOf(k) >= 0) add(k, PARAMS[k].get(lab)); });
+    Object.keys(PARAMS).forEach(function (k) { var d = PARAMS[k]; if (d.only && ctl.indexOf(d.only) >= 0) add(k, d.get(lab)); });
+    return location.origin + location.pathname + '#' + tab.id + (q.length ? '?' + q.join('&') : '');
+  }
+  CTRL.share = function (panel, lab, tab) {
+    var b = button(panel, 'Copy a link to these settings', function () {
+      var url = shareUrl(lab, tab), done = function () { msg.textContent = 'Link copied. Anyone who opens it gets this tab with these settings.'; };
+      out.value = url; out.hidden = false;
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { out.select(); msg.textContent = 'Copy the link above.'; });
+      else { out.select(); msg.textContent = 'Copy the link above.'; }
+    });
+    b.classList.add('lab-share');
+    var out = el('input', 'lab-share-url'); out.type = 'text'; out.readOnly = true; out.hidden = true; out.setAttribute('aria-label', 'Link to these settings');
+    out.addEventListener('focus', function () { out.select(); });
+    var msg = el('p', 'panel-hint lab-share-msg', ''); msg.setAttribute('aria-live', 'polite');
+    panel.appendChild(out); panel.appendChild(msg);
+  };
+
+  // What a challenge can ask about. Each reads the live lab; none of them changes it.
+  function ringRms(lab) { return lab.ring.length ? Math.sqrt(lab.ring.reduce(function (a, c) { return a + c; }, 0) / lab.ring.length) : Infinity; }
+  function mg0(lab) { var an = analyze(lab), ch = an.ch[0]; return an.stable && ch ? ch.mg : null; }
+  var METRICS = {
+    stable: { get: function (l) { return analyze(l).stable; } },
+    pm: { get: function (l) { var m = mg0(l); return m && m.pm !== null ? m.pm : -Infinity; }, fmt: function (v) { return isFinite(v) ? fmt(v, 0) + '°' : 'none'; }, label: 'phase margin' },
+    delayMargin: { get: function (l) { var m = mg0(l); return m && m.delayMargin !== null ? m.delayMargin * 1000 : -Infinity; }, fmt: function (v) { return isFinite(v) ? fmt(v, 0) + ' ms' : 'none'; }, label: 'delay margin' },
+    overshoot: { get: function (l) { var s = stepResponse(l, 12); return s.diverged ? Infinity : s.overshoot; }, fmt: function (v) { return isFinite(v) ? fmt(v, 0) + '%' : 'never settles'; }, label: 'overshoot' },
+    settle: { get: function (l) { var s = stepResponse(l, 12); return s.failed ? Infinity : s.settle; }, fmt: function (v) { return isFinite(v) ? fmt(v, 1) + ' s' : 'never'; }, label: 'settling time' },
+    offset: { get: function (l) { var s = stepResponse(l, 12); return s.diverged ? Infinity : Math.abs(1 - s.final) * 100; }, fmt: function (v) { return isFinite(v) ? fmt(v, 1) + '%' : '-'; }, label: 'offset after 12 s' },
+    peakForce: { get: function (l) { return stepResponse(l, 12).umax; }, fmt: function (v) { return fmt(v, 1) + ' N'; }, label: 'peak force' },
+    rms: { get: function (l, t) { return !l.manual && l.ring.length >= Math.round(((t.score && t.score.window) || 5) / l.plant.dt) ? ringRms(l) : Infinity; }, fmt: function (v, t) { return isFinite(v) ? fmt(v, 3) + ' ' + ((t.score && t.score.unit) || '') : 'wait for a full window'; }, label: 'RMSE' },
+    autoTime: { get: function (l) { return l.manual ? 0 : l.aliveAuto || 0; }, fmt: function (v) { return fmt(v, 0) + ' s'; }, label: 'on its own for' },
+    manualTime: { get: function (l) { return l.manual ? l.aliveMan || 0 : 0; }, fmt: function (v) { return fmt(v, 0) + ' s'; }, label: 'by hand for' },
+    delay: { get: function (l) { return l.delay * 1000; }, fmt: function (v) { return fmt(v, 0) + ' ms'; }, label: 'delay' },
+    noise: { get: function (l) { return l.noise; }, fmt: function (v) { return fmt(v, 2); }, label: 'noise' },
+    rate: { get: function (l) { return (l.ctrlPeriod || 0) * 1000; }, fmt: function (v) { return fmt(v, 0) + ' ms'; }, label: 'controller period' },
+    sampledStable: { get: function (l) { return loopInfo(l).max < 1; } },
+    rateError: { get: function (l) { var r = estStats(l).rate; return r === null || l.trials > 0 && (l.aliveAuto || 0) < 5 ? Infinity : r; }, fmt: function (v) { return isFinite(v) ? fmt(v, 1) + '°/s' : '-'; }, label: 'rate error' },
+    kalman: { get: function (l) { return l.estimator === 'kalman'; } },
+    manual: { get: function (l) { return !!l.manual; } }
+  };
+  function gainMetric(g) { return { get: function (l) { return g in l.gains[0] ? l.gains[0][g] : NaN; }, fmt: function (v) { return fmtG(v); }, label: g }; }
+  var OPS = { '<': function (a, b) { return a < b; }, '<=': function (a, b) { return a <= b; }, '>': function (a, b) { return a > b; }, '>=': function (a, b) { return a >= b; } };
+  function checkWhen(lab, tab, when) {
+    var ok = true, shown = [];
+    Object.keys(when).forEach(function (k) {
+      var M = k.indexOf('gain.') === 0 ? gainMetric(k.slice(5)) : METRICS[k]; if (!M) { ok = false; return; }
+      var v = M.get(lab, tab), want = when[k];
+      if (Array.isArray(want)) { if (!OPS[want[0]](v, want[1])) ok = false; if (M.fmt) shown.push(M.label + ' ' + M.fmt(v, tab)); }
+      else if (v !== want) ok = false;
+    });
+    return { ok: ok, shown: shown };
+  }
+
+  // The card under the sim: a prediction to commit to first, then challenges that tick themselves off.
+  function buildLearn(tab) {
+    if (!tab.predict && !tab.challenges) return;
+    var sec = document.getElementById('sec-' + tab.id), after = sec && sec.querySelector('.sim-layout'); if (!after) return;
+    var box = el('div', 'lab-learn'); after.parentNode.insertBefore(box, after.nextSibling);
+    var key = 'lab:' + (CFG.page || '') + ':' + tab.id + ':';
+    if (tab.predict) {
+      var P = tab.predict, card = el('div', 'lab-card lab-predict');
+      card.appendChild(el('h4', 'lab-card-title', 'Predict first'));
+      card.appendChild(el('p', 'lab-q', P.question));
+      var opts = el('div', 'lab-opts'), follow = el('div', 'lab-follow'); follow.hidden = true;
+      var picked = null, btns = P.options.map(function (o, i) {
+        var b = el('button', 'lab-opt', o); b.type = 'button';
+        b.addEventListener('click', function () {
+          picked = i; btns.forEach(function (x, k) { x.classList.toggle('picked', k === i); x.setAttribute('aria-pressed', k === i ? 'true' : 'false'); });
+          follow.hidden = false; verdict.hidden = true; reveal.hidden = false;
+        });
+        b.setAttribute('aria-pressed', 'false'); opts.appendChild(b); return b;
+      });
+      card.appendChild(opts);
+      follow.appendChild(el('p', 'lab-try', '<strong>Now try it:</strong> ' + P.try));
+      var reveal = el('button', 'sim-btn', 'Show the answer'); reveal.type = 'button'; follow.appendChild(reveal);
+      var verdict = el('div', 'lab-verdict'); verdict.hidden = true; verdict.setAttribute('aria-live', 'polite'); follow.appendChild(verdict);
+      reveal.addEventListener('click', function () {
+        var right = picked === P.answer;
+        btns.forEach(function (x, k) { x.classList.toggle('right', k === P.answer); x.classList.toggle('wrong', k === picked && !right); });
+        verdict.innerHTML = '<p><strong>' + (right ? 'Right.' : 'Not quite: it\'s "' + P.options[P.answer] + '".') + '</strong> ' + P.explain + '</p>';
+        verdict.hidden = false; reveal.hidden = true; store(key + 'predict', '1');
+      });
+      card.appendChild(follow); box.appendChild(card);
+    }
+    if (tab.challenges) {
+      var cc = el('div', 'lab-card lab-challenges'), head = el('h4', 'lab-card-title', 'Challenges'), count = el('span', 'lab-count');
+      head.appendChild(count); cc.appendChild(head);
+      var list = el('ol', 'lab-ch-list'), rows = tab.challenges.map(function (ch, i) {
+        var li = el('li', 'lab-ch'), mark = el('span', 'lab-ch-mark', ''), body = el('div', 'lab-ch-body'), now = el('div', 'lab-ch-now');
+        mark.setAttribute('aria-hidden', 'true');
+        body.appendChild(el('p', 'lab-ch-text', ch.text)); body.appendChild(now);
+        li.appendChild(mark); li.appendChild(body); list.appendChild(li);
+        return { li: li, now: now, done: stored(key + 'ch' + i) === '1', ch: ch, i: i };
+      });
+      cc.appendChild(list); box.appendChild(cc);
+      tab.learn = function () {
+        var lab = tab.lab, n = 0, focus = true;
+        rows.forEach(function (r) {
+          var res = r.done ? null : checkWhen(lab, tab, r.ch.when);
+          if (res && res.ok) { r.done = true; store(key + 'ch' + r.i, '1'); }
+          r.li.classList.toggle('done', r.done); r.li.setAttribute('aria-label', (r.done ? 'Done: ' : '') + r.ch.text.replace(/<[^>]+>/g, ''));
+          var t = !r.done && focus && res.shown.length ? 'Now: ' + res.shown.join(', ') : '';
+          if (!r.done) focus = false;
+          if (r.now.textContent !== t) r.now.textContent = t;
+          if (r.done) n++;
+        });
+        var c = ' ' + n + ' of ' + rows.length; if (count.textContent !== c) count.textContent = c;
+      };
+      tab.challengeState = function () { return rows.map(function (r) { return r.done; }); };
+    }
+  }
+  window.LabDebug = { labs: labs, metric: function (labId, name, tabId) { var t = tabs.filter(function (x) { return x.id === tabId; })[0] || {}; return METRICS[name].get(labs[labId], t); }, tabs: function () { return tabs; } };
+
   /* ================= tabs ================= */
   var tabEls = Array.prototype.slice.call(document.querySelectorAll('.sim-tab')), secEls = Array.prototype.slice.call(document.querySelectorAll('.sim-section'));
   function activate(i) { tabEls.forEach(function (t, k) { t.classList.toggle('active', k === i); t.setAttribute('aria-selected', k === i ? 'true' : 'false'); }); secEls.forEach(function (s, k) { s.classList.toggle('active', k === i); }); }
-  function fromHash() { var h = location.hash.slice(1), idx = 0; CFG.tabs.forEach(function (t, i) { if (t.id === h) idx = i; }); activate(idx); }
+  function fromHash() { var h = hashTab(), idx = 0; CFG.tabs.forEach(function (t, i) { if (t.id === h) idx = i; }); activate(idx); }
   tabEls.forEach(function (t, i) { t.addEventListener('click', function () { activate(i); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
   window.addEventListener('hashchange', function () {
+    if (location.hash.indexOf('?') >= 0) { location.reload(); return; }   // a pasted share link: rebuild with its settings
     fromHash();
     var row = document.querySelector('.sim-tabs-row');            // "Next:" links live at the bottom
     if (row) row.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
@@ -1655,7 +1823,11 @@
     if (tab.shake) lab.shake = lab.shake || { input: 0, amp: tab.shakeAmp || 1 };
     tab.canvases = ['top', 'row1', 'row2'].map(function (slot) { return document.getElementById(tc.id + '-' + slot); });
     var panel = document.getElementById(tc.id + '-panel');
+    if (hashTab() === tc.id) applyParams(lab, tab, hashParams());
     (tc.controls || []).forEach(function (k) { if (CTRL[k]) CTRL[k](panel, lab, tab); });
+    if (tab.share !== false && SHAREABLE.some(function (k) { return (tc.controls || []).indexOf(k) >= 0; })) CTRL.share(panel, lab, tab);
+    if (lab.fromUrl) changed(lab);
+    buildLearn(tab);
     if (lab.sysid && !lab.sysid.data && (tc.controls || []).indexOf('sysid') >= 0) runSysid(lab);
     tab.canvases.forEach(function (cv, i) {
       var vname = [tc.top, tc.row1, tc.row2][i];
@@ -1675,12 +1847,13 @@
     while (lab.acc >= plant.dt && guard++ < 200) {
       lab.acc -= plant.dt;
       if (lab.failT !== null) { if (lab.sim.t - lab.failT > 1) { lab.sim.reset(); lab.failT = null; } else { lab.sim.t += plant.dt; continue; } }
-      lab.sim.step(); lab.frames++; if (lab.sim.cbfActive) lab.cbfFrames++;
+      lab.sim.step(); lab.frames++;
+      if (lab.manual) lab.aliveMan = (lab.aliveMan || 0) + plant.dt; else lab.aliveAuto = (lab.aliveAuto || 0) + plant.dt; if (lab.sim.cbfActive) lab.cbfFrames++;
       if (lab.stops) {                                    // hard stops: an impact, not a crash
         var x = lab.sim.x, pi = lab.cbf.pos;
         if (Math.abs(x[pi]) > lab.stops) { x[pi] = Math.sign(x[pi]) * lab.stops; if (x[lab.cbf.vel] * Math.sign(x[pi]) > 0) { x[lab.cbf.vel] = 0; lab.hits++; lab.hitFlash = 20; } }
       }
-      if (lab.sim.failed && lab.failT === null) { lab.failT = lab.sim.t; lab.trials++; lab.ring = []; }
+      if (lab.sim.failed && lab.failT === null) { lab.failT = lab.sim.t; lab.trials++; lab.ring = []; lab.aliveMan = 0; lab.aliveAuto = 0; }
       lab.tick = (lab.tick || 0) + 1;
       if (lab.rec) recordTick(lab);
       if (lab.hiRes) { push(lab.hiRes.t, lab.sim.t, 1200); push(lab.hiRes.y, lab.sim.x[0], 1200); }
@@ -1731,6 +1904,7 @@
       if (tab.method === 'compare' && !idState(lab).compare && lab.sysid && lab.sysid.msd) {
         ['step', 'freq', 'era', 'grey'].forEach(function (mm) { if (!idState(lab)[mm]) runId(lab, mm); }); runId(lab, 'compare');
       }
+      if (tab.learn && ts - (tab.learnAt || 0) > 300) { tab.learnAt = ts; tab.learn(); }
       ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec', 'syncEst', 'syncSamp', 'syncRate'].forEach(function (f) { if (tab[f]) tab[f](); });
     });
     requestAnimationFrame(frame);

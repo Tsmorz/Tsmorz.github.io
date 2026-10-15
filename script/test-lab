@@ -203,7 +203,7 @@ console.log('8. discretisation');
 console.log('9. page data');
 {
   const dir = path.join(root, '_data/labs'), views = ['samp-time', 'samp-fold', 'disc-z', 'disc-step', 'disc-bode', 'disc-loop', 'est-states', 'rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
-  const controls = ['sampling', 'discretize', 'ctrlrate', 'estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const controls = ['share', 'sampling', 'discretize', 'ctrlrate', 'estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
   const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
   check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
   const missing = controls.filter((c) => !src.includes('CTRL.' + c + ' =') && !new RegExp('var CTRL = \\{[^}]*\\b' + c + ':').test(src));

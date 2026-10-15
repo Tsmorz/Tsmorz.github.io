@@ -36,6 +36,15 @@ tabs:
     top: disc-z
     row1: disc-step
     row2: disc-bode
+    predict:
+      question: Convert the mass-spring with forward Euler at T = 0.2 s. What is the discrete model like?
+      options:
+      - A bit less accurate, but fine
+      - Unstable, though the real system is stable
+      - Identical to the hold method
+      answer: 1
+      try: Set T to 0.2 s and pick Fwd.
+      explain: Forward Euler maps a pole s to 1 + sT. A lightly damped pole sits close to the imaginary axis, so 1 + sT leaves the unit circle as soon as T is longer than 2ζ/ω<sub>n</sub>, only 0.1 s for this mass-spring. The hold method and Tustin keep a stable pole stable at any T.
     controls: [discretize]
     aria: ["The z-plane with the plant's poles as each discretisation method places them", "Step responses of the continuous plant and each discrete model", "Gain of the continuous plant and each discrete model, up to the Nyquist frequency"]
     note_title: Four ways to turn ẋ = f(x) into a step-by-step rule
@@ -63,6 +72,33 @@ tabs:
     top: sim
     row1: time
     row2: disc-loop
+    predict:
+      question: The PID runs every 20 ms. Slow it to 100 ms. What happens?
+      options:
+      - Nothing much, 100 ms is still quick
+      - It still works, with more overshoot
+      - It goes unstable
+      answer: 1
+      try: Drag "Runs every" to 100 ms and watch the step and the poles.
+      explain: Holding each command for one period acts like a delay of about half a period, which costs phase margin. With these gains the loop survives up to about 135 ms, but overshoot grows well before that.
+    challenges:
+    - text: 'Find how slow the controller can run with these gains: past 120 ms and still stable.'
+      when:
+        rate:
+        - '>='
+        - 120
+        sampledStable: true
+      solution: rate=130
+    - text: Run it every 200 ms and retune until it's stable with under 30% overshoot.
+      when:
+        rate:
+        - '>='
+        - 200
+        sampledStable: true
+        overshoot:
+        - <
+        - 30
+      solution: rate=200&kp=10&ki=2&kd=2
     controls: [ctrlrate, gains, reference]
     aria: ["The mass under PID control, the controller running at the chosen rate", "Position, reference and the staircase force over time", "Closed-loop poles of the sampled loop in the z-plane"]
     note_title: How slow can the controller run?

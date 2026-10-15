@@ -35,6 +35,40 @@ tabs:
     row1: time
     row2: analysis
     analysis: [bode, nyquist, poles]
+    predict:
+      question: Add 100 ms of delay. What happens to the Bode plot?
+      options:
+      - The gain curve drops everywhere
+      - The gain curve stays put and the phase curve falls away at high frequency
+      - Both curves shift to lower frequencies
+      answer: 1
+      try: Pick the Bode view, then drag the delay slider from 0 to 100 ms.
+      explain: 'A delay changes when the signal arrives, not how big it is: e<sup>−sT</sup> has gain 1 and phase −ωT. The phase loss grows with frequency, so the phase margin shrinks by ω<sub>c</sub>T at crossover.'
+    challenges:
+    - text: Get a phase margin of at least 60°.
+      when:
+        pm:
+        - '>='
+        - 60
+      solution: kp=40&ki=5&kd=10
+    - text: Add 50 ms of delay and keep the phase margin above 45°.
+      when:
+        delay:
+        - '>='
+        - 50
+        pm:
+        - '>='
+        - 45
+      solution: kp=20&ki=5&kd=8&delay=50
+    - text: Push the delay to 150 ms and keep a phase margin above 30°.
+      when:
+        delay:
+        - '>='
+        - 150
+        pm:
+        - '>='
+        - 30
+      solution: kp=5&ki=1&kd=3&delay=150
     controls: [reference, gains, delay, noise, view, freq, margins]
     aria: ["The mass-spring-damper under PID control", "Position, reference and force over time", "Loop analysis: Bode, Nyquist or poles"]
     note: |
@@ -55,6 +89,32 @@ tabs:
     row1: time
     row2: analysis
     analysis: [bode, nyquist, poles]
+    predict:
+      question: Halve all four LQR gains. Does the pole stay up?
+      options:
+      - Yes, with a smaller phase margin
+      - No, the loop goes unstable
+      - Yes, and the margins get bigger
+      answer: 0
+      try: Set each gain to about half its suggested value and watch the Nyquist plot and the margins.
+      explain: An LQR loop has at least 60° of phase margin and can lose half its gain, at the plant input, with every state measured. Halving all four gains is exactly that test, so it stays up, with less margin to spare.
+    challenges:
+    - text: Keep the LQR stable with 100 ms of delay.
+      when:
+        delay:
+        - '>='
+        - 100
+        stable: true
+      solution: delay=100
+    - text: Add 50 ms of delay and keep the phase margin above 30°.
+      when:
+        delay:
+        - '>='
+        - 50
+        pm:
+        - '>='
+        - 30
+      solution: delay=50
     controls: [reference, gains, delay, noise, view, freq, margins]
     noiseMax: 2
     noiseUnit: '°'

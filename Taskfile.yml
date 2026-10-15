@@ -71,6 +71,11 @@ tasks:
     cmds:
       - script/test-lab
 
+  check:challenges:
+    desc: Check every lab challenge can be met, in a real browser (needs Playwright + Chromium; build first)
+    cmds:
+      - script/test-challenges {{.SITE_DIR}}
+
   check:links:
     desc: Check internal links with html-proofer
     cmds:

@@ -200,6 +200,26 @@ once per period with a zero-order hold between (`LabCore.createSim`); `sampledPi
 exact discrete-time closed loop for a sampled PID, and `mapPole` / `zohDiscretize` /
 `tfDiscretize` the four conversions (hold, forward and backward Euler, Tustin).
 
+Predict, challenges and share links (any tab, all from YAML):
+- `predict: {question, options, answer (0-based), try, explain}` puts a "Predict first" card under
+  the sim: the visitor picks an answer, is told what to try, then reveals the explanation.
+- `challenges: [{text, when, solution, wait}]` lists goals that tick themselves off (remembered in
+  localStorage when it's available). `when` maps metrics from `METRICS` in lab.js (overshoot,
+  settle, offset, peakForce, pm, delayMargin, stable, rms, autoTime, manualTime, delay, noise, rate,
+  sampledStable, rateError, kalman, manual) or `gain.<name>` to `[op, number]` or true/false; all
+  must hold at once. `solution` is a share-link query (`kp=40&kd=6&mode=auto`) that meets it, and
+  `wait` the seconds of sim time it needs. Leave `solution` out only for hands-on (Manual) goals.
+- Share links: tabs with gains, delay, noise, estimator, rate or limit controls get a "Copy a link"
+  button. The link is `#<tab>?<settings>` (gains by name, with the channel number appended after the
+  first loop: `kp2`; delay and rate in ms); `PARAMS` in lab.js lists what it carries.
+- The recording tab on /controls/sysid/ can download its data as CSV.
+
+`script/test-data` checks every prediction and challenge is well formed and names known metrics.
+`script/test-challenges [SITE_DIR]` (`task check:challenges`, needs Playwright with Chromium; not
+part of CI) opens each tab in a real browser and checks no challenge is met at the start, each
+`solution` link meets its challenge, and the share button gives back the same settings. Run it
+after changing a challenge, a plant or a controller.
+
 `script/test-lab` (`task check:lab`, part of `task check`) checks the plants against /controls/,
 the textbook margins, Nyquist against eigenvalues, pole placement, the filter, sound network bounds,
 that identification recovers the mass-spring, and that every `_data/labs` page only names plants,

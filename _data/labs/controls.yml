@@ -34,6 +34,43 @@ tabs:
     window: 5
     label: RMSE (m)
     unit: m
+  predict:
+    question: Set K<sub>p</sub> = 40 and leave K<sub>i</sub> and K<sub>d</sub> at zero. What will the mass do after a step?
+    options:
+    - Move to the new position and stop there
+    - Ring around it and come to rest short of it
+    - Run away, because the gain is too high
+    answer: 1
+    try: Switch to PID, pick Step, set K<sub>p</sub> to 40 and watch a few jumps.
+    explain: Proportional action alone behaves like a stiffer spring. Nothing removes energy, so the mass rings, and the real spring pushes back with a force only an error can balance, so it stops short. K<sub>d</sub> adds the damping and K<sub>i</sub> the missing push.
+  challenges:
+  - text: Hand over to the PID and track the wave with RMSE under 0.1 m.
+    when:
+      rms:
+      - <
+      - 0.1
+    solution: kp=40&ki=5&kd=6&mode=auto
+    wait: 7
+  - text: 'Make a step land cleanly: under 5% overshoot and settled within 2 s.'
+    when:
+      overshoot:
+      - <
+      - 5
+      settle:
+      - <
+      - 2
+    solution: kp=50&ki=20&kd=12&mode=auto
+  - text: Add 200 ms of delay and still track the wave with RMSE under 0.3 m. You will have to give up speed.
+    when:
+      delay:
+      - '>='
+      - 200
+      stable: true
+      rms:
+      - <
+      - 0.3
+    solution: kp=5&ki=1&kd=3&delay=200&mode=auto
+    wait: 7
   controls:
   - mode
   - reference
@@ -83,6 +120,28 @@ tabs:
     window: 8
     label: RMSE (m)
     unit: m
+  predict:
+    question: Give the tilt table K<sub>p</sub> = 3 and nothing else. What does the ball do?
+    options:
+    - Rolls to the target and stops
+    - Swings past the target again and again, and the swings don't die out
+    - Rolls straight off the end
+    answer: 1
+    try: Switch to PID, set K<sub>p</sub> to 3 with K<sub>i</sub> and K<sub>d</sub> at zero, and watch the ball.
+    explain: Tilting the beam sets the ball's acceleration, not its speed, so proportional action alone is a spring with no damper. The servo's lag then eats the little phase that is left, and the swings grow until the ball rolls off. K<sub>d</sub> is the brake.
+  challenges:
+  - text: Keep the ball on the beam by hand for 20 s.
+    when:
+      manualTime:
+      - '>='
+      - 20
+  - text: Let the PID track the wave with RMSE under 0.01 m.
+    when:
+      rms:
+      - <
+      - 0.01
+    solution: kp=3&ki=0&kd=2&mode=auto
+    wait: 10
   controls:
   - mode
   - reference
@@ -131,6 +190,19 @@ tabs:
     window: 6
     label: RMSE (m)
     unit: m
+  challenges:
+  - text: Fly by hand for 30 s without crashing.
+    when:
+      manualTime:
+      - '>='
+      - 30
+  - text: Give the altitude autopilot gains that hold the reference with RMSE under 0.3 m.
+    when:
+      rms:
+      - <
+      - 0.3
+    solution: kp=0.5&ki=0.1&kd=0.35&mode=auto
+    wait: 12
   controls:
   - mode
   - reference
@@ -202,6 +274,41 @@ tabs:
     window: 10
     label: RMSE (m)
     unit: m
+  predict:
+    question: The LQR is told to move the cart 1 m to the right. Which way does the cart move first?
+    options:
+    - Right, straight away
+    - Left for a moment, then right
+    - Nowhere until the pole starts to tip
+    answer: 1
+    try: Switch to LQR, press Load LQR gains, pick Step and watch the cart at each jump.
+    explain: To travel right with the pole upright, the pole has to lean right first, and the only way to tip it right is to pull its base left. Systems that start off the wrong way are called non-minimum phase, and they limit how fast any controller can be.
+  challenges:
+  - text: Balance the pole by hand for 10 s.
+    when:
+      manualTime:
+      - '>='
+      - 10
+  - text: Keep the LQR balancing for 10 s with 100 ms of delay.
+    when:
+      delay:
+      - '>='
+      - 100
+      autoTime:
+      - '>='
+      - 10
+    solution: kx=3.1&kv=5.9&kth=43.5&kw=18.1&delay=100&mode=auto
+    wait: 11
+  - text: Balance for 10 s with k<sub>θ</sub> below 25. How small can it get before gravity wins?
+    when:
+      gain.kth:
+      - <
+      - 25
+      autoTime:
+      - '>='
+      - 10
+    solution: kx=1&kv=2&kth=20&kw=5&mode=auto
+    wait: 11
   controls:
   - mode
   - reference

@@ -14,6 +14,15 @@ tabs:
     noiseUnit: '°'
     fixedEstimator: "Rates by differencing: (this reading − last reading) ÷ 25 ms."
     trust: false
+    challenges:
+    - text: Switch to the Kalman filter and get the rate error under 5 °/s.
+      when:
+        kalman: true
+        rateError:
+        - <
+        - 5
+      solution: est=kalman
+      wait: 10
     controls: [estimator, noise, reference]
     aria: ["The cart-pole balanced by LQR using rates computed by differencing noisy readings", "Measured and true pole angle, and estimated and true rates", "Each gain's contribution to the force"]
     note_title: You can't control what you can't measure
@@ -37,6 +46,36 @@ tabs:
     row2: contrib
     noiseMax: 2
     noiseUnit: '°'
+    predict:
+      question: Slide the trust all the way to "sensors". What happens to the rate estimate?
+      options:
+      - It gets smoother
+      - It gets noisier, close to plain differencing
+      - Nothing changes
+      answer: 1
+      try: Drag the trust slider to the right and watch the estimated rate against the true one.
+      explain: 'Trusting the sensors means a large Kalman gain: each new reading pulls the estimate hard, so its noise comes straight through. Trusting the model smooths, but reacts late when the model is wrong.'
+    challenges:
+    - text: Get the rate error under 1.5 °/s with the noise at 0.5° or more.
+      when:
+        noise:
+        - '>='
+        - 0.5
+        rateError:
+        - <
+        - 1.5
+      solution: trust=-2
+      wait: 10
+    - text: Keep the pole up for 15 s with the noise at 1° or more.
+      when:
+        noise:
+        - '>='
+        - 1
+        autoTime:
+        - '>='
+        - 15
+      solution: noise=1&trust=0
+      wait: 16
     controls: [estimator, noise, reference]
     aria: ["The cart-pole balanced by LQR on Kalman-filtered estimates", "Measured and true pole angle, and estimated and true rates", "Each gain's contribution to the force"]
     note_title: Predict, then correct
