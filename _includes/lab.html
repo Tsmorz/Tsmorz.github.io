@@ -26,6 +26,8 @@
   {%- for t in L.tabs %}
   {%- assign is_first = forloop.first -%}{%- assign is_last = forloop.last -%}{%- assign idx = forloop.index -%}
   <section class="sim-section{% if forloop.first %} active{% endif %}" id="sec-{{ t.id }}" role="tabpanel" aria-labelledby="tab-{{ t.id }}">
+    {%- comment -%} The tab's own anchor, so links like /controls/#cartpole (and html-proofer's hash check) find a target. {%- endcomment %}
+    <span class="lab-anchor" id="{{ t.id }}"></span>
     <div class="sim-layout">
       <div class="sim-canvas-wrap sim-stack">
         <div class="sim-cell"><canvas class="sim-canvas lab-canvas" id="{{ t.id }}-top" aria-label="{{ t.aria[0] }}"{% if t.sprite %} data-sprite="{{ t.sprite | relative_url }}"{% endif %}></canvas></div>
