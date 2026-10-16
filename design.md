@@ -1,7 +1,7 @@
 ---
 layout: default
 title: The Design Process
-description: One plant from requirements to a tested controller: say what good means, identify the plant, design, verify, implement and test.
+description: "One plant from requirements to a tested controller: say what good means, identify the plant, design, verify, implement and test."
 permalink: /controls/design/
 lab: design
 ---

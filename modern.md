@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Modern Methods
-description: Newer ideas on the familiar sims: a safety filter that keeps the mass off its stops, proving what a neural-network controller will do, and two loops tested together.
+description: "Newer ideas on the familiar sims: a safety filter that keeps the mass off its stops, proving what a neural-network controller will do, and two loops tested together."
 permalink: /controls/modern/
 lab: modern
 ---

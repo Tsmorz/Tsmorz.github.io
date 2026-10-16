@@ -60,6 +60,20 @@ load_yaml("_data/photos.yml", errors).each_with_index do |photo, i|
   errors << "photos.yml: #{slug} thumbnail missing: #{thumb} (run script/add-photo)" unless file_present?(thumb)
 end
 
+# --- page front matter ---
+# Jekyll skips a page whose front matter isn't valid YAML (an unquoted ": " in a description is
+# enough), and the build still succeeds: the page just isn't there. Catch it here instead.
+Dir.glob("*.{md,html}").sort.each do |path|
+  text = File.read(path, encoding: "UTF-8")
+  next unless text.start_with?("---")
+  fm = text.split(/^---\s*$/, 3)[1]
+  begin
+    YAML.safe_load(fm.to_s)
+  rescue => e
+    errors << "#{path}: front matter is not valid YAML (#{e.message.lines.first.strip}); quote values that contain \": \""
+  end
+end
+
 # --- lab predictions and challenges (_data/labs/*.yml, read by assets/js/lab/lab.js) ---
 # A prediction needs a question, 2+ options, an answer that indexes one of them, a "try" and an
 # "explain". A challenge needs text and a "when" whose every key is a metric lab.js knows
