@@ -66,6 +66,16 @@ tasks:
     cmds:
       - script/test-swingup
 
+  check:lab:
+    desc: Check the lab template (assets/js/lab/) and every _data/labs page (Node, no build)
+    cmds:
+      - script/test-lab
+
+  check:challenges:
+    desc: Check every lab challenge can be met, in a real browser (needs Playwright + Chromium; build first)
+    cmds:
+      - script/test-challenges {{.SITE_DIR}}
+
   check:links:
     desc: Check internal links with html-proofer
     cmds:
@@ -76,6 +86,7 @@ tasks:
     cmds:
       - task: check:data
       - task: check:swingup
+      - task: check:lab
       - task: build
       - task: check:js
       - task: check:links

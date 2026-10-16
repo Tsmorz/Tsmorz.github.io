@@ -1,0 +1,116 @@
+# /controls/discrete/ — from continuous to discrete: sampling, converting a model, and running the
+# controller at a finite rate. All on the /controls/ mass-spring.
+labs:
+  shaken: { plant: msd, controller: open, w: 1 }
+  model:  { plant: msd, controller: open }
+  loop:   { plant: msd, controller: pid, refs: [{ type: step }] }
+tabs:
+  - id: sampling
+    label: Sampling a Signal
+    lab: shaken
+    top: sim
+    row1: samp-time
+    row2: samp-fold
+    shake: true
+    shakeAmp: 1
+    controls: [freq, sampling]
+    aria: ["The mass, shaken by a sine-wave force", "Its position, continuous, sampled, and rebuilt from the samples", "Frequency folding: where a sampled frequency appears"]
+    note_title: A computer only sees samples
+    note: |
+      <p>A controller on a microcontroller never sees the smooth position on the left; it sees a number read every
+      T seconds (the dots), and between readings it knows nothing. Two things happen to a signal on the way in.
+      It's <strong>sampled</strong> in time, and it's <strong>quantised</strong> in value: an ADC with n bits can only
+      return 2<sup>n</sup> levels (try 4 or 2 bits and watch the dots snap to a grid). On the way out, a DAC or a PWM
+      output holds each value until the next one arrives: the <strong>zero-order hold</strong>, the staircase. It's the
+      simplest reconstruction, and what nearly every real controller does.</p>
+      <p>Now raise the shaking frequency (or lower the sample rate) past <strong>fs/2</strong>, the
+      <strong>Nyquist frequency</strong>. The dots still trace a smooth wave, but a slower, wrong one (dashed red):
+      <strong>aliasing</strong>. A 3&nbsp;Hz vibration sampled at 4&nbsp;Hz looks exactly like a 1&nbsp;Hz one, and no
+      amount of cleverness afterwards can tell them apart, because the samples are identical. The folding diagram
+      shows where every frequency lands. The only cure is to remove those frequencies <em>before</em> sampling, with an
+      analogue <strong>anti-aliasing filter</strong>, and to sample fast enough: Shannon's rule says faster than twice
+      the highest frequency present, and control engineers aim far higher.</p>
+  - id: model
+    label: Discretising a Model
+    lab: model
+    top: disc-z
+    row1: disc-step
+    row2: disc-bode
+    predict:
+      question: Convert the mass-spring with forward Euler at T = 0.2 s. What is the discrete model like?
+      options:
+      - A bit less accurate, but fine
+      - Unstable, though the real system is stable
+      - Identical to the hold method
+      answer: 1
+      try: Set T to 0.2 s and pick Fwd.
+      explain: Forward Euler maps a pole s to 1 + sT. A lightly damped pole sits close to the imaginary axis, so 1 + sT leaves the unit circle as soon as T is longer than 2ζ/ω<sub>n</sub>, only 0.1 s for this mass-spring. The hold method and Tustin keep a stable pole stable at any T.
+    controls: [discretize]
+    aria: ["The z-plane with the plant's poles as each discretisation method places them", "Step responses of the continuous plant and each discrete model", "Gain of the continuous plant and each discrete model, up to the Nyquist frequency"]
+    note_title: Four ways to turn ẋ = f(x) into a step-by-step rule
+    note: |
+      <p>A computer can't integrate; it repeats an update every T seconds. Turning a continuous model (or
+      controller) into that update is <strong>discretisation</strong>, and the method matters. In the
+      <strong>z-plane</strong> a discrete system is stable when its poles sit inside the unit circle, the counterpart
+      of the left half-plane.</p>
+      <ul>
+        <li><strong>Zero-order hold</strong> (z&#8201;=&#8201;e<sup>pT</sup>): exact, if the input really is held
+          constant between samples, which it is when the plant is driven by a DAC. The reference for the others.</li>
+        <li><strong>Forward Euler</strong> (s&#8201;&#8776;&#8201;(z&#8722;1)/T): the textbook first step. Slide T up to
+          0.2&nbsp;s and the lightly damped mass's poles leave the circle: a stable plant becomes an unstable model.</li>
+        <li><strong>Backward Euler</strong> (s&#8201;&#8776;&#8201;(z&#8722;1)/(zT)): always stable, but by squeezing poles
+          inward it adds damping that isn't there; the step response rings less than the real thing.</li>
+        <li><strong>Tustin</strong>, or bilinear (s&#8201;&#8776;&#8201;(2/T)(z&#8722;1)/(z+1)): maps the whole stable
+          half-plane exactly onto the unit disk, so stable stays stable. Its cost is a squeezed frequency axis, visible
+          on the Bode plot as T grows. It's the usual choice for turning a continuous controller into code.</li>
+      </ul>
+      <p>At small T all four agree; differences only matter when the sample period is a sizeable fraction of the
+      fastest time constant. That's the practical rule: sample fast, and the method barely matters.</p>
+  - id: loop
+    label: Sample Rate in the Loop
+    lab: loop
+    top: sim
+    row1: time
+    row2: disc-loop
+    predict:
+      question: The PID runs every 20 ms. Slow it to 100 ms. What happens?
+      options:
+      - Nothing much, 100 ms is still quick
+      - It still works, with more overshoot
+      - It goes unstable
+      answer: 1
+      try: Drag "Runs every" to 100 ms and watch the step and the poles.
+      explain: Holding each command for one period acts like a delay of about half a period, which costs phase margin. With these gains the loop survives up to about 135 ms, but overshoot grows well before that.
+    challenges:
+    - text: 'Find how slow the controller can run with these gains: past 120 ms and still stable.'
+      when:
+        rate:
+        - '>='
+        - 120
+        sampledStable: true
+      solution: rate=130
+    - text: Run it every 200 ms and retune until it's stable with under 30% overshoot.
+      when:
+        rate:
+        - '>='
+        - 200
+        sampledStable: true
+        overshoot:
+        - <
+        - 30
+      solution: rate=200&kp=10&ki=2&kd=2
+    controls: [ctrlrate, gains, reference]
+    aria: ["The mass under PID control, the controller running at the chosen rate", "Position, reference and the staircase force over time", "Closed-loop poles of the sampled loop in the z-plane"]
+    note_title: How slow can the controller run?
+    note: |
+      <p>Now the PID itself runs on a computer: every T it reads the position, computes a force, and a zero-order hold
+      applies that force until the next update (watch the force become a staircase as you slow it down). On the
+      plots the loop is analysed <strong>exactly</strong> in discrete time: one update maps the state to the next, and
+      the loop is stable when every pole of that map is inside the unit circle. The simulation agrees: these gains
+      are stable at 130&nbsp;ms and shake themselves apart at 140&nbsp;ms.</p>
+      <p>The popular shortcut says a hold behaves like half a sample of delay, so a loop with phase margin PM and
+      crossover &#969;<sub>c</sub> survives up to T&#8201;=&#8201;2&#183;PM/&#969;<sub>c</sub>. Here that predicts about
+      230&nbsp;ms, nearly twice the true limit, because the derivative, computed from two consecutive samples, adds
+      its own lag. Treat the shortcut as an upper bound. The rule designers actually use is to run the loop
+      <strong>10–30 times per crossover period</strong> (the panel counts it), which here means 25–75&nbsp;ms; then
+      neither the hold nor the method of discretising matters much.</p>

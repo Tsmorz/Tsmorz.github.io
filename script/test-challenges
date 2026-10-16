@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Check the lab challenges in a real browser (Playwright + Chromium).
+
+For every tab in _data/labs/*.yml that has challenges:
+  * opened fresh, no challenge is already met (a challenge that ticks itself is no challenge);
+  * opened from a share link carrying the challenge's `solution`, that challenge gets met
+    (so each one can be done, and share links really restore the settings);
+  * the "Copy a link" button on that tab writes a link carrying those same settings.
+Challenges without a `solution` (the hands-on ones) are only checked for the first point.
+
+Usage: script/test-challenges [SITE_DIR]   (default _site; build it first with `task build`)
+Needs: pip install playwright pyyaml, and a Chromium Playwright can find.
+"""
+import functools, http.server, os, re, sys, threading, time
+import yaml
+from playwright.sync_api import sync_playwright
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SITE = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, '_site'))
+if not os.path.isdir(SITE):
+    sys.exit(f'{SITE} not found: build the site first (task build)')
+
+# Which page shows which lab: the front matter of the top-level .md files.
+pages = {}
+for f in os.listdir(ROOT):
+    if f.endswith('.md'):
+        head = open(os.path.join(ROOT, f), encoding='utf-8').read().split('\n---', 1)[0]
+        lab, link = re.search(r'^lab:\s*(\S+)', head, re.M), re.search(r'^permalink:\s*(\S+)', head, re.M)
+        if lab and link:
+            pages[lab.group(1)] = link.group(1)
+
+jobs = []   # (label, url, tab, index or None, expect, timeout)
+for lab, url in sorted(pages.items()):
+    doc = yaml.safe_load(open(os.path.join(ROOT, '_data/labs', lab + '.yml'), encoding='utf-8'))
+    for tab in doc.get('tabs', []):
+        chs = tab.get('challenges') or []
+        if not chs:
+            continue
+        jobs.append((f'{lab}#{tab["id"]}: none met at the start', f'{url}#{tab["id"]}', tab['id'], None, False, 2.0))
+        for i, ch in enumerate(chs):
+            if ch.get('solution'):
+                label = f'{lab}#{tab["id"]} challenge {i + 1}: met by its solution'
+                jobs.append((label, f'{url}#{tab["id"]}?{ch["solution"]}', tab['id'], i, True, 3 * ch.get('wait', 1.5) + 5))
+
+class Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+
+handler = functools.partial(Quiet, directory=SITE)
+srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), handler)
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = f'http://127.0.0.1:{srv.server_address[1]}'
+
+def same(a, b):
+    if a is None:
+        return False
+    if re.match(r'^-?[\d.]+$', b):
+        return abs(float(a) - float(b)) <= 1e-6 * max(1, abs(float(b)))
+    return a == b
+
+
+STATE = '(t) => { var x = LabDebug.tabs().filter(a => a.id === t)[0]; return x && x.challengeState ? x.challengeState() : null; }'
+fails = []
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    # A few pages at a time: the sims run in real time, and too many at once starve each other.
+    for k in range(0, len(jobs), 4):
+        batch, open_ = jobs[k:k + 4], []
+        for job in batch:
+            ctx = browser.new_context(viewport={'width': 1200, 'height': 900})
+            pg = ctx.new_page(); errs = []
+            pg.on('pageerror', lambda e, errs=errs: errs.append(str(e)))
+            pg.goto(base + job[1])
+            open_.append((job, ctx, pg, errs, time.time()))
+        pending = list(open_)
+        while pending:
+            time.sleep(0.5)
+            for item in list(pending):
+                (label, url, tab, i, expect, timeout), ctx, pg, errs, t0 = item
+                st = pg.evaluate(STATE, tab)
+                elapsed = time.time() - t0
+                if st is None:
+                    fails.append(f'{label}: no challenges on the page'); pending.remove(item); continue
+                if expect and st[i]:
+                    # the share button should hand back the settings the link brought in
+                    pg.click(f'#{tab}-panel .lab-share')
+                    got = pg.input_value(f'#{tab}-panel .lab-share-url')
+                    sol = dict(kv.split('=') for kv in url.split('?', 1)[1].split('&'))
+                    have = dict(kv.split('=') for kv in got.split('?', 1)[1].split('&')) if '?' in got else {}
+                    bad = [k2 for k2, v in sol.items() if not same(have.get(k2), v)]
+                    if bad:
+                        fails.append(f'{label}: share link lost {", ".join(bad)} ({got})')
+                    print(f'ok   {label} ({elapsed:.0f} s)')
+                    pending.remove(item)
+                elif not expect and any(st):
+                    fails.append(f'{label}: already met: {[n + 1 for n, s in enumerate(st) if s]}'); pending.remove(item)
+                elif elapsed > timeout:
+                    if expect:
+                        fails.append(f'{label}: not met after {timeout:.0f} s')
+                    else:
+                        print(f'ok   {label}')
+                    pending.remove(item)
+                if errs:
+                    fails.append(f'{label}: page errors: {errs}')
+                    errs.clear()
+        for item in open_:
+            item[1].close()
+    browser.close()
+srv.shutdown()
+for f in fails:
+    print('FAIL ' + f)
+print('all challenges check out' if not fails else f'{len(fails)} problem(s)')
+sys.exit(1 if fails else 0)

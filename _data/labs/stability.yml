@@ -1,0 +1,147 @@
+# /controls/stability/ — frequency response, Nyquist and poles on the /controls/ sims.
+# Rendered by _includes/lab.html; views and controls are listed at the top of assets/js/lab/lab.js.
+labs:
+  msd_open: { plant: msd, controller: open, w: 0.5 }
+  msd_pid:  { plant: msd, controller: pid }
+  cp_lqr:   { plant: cartpole, controller: lqr }
+  fl:       { plant: flight, controller: both }
+tabs:
+  - id: plant
+    label: The Plant
+    lab: msd_open
+    top: sim
+    row1: time
+    row2: analysis
+    analysis: [bode, poles]
+    shake: true
+    shakeAmp: 1
+    controls: [freq, view]
+    aria: ["The mass on its spring, shaken by a sine-wave force", "Force in and position out over time", "Bode plot or poles of the mass-spring-damper"]
+    note: |
+      <p>The mass on a spring from the <a href="/controls/">Intro demo</a>, with no controller, shaken by a
+      1&nbsp;N sine-wave force. A Bode plot answers one question: shake a system at a frequency, and how big
+      is the output, and how late? Drag &#969; or press <strong>Sweep</strong> and watch the dot trace the
+      curve: the spring wins when slow (output in step), the mass resonates near 2&nbsp;rad/s, and the mass
+      can't keep up when fast (output tiny, half a cycle late).</p>
+      <p>Switch <strong>View</strong> to <strong>Poles</strong>. The &#215; marks are the roots of
+      ms&#178;&#8201;+&#8201;cs&#8201;+&#8201;k: the system's own motions. The gain at &#969; is one over the
+      product of the distances from each pole to the point j&#969;, so as j&#969; slides past a pole the
+      distance shrinks and the gain peaks. <strong>Drag a pole</strong> to change the spring and damper:
+      pull it toward the axis and the peak sharpens; push it left and the ringing dies faster.</p>
+  - id: pid
+    label: PID Loop
+    lab: msd_pid
+    top: sim
+    row1: time
+    row2: analysis
+    analysis: [bode, nyquist, poles]
+    predict:
+      question: Add 100 ms of delay. What happens to the Bode plot?
+      options:
+      - The gain curve drops everywhere
+      - The gain curve stays put and the phase curve falls away at high frequency
+      - Both curves shift to lower frequencies
+      answer: 1
+      try: Pick the Bode view, then drag the delay slider from 0 to 100 ms.
+      explain: 'A delay changes when the signal arrives, not how big it is: e<sup>−sT</sup> has gain 1 and phase −ωT. The phase loss grows with frequency, so the phase margin shrinks by ω<sub>c</sub>T at crossover.'
+    challenges:
+    - text: Get a phase margin of at least 60°.
+      when:
+        pm:
+        - '>='
+        - 60
+      solution: kp=40&ki=5&kd=10
+    - text: Add 50 ms of delay and keep the phase margin above 45°.
+      when:
+        delay:
+        - '>='
+        - 50
+        pm:
+        - '>='
+        - 45
+      solution: kp=20&ki=5&kd=8&delay=50
+    - text: Push the delay to 150 ms and keep a phase margin above 30°.
+      when:
+        delay:
+        - '>='
+        - 150
+        pm:
+        - '>='
+        - 30
+      solution: kp=5&ki=1&kd=3&delay=150
+    controls: [reference, gains, delay, noise, view, freq, margins]
+    aria: ["The mass-spring-damper under PID control", "Position, reference and force over time", "Loop analysis: Bode, Nyquist or poles"]
+    note: |
+      <p>The same PID loop as the Intro demo, cut open at the force. The <strong>loop gain</strong>
+      L(s)&#8201;=&#8201;C(s)G(s) is what a signal goes through on one trip round the loop. If it comes back
+      the same size and inverted (gain 0&nbsp;dB, phase &#8722;180&#176;) the loop sustains an oscillation by
+      itself. The <strong>phase margin</strong> and <strong>gain margin</strong> say how far from that you
+      are, and the <strong>delay margin</strong> how much delay would close the gap. Push the delay slider
+      past it and watch the sim and the plots agree.</p>
+      <p>Three views of one loop: <strong>Bode</strong> (margins and delay), <strong>Nyquist</strong> (the
+      same numbers as one curve; stability is whether it circles &#8722;1), and <strong>Poles</strong>
+      (the closed loop's own motions). In Poles, <strong>drag a closed-loop pole</strong> and the three
+      gains are solved to put it there: that is <em>pole placement</em>, and the sliders follow.</p>
+  - id: lqr
+    label: LQR Loop
+    lab: cp_lqr
+    top: sim
+    row1: time
+    row2: analysis
+    analysis: [bode, nyquist, poles]
+    predict:
+      question: Halve all four LQR gains. Does the pole stay up?
+      options:
+      - Yes, with a smaller phase margin
+      - No, the loop goes unstable
+      - Yes, and the margins get bigger
+      answer: 0
+      try: Set each gain to about half its suggested value and watch the Nyquist plot and the margins.
+      explain: An LQR loop has at least 60° of phase margin and can lose half its gain, at the plant input, with every state measured. Halving all four gains is exactly that test, so it stays up, with less margin to spare.
+    challenges:
+    - text: Keep the LQR stable with 100 ms of delay.
+      when:
+        delay:
+        - '>='
+        - 100
+        stable: true
+      solution: delay=100
+    - text: Add 50 ms of delay and keep the phase margin above 30°.
+      when:
+        delay:
+        - '>='
+        - 50
+        pm:
+        - '>='
+        - 30
+      solution: delay=50
+    controls: [reference, gains, delay, noise, view, freq, margins]
+    noiseMax: 2
+    noiseUnit: '°'
+    aria: ["The cart-pole under LQR state feedback", "Cart position, reference and force over time", "Loop analysis: Bode, Nyquist or poles"]
+    note: |
+      <p>The <a href="/controls/#cartpole">cart-pole</a> with its LQR gains, cut open at the force:
+      L(s)&#8201;=&#8201;K(sI&#8201;&#8722;&#8201;A)<sup>&#8722;1</sup>B. With every state measured and no
+      delay, LQR guarantees at least 60&#176; of phase margin, no upper gain limit, and a gain that can drop
+      to half (&#8722;6&nbsp;dB); the readout shows all three. This plant is unstable on its own, so the
+      gain can also be too <em>low</em>, and you can't read stability off the Bode plot alone: switch to
+      <strong>Nyquist</strong>, where the curve must circle &#8722;1 once counterclockwise to cancel the
+      falling pole. In <strong>Poles</strong>, drag any of the four closed-loop poles and all four gains are
+      solved at once.</p>
+  - id: flight
+    label: Aircraft
+    lab: fl
+    top: sim
+    sprite: /assets/img/controls/cessna.png
+    row1: time
+    row2: analysis
+    analysis: [bode, nyquist, poles]
+    channels: [0, 1]
+    window: 20
+    controls: [channel, view, freq, gains, delay, margins]
+    aria: ["The aircraft holding altitude with elevator and airspeed with throttle", "Altitude and airspeed errors over time", "Loop analysis of the chosen loop"]
+    note: |
+      <p>The <a href="/controls/#flight">flight sim</a> with both of its loops on: altitude through the
+      elevator (your PID) and airspeed through the throttle (the autothrottle). Two loops means two places
+      to cut. <strong>Which loop to cut</strong> picks one; the other stays closed, which is how each loop's
+      margins are measured in practice. The model is your sim's own equations, linearised about trim.</p>

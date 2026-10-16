@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+// Train the small network that /controls/modern/#verify verifies, and write it to
+// assets/models/verify-net.json. It imitates the cart-pole LQR controller from
+// /controls/ (F = k·state, saturated at ±10 N) with a 4 → 16 → 16 → 1 ReLU net and a
+// tanh output, small enough that interval bounds stay useful. Deterministic (seeded),
+// so re-running reproduces the committed file. Pure Node, no dependencies.
+//
+//   script/train-verify-net            # write assets/models/verify-net.json
+'use strict';
+const fs = require('fs');
+const path = require('path');
+
+const K = [3.1, 5.9, 43.5, 18.1];          // the cart-pole LQR gains (lab-plants.js) (x, ẋ, θ, θ̇)
+const FMAX = 10;                            // N, the cart-pole's force limit
+const RANGE = [1.5, 2.0, 0.5, 1.5];         // training box: |x|, |ẋ|, |θ|, |θ̇|
+const SIZES = [4, 16, 16, 1];
+
+let seed = 7;
+function rand() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+function randn() { let u = 0; while (u === 0) u = rand(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand()); }
+
+// Layers: W (out × in, row-major), b. Inputs are scaled by 1/RANGE inside layer 0.
+const layers = [];
+for (let l = 0; l < SIZES.length - 1; l++) {
+  const n = SIZES[l], m = SIZES[l + 1];
+  layers.push({ n, m, W: Array.from({ length: n * m }, () => randn() * Math.sqrt(2 / n)), b: new Array(m).fill(0) });
+}
+// Adam state
+layers.forEach((L) => { L.mW = L.W.map(() => 0); L.vW = L.W.map(() => 0); L.mb = L.b.map(() => 0); L.vb = L.b.map(() => 0); });
+
+function target(s) { return Math.max(-FMAX, Math.min(FMAX, K[0] * s[0] + K[1] * s[1] + K[2] * s[2] + K[3] * s[3])); }
+
+function forward(s) {
+  const acts = [s.map((v, i) => v / RANGE[i])], pre = [];
+  layers.forEach((L, li) => {
+    const x = acts[acts.length - 1], z = new Array(L.m);
+    for (let o = 0; o < L.m; o++) { let a = L.b[o]; for (let i = 0; i < L.n; i++) a += L.W[o * L.n + i] * x[i]; z[o] = a; }
+    pre.push(z);
+    acts.push(li < layers.length - 1 ? z.map((v) => Math.max(0, v)) : z);
+  });
+  const y = FMAX * Math.tanh(acts[acts.length - 1][0]);
+  return { acts, pre, y };
+}
+
+const LR = 3e-3, B1 = 0.9, B2 = 0.999, BATCH = 64, STEPS = 12000;
+for (let step = 1; step <= STEPS; step++) {
+  const gW = layers.map((L) => L.W.map(() => 0)), gb = layers.map((L) => L.b.map(() => 0));
+  for (let k = 0; k < BATCH; k++) {
+    // Mostly near upright, where the controller lives, plus the full box.
+    const s = RANGE.map((r) => (rand() < 0.5 ? 0.3 : 1) * r * (2 * rand() - 1));
+    const f = forward(s);
+    let delta = [(f.y - target(s)) * FMAX * (1 - Math.tanh(f.pre[f.pre.length - 1][0]) ** 2) * 2 / BATCH];
+    for (let li = layers.length - 1; li >= 0; li--) {
+      const L = layers[li], x = f.acts[li], back = new Array(L.n).fill(0);
+      for (let o = 0; o < L.m; o++) {
+        gb[li][o] += delta[o];
+        for (let i = 0; i < L.n; i++) { gW[li][o * L.n + i] += delta[o] * x[i]; back[i] += delta[o] * L.W[o * L.n + i]; }
+      }
+      if (li > 0) delta = back.map((v, i) => (f.pre[li - 1][i] > 0 ? v : 0));
+    }
+  }
+  const lr = LR * (step > STEPS * 0.7 ? 0.2 : 1);
+  layers.forEach((L, li) => {
+    [['W', 'mW', 'vW', gW[li]], ['b', 'mb', 'vb', gb[li]]].forEach(([p, m, v, g]) => {
+      for (let i = 0; i < L[p].length; i++) {
+        L[m][i] = B1 * L[m][i] + (1 - B1) * g[i];
+        L[v][i] = B2 * L[v][i] + (1 - B2) * g[i] * g[i];
+        L[p][i] -= lr * (L[m][i] / (1 - B1 ** step)) / (Math.sqrt(L[v][i] / (1 - B2 ** step)) + 1e-8);
+      }
+    });
+  });
+}
+
+// Report the fit on a fresh sample.
+let worst = 0, sq = 0, N = 4000;
+for (let k = 0; k < N; k++) {
+  const s = RANGE.map((r) => 0.3 * r * (2 * rand() - 1));
+  const e = forward(s).y - target(s); sq += e * e; worst = Math.max(worst, Math.abs(e));
+}
+console.log(`near upright: RMS error ${Math.sqrt(sq / N).toFixed(3)} N, worst sampled ${worst.toFixed(3)} N`);
+
+// Fold the input scaling into layer 0 so the page needs no normalisation step.
+const L0 = layers[0];
+for (let o = 0; o < L0.m; o++) for (let i = 0; i < L0.n; i++) L0.W[o * L0.n + i] /= RANGE[i];
+const round = (v) => +v.toPrecision(6);
+const out = {
+  about: 'Small ReLU net imitating the /controls/ cart-pole LQR (F = k·state, ±10 N). Written by script/train-verify-net; do not hand-edit.',
+  inputs: ['x', 'xd', 'th', 'thd'], force_max: FMAX, lqr_gains: K, train_range: RANGE,
+  layers: layers.map((L) => ({ in: L.n, out: L.m, W: L.W.map(round), b: L.b.map(round) })),
+  output: 'force_max * tanh(last layer)'
+};
+const file = path.resolve(__dirname, '..', 'assets/models/verify-net.json');
+fs.writeFileSync(file, JSON.stringify(out) + '\n');
+console.log('wrote', path.relative(process.cwd(), file));

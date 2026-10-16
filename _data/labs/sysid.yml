@@ -1,0 +1,172 @@
+# /controls/sysid/ — system identification: the common methods, each on the /controls/ mass-spring.
+# All tabs share one lab, so the Compare tab can test every method's model.
+labs:
+  id: { plant: msd, controller: pid, params: { M: 1, k: 4, c: 0.4 }, sysid: { exc: prbs, noise: 0.01, T: 30, order: 2, amp: 2 } }
+tabs:
+  - id: step
+    label: Step Response
+    lab: id
+    method: step
+    top: id-replay
+    row1: id-step
+    row2: id-result
+    controls: [idrun]
+    aria: ["The mass replaying a step test", "The measured step response with its final value, overshoot and peak time marked", "Estimated mass, damping and spring against the true values"]
+    note_title: Method 1 — Read it off a step
+    note: |
+      <p>The oldest method, and still the first thing most engineers try: push once and watch. Apply a sudden
+      2&nbsp;N force and record the position. A mass on a spring is a <strong>second-order</strong> system, and a
+      second-order step response is fixed by three numbers you can read straight off the plot:</p>
+      <ul>
+        <li><strong>Where it settles</strong> gives the static gain K: final position &#247; force. For a spring that's 1/k.</li>
+        <li><strong>How far it overshoots</strong> gives the damping ratio &#950;: overshoot&#8201;=&#8201;e<sup>&#8722;&#960;&#950;/&#8730;(1&#8722;&#950;&#178;)</sup>, solved for &#950;.</li>
+        <li><strong>When it first peaks</strong> gives the ringing frequency &#969;<sub>d</sub>&#8201;=&#8201;&#960;&#8201;/&#8201;t<sub>p</sub>, and with &#950; the natural frequency &#969;<sub>n</sub>.</li>
+      </ul>
+      <p>From K, &#950; and &#969;<sub>n</sub> come k, then m&#8201;=&#8201;k/&#969;<sub>n</sub>&#178; and c&#8201;=&#8201;2&#950;&#969;<sub>n</sub>m.
+      It's quick and needs no software, but it leans on just three points of the curve, so noise on the peak goes
+      straight into the answer (turn the noise up and rerun a few times), and it only works if you already know
+      the model is second order and underdamped. A plant that doesn't overshoot gives it nothing to read.</p>
+  - id: freq
+    label: Frequency Sweep
+    lab: id
+    method: freq
+    top: id-replay
+    row1: id-freq
+    row2: id-result
+    controls: [idrun]
+    aria: ["The mass being shaken at one frequency after another", "Measured gain and phase points on a Bode plot, with the true plant and the fitted model", "Estimated mass, damping and spring against the true values"]
+    note_title: Method 2 — Shake it at one frequency at a time
+    note: |
+      <p>The method behind the <a href="/controls/stability/">Bode plots</a>: shake the plant with a sine wave,
+      wait for it to settle, and measure how big and how late the output is. One frequency gives one dot on the
+      Bode plot; a sweep of frequencies draws the curve point by point (watch the dots arrive). Comparing the
+      output with the sine and cosine of the input over whole periods averages the noise away, which is why this
+      is the method of choice on noisy hardware and why lab instruments called <em>frequency response analysers</em>
+      exist.</p>
+      <p>The model then comes from the dots. For a mass-spring-damper,
+      1/G(j&#969;)&#8201;=&#8201;k&#8201;&#8722;&#8201;m&#969;&#178;&#8201;+&#8201;j&#8201;c&#969;: the real part is a straight line in
+      &#969;&#178; (its intercept is k, its slope &#8722;m) and the imaginary part a straight line in &#969; (slope c), so
+      the fit is ordinary least squares. One refinement matters with noise: high-frequency points are tiny and
+      noisy, and inverting them blows the noise up, so each point is weighted by its measured gain squared, which
+      makes the fit balance the error in G rather than in 1/G. Try 4 frequencies against 20: with 4 the estimates
+      wobble by a few percent from run to run, with 20 they settle within about one. The cost is time: every point
+      needs the plant to settle first, and a lightly damped plant settles slowly.</p>
+  - id: arx
+    label: Least Squares (ARX)
+    lab: id
+    top: sysid-replay
+    row1: sysid-data
+    row2: sysid-bode
+    controls: [sysid]
+    aria: ["The mass replaying the identification experiment", "The input, the noisy measurement, and the fitted model's prediction", "Bode plot of the true plant and the fitted model"]
+    note_title: Method 3 — Fit a difference equation by least squares
+    note: |
+      <p>The workhorse of system identification. Push the plant with any rich input (a chirp or a random signal),
+      sample input and output, and look for the <strong>difference equation</strong> that best predicts each output
+      sample from the ones before it:
+      y[k]&#8201;=&#8201;&#8722;a&#8321;y[k&#8722;1]&#8201;&#8722;&#8201;a&#8322;y[k&#8722;2]&#8201;+&#8201;b&#8321;u[k&#8722;1]&#8201;+&#8201;b&#8322;u[k&#8722;2].
+      That's linear in the unknowns, so one least-squares solve finds them all, from a single experiment, with no
+      waiting for anything to settle. This is <strong>ARX</strong> (auto-regressive with exogenous input), and it's
+      what most toolboxes do first. A 2nd-order fit can be read back as m, c and k (the poles map back from
+      discrete to continuous time).</p>
+      <p>Two things to know. First, the model order is your choice: try 1st order (it can't resonate, and the Bode
+      plot shows where it's wrong) and 4th (it starts fitting the noise). Second, plain least squares is biased by
+      sensor noise, because the noisy past outputs sit inside its own regressors. This fit refines itself with
+      <strong>instrumental variables</strong>, using the model's own noise-free prediction in place of the noisy
+      outputs, which removes the bias. A step input barely excites the resonance, so the fit gets the spring right
+      and the damping wrong; a chirp or random input nails all three.</p>
+  - id: era
+    label: Ho–Kalman (ERA)
+    lab: id
+    method: era
+    top: id-replay
+    row1: id-era
+    row2: id-result
+    controls: [idrun]
+    aria: ["The mass replaying a hammer tap", "The Hankel matrix of the impulse response, its singular values, and the measured and realized impulse responses", "Estimated mass, damping and spring against the true values"]
+    note_title: Method 4 — Realize a state-space model from the impulse response
+    note: |
+      <p>Tap the mass once, like an engineer with an instrumented hammer, and record how it rings: that's the
+      <strong>impulse response</strong>, a list of numbers h&#8321;, h&#8322;, h&#8323;, … called the Markov parameters.
+      In 1966 Ho and Kalman showed how to turn that list straight into a state-space model. Stack the numbers into a
+      <strong>Hankel matrix</strong>, where each row is the one above shifted by one sample (the diagonal stripes in
+      the heatmap). Every row is a combination of the system's own motions, so the matrix's <em>rank</em> is the
+      number of states.</p>
+      <p>The <strong>singular values</strong> make that rank visible. For this plant two are large and the rest are
+      tiny: the order is 2, read from the data rather than guessed, which is what ARX made you choose by hand. Keep
+      those two and the A, B and C matrices follow from the matrix's factors; the dashed curve is the realized
+      model's own impulse response. Turn the noise up and tap again: the small singular values rise into a noise
+      floor, the gap shrinks, and choosing where to cut becomes a judgement. That truncation is what the
+      <strong>Eigensystem Realization Algorithm</strong> (ERA) adds to Ho–Kalman, and it's the core idea behind the
+      <strong>subspace methods</strong> (N4SID, MOESP) used for systems with many inputs and outputs and in the modal
+      testing of structures. Try keeping 1, 3 or 4: too few can't ring; extra ones model the noise.</p>
+  - id: grey
+    label: Grey-Box Fit
+    lab: id
+    method: grey
+    top: id-replay
+    row1: id-grey
+    row2: id-result
+    controls: [idrun]
+    aria: ["The mass replaying a random-input experiment", "The measured response and the model's simulation improving iteration by iteration, with the error falling", "Estimated mass, damping and spring against the true values"]
+    note_title: Method 5 — Fit the physics directly
+    note: |
+      <p>When you already know the equations (here m&#7821;&#8201;+&#8201;c&#7819;&#8201;+&#8201;kx&#8201;=&#8201;F) and only
+      the constants are unknown, fit those constants directly. Start from a guess, <strong>simulate</strong> the
+      model with the same input the plant received, measure how far the simulation is from the data, work out which
+      way to nudge m, c and k to shrink that error, and repeat. This is a <strong>grey-box</strong> or
+      <strong>output-error</strong> fit: grey because the structure comes from physics and only the numbers come
+      from data. Watch the simulated curve snap onto the measurement over a handful of iterations.</p>
+      <p>Its strengths: the answers are physical quantities you can sanity-check (a negative mass means something is
+      wrong), it works the same way for nonlinear models, and comparing simulation with data, rather than predicting
+      one step ahead, makes it robust to sensor noise. Its weaknesses: you have to know the structure, every
+      iteration costs simulations, and the error surface can have more than one valley. Move the starting guess far
+      away and it usually still converges; start somewhere silly and it can settle on the wrong answer.</p>
+  - id: compare
+    label: Compare & Validate
+    lab: id
+    method: compare
+    top: id-replay
+    row1: id-compare
+    row2: id-validate
+    controls: [idrun]
+    aria: ["The mass replaying the validation experiment", "Every method's estimates and its fit on fresh data", "The fresh measurement with each model's prediction"]
+    note_title: The step everyone skips — validate on fresh data
+    note: |
+      <p>A model fits the data it was fitted to; that proves little. The test that matters is
+      <strong>validation</strong>: run a new experiment with a different input, feed the same input to each model,
+      and see who predicts the measurement best. The table also shows each model's constants against the truth,
+      which the simulator knows and real life never tells you. Fresh data is all you get on hardware, which is why
+      the right-hand column is the one engineers trust.</p>
+      <p>Rules of thumb that fall out of trying all four: excite the frequencies you care about (a step barely
+      touches the resonance); prefer methods that average over a whole record (frequency sweeps, least squares,
+      grey-box) to ones that read a few points (the step); choose the simplest model that validates; and always keep
+      some data back for validation. The model you end up with is what every other page on this site starts from:
+      the <a href="/controls/design/">design process</a> uses this same experiment in its step 2. Beyond these
+      four, the usual toolbox adds <strong>subspace methods</strong> (N4SID), which fit state-space models with
+      several inputs and outputs in one go, and <strong>closed-loop identification</strong> for plants that can't
+      run without a controller, like the cart-pole.</p>
+  - id: yours
+    label: Your Own Data
+    lab: id
+    top: sim
+    row1: rec-data
+    row2: rec-fit
+    startManual: true
+    manualHint: "<strong>Manual:</strong> drag the mass to push it yourself. Or switch to PID and let the controller move it."
+    controls: [mode, record]
+    aria: ["The live mass-spring-damper: drag it, tap it, or let the PID drive it while recording", "Your recorded force and position", "Models identified from your recording, checked on the part held back"]
+    note_title: Collect your own data
+    note: |
+      <p>So far the experiments were scripted. On real hardware you design the experiment yourself, and its quality
+      decides the model's. Press <strong>Record</strong> and move the mass any way you like: drag it by hand, tap it,
+      switch on the random shaker, or put the <strong>PID</strong> in charge and let it chase its reference. Then press
+      <strong>Identify</strong>. Least squares, Ho–Kalman (fitting the impulse response from your data first, which is
+      how ERA is used on data that isn't a clean tap) and the grey-box fit all run on your recording. The first 70% is
+      used to fit, and the last 30% is held back to check each model against data it never saw.</p>
+      <p>What you'll find: gentle, slow pushes barely excite the resonance, so the damping comes out wrong; vigorous,
+      varied pushes (or the shaker) give all three methods plenty to work with. Short recordings hurt Ho–Kalman most,
+      because the impulse response it fits has to last as long as the mass keeps ringing (about 20&nbsp;s here). And
+      data recorded while the PID is in control is <em>closed-loop</em>: the force reacts to the position, which can
+      bias the fit unless something else (the shaker) also excites it. That's the core difficulty of closed-loop
+      identification, the method needed for plants like the cart-pole that can't be run without a controller.</p>

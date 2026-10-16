@@ -250,7 +250,7 @@
   var canvas = document.getElementById('su-canvas');
   if (!canvas) return;
 
-  // Polyfill ctx.roundRect for older Safari / Firefox (same as controls.js, which
+  // Polyfill ctx.roundRect for older Safari / Firefox (same as lab.js, which
   // this page doesn't load).
   if (!CanvasRenderingContext2D.prototype.roundRect) {
     CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {

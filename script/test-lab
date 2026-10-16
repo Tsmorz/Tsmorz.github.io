@@ -1,0 +1,223 @@
+#!/usr/bin/env node
+// Check the lab template (assets/js/lab/): the maths every template page relies on, run on
+// the same plants as /controls/.
+//   1. plants: the cart-pole linearises to the A, B printed on /controls/; the aircraft's trim
+//      is an equilibrium; every plant's default controller holds it for 20 s in simulation
+//   2. loops: the textbook margins (PID 53°, LQR ≥ 60° and −6 dB, ∞ up); Nyquist agrees with
+//      closed-loop eigenvalues for random gains; the delay margin is where it breaks
+//   3. pole placement round-trips; Padé poles agree with Nyquist away from the edge
+//   4. safety filter keeps the mass inside its stops; network bounds are sound
+//   5. system identification recovers the mass-spring-damper from noisy data
+//   6. every _data/labs/*.yml names plants, controllers, views and controls that exist
+// Pure Node, no dependencies, no build.
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const root = path.resolve(__dirname, '..');
+const C = require(path.join(root, 'assets/js/lab/lab-core.js'));
+const P = require(path.join(root, 'assets/js/lab/lab-plants.js'));
+
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+let seed = 2024;
+function rand() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+const W = C.logspace(0.01, 100, 500);
+function setup(plant, key, gains, params) {
+  const p = Object.assign({}, plant.params, params || {}), ctrl = plant.controllers[key];
+  const m = C.loopModel(plant, p, ctrl), K = m.K(gains || ctrl.channels.map((c) => c.gains));
+  return { p, ctrl, m, K };
+}
+function mg(s, ci, T) { return C.margins(C.freqResponse((x) => C.loopAt(s.m, s.K, ci, T || 0, x), W)); }
+
+console.log('1. plants');
+{
+  const L = C.linearize(P.cartpole, P.cartpole.params);
+  const A = [[0, 1, 0, 0], [0, -2.13, -5.89, 0], [0, 0, 0, 1], [0, 1.07, 7.85, 0]], B = [0, 2.67, 0, -1.33];
+  let err = 0; L.A.forEach((r, i) => r.forEach((v, j) => { err = Math.max(err, Math.abs(v - A[i][j])); })); L.B.forEach((r, i) => { err = Math.max(err, Math.abs(r[0] - B[i])); });
+  check(err < 0.006, `cart-pole A, B match /controls/ (max diff ${err.toFixed(4)})`);
+  const f = P.flight, d = f.deriv(f.x0(f.params), f.u0(f.params), f.params);
+  const dd = d.slice(0, 5);   // the 6th state is distance downrange, which grows at V
+  check(dd.every((v) => Math.abs(v) < 1e-8), `aircraft trim is an equilibrium (largest rate ${Math.max(...dd.map(Math.abs)).toExponential(1)})`);
+  [['msd', 'pid'], ['tilt', 'pid'], ['cartpole', 'lqr'], ['flight', 'alt'], ['flight', 'both']].forEach(([pk, ck]) => {
+    const plant = P[pk], ctrl = JSON.parse(JSON.stringify(plant.controllers[ck]));
+    const lab = { p: Object.assign({}, plant.params), controller: ctrl, gains: ctrl.channels.map((c) => Object.assign({}, c.gains)),
+      refs: plant.refs.map((r) => Object.assign({}, r)), noise: 0, delay: 0 };
+    const sim = C.createSim(plant, lab, rand); let bad = false;
+    for (let k = 0; k < Math.round(20 / plant.dt); k++) { sim.step(); if (sim.failed || !sim.x.every(isFinite)) { bad = true; break; } }
+    check(!bad, `${pk} (${ck}): suggested gains run 20 s without failing`);
+  });
+}
+
+console.log('2. loops');
+{
+  const pid = setup(P.msd, 'pid'), m1 = mg(pid, 0);
+  check(Math.abs(m1.pm - 53.4) < 0.5, `mass-spring PID: phase margin ${m1.pm.toFixed(1)}° (53.4° expected)`);
+  const lqr = setup(P.cartpole, 'lqr'), m2 = mg(lqr, 0);
+  check(m2.pm >= 60 && m2.gmUp === null && m2.gmDown <= -6, `cart-pole LQR: PM ${m2.pm.toFixed(1)}°, no upper limit, down ${m2.gmDown.toFixed(1)} dB`);
+  check(C.nyquistCount(lqr.m, lqr.K, 0, 0).P === 1 && C.nyquistCount(lqr.m, lqr.K, 0, 0).Z === 0, 'cart-pole: one open-loop unstable pole, none closed-loop');
+  let bad = 0;
+  for (let n = 0; n < 80; n++) {
+    const g = { kp: 100 * rand() - 50, ki: 40 * rand() - 20, kd: 20 * rand() - 10 }, s = setup(P.msd, 'pid', [g]);
+    if ((C.nyquistCount(s.m, s.K, 0, 0).Z === 0) !== C.eig(C.closedA(s.m, s.K)).every((z) => z[0] < 1e-3)) bad++;
+    const k = { kx: 40 * rand() - 20, kv: 40 * rand() - 20, kth: 120 * rand() - 20, kw: 50 * rand() - 10 }, t = setup(P.cartpole, 'lqr', [k]);
+    if ((C.nyquistCount(t.m, t.K, 0, 0).Z === 0) !== C.eig(C.closedA(t.m, t.K)).every((z) => z[0] < 1e-3)) bad++;
+  }
+  check(bad === 0, `Nyquist agrees with eigenvalues for 160 random gain sets (${bad} mismatches)`);
+  [[pid, 'PID'], [lqr, 'LQR']].forEach(([s, nm]) => {
+    const dm = mg(s, 0).delayMargin;
+    check(C.nyquistCount(s.m, s.K, 0, 0.9 * dm).Z === 0 && C.nyquistCount(s.m, s.K, 0, 1.1 * dm).Z > 0, `${nm}: stable at 0.9×, unstable at 1.1× the ${(dm * 1000).toFixed(0)} ms delay margin`);
+  });
+  const fl = setup(P.flight, 'both');
+  check([0, 1].every((ci) => C.nyquistCount(fl.m, fl.K, ci, 0).Z === 0), 'aircraft: both loops stable, cut at either input');
+}
+
+console.log('3. poles');
+{
+  [[P.msd, 'pid'], [P.cartpole, 'lqr']].forEach(([plant, key]) => {
+    const s = setup(plant, key), poles = C.eig(C.closedA(s.m, s.K)), g = C.placePoles(s.m, poles), want = plant.controllers[key].channels[0].gains;
+    const err = Math.max(...Object.keys(want).map((k) => Math.abs(g[k] - want[k])));
+    check(C.placeable(s.m) && err < 1e-3, `${plant.id}: placing its own poles returns its gains (max error ${err.toExponential(1)})`);
+  });
+  check(!C.placeable(setup(P.flight, 'both').m), 'aircraft: two inputs, not placeable by dragging (as the page says)');
+  let dis = 0;
+  [[P.msd, 'pid'], [P.cartpole, 'lqr']].forEach(([plant, key]) => {
+    const s = setup(plant, key);
+    [0, 0.03, 0.06, 0.2, 0.3].forEach((T) => {
+      if (C.eig(C.closedAWithDelay(s.m, s.K, T)).every((z) => z[0] < 0) !== (C.nyquistCount(s.m, s.K, 0, T).Z === 0)) dis++;
+    });
+  });
+  check(dis === 0, `Padé poles agree with Nyquist on stability away from the margin (${dis} disagreements)`);
+}
+
+console.log('4. safety filter and verification');
+{
+  let worst = 0;
+  for (let n = 0; n < 20; n++) {
+    const plant = P.msd, ctrl = JSON.parse(JSON.stringify(plant.controllers.pid));
+    const lab = { p: Object.assign({}, plant.params), controller: ctrl, gains: [{ kp: 20 + 30 * rand(), ki: 5 * rand(), kd: 2 + 6 * rand() }],
+      refs: [{ type: rand() < 0.5 ? 'wave' : 'step', amp: 1.5 + rand(), omega: 0.5 }], noise: 0, delay: 0,
+      cbf: { on: true, input: 0, pos: 0, vel: 1, lim: 1.2, lambda: 0.5 + 4 * rand() } };
+    const sim = C.createSim(plant, lab, rand);
+    for (let k = 0; k < 3000; k++) { sim.step(); worst = Math.max(worst, Math.abs(sim.x[0])); }
+  }
+  check(worst <= 1.2 + 1e-3, `filter keeps the mass inside ±1.2 m with a reference up to 2.5 m (worst ${worst.toFixed(4)} m)`);
+  const net = JSON.parse(fs.readFileSync(path.join(root, 'assets/models/verify-net.json'), 'utf8'));
+  let unsound = 0, order = 0;
+  for (let k = 0; k < 200; k++) {
+    const e = [0.3 * (2 * rand() - 1), 0.3 * (2 * rand() - 1), 0.4 * (2 * rand() - 1), 1.2 * (2 * rand() - 1)], eps = 0.002 + 0.05 * rand();
+    const b = C.queryBox(e, eps), F = C.netBounds(net, b.lo, b.hi);
+    for (let j = 0; j < 20; j++) { const f = C.netForward(net, b.lo.map((l, i) => l + rand() * (b.hi[i] - l))); if (f < F[0] - 1e-9 || f > F[1] + 1e-9) unsound++; }
+    if (C.attack(net, e, eps).dev > C.certify(net, e, eps, 2).dev + 1e-9) order++;
+  }
+  check(unsound === 0, `network bounds contain every sampled output (${unsound} outside)`);
+  check(order === 0, `no counterexample ever beats a proof (${order} cases)`);
+}
+
+console.log('5. system identification');
+{
+  [[P.msd.params, 'textbook'], [{ M: 1.6, c: 0.9, k: 6.5 }, 'design-page "real"']].forEach(([pp, nm]) => {
+    const p = Object.assign({}, P.msd.params, pp), dt = 0.05, u = [], y = []; let x = [0, 0];
+    for (let k = 0; k < 600; k++) {
+      const t = k * dt, uk = 2 * Math.sin(0.2 * t + 9.8 * t * t / 60);
+      u.push(uk); y.push(x[0] + 0.01 * C.gaussian(rand));
+      for (let j = 0; j < 5; j++) {
+        const h = 0.01, f = (xx) => P.msd.deriv(xx, [uk], p);
+        const k1 = f(x), k2 = f(x.map((v, i) => v + k1[i] * h / 2)), k3 = f(x.map((v, i) => v + k2[i] * h / 2)), k4 = f(x.map((v, i) => v + k3[i] * h));
+        x = x.map((v, i) => v + (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]) * h / 6);
+      }
+    }
+    const est = C.arxToMsd(C.arxFitIV(u, y, 2, 2), dt);
+    const err = Math.max(Math.abs(est.M / p.M - 1), Math.abs(est.c / p.c - 1), Math.abs(est.k / p.k - 1));
+    check(err < 0.06, `${nm} plant recovered from 10 mm noise to within ${(err * 100).toFixed(1)}%`);
+  });
+}
+
+console.log('6. identification methods');
+{
+  const p = Object.assign({}, P.msd.params), dt = 0.05;
+  const rel = (e) => Math.max(...['M', 'c', 'k'].map((n) => Math.abs(e[n] / p[n] - 1)));
+  const st = C.stepEstimate(C.experiment(P.msd, p, (t) => (t >= 1 ? 2 : 0), 25, dt, 0, rand), 2, 1);
+  check(st.ok && rel(st) < 0.05, `step response reads the plant to within ${(rel(st) * 100).toFixed(1)}% (noise-free)`);
+  const ws = C.logspace(0.3, 8, 12), Gs = ws.map((w) => { const T = 2 * Math.PI / w, ts = Math.max(25, 6 * T); return C.freqPoint(C.experiment(P.msd, p, (t) => 2 * Math.sin(w * t), ts + Math.max(4 * T, 10), 0.02, 0.01, rand), w, 2, ts); });
+  const fq = C.levyFit(ws, Gs);
+  check(rel(fq) < 0.05, `frequency sweep fit within ${(rel(fq) * 100).toFixed(1)}% with 10 mm noise`);
+  const levels = []; let s2 = 5; for (let i = 0; i < 700; i++) { s2 = (s2 * 1103515245 + 12345) % 2147483648; levels.push(s2 / 2147483648 < 0.5 ? 2 : -2); }
+  const prbs = (t) => levels[Math.floor(t / 0.4)];
+  const dg = C.experiment(P.msd, p, prbs, 30, dt, 0.01, rand), path = C.greyBoxFit(P.msd, p, dg, ['M', 'c', 'k'], { M: 2.5, c: 1.5, k: 1.5 }, 25), gb = path[path.length - 1].p;
+  check(rel(gb) < 0.03 && path.every((q, i) => i === 0 || q.cost <= path[i - 1].cost + 1e-15), `grey-box fit within ${(rel(gb) * 100).toFixed(1)}% from a 2.5× guess, error never rising`);
+  const tap = C.experiment(P.msd, p, (t) => (t < dt ? 20 : 0), 20, dt, 0, rand), hk = tap.y.slice(1).map((v) => v / 20), er = C.era(hk, 20, 2), ee = C.ssToMsd(er, dt);
+  check(er.S[2] / er.S[1] < 1e-10 && rel(ee) < 0.01, `Ho–Kalman: singular values drop ${(er.S[1] / er.S[2]).toExponential(0)}× after the 2nd, plant within ${(rel(ee) * 100).toFixed(2)}%`);
+  const dr = C.experiment(P.msd, p, prbs, 60, dt, 0.01, rand), em = C.ssToMsd(C.era(C.firFit(dr.u, dr.y, 160), 30, 2), dt);
+  check(rel(em) < 0.06, `ERA from random data (impulse response fitted first): within ${(rel(em) * 100).toFixed(1)}%`);
+  const sv = C.svd([[3, 0], [4, 5]]).S;
+  check(Math.abs(sv[0] - Math.sqrt(45)) < 1e-9 && Math.abs(sv[1] - Math.sqrt(5)) < 1e-9, 'SVD matches a known 2×2 (√45, √5)');
+  const dv = C.experiment(P.msd, p, prbs, 30, dt, 0, rand);
+  check(C.fitPercent(dv.y, C.simMsd(P.msd, p, gb, dv.u, dt)) > 95, 'validation: the grey-box model predicts fresh data at > 95% fit');
+}
+
+console.log('7. state estimation');
+{
+  const pl = P.cartpole, p = Object.assign({}, pl.params);
+  function lqg(logQ, noise) {
+    const ctrl = JSON.parse(JSON.stringify(pl.controllers.lqg)), ch = ctrl.channels[0], E = C.buildEstimator(pl, p, ch, noise, logQ, pl.dt);
+    ch.Lo = E.L; return { ctrl, ch, E, m: C.loopModel(pl, p, ctrl) };
+  }
+  function run(estimator, noise, logQ) {
+    const { ctrl, ch, E } = lqg(logQ, noise);
+    const lab = { p, controller: ctrl, gains: [Object.assign({}, ch.gains)], refs: pl.refs.map((r) => Object.assign({}, r)), noise, delay: 0, estimator, est: E };
+    const sim = C.createSim(pl, lab, rand); let falls = 0, e = 0, n = 0;
+    for (let k = 0; k < 2400; k++) { sim.step(); if (sim.failed) { falls++; sim.reset(); continue; } if (k > 200) { e += (sim.xhat[3] - sim.x[3]) ** 2; n++; } }
+    return { falls, rate: Math.sqrt(e / n) * 180 / Math.PI };
+  }
+  const d = run('diff', 2, 0), k = run('kalman', 2, 0);
+  check(d.falls > 5 && k.falls === 0 && k.rate < d.rate / 10, `2° noise: differencing drops the pole ${d.falls}× (rate error ${d.rate.toFixed(0)}°/s); the Kalman filter never does (${k.rate.toFixed(1)}°/s)`);
+  const W2 = C.logspace(0.01, 100, 600);
+  const pm = (logQ) => { const { m, ch } = lqg(logQ, 0.5), K = m.K([ch.gains]); return C.margins(C.freqResponse((s) => C.loopAt(m, K, 0, 0, s), W2)); };
+  const slow = pm(-2), fast = pm(4);
+  check(slow.gmDown > -6 && slow.pm < 30, `LQG trusting the model loses LQR's guarantee: PM ${slow.pm.toFixed(0)}°, gain can only drop ${slow.gmDown.toFixed(1)} dB`);
+  check(fast.pm > 55 && fast.gmDown < -9, `trusting the sensors recovers most of it: PM ${fast.pm.toFixed(0)}°, down ${fast.gmDown.toFixed(1)} dB`);
+  const { m, ch } = lqg(1, 0.5), cl = C.eig(C.closedA(m, m.K([ch.gains]))), lqrM = C.loopModel(pl, p, pl.controllers.lqr);
+  const want = C.eig(C.closedA(lqrM, lqrM.K([ch.gains]))).concat(m.obsPoles);
+  const sep = want.every((w) => cl.some((z) => Math.hypot(z[0] - w[0], z[1] - w[1]) < 1e-4));
+  check(sep, 'separation principle: closed-loop poles = LQR poles ∪ estimator poles');
+}
+
+console.log('8. discretisation');
+{
+  const pl = P.msd, p = Object.assign({}, pl.params), pole = C.eig(C.linearize(pl, p).A)[0];
+  const at = (m, T) => C.cabs(C.mapPole(m, pole, T));
+  check(at('fe', 0.05) < 1 && at('fe', 0.2) > 1, `forward Euler: stable model at 50 ms, unstable at 200 ms (|z| = ${at('fe', 0.2).toFixed(3)})`);
+  check([0.05, 0.2, 0.5, 1].every((T) => at('be', T) < at('zoh', T) && at('tu', T) < 1), 'backward Euler adds damping (|z| below the exact hold); Tustin always stays inside');
+  const d = C.tfDiscretize([1], [p.M, p.c, p.k], 'tu', 0.2), y = C.dtfSim(d, new Array(600).fill(1));
+  const zp = C.roots(d.den), want = C.mapPole('tu', pole, 0.2);
+  check(Math.abs(y[599] - 1 / p.k) < 1e-3 && zp.some((z) => Math.hypot(z[0] - want[0], Math.abs(z[1]) - Math.abs(want[1])) < 1e-6), 'Tustin model: poles where the map says, DC gain preserved');
+  const zz = C.zohDiscretize(C.linearize(pl, p).A, C.linearize(pl, p).B, 0.2), ze = C.eig(zz.Phi), zw = C.mapPole('zoh', pole, 0.2);
+  check(ze.some((z) => Math.hypot(z[0] - zw[0], Math.abs(z[1]) - Math.abs(zw[1])) < 1e-9), 'zero-order hold: e^{AT} has eigenvalues e^{pT}');
+  const ch = pl.controllers.pid.channels[0], uns = (T) => C.sampledPidLoop(pl, p, ch, ch.gains, T).some((z) => C.cabs(z) >= 1);
+  check(!uns(0.13) && uns(0.14), 'sampled PID (40/5/6): stable at 130 ms, unstable at 140 ms (exact)');
+  const simMax = (T) => { const ctrl = JSON.parse(JSON.stringify(pl.controllers.pid)); const lab = { p, controller: ctrl, gains: [Object.assign({}, ch.gains)], refs: [{ type: 'step', amp: 1, omega: 0.5 }], noise: 0, delay: 0, ctrlPeriod: T };
+    const sim = C.createSim(pl, lab, rand); let m = 0; for (let k = 0; k < 4000; k++) { sim.step(); if (k > 2000) m = Math.max(m, Math.abs(sim.x[0])); } return m; };
+  check(simMax(0.13) < 3 && simMax(0.14) > 100, 'the simulation with a real hold agrees: settles at 130 ms, diverges at 140 ms');
+}
+
+console.log('9. page data');
+{
+  const dir = path.join(root, '_data/labs'), views = ['samp-time', 'samp-fold', 'disc-z', 'disc-step', 'disc-bode', 'disc-loop', 'est-states', 'rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-step', 'id-freq', 'id-grey', 'id-result', 'id-compare', 'id-validate', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['share', 'sampling', 'discretize', 'ctrlrate', 'estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
+  check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
+  const missing = controls.filter((c) => !src.includes('CTRL.' + c + ' =') && !new RegExp('var CTRL = \\{[^}]*\\b' + c + ':').test(src));
+  check(missing.length === 0, 'every control name is implemented in lab.js' + (missing.length ? ': missing ' + missing.join(', ') : ''));
+  let problems = [];
+  fs.readdirSync(dir).filter((f) => f.endsWith('.yml')).forEach((f) => {
+    const txt = fs.readFileSync(path.join(dir, f), 'utf8');
+    (txt.match(/(?:^\s*|[{,]\s*)plant: (\w+)/gm) || []).forEach((m) => { const k = m.trim().split(' ').pop(); if (!P[k]) problems.push(f + ': plant ' + k); });
+    (txt.match(/(top|row1|row2): ([\w-]+)/g) || []).forEach((m) => { const v = m.split(': ')[1]; if (!views.includes(v)) problems.push(f + ': view ' + v); });
+    (txt.match(/controls: \[([^\]]*)\]/g) || []).forEach((m) => m.slice(11, -1).split(',').map((s) => s.trim()).forEach((c) => { if (!controls.includes(c)) problems.push(f + ': control ' + c); }));
+    if (!fs.existsSync(path.join(root, f.replace('.yml', '.md')))) problems.push(f + ': no page ' + f.replace('.yml', '.md'));
+  });
+  check(problems.length === 0, 'all _data/labs pages use known plants, views and controls' + (problems.length ? ': ' + problems.join('; ') : ''));
+}
+
+if (failed) { console.log('\ntest-lab: FAILED'); process.exit(1); }
+console.log('\ntest-lab: all checks passed');
