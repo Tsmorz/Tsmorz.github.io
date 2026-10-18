@@ -8,39 +8,32 @@
 {%- assign L = site.data.labs[page.lab] -%}
 {%- assign base_href = 'href="' | append: site.baseurl | append: '/' -%}
 <div class="wrap" style="padding-bottom:3rem">
-  {%- if L.problem %}
-  <details class="demo-note lab-course" open>
-    <summary><span class="lab-phase">Course map</span> The running problem</summary>
-    <p>{{ L.problem }}</p>
-    {%- for d in L.demos %}
-    <p class="lab-course-row"><strong>{% if d.extend %}Then, on {% endif %}{{ d.label }}:</strong>
-      {%- assign n = 0 -%}
-      {%- for t in L.tabs %}{% if t.demo == d.id %}{% assign n = n | plus: 1 %}
-      <a href="#{{ t.id }}">{% unless d.extend %}{{ n }}. {% endunless %}{{ t.label }}</a>{% unless forloop.last %}{% endunless %}
-      {%- endif %}{% endfor %}
-    </p>
-    {%- endfor %}
-  </details>
-  {%- endif %}
-  <div class="sim-tabs-row">
-    <div class="sim-tabs" role="tablist" aria-label="Demo selector">
+  <nav class="lab-map" aria-label="Lessons">
+    {%- if L.problem %}
+    <p class="lab-map-problem"><span class="lab-phase">Course map</span> {{ L.problem | split: '. ' | first }}.</p>
+    {%- endif %}
+    <div class="lab-map-rows" role="tablist" aria-label="Lessons">
       {%- assign ext_shown = false -%}
       {%- for d in L.demos %}
-      {%- if d.extend and ext_shown == false %}{% assign ext_shown = true %}<span class="demo-sep">same steps on</span>{% endif %}
-      <button class="demo-tab{% if forloop.first %} active{% endif %}" data-demo="{{ d.id }}" type="button">{{ d.label }}</button>
+      {%- if d.extend and ext_shown == false %}{% assign ext_shown = true %}<p class="lab-map-sep">Then the same steps on</p>{% endif %}
+      <div class="lab-map-row" data-demo="{{ d.id }}">
+        <span class="lab-map-label">{{ d.label }}</span>
+        <div class="lab-map-pills">
+          {%- assign n = 0 -%}
+          {%- for t in L.tabs %}{% if t.demo == d.id %}{% assign n = n | plus: 1 %}
+          <button class="sim-tab lesson-tab{% if forloop.first %} active{% endif %}" role="tab" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" aria-controls="sec-{{ t.id }}" id="tab-{{ t.id }}" data-demo="{{ d.id }}" type="button">{% unless d.extend %}<span class="lesson-n">{{ n }}</span> {% endunless %}{{ t.label }}</button>
+          {%- endif %}{% endfor %}
+        </div>
+      </div>
       {%- endfor %}
     </div>
-    {%- for l in L.links %}
-    <a class="sim-tab-link" href="{{ l.href | relative_url }}">{{ l.label }} &#8594;</a>
-    {%- endfor %}
-  </div>
-  {%- for d in L.demos %}
-  <div class="lesson-row" data-demo="{{ d.id }}" role="tablist" aria-label="{{ d.label }} lessons"{% unless forloop.first %} hidden{% endunless %}>
-    {%- for t in L.tabs %}{% if t.demo == d.id %}
-    <button class="sim-tab lesson-tab{% if forloop.first %} active{% endif %}" role="tab" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" aria-controls="sec-{{ t.id }}" id="tab-{{ t.id }}" type="button">{{ t.label }}</button>
-    {%- endif %}{% endfor %}
-  </div>
-  {%- endfor %}
+    <div class="lab-map-foot">
+      <button class="lab-map-toggle" type="button" aria-expanded="true">Show fewer</button>
+      {%- for l in L.links %}
+      <a class="sim-tab-link" href="{{ l.href | relative_url }}">{{ l.label }} &#8594;</a>
+      {%- endfor %}
+    </div>
+  </nav>
   {%- for t in L.tabs %}
   {%- assign idx = forloop.index -%}
   <section class="sim-section{% if forloop.first %} active{% endif %}" id="sec-{{ t.id }}" role="tabpanel" aria-labelledby="tab-{{ t.id }}">
@@ -120,12 +113,7 @@
 .range-row{display:flex;align-items:center;gap:.25rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
 .range-input{width:3.6rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text)}
-.lab-course{margin-bottom:1.25rem}
-.lab-course>summary{cursor:pointer;font-weight:600;font-size:.92rem}
-.lab-course-row{margin:.35rem 0;font-size:.88rem}
-.lab-course-row a{margin-right:.7rem;white-space:nowrap;font-family:var(--mono);font-size:.8rem}
 .lab-needs{font-family:var(--mono);font-size:.76rem;margin-left:.3rem}
-.demo-sep{align-self:center;font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:0 .2rem 0 .6rem}
 .lab-recap{margin:1rem 0 0;font-size:.9rem;color:var(--text-muted)}
 .lab-recall{margin:0 0 .8rem;font-size:.9rem;color:var(--text-muted)}
 .lab-time{font:400 .72rem var(--mono);color:var(--text-muted);margin-left:.4rem}
@@ -133,8 +121,21 @@
 .lab-maths{margin-top:1rem}
 .lab-tasks label{cursor:pointer}
 .lab-tasks input{margin-right:.35rem}
-.lesson-row{display:flex;gap:.35rem;flex-wrap:wrap;margin:-.9rem 0 1.5rem}
-.lesson-row[hidden]{display:none}
+.lab-map{margin-bottom:1.5rem;display:flex;flex-direction:column;gap:.6rem}
+.lab-map-problem{margin:0;font-size:.9rem;color:var(--text-muted)}
+.lab-map-problem .lab-phase{margin:0 .5rem 0 0}
+.lab-map-rows{display:flex;flex-direction:column;gap:.45rem}
+.lab-map-row{display:grid;grid-template-columns:8.5rem 1fr;gap:.5rem .8rem;align-items:start}
+.lab-map-label{font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);padding-top:.35rem}
+.lab-map-pills{display:flex;gap:.35rem;flex-wrap:wrap;min-width:0}
+.lab-map-sep{margin:.3rem 0 0;font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+.lab-map.collapsed .lab-map-row:not(.current),.lab-map.collapsed .lab-map-sep{display:none}
+.lab-map-foot{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.lab-map-toggle{font:500 .75rem var(--mono);background:none;border:0;padding:0;color:var(--accent);cursor:pointer;text-decoration:underline}
+.lesson-n{font:500 .72rem var(--mono);opacity:.7}
+.lesson-tab.done::after{content:"\2713";margin-left:.4rem;color:var(--lime-text)}
+.lesson-tab.prereq::before{content:"";display:inline-block;width:6px;height:6px;margin-right:.4rem;border-radius:50%;background:var(--accent);vertical-align:middle}
+@media(max-width:620px){.lab-map-row{grid-template-columns:1fr;gap:.2rem}.lab-map-label{padding-top:0}}
 .lesson-tab{font-size:.8rem;padding:.25rem .65rem}
 .lab-phase{display:inline-block;font:600 .68rem var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-bottom:.25rem}
 .lab-goal{margin:0 0 .8rem;font-size:.95rem}

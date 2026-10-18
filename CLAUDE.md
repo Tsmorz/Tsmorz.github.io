@@ -86,7 +86,7 @@ LQR. It is its own page, not a lab lesson, so it has a goal, an explanation and 
 
 `controls.md` includes `lab.html`, which renders `_data/labs/controls.yml`. **To add or change a lesson, edit
 that YAML, not code.** The file is organised around one **running problem**: a mass on a spring. `problem` is its
-statement (shown in the course map at the top), `demos` are the buttons (the mass first, then the `extend: true`
+statement (its first sentence heads the lesson map), `demos` are the rows of the lesson map (the mass first, then the `extend: true`
 plants: tilt table, aircraft, cart-pole), and `tabs` are the lessons, in teaching order. A lesson names its `demo` and
 `lab`, a view for each of `top`, `row1`, `row2`, the panel `controls`, and its ARIVA fields. `labs` holds the plants
 (a plant from `lab-plants.js`, a controller, and optional `params`, `model`, `gains`, `refs`, `net`,

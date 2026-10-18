@@ -1667,31 +1667,56 @@
   }
 
   /* ================= tabs ================= */
-  // Two levels: a demo (the buttons on top) holds lessons (the row beneath it). A hash names a lesson
-  // or a demo; a demo opens at its first lesson.
+  // One map: a row per demo, a pill per lesson. A hash names a lesson or a demo (a demo opens at its first lesson).
+  // The map collapses to the current demo's row once the visitor has picked something; "Show all" brings it back.
+  // A pill gets a tick when every task in the lesson is ticked and every check is answered (remembered in localStorage).
   var tabEls = CFG.tabs.map(function (t) { return document.getElementById('tab-' + t.id); }), secEls = CFG.tabs.map(function (t) { return document.getElementById('sec-' + t.id); });
-  var demoEls = Array.prototype.slice.call(document.querySelectorAll('.demo-tab')), lessonRows = Array.prototype.slice.call(document.querySelectorAll('.lesson-row'));
-  function activate(i) {
-    var d = CFG.tabs[i].demo;
-    tabEls.forEach(function (t, k) { t.classList.toggle('active', k === i); t.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
-    secEls.forEach(function (s, k) { s.classList.toggle('active', k === i); });
-    demoEls.forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-demo') === d); });
-    lessonRows.forEach(function (r) { r.hidden = r.getAttribute('data-demo') !== d || r.children.length < 2; });
+  var mapEl = document.querySelector('.lab-map'), mapRows = Array.prototype.slice.call(document.querySelectorAll('.lab-map-row')), mapToggle = document.querySelector('.lab-map-toggle');
+  var DONE_KEY = 'lab-done:' + CFG.page, done = {};
+  try { (JSON.parse(localStorage.getItem(DONE_KEY)) || []).forEach(function (id) { done[id] = true; }); } catch (e) {}
+  function tabIndex(id) { for (var i = 0; i < CFG.tabs.length; i++) if (CFG.tabs[i].id === id) return i; return -1; }
+  var cur = 0;
+  function paintMap() {
+    var needs = CFG.tabs[cur].needs || [];
+    tabEls.forEach(function (t, k) {
+      var id = CFG.tabs[k].id;
+      t.classList.toggle('active', k === cur); t.setAttribute('aria-selected', k === cur ? 'true' : 'false');
+      t.classList.toggle('done', !!done[id]);
+      t.classList.toggle('prereq', k !== cur && needs.indexOf(id) >= 0 && !done[id]);
+      t.title = t.classList.contains('prereq') ? 'Builds on this' : '';
+    });
   }
+  function setCollapsed(c) {
+    mapEl.classList.toggle('collapsed', c); mapToggle.textContent = c ? 'Show all lessons' : 'Show fewer'; mapToggle.setAttribute('aria-expanded', c ? 'false' : 'true');
+  }
+  function activate(i) {
+    cur = i; var d = CFG.tabs[i].demo;
+    secEls.forEach(function (s, k) { s.classList.toggle('active', k === i); });
+    mapRows.forEach(function (r) { r.classList.toggle('current', r.getAttribute('data-demo') === d); });
+    paintMap();
+  }
+  function refreshDone(i) {
+    var sec = secEls[i], id = CFG.tabs[i].id; if (done[id]) return;
+    var boxes = sec.querySelectorAll('.lab-tasks input'), ok = true;
+    Array.prototype.forEach.call(boxes, function (b) { if (!b.checked) ok = false; });
+    Array.prototype.forEach.call(sec.querySelectorAll('.lab-check-slot .lab-verdict'), function (v) { if (v.hidden) ok = false; });
+    if (!ok || (!boxes.length && !sec.querySelector('.lab-check-slot .lab-verdict'))) return;
+    done[id] = true; paintMap();
+    try { localStorage.setItem(DONE_KEY, JSON.stringify(Object.keys(done))); } catch (e) {}
+  }
+  secEls.forEach(function (s, i) { s.addEventListener('change', function () { refreshDone(i); }); s.addEventListener('click', function () { refreshDone(i); }); });
   function firstOf(demo) { for (var i = 0; i < CFG.tabs.length; i++) if (CFG.tabs[i].demo === demo) return i; return 0; }
   function fromHash() {
-    var h = hashTab(), idx = -1;
-    CFG.tabs.forEach(function (t, i) { if (t.id === h) idx = i; });
-    activate(idx >= 0 ? idx : firstOf(h) );
+    var h = hashTab(), idx = tabIndex(h);
+    activate(idx >= 0 ? idx : firstOf(h));
   }
-  tabEls.forEach(function (t, i) { t.addEventListener('click', function () { activate(i); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
-  demoEls.forEach(function (b) { b.addEventListener('click', function () { var i = firstOf(b.getAttribute('data-demo')); activate(i); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
+  tabEls.forEach(function (t, i) { t.addEventListener('click', function () { activate(i); setCollapsed(true); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
+  mapToggle.addEventListener('click', function () { setCollapsed(!mapEl.classList.contains('collapsed')); });
   window.addEventListener('hashchange', function () {
-    fromHash();
-    var row = document.querySelector('.sim-tabs-row');            // "Next:" links live at the bottom
-    if (row) row.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    fromHash(); setCollapsed(true);
+    mapEl.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });   // "Next:" links live at the bottom
   });
-  fromHash();
+  fromHash(); setCollapsed(!!hashTab());
 
   var tabs = CFG.tabs.map(function (tc) {
     var tab = Object.assign({}, tc), lab = labs[tc.lab];
