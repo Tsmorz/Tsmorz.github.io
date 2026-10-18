@@ -62,8 +62,7 @@ tabs:
     note_title: Step 4 — Prove it's stable, with room to spare
     note: |-
       <p>A good-looking step response says nothing about cases you didn't try. The <strong>Nyquist</strong> curve must not circle
-      &#8722;1, and the <strong>margins</strong> are your budget for everything the model gets wrong. Add delay to spend some of it. (The
-      <a href="/controls/stability/">Stability page</a> explains each view.)</p>
+      &#8722;1, and the <strong>margins</strong> are your budget for everything the model gets wrong. Add delay to spend some of it. (Use the Bode, Nyquist and Poles views on the <a href="/controls/">demos</a> to explore each.)</p>
   - id: implement
     label: 5 · Implement
     lab: d

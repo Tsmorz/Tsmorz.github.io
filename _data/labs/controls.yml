@@ -12,14 +12,22 @@ labs:
     controller: alt
   cartpole:
     plant: cartpole
-    controller: lqr
+    controller: lqg
+    estimator: kalman
+    noise: 0.5
+    logQ: 0
 tabs:
 - id: msd
   label: Intro
   lab: msd
   top: sim
   row1: states
-  row2: contrib
+  row2: analysis
+  analysis:
+  - contrib
+  - bode
+  - nyquist
+  - poles
   startManual: true
   zeroGains: true
   manualHint: <strong>Manual:</strong> drag the mass up or down. Delay and noise apply to PID only.
@@ -43,6 +51,20 @@ tabs:
     answer: 1
     try: Switch to PID, pick Step, set K<sub>p</sub> to 40 and watch a few jumps.
     explain: Proportional action alone behaves like a stiffer spring. Nothing removes energy, so the mass rings, and the real spring pushes back with a force only an error can balance, so it stops short. K<sub>d</sub> adds the damping and K<sub>i</sub> the missing push.
+  goal: Tune a PID so the mass tracks the reference without ringing, then see what delay, noise and a slow controller do to it.
+  tasks:
+  - Press <strong>PID</strong> and <strong>Load suggested gains</strong>, and watch it track the wave.
+  - 'Set K<sub>i</sub> and K<sub>d</sub> to zero and raise K<sub>p</sub>: it rings. Bring K<sub>d</sub> back to stop it.'
+  - Switch <strong>View</strong> to Bode and read the phase margin. Drag <strong>Delay</strong> up until the margin runs out, then watch the sim.
+  - Slow the controller with <strong>Runs every</strong> until the readout says unstable.
+  check:
+    question: You add delay and the loop turns unstable. Which number on the margins readout told you how much delay it could take?
+    options:
+    - Gain up
+    - Delay margin
+    - Crossover
+    answer: 1
+    explain: A delay costs phase of &#969;T at crossover. The delay margin is the delay that uses up the whole phase margin, so past it the loop oscillates.
   controls:
   - mode
   - reference
@@ -50,6 +72,10 @@ tabs:
   - gains
   - delay
   - noise
+  - ctrlrate
+  - view
+  - freq
+  - margins
   - score
   - reset
   aria:
@@ -67,7 +93,12 @@ tabs:
   lab: tilt
   top: sim
   row1: states
-  row2: contrib
+  row2: analysis
+  analysis:
+  - contrib
+  - bode
+  - nyquist
+  - poles
   startManual: true
   zeroGains: true
   manualHint: <strong>Manual:</strong> drag the beam ends to tilt it. Delay and noise apply to PID only.
@@ -91,6 +122,20 @@ tabs:
     answer: 1
     try: Switch to PID, set K<sub>p</sub> to 3 with K<sub>i</sub> and K<sub>d</sub> at zero, and watch the ball.
     explain: Tilting the beam sets the ball's acceleration, not its speed, so proportional action alone is a spring with no damper. The servo's lag then eats the little phase that is left, and the swings grow until the ball rolls off. K<sub>d</sub> is the brake.
+  goal: Hold a rolling ball at a target on a tilting beam, with a servo that can only turn so fast.
+  tasks:
+  - Press <strong>PID</strong> and <strong>Load suggested gains</strong>, and watch the ball chase the wave.
+  - 'Set K<sub>d</sub> to zero and raise K<sub>p</sub>: the swings grow until the ball rolls off.'
+  - Pick <strong>Step</strong> and watch &#952;&#775; hit the 60&nbsp;&#176;/s servo limit in the state plot.
+  - Switch <strong>View</strong> to Poles and see where the poles move as you raise K<sub>d</sub>.
+  check:
+    question: What does the derivative term K<sub>d</sub> react to?
+    options:
+    - How far the ball is from the target
+    - How fast the error is changing, so it brakes before overshooting
+    - The sum of all past errors
+    answer: 1
+    explain: K<sub>d</sub> acts on the rate of change of the error. It is the damper that K<sub>p</sub> alone lacks; the integral term is the one that sums past error.
   controls:
   - mode
   - reference
@@ -98,6 +143,9 @@ tabs:
   - gains
   - delay
   - noise
+  - view
+  - freq
+  - margins
   - score
   - reset
   aria:
@@ -114,7 +162,12 @@ tabs:
   lab: flight
   top: sim
   row1: states
-  row2: contrib
+  row2: analysis
+  analysis:
+  - contrib
+  - bode
+  - nyquist
+  - poles
   startManual: true
   zeroGains: true
   manualHint: |-
@@ -130,6 +183,29 @@ tabs:
     window: 6
     label: RMSE (m)
     unit: m
+  goal: Make an aircraft hold or change altitude with the elevator, without stalling the wing.
+  predict:
+    question: The aircraft is below its target altitude and you use K<sub>p</sub> alone. What does it do?
+    options:
+    - Climbs and settles at the target
+    - Climbs, overshoots and oscillates around it
+    - Keeps descending
+    answer: 1
+    try: Switch to PID, set K<sub>p</sub> with K<sub>i</sub> and K<sub>d</sub> at zero, and pick Step.
+    explain: Altitude only changes through pitch and flight-path angle, so there is lag between the elevator and the climb. Proportional action alone overshoots; K<sub>d</sub> on climb rate damps it.
+  tasks:
+  - Press <strong>PID</strong> and <strong>Load suggested gains</strong>, and watch the altitude track the wave.
+  - Pick <strong>Step</strong> and compare K<sub>p</sub> alone with K<sub>p</sub> plus K<sub>d</sub>.
+  - Raise all the gains until the wing stalls, then back off.
+  - Switch <strong>View</strong> to Nyquist and see how close the curve gets to &#8722;1 as you raise K<sub>p</sub>.
+  check:
+    question: You push the gains much too high. What happens to the aircraft?
+    options:
+    - 'Nothing: the elevator command is clamped'
+    - The wing stalls and it loses altitude
+    - It flies faster but stays level
+    answer: 1
+    explain: Lift drops sharply past about 16&#176; angle of attack. A harder pull makes the angle bigger, so past the limit more command means less lift.
   controls:
   - mode
   - reference
@@ -137,6 +213,9 @@ tabs:
   - gains
   - delay
   - noise
+  - view
+  - freq
+  - margins
   - score
   - reset
   aria:
@@ -174,8 +253,13 @@ tabs:
   label: Cart-Pole
   lab: cartpole
   top: sim
-  row1: states
-  row2: contrib
+  row1: est-states
+  row2: analysis
+  analysis:
+  - contrib
+  - bode
+  - nyquist
+  - poles
   startManual: true
   zeroGains: true
   manualHint: <strong>Manual:</strong> drag the cart. Delay and noise apply to the controller only.
@@ -199,6 +283,20 @@ tabs:
     answer: 1
     try: Switch to LQR, press Load LQR gains, pick Step and watch the cart at each jump.
     explain: To travel right with the pole upright, the pole has to lean right first, and the only way to tip it right is to pull its base left. Systems that start off the wrong way are called non-minimum phase, and they limit how fast any controller can be.
+  goal: Balance an unstable pole on a cart using only two noisy sensors, and see what the estimator costs.
+  tasks:
+  - Press <strong>LQR</strong> and <strong>Load LQR gains</strong>, and watch it balance.
+  - 'Raise <strong>Sensor noise</strong> to 2&#176; with <strong>Differencing</strong> on: the pole falls. Switch to <strong>Kalman filter</strong>: it holds.'
+  - Slide <strong>Trust</strong> from model to sensors and watch the rate estimate get noisier.
+  - 'Switch <strong>View</strong> to Poles: four of the eight poles are the filter''s and only they move with Trust. Check the margins readout.'
+  check:
+    question: At 2&#176; of noise, why does differencing drop the pole while the Kalman filter does not?
+    options:
+    - Differencing divides noise by a tiny time step, so the rate estimate is useless
+    - The Kalman filter uses a stronger controller
+    - Differencing only measures the cart
+    answer: 0
+    explain: A reading off by half a degree, divided by 25&nbsp;ms, is a rate off by about 20&nbsp;&#176;/s. The Kalman filter uses the model to smooth that out.
   controls:
   - mode
   - reference
@@ -206,19 +304,24 @@ tabs:
   - gains
   - delay
   - noise
+  - estimator
+  - view
+  - freq
+  - margins
   - score
   - reset
   aria:
   - Cart-pole balancing simulation. With a controller running, drag to move the reference.
-  - 'State history: cart position and velocity, pole angle and rate'
+  - Measured and true pole angle, and estimated and true rates
   - Each gain's contribution to the force
   note_title: About this demo
   note: |-
     <p>The <strong>cart-pole</strong> is unstable: with no control the pole falls in a second or two. One force must hold
-    the pole angle and the cart position, so the force is a weighted sum of all four states (<strong>full-state feedback</strong>).
-    k<sub>&#952;</sub> and k<sub>&#952;&#775;</sub> keep the pole up but let the cart drift; k<sub>x</sub> and k<sub>&#7819;</sub> bring it
-    back, with a sign that looks backwards. <strong>Load LQR gains</strong> fills in the optimal set. Noise goes on the
-    measurements, never the force.</p>
+    the pole angle and the cart position, so the force is a weighted sum of four states (<strong>full-state feedback</strong>).
+    Only the cart position and pole angle are measured, so the two rates are <strong>estimated</strong>: by <strong>differencing</strong>
+    readings (noise gets amplified) or by a <strong>Kalman filter</strong> (a model of the plant corrected by the sensors, with a
+    <strong>trust</strong> slider). Raise the noise and compare. <strong>Load LQR gains</strong> fills in the optimal set. Switch
+    <strong>View</strong> to Bode, Nyquist or Poles: the filter is part of the loop, and LQR's guaranteed margins are gone (Doyle, 1978).</p>
     </div>
     <div class="demo-note">
     <h4 class="demo-note-title">Equations of motion &amp; control law</h4>

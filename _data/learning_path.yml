@@ -9,26 +9,18 @@
   title: Where models come from
   url: /controls/sysid/
   needs: [sims]
-- id: stability
-  title: Is it stable, and by how much?
-  url: /controls/stability/
-  needs: [sims]
-- id: estimation
-  title: Estimating what you can't measure
-  url: /controls/estimation/
-  needs: [sims, stability]
 - id: discrete
   title: From continuous to discrete
   url: /controls/discrete/
-  needs: [stability]
+  needs: [sims]
 - id: design
   title: The design process
   url: /controls/design/
-  needs: [sysid, stability, discrete]
+  needs: [sysid, discrete]
 - id: modern
   title: Modern methods
   url: /controls/modern/
-  needs: [stability]
+  needs: [sims]
 - id: swingup
   title: Beyond linear control
   url: /controls/swingup/

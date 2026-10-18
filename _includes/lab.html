@@ -27,6 +27,9 @@
   <section class="sim-section{% if forloop.first %} active{% endif %}" id="sec-{{ t.id }}" role="tabpanel" aria-labelledby="tab-{{ t.id }}">
     {%- comment -%} The tab's own anchor, so links like /controls/#cartpole (and html-proofer's hash check) find a target. {%- endcomment %}
     <span class="lab-anchor" id="{{ t.id }}"></span>
+    {%- if t.goal %}
+    <p class="lab-goal"><span class="lab-phase">1 &middot; Arrive</span> {{ t.goal }}</p>
+    {%- endif %}
     <div class="sim-layout">
       <div class="sim-canvas-wrap sim-stack">
         <div class="sim-cell"><canvas class="sim-canvas lab-canvas" id="{{ t.id }}-top" aria-label="{{ t.aria[0] }}"{% if t.sprite %} data-sprite="{{ t.sprite | relative_url }}"{% endif %}></canvas></div>
@@ -39,10 +42,19 @@
     </div>
     {%- if t.note %}
     <div class="demo-note">
+      <span class="lab-phase">3 &middot; Inform</span>
       <h4 class="demo-note-title">{{ t.note_title | default: 'About this demo' }}</h4>
       {{ t.note | replace: 'href="/', base_href }}
     </div>
     {%- endif %}
+    {%- if t.tasks %}
+    <div class="lab-card lab-tasks">
+      <span class="lab-phase">4 &middot; Process</span>
+      <h4 class="lab-card-title">Try it</h4>
+      <ol>{% for task in t.tasks %}<li>{{ task }}</li>{% endfor %}</ol>
+    </div>
+    {%- endif %}
+    {%- if t.check %}<div class="lab-check-slot"></div>{% endif %}
     <div class="lab-next">
       {%- if is_first and here and here.needs.size > 0 %}
       <span class="lab-needs">You'll need:
@@ -85,6 +97,12 @@
 .range-row{display:flex;align-items:center;gap:.25rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
 .range-input{width:3.6rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
+.lab-phase{display:inline-block;font:600 .68rem var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-bottom:.25rem}
+.lab-goal{margin:0 0 .8rem;font-size:.95rem}
+.lab-goal .lab-phase{margin-right:.5rem}
+.lab-tasks,.lab-check-slot{margin-top:1rem}
+.lab-tasks ol{margin:0;padding-left:1.2rem;font-size:.9rem}
+.lab-tasks li{margin:.25rem 0}
 .lab-learn{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:1rem;margin:1rem 0 0}
 .lab-card{background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius);padding:.9rem 1rem}
 .lab-card-title{margin:0 0 .5rem;font-size:.95rem;display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}

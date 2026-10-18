@@ -77,7 +77,7 @@ closed-loop runs of every transition); if it fails after a re-export, the port h
 `_includes/learning-path.html` draws it as a strip on the swing-up page; `_includes/lab.html` uses it for
 "You'll need:" on a page's first tab and "Next:" on its last. **A new controls page must be added there.**
 
-### The lab template (`/controls/` and `/controls/stability|sysid|estimation|discrete|design|modern/`)
+### The lab template (`/controls/` and `/controls/sysid|discrete|design|modern/`)
 
 These pages share one engine; a page differs only in its data. **To add or change one, edit
 `_data/labs/<page>.yml`, not code.** `<page>.md` has `lab: <page>`, a title, a short intro, and
@@ -98,15 +98,19 @@ Tabs may share a lab. Each tab deep-links as `#<tab id>`, and hidden tabs skip p
 
 Other notes:
 
-- **Estimation** uses the cart-pole's `lqg` controller (measures x and θ only, LQR on an estimate by
-  differencing or a Kalman filter); margins, Nyquist and poles include the filter.
+- **The cart-pole demo** uses the `lqg` controller (measures x and θ only, LQR on an estimate by differencing
+  or a Kalman filter); margins, Nyquist and poles include the filter. Every /controls/ demo has a View toggle
+  (Terms, Bode, Nyquist, Poles), a margins readout and an ω probe.
 - **Discretisation:** a lab's `ctrlPeriod` runs the controller once per period with a zero-order hold.
 - **System ID** keeps two methods, least squares (ARX) and Ho–Kalman (ERA), plus a tab to record your own
   data. Both read m, c, k at order 2 or more (the slowest oscillating pole pair plus the DC gain, flagged
   `reduced` above order 2); order 1 reads nothing.
 - The ω slider on closed-loop tabs has a "Shake the sim" toggle that adds a sine at ω to input 0.
-- `predict: {question, options, answer (0-based), try, explain}` on any tab adds a "Predict first" card.
-- `script/test-data` checks every prediction is well formed.
+- **Teaching structure (ARIVA):** every /controls/ demo tab runs through five labelled steps: **Arrive**
+  (`goal`, one sentence above the sim), **Reactivate** (`predict: {question, options, answer (0-based), try,
+  explain}`, a card under the sim), **Inform** (`note`), **Process** (`tasks`, a short numbered list of things to
+  do in the sim) and **Evaluate** (`check: {question, options, answer, explain}`, a closing card). `script/test-data`
+  requires all four fields on every tab in `controls.yml`.
 - `script/test-lab` (`task check:lab`, part of `task check`) checks the plants, textbook margins, Nyquist vs
   eigenvalues, pole placement, the filter, network bounds, identification, and that every `_data/labs` page
   names only plants, views and controls that exist. `assets/models/verify-net.json` is written by

@@ -1,4 +1,4 @@
-// LabCore — the maths shared by every template page (/controls/stability/, /modern/,
+// LabCore — the maths shared by every template page (/controls/, /modern/,
 // /sysid/, /design/). No DOM, so script/test-lab runs it in Node. Everything is
 // generic over a plant from lab-plants.js and a controller spec:
 //   • linearise the plant, build the closed loop as one state-space model
