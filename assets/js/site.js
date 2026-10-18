@@ -19,55 +19,6 @@
   });
 })();
 
-// Photo lightbox.
-(function () {
-  var shots = Array.prototype.slice.call(document.querySelectorAll('.shot'));
-  if (!shots.length) return;
-
-  var box = document.createElement('div');
-  box.className = 'lightbox';
-  box.innerHTML =
-    '<button class="lightbox-close" type="button" aria-label="Close">&times;</button>' +
-    '<div><img alt=""><p class="lightbox-cap"><strong></strong><span></span></p></div>';
-  document.body.appendChild(box);
-
-  var img = box.querySelector('img');
-  var capTitle = box.querySelector('.lightbox-cap strong');
-  var capMeta = box.querySelector('.lightbox-cap span');
-  var lastFocus = null;
-
-  function open(shot) {
-    lastFocus = shot;
-    img.src = shot.dataset.full;
-    img.alt = shot.dataset.title || '';
-    capTitle.textContent = shot.dataset.title || '';
-    capMeta.textContent = shot.dataset.meta || '';
-    box.setAttribute('open', '');
-    box.querySelector('.lightbox-close').focus();
-  }
-
-  function close() {
-    box.removeAttribute('open');
-    img.src = '';
-    if (lastFocus) lastFocus.focus();
-  }
-
-  shots.forEach(function (shot) {
-    shot.addEventListener('click', function () { open(shot); });
-    shot.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(shot); }
-    });
-  });
-
-  box.addEventListener('click', function (e) {
-    if (e.target === box || e.target.closest('.lightbox-close')) close();
-  });
-
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && box.hasAttribute('open')) close();
-  });
-})();
-
 // Hero field — math symbols that spring back to a home point, pushed by the cursor.
 (function () {
   var hero = document.querySelector('.hero');

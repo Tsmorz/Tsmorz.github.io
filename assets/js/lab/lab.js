@@ -6,7 +6,7 @@
 //
 // Views:    sim, time, states, contrib, analysis (toggle of bode | nyquist | poles), step, cbf,
 //           verify-map, verify-proof, mimo, sysid-replay, sysid-data, sysid-bode, checklist,
-//           id-replay, id-step, id-freq, id-era, id-grey, id-result, id-compare, id-validate,
+//           id-replay, id-era, id-result,
 //           rec-data, rec-fit, est-states, samp-time, samp-fold, disc-z, disc-step, disc-bode, disc-loop
 // Controls: mode, hint, freq, view, channel, reference, gains, controller, delay, noise, limit,
 //           margins, cbf, verify, mimo, sysid, idrun, record, estimator, sampling, discretize, ctrlrate,
@@ -782,50 +782,21 @@
     [0.01, 0.1, 1, 10].forEach(function (om) { text(ctx, String(om), X(om), c.H - 14, col.muted, { align: 'center', size: 10, mono: true, w: '400' }); });
   };
 
-  /* ---- identification methods: step, frequency sweep, grey-box, compare ---- */
-  var ID_DT = 0.05, ID_NAMES = ['M', 'c', 'k'], ID_LABEL = { step: 'Step response', freq: 'Frequency sweep', arx: 'Least squares (ARX)', era: 'Ho–Kalman (ERA)', grey: 'Grey-box fit' };
-  function idState(lab) { return lab.idm || (lab.idm = { noise: 0.01, points: 12, guess: { M: 2.5, c: 1.5, k: 1.5 }, eraOrder: 2 }); }
+  /* ---- identification methods: Ho–Kalman (ERA), compared with least squares ---- */
+  var ID_DT = 0.05, ID_NAMES = ['M', 'c', 'k'], ID_LABEL = { arx: 'Least squares (ARX)', era: 'Ho–Kalman (ERA)' };
+  function idState(lab) { return lab.idm || (lab.idm = { noise: 0.01, eraOrder: 2 }); }
   function seeded(seed) { return function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }; }
-  // A random ±A square wave, switching every 0.2–1 s, as a plain function of time.
-  function randomInput(A, T, seed) {
-    var r = seeded(seed), times = [0], levels = [r() < 0.5 ? A : -A], t = 0;
-    while (t < T) { t += 0.2 + 0.8 * r(); times.push(t); levels.push(-levels[levels.length - 1] * (r() < 0.85 ? 1 : -1)); }
-    return function (tt) { var i = 0; while (i + 1 < times.length && times[i + 1] <= tt) i++; return levels[i]; };
-  }
   function idEstimate(lab, method) {
     var I = idState(lab);
     if (method === 'arx') return lab.sysid && lab.sysid.msd ? { M: lab.sysid.msd.M, c: lab.sysid.msd.c, k: lab.sysid.msd.k } : null;
-    if (method === 'grey') return I.grey ? I.grey.path[I.grey.path.length - 1].p : null;
-    if (method === 'era') return I.era && I.era.est ? I.era.est : null;
-    return I[method] && I[method].est && I[method].est.M ? I[method].est : null;
+    return I.era && I.era.est ? I.era.est : null;
   }
   function runId(lab, method) {
     var I = idState(lab), plant = lab.plant, p = lab.p, rng = seeded(4242 + Math.floor(Math.random() * 1000));
-    if (method === 'step') {
-      var d = C.experiment(plant, p, function (t) { return t >= 1 ? 2 : 0; }, 25, ID_DT, I.noise, rng);
-      I.step = { data: d, est: C.stepEstimate(d, 2, 1), t0: performance.now() };
-    } else if (method === 'freq') {
-      var ws = C.logspace(0.3, 8, I.points), pts = ws.map(function (w) {
-        var T = 2 * Math.PI / w, ts = Math.max(25, 6 * T), dd = C.experiment(plant, p, function (t) { return 2 * Math.sin(w * t); }, ts + Math.max(4 * T, 10), 0.02, I.noise, rng);
-        var keep = Math.round(Math.min(3 * T, 8) / 0.02), tail = { t: dd.t.slice(-keep), u: dd.u.slice(-keep), yTrue: dd.yTrue.slice(-keep), dt: 0.02 };
-        return { w: w, G: C.freqPoint(dd, w, 2, ts), tail: tail };
-      });
-      I.freq = { pts: pts, est: C.levyFit(ws, pts.map(function (q) { return q.G; })), t0: performance.now() };
-    } else if (method === 'grey') {
-      var dg = C.experiment(plant, p, randomInput(2, 30, 77), 30, ID_DT, I.noise, rng);
-      I.grey = { data: dg, path: C.greyBoxFit(plant, p, dg, ID_NAMES, I.guess, 25), t0: performance.now() };
-    } else if (method === 'era') {
+    if (method === 'era') {
       // A hammer tap: 20 N for one sample. The sampled response divided by the tap is the impulse response.
       var A = 20, de = C.experiment(plant, p, function (t) { return t < ID_DT ? A : 0; }, 20, ID_DT, I.noise, rng);
       I.era = { data: de, t0: performance.now() }; eraFit(I.era, de.y.slice(1).map(function (v) { return v / A; }), I.eraOrder);
-    } else if (method === 'compare') {
-      var dv = C.experiment(plant, p, randomInput(2, 30, 991 + Math.floor(Math.random() * 1e4)), 30, ID_DT, I.noise, rng), rows = [];
-      ['step', 'freq', 'arx', 'era', 'grey'].forEach(function (m) {
-        var e = idEstimate(lab, m); if (!e) { rows.push({ m: m, est: null }); return; }
-        var yh = C.simMsd(plant, p, e, dv.u, ID_DT);
-        rows.push({ m: m, est: e, yh: yh, fit: C.fitPercent(dv.y, yh) });
-      });
-      I.compare = { data: dv, rows: rows, t0: performance.now() };
     }
   }
   // ERA on a set of Markov parameters, at a chosen order; keeps everything the views draw.
@@ -835,102 +806,18 @@
     E.hhat = C.ssSim(E.model, [1].concat(new Array(h.length - 1).fill(0)));      // the realization's own impulse response
   }
   function age(o) { return o ? (performance.now() - o.t0) / 1000 : 0; }
-  var M_COLORS = function () { return { step: col.viz1, freq: col.viz3, arx: col.viz4, era: cssVar('--viz-7') || col.accent, grey: col.viz2 }; };
+  var M_COLORS = function () { return { arx: col.viz4, era: cssVar('--viz-7') || col.accent }; };
 
   V['id-replay'] = function (c, lab, tab) {
-    var I = idState(lab), m = tab.method, d = null, label = '', k = 0;
-    if (m === 'freq' && I.freq) {
-      var per = 1.6, n = I.freq.pts.length, a = age(I.freq), i = Math.min(n - 1, Math.floor(a / per)), q = I.freq.pts[i];
-      d = q.tail; k = Math.floor(((a % per) / per) * (d.t.length - 1)); label = 'Shaking at ω = ' + fmtW(q.w) + ' rad/s (' + (i + 1) + ' of ' + n + ')';
-    } else {
-      var src = m === 'step' ? I.step : m === 'grey' ? I.grey : m === 'era' ? I.era : I.compare; if (!src) { text(c.ctx, 'Press Run experiment', 14, 14, col.muted); return; }
-      d = src.data; k = Math.min(d.t.length - 1, Math.floor(age(src) * 3 / d.dt));
-      label = (m === 'compare' ? 'Fresh validation data' : 'Replaying the experiment') + ': t = ' + fmt(d.t[k], 1) + ' s (3× speed)';
-    }
+    var I = idState(lab), m = tab.method, d, label, k;
+    var src = I.era; if (!src) { text(c.ctx, 'Press Run experiment', 14, 14, col.muted); return; }
+    d = src.data; k = Math.min(d.t.length - 1, Math.floor(age(src) * 3 / d.dt));
+    label = 'Replaying the experiment: t = ' + fmt(d.t[k], 1) + ' s (3× speed)';
     var x = lab.plant.x0(lab.p).slice(); x[0] = d.yTrue[k];
     var fake = { x: x, u: [d.u[k] * 4], t: -1e9, failed: false, status: 'ok' };
     lab.plant.draw(c.ctx, c.W, c.H, fake, Object.assign({}, lab, { refs: [{ type: 'hold', hold: NaN }], shake: true, replay: true, manual: false }), col);
     c.ctx.fillStyle = withAlpha(col.bgSoft, 0.9); c.ctx.fillRect(8, 6, c.W * 0.6, 40);
-    text(c.ctx, ID_LABEL[m] || 'Validation', 14, 10, col.accent, { size: 13 }); text(c.ctx, label, 14, 28, col.muted, { size: 11, mono: true, w: '400' });
-  };
-
-  V['id-step'] = function (c, lab) {
-    var I = idState(lab), ctx = c.ctx, S = I.step; if (!S) return;
-    var d = S.data, e = S.est, n = Math.min(d.t.length, Math.floor(age(S) * 3 / d.dt) + 2), x0 = 44, x1 = c.W * (c.W < 560 ? 0.97 : 0.62), y0 = 20, y1 = c.H - 18;
-    var hi = Math.max.apply(null, d.y) * 1.1, lo = Math.min(-0.05, Math.min.apply(null, d.y));
-    var X = function (t) { return x0 + t / d.t[d.t.length - 1] * (x1 - x0); }, Y = function (v) { return y1 - (v - lo) / (hi - lo) * (y1 - y0); };
-    ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
-    ctx.strokeStyle = withAlpha(col.muted, 0.8); ctx.lineWidth = 1; ctx.beginPath();
-    for (var i = 0; i < n; i++) { if (i) ctx.lineTo(X(d.t[i]), Y(d.y[i])); else ctx.moveTo(X(d.t[i]), Y(d.y[i])); } ctx.stroke();
-    text(ctx, 'Measured step response (2 N at t = 1 s)', x0 + 6, 2, col.text, { size: 11 });
-    if (n < d.t.length || !e.ok) { if (!e.ok && n >= d.t.length) text(ctx, 'No overshoot to read: the method needs an underdamped response.', x0 + 6, 20, col.bad, { size: 11 }); return; }
-    ctx.save(); ctx.setLineDash([5, 4]); ctx.strokeStyle = col.viz1; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(x0, Y(e.yss)); ctx.lineTo(x1, Y(e.yss)); ctx.stroke(); ctx.restore();
-    ctx.strokeStyle = col.viz3; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(e.tpk), Y(e.yss)); ctx.lineTo(X(e.tpk), Y(e.ypk)); ctx.stroke();
-    dot(ctx, X(e.tpk), Y(e.ypk), col.viz3);
-    ctx.strokeStyle = col.viz4; ctx.beginPath(); ctx.moveTo(X(1), y1 - 6); ctx.lineTo(X(e.tpk), y1 - 6); ctx.stroke();
-    text(ctx, 'final value', x1 - 4, Y(e.yss) + 3, col.viz1, { align: 'right', size: 10 });
-    text(ctx, 'overshoot ' + fmt(e.overshoot * 100, 0) + '%', X(e.tpk) + 8, Y(e.ypk) - 4, col.viz3, { size: 10 });
-    text(ctx, 't_p = ' + fmt(e.tp, 2) + ' s', (X(1) + X(e.tpk)) / 2, y1 - 20, col.viz4, { align: 'center', size: 10 });
-    var model = C.simMsd(lab.plant, lab.p, e, d.u, d.dt);
-    ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = col.accent; ctx.lineWidth = 2; ctx.beginPath();
-    model.forEach(function (v, j) { if (j) ctx.lineTo(X(d.t[j]), Y(v)); else ctx.moveTo(X(d.t[j]), Y(v)); }); ctx.stroke(); ctx.restore();
-    if (c.W >= 560) notes(ctx, { x0: x1 + 18, x1: c.W - 10, y: 6 }, [
-      ['Gain: final value ÷ step = ' + fmt(e.K, 3) + ' m/N, so k = 1/K = ' + fmt(e.k, 2) + ' N/m', col.viz1],
-      ['Overshoot ' + fmt(e.overshoot * 100, 0) + '% gives the damping ratio ζ = ' + fmt(e.zeta, 3), col.viz3],
-      ['First peak at t_p = ' + fmt(e.tp, 2) + ' s: it rings at ω_d = π/t_p = ' + fmt(Math.PI / e.tp, 2) + ' rad/s', col.viz4],
-      ['Dashed: the model these three numbers make.', col.accent, '400']
-    ]);
-  };
-
-  V['id-freq'] = function (c, lab) {
-    var I = idState(lab), ctx = c.ctx, F = I.freq; if (!F) return;
-    var shown = Math.min(F.pts.length, Math.floor(age(F) / 1.6) + 1), done = shown >= F.pts.length;
-    var x0 = 46, x1 = c.W * (c.W < 560 ? 0.97 : 0.62), mid = c.H * 0.5, X = logX(x0, x1);
-    var lin = C.linearize(lab.plant, lab.p), model = { A: lin.A, B: lin.B, na: lab.plant.n, chans: [{ input: 0 }] }, row = [-1, 0];
-    var w = GRID.filter(function (om) { return om > 0.1 && om < 30; }), tru = w.map(function (om) { return C.loopAt(model, [row], 0, 0, [0, om]); });
-    var e = F.est, fitG = w.map(function (om) { return C.cdiv([1, 0], [e.k - e.M * om * om, e.c * om]); });
-    function draw(y0, y1, f, lo, hi, title, step) {
-      var Y = function (v) { return y1 - (clamp(v, lo, hi) - lo) / (hi - lo) * (y1 - y0); };
-      ctx.strokeStyle = col.border; ctx.lineWidth = 1;
-      for (var t = lo; t <= hi; t += step) { ctx.beginPath(); ctx.moveTo(x0, Y(t)); ctx.lineTo(x1, Y(t)); ctx.stroke(); text(ctx, String(t), x0 - 4, Y(t) - 5, col.muted, { align: 'right', size: 10, mono: true, w: '400' }); }
-      ctx.strokeStyle = withAlpha(col.muted, 0.5); ctx.lineWidth = 4; ctx.beginPath(); var pv = null;
-      tru.forEach(function (v, i) { var yv = f(v, pv); pv = yv; if (i) ctx.lineTo(X(w[i]), Y(yv)); else ctx.moveTo(X(w[i]), Y(yv)); }); ctx.stroke();
-      if (done) { ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = col.accent; ctx.lineWidth = 2; ctx.beginPath(); pv = null; fitG.forEach(function (v, i) { var yv = f(v, pv); pv = yv; if (i) ctx.lineTo(X(w[i]), Y(yv)); else ctx.moveTo(X(w[i]), Y(yv)); }); ctx.stroke(); ctx.restore(); }
-      F.pts.slice(0, shown).forEach(function (q) { var yv = f(q.G, null); if (yv < -170 && title === 'Phase (°)') yv = yv; dot(ctx, X(q.w), Y(f(q.G, title === 'Phase (°)' ? -90 : null)), col.viz3); });
-      text(ctx, title, x0 + 8, y0 + 1, col.text, { size: 11 });
-    }
-    draw(4, mid - 4, function (v) { return 20 * Math.log10(C.cabs(v)); }, -40, 10, 'Gain (dB): measured points, true plant (grey), fit (dashed)', 10);
-    draw(mid + 4, c.H - 18, function (v, prev) { var a = C.carg(v) * 180 / Math.PI; if (prev !== null) a = prev + C.wrap180(a - prev); else if (a > 0) a -= 360; return a; }, -180, 0, 'Phase (°)', 45);
-    [0.1, 1, 10].forEach(function (om) { text(ctx, String(om), X(om), c.H - 14, col.muted, { align: 'center', size: 10, mono: true, w: '400' }); });
-    if (c.W >= 560) notes(ctx, { x0: x1 + 18, x1: c.W - 10, y: 6 }, [
-      ['Each dot is one experiment: shake at one frequency, wait for it to settle, then compare the output with the input to get a gain and a phase.', col.muted, '400'],
-      ['For this plant 1/G(jω) = k − Mω² + j·cω, a straight line in the unknowns, so the fit is ordinary least squares.', col.text, '400'],
-      done ? ['Fit: m = ' + fmt(e.M, 3) + ', c = ' + fmt(e.c, 3) + ', k = ' + fmt(e.k, 3), col.accent] : ['Measuring point ' + shown + ' of ' + F.pts.length + '…', col.viz3]
-    ]);
-  };
-
-  V['id-grey'] = function (c, lab) {
-    var I = idState(lab), ctx = c.ctx, G = I.grey; if (!G) return;
-    var nIt = G.path.length, it = Math.min(nIt - 1, Math.floor(age(G) / 0.6)), P = G.path[it], d = G.data, mid = c.H * 0.58, x1 = c.W * (c.W < 560 ? 0.97 : 0.62);
-    timePlot(ctx, 44, 4, x1, mid - 4, [
-      { data: d.y, cap: d.y.length, color: withAlpha(col.muted, 0.8), width: 1, name: 'measured' },
-      { data: P.y, cap: d.y.length, color: col.viz2, name: 'model, iteration ' + it }
-    ], range([d.y], 0.2), 'Simulate the model, compare, adjust the constants, repeat');
-    var cx0 = 44, cy0 = mid + 16, cy1 = c.H - 14, costs = G.path.map(function (q) { return Math.log10(q.cost + 1e-12); });
-    var lo = Math.min.apply(null, costs) - 0.3, hi = Math.max.apply(null, costs) + 0.3;
-    var X = function (i) { return cx0 + i / Math.max(1, nIt - 1) * (x1 - cx0); }, Y = function (v) { return cy1 - (v - lo) / (hi - lo) * (cy1 - cy0); };
-    ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0, cy1); ctx.lineTo(x1, cy1); ctx.stroke();
-    ctx.strokeStyle = col.viz2; ctx.lineWidth = 2; ctx.beginPath();
-    for (var i = 0; i <= it; i++) { if (i) ctx.lineTo(X(i), Y(costs[i])); else ctx.moveTo(X(i), Y(costs[i])); } ctx.stroke();
-    dot(ctx, X(it), Y(costs[it]), col.viz2);
-    text(ctx, 'Squared error (log scale) by iteration', cx0 + 6, mid + 2, col.text, { size: 11 });
-    if (c.W >= 560) notes(ctx, { x0: x1 + 18, x1: c.W - 10, y: 6 }, [
-      ['Iteration ' + it + ' of ' + (nIt - 1), col.text],
-      ['m = ' + fmt(P.p.M, 3) + '   c = ' + fmt(P.p.c, 3) + '   k = ' + fmt(P.p.k, 3), col.viz2],
-      ['Starting guess: m = ' + fmt(G.path[0].p.M, 2) + ', c = ' + fmt(G.path[0].p.c, 2) + ', k = ' + fmt(G.path[0].p.k, 2), col.muted, '400'],
-      ['Each step works out which way to nudge m, c and k to shrink the error (Levenberg–Marquardt) and simulates again.', col.muted, '400']
-    ]);
+    text(c.ctx, ID_LABEL[m], 14, 10, col.accent, { size: 13 }); text(c.ctx, label, 14, 28, col.muted, { size: 11, mono: true, w: '400' });
   };
 
   // ERA: the Hankel matrix, its singular values (the order), and the realized response.
@@ -976,12 +863,9 @@
   // Estimated constants against the true ones, as bars.
   V['id-result'] = function (c, lab, tab) {
     var ctx = c.ctx, e = idEstimate(lab, tab.method), trueP = lab.p;
-    var done = tab.method === 'freq' ? idState(lab).freq && age(idState(lab).freq) > 1.6 * idState(lab).freq.pts.length
-             : tab.method === 'grey' ? idState(lab).grey && age(idState(lab).grey) > 0.6 * idState(lab).grey.path.length
-             : tab.method === 'step' ? idState(lab).step && age(idState(lab).step) * 3 > 25 : true;
-    if (tab.method === 'era' && idState(lab).era && !e) { text(ctx, 'Order ' + idState(lab).era.order + ' can\'t be read as a mass, damper and spring: pick 2 to compare, or validate it on the last tab.', 12, 26, col.muted, { size: 12 }); return; }
+    if (tab.method === 'era' && idState(lab).era && !e) { text(ctx, 'Order ' + idState(lab).era.order + ' has no oscillating pair to read as a mass, damper and spring: keep 2 or more bars.', 12, 26, col.muted, { size: 12 }); return; }
     text(ctx, 'What it found vs the truth (the sim knows the real m = 1, c = 0.4, k = 4)', 12, 4, col.text, { size: 11 });
-    if (!e || !done) { text(ctx, e ? 'Working…' : 'Run the experiment', 12, 26, col.muted, { size: 12 }); return; }
+    if (!e) { text(ctx, 'Run the experiment', 12, 26, col.muted, { size: 12 }); return; }
     var rows = ID_NAMES, bw = (c.W - 40) / rows.length, y1 = c.H - 30, y0 = 34;
     rows.forEach(function (nm, i) {
       var est = e[nm], tru = trueP[nm], err = (est / tru - 1) * 100, x = 20 + i * bw, mx = Math.max(est, tru) * 1.3, Hh = function (v) { return (y1 - y0) * v / mx; };
@@ -991,35 +875,6 @@
       text(ctx, fmt(est, 3) + ' (' + (err >= 0 ? '+' : '') + fmt(err, 1) + '%)', x + bw * 0.62, y1 - Hh(est) - 16, Math.abs(err) < 5 ? col.accent : col.text, { align: 'center', size: 11, mono: true });
     });
     text(ctx, 'grey: true   colour: estimate', c.W - 12, 4, col.muted, { align: 'right', size: 10, w: '400' });
-  };
-
-  V['id-compare'] = function (c, lab) {
-    var ctx = c.ctx, I = idState(lab), C2 = I.compare, cols = M_COLORS();
-    text(ctx, c.W < 560 ? 'Each model on fresh data' : 'Every method\'s model, tested on fresh data none of them was fitted to', 12, 6, col.text, { size: 12 });
-    var rowsDef = ['step', 'freq', 'arx', 'era', 'grey'], x = [12, c.W * 0.32, c.W * 0.45, c.W * 0.58, c.W * 0.71, c.W - 14], y = 26, rh = clamp((c.H - 50) / 6, 16, 30);
-    var narrow = c.W < 560;
-    if (narrow) x = [10, c.W * 0.38, c.W * 0.54, c.W * 0.7, -1, c.W - 12];
-    ['Method', 'm', 'c', 'k', 'worst error', narrow ? 'fit' : 'fit on new data'].forEach(function (h, i) { if (x[i] >= 0) text(ctx, h, x[i], y, col.muted, { size: 11, align: i === 5 ? 'right' : 'left' }); });
-    y += rh - 4;
-    var best = null; if (C2) C2.rows.forEach(function (r) { if (r.est && (best === null || r.fit > best)) best = r.fit; });
-    rowsDef.forEach(function (m) {
-      var e = idEstimate(lab, m), r = C2 ? C2.rows.filter(function (q) { return q.m === m; })[0] : null;
-      ctx.fillStyle = withAlpha(cols[m], 0.12); ctx.fillRect(8, y - 3, c.W - 16, rh - 4);
-      text(ctx, narrow ? ID_LABEL[m].split(' (')[0].replace('Frequency', 'Freq.').replace('response', '') : ID_LABEL[m], x[0], y, cols[m], { size: 12 });
-      if (!e) { text(ctx, 'not run yet (see its tab)', x[1], y, col.muted, { size: 11, w: '400' }); y += rh; return; }
-      var worst = 0; ID_NAMES.forEach(function (nm, i) { text(ctx, fmt(e[nm], 3), x[i + 1], y, col.text, { size: 12, mono: true }); worst = Math.max(worst, Math.abs(e[nm] / lab.p[nm] - 1)); });
-      if (x[4] >= 0) text(ctx, fmt(worst * 100, 1) + '%', x[4], y, worst < 0.05 ? col.accent : worst < 0.2 ? col.viz3 : col.bad, { size: 12, mono: true });
-      if (r && r.est) text(ctx, fmt(r.fit, 1) + '%' + (r.fit === best ? '  ★' : ''), x[5], y, r.fit === best ? col.accent : col.text, { size: 12, mono: true, align: 'right' });
-      y += rh;
-    });
-    text(ctx, 'true', x[0], y, col.muted, { size: 12 }); ID_NAMES.forEach(function (nm, i) { text(ctx, fmt(lab.p[nm], 3), x[i + 1], y, col.muted, { size: 12, mono: true }); });
-  };
-  V['id-validate'] = function (c, lab) {
-    var I = idState(lab), C2 = I.compare, ctx = c.ctx; if (!C2) { text(ctx, 'Press Validate on fresh data', 12, 12, col.muted); return; }
-    var cols = M_COLORS(), d = C2.data, n = d.y.length;
-    var ser = [{ data: d.y, cap: n, color: withAlpha(col.muted, 0.8), width: 1, name: 'measured' }];
-    C2.rows.forEach(function (r) { if (r.est) ser.push({ data: r.yh, cap: n, color: cols[r.m], width: 1.6, name: ID_LABEL[r.m].split(' (')[0] }); });
-    timePlot(ctx, 44, 4, c.W - 10, c.H - 6, ser, range([d.y], 0.2), 'Fresh input, and what each model predicts');
   };
 
   /* ---- your own data: record from the live sim, then identify ---- */
@@ -1034,14 +889,12 @@
     recState(lab).on = false;                          // identifying ends the recording
     var R = recState(lab), N = R.u.length, cut = Math.floor(N * 0.7), res = { rows: [], cut: cut, n: N };
     if (N * ID_DT < 10) { R.res = { error: 'Record at least 10 s (longer is better).' }; return; }
-    var uf = R.u.slice(0, cut), yf = R.y.slice(0, cut), base = Object.assign({}, lab.p), plant = lab.plant;
+    var uf = R.u.slice(0, cut), yf = R.y.slice(0, cut);
     function add(m, est, yh) { res.rows.push({ m: m, est: est, yh: yh, fit: yh ? C.fitPercent(R.y.slice(cut), yh.slice(cut)) : null }); }
-    var ax = C.arxFitIV(uf, yf, 2, 2), am = C.arxToMsd(ax, ID_DT);
+    var ord = lab.sysid ? lab.sysid.order : 2, ax = C.arxFitIV(uf, yf, ord, ord), am = C.arxToMsd(ax, ID_DT);
     add('arx', am, C.arxSim(ax, R.u));
-    var L = Math.min(160, Math.floor(cut / 4)), h = C.firFit(uf, yf, L), E = {}; eraFit(E, h, 2);
+    var L = Math.min(160, Math.floor(cut / 4)), h = C.firFit(uf, yf, L), E = {}; eraFit(E, h, idState(lab).eraOrder);
     add('era', E.est, C.ssSim(E.model, R.u)); res.era = E; res.L = L;
-    var path = C.greyBoxFit(plant, base, { u: uf, y: yf, dt: ID_DT }, ID_NAMES, { M: 2.5, c: 1.5, k: 1.5 }, 20), gb = path[path.length - 1].p;
-    add('grey', gb, C.simMsd(plant, base, gb, R.u, ID_DT));
     var energy = uf.reduce(function (a, v) { return a + v * v; }, 0) / uf.length;
     res.weak = energy < 0.05;
     R.res = res;
@@ -1386,7 +1239,7 @@
 
   /* ================= controls (built into each tab's panel) ================= */
   function h3(panel, t) { panel.appendChild(el('h3', '', t)); }
-  function hint(panel, t) { panel.appendChild(el('p', 'panel-hint', t)); }
+  function hint(panel, t) { var p = el('p', 'panel-hint', t); panel.appendChild(p); return p; }
   function slider(panel, id, label, min, max, step, value, fmtV, onInput) {
     var g = el('div', 'pid-group'), lb = el('label'), val = el('span'); lb.setAttribute('for', id); lb.innerHTML = label + ' '; lb.appendChild(val);
     var inp = el('input'); inp.type = 'range'; inp.id = id; inp.min = min; inp.max = max; inp.step = step; inp.value = value;
@@ -1445,6 +1298,9 @@
     var a = Math.log10(GRID[0]), b = Math.log10(GRID[GRID.length - 1]);
     var s = slider(panel, tab.id + '-w', 'ω', 0, 1000, 1, 1000 * (Math.log10(lab.w) - a) / (b - a), function (v) { return fmtW(Math.pow(10, a + v / 1000 * (b - a))) + ' rad/s'; },
       function (v) { lab.w = Math.pow(10, a + v / 1000 * (b - a)); tab.sweeping = false; });
+    if (!tab.shake) toggle(panel, 'Drive the sim at ω', [[false, 'Marker only'], [true, 'Shake the sim']], !!lab.shake, function (v) {
+      var lim = lab.plant.ulim(lab.p)[0]; lab.shake = v ? { input: 0, amp: tab.shakeAmp || 0.1 * (lim[1] - lim[0]) / 2 } : null;
+    });
     var btn = button(panel, 'Sweep frequency', function () { tab.sweeping = !tab.sweeping; if (tab.sweeping) lab.w = GRID[0]; });
     tab.syncFreq = function () { s.set(1000 * (Math.log10(lab.w) - a) / (b - a)); btn.textContent = tab.sweeping ? 'Stop sweep' : 'Sweep frequency'; };
   };
@@ -1564,36 +1420,28 @@
     toggle(panel, 'Model order', [[1, '1st'], [2, '2nd'], [3, '3rd'], [4, '4th']], s.order, function (v) { s.order = v; if (s.data) runSysid(lab); });
     button(panel, 'Run experiment', function () { runSysid(lab); });
     var t = telemetry(panel, [['fit', 'Fit'], ['m', 'Mass m'], ['c', 'Damping c'], ['k', 'Spring k']]);
+    var note = hint(panel, '');
     if (tab.useModel) button(panel, 'Design with this model', function (b) {
       if (!s.msd) return; lab.pm = Object.assign({}, lab.pm, { M: s.msd.M, c: s.msd.c, k: s.msd.k }); s.used = true; changed(lab); b.textContent = 'Model in use ✓';
     });
     tab.syncSysid = function () {
       setV(t.fit, s.data ? fmt(s.fit, 1) + '%' : '-');
-      var m = s.msd; setV(t.m, m ? fmt(m.M, 2) + ' kg' : '-'); setV(t.c, m ? fmt(m.c, 2) : '-'); setV(t.k, m ? fmt(m.k, 2) : '-');
+      if (note) note.textContent = !s.data ? '' : s.order === 1 ? 'A 1st-order model can\'t ring, so there is no mass, damper and spring to read. Pick 2nd or higher.' : s.msd && s.msd.reduced ? '* Read from the dominant pole pair of the order-' + s.order + ' fit (a 2nd-order summary of it).' : !s.msd ? 'This fit has no usable oscillating pair; try a richer input or another order.' : '';
+      var m = s.msd; setV(t.m, m ? fmt(m.M, 2) + ' kg' + (m.reduced ? ' *' : '') : '-'); setV(t.c, m ? fmt(m.c, 2) : '-'); setV(t.k, m ? fmt(m.k, 2) : '-');
     };
   };
   CTRL.idrun = function (panel, lab, tab) {
     var I = idState(lab), m = tab.method;
-    h3(panel, m === 'compare' ? 'Validation' : 'Experiment');
+    h3(panel, 'Experiment');
     slider(panel, tab.id + '-idnoise', 'Sensor noise', 0, 0.1, 0.002, I.noise, function (v) { return fmt(v * 1000, 0) + ' mm'; }, function (v) { I.noise = v; });
-    if (m === 'freq') toggle(panel, 'Frequencies measured', [[4, '4'], [8, '8'], [12, '12'], [20, '20']], I.points, function (v) { I.points = v; });
     if (m === 'era') {
       h3(panel, 'Model order (bars kept)');
       toggle(panel, 'Model order', [[1, '1'], [2, '2'], [3, '3'], [4, '4']], I.eraOrder, function (v) { I.eraOrder = v; if (I.era) eraFit(I.era, I.era.h, v); });
     }
-    if (m === 'grey') {
-      h3(panel, 'Starting guess');
-      [['M', 'm', 0.2, 5], ['c', 'c', 0.05, 3], ['k', 'k', 0.5, 12]].forEach(function (g) {
-        slider(panel, tab.id + '-g' + g[0], g[1], g[2], g[3], (g[3] - g[2]) / 200, I.guess[g[0]], function (v) { return fmt(v, 2); }, function (v) { I.guess[g[0]] = v; });
-      });
-      hint(panel, 'Start far from the truth and it still gets there; start in a silly place and it can stop in the wrong valley.');
-    }
-    button(panel, m === 'compare' ? 'Validate on fresh data' : m === 'era' ? 'Tap it' : 'Run experiment', function () { runId(lab, m); });
-    if (m !== 'compare') {
-      var t = telemetry(panel, [['M', 'Mass m'], ['c', 'Damping c'], ['k', 'Spring k']]);
-      tab.syncId = function () { var e = idEstimate(lab, m); ID_NAMES.forEach(function (nm) { setV(t[nm], e ? fmt(e[nm], 3) : '-'); }); };
-    }
-    if (!I[m] && m !== 'compare') runId(lab, m);
+    button(panel, 'Tap it', function () { runId(lab, m); });
+    var t = telemetry(panel, [['M', 'Mass m'], ['c', 'Damping c'], ['k', 'Spring k']]);
+    tab.syncId = function () { var e = idEstimate(lab, m); ID_NAMES.forEach(function (nm) { setV(t[nm], e ? fmt(e[nm], 3) : '-'); }); };
+    if (!I[m]) runId(lab, m);
   };
   CTRL.requirements = function (panel, lab, tab) {
     var r = lab.req; h3(panel, 'Requirements');
@@ -1606,7 +1454,7 @@
   function restart(lab) { lab.aliveMan = 0; lab.aliveAuto = 0; lab.sim.reset(); lab.hist = { r: [], y: [], u: [], x: [], s: [], c: {} }; lab.ring = []; lab.hits = 0; lab.failT = null; lab.drag = null; }
   CTRL.mode = function (panel, lab, tab) {
     h3(panel, 'Controller');
-    lab.manual = lab.urlMode ? lab.urlMode === 'manual' && !!lab.plant.manual : tab.startManual !== false && !!lab.plant.manual;
+    lab.manual = tab.startManual !== false && !!lab.plant.manual;
     tab.setMode = toggle(panel, 'Who is in control', [[true, 'Manual'], [false, lab.controller.label]], lab.manual, function (v) {
       lab.manual = v; lab.aliveMan = 0; lab.aliveAuto = 0; lab.drag = null; lab.sim.z = lab.sim.z.map(function () { return 0; }); lab.ring = []; lab.best = null;
     });
@@ -1648,108 +1496,15 @@
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
   }
 
-  /* ================= predict, challenges, share links ================= */
-  // Browser storage is a convenience only: every read and write is guarded, and the page works without it.
-  function stored(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
-  function store(k, v) { try { window.localStorage.setItem(k, v); } catch (e) { /* private mode: forget it */ } }
-
-  // A share link is "#<tab>?kp=40&kd=6&delay=120": the tab, then the settings.
+  /* ================= predict-first cards ================= */
+  // A tab deep-links as "#<tab>".
   function hashTab() { return location.hash.slice(1).split('?')[0]; }
-  function hashParams() {
-    var h = location.hash.slice(1), q = h.indexOf('?'), out = {};
-    if (q >= 0) h.slice(q + 1).split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) out[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || ''); });
-    return out;
-  }
-  function gainKey(g, ci) { return ci ? g + (ci + 1) : g; }
-  // Each setting a link can carry: read it from the lab, write it back. Units chosen to read well in a URL.
-  var PARAMS = {
-    delay: { get: function (l) { return Math.round(l.delay * 1000); }, set: function (l, v) { l.delay = v / 1000; } },
-    noise: { get: function (l) { return l.noise; }, set: function (l, v) { l.noise = v; l.estDirty = true; } },
-    ref: { get: function (l) { return l.refs[0].type; }, set: function (l, v) { if (v === 'wave' || v === 'step') l.refs[0].type = v; }, str: true },
-    amp: { get: function (l) { return l.refs[0].amp; }, set: function (l, v) { l.refs[0].amp = v; } },
-    mode: { get: function (l) { return l.manual ? 'manual' : 'auto'; }, set: function (l, v) { l.urlMode = v; }, str: true },
-    est: { get: function (l) { return l.estimator; }, set: function (l, v) { if (v === 'diff' || v === 'kalman') { l.estimator = v; l.sim.xhat = null; } }, str: true, only: 'estimator' },
-    trust: { get: function (l) { return l.logQ; }, set: function (l, v) { l.logQ = v; l.estDirty = true; }, only: 'estimator' },
-    rate: { get: function (l) { return Math.round(l.ctrlPeriod * 1000); }, set: function (l, v) { l.ctrlPeriod = v / 1000; }, only: 'ctrlrate' },
-    limit: { get: function (l) { return l.p.Fmax > 1e6 ? 0 : l.p.Fmax; }, set: function (l, v) { l.p.Fmax = v > 0 ? v : 1e9; }, only: 'limit' }
-  };
-  var SHAREABLE = ['gains', 'delay', 'noise', 'estimator', 'ctrlrate', 'limit'];
-  function applyParams(lab, tab, P) {
-    var keys = Object.keys(P); if (!keys.length) return;
-    lab.gains.forEach(function (g, ci) {
-      Object.keys(g).forEach(function (k) { var v = parseFloat(P[gainKey(k, ci)]); if (isFinite(v)) { g[k] = v; lab.zeroed = true; } });
-    });
-    Object.keys(PARAMS).forEach(function (k) {
-      if (!(k in P)) return; var d = PARAMS[k], v = d.str ? P[k] : parseFloat(P[k]);
-      if (d.str || isFinite(v)) d.set(lab, v);
-    });
-    lab.fromUrl = true;
-  }
-  function shareUrl(lab, tab) {
-    var ctl = tab.controls || [], q = [];
-    function add(k, v) { q.push(k + '=' + encodeURIComponent(typeof v === 'number' ? +v.toPrecision(4) : v)); }
-    if (ctl.indexOf('gains') >= 0) lab.gains.forEach(function (g, ci) { Object.keys(g).forEach(function (k) { add(gainKey(k, ci), g[k]); }); });
-    if (ctl.indexOf('mode') >= 0) add('mode', PARAMS.mode.get(lab));
-    if (ctl.indexOf('reference') >= 0) { add('ref', PARAMS.ref.get(lab)); if (tab.refAmp) add('amp', PARAMS.amp.get(lab)); }
-    ['delay', 'noise'].forEach(function (k) { if (ctl.indexOf(k) >= 0) add(k, PARAMS[k].get(lab)); });
-    Object.keys(PARAMS).forEach(function (k) { var d = PARAMS[k]; if (d.only && ctl.indexOf(d.only) >= 0) add(k, d.get(lab)); });
-    return location.origin + location.pathname + '#' + tab.id + (q.length ? '?' + q.join('&') : '');
-  }
-  CTRL.share = function (panel, lab, tab) {
-    var b = button(panel, 'Copy a link to these settings', function () {
-      var url = shareUrl(lab, tab), done = function () { msg.textContent = 'Link copied. Anyone who opens it gets this tab with these settings.'; };
-      out.value = url; out.hidden = false;
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function () { out.select(); msg.textContent = 'Copy the link above.'; });
-      else { out.select(); msg.textContent = 'Copy the link above.'; }
-    });
-    b.classList.add('lab-share');
-    var out = el('input', 'lab-share-url'); out.type = 'text'; out.readOnly = true; out.hidden = true; out.setAttribute('aria-label', 'Link to these settings');
-    out.addEventListener('focus', function () { out.select(); });
-    var msg = el('p', 'panel-hint lab-share-msg', ''); msg.setAttribute('aria-live', 'polite');
-    panel.appendChild(out); panel.appendChild(msg);
-  };
 
-  // What a challenge can ask about. Each reads the live lab; none of them changes it.
-  function ringRms(lab) { return lab.ring.length ? Math.sqrt(lab.ring.reduce(function (a, c) { return a + c; }, 0) / lab.ring.length) : Infinity; }
-  function mg0(lab) { var an = analyze(lab), ch = an.ch[0]; return an.stable && ch ? ch.mg : null; }
-  var METRICS = {
-    stable: { get: function (l) { return analyze(l).stable; } },
-    pm: { get: function (l) { var m = mg0(l); return m && m.pm !== null ? m.pm : -Infinity; }, fmt: function (v) { return isFinite(v) ? fmt(v, 0) + '°' : 'none'; }, label: 'phase margin' },
-    delayMargin: { get: function (l) { var m = mg0(l); return m && m.delayMargin !== null ? m.delayMargin * 1000 : -Infinity; }, fmt: function (v) { return isFinite(v) ? fmt(v, 0) + ' ms' : 'none'; }, label: 'delay margin' },
-    overshoot: { get: function (l) { var s = stepResponse(l, 12); return s.diverged ? Infinity : s.overshoot; }, fmt: function (v) { return isFinite(v) ? fmt(v, 0) + '%' : 'never settles'; }, label: 'overshoot' },
-    settle: { get: function (l) { var s = stepResponse(l, 12); return s.failed ? Infinity : s.settle; }, fmt: function (v) { return isFinite(v) ? fmt(v, 1) + ' s' : 'never'; }, label: 'settling time' },
-    offset: { get: function (l) { var s = stepResponse(l, 12); return s.diverged ? Infinity : Math.abs(1 - s.final) * 100; }, fmt: function (v) { return isFinite(v) ? fmt(v, 1) + '%' : '-'; }, label: 'offset after 12 s' },
-    peakForce: { get: function (l) { return stepResponse(l, 12).umax; }, fmt: function (v) { return fmt(v, 1) + ' N'; }, label: 'peak force' },
-    rms: { get: function (l, t) { return !l.manual && l.ring.length >= Math.round(((t.score && t.score.window) || 5) / l.plant.dt) ? ringRms(l) : Infinity; }, fmt: function (v, t) { return isFinite(v) ? fmt(v, 3) + ' ' + ((t.score && t.score.unit) || '') : 'wait for a full window'; }, label: 'RMSE' },
-    autoTime: { get: function (l) { return l.manual ? 0 : l.aliveAuto || 0; }, fmt: function (v) { return fmt(v, 0) + ' s'; }, label: 'on its own for' },
-    manualTime: { get: function (l) { return l.manual ? l.aliveMan || 0 : 0; }, fmt: function (v) { return fmt(v, 0) + ' s'; }, label: 'by hand for' },
-    delay: { get: function (l) { return l.delay * 1000; }, fmt: function (v) { return fmt(v, 0) + ' ms'; }, label: 'delay' },
-    noise: { get: function (l) { return l.noise; }, fmt: function (v) { return fmt(v, 2); }, label: 'noise' },
-    rate: { get: function (l) { return (l.ctrlPeriod || 0) * 1000; }, fmt: function (v) { return fmt(v, 0) + ' ms'; }, label: 'controller period' },
-    sampledStable: { get: function (l) { return loopInfo(l).max < 1; } },
-    rateError: { get: function (l) { var r = estStats(l).rate; return r === null || l.trials > 0 && (l.aliveAuto || 0) < 5 ? Infinity : r; }, fmt: function (v) { return isFinite(v) ? fmt(v, 1) + '°/s' : '-'; }, label: 'rate error' },
-    kalman: { get: function (l) { return l.estimator === 'kalman'; } },
-    manual: { get: function (l) { return !!l.manual; } }
-  };
-  function gainMetric(g) { return { get: function (l) { return g in l.gains[0] ? l.gains[0][g] : NaN; }, fmt: function (v) { return fmtG(v); }, label: g }; }
-  var OPS = { '<': function (a, b) { return a < b; }, '<=': function (a, b) { return a <= b; }, '>': function (a, b) { return a > b; }, '>=': function (a, b) { return a >= b; } };
-  function checkWhen(lab, tab, when) {
-    var ok = true, shown = [];
-    Object.keys(when).forEach(function (k) {
-      var M = k.indexOf('gain.') === 0 ? gainMetric(k.slice(5)) : METRICS[k]; if (!M) { ok = false; return; }
-      var v = M.get(lab, tab), want = when[k];
-      if (Array.isArray(want)) { if (!OPS[want[0]](v, want[1])) ok = false; if (M.fmt) shown.push(M.label + ' ' + M.fmt(v, tab)); }
-      else if (v !== want) ok = false;
-    });
-    return { ok: ok, shown: shown };
-  }
-
-  // The card under the sim: a prediction to commit to first, then challenges that tick themselves off.
+  // The card under the sim: a prediction to commit to first.
   function buildLearn(tab) {
-    if (!tab.predict && !tab.challenges) return;
+    if (!tab.predict) return;
     var sec = document.getElementById('sec-' + tab.id), after = sec && sec.querySelector('.sim-layout'); if (!after) return;
     var box = el('div', 'lab-learn'); after.parentNode.insertBefore(box, after.nextSibling);
-    var key = 'lab:' + (CFG.page || '') + ':' + tab.id + ':';
     if (tab.predict) {
       var P = tab.predict, card = el('div', 'lab-card lab-predict');
       card.appendChild(el('h4', 'lab-card-title', 'Predict first'));
@@ -1771,38 +1526,11 @@
         var right = picked === P.answer;
         btns.forEach(function (x, k) { x.classList.toggle('right', k === P.answer); x.classList.toggle('wrong', k === picked && !right); });
         verdict.innerHTML = '<p><strong>' + (right ? 'Right.' : 'Not quite: it\'s "' + P.options[P.answer] + '".') + '</strong> ' + P.explain + '</p>';
-        verdict.hidden = false; reveal.hidden = true; store(key + 'predict', '1');
+        verdict.hidden = false; reveal.hidden = true;
       });
       card.appendChild(follow); box.appendChild(card);
     }
-    if (tab.challenges) {
-      var cc = el('div', 'lab-card lab-challenges'), head = el('h4', 'lab-card-title', 'Challenges'), count = el('span', 'lab-count');
-      head.appendChild(count); cc.appendChild(head);
-      var list = el('ol', 'lab-ch-list'), rows = tab.challenges.map(function (ch, i) {
-        var li = el('li', 'lab-ch'), mark = el('span', 'lab-ch-mark', ''), body = el('div', 'lab-ch-body'), now = el('div', 'lab-ch-now');
-        mark.setAttribute('aria-hidden', 'true');
-        body.appendChild(el('p', 'lab-ch-text', ch.text)); body.appendChild(now);
-        li.appendChild(mark); li.appendChild(body); list.appendChild(li);
-        return { li: li, now: now, done: stored(key + 'ch' + i) === '1', ch: ch, i: i };
-      });
-      cc.appendChild(list); box.appendChild(cc);
-      tab.learn = function () {
-        var lab = tab.lab, n = 0, focus = true;
-        rows.forEach(function (r) {
-          var res = r.done ? null : checkWhen(lab, tab, r.ch.when);
-          if (res && res.ok) { r.done = true; store(key + 'ch' + r.i, '1'); }
-          r.li.classList.toggle('done', r.done); r.li.setAttribute('aria-label', (r.done ? 'Done: ' : '') + r.ch.text.replace(/<[^>]+>/g, ''));
-          var t = !r.done && focus && res.shown.length ? 'Now: ' + res.shown.join(', ') : '';
-          if (!r.done) focus = false;
-          if (r.now.textContent !== t) r.now.textContent = t;
-          if (r.done) n++;
-        });
-        var c = ' ' + n + ' of ' + rows.length; if (count.textContent !== c) count.textContent = c;
-      };
-      tab.challengeState = function () { return rows.map(function (r) { return r.done; }); };
-    }
   }
-  window.LabDebug = { labs: labs, metric: function (labId, name, tabId) { var t = tabs.filter(function (x) { return x.id === tabId; })[0] || {}; return METRICS[name].get(labs[labId], t); }, tabs: function () { return tabs; } };
 
   /* ================= tabs ================= */
   var tabEls = Array.prototype.slice.call(document.querySelectorAll('.sim-tab')), secEls = Array.prototype.slice.call(document.querySelectorAll('.sim-section'));
@@ -1810,7 +1538,6 @@
   function fromHash() { var h = hashTab(), idx = 0; CFG.tabs.forEach(function (t, i) { if (t.id === h) idx = i; }); activate(idx); }
   tabEls.forEach(function (t, i) { t.addEventListener('click', function () { activate(i); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
   window.addEventListener('hashchange', function () {
-    if (location.hash.indexOf('?') >= 0) { location.reload(); return; }   // a pasted share link: rebuild with its settings
     fromHash();
     var row = document.querySelector('.sim-tabs-row');            // "Next:" links live at the bottom
     if (row) row.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
@@ -1823,10 +1550,7 @@
     if (tab.shake) lab.shake = lab.shake || { input: 0, amp: tab.shakeAmp || 1 };
     tab.canvases = ['top', 'row1', 'row2'].map(function (slot) { return document.getElementById(tc.id + '-' + slot); });
     var panel = document.getElementById(tc.id + '-panel');
-    if (hashTab() === tc.id) applyParams(lab, tab, hashParams());
     (tc.controls || []).forEach(function (k) { if (CTRL[k]) CTRL[k](panel, lab, tab); });
-    if (tab.share !== false && SHAREABLE.some(function (k) { return (tc.controls || []).indexOf(k) >= 0; })) CTRL.share(panel, lab, tab);
-    if (lab.fromUrl) changed(lab);
     buildLearn(tab);
     if (lab.sysid && !lab.sysid.data && (tc.controls || []).indexOf('sysid') >= 0) runSysid(lab);
     tab.canvases.forEach(function (cv, i) {
@@ -1901,10 +1625,6 @@
         var cv = tab.canvases[k]; if (!cv || !V[vname]) return;
         V[vname](fit(cv), lab, tab, cv);
       });
-      if (tab.method === 'compare' && !idState(lab).compare && lab.sysid && lab.sysid.msd) {
-        ['step', 'freq', 'era', 'grey'].forEach(function (mm) { if (!idState(lab)[mm]) runId(lab, mm); }); runId(lab, 'compare');
-      }
-      if (tab.learn && ts - (tab.learnAt || 0) > 300) { tab.learnAt = ts; tab.learn(); }
       ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec', 'syncEst', 'syncSamp', 'syncRate'].forEach(function (f) { if (tab[f]) tab[f](); });
     });
     requestAnimationFrame(frame);

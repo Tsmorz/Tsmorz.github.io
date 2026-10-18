@@ -11,7 +11,6 @@
 {%- assign lp = site.data.learning_path -%}
 {%- assign here = nil -%}{%- assign next_step = nil -%}
 {%- for st in lp -%}{%- if st.url == page.url -%}{%- assign here = st -%}{%- assign next_step = lp[forloop.index] -%}{%- endif -%}{%- endfor -%}
-{%- unless page.url == '/controls/' %}{% include learning-path.html mode="strip" %}{% endunless %}
 <div class="wrap" style="padding-bottom:3rem">
   <div class="sim-tabs-row">
     <div class="sim-tabs" role="tablist" aria-label="Demo selector">
@@ -89,7 +88,6 @@
 .lab-learn{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:1rem;margin:1rem 0 0}
 .lab-card{background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius);padding:.9rem 1rem}
 .lab-card-title{margin:0 0 .5rem;font-size:.95rem;display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}
-.lab-count{font-family:var(--mono);font-size:.8rem;font-weight:400;color:var(--text-muted)}
 .lab-q{margin:0 0 .6rem;font-size:.92rem}
 .lab-opts{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem}
 .lab-opt{text-align:left;font:inherit;font-size:.88rem;padding:.45rem .7rem;border:1px solid var(--border-strong);border-radius:6px;background:var(--bg);color:var(--text);cursor:pointer}
@@ -98,17 +96,6 @@
 .lab-opt.right{border-color:var(--viz-1);box-shadow:inset 3px 0 0 var(--viz-1)}
 .lab-opt.wrong{border-color:var(--nn-act-neg);box-shadow:inset 3px 0 0 var(--nn-act-neg)}
 .lab-try,.lab-verdict p{font-size:.88rem;margin:.2rem 0 .6rem}
-.lab-ch-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.55rem}
-.lab-ch{display:flex;gap:.6rem;align-items:flex-start}
-.lab-ch-mark{flex:0 0 1.1rem;height:1.1rem;margin-top:.1rem;border:1.5px solid var(--border-strong);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;line-height:1}
-.lab-ch.done .lab-ch-mark{background:var(--viz-1);border-color:var(--viz-1);color:var(--bg)}
-.lab-ch.done .lab-ch-mark::after{content:"\2713"}
-.lab-ch-text{margin:0;font-size:.88rem}
-.lab-ch.done .lab-ch-text{color:var(--text-muted)}
-.lab-ch-now{font-family:var(--mono);font-size:.76rem;color:var(--text-muted);margin-top:.15rem}
-.lab-ch-now:empty{display:none}
-.lab-share-url{width:100%;font-family:var(--mono);font-size:.72rem;padding:.25rem .35rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);margin-bottom:.2rem}
-.lab-share-msg:empty{display:none}
 .trial-status-row{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin:.3rem 0 .2rem;background:var(--bg-soft);border:1px solid var(--border);border-radius:6px;padding:.35rem .55rem}
 .trial-status-text{font-size:.82rem;color:var(--text-muted)}
 .trial-status-text.success{color:#22c55e;font-weight:600}

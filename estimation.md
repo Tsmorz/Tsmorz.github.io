@@ -9,10 +9,9 @@ lab: estimation
   <h1 class="page-title">State Estimation</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
-    The <a href="{{ '/controls/#cartpole' | relative_url }}">cart-pole's</a> LQR needs four states, but only two
-    sensors are fitted: one for the cart's position and one for the pole's angle. The two rates have to be
-    <em>estimated</em>. This page shows why the obvious way fails, how a <strong>Kalman filter</strong> does it
-    properly, and the price estimation charges in robustness.
+    The <a href="{{ '/controls/#cartpole' | relative_url }}">cart-pole's</a> LQR needs four states but only two are
+    measured. See why differencing fails, how a <strong>Kalman filter</strong> fixes it, and what it costs in
+    robustness.
   </p>
 </section>
 
