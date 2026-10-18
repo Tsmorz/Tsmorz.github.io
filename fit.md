@@ -17,7 +17,7 @@ permalink: /controls/fit/
 <div class="wrap" id="fit-root" style="padding-bottom:3rem">
   <p class="lab-goal"><span class="lab-phase">1 &middot; Arrive</span> Turn a recording into a model, and the model into a controller that stabilises it. <span class="lab-time">about 10 min</span></p>
   <details class="demo-note lab-inform" open>
-    <summary><span class="lab-phase">3 &middot; Inform</span> What the page does</summary>
+    <summary><span class="lab-phase">2 &middot; Inform</span> What the page does</summary>
     <p>A recording sampled much faster than the plant moves has all its poles crowded near 1, which makes a model hard to read. The <strong>model sample rate</strong> slider resamples the data to a slower rate before fitting, so the model, its poles and the LQR all live at that rate. The model is found by least squares: it picks the A and B that best predict each sample from the one before. The dashed
     lines show those one-step predictions against your data; the fit percentage says how close. The poles show the model's own
     motions: any outside the unit circle is unstable. The <strong>LQR</strong> trades state error (Q) against input effort (R)
@@ -74,7 +74,7 @@ permalink: /controls/fit/
   </div>
 
   <div class="lab-card lab-tasks">
-    <span class="lab-phase">4 &middot; Process</span>
+    <span class="lab-phase">3 &middot; Process</span>
     <h4 class="lab-card-title">Try it</h4>
     <ol>
       <li>Press <strong>Load an example</strong>: a cart-pole balanced by an LQR with a little dither. How well does the model predict each state?</li>
