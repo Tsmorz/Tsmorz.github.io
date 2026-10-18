@@ -369,7 +369,7 @@ tabs:
     <p>A controller sees a number every T seconds (the dots) and nothing in between. It is <strong>sampled</strong> in time and
     <strong>quantised</strong> in value (try 2 bits), and its output is held until the next update: a <strong>zero-order hold</strong>.
     Push the signal past <strong>fs/2</strong>, the <strong>Nyquist frequency</strong>, and the dots trace a slower, wrong wave
-    (dashed red): <strong>aliasing</strong>. Only an analogue filter before sampling can remove it.</p>
+    (dashed): <strong>aliasing</strong>. Only an analogue filter before sampling can remove it.</p>
   demo: msd
   minutes: 8
   goal: See what a computer loses when it only reads a signal every T seconds.
@@ -524,7 +524,7 @@ tabs:
   demo: msd
   minutes: 5
   goal: Write down what the controller must achieve, as numbers, before any design.
-  recall: In the Tune lesson you stopped when it looked good. Real designs stop when a checklist is green.
+  recall: In the Tune lesson you stopped when it looked good. Real designs stop when every line of a checklist is ticked.
   predict:
     question: You halve the allowed settling time. What happens to the region where the poles must sit?
     options:
@@ -545,7 +545,7 @@ tabs:
     - So the design is faster to compute
     - Because the model needs them
     answer: 0
-    explain: 'A number can be checked: the checklist turns green or red. "Looks good" cannot be tested.'
+    explain: 'A number can be checked: the checklist shows a tick or a cross. "Looks good" cannot be tested.'
     why:
     - ''
     - Numbers do not change how long design takes.
@@ -688,9 +688,9 @@ tabs:
     explain: When the force clips, the error persists and the integrator keeps summing. That extra stored push shows up as overshoot (the cure is anti-windup).
   tasks:
   - 'Add <strong>Sensor noise</strong>: what happens to the force trace?'
-  - Lower <strong>Force limit</strong> until the checklist turns red.
+  - Lower <strong>Force limit</strong> until a line of the checklist shows a cross.
   - 'Add <strong>Delay</strong>: which requirement fails first?'
-  - Press <strong>Restart</strong> and get every line green.
+  - Press <strong>Restart</strong> and get every line ticked.
   check:
   - question: A requirement fails on the real plant. Where do you go back to?
     options:
@@ -698,7 +698,7 @@ tabs:
     - Always to the beginning
     - 'Nowhere: accept it'
     answer: 0
-    explain: 'Red lines point back: a different trade-off (design), a wrong model, or requirements the actuator cannot meet. Most designs loop several times.'
+    explain: 'A cross points back: a different trade-off (design), a wrong model, or requirements the actuator cannot meet. Most designs loop several times.'
     why:
     - ''
     - Not always the beginning; the failure tells you which step.
@@ -725,8 +725,8 @@ tabs:
   note: |-
     <p>The mass now has hard stops at &#177;1.4&nbsp;m and a reference that goes past them. With the <strong>safety filter</strong> on,
     every force first passes through a <strong>control barrier function</strong>: h&#8201;=&#8201;limit&#8201;&#8722;&#8201;|x| may shrink, but only
-    slower as it gets small. That leaves a band of allowed forces (teal, right), and the filter sends the nearest one. In the
-    phase plane the teal region is the safe set. On the cart-pole the same filter makes the pole fall: a barrier on one state of
+    slower as it gets small. That leaves a band of allowed forces (shaded, right), and the filter sends the nearest one. In the
+    phase plane the shaded region is the safe set. On the cart-pole the same filter makes the pole fall: a barrier on one state of
     an underactuated plant isn't enough.</p>
   demo: msd
   minutes: 8

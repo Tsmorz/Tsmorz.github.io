@@ -8,7 +8,7 @@ permalink: /controls/fit/
   <h1 class="page-title">Fit and Control</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
-    Upload a recording with a time column, the states and the inputs. It is plotted, a linear model
+    Upload a recording with columns <code>t</code>, <code>x1, x2, ...</code> and <code>u1, u2, ...</code>. It is plotted, a linear model
     <code>x[k+1] = A x[k] + B u[k]</code> is fitted to it, and an <strong>LQR</strong> is designed on that model.
     Nothing leaves your browser.
   </p>
@@ -22,14 +22,31 @@ permalink: /controls/fit/
     lines show those one-step predictions against your data; the fit percentage says how close. The poles show the model's own
     motions: any outside the unit circle is unstable. The <strong>LQR</strong> trades state error (Q) against input effort (R)
     and gives a feedback u&#8201;=&#8201;&#8722;Kx; the bottom plot runs it on the model.</p>
-    <p>CSV format: a header row, one row per sample, a time column (seconds, or timestamps), the states, and the inputs.
-    Pick each column's role below. The model is linear, so record small motions around the point you want to hold, and
-    switch on the input.</p>
+    <p>The recording is a plain-text CSV, described below. </p>
+  </details>
+
+  <details class="demo-note lab-inform lab-format" open>
+    <summary>CSV format</summary>
+    <p>A header row, then one row per sample. Three kinds of column, named like this:</p>
+<pre class="fit-example">t,x1,x2,x3,x4,u1
+0.00,0.00000,0.00000,0.08000,0.00000,-1.9060
+0.05,0.00031,0.00112,0.08140,0.01560,-2.0420
+0.10,0.00112,...</pre>
+    <table class="fit-spec">
+      <tr><th>Column</th><th>Rule</th></tr>
+      <tr><td>t</td><td>Time in seconds. One column, strictly increasing.</td></tr>
+      <tr><td>x1, x2, ...</td><td>The states, measured at each sample. A single state can be just <code>x</code>.</td></tr>
+      <tr><td>u1, u2, ...</td><td>The inputs, as commanded at each sample. A single input can be just <code>u</code>. The input in row k acts between row k and row k+1.</td></tr>
+    </table>
+    <p>Columns with any other name are ignored. Commas, semicolons or tabs separate the columns, and lines starting with
+    <code>#</code> are skipped. Values are plain numbers in your own units; the LQR gain comes out in those units. A row with an
+    empty cell is dropped. You need at least 20 complete rows. Evenly spaced times are best: if the spacing varies by more than
+    5%, the data is resampled onto the median spacing. The signals should wiggle around one operating point, since the model is linear.</p>
   </details>
 
   <div class="fit-layout">
     <div class="fit-plots">
-      <canvas class="fit-canvas fit-tall" id="fit-c1" aria-label="Your data and the model's one-step predictions"></canvas>
+      <canvas class="fit-canvas" id="fit-c1" aria-label="Your data and the model's one-step predictions"></canvas>
       <div class="fit-pair">
         <canvas class="fit-canvas" id="fit-c2" aria-label="Poles of the model and of the model with LQR"></canvas>
         <canvas class="fit-canvas" id="fit-c3" aria-label="The model with and without LQR from a small push"></canvas>
@@ -42,10 +59,7 @@ permalink: /controls/fit/
       <button class="sim-btn" id="fit-example" type="button">Load an example</button>
       <button class="sim-btn" id="fit-csv" type="button">Download the example CSV</button>
       <p class="fit-msg" id="fit-msg" role="status"></p>
-      <h3>Columns</h3>
-      <div id="fit-roles"></div>
-      <label class="fit-role">Time unit
-        <select id="fit-tunit"><option value="1">seconds</option><option value="0.001">milliseconds</option><option value="0.000001">microseconds</option></select></label>
+      <p class="fit-msg" id="fit-found"></p>
       <h3>Model sample rate</h3>
       <div id="fit-rate" class="pid-group" hidden>
         <label for="fit-rate-in">Fit at <span class="fit-rate-val"></span></label>
@@ -67,7 +81,7 @@ permalink: /controls/fit/
       <li>Look at the poles: is the model unstable on its own? Where do the poles go with the LQR?</li>
       <li>Slow the <strong>model sample rate</strong>: the poles move away from 1 and the fit changes. Which rate gives the cleanest model?</li>
       <li>Raise a Q weight, or lower R, and watch the push die out faster at the cost of more input.</li>
-      <li>Download the example CSV, change a column role to Ignore, and see what the model loses. Then try your own recording.</li>
+      <li>Download the example CSV, rename a state column (say <code>x3</code> to <code>y3</code>) so it is ignored, and see what the model loses. Then try your own recording.</li>
     </ol>
   </div>
 </div>
@@ -75,10 +89,8 @@ permalink: /controls/fit/
 <style>
 .fit-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:1rem;align-items:start}
 .fit-plots{display:flex;flex-direction:column;gap:.75rem;min-width:0}
-.fit-canvas{display:block;width:100%;height:260px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-soft)}
-.fit-tall{height:380px}
-.fit-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:.75rem}
-.fit-pair .fit-canvas{height:300px}
+.fit-canvas{display:block;width:100%;height:calc(var(--lanes, 4) * 100px + 44px);border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-soft)}
+.fit-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:.75rem}
 @media (max-width:860px){.fit-layout{grid-template-columns:minmax(0,1fr)}.fit-pair{grid-template-columns:minmax(0,1fr)}}
 .lab-phase{display:inline-block;font:600 .68rem var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-bottom:.25rem}
 .lab-goal{margin:0 0 .8rem;font-size:.95rem}
@@ -94,6 +106,12 @@ permalink: /controls/fit/
 .fit-drop input{display:block;margin:.4rem auto 0;max-width:100%}
 .fit-role{display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-size:.82rem;margin:.25rem 0}
 .fit-role select{font:inherit;font-size:.82rem}
+.fit-spec{border-collapse:collapse;font-size:.85rem;margin:.6rem 0}
+.fit-spec th,.fit-spec td{border:1px solid var(--border);padding:.35rem .6rem;text-align:left;vertical-align:top}
+.fit-spec th{font:600 .72rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)}
+.fit-spec td:first-child{white-space:nowrap;font-family:var(--mono);font-size:.8rem}
+.fit-example{font:.78rem/1.5 var(--mono);background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem .8rem;overflow-x:auto;margin:.4rem 0}
+.lab-format{margin-top:.75rem}
 .fit-msg{font-size:.82rem;color:var(--text-muted);margin:.4rem 0}
 .fit-msg.bad{color:var(--nn-act-neg)}
 .fit-info{font:.74rem/1.45 var(--mono);white-space:pre;overflow-x:auto;margin:0}

@@ -74,11 +74,12 @@ closed-loop runs of every transition); if it fails after a re-export, the port h
 
 ### The fit page (`/controls/fit/`)
 
-`fit.md` + `assets/js/fit.js`. The visitor uploads a CSV (header, a time column in seconds, ms, µs or timestamps,
-states, inputs; roles are guessed and can be changed), `FitCore` resamples an uneven time base, fits A and B by
-least squares (optionally after subtracting the mean), and `dlqr` solves the Riccati recursion on that model. The
-page plots data against one-step predictions, the z-plane poles, and the model with and without LQR. It is its own
-page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
+`fit.md` + `assets/js/fit.js`. The visitor uploads a CSV with a header row and exactly three kinds of column:
+`t` (seconds), `x` or `x1, x2, ...` (states) and `u` or `u1, u2, ...` (inputs); other columns are ignored. There is no
+column picker or unit setting, on purpose. `FitCore` resamples an uneven time base, fits A and B by least squares
+(optionally after subtracting the mean), and `dlqr` solves the Riccati recursion on that model. A slider refits at a
+slower sample rate. The page plots data against one-step predictions, the z-plane poles, and the model with and without
+LQR. It is its own page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
 (`task check:fit`, in `check:fast`) guards the parser, the fit and the LQR.
 
 ### The lab template (`/controls/`)
