@@ -30,8 +30,8 @@
   --viz-total: #556070;  /* neutral gray — aggregate / total lines */
   --pend-cart: #5fae16;
   --pend-rod: #556070;
-  --pend-1: #5fae16;
-  --pend-2: #8576f0;  /* double pendulum: lime cart and upper bob, violet lower bob, grey rods */
+  --pend-1: #8576f0;
+  --pend-2: #5fae16;  /* double pendulum: lime cart and lower bob, violet upper bob, grey rods */
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -67,8 +67,8 @@
     --viz-total: #9aa7b6;
     --pend-cart: #adf45d;
     --pend-rod: #9aa7b6;
-    --pend-1: #adf45d;
-    --pend-2: #a798ff;
+    --pend-1: #a798ff;
+    --pend-2: #adf45d;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -99,8 +99,8 @@
   --viz-total: #9aa7b6;
   --pend-cart: #adf45d;
   --pend-rod: #9aa7b6;
-  --pend-1: #adf45d;
-  --pend-2: #a798ff;
+  --pend-1: #a798ff;
+  --pend-2: #adf45d;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }
