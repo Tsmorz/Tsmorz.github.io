@@ -757,7 +757,7 @@
     var c = sizeCanvas(plotCanvas), ctx = c.ctx, W = c.W, H = c.H;
     var bg = cssVar('--bg'), border = cssVar('--border'), muted = cssVar('--text-muted');
     var text = cssVar('--text'), mono = cssVar('--mono');
-    var colors = [cssVar('--accent'), cssVar('--viz-1'), cssVar('--viz-2'), cssVar('--viz-4')];
+    var colors = [cssVar('--viz-1'), cssVar('--viz-2'), cssVar('--viz-3'), cssVar('--viz-4')];
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
     var PAD_L = 70, PAD_R = 8, PAD_T = 4, PAD_B = 4;
     var rowH = (H - PAD_T - PAD_B) / PLOT_SPEC.length, pw = W - PAD_L - PAD_R;

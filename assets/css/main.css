@@ -15,21 +15,22 @@
   --lav: #8576f0;        /* lavender outlines */
   --lime: #5fae16;       /* outlines, markers */
   --lime-text: #3f7a0a;  /* small text */
-  --nn-act-neg: #c4510d;
+  --nn-act-neg: #8a0f0f;
   --nn-act-zero: #e6e6ea;
   --nn-act-pos: #5a4fd6;
-  /* Data-viz series palette: violet / green / pink / sky, the site accents plus two. Picked so every pair stays
-     separable under deuteranopia and protanopia simulation (min dE ~20 light, ~13 dark). Used by every controls
-     plot. Reference labels always accompany the color, so identity is never color-alone. */
+  /* Data-viz series palette: violet / gold / red / teal. Chosen by search so that every pair stays at least
+     CIEDE2000 24 apart under normal vision, deuteranopia, protanopia and tritanopia (Machado 2009 simulation), in
+     light and dark, with at least 3:1 contrast against the background, and differs in lightness as well as hue.
+     Used by every controls plot. Labels, dashes and marks always accompany the color, so identity is never color-alone. red doubles as the "problem" color. */
   --viz-1: #5a4fd6;  /* violet */
-  --viz-2: #4a9410;  /* green  */
-  --viz-3: #c0679a;  /* pink   */
-  --viz-4: #3b9ad6;  /* sky    */
-  --viz-7: #d98f00;  /* amber — the simulated mass; kept off the series colors */
+  --viz-2: #a58d12;  /* gold   */
+  --viz-3: #8a0f0f;  /* red    */
+  --viz-4: #12a599;  /* teal   */
+  --viz-7: #556070;  /* slate — the simulated mass; kept off the series colors */
   --viz-total: #556070;  /* neutral gray — aggregate / total lines */
-  --pend-cart: #6f69bc;
-  --pend-1: #7d77c3;
-  --pend-2: #54852e;  /* double pendulum: the accents, muted */
+  --pend-cart: #5a4fd6;
+  --pend-1: #a58d12;
+  --pend-2: #8a0f0f;  /* double pendulum: the series colors, matching the plot lanes */
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -54,18 +55,18 @@
   --lav: #a798ff;
   --lime: #adf45d;
   --lime-text: #adf45d;
-    --nn-act-neg: #ff8a45;
+    --nn-act-neg: #eb4763;
     --nn-act-zero: #2c2d32;
     --nn-act-pos: #c8c0ff;
     --viz-1: #a798ff;
-    --viz-2: #adf45d;
-    --viz-3: #e59ac4;
-    --viz-4: #66b3f2;
-    --viz-7: #f4b740;
+    --viz-2: #fbe160;
+    --viz-3: #eb4763;
+    --viz-4: #88fce9;
+    --viz-7: #9aa7b6;
     --viz-total: #9aa7b6;
-    --pend-cart: #b5aceb;
-    --pend-1: #b6adea;
-    --pend-2: #a1c974;
+    --pend-cart: #a798ff;
+    --pend-1: #fbe160;
+    --pend-2: #eb4763;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -85,18 +86,18 @@
   --lav: #a798ff;
   --lime: #adf45d;
   --lime-text: #adf45d;
-  --nn-act-neg: #ff8a45;
+  --nn-act-neg: #eb4763;
   --nn-act-zero: #2c2d32;
   --nn-act-pos: #c8c0ff;
   --viz-1: #a798ff;
-  --viz-2: #adf45d;
-  --viz-3: #e59ac4;
-  --viz-4: #66b3f2;
-  --viz-7: #f4b740;
+  --viz-2: #fbe160;
+  --viz-3: #eb4763;
+  --viz-4: #88fce9;
+  --viz-7: #9aa7b6;
   --viz-total: #9aa7b6;
-  --pend-cart: #b5aceb;
-  --pend-1: #b6adea;
-  --pend-2: #a1c974;
+  --pend-cart: #a798ff;
+  --pend-1: #fbe160;
+  --pend-2: #eb4763;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }
@@ -485,7 +486,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
   font-family: var(--mono); font-size: .82rem; color: var(--accent); font-weight: 400;
 }
 .pid-group input[type="range"] {
-  width: 100%; accent-color: var(--accent); cursor: pointer;
+  width: 100%; cursor: pointer;
 }
 .pid-group > input[type="range"]:last-child { grid-column: 1 / -1; }
 
@@ -709,6 +710,21 @@ h1, h2 { font-optical-sizing: auto; font-weight: 500; letter-spacing: -.01em; }
 .nav-links a { font-family: var(--mono); font-size: .8rem; letter-spacing: .02em; text-transform: lowercase; }
 .btn { font-family: var(--mono); font-size: .85rem; font-weight: 500; }
 .hero h1 .accent { border-radius: 2px; }
+
+/* sliders: a hairline lavender track and a square lime-outlined thumb, no fill (outlines only, like the tabs) */
+input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; height: 20px; margin: 0; cursor: pointer; accent-color: var(--lime); }
+input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: var(--lav); border: 0; border-radius: 0; }
+input[type="range"]::-moz-range-track { height: 2px; background: var(--lav); border: 0; border-radius: 0; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 18px; margin-top: -8px; box-sizing: border-box; background: var(--bg); border: 1.5px solid var(--lime); border-radius: 3px; transition: background .12s ease; }
+input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; box-sizing: border-box; background: var(--bg); border: 1.5px solid var(--lime); border-radius: 3px; transition: background .12s ease; }
+input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:active::-webkit-slider-thumb { background: var(--accent-soft); }
+input[type="range"]:hover::-moz-range-thumb, input[type="range"]:active::-moz-range-thumb { background: var(--accent-soft); }
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--lav); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--lav); }
+input[type="range"]:disabled { opacity: .45; cursor: default; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
+.pid-group > label { font-family: var(--mono); font-size: .78rem; font-weight: 500; }
 
 /* hero: faint plot-paper grid behind the floating equations */
 .hero::before {

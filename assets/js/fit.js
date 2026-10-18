@@ -26,29 +26,19 @@
 
   /* ---------------- reading a CSV ---------------- */
   function splitLine(line, d) { return line.split(d).map(function (s) { return s.trim().replace(/^"|"$/g, ''); }); }
-  function cellValue(s) {
-    if (s === '') return NaN;
-    var n = Number(s); if (isFinite(n)) return n;
-    var t = Date.parse(s); return isFinite(t) ? t / 1000 : NaN;     // a timestamp becomes seconds
-  }
+  function cellValue(s) { return s === '' ? NaN : (isFinite(Number(s)) ? Number(s) : NaN); }
+  // A header row is required. Columns: t (seconds), x or x1, x2, ... (states), u or u1, u2, ... (inputs);
+  // any other column is ignored.
   function parseCsv(text) {
     var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l && l[0] !== '#'; });
     if (lines.length < 2) return null;
     var d = [',', ';', '\t'].map(function (c) { return [c, lines[0].split(c).length]; }).sort(function (a, b) { return b[1] - a[1]; })[0][0];
-    var first = splitLine(lines[0], d), hasHeader = first.some(function (s) { return !isFinite(Number(s)) && !isFinite(Date.parse(s)); }) || first.every(function (s) { return s === '' || !isFinite(Number(s)); });
-    var header = hasHeader ? first.map(function (s, i) { return s || 'col' + (i + 1); }) : first.map(function (_, i) { return 'col' + (i + 1); });
-    var cols = header.map(function () { return []; });
-    lines.slice(hasHeader ? 1 : 0).forEach(function (l) { var c = splitLine(l, d); header.forEach(function (_, j) { cols[j].push(cellValue(c[j] === undefined ? '' : c[j])); }); });
+    var header = splitLine(lines[0], d), cols = header.map(function () { return []; });
+    lines.slice(1).forEach(function (l) { var c = splitLine(l, d); header.forEach(function (_, j) { cols[j].push(cellValue(c[j] === undefined ? '' : c[j])); }); });
     return { header: header, cols: cols };
   }
-  var TIME_RE = /^(t|time|timestamp|stamp|ts|secs?|seconds?)(\b|_)/i, INPUT_RE = /^(u\d*|u_|in(put)?|cmd|command|force|torque|voltage|thrust|ctrl|action)(\b|_|\d)/i, SKIP_RE = /^(id|index|idx|n|#)$/i;
-  function guessRoles(header, cols) {
-    var haveTime = false;
-    return header.map(function (h, j) {
-      if (SKIP_RE.test(h)) return 'ignore';
-      if (!haveTime && (TIME_RE.test(h + ' ') || (j === 0 && cols[j].every(function (v, i) { return isFinite(v) && (i === 0 || v > cols[j][i - 1]); })))) { haveTime = true; return 'time'; }
-      return INPUT_RE.test(h) ? 'input' : 'state';
-    });
+  function guessRoles(header) {
+    return header.map(function (h) { return /^t$/i.test(h) ? 'time' : /^x\d*$/i.test(h) ? 'state' : /^u\d*$/i.test(h) ? 'input' : 'ignore'; });
   }
 
   // Linear interpolation of each series (sampled at times t) onto a uniform grid of spacing dt.
@@ -61,17 +51,17 @@
   // Roles → uniform samples. Rows with a missing value are dropped; an uneven time base is resampled
   // onto the median spacing. `mult` (≥ 1) then slows the sample rate the model is fitted at: the
   // recording is resampled to mult × its own spacing, so the model, its poles and the LQR all live at that rate.
-  function prepare(data, roles, tScale, mult) {
-    var ti = roles.indexOf('time'); if (ti < 0) return { error: 'Pick one column as Time.' };
+  function prepare(data, roles, mult) {
+    var ti = roles.indexOf('time'); if (ti < 0) return { error: 'The header needs a column named t (time in seconds).' };
     var si = [], ui = [];
     roles.forEach(function (r, j) { if (r === 'state') si.push(j); else if (r === 'input') ui.push(j); });
-    if (!si.length) return { error: 'Pick at least one State column.' };
-    if (!ui.length) return { error: 'Pick at least one Input column.' };
+    if (!si.length) return { error: 'The header needs a state column named x (or x1, x2, ...).' };
+    if (!ui.length) return { error: 'The header needs an input column named u (or u1, u2, ...).' };
     var use = [ti].concat(si, ui), rows = [];
     data.cols[ti].forEach(function (_, k) { if (use.every(function (j) { return isFinite(data.cols[j][k]); })) rows.push(k); });
     rows.sort(function (a, b) { return data.cols[ti][a] - data.cols[ti][b]; });
     if (rows.length < 20) return { error: 'Need at least 20 rows with every column filled in.' };
-    var t = rows.map(function (k) { return data.cols[ti][k] * tScale; }), diffs = [];
+    var t = rows.map(function (k) { return data.cols[ti][k]; }), diffs = [];
     for (var i = 1; i < t.length; i++) diffs.push(t[i] - t[i - 1]);
     if (diffs.some(function (d) { return d <= 0; })) return { error: 'Time must increase from row to row.' };
     var sorted = diffs.slice().sort(function (a, b) { return a - b; }), dt0 = sorted[Math.floor(sorted.length / 2)];
@@ -134,7 +124,7 @@
   function exampleCsv() {
     var LP = root.LabPlants || (typeof require !== 'undefined' ? require('./lab/lab-plants.js') : null), plant = LP && LP.cartpole; if (!plant || !C) return null;
     var p = Object.assign({}, plant.params), dt = 0.05, lin = C.linearize(plant, p), d = C.zohDiscretize(lin.A, lin.B, dt);
-    var lq = dlqr(d.Phi, d.Gam, [1, 0.1, 10, 0.1], [0.1]), x = [0, 0, 0.08, 0], seed = 7, level = 0, hold = 0, out = ['t,x,x_dot,theta,theta_dot,force'];
+    var lq = dlqr(d.Phi, d.Gam, [1, 0.1, 10, 0.1], [0.1]), x = [0, 0, 0.08, 0], seed = 7, level = 0, hold = 0, out = ['t,x1,x2,x3,x4,u1'];
     function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
     for (var k = 0; k < 600; k++) {
       if (hold <= 0) { level = (rnd() < 0.5 ? -2 : 2); hold = 0.3 + 0.7 * rnd(); } hold -= dt;
@@ -156,12 +146,12 @@
   /* ================= the page ================= */
   if (typeof document === 'undefined' || !document.getElementById('fit-root')) return;
   var $ = function (id) { return document.getElementById(id); };
-  var S = { data: null, roles: [], tScale: 1, mult: 1, subtractMean: true, qw: [], rw: 0.1, prep: null, model: null, lq: null };
+  var S = { data: null, roles: [], mult: 1, subtractMean: true, qw: [], rw: 0.1, prep: null, model: null, lq: null };
   var col = {};
   function cssVar(n, fb) { var v = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return v || fb; }
   function readColors() {
     col = { text: cssVar('--text', '#222'), muted: cssVar('--text-muted', '#666'), border: cssVar('--border', '#ddd'), strong: cssVar('--border-strong', '#bbb'),
-            v1: cssVar('--viz-1', '#5a4fd6'), v2: cssVar('--viz-2', '#4a9410'), v3: cssVar('--viz-3', '#c0679a'), v4: cssVar('--viz-4', '#3b9ad6') };
+            v1: cssVar('--viz-1', '#5a4fd6'), v2: cssVar('--viz-2', '#a58d12'), v3: cssVar('--viz-3', '#8a0f0f'), v4: cssVar('--viz-4', '#12a599') };
   }
   function fitCanvas(cv) {
     var dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
@@ -199,13 +189,22 @@
     label(ctx, '0', x0, c.H - 13, col.muted, 'center', 9); label(ctx, num(tmax) + ' s', x1, c.H - 13, col.muted, 'right', 9);
   }
   function zplane(c, open, closed) {
-    var ctx = c.ctx, R = Math.max(1.3, 1.1 * Math.max.apply(null, open.concat(closed || []).map(function (z) { return Math.hypot(z[0], z[1]); })));
-    var side = Math.max(40, Math.min(c.W - 20, c.H - 30)), cx = c.W / 2, cy = 18 + (c.H - 18) / 2, k = side / 2 / R;
-    label(ctx, 'Poles: model (×), with LQR (○), unit circle', 10, 2, col.text, 'left', 11);
-    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - R * k, cy); ctx.lineTo(cx + R * k, cy); ctx.moveTo(cx, cy - R * k); ctx.lineTo(cx, cy + R * k); ctx.stroke();
-    ctx.strokeStyle = col.strong; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(cx, cy, k, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
-    open.forEach(function (z) { var x = cx + z[0] * k, y = cy - z[1] * k, bad = Math.hypot(z[0], z[1]) >= 1; ctx.strokeStyle = bad ? col.v3 : col.v1; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x - 5, y + 5); ctx.lineTo(x + 5, y - 5); ctx.stroke(); });
-    (closed || []).forEach(function (z) { ctx.strokeStyle = col.v2; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx + z[0] * k, cy - z[1] * k, 5, 0, 2 * Math.PI); ctx.stroke(); });
+    var ctx = c.ctx, all = open.concat(closed || []), big = Math.max.apply(null, all.map(function (z) { return Math.hypot(z[0], z[1]); })), cx0 = 0, cy0 = 0, h = Math.max(1.3, 1.1 * big), zoom = false;
+    if (all.every(function (z) { return Math.hypot(z[0], z[1]) > 0.6; }) && big < 1.6) {     // poles crowd the unit circle: zoom in on them
+      var pts = all.concat([[1, 0]]), lo = [Math.min.apply(null, pts.map(function (z) { return z[0]; })), Math.min.apply(null, pts.map(function (z) { return z[1]; }))], hi = [Math.max.apply(null, pts.map(function (z) { return z[0]; })), Math.max.apply(null, pts.map(function (z) { return z[1]; }))];
+      cx0 = (lo[0] + hi[0]) / 2; cy0 = (lo[1] + hi[1]) / 2; h = Math.max(0.12, 0.65 * Math.max(hi[0] - lo[0], hi[1] - lo[1])); zoom = true;
+    }
+    var side = Math.max(40, Math.min(c.W - 20, c.H - 30)), cx = c.W / 2, cy = 18 + (c.H - 18) / 2, k = side / 2 / h;
+    var X = function (re) { return cx + (re - cx0) * k; }, Y = function (im) { return cy - (im - cy0) * k; };
+    label(ctx, 'Poles: model (×), with LQR (○)' + (zoom ? ', zoomed' : ''), 10, 2, col.text, 'left', 11);
+    ctx.save(); ctx.beginPath(); ctx.rect(cx - side / 2, cy - side / 2, side, side); ctx.clip();
+    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - side / 2, Y(0)); ctx.lineTo(cx + side / 2, Y(0)); ctx.moveTo(X(0), cy - side / 2); ctx.lineTo(X(0), cy + side / 2); ctx.stroke();
+    ctx.strokeStyle = col.strong; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.arc(X(0), Y(0), k, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+    ctx.restore(); ctx.strokeStyle = col.border; ctx.strokeRect(cx - side / 2 + .5, cy - side / 2 + .5, side - 1, side - 1);
+    label(ctx, 'unit circle (dashed)', cx - side / 2 + 4, cy + side / 2 - 14, col.muted, 'left', 9);
+    label(ctx, num(cx0 - h) + ' … ' + num(cx0 + h), cx + side / 2 - 4, cy + side / 2 - 14, col.muted, 'right', 9);
+    open.forEach(function (z) { var x = X(z[0]), y = Y(z[1]), bad = Math.hypot(z[0], z[1]) >= 1; ctx.strokeStyle = bad ? col.v3 : col.v1; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x - 5, y + 5); ctx.lineTo(x + 5, y - 5); ctx.stroke(); });
+    (closed || []).forEach(function (z) { ctx.strokeStyle = col.v2; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X(z[0]), Y(z[1]), 5, 0, 2 * Math.PI); ctx.stroke(); });
   }
 
   function say(msg, bad) { var e = $('fit-msg'); e.textContent = msg || ''; e.className = 'fit-msg' + (bad ? ' bad' : ''); }
@@ -213,20 +212,9 @@
 
   function load(text) {
     var data = parseCsv(text);
-    if (!data || data.header.length < 3) { say('That does not look like a CSV with a time column, states and inputs.', true); return; }
-    S.data = data; S.roles = guessRoles(data.header, data.cols);
-    buildRoles(); analyze(true);
-  }
-  function buildRoles() {
-    var box = $('fit-roles'); box.innerHTML = '';
-    S.data.header.forEach(function (h, j) {
-      var row = document.createElement('label'), sel = document.createElement('select');
-      row.className = 'fit-role'; row.appendChild(document.createTextNode(h + ' '));
-      [['time', 'Time'], ['state', 'State'], ['input', 'Input'], ['ignore', 'Ignore']].forEach(function (o) { var op = document.createElement('option'); op.value = o[0]; op.textContent = o[1]; sel.appendChild(op); });
-      sel.value = S.roles[j];
-      sel.addEventListener('change', function () { if (sel.value === 'time') S.roles = S.roles.map(function (r) { return r === 'time' ? 'ignore' : r; }); S.roles[j] = sel.value; buildRoles(); analyze(true); });
-      row.appendChild(sel); box.appendChild(row);
-    });
+    if (!data || data.header.length < 3) { say('That does not look like a CSV with a header row t, x1, ..., u1, ...', true); return; }
+    S.data = data; S.roles = guessRoles(data.header);
+    analyze(true);
   }
   function buildWeights() {
     var box = $('fit-weights'); box.innerHTML = '';
@@ -249,7 +237,7 @@
   }
   function analyze(reset) {
     if (reset) S.mult = 1;
-    var prep = prepare(S.data, S.roles, S.tScale, S.mult); S.prep = null; S.model = null; S.lq = null;
+    var prep = prepare(S.data, S.roles, S.mult); S.prep = null; S.model = null; S.lq = null;
     if (prep.error) { say(prep.error, true); draw(); return; }
     buildRate(prep);
     var model = fitLinear(prep.X, prep.U, S.subtractMean);
@@ -261,6 +249,7 @@
       S.qw = S.qw.map(function (q) { return Math.pow(10, Math.max(-3, Math.min(3, Math.log10(q)))); });
       buildWeights();
     }
+    $('fit-found').textContent = 'Found: t, ' + prep.sNames.join(', ') + ', ' + prep.uNames.join(', ');
     say(prep.uneven || S.mult > 1 ? 'Resampled to ' + num(prep.dt) + ' s (recorded at ' + num(prep.dt0) + ' s, ' + num(1 / prep.dt) + ' Hz fit).' : '');
     design();
   }
@@ -271,7 +260,11 @@
 
   function draw() {
     readColors();
-    var info = $('fit-info'), P = S.prep, M = S.model, c1 = fitCanvas($('fit-c1')), c2 = fitCanvas($('fit-c2')), c3 = fitCanvas($('fit-c3'));
+    var info = $('fit-info'), P = S.prep, M = S.model;
+    // Height follows the number of lanes (set as a CSS variable, never from the pixel buffer).
+    $('fit-c1').style.setProperty('--lanes', P ? P.sNames.length + P.uNames.length : 4);
+    $('fit-c2').parentNode.style.setProperty('--lanes', P ? P.sNames.length + 1 : 4);
+    var c1 = fitCanvas($('fit-c1')), c2 = fitCanvas($('fit-c2')), c3 = fitCanvas($('fit-c3'));
     if (!P || !M) {
       label(c1.ctx, 'Load a CSV or press "Load an example".', 14, 14, col.muted, 'left', 13); info.textContent = ''; return;
     }
@@ -290,7 +283,7 @@
       var cl = run(S.lq.Acl, x0, N), ol = run(M.A, x0, N), uu = cl.map(function (x) { return -S.lq.K[0].reduce(function (s, kk, i) { return s + kk * x[i]; }, 0); });
       var L3 = P.sNames.map(function (nm, j) { return { name: nm + ' (change from rest)', series: [{ x: tt, y: ol.map(function (r) { return r[j]; }), color: col.v3, dash: [5, 3], clip: true }, { x: tt, y: cl.map(function (r) { return r[j]; }), color: col.v2 }] }; });
       L3.push({ name: P.uNames[0] + ' (LQR effort)', series: [{ x: tt, y: uu, color: col.v1 }] });
-      lanes(c3, L3, 'LQR on the model: with control (green), without (pink dashed)');
+      lanes(c3, L3, 'LQR on the model: with control (solid), without (dashed)');
     } else {
       label(c3.ctx, S.lq ? 'This LQR does not stabilise the model: raise a Q or lower R, or check the model.' : 'No LQR: the model is not stabilisable (or the data is too flat).', 12, 14, col.v3, 'left', 12);
     }
@@ -309,7 +302,6 @@
     dz.addEventListener('drop', function (e) { e.preventDefault(); var f = e.dataTransfer.files[0]; if (!f) return; var r = new FileReader(); r.onload = function () { load(String(r.result)); }; r.readAsText(f); });
     $('fit-example').addEventListener('click', function () { var t = exampleCsv(); if (t) load(t); });
     $('fit-rate').querySelector('input').addEventListener('input', function (e) { S.mult = Math.pow(10, e.target.value / 100); if (S.data) analyze(false); });
-    $('fit-tunit').addEventListener('change', function (e) { S.tScale = +e.target.value; if (S.data) analyze(true); });
     $('fit-mean').addEventListener('change', function (e) { S.subtractMean = e.target.checked; if (S.data) analyze(true); });
     $('fit-csv').addEventListener('click', function () { var t = exampleCsv(); if (!t) return; var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], { type: 'text/csv' })); a.download = 'cartpole-example.csv'; document.body.appendChild(a); a.click(); a.remove(); });
     window.addEventListener('resize', draw);
