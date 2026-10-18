@@ -619,7 +619,7 @@
     var bg = cssVar('--bg-soft'), border = cssVar('--border'), strong = cssVar('--border-strong');
     var text = cssVar('--text'), muted = cssVar('--text-muted'), accent = cssVar('--accent');
     var mono = cssVar('--mono'), font = cssVar('--font');
-    var col1 = cssVar('--pend-1'), col2 = cssVar('--pend-2'), colF = cssVar('--viz-4'), colCart = cssVar('--pend-cart');
+    var col1 = cssVar('--pend-1'), col2 = cssVar('--pend-2'), colF = cssVar('--viz-4'), colCart = cssVar('--pend-cart'), colRod = cssVar('--pend-rod');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
     if (!meta || !state) {
@@ -667,7 +667,7 @@
     for (gk = 0; gk < meta.n_links; gk++) {
       gth = target ? target[gk] : 0;
       gnx = gx + p.lengths[gk] * scale * Math.sin(gth); gny = gy - p.lengths[gk] * scale * Math.cos(gth);
-      ctx.strokeStyle = colCart;
+      ctx.strokeStyle = colRod;
       ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gnx, gny); ctx.stroke();
       ctx.setLineDash([]); ctx.strokeStyle = gk % 2 ? col2 : col1;
       ctx.beginPath(); ctx.arc(gnx, gny, Math.max(6, 0.028 * scale * Math.sqrt(p.masses[gk] / 0.15)) + 2, 0, 2 * Math.PI); ctx.stroke();
@@ -679,7 +679,7 @@
     // Cart
     var cw = 2 * cartHalf * scale, ch = Math.max(16, 0.07 * scale);
     ctx.fillStyle = colCart;
-    ctx.beginPath(); ctx.roundRect(cartX - cw / 2, trackY - ch / 2, cw, ch, 5); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(cartX - cw / 2, trackY - ch / 2, cw, ch, 3); ctx.fill();
 
     // Links (bob x = x + l sin θ, height = l cos θ)
     var px = cartX, py = trackY;
@@ -687,7 +687,7 @@
     for (var k = 0; k < meta.n_links; k++) {
       var th = state[2 + 2 * k], len = p.lengths[k] * scale;
       var qx = px + len * Math.sin(th), qy = py - len * Math.cos(th);
-      ctx.strokeStyle = text; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.strokeStyle = colRod; ctx.lineWidth = 4; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(qx, qy); ctx.stroke();
       ctx.fillStyle = cols[k % 2];
       ctx.beginPath(); ctx.arc(qx, qy, Math.max(6, 0.028 * scale * Math.sqrt(p.masses[k] / 0.15)), 0, 2 * Math.PI); ctx.fill();
@@ -709,7 +709,7 @@
 
     // Status
     var label, colr = muted;
-    if (status === 'crashed')            { label = 'Hit the end of the rail - resetting…'; colr = col2; }
+    if (status === 'crashed')            { label = 'Hit the end of the rail - resetting…'; colr = cssVar('--viz-3'); }
     else if (reachTime !== null && settled > 0) {
       label = 'Reached ' + goal + ' in ' + reachTime.toFixed(2) + ' s - holding'; colr = accent;
     }

@@ -37,7 +37,7 @@
     var bx = W - bw - 10, by = H - bh - 10;
 
     ctx.fillStyle = isDark() ? 'rgba(11,15,20,0.72)' : 'rgba(245,246,248,0.82)';
-    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 8); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 3); ctx.fill();
     ctx.strokeStyle = css('--border'); ctx.lineWidth = 1; ctx.stroke();
 
     var xLabel = bx + PAD_X;
