@@ -9,7 +9,9 @@ lab: design
   <h1 class="page-title">The Design Process</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
-    The other pages each show one tool. This one puts them in order, the way a controller actually gets built: <strong>requirements</strong>, a <strong>model</strong> identified from data, a <strong>design</strong> that meets the requirements on the model, <strong>verification</strong> that it is stable with margin, <strong>implementation</strong> on imperfect hardware, and a <strong>test</strong> against the requirements on the real plant. Work through the tabs in order: they share one plant and one controller, and the real plant isn't quite what the textbook says.
+    The other pages show one tool each; this one puts them in order: <strong>requirements</strong>,
+    <strong>model</strong>, <strong>design</strong>, <strong>verification</strong>, <strong>implementation</strong>
+    and <strong>test</strong>. The tabs share one plant and controller.
   </p>
 </section>
 

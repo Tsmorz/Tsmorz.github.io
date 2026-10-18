@@ -9,7 +9,8 @@ lab: stability
   <h1 class="page-title">Stability Analysis</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
-    A controller that works in one test can still be one gust away from shaking itself apart. These tabs take the loops you already know from the <a href="{{ '/controls/' | relative_url }}">controls demos</a> and ask how stable they are, and by how much. Start with <strong>The Plant</strong> and shake it, then cut the PID, LQR and aircraft loops open. Under each sim, <strong>View</strong> switches between three pictures of the same loop: Bode, Nyquist and poles, and in the poles view you can drag the poles yourself.
+    How stable is a loop, and by how much? Shake the plant, cut the PID, LQR and aircraft loops open, and
+    switch <strong>View</strong> between Bode, Nyquist and poles. In the poles view you can drag the poles.
   </p>
 </section>
 

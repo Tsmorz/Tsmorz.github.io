@@ -39,7 +39,7 @@ tasks:
       - bundle exec jekyll build --baseurl "{{.BASEURL}}"
 
   check:data:
-    desc: Validate _data/*.yml (required fields, photo/project images exist) — no build needed
+    desc: Validate _data/*.yml (required fields, project images exist) — no build needed
     cmds:
       - script/test-data
 
@@ -71,11 +71,6 @@ tasks:
     cmds:
       - script/test-lab
 
-  check:challenges:
-    desc: Check every lab challenge can be met, in a real browser (needs Playwright + Chromium; build first)
-    cmds:
-      - script/test-challenges {{.SITE_DIR}}
-
   check:links:
     desc: Check internal links with html-proofer
     cmds:
@@ -90,11 +85,6 @@ tasks:
       - task: build
       - task: check:js
       - task: check:links
-
-  add-photo:
-    desc: 'Add a gallery photo — usage: task add-photo -- <source-image> <slug>'
-    cmds:
-      - script/add-photo {{.CLI_ARGS}}
 
   clean:
     desc: Remove the built site and Jekyll cache

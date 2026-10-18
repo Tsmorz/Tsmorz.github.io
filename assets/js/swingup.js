@@ -619,7 +619,7 @@
     var bg = cssVar('--bg-soft'), border = cssVar('--border'), strong = cssVar('--border-strong');
     var text = cssVar('--text'), muted = cssVar('--text-muted'), accent = cssVar('--accent');
     var mono = cssVar('--mono'), font = cssVar('--font');
-    var col1 = cssVar('--viz-1'), col2 = cssVar('--viz-2'), colF = cssVar('--viz-4');
+    var col1 = cssVar('--pend-1'), col2 = cssVar('--pend-2'), colF = cssVar('--viz-4'), colCart = cssVar('--pend-cart');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
     if (!meta || !state) {
@@ -667,7 +667,7 @@
     for (gk = 0; gk < meta.n_links; gk++) {
       gth = target ? target[gk] : 0;
       gnx = gx + p.lengths[gk] * scale * Math.sin(gth); gny = gy - p.lengths[gk] * scale * Math.cos(gth);
-      ctx.strokeStyle = accent;
+      ctx.strokeStyle = colCart;
       ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gnx, gny); ctx.stroke();
       ctx.setLineDash([]); ctx.strokeStyle = gk % 2 ? col2 : col1;
       ctx.beginPath(); ctx.arc(gnx, gny, Math.max(6, 0.028 * scale * Math.sqrt(p.masses[gk] / 0.15)) + 2, 0, 2 * Math.PI); ctx.stroke();
@@ -678,7 +678,7 @@
 
     // Cart
     var cw = 2 * cartHalf * scale, ch = Math.max(16, 0.07 * scale);
-    ctx.fillStyle = accent;
+    ctx.fillStyle = colCart;
     ctx.beginPath(); ctx.roundRect(cartX - cw / 2, trackY - ch / 2, cw, ch, 5); ctx.fill();
 
     // Links (bob x = x + l sin θ, height = l cos θ)

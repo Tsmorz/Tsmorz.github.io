@@ -43,34 +43,6 @@ tabs:
     answer: 1
     try: Switch to PID, pick Step, set K<sub>p</sub> to 40 and watch a few jumps.
     explain: Proportional action alone behaves like a stiffer spring. Nothing removes energy, so the mass rings, and the real spring pushes back with a force only an error can balance, so it stops short. K<sub>d</sub> adds the damping and K<sub>i</sub> the missing push.
-  challenges:
-  - text: Hand over to the PID and track the wave with RMSE under 0.1 m.
-    when:
-      rms:
-      - <
-      - 0.1
-    solution: kp=40&ki=5&kd=6&mode=auto
-    wait: 7
-  - text: 'Make a step land cleanly: under 5% overshoot and settled within 2 s.'
-    when:
-      overshoot:
-      - <
-      - 5
-      settle:
-      - <
-      - 2
-    solution: kp=50&ki=20&kd=12&mode=auto
-  - text: Add 200 ms of delay and still track the wave with RMSE under 0.3 m. You will have to give up speed.
-    when:
-      delay:
-      - '>='
-      - 200
-      stable: true
-      rms:
-      - <
-      - 0.3
-    solution: kp=5&ki=1&kd=3&delay=200&mode=auto
-    wait: 7
   controls:
   - mode
   - reference
@@ -86,20 +58,10 @@ tabs:
   - PID contribution chart
   note_title: About this demo
   note: |-
-    <p>
-            A <strong>PID controller</strong> pushes a lightly damped mass on a spring
-            (&#950; &#8776; 0.1) to track a reference: a slow sine wave, or a <strong>step</strong>
-            that jumps to the opposite position every half period. The line ahead of the mass shows
-            where the reference is going. The <em>proportional</em> term
-            reacts to the current error, the <em>integral</em> term removes steady-state offset, and
-            the <em>derivative</em> term damps oscillation. The score is RMSE over the last 5 s.
-            Start with K<sub>p</sub> alone, add K<sub>d</sub> to cut the overshoot, then a small
-            K<sub>i</sub> to remove what's left. Then add a <strong>transport delay</strong> to the
-            command or <strong>sensor noise</strong> to the measurement: delay eats phase margin, and
-            the derivative term amplifies noise the most. In Manual mode, drag the mass to follow the
-            reference yourself. &#8594;
-            <a href="https://en.wikipedia.org/wiki/PID_controller" target="_blank" rel="noopener">PID controller - Wikipedia</a>
-          </p>
+    <p>A <strong>PID</strong> controller tracks a reference with a lightly damped mass on a spring. The proportional term reacts
+    to the error, the integral term removes offset, and the derivative term damps ringing. Start with K<sub>p</sub>, add
+    K<sub>d</sub>, then a little K<sub>i</sub>. Then add <strong>delay</strong> (it eats phase margin) or <strong>noise</strong>
+    (the derivative term amplifies it). The score is RMSE over the last 5&nbsp;s.</p>
 - id: tilt
   label: Tilt Table
   lab: tilt
@@ -129,19 +91,6 @@ tabs:
     answer: 1
     try: Switch to PID, set K<sub>p</sub> to 3 with K<sub>i</sub> and K<sub>d</sub> at zero, and watch the ball.
     explain: Tilting the beam sets the ball's acceleration, not its speed, so proportional action alone is a spring with no damper. The servo's lag then eats the little phase that is left, and the swings grow until the ball rolls off. K<sub>d</sub> is the brake.
-  challenges:
-  - text: Keep the ball on the beam by hand for 20 s.
-    when:
-      manualTime:
-      - '>='
-      - 20
-  - text: Let the PID track the wave with RMSE under 0.01 m.
-    when:
-      rms:
-      - <
-      - 0.01
-    solution: kp=3&ki=0&kd=2&mode=auto
-    wait: 10
   controls:
   - mode
   - reference
@@ -157,18 +106,9 @@ tabs:
   - PID contribution chart
   note_title: About this demo
   note: |-
-    <p>
-            A <strong>PID controller</strong> tilts a beam so a rolling ball tracks a reference
-            position: a sine wave, or a <strong>step</strong> that jumps to the other side of the beam
-            every half period (the dashed ring on the beam is where the ball should be). The run
-            restarts if the ball rolls off an end. The controller outputs a
-            <em>commanded</em> tilt, and a servo turns the beam toward it at no more than
-            60&nbsp;&#176;/s, so a big correction takes time. Watch &#952;&#775; saturate in the state
-            plot. K<sub>p</sub> alone makes the ball oscillate, K<sub>d</sub> damps it, and a small
-            K<sub>i</sub> removes any leftover offset. In Manual mode, drag either end of the beam to
-            tilt it. The same servo limit applies to you. &#8594;
-            <a href="https://en.wikipedia.org/wiki/Ball_and_beam" target="_blank" rel="noopener">Ball and beam - Wikipedia</a>
-          </p>
+    <p>A <strong>PID</strong> controller tilts a beam so a ball tracks a reference (the dashed ring). A servo turns the beam at
+    no more than 60&nbsp;&#176;/s, so watch &#952;&#775; saturate. K<sub>p</sub> alone oscillates, K<sub>d</sub> damps it, and a little
+    K<sub>i</sub> removes offset. The run restarts if the ball rolls off an end.</p>
 - id: flight
   label: Flight Sim
   lab: flight
@@ -190,19 +130,6 @@ tabs:
     window: 6
     label: RMSE (m)
     unit: m
-  challenges:
-  - text: Fly by hand for 30 s without crashing.
-    when:
-      manualTime:
-      - '>='
-      - 30
-  - text: Give the altitude autopilot gains that hold the reference with RMSE under 0.3 m.
-    when:
-      rms:
-      - <
-      - 0.3
-    solution: kp=0.5&ki=0.1&kd=0.35&mode=auto
-    wait: 12
   controls:
   - mode
   - reference
@@ -218,20 +145,9 @@ tabs:
   - 'PID contribution chart: elevator command'
   note_title: About this demo
   note: |-
-    <p>
-            A nonlinear longitudinal aircraft model with six states (V, &#947;, &#945;, q, h, x) and
-            a smooth stall: C<sub>L</sub> rises linearly up to about 16&#176; angle of attack, then
-            drops sharply. A <strong>PID autopilot</strong> tracks an altitude reference, a sine wave or a
-            <strong>step</strong> that jumps up and down every half period, by moving the elevator
-            away from trim. Altitude error goes in, and a nose-up elevator command
-            in degrees comes out. The aircraft can only change altitude <em>through</em> its pitch and
-            flight-path angle, so K<sub>p</sub> alone oscillates. K<sub>d</sub> acts on climb rate,
-            and it is what damps the oscillation. Push too hard and the wing stalls. Delay and sensor
-            noise work as in the other demos, with noise &#963; in metres. In Manual mode the canvas
-            is a control stick: drag up to pitch the nose up, and let go to return to trim. &#8594;
-            <a href="https://en.wikipedia.org/wiki/Flight_dynamics_(fixed-wing_aircraft)" target="_blank" rel="noopener">Flight dynamics - Wikipedia</a>,
-            <a href="https://en.wikipedia.org/wiki/Autopilot" target="_blank" rel="noopener">Autopilot - Wikipedia</a>
-          </p>
+    <p>A <strong>PID autopilot</strong> tracks an altitude reference by moving the elevator away from trim. Altitude can only
+    change through pitch and flight-path angle, so K<sub>p</sub> alone oscillates; K<sub>d</sub> on climb rate damps it. Push too
+    hard and the wing stalls. In Manual the canvas is a control stick.</p>
     </div>
     <div class="demo-note">
     <h4 class="demo-note-title">Equations of motion</h4>
@@ -283,32 +199,6 @@ tabs:
     answer: 1
     try: Switch to LQR, press Load LQR gains, pick Step and watch the cart at each jump.
     explain: To travel right with the pole upright, the pole has to lean right first, and the only way to tip it right is to pull its base left. Systems that start off the wrong way are called non-minimum phase, and they limit how fast any controller can be.
-  challenges:
-  - text: Balance the pole by hand for 10 s.
-    when:
-      manualTime:
-      - '>='
-      - 10
-  - text: Keep the LQR balancing for 10 s with 100 ms of delay.
-    when:
-      delay:
-      - '>='
-      - 100
-      autoTime:
-      - '>='
-      - 10
-    solution: kx=3.1&kv=5.9&kth=43.5&kw=18.1&delay=100&mode=auto
-    wait: 11
-  - text: Balance for 10 s with k<sub>θ</sub> below 25. How small can it get before gravity wins?
-    when:
-      gain.kth:
-      - <
-      - 25
-      autoTime:
-      - '>='
-      - 10
-    solution: kx=1&kv=2&kth=20&kw=5&mode=auto
-    wait: 11
   controls:
   - mode
   - reference
@@ -324,26 +214,11 @@ tabs:
   - Each gain's contribution to the force
   note_title: About this demo
   note: |-
-    <p>
-            The <strong>cart-pole</strong> is the classic unstable plant: a pole hinged on a cart that
-            can only be pushed left or right. Each trial starts with the pole <em>upright</em>, tilted
-            1&#8211;4&#176; at random, and with no control it falls within a second or two. One force has to
-            hold two things at once, the pole angle and the cart position, so this demo uses
-            <strong>full-state feedback</strong> instead of a single PID loop: the force is a weighted
-            sum of cart position, cart velocity, pole angle and pole rate. Start with
-            k<sub>&#952;</sub> and k<sub>&#952;&#775;</sub>. They keep the pole up, but the cart then drifts away
-            and eventually the pole falls. Adding k<sub>x</sub> and k<sub>&#7819;</sub> makes the cart follow
-            the reference position (the dashed marker on the rail), which is a sine wave or a
-            <strong>step</strong> that jumps to the other side every half period. Their sign looks
-            backwards at first: to bring the cart left, it must first be pushed right so the pole tips
-            left. Hand-tuning four gains is hard, so
-            <strong>Load LQR gains</strong> fills in the optimal set, found by solving a Riccati
-            equation for this plant. LQR picks the gains by trading off state error against force use
-            (here Q&#8201;=&#8201;diag(1, 0.1, 10, 0.1), R&#8201;=&#8201;0.1). The rail is 8 m long with hard stops, and
-            running into an end ends the trial. Sensor noise perturbs all four measurements the controller sees (sigma degrees on the angle, sigma centimetres on the cart position, and the same amount per 0.2 s on the two rates), never the force. The score is the RMS position error over the last 10 s. Switch to
-            Manual and drag the cart to balance the pole yourself. &#8594;
-            <a href="https://en.wikipedia.org/wiki/Inverted_pendulum" target="_blank" rel="noopener">Inverted pendulum - Wikipedia</a>
-          </p>
+    <p>The <strong>cart-pole</strong> is unstable: with no control the pole falls in a second or two. One force must hold
+    the pole angle and the cart position, so the force is a weighted sum of all four states (<strong>full-state feedback</strong>).
+    k<sub>&#952;</sub> and k<sub>&#952;&#775;</sub> keep the pole up but let the cart drift; k<sub>x</sub> and k<sub>&#7819;</sub> bring it
+    back, with a sign that looks backwards. <strong>Load LQR gains</strong> fills in the optimal set. Noise goes on the
+    measurements, never the force.</p>
     </div>
     <div class="demo-note">
     <h4 class="demo-note-title">Equations of motion &amp; control law</h4>

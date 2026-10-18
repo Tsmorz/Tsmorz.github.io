@@ -1,6 +1,6 @@
 # tsmorz.github.io
 
-My personal site — projects, photography, and how to reach me.
+My personal site — projects, interactive controls demos, and how to reach me.
 Live at **[https://tsmorz.github.io](https://tsmorz.github.io)**.
 
 A small custom Jekyll site: no theme gem, no bundler, no CSS framework. The design is
@@ -24,8 +24,6 @@ Everything that repeats lives in `_data/`:
 
 - **A project** — add a block to `_data/projects.yml`. `featured: true` lists it on
   /projects/; `about: true` on /about/; `on_cv: true` badges it as formal work; `tags` feed the filter buttons.
-- **A photo** — `script/add-photo <source-image> <slug>` makes the web-sized versions,
-  then add a block to `_data/photos.yml`.
 
 See [CLAUDE.md](CLAUDE.md) for the full field reference and conventions.
 
@@ -37,5 +35,5 @@ run the link check without deploying.
 
 ## License
 
-Site content and photographs © Tony Smoragiewicz. The original theme this site grew out
+Site content © Tony Smoragiewicz. The original theme this site grew out
 of, `jekyll-theme-minimal`, is CC0 — see [LICENSE](LICENSE).

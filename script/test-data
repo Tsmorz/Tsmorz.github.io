@@ -3,9 +3,7 @@
 
 # Validate _data/*.yml against what the pages assume — the things a Jekyll build
 # and html-proofer don't catch:
-#   * required fields are present (projects need name + blurb; photos need slug)
-#   * every photo's full-size image exists (referenced in a data-full attribute,
-#     which html-proofer never checks) as well as its thumbnail
+#   * required fields are present (projects need name + blurb)
 #   * any local project image path points at a real file
 #
 # Pure stdlib (YAML ships with Ruby), no bundler, no build. Runs anywhere Ruby does.
@@ -47,19 +45,6 @@ load_yaml("_data/projects.yml", errors).each_with_index do |proj, i|
   end
 end
 
-# --- photos ---
-load_yaml("_data/photos.yml", errors).each_with_index do |photo, i|
-  slug = photo["slug"].to_s.strip
-  if slug.empty?
-    errors << "photos.yml: entry ##{i + 1} is missing `slug`"
-    next
-  end
-  full  = "assets/img/photos/#{slug}.jpg"
-  thumb = "assets/img/photos/thumbs/#{slug}.jpg"
-  errors << "photos.yml: #{slug} full-size missing: #{full} (run script/add-photo)" unless file_present?(full)
-  errors << "photos.yml: #{slug} thumbnail missing: #{thumb} (run script/add-photo)" unless file_present?(thumb)
-end
-
 # --- page front matter ---
 # Jekyll skips a page whose front matter isn't valid YAML (an unquoted ": " in a description is
 # enough), and the build still succeeds: the page just isn't there. Catch it here instead.
@@ -74,15 +59,9 @@ Dir.glob("*.{md,html}").sort.each do |path|
   end
 end
 
-# --- lab predictions and challenges (_data/labs/*.yml, read by assets/js/lab/lab.js) ---
+# --- lab predictions (_data/labs/*.yml, read by assets/js/lab/lab.js) ---
 # A prediction needs a question, 2+ options, an answer that indexes one of them, a "try" and an
-# "explain". A challenge needs text and a "when" whose every key is a metric lab.js knows
-# (METRICS, or gain.<name>) with a comparison [op, number] or a true/false. Whether each challenge
-# can actually be met is checked in a browser by script/test-challenges.
-lab_js = File.read("assets/js/lab/lab.js", encoding: "UTF-8")
-metrics_src = lab_js[/var METRICS = \{(.*?)\n  \};/m, 1] || ""
-metrics = metrics_src.scan(/^    (\w+): \{/).flatten
-errors << "assets/js/lab/lab.js: could not find METRICS" if metrics.empty?
+# "explain".
 Dir.glob("_data/labs/*.yml").sort.each do |path|
   doc = load_yaml(path, errors)
   (doc.is_a?(Hash) ? doc["tabs"] || [] : []).each do |tab|
@@ -94,19 +73,6 @@ Dir.glob("_data/labs/*.yml").sort.each do |path|
         errors << "#{where}: predict needs at least two options"
       elsif !pr["answer"].is_a?(Integer) || !pr["answer"].between?(0, opts.size - 1)
         errors << "#{where}: predict answer must index one of its #{opts.size} options (0-based)"
-      end
-    end
-    (tab["challenges"] || []).each_with_index do |ch, i|
-      cw = "#{where} challenge #{i + 1}"
-      errors << "#{cw}: needs text" if ch["text"].to_s.strip.empty?
-      unless ch["when"].is_a?(Hash) && !ch["when"].empty?
-        errors << "#{cw}: needs a when"
-        next
-      end
-      ch["when"].each do |k, v|
-        errors << "#{cw}: unknown metric #{k}" unless metrics.include?(k) || k.start_with?("gain.")
-        ok = [true, false].include?(v) || (v.is_a?(Array) && v.size == 2 && %w[< <= > >=].include?(v[0]) && v[1].is_a?(Numeric))
-        errors << "#{cw}: #{k} must be true/false or [op, number]" unless ok
       end
     end
   end
