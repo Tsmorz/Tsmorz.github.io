@@ -74,7 +74,7 @@
     refs: [{ type: 'wave', amp: 1, omega: 0.5, label: 'x', unit: 'm', idx: 0 }],
     states: [{ label: 'x (m)', f: function (x) { return x[0]; } }, { label: 'ẋ (m/s)', f: function (x) { return x[1]; } }],
     contribUnit: 'F (N)', contribScale: 1,
-    // Drag the plant's own poles (Stability page): the pair −σ ± jω_d sets c and k.
+    // Drag the plant's own poles (the Poles view): the pair −σ ± jω_d sets c and k.
     setPoles: function (p, re, im) { p.c = -2 * re * p.M; p.k = p.M * (re * re + im * im); },
     // Manual: drag the mass; a damped virtual spring pulls it toward the pointer, ±10 N.
     manual: function (drag, sim, lab) {

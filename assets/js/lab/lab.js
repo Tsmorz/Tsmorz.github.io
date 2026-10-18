@@ -1291,7 +1291,7 @@
     slider(panel, tab.id + '-Tc', 'Runs every', Math.log10(0.005), Math.log10(0.3), 0.005, Math.log10(lab.ctrlPeriod), function (v) { var T = Math.pow(10, v); return fmt(T * 1000, 0) + ' ms (' + fmt(1 / T, 1 / T < 10 ? 1 : 0) + ' Hz)'; },
       function (v) { lab.ctrlPeriod = Math.pow(10, v); lab.stepCache = null; });
     var t = telemetry(panel, [['v', 'Exact'], ['c', 'Limit'], ['r', 'Rule of thumb']]);
-    tab.syncRate = function () { var L = loopInfo(lab); setV(t.v, L.max < 1 ? 'stable' : 'unstable', L.max >= 1); setV(t.c, fmt(L.Tcrit * 1000, 0) + ' ms'); setV(t.r, L.Trule ? fmt(L.Trule * 1000, 0) + ' ms' : '-'); };
+    tab.syncRate = function () { var L = loopInfo(lab); setV(t.v, L.max < 1 + 1e-9 ? 'stable' : 'unstable', L.max >= 1 + 1e-9); setV(t.c, fmt(L.Tcrit * 1000, 0) + ' ms'); setV(t.r, L.Trule ? fmt(L.Trule * 1000, 0) + ' ms' : '-'); };
   };
   CTRL.freq = function (panel, lab, tab) {
     h3(panel, tab.shake ? 'Shake it' : 'Frequency');
@@ -1306,7 +1306,7 @@
   };
   CTRL.view = function (panel, lab, tab) {
     h3(panel, 'View');
-    var names = { bode: 'Bode', nyquist: 'Nyquist', poles: 'Poles' };
+    var names = { contrib: 'Terms', bode: 'Bode', nyquist: 'Nyquist', poles: 'Poles' };
     toggle(panel, 'Plot shown', tab.analysis.map(function (v) { return [v, names[v]]; }), tab.view, function (v) { tab.view = v; });
   };
   CTRL.channel = function (panel, lab, tab) {
@@ -1500,43 +1500,61 @@
   // A tab deep-links as "#<tab>".
   function hashTab() { return location.hash.slice(1).split('?')[0]; }
 
-  // The card under the sim: a prediction to commit to first.
+  // A multiple-choice card: pick, then reveal. A `try` line is shown once an answer is picked (the
+  // prediction uses it); `why[i]` says why a wrong option i is wrong; onReveal runs after the answer.
+  function quizCard(P, title, phase, onReveal) {
+    var card = el('div', 'lab-card lab-quiz');
+    card.appendChild(el('span', 'lab-phase', phase)); card.appendChild(el('h4', 'lab-card-title', title));
+    card.appendChild(el('p', 'lab-q', P.question));
+    var opts = el('div', 'lab-opts'), follow = el('div', 'lab-follow'); follow.hidden = true;
+    var picked = null, btns = P.options.map(function (o, i) {
+      var b = el('button', 'lab-opt', o); b.type = 'button';
+      b.addEventListener('click', function () {
+        picked = i; btns.forEach(function (x, k) { x.classList.toggle('picked', k === i); x.setAttribute('aria-pressed', k === i ? 'true' : 'false'); });
+        follow.hidden = false; verdict.hidden = true; reveal.hidden = false;
+      });
+      b.setAttribute('aria-pressed', 'false'); opts.appendChild(b); return b;
+    });
+    card.appendChild(opts);
+    if (P.try) follow.appendChild(el('p', 'lab-try', '<strong>Now try it:</strong> ' + P.try));
+    var reveal = el('button', 'sim-btn', 'Show the answer'); reveal.type = 'button'; follow.appendChild(reveal);
+    var verdict = el('div', 'lab-verdict'); verdict.hidden = true; verdict.setAttribute('aria-live', 'polite'); follow.appendChild(verdict);
+    reveal.addEventListener('click', function () {
+      var right = picked === P.answer, why = !right && P.why && P.why[picked] ? ' ' + P.why[picked] : '';
+      btns.forEach(function (x, k) { x.classList.toggle('right', k === P.answer); x.classList.toggle('wrong', k === picked && !right); });
+      verdict.innerHTML = '<p><strong>' + (right ? 'Right.' : 'Not quite: it\'s "' + P.options[P.answer] + '".') + '</strong>' + why + ' ' + P.explain + '</p>';
+      verdict.hidden = false; reveal.hidden = true; if (onReveal) onReveal();
+    });
+    card.appendChild(follow); return card;
+  }
+  // Reactivate: a prediction above the sim (its answer opens the explanation). Evaluate: closing checks.
   function buildLearn(tab) {
-    if (!tab.predict) return;
-    var sec = document.getElementById('sec-' + tab.id), after = sec && sec.querySelector('.sim-layout'); if (!after) return;
-    var box = el('div', 'lab-learn'); after.parentNode.insertBefore(box, after.nextSibling);
-    if (tab.predict) {
-      var P = tab.predict, card = el('div', 'lab-card lab-predict');
-      card.appendChild(el('h4', 'lab-card-title', 'Predict first'));
-      card.appendChild(el('p', 'lab-q', P.question));
-      var opts = el('div', 'lab-opts'), follow = el('div', 'lab-follow'); follow.hidden = true;
-      var picked = null, btns = P.options.map(function (o, i) {
-        var b = el('button', 'lab-opt', o); b.type = 'button';
-        b.addEventListener('click', function () {
-          picked = i; btns.forEach(function (x, k) { x.classList.toggle('picked', k === i); x.setAttribute('aria-pressed', k === i ? 'true' : 'false'); });
-          follow.hidden = false; verdict.hidden = true; reveal.hidden = false;
-        });
-        b.setAttribute('aria-pressed', 'false'); opts.appendChild(b); return b;
-      });
-      card.appendChild(opts);
-      follow.appendChild(el('p', 'lab-try', '<strong>Now try it:</strong> ' + P.try));
-      var reveal = el('button', 'sim-btn', 'Show the answer'); reveal.type = 'button'; follow.appendChild(reveal);
-      var verdict = el('div', 'lab-verdict'); verdict.hidden = true; verdict.setAttribute('aria-live', 'polite'); follow.appendChild(verdict);
-      reveal.addEventListener('click', function () {
-        var right = picked === P.answer;
-        btns.forEach(function (x, k) { x.classList.toggle('right', k === P.answer); x.classList.toggle('wrong', k === picked && !right); });
-        verdict.innerHTML = '<p><strong>' + (right ? 'Right.' : 'Not quite: it\'s "' + P.options[P.answer] + '".') + '</strong> ' + P.explain + '</p>';
-        verdict.hidden = false; reveal.hidden = true;
-      });
-      card.appendChild(follow); box.appendChild(card);
-    }
+    var sec = document.getElementById('sec-' + tab.id), slot = sec && sec.querySelector('.lab-check-slot'), pslot = sec && sec.querySelector('.lab-predict-slot');
+    if (tab.predict && pslot) pslot.appendChild(quizCard(tab.predict, 'Predict first', '2 · Reactivate', function () { var d = sec.querySelector('.lab-inform'); if (d) d.open = true; }));
+    var checks = tab.check ? (Array.isArray(tab.check) ? tab.check : [tab.check]) : [];
+    if (slot) checks.forEach(function (c, i) { slot.appendChild(quizCard(c, checks.length > 1 ? 'Check yourself (' + (i + 1) + ' of ' + checks.length + ')' : 'Check yourself', '5 · Evaluate')); });
   }
 
   /* ================= tabs ================= */
-  var tabEls = Array.prototype.slice.call(document.querySelectorAll('.sim-tab')), secEls = Array.prototype.slice.call(document.querySelectorAll('.sim-section'));
-  function activate(i) { tabEls.forEach(function (t, k) { t.classList.toggle('active', k === i); t.setAttribute('aria-selected', k === i ? 'true' : 'false'); }); secEls.forEach(function (s, k) { s.classList.toggle('active', k === i); }); }
-  function fromHash() { var h = hashTab(), idx = 0; CFG.tabs.forEach(function (t, i) { if (t.id === h) idx = i; }); activate(idx); }
+  // Two levels: a demo (the buttons on top) holds lessons (the row beneath it). A hash names a lesson
+  // or a demo; a demo opens at its first lesson.
+  var tabEls = CFG.tabs.map(function (t) { return document.getElementById('tab-' + t.id); }), secEls = CFG.tabs.map(function (t) { return document.getElementById('sec-' + t.id); });
+  var demoEls = Array.prototype.slice.call(document.querySelectorAll('.demo-tab')), lessonRows = Array.prototype.slice.call(document.querySelectorAll('.lesson-row'));
+  function activate(i) {
+    var d = CFG.tabs[i].demo;
+    tabEls.forEach(function (t, k) { t.classList.toggle('active', k === i); t.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
+    secEls.forEach(function (s, k) { s.classList.toggle('active', k === i); });
+    demoEls.forEach(function (b) { b.classList.toggle('active', b.getAttribute('data-demo') === d); });
+    lessonRows.forEach(function (r) { r.hidden = r.getAttribute('data-demo') !== d || r.children.length < 2; });
+  }
+  function firstOf(demo) { for (var i = 0; i < CFG.tabs.length; i++) if (CFG.tabs[i].demo === demo) return i; return 0; }
+  function fromHash() {
+    var h = hashTab(), idx = -1;
+    CFG.tabs.forEach(function (t, i) { if (t.id === h) idx = i; });
+    activate(idx >= 0 ? idx : firstOf(h) );
+  }
   tabEls.forEach(function (t, i) { t.addEventListener('click', function () { activate(i); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
+  demoEls.forEach(function (b) { b.addEventListener('click', function () { var i = firstOf(b.getAttribute('data-demo')); activate(i); history.replaceState(null, '', i === 0 ? location.pathname + location.search : '#' + CFG.tabs[i].id); }); });
   window.addEventListener('hashchange', function () {
     fromHash();
     var row = document.querySelector('.sim-tabs-row');            // "Next:" links live at the bottom

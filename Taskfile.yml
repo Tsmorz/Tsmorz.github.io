@@ -4,11 +4,19 @@
 # This is the single source of truth for the build and the CI checks: both
 # `script/check` and .github/workflows/pages.yml delegate here, so the JS and
 # link checks are defined exactly once. No build step for CSS/JS.
+#
+# Everyday use:
+#   task serve                       edit with live reload at http://127.0.0.1:4000
+#   task serve -- --port 4001        anything after `--` goes to jekyll
+#   task check:fast                  quick data + JS-maths checks, no build (seconds)
+#   task check                       everything CI runs; run before pushing
+#   task build BASEURL=/subpath      build for a site that lives under a subpath
 
 version: "3"
 
 vars:
   SITE_DIR: _site
+  BASEURL: ""   # override on the command line: task build BASEURL=/subpath
 
 tasks:
   default:
@@ -66,6 +74,11 @@ tasks:
     cmds:
       - script/test-swingup
 
+  check:fit:
+    desc: Check the CSV, model fit and LQR behind /controls/fit/ (Node, no build)
+    cmds:
+      - script/test-fit
+
   check:lab:
     desc: Check the lab template (assets/js/lab/) and every _data/labs page (Node, no build)
     cmds:
@@ -76,12 +89,18 @@ tasks:
     cmds:
       - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt
 
-  check:
-    desc: Build, verify JS is referenced, and check internal links — the CI check
+  check:fast:
+    desc: "Quick checks, no build: _data content, swing-up port, lab maths, CSV fit"
     cmds:
       - task: check:data
       - task: check:swingup
       - task: check:lab
+      - task: check:fit
+
+  check:
+    desc: "Everything CI runs: quick checks, then build, JS references, internal links"
+    cmds:
+      - task: check:fast
       - task: build
       - task: check:js
       - task: check:links

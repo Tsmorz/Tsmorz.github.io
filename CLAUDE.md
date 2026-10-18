@@ -42,9 +42,10 @@ assets/css/main.css      hand-written, token-based, no build step
 assets/js/site.js        theme toggle, tag filter
 assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab and swingup.js (load first)
 assets/js/swingup.js     /controls/swingup/: double cart-pole + goal-conditioned TQC policy in vanilla JS
-assets/js/lab/           the lab template behind every /controls/ page except swingup
+assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax + Bu, design a discrete LQR; FitCore has no DOM
+assets/js/lab/           the lab template behind /controls/
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
-script/                  serve, check, test-data, test-swingup, test-lab, train-verify-net
+script/                  serve, check, test-data, test-swingup, test-lab, test-fit, train-verify-net
 ```
 
 ### Conventions
@@ -71,20 +72,23 @@ The dynamics are a line-for-line port of `n_cartpole/env/dynamics.py`. The ~2 MB
 visitor first picks TQC. `script/test-swingup` guards the port (JS vs torch actions, JS vs Python trajectory,
 closed-loop runs of every transition); if it fails after a re-export, the port has drifted.
 
-### The learning path
+### The fit page (`/controls/fit/`)
 
-`_data/learning_path.yml` lists the controls pages in reading order with `needs` (step ids).
-`_includes/learning-path.html` draws it as a strip on the swing-up page; `_includes/lab.html` uses it for
-"You'll need:" on a page's first tab and "Next:" on its last. **A new controls page must be added there.**
+`fit.md` + `assets/js/fit.js`. The visitor uploads a CSV (header, a time column in seconds, ms, µs or timestamps,
+states, inputs; roles are guessed and can be changed), `FitCore` resamples an uneven time base, fits A and B by
+least squares (optionally after subtracting the mean), and `dlqr` solves the Riccati recursion on that model. The
+page plots data against one-step predictions, the z-plane poles, and the model with and without LQR. It is its own
+page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
+(`task check:fit`, in `check:fast`) guards the parser, the fit and the LQR.
 
-### The lab template (`/controls/` and `/controls/stability|sysid|estimation|discrete|design|modern/`)
+### The lab template (`/controls/`)
 
-These pages share one engine; a page differs only in its data. **To add or change one, edit
-`_data/labs/<page>.yml`, not code.** `<page>.md` has `lab: <page>`, a title, a short intro, and
-`{% include lab.html %}`. The YAML has `labs` (a plant from `lab-plants.js`, a controller, and optional
-`params`, `model`, `gains`, `refs`, `cbf`, `net`, `requirements`, `sysid`, `limit`) and `tabs` (`lab`, a view
-for each of `top`, `row1`, `row2`, the panel `controls`, and a short `note` in HTML with root-relative links).
-Tabs may share a lab. Each tab deep-links as `#<tab id>`, and hidden tabs skip physics and drawing.
+`controls.md` includes `lab.html`, which renders `_data/labs/controls.yml`. **To add or change a lesson, edit
+that YAML, not code.** It has `labs` (a plant from `lab-plants.js`, a controller, and optional `params`, `model`,
+`gains`, `refs`, `cbf`, `net`, `requirements`, `sysid`, `limit`), `demos` (the buttons on top: Intro, Tilt Table,
+Flight Sim, Cart-Pole) and `tabs`, the lessons. A lesson names its `demo` and `lab`, a view for each of `top`,
+`row1`, `row2`, the panel `controls`, and its ARIVA fields. Lessons may share a lab. The URL hash is a lesson id
+(`#arx`) or a demo id (`#flight`, which opens its first lesson); hidden lessons skip physics and drawing.
 
 - `lab-plants.js`: one entry per sim (mass-spring, tilt table, cart-pole, aircraft): constants, `deriv`,
   limits, actuator slew, failure `status`, supported controllers, what a Manual drag means, state-plot lanes,
@@ -98,15 +102,21 @@ Tabs may share a lab. Each tab deep-links as `#<tab id>`, and hidden tabs skip p
 
 Other notes:
 
-- **Estimation** uses the cart-pole's `lqg` controller (measures x and θ only, LQR on an estimate by
-  differencing or a Kalman filter); margins, Nyquist and poles include the filter.
+- **The cart-pole demo** uses the `lqg` controller (measures x and θ only, LQR on an estimate by differencing
+  or a Kalman filter); margins, Nyquist and poles include the filter. Every /controls/ demo has a View toggle
+  (Terms, Bode, Nyquist, Poles), a margins readout and an ω probe.
 - **Discretisation:** a lab's `ctrlPeriod` runs the controller once per period with a zero-order hold.
-- **System ID** keeps two methods, least squares (ARX) and Ho–Kalman (ERA), plus a tab to record your own
+- **System ID** (Intro demo lessons) keeps two methods, least squares (ARX) and Ho–Kalman (ERA), plus a tab to record your own
   data. Both read m, c, k at order 2 or more (the slowest oscillating pole pair plus the DC gain, flagged
   `reduced` above order 2); order 1 reads nothing.
 - The ω slider on closed-loop tabs has a "Shake the sim" toggle that adds a sine at ω to input 0.
-- `predict: {question, options, answer (0-based), try, explain}` on any tab adds a "Predict first" card.
-- `script/test-data` checks every prediction is well formed.
+- **Teaching structure (ARIVA):** every lesson runs through five labelled steps: **Arrive** (`goal`, plus
+  `minutes`), **Reactivate** (`recall`, one line tying back to an earlier lesson, and `predict: {question,
+  options, answer (0-based), try, explain}`, a card shown before the sim whose answer opens the note), **Inform**
+  (`note`, folded; `maths` is an optional folded "Show the maths"), **Process** (`tasks`, tick-off steps) and
+  **Evaluate** (`check`, one question or a list: `{question, options, answer, explain, why}` where `why` has one
+  line per option saying why a wrong one is wrong; and `recap`, "You can now ..."). `script/test-data` requires
+  goal, predict, note, tasks, check and a valid `demo` on every lesson.
 - `script/test-lab` (`task check:lab`, part of `task check`) checks the plants, textbook margins, Nyquist vs
   eigenvalues, pole placement, the filter, network bounds, identification, and that every `_data/labs` page
   names only plants, views and controls that exist. `assets/models/verify-net.json` is written by
