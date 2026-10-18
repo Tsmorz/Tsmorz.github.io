@@ -649,6 +649,10 @@ button, input, select, textarea { font-family: var(--mono); }
 }
 .goal-icon svg { display: block; width: 28px; height: 46px; }
 .goal-label { font-family: var(--mono); font-weight: 700; font-size: .88rem; }
+.su-net-wrap { margin-top: 1.5rem; }
+.su-net-title { margin: 0 0 .6rem; font-size: 1rem; }
+.su-net { display: block; width: 100%; height: 300px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg-soft); }
+@media (max-width: 720px) { .su-net { height: 220px; } }
 .su-reset-row { display: flex; gap: .4rem; }
 .su-reset-row .sim-btn { padding: .45rem .3rem; font-size: .8rem; white-space: nowrap; }
 .su-layout .sim-panel { gap: .8rem; }

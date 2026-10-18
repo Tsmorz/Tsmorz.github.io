@@ -190,6 +190,9 @@
       var H = net.hidden, E = H * net.expand, D = net.obs_dim, eps = net.ln_eps;
       var fmax = meta.physics.force_max;
       var h = new Float32Array(H), t = new Float32Array(H), u = new Float32Array(E);
+      // Copy of every stage from the last act() call, for the network diagram.
+      var trace = { obs: new Float32Array(D), h: [new Float32Array(H)], u: [], out: 0, force: 0 };
+      for (var q = 0; q < net.blocks; q++) { trace.u.push(new Float32Array(E)); trace.h.push(new Float32Array(H)); }
 
       function linear(W, b, x, inDim, outDim, out) {
         for (var o = 0; o < outDim; o++) {
@@ -209,6 +212,7 @@
 
       function act(obs) {
         linear(T.in_w, T.in_b, obs, D, H, h);
+        trace.obs.set(obs); trace.h[0].set(h);
         for (var bi = 0; bi < net.blocks; bi++) {
           var P = 'b' + bi + '_';
           layerNorm(h, T[P + 'ln_w'], T[P + 'ln_b'], t);
@@ -220,14 +224,16 @@
             for (var j = 0; j < E; j++) s += W2[row + j] * u[j];
             h[o] += s;
           }
+          trace.u[bi].set(u); trace.h[bi + 1].set(h);
         }
         layerNorm(h, T.final_ln_w, T.final_ln_b, t);
         var mean = T.out_b[0];
         for (var k = 0; k < H; k++) mean += T.out_w[k] * t[k];
-        return Math.tanh(mean) * fmax;
+        trace.out = mean; trace.force = Math.tanh(mean) * fmax;
+        return trace.force;
       }
 
-      return { act: act };
+      return { act: act, trace: trace };
     }
 
     return {
@@ -813,6 +819,131 @@
     }
   }
 
+
+  /* ---- Network diagram: the SimBa actor, with the live activations ---- */
+  var netCanvas = document.getElementById('su-net');
+  var OBS_LABELS = ['x', 'ẋ', 'cos θ₁', 'sin θ₁', 'θ̇₁', 'cos θ₂', 'sin θ₂', 'θ̇₂', 'cos goal₁', 'cos goal₂'];
+  var OBS_SCALE = [1, 2, 1, 1, 10, 1, 1, 10, 1, 1];
+  var rgbCache = {};
+  function rgb(name) {
+    var c = cssVar(name);
+    if (!rgbCache[c]) {
+      var m = /^#([0-9a-f]{6})$/i.exec(c.trim()), n = m ? parseInt(m[1], 16) : 0x888888;
+      rgbCache[c] = [n >> 16, (n >> 8) & 255, n & 255];
+    }
+    return rgbCache[c];
+  }
+  function mix(a, b, f) {
+    return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * f) + ',' + Math.round(a[1] + (b[1] - a[1]) * f) + ',' +
+      Math.round(a[2] + (b[2] - a[2]) * f) + ')';
+  }
+
+  function drawNet() {
+    if (!netCanvas || !meta) return;
+    var c = sizeCanvas(netCanvas), ctx = c.ctx, W = c.W, H = c.H;
+    var bg = cssVar('--bg-soft'), text = cssVar('--text'), muted = cssVar('--text-muted');
+    var border = cssVar('--border-strong'), mono = cssVar('--mono'), font = cssVar('--font');
+    var neg = rgb('--nn-act-neg'), zero = rgb('--nn-act-zero'), pos = rgb('--nn-act-pos');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+
+    var net = meta.network, B = net.blocks, side = Math.round(Math.sqrt(net.hidden)), side2 = Math.round(Math.sqrt(net.hidden * net.expand));
+    if (!policy) {
+      ctx.fillStyle = muted; ctx.font = '13px ' + font;
+      ctx.fillText(policyLoading ? 'Loading the network…' : 'Pick the TQC network to load it and watch it think.', W / 2, H / 2);
+      return;
+    }
+    // While a human drives, show what the network would do from here.
+    if (mode !== 'tqc' && state) policy.act(Core.encodeObs(state, meta.n_links, meta.goals ? target : null));
+    var tr = policy.trace;
+
+    // Layout in design units (DW wide), scaled to fit.
+    var DW = 960, DH = 290, sc = Math.min(W / DW, H / DH);
+    ctx.save();
+    ctx.translate((W - DW * sc) / 2, (H - DH * sc) / 2);
+    ctx.scale(sc, sc);
+
+    var gridY = 70, cellH = 6, cellU = 4;          // 16 x 6 = 96 px; 32 x 4 = 128 px
+    var hs = side * cellH, us = side2 * cellU;
+    var x = 120, gap = 40;
+    var boxes = [];                                 // {x, y, size, kind}
+    function grid(vals, bx, by, n, cell, signed, label, sub) {
+      var m = 1e-6, i;
+      for (i = 0; i < vals.length; i++) m = Math.max(m, Math.abs(vals[i]));
+      for (i = 0; i < vals.length; i++) {
+        var f = vals[i] / m;
+        ctx.fillStyle = signed ? (f < 0 ? mix(zero, neg, -f) : mix(zero, pos, f)) : mix(zero, pos, Math.max(0, f));
+        ctx.fillRect(bx + (i % n) * cell, by + Math.floor(i / n) * cell, cell, cell);
+      }
+      ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.strokeRect(bx - .5, by - .5, n * cell + 1, n * cell + 1);
+      ctx.fillStyle = text; ctx.font = '600 12px ' + font;
+      ctx.fillText(label, bx + n * cell / 2, by + n * cell + 20);
+      ctx.fillStyle = muted; ctx.font = '11px ' + font;
+      ctx.fillText(sub, bx + n * cell / 2, by + n * cell + 35);
+    }
+    function arrow(x0, x1, y) {
+      ctx.strokeStyle = muted; ctx.fillStyle = muted; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x1 - 5, y - 3.5); ctx.lineTo(x1 - 5, y + 3.5); ctx.closePath(); ctx.fill();
+    }
+
+    // Inputs: ten labelled bars.
+    var rowH = 22, ix = 10, iy = 30;
+    ctx.font = '11px ' + mono;
+    for (var k = 0; k < tr.obs.length; k++) {
+      var cy = iy + k * rowH, v = clamp(tr.obs[k] / OBS_SCALE[k], -1, 1);
+      ctx.textAlign = 'right'; ctx.fillStyle = muted; ctx.fillText(OBS_LABELS[k], ix + 62, cy + 12);
+      ctx.fillStyle = mix(zero, zero, 0); ctx.fillRect(ix + 68, cy + 3, 40, 12);
+      ctx.fillStyle = v < 0 ? mix(zero, neg, 1) : mix(zero, pos, 1);
+      ctx.fillRect(ix + 88 + (v < 0 ? v * 20 : 0), cy + 3, Math.abs(v) * 20, 12);
+      ctx.fillStyle = border; ctx.fillRect(ix + 88, cy + 1, 1, 16);
+    }
+    ctx.textAlign = 'center'; ctx.fillStyle = text; ctx.font = '600 12px ' + font;
+    ctx.fillText('Input', ix + 60, iy + tr.obs.length * rowH + 14);
+    ctx.fillStyle = muted; ctx.font = '11px ' + font;
+    ctx.fillText(tr.obs.length + ' numbers', ix + 60, iy + tr.obs.length * rowH + 29);
+    var midY = gridY + hs / 2;
+    arrow(ix + 112, x - 4, midY);
+
+    // Embedding, then the residual blocks.
+    var hx = [];
+    grid(tr.h[0], x, gridY, side, cellH, true, 'Embed', net.hidden + ' units'); hx.push(x);
+    var cx = x + hs;
+    for (var b = 0; b < B; b++) {
+      arrow(cx + 4, cx + gap - 4, midY);
+      var ux = cx + gap, uy = gridY - (us - hs) / 2;
+      grid(tr.u[b], ux, uy, side2, cellU, false, 'Block ' + (b + 1) + ' · ReLU', net.hidden * net.expand + ' units');
+      arrow(ux + us + 4, ux + us + gap - 4, midY);
+      var hx2 = ux + us + gap;
+      grid(tr.h[b + 1], hx2, gridY, side, cellH, true, 'Sum', 'h + fc2(…)');
+      // The skip connection: the embedding bypasses the block.
+      ctx.strokeStyle = muted; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+      // Offset the ends so one block's skip doesn't run on top of the next.
+      var sx0 = cx - hs / 2 + (b > 0 ? 14 : 0), sx1 = hx2 + hs / 2 - (b < B - 1 ? 14 : 0), top = gridY - 14 - (us - hs) / 2;
+      ctx.beginPath(); ctx.moveTo(sx0, gridY - 2); ctx.lineTo(sx0, top); ctx.lineTo(sx1, top); ctx.lineTo(sx1, gridY - 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(sx1, gridY - 1); ctx.lineTo(sx1 - 3.5, gridY - 7); ctx.lineTo(sx1 + 3.5, gridY - 7); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = muted; ctx.font = '11px ' + font; ctx.textAlign = 'center';
+      ctx.fillText('skip', (sx0 + sx1) / 2, top - 4);
+      cx = hx2 + hs;
+    }
+    arrow(cx + 4, cx + gap - 4, midY);
+
+    // Output: one number, squashed to a force.
+    var ox = cx + gap + 8, fmax = meta.physics.force_max, f = tr.force / fmax;
+    ctx.fillStyle = mix(zero, zero, 0); ctx.fillRect(ox, midY - 48, 16, 96);
+    ctx.fillStyle = f < 0 ? mix(zero, neg, 1) : mix(zero, pos, 1);
+    ctx.fillRect(ox, f < 0 ? midY : midY + f * 48, 16, Math.abs(f) * 48);
+    ctx.fillStyle = border; ctx.fillRect(ox - 3, midY, 22, 1);
+    ctx.textAlign = 'left'; ctx.fillStyle = text; ctx.font = '600 13px ' + mono;
+    ctx.fillText(tr.force.toFixed(1) + ' N', ox + 26, midY + 4);
+    ctx.textAlign = 'center'; ctx.font = '600 12px ' + font;
+    ctx.fillText('Force', ox + 8, gridY + hs + 20);
+    ctx.fillStyle = muted; ctx.font = '11px ' + font;
+    ctx.fillText('tanh · ' + fmax + ' N', ox + 8, gridY + hs + 35);
+    ctx.restore();
+  }
+
   /* ---- Loop: fixed 100 Hz physics inside requestAnimationFrame ---- */
   var lastT = null, accum = 0;
   function frame(now) {
@@ -829,6 +960,7 @@
     lastT = now;
     drawScene();
     drawPlot();
+    drawNet();
     requestAnimationFrame(frame);
   }
   document.addEventListener('visibilitychange', function () { lastT = null; });

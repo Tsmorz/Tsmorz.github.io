@@ -91,6 +91,18 @@ permalink: /controls/swingup/
     </div>
   </div>
 
+  <div class="su-net-wrap">
+    <h3 class="su-net-title">Inside the network</h3>
+    <canvas class="su-net" id="su-net" aria-label="Diagram of the policy network with live activations: ten inputs, a 256-unit embedding, two residual blocks of 1024 ReLU units each, and one output force."></canvas>
+    <p class="eqn-note">
+      Each square is one neuron, violet when positive and red when negative. The ten inputs feed a
+      256-unit embedding, then two residual blocks (each widens to 1024 ReLU units and adds its
+      result back through the skip), and a single number comes out. <code>tanh</code> squashes it
+      to a force of at most 20&nbsp;N. In Manual it shows what the network would do from where you
+      have left the poles.
+    </p>
+  </div>
+
   <div class="demo-note">
     <h4 class="demo-note-title">About this demo</h4>
     <p>
