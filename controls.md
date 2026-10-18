@@ -8,9 +8,8 @@ lab: controls
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
   <p class="page-sub controls-intro">
-    Four demos, each with a row of lessons: tune a <strong>PID</strong> on a mass-spring, a tilt table and an
-    aircraft, or an <strong>LQR</strong> on a cart-pole, then fit a model, sample it, design for requirements,
-    keep it safe, and verify it. Every lesson goes arrive, predict, read, try, check. Past what these can do,
+    One problem, taken all the way through: a mass on a spring. Each lesson follows the same five steps (arrive, reactivate, inform,
+    process, evaluate), and the same steps are then repeated on a tilt table, an aircraft and a cart-pole. Past what these can do,
     <a href="{{ '/controls/swingup/' | relative_url }}">swing up a double pendulum</a>, or
     <a href="{{ '/controls/fit/' | relative_url }}">upload your own recording</a> to fit a model and design an LQR for it.
   </p>

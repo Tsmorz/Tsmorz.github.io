@@ -172,7 +172,7 @@ pre code { background: none; border: 0; padding: 0; }
   flex-shrink: 0;
 }
 .nav-brand:hover { text-decoration: none; color: var(--accent); }
-.nav-brand img { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.nav-brand img { width: 32px; height: 32px; border-radius: 3px; object-fit: cover; flex-shrink: 0; outline: 1px solid var(--lav); outline-offset: 2px; }
 
 .nav-links {
   display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0;
@@ -470,6 +470,9 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .nn-legend-txt {
   font-size: .78rem; color: var(--text-muted); margin-left: .1rem;
 }
+
+/* Type system: Fraunces for h1/h2, Inter for prose, JetBrains Mono for every control and label (nav, tabs, buttons, tags, inputs). Buttons don't inherit fonts by default, so set it here. */
+button, input, select, textarea { font-family: var(--mono); }
 
 /* Slider group: name + value on top; slider with its ± range box on one line. */
 .pid-group {

@@ -69,8 +69,16 @@
     controllers: {
       pid: { label: 'PID', channels: [{ type: 'pid', input: 0, out: 0, sign: 1, gains: { kp: 40, ki: 5, kd: 6 },
              ranges: { kp: [-50, 50], ki: [-20, 20], kd: [-10, 10] } }] },
+      // State feedback on position and velocity (LQR with Q = diag(10, 1), R = 0.1; u = K x, so K is negative).
+      lqr: { label: 'LQR', channels: [{ type: 'sf', input: 0, rows: [0, 1], names: ['kx', 'kv'], gains: { kx: -6.8, kv: -4.5 },
+             ranges: { kx: [-20, 20], kv: [-20, 20] } }] },
+      // The same LQR on an estimate: only the position is measured; the velocity is differenced or Kalman-filtered.
+      lqg: { label: 'LQR', channels: [{ type: 'obs', input: 0, rows: [0, 1], names: ['kx', 'kv'], meas: [0], rates: [[0, 1]], gains: { kx: -6.8, kv: -4.5 },
+             ranges: { kx: [-20, 20], kv: [-20, 20] } }] },
       open: { label: 'none', channels: [], open: { input: 0, out: 0 } }
     },
+    // What the estimator view plots: measured or estimated vs true, and which lane is "the rate" for the error readout.
+    est: { rate: 1, unit: 'm/s', lanes: [{ label: 'Position x (m): measured vs true', idx: 0, scale: 1, measured: true }, { label: 'Velocity ẋ (m/s): estimate vs true', idx: 1, scale: 1 }] },
     refs: [{ type: 'wave', amp: 1, omega: 0.5, label: 'x', unit: 'm', idx: 0 }],
     states: [{ label: 'x (m)', f: function (x) { return x[0]; } }, { label: 'ẋ (m/s)', f: function (x) { return x[1]; } }],
     contribUnit: 'F (N)', contribScale: 1,
@@ -90,13 +98,6 @@
       var massY = H / 2 + sim.x[0] * scale, massTop = massY - massH / 2, refNow = rv(t), refY = H / 2 + refNow * scale;
       var springX = cx - 13, damperX = cx + 14;
       lab.view = { mid: H / 2, scale: scale };
-      if (lab.stops) {                                   // hard stops (Modern: safety filter)
-        [1, -1].forEach(function (sg) {
-          var sy = H / 2 + sg * (lab.stops * scale + massH / 2);
-          ctx.fillStyle = withAlpha(col.bad, 0.25); ctx.fillRect(cx - 60, sg > 0 ? sy : sy - 8, 120, 8);
-          ctx.fillStyle = col.bad; ctx.fillRect(cx - 60, sy - 1, 120, 2.5);
-        });
-      }
       // Reference path: faint dashed future ahead, fading tail behind, a soft dot now.
       var LOOK = 8, pxPerSec = Math.max(20, (W - 16 - cx) / LOOK);
       var refPy = function (tt) { return H / 2 + rv(tt) * scale; };
@@ -136,7 +137,7 @@
         ctx.beginPath(); ctx.moveTo(ax, massY); ctx.lineTo(ax, ay1 - dir * 5); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(ax, ay1); ctx.lineTo(ax - 5, ay1 - dir * 7); ctx.lineTo(ax + 5, ay1 - dir * 7); ctx.closePath(); ctx.fill();
       }
-      var w = who(lab, lab.shake ? 'Shaken by a sine-wave force' : 'PID tracking');
+      var w = who(lab, lab.shake ? 'Shaken by a sine-wave force' : lab.controller.label + ' tracking');
       statusLine(ctx, w === null ? 'Manual - drag the mass' : w === 'none' ? 'No control - raise Kp' : w, w === 'none' ? muted : accent, 't = ' + t.toFixed(1) + ' s', col);
       stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], decimals: 2, unit: 'm' }, { label: 'ẋ', value: sim.x[1], decimals: 2, unit: 'm/s' }]
         .concat(lab.replay ? [] : [{ label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, decimals: 2, unit: lab.shake ? 'rad/s' : 'm' }])
@@ -234,6 +235,8 @@
              gains: { kx: 3.1, kv: 5.9, kth: 43.5, kw: 18.1 },
              ranges: { kx: [-20, 20], kv: [-20, 20], kth: [-100, 100], kw: [-40, 40] } }] }
     },
+    est: { rate: 1, unit: '°/s', lanes: [{ label: 'Pole angle θ (°): measured vs true', idx: 2, scale: 180 / Math.PI, measured: true },
+      { label: 'Pole rate θ̇ (°/s): estimate vs true', idx: 3, scale: 180 / Math.PI }, { label: 'Cart velocity ẋ (m/s): estimate vs true', idx: 1, scale: 1 }] },
     refs: [{ type: 'wave', amp: 1, omega: 2 * Math.PI / 12, label: 'x', unit: 'm', idx: 0 }],
     states: [{ label: 'x (m)', f: function (x) { return x[0]; } }, { label: 'ẋ (m/s)', f: function (x) { return x[1]; } },
              { label: 'θ (°)', f: function (x) { return deg(x[2]); } }, { label: 'θ̇ (°/s)', f: function (x) { return deg(x[3]); } }],

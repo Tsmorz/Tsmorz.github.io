@@ -85,17 +85,23 @@ LQR. It is its own page, not a lab lesson, so it has a goal, an explanation and 
 ### The lab template (`/controls/`)
 
 `controls.md` includes `lab.html`, which renders `_data/labs/controls.yml`. **To add or change a lesson, edit
-that YAML, not code.** It has `labs` (a plant from `lab-plants.js`, a controller, and optional `params`, `model`,
-`gains`, `refs`, `cbf`, `net`, `requirements`, `sysid`, `limit`), `demos` (the buttons on top: Intro, Tilt Table,
-Flight Sim, Cart-Pole) and `tabs`, the lessons. A lesson names its `demo` and `lab`, a view for each of `top`,
-`row1`, `row2`, the panel `controls`, and its ARIVA fields. Lessons may share a lab. The URL hash is a lesson id
-(`#arx`) or a demo id (`#flight`, which opens its first lesson); hidden lessons skip physics and drawing.
+that YAML, not code.** The file is organised around one **running problem**: a mass on a spring. `problem` is its
+statement (shown in the course map at the top), `demos` are the buttons (the mass first, then the `extend: true`
+plants: tilt table, aircraft, cart-pole), and `tabs` are the lessons, in teaching order. A lesson names its `demo` and
+`lab`, a view for each of `top`, `row1`, `row2`, the panel `controls`, and its ARIVA fields. `labs` holds the plants
+(a plant from `lab-plants.js`, a controller, and optional `params`, `model`, `gains`, `refs`, `net`,
+`requirements`, `sysid`, `limit`, `estimator`); lessons may share a lab. The URL hash is a lesson id (`#arx`) or a demo
+id (`#flight`, which opens its first lesson); hidden lessons skip physics and drawing.
+
+**The rule for new content:** teach each idea on the mass on a spring first, as a lesson in the first row, then say
+what changes on the other plants in their lessons (`needs` and `recall` point back to the mass lesson). Do not add an
+idea only to a side plant.
 
 - `lab-plants.js`: one entry per sim (mass-spring, tilt table, cart-pole, aircraft): constants, `deriv`,
   limits, actuator slew, failure `status`, supported controllers, what a Manual drag means, state-plot lanes,
   and `draw`. The aircraft's trim is solved numerically.
 - `lab-core.js` (no DOM): linearisation, the closed loop as one state-space model (so loop gain, root locus
-  and pole placement are linear algebra), margins, Nyquist counting with delay, Padé poles, the CBF filter,
+  and pole placement are linear algebra), margins, Nyquist counting with delay, Padé poles,
   interval bounds on the small net, ARX identification (instrumental variables), Ho–Kalman, and the simulator.
 - `lab.js`: the views and panel controls, listed at the top of the file. The /controls/ demos start in Manual
   and track a Wave | Step reference; noise goes on measurements, never the force.
@@ -103,21 +109,27 @@ Flight Sim, Cart-Pole) and `tabs`, the lessons. A lesson names its `demo` and `l
 
 Other notes:
 
-- **The cart-pole demo** uses the `lqg` controller (measures x and θ only, LQR on an estimate by differencing
-  or a Kalman filter); margins, Nyquist and poles include the filter. Every /controls/ demo has a View toggle
+- **Estimation:** the mass ("Estimate the speed") and the cart-pole use an `lqg` controller (position and angle
+  measured only, LQR on an estimate by differencing or a Kalman filter); each plant's `est` block says which lanes
+  the estimator view draws; margins, Nyquist and poles include the filter. Every /controls/ demo has a View toggle
   (Terms, Bode, Nyquist, Poles), a margins readout and an ω probe.
 - **Discretisation:** a lab's `ctrlPeriod` runs the controller once per period with a zero-order hold.
-- **System ID** (Intro demo lessons) keeps two methods, least squares (ARX) and Ho–Kalman (ERA), plus a tab to record your own
+- **System ID** (mass-on-a-spring lessons) keeps two methods, least squares (ARX) and Ho–Kalman (ERA), plus a tab to record your own
   data. Both read m, c, k at order 2 or more (the slowest oscillating pole pair plus the DC gain, flagged
   `reduced` above order 2); order 1 reads nothing.
+- **Unseen states:** the "Change of basis" lesson (mass) draws the same motion in coordinates `x̃ = T x` (views
+  `basis-*`, control `basis`). The aircraft and cart-pole "Unseen ..." lessons use `LabCore.unseen`: a multi-output
+  Ho–Kalman (`eraMimo`) on the linearised plant measured through `unseen.outs`, then a one-off calibration of a hard-to-measure
+  state (`unseen.targets`) against the realized states, checked on a fresh input (views `unseen-*`, control `unseen`;
+  `amp` and `N` keep the open-loop runs small). `script/test-lab` section 4b guards it.
 - The ω slider on closed-loop tabs has a "Shake the sim" toggle that adds a sine at ω to input 0.
 - **Teaching structure (ARIVA):** every lesson runs through five labelled steps: **Arrive** (`goal`, plus
-  `minutes`), **Reactivate** (`recall`, one line tying back to an earlier lesson, and `predict: {question,
+  `minutes`), **Reactivate** (`needs`, the lessons it builds on, shown as links; `recall`, one line tying back; and `predict: {question,
   options, answer (0-based), try, explain}`, a card shown before the sim whose answer opens the note), **Inform**
   (`note`, folded; `maths` is an optional folded "Show the maths"), **Process** (`tasks`, tick-off steps) and
   **Evaluate** (`check`, one question or a list: `{question, options, answer, explain, why}` where `why` has one
   line per option saying why a wrong one is wrong; and `recap`, "You can now ..."). `script/test-data` requires
-  goal, predict, note, tasks, check and a valid `demo` on every lesson.
+  goal, recall, predict, note, tasks, check, recap, a valid `demo` and valid `needs` on every lesson.
 - `script/test-lab` (`task check:lab`, part of `task check`) checks the plants, textbook margins, Nyquist vs
   eigenvalues, pole placement, the filter, network bounds, identification, and that every `_data/labs` page
   names only plants, views and controls that exist. `assets/models/verify-net.json` is written by

@@ -50,12 +50,12 @@ Content lives in `_data/` and a few pages, not in HTML.
 
 ### Editing a controls lesson
 
-Each demo (Intro, Tilt Table, Flight Sim, Cart-Pole) in `_data/labs/controls.yml` holds lessons. Every lesson follows the five ARIVA steps, and `task check:fast` fails if one is missing:
+`_data/labs/controls.yml` is one course: a running problem (a mass on a spring) taken through every idea, then the same steps on a tilt table, an aircraft and a cart-pole. Teach a new idea on the mass first, then add what changes on the other plants. Every lesson follows the five ARIVA steps, and `task check:fast` fails if one is missing:
 
 | Step | Field | What it is |
 | --- | --- | --- |
 | Arrive | `goal` | One sentence above the sim |
-| Reactivate | `recall`, `predict` | A line tying back to an earlier lesson, and a prediction card before the sim |
+| Reactivate | `needs`, `recall`, `predict` | The lessons it builds on (ids), a line tying back, and a prediction card before the sim |
 | Inform | `note` | A short, folded explanation (HTML); `maths` is an optional "Show the maths" |
 | Process | `tasks` | A numbered list of things to do in the sim |
 | Evaluate | `check`, `recap` | Closing multiple-choice questions (`why` explains each wrong answer) and a "You can now" line |

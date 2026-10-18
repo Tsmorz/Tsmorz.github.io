@@ -8,9 +8,25 @@
 {%- assign L = site.data.labs[page.lab] -%}
 {%- assign base_href = 'href="' | append: site.baseurl | append: '/' -%}
 <div class="wrap" style="padding-bottom:3rem">
+  {%- if L.problem %}
+  <details class="demo-note lab-course" open>
+    <summary><span class="lab-phase">Course map</span> The running problem</summary>
+    <p>{{ L.problem }}</p>
+    {%- for d in L.demos %}
+    <p class="lab-course-row"><strong>{% if d.extend %}Then, on {% endif %}{{ d.label }}:</strong>
+      {%- assign n = 0 -%}
+      {%- for t in L.tabs %}{% if t.demo == d.id %}{% assign n = n | plus: 1 %}
+      <a href="#{{ t.id }}">{% unless d.extend %}{{ n }}. {% endunless %}{{ t.label }}</a>{% unless forloop.last %}{% endunless %}
+      {%- endif %}{% endfor %}
+    </p>
+    {%- endfor %}
+  </details>
+  {%- endif %}
   <div class="sim-tabs-row">
     <div class="sim-tabs" role="tablist" aria-label="Demo selector">
+      {%- assign ext_shown = false -%}
       {%- for d in L.demos %}
+      {%- if d.extend and ext_shown == false %}{% assign ext_shown = true %}<span class="demo-sep">same steps on</span>{% endif %}
       <button class="demo-tab{% if forloop.first %} active{% endif %}" data-demo="{{ d.id }}" type="button">{{ d.label }}</button>
       {%- endfor %}
     </div>
@@ -31,7 +47,11 @@
     {%- comment -%} The tab's own anchor, so links like /controls/#cartpole (and html-proofer's hash check) find a target. {%- endcomment %}
     <span class="lab-anchor" id="{{ t.id }}"></span>
     <p class="lab-goal"><span class="lab-phase">1 &middot; Arrive</span> {{ t.goal }}{% if t.minutes %} <span class="lab-time">about {{ t.minutes }} min</span>{% endif %}</p>
-    {%- if t.recall %}<p class="lab-recall"><span class="lab-phase">2 &middot; Reactivate</span> {{ t.recall }}</p>{% endif %}
+    {%- if t.recall or t.needs.size > 0 %}
+    <p class="lab-recall"><span class="lab-phase">2 &middot; Reactivate</span> {{ t.recall }}
+      {%- if t.needs.size > 0 %} <span class="lab-needs">Builds on:
+        {%- for nid in t.needs %}{% assign nt = L.tabs | where: 'id', nid | first %} <a href="#{{ nid }}">{{ nt.label }}</a>{% unless forloop.last %},{% endunless %}{% endfor %}</span>{% endif %}</p>
+    {%- endif %}
     <div class="lab-learn lab-predict-slot"></div>
     {%- if t.note %}
     <details class="demo-note lab-inform"{% unless t.predict %} open{% endunless %}>
@@ -100,6 +120,12 @@
 .range-row{display:flex;align-items:center;gap:.25rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
 .range-input{width:3.6rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
+.lab-course{margin-bottom:1.25rem}
+.lab-course>summary{cursor:pointer;font-weight:600;font-size:.92rem}
+.lab-course-row{margin:.35rem 0;font-size:.88rem}
+.lab-course-row a{margin-right:.7rem;white-space:nowrap}
+.lab-needs{font-family:var(--mono);font-size:.76rem;margin-left:.3rem}
+.demo-sep{align-self:center;font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);margin:0 .2rem 0 .6rem}
 .lab-recap{margin:1rem 0 0;font-size:.9rem;color:var(--text-muted)}
 .lab-recall{margin:0 0 .8rem;font-size:.9rem;color:var(--text-muted)}
 .lab-time{font:400 .72rem var(--mono);color:var(--text-muted);margin-left:.4rem}
@@ -121,7 +147,7 @@
 .lab-card-title{margin:0 0 .5rem;font-size:.95rem;display:flex;justify-content:space-between;align-items:baseline;gap:.5rem}
 .lab-q{margin:0 0 .6rem;font-size:.92rem}
 .lab-opts{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem}
-.lab-opt{text-align:left;font:inherit;font-size:.88rem;padding:.45rem .7rem;border:1px solid var(--border-strong);border-radius:6px;background:var(--bg);color:var(--text);cursor:pointer}
+.lab-opt{text-align:left;font-family:var(--font);font-size:.88rem;padding:.45rem .7rem;border:1px solid var(--border-strong);border-radius:6px;background:var(--bg);color:var(--text);cursor:pointer}
 .lab-opt:hover{border-color:var(--accent)}
 .lab-opt.picked{border-color:var(--accent);background:var(--accent-soft)}
 .lab-opt.right{border-color:var(--viz-1);box-shadow:inset 3px 0 0 var(--viz-1)}

@@ -6,7 +6,7 @@
 //   2. loops: the textbook margins (PID 53°, LQR ≥ 60° and −6 dB, ∞ up); Nyquist agrees with
 //      closed-loop eigenvalues for random gains; the delay margin is where it breaks
 //   3. pole placement round-trips; Padé poles agree with Nyquist away from the edge
-//   4. safety filter keeps the mass inside its stops; network bounds are sound
+//   4. network bounds are sound
 //   5. system identification recovers the mass-spring-damper from noisy data
 //   6. every _data/labs/*.yml names plants, controllers, views and controls that exist
 // Pure Node, no dependencies, no build.
@@ -89,18 +89,8 @@ console.log('3. poles');
   check(dis === 0, `Padé poles agree with Nyquist on stability away from the margin (${dis} disagreements)`);
 }
 
-console.log('4. safety filter and verification');
+console.log('4. network verification');
 {
-  let worst = 0;
-  for (let n = 0; n < 20; n++) {
-    const plant = P.msd, ctrl = JSON.parse(JSON.stringify(plant.controllers.pid));
-    const lab = { p: Object.assign({}, plant.params), controller: ctrl, gains: [{ kp: 20 + 30 * rand(), ki: 5 * rand(), kd: 2 + 6 * rand() }],
-      refs: [{ type: rand() < 0.5 ? 'wave' : 'step', amp: 1.5 + rand(), omega: 0.5 }], noise: 0, delay: 0,
-      cbf: { on: true, input: 0, pos: 0, vel: 1, lim: 1.2, lambda: 0.5 + 4 * rand() } };
-    const sim = C.createSim(plant, lab, rand);
-    for (let k = 0; k < 3000; k++) { sim.step(); worst = Math.max(worst, Math.abs(sim.x[0])); }
-  }
-  check(worst <= 1.2 + 1e-3, `filter keeps the mass inside ±1.2 m with a reference up to 2.5 m (worst ${worst.toFixed(4)} m)`);
   const net = JSON.parse(fs.readFileSync(path.join(root, 'assets/models/verify-net.json'), 'utf8'));
   let unsound = 0, order = 0;
   for (let k = 0; k < 200; k++) {
@@ -111,6 +101,28 @@ console.log('4. safety filter and verification');
   }
   check(unsound === 0, `network bounds contain every sampled output (${unsound} outside)`);
   check(order === 0, `no counterexample ever beats a proof (${order} cases)`);
+}
+
+console.log('4b. unseen states');
+{
+  [['cart-pole', P.cartpole, [0, 2], 4, [1, 3]], ['aircraft', P.flight, [0, 4], 5, [1, 2, 3]]].forEach(([nm, pl, outs, ord, tg]) => {
+    const r = C.unseen(pl, Object.assign({}, pl.params), { outs, target: tg[0], order: ord, noise: 0, seed: 3 });
+    check(r.S[ord - 1] / r.S[0] > 1e-6 && r.S[ord] / r.S[0] < 1e-9, `${nm}: measuring ${outs.map((o) => pl.stateNames[o]).join(' and ')} reveals exactly ${ord} states (singular values ${r.S[ord - 1].toExponential(1)} then ${r.S[ord].toExponential(1)})`);
+    tg.forEach((t) => {
+      const q = C.unseen(pl, Object.assign({}, pl.params), { outs, target: t, order: ord, noise: 0, seed: 3 });
+      check(q.fit > 99.9, `${nm}: hidden ${pl.stateNames[t]} read from the realized states, fit ${q.fit.toFixed(2)}%`);
+    });
+    const nz = C.unseen(pl, Object.assign({}, pl.params), { outs, target: tg[0], order: ord, noise: 0.2, seed: 3 });
+    check(nz.fit > 60 && nz.fit < 99, `${nm}: 20% calibration noise costs accuracy but not the idea (fit ${nz.fit.toFixed(0)}%)`);
+  });
+}
+
+console.log('5b. comparing identification methods');
+{
+  const p = Object.assign({}, P.msd.params), clean = C.compareFits(P.msd, p, 0, 1, 2), noisy = C.compareFits(P.msd, p, 0.1, 1, 4), mean = (v) => v.reduce((a, b) => a + b, 0) / v.length;
+  check(Math.max(...clean.arx, ...clean.ss) < 1 && Math.max(...clean.era) < 8, `no noise: least squares ${Math.max(...clean.arx).toFixed(1)}% and state least squares ${Math.max(...clean.ss).toFixed(1)}%, Ho–Kalman ${Math.max(...clean.era).toFixed(1)}% worst error`);
+  check(mean(noisy.era) < mean(noisy.arx) / 2 && mean(noisy.era) < mean(noisy.ss) / 2, `10% noise: Ho–Kalman ${mean(noisy.era).toFixed(0)}% beats least squares ${mean(noisy.arx).toFixed(0)}% and state least squares ${mean(noisy.ss).toFixed(0)}%`);
+  check(noisy.ss[1] > 50, `state least squares on noisy states is biased in the damping (${noisy.ss[1].toFixed(0)}% off)`);
 }
 
 console.log('5. system identification');
@@ -204,8 +216,8 @@ console.log('8. discretisation');
 
 console.log('9. page data');
 {
-  const dir = path.join(root, '_data/labs'), views = ['samp-time', 'samp-fold', 'disc-z', 'disc-step', 'disc-bode', 'disc-loop', 'est-states', 'rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-result', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'cbf', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
-  const controls = ['sampling', 'discretize', 'ctrlrate', 'estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'cbf', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
+  const dir = path.join(root, '_data/labs'), views = ['samp-time', 'samp-fold', 'disc-z', 'disc-step', 'disc-bode', 'disc-loop', 'est-states', 'rec-data', 'rec-fit', 'id-era', 'id-replay', 'id-result', 'id-hidden', 'id-vs', 'basis-phase', 'basis-time', 'basis-matrices', 'unseen-map', 'unseen-fit', 'sim', 'time', 'states', 'contrib', 'analysis', 'bode', 'nyquist', 'poles', 'step', 'verify-map', 'verify-proof', 'mimo', 'sysid-replay', 'sysid-data', 'sysid-bode', 'checklist'];
+  const controls = ['basis', 'unseen', 'sampling', 'discretize', 'ctrlrate', 'estimator', 'record', 'idrun', 'mode', 'hint', 'score', 'reset', 'freq', 'view', 'channel', 'reference', 'gains', 'controller', 'delay', 'noise', 'limit', 'margins', 'verify', 'mimo', 'sysid', 'requirements', 'restart'];
   const src = fs.readFileSync(path.join(root, 'assets/js/lab/lab.js'), 'utf8');
   check(views.every((v) => src.includes("V['" + v + "']") || src.includes('V.' + v + ' =')), 'every view name is implemented in lab.js');
   const missing = controls.filter((c) => !src.includes('CTRL.' + c + ' =') && !new RegExp('var CTRL = \\{[^}]*\\b' + c + ':').test(src));
