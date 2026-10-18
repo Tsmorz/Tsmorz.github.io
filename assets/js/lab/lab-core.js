@@ -4,7 +4,6 @@
 //   • linearise the plant, build the closed loop as one state-space model
 //   • loop transfer functions, margins, Nyquist count, closed-loop poles, root locus,
 //     pole placement (drag a pole → gains)
-//   • a control-barrier-function filter on any position-like state
 //   • interval bounds on a small policy network
 //   • least-squares (ARX) system identification
 //   • a nonlinear simulator with delay, noise and actuator limits
@@ -368,21 +367,6 @@
     return out;
   }
 
-  /* ---------------- control barrier function on one position-like state ----------------
-     h = lim ∓ pos ≥ 0. pos has relative degree 2 (acc = a + b·u), so the filter keeps
-     ḧ + 2λḣ + λ²h ≥ 0, a pair of bounds on u; it sends the allowed u closest to the
-     requested one. Safe set drawn on the phase plane: |pos| ≤ lim and λ(lim − |pos|) ≥ ±vel. */
-  function cbfBounds(plant, p, x, uRest, cbf) {
-    var ci = cbf.input, u = uRest.slice(); u[ci] = 0;
-    var a = plant.deriv(x, u, p)[cbf.vel]; u[ci] = 1;
-    var b = plant.deriv(x, u, p)[cbf.vel] - a, L = cbf.lambda, pos = x[cbf.pos], vel = x[cbf.vel];
-    var hiAcc = L * L * (cbf.lim - pos) - 2 * L * vel, loAcc = -L * L * (cbf.lim + pos) - 2 * L * vel;
-    var lo = (loAcc - a) / b, hi = (hiAcc - a) / b;
-    if (b < 0) { var t = lo; lo = hi; hi = t; }
-    if (lo > hi) { var m = (lo + hi) / 2; lo = hi = m; }
-    return [lo, hi];
-  }
-
   /* ---------------- interval bounds on a small ReLU policy network ---------------- */
   function netForward(net, s) {
     var x = s;
@@ -628,6 +612,84 @@
     for (a = 0; a < n; a++) { B.push(sq[a] * Vr[0][a]); Cr.push(sq[a] * Ur[0][a]); }
     return { A: A, B: B, C: Cr, S: sv.S, H: H, n: n };
   }
+  // Ho–Kalman for several measured outputs: h[k] is the vector of outputs k+1 samples after a unit tap, so
+  // h[k] = C A^k B. The Hankel matrix stacks the outputs, so it is (rows·p) × rows; its SVD gives the order and the realization.
+  function eraMimo(h, p, rows, order) {
+    var nr = rows * p, nc = rows, H = zeros(nr, nc), H2 = zeros(nr, nc), i, j, a, b, o;
+    for (i = 0; i < rows; i++) for (j = 0; j < nc; j++) for (o = 0; o < p; o++) { H[i * p + o][j] = (h[i + j] || [])[o] || 0; H2[i * p + o][j] = (h[i + j + 1] || [])[o] || 0; }
+    var sv = svd(H), n = order, Ur = sv.U.map(function (r) { return r.slice(0, n); }), Vr = sv.V.map(function (r) { return r.slice(0, n); }), sq = sv.S.slice(0, n).map(Math.sqrt);
+    var A = zeros(n, n), B = [], Cm = zeros(p, n);
+    for (a = 0; a < n; a++) for (b = 0; b < n; b++) {
+      var sm = 0; for (i = 0; i < nr; i++) for (j = 0; j < nc; j++) sm += Ur[i][a] * H2[i][j] * Vr[j][b];
+      A[a][b] = sm / (sq[a] * sq[b]);
+    }
+    for (a = 0; a < n; a++) { B.push(sq[a] * Vr[0][a]); for (o = 0; o < p; o++) Cm[o][a] = sq[a] * Ur[o][a]; }
+    return { A: A, B: B, C: Cm, S: sv.S, n: n };
+  }
+  // x[k+1] = A x[k] + B u[k], x[0] = 0; returns the states x[0..N-1].
+  function simLin(A, B, u) {
+    var n = A.length, x = new Array(n).fill(0), out = [];
+    u.forEach(function (uk) { out.push(x); x = A.map(function (row, i) { var s2 = B[i] * uk; for (var q = 0; q < n; q++) s2 += row[q] * x[q]; return s2; }); });
+    return out;
+  }
+  // Weights w minimising |X w − Y|² (normal equations, Gaussian elimination, a whisper of ridge).
+  function lsqSolve(X, Y) {
+    var m = X[0].length, M = zeros(m, m), b = new Array(m).fill(0), a, c2, r;
+    X.forEach(function (row, t2) { for (a = 0; a < m; a++) { b[a] += row[a] * Y[t2]; for (c2 = 0; c2 < m; c2++) M[a][c2] += row[a] * row[c2]; } });
+    var tr = 0; for (a = 0; a < m; a++) tr += M[a][a]; for (a = 0; a < m; a++) M[a][a] += 1e-10 * tr / m;
+    var aug = M.map(function (rw, i2) { return rw.concat([b[i2]]); });
+    for (a = 0; a < m; a++) { var pv = a; for (r = a + 1; r < m; r++) if (Math.abs(aug[r][a]) > Math.abs(aug[pv][a])) pv = r; var t3 = aug[a]; aug[a] = aug[pv]; aug[pv] = t3;
+      for (r = a + 1; r < m; r++) { var f = aug[r][a] / aug[a][a]; for (c2 = a; c2 <= m; c2++) aug[r][c2] -= f * aug[a][c2]; } }
+    var w = new Array(m); for (a = m - 1; a >= 0; a--) { var sm2 = aug[a][m]; for (c2 = a + 1; c2 < m; c2++) sm2 -= aug[a][c2] * w[c2]; w[a] = sm2 / aug[a][a]; }
+    return w;
+  }
+
+  // Three ways to fit the same noisy random-input recording of a mass-spring-damper, as mean relative error in m, c, k over
+  // `draws` recordings: ARX by instrumental variables (position only), Ho–Kalman from a least-squares impulse response (position
+  // only), and plain state-space least squares on measured position and velocity (full state, each noisy; velocity 3× as much).
+  function compareFits(plant, p, noise, seed, draws) {
+    var dt = 0.05, N = 1200, sums = { arx: [0, 0, 0], era: [0, 0, 0], ss: [0, 0, 0] }, cnt = { arx: 0, era: 0, ss: 0 };
+    function relErr(e) { return e ? [Math.abs(e.M / p.M - 1), Math.abs(e.c / p.c - 1), Math.abs(e.k / p.k - 1)] : null; }
+    function add(key, e) { var r = relErr(e); if (!r) return; r.forEach(function (v, i) { sums[key][i] += v; }); cnt[key]++; }
+    for (var d = 0; d < (draws || 4); d++) {
+      var sd = (seed || 1) * 7919 + d * 104729, g = function () { sd = (sd * 1103515245 + 12345) % 2147483648; return sd / 2147483648; };
+      var x = plant.x0(p).slice(), u = [], xm = [], vm = [], level = 2, hold = 0, k, j;
+      for (k = 0; k < N; k++) {
+        if (hold <= 0) { level = g() < 0.5 ? 2 : -2; hold = 0.2 + 0.8 * g(); } hold -= dt;
+        u.push(level); xm.push(x[0] + noise * gaussian(g)); vm.push(x[1] + 3 * noise * gaussian(g));
+        for (j = 0; j < 5; j++) x = rk4(plant, x, [level], p, dt / 5);
+      }
+      add('arx', arxToMsd(arxFitIV(u, xm, 2, 2), dt));
+      var E = era(firFit(u, xm, 240), 30, 2); add('era', ssToMsd(E, dt));
+      var Z = [], X1 = [], V1 = []; for (k = 0; k < N - 1; k++) { Z.push([xm[k], vm[k], u[k]]); X1.push(xm[k + 1]); V1.push(vm[k + 1]); }
+      var w1 = lsqSolve(Z, X1), w2 = lsqSolve(Z, V1);
+      add('ss', ssToMsd({ n: 2, A: [[w1[0], w1[1]], [w2[0], w2[1]]], B: [w1[2], w2[2]], C: [1, 0] }, dt));
+    }
+    var out = {}; Object.keys(sums).forEach(function (key) { out[key] = cnt[key] ? sums[key].map(function (v) { return 100 * v / cnt[key]; }) : null; });
+    return out;
+  }
+  // The unseen-state example. Measure only the states in `outs`; build a model from one tap of the linearised plant by
+  // Ho–Kalman; the realized states are a fixed mix of the physical ones, so a one-off calibration against the hard-to-measure
+  // state `target` (noisy) gives weights w with target ≈ w·x̃, checked on a fresh input.
+  function unseen(plant, p, cfg) {
+    var dt = cfg.dt || 0.05, lin = linearize(plant, p), d = zohDiscretize(lin.A, lin.B, dt), n = plant.n, G = d.Gam.map(function (r) { return r[0]; });
+    var rows = cfg.rows || 30, K = 2 * rows + 2, q = G.slice(), h = [], k, i;
+    for (k = 0; k < K; k++) { h.push(cfg.outs.map(function (o) { return q[o]; })); q = d.Phi.map(function (r) { var sm = 0; for (var z = 0; z < n; z++) sm += r[z] * q[z]; return sm; }); }
+    var era = eraMimo(h, cfg.outs.length, rows, cfg.order);
+    var seed = cfg.seed || 1; function rng() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+    function prbs(N, hold) { var u = [], lv = 1; for (k = 0; k < N; k++) { if (k % hold === 0) lv = rng() < 0.5 ? -1 : 1; u.push(lv); } return u; }
+    var N = cfg.N || 80, amp = cfg.amp || 1, cal = prbs(N, 4).map(function (v) { return v * amp; }), val = prbs(N, 6).map(function (v, j) { return v * amp * (j % 20 < 10 ? 1 : 0.5); });
+    function run(u) { return { xp: simLin(d.Phi, G, u), xr: simLin(era.A, era.B, u) }; }
+    var C1 = run(cal), V1 = run(val), tgt = cfg.target;
+    var tc = C1.xp.map(function (x) { return x[tgt]; }), mean = tc.reduce(function (a, v) { return a + v; }, 0) / tc.length, sd = Math.sqrt(tc.reduce(function (a, v) { return a + (v - mean) * (v - mean); }, 0) / tc.length) || 1;
+    var yc = tc.map(function (v) { return v + (cfg.noise || 0) * sd * gaussian(rng); });
+    var w = lsqSolve(C1.xr, yc), est = V1.xr.map(function (x) { var sm = 0; for (i = 0; i < w.length; i++) sm += w[i] * x[i]; return sm; });
+    var tv = V1.xp.map(function (x) { return x[tgt]; }), mv = tv.reduce(function (a, v) { return a + v; }, 0) / tv.length, e2 = 0, v2 = 0;
+    tv.forEach(function (v, j) { e2 += Math.pow(v - est[j], 2); v2 += Math.pow(v - mv, 2); });
+    // every observable physical state as a mix of the realized ones (noise-free), for the picture
+    var W = []; for (var s3 = 0; s3 < n; s3++) { var wr = lsqSolve(C1.xr, C1.xp.map(function (x) { return x[s3]; })), res = 0, vr = 0; C1.xr.forEach(function (x, j) { var e = 0; for (i = 0; i < wr.length; i++) e += wr[i] * x[i]; res += Math.pow(C1.xp[j][s3] - e, 2); vr += Math.pow(C1.xp[j][s3], 2); }); W.push({ w: wr, miss: vr > 0 ? Math.sqrt(res / vr) : 0 }); }
+    return { dt: dt, S: era.S, order: cfg.order, w: w, W: W, t: val.map(function (_, j) { return j * dt; }), truth: tv, est: est, fit: v2 > 0 ? 100 * (1 - Math.sqrt(e2 / v2)) : NaN };
+  }
   function ssSim(m, u) {                               // discrete state-space free run, x₀ = 0
     var x = m.B.map(function () { return 0; }), y = [];
     for (var k = 0; k < u.length; k++) {
@@ -757,7 +819,7 @@
 
   function createSim(plant, lab, rng) {
     rng = rng || Math.random;
-    var sim = { t: 0, x: null, z: [], prevY: [], prevE: [], buf: [], u: plant.u0(lab.p), uReq: null, cbfActive: false, failed: false, contrib: [] };
+    var sim = { t: 0, x: null, z: [], prevY: [], prevE: [], buf: [], u: plant.u0(lab.p), uReq: null, failed: false, contrib: [] };
     sim.reset = function (x) {
       sim.t = 0; sim.x = x || plant.start(lab.p, rng); sim.z = lab.controller.channels.map(function () { return 0; });
       sim.prevY = null; sim.prevE = []; sim.xhat = null; sim.prevMeas = null; sim.uHeld = null; sim.holdLeft = 0; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
@@ -823,12 +885,6 @@
       sim.prevY = ctrl.channels.map(function (ch) { return ch.type === 'pid' ? meas[ch.out] : 0; });
       if (!sim.prevE.length) sim.prevE = ctrl.channels.map(function () { return 0; });
       sim.uReq = u.slice();
-      if (lab.cbf && lab.cbf.on) {
-        var bd = cbfBounds(plant, p, sim.x, u, lab.cbf);
-        var before = u[lab.cbf.input];
-        u[lab.cbf.input] = clamp(u[lab.cbf.input], bd[0], bd[1]);
-        sim.cbfActive = Math.abs(u[lab.cbf.input] - before) > 1e-9; sim.cbfBounds = bd;
-      } else sim.cbfActive = false;
       if (Ts > dt) { sim.uHeld = u.slice(); sim.holdLeft = Ts - dt; } else sim.uHeld = null;
       return finish(u, manualU);
     };
@@ -858,11 +914,11 @@
     charPoly: charPoly, roots: roots, eig: eig, polyFromRoots: polyFromRoots, polyStr: polyStr,
     linearize: linearize, loopModel: loopModel, closedA: closedA, closedAWithDelay: closedAWithDelay, loopAt: loopAt,
     freqResponse: freqResponse, margins: margins, nyquistCount: nyquistCount, placeable: placeable, placePoles: placePoles,
-    cbfBounds: cbfBounds, netForward: netForward, netBounds: netBounds, queryBox: queryBox, certify: certify, attack: attack,
+    netForward: netForward, netBounds: netBounds, queryBox: queryBox, certify: certify, attack: attack,
     certifiedRadius: certifiedRadius, netGains: netGains, RATE_PER_ANGLE: RATE_PER_ANGLE,
     arxFit: arxFit, arxFitIV: arxFitIV, arxSim: arxSim, arxFreq: arxFreq, arxToMsd: arxToMsd,
     experiment: experiment,
-    simMsd: simMsd, fitPercent: fitPercent, svd: svd, firFit: firFit, era: era, ssSim: ssSim, ssToMsd: ssToMsd,
+    simMsd: simMsd, fitPercent: fitPercent, svd: svd, firFit: firFit, era: era, eraMimo: eraMimo, simLin: simLin, unseen: unseen, lsqSolve: lsqSolve, compareFits: compareFits, ssSim: ssSim, ssToMsd: ssToMsd,
     mapPole: mapPole, zohDiscretize: zohDiscretize, tfDiscretize: tfDiscretize, dtfSim: dtfSim, dtfFreq: dtfFreq, sampledPidLoop: sampledPidLoop,
     kalmanGain: kalmanGain, buildEstimator: buildEstimator, createSim: createSim, refValue: refValue, gaussian: gaussian
   };

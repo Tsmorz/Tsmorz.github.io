@@ -1,5 +1,6 @@
-# /controls/ — every demo, as lessons. A demo (Intro, Tilt Table, ...) holds lessons; each lesson follows ARIVA:
-# goal (Arrive), recall + predict (Reactivate), note (Inform), tasks (Process), check + recap (Evaluate).
+# /controls/ — one running problem (a mass on a spring) taken through every idea, then the same steps on other plants.
+# `demos` are the buttons on top (`extend: true` ones are the other plants); `tabs` are the lessons in each. Each lesson follows ARIVA:
+# goal (Arrive), needs + recall + predict (Reactivate), note (Inform), tasks (Process), check + recap (Evaluate).
 # Rendered by _includes/lab.html; views and controls are listed at the top of assets/js/lab/lab.js.
 labs:
   msd:
@@ -72,15 +73,6 @@ labs:
       amp: 2
     refs:
     - type: step
-  safe:
-    plant: msd
-    controller: pid
-    cbf:
-      lim: 1.2
-      stops: 1.4
-      lambda: 2
-    refs:
-    - amp: 1.8
   net:
     plant: cartpole
     controller: lqr
@@ -88,27 +80,46 @@ labs:
   mimo:
     plant: flight
     controller: both
+  stab:
+    plant: msd
+    controller: pid
+  sf:
+    plant: msd
+    controller: lqr
+  est:
+    plant: msd
+    controller: lqg
+    estimator: kalman
+    noise: 0.02
+    logQ: 0
+  basis:
+    plant: msd
+    controller: open
+  cp_un:
+    plant: cartpole
+    controller: lqr
+  fl_un:
+    plant: flight
+    controller: alt
 demos:
 - id: msd
-  label: Intro
+  label: Mass on a spring
 - id: tilt
   label: Tilt Table
+  extend: true
 - id: flight
-  label: Flight Sim
+  label: Aircraft
+  extend: true
 - id: cartpole
   label: Cart-Pole
+  extend: true
 tabs:
 - id: msd
   label: Tune
   lab: msd
   top: sim
   row1: states
-  row2: analysis
-  analysis:
-  - contrib
-  - bode
-  - nyquist
-  - poles
+  row2: contrib
   startManual: true
   zeroGains: true
   manualHint: <strong>Manual:</strong> drag the mass up or down. Delay and noise apply to PID only.
@@ -135,20 +146,20 @@ tabs:
   tasks:
   - Press <strong>PID</strong> and <strong>Load suggested gains</strong>, and watch it track the wave.
   - 'Set K<sub>i</sub> and K<sub>d</sub> to zero and raise K<sub>p</sub>: it rings. Bring K<sub>d</sub> back to stop it.'
-  - Switch <strong>View</strong> to Bode and read the phase margin. Drag <strong>Delay</strong> up until the margin runs out, then watch the sim.
-  - Slow the controller with <strong>Runs every</strong> until the readout says unstable.
+  - 'Pick <strong>Step</strong> and add a little K<sub>i</sub>: what does it remove?'
+  - Add <strong>Delay</strong> until it starts to oscillate. How much could it take?
   check:
-  - question: You add delay and the loop turns unstable. Which number on the margins readout told you how much delay it could take?
+  - question: You add delay and the tuned loop starts to oscillate. Which stability measure says how much delay it could take?
     options:
-    - Gain up
+    - Gain margin
     - Delay margin
-    - Crossover
+    - Settling time
     answer: 1
-    explain: A delay costs phase of &#969;T at crossover. The delay margin is the delay that uses up the whole phase margin, so past it the loop oscillates.
+    explain: A delay costs phase of &#969;T at crossover. The delay margin is the delay that uses up the whole phase margin; the next lesson reads it off a plot.
     why:
-    - Gain up is how much more gain the loop tolerates, not how much delay.
+    - Gain margin is how much more gain it tolerates.
     - ''
-    - Crossover is a frequency, not a time.
+    - Settling time is a property of the response, not a limit.
   - question: A PID makes a stiff, heavy cart track well. You swap in a lighter cart with the same gains and it rings. What changed?
     options:
     - The loop gain is higher, so the phase margin is smaller
@@ -167,9 +178,6 @@ tabs:
   - gains
   - delay
   - noise
-  - view
-  - freq
-  - margins
   - score
   - reset
   aria:
@@ -184,9 +192,78 @@ tabs:
     (the derivative term amplifies it). The score is RMSE over the last 5&nbsp;s.</p>
   demo: msd
   minutes: 10
-  recap: tune a PID by watching its phase margin, and predict how much delay it can take.
+  recap: tune a PID by eye, and say what each term does.
+  needs: []
+  recall: You already know a spring pulls back and a damper slows things down. That is all this mass is, and a controller has to work with it.
+- id: stable
+  label: Is it stable?
+  demo: msd
+  lab: stab
+  minutes: 8
+  top: sim
+  row1: time
+  row2: analysis
+  analysis:
+  - bode
+  - nyquist
+  - poles
+  controls:
+  - reference
+  - gains
+  - delay
+  - view
+  - freq
+  - margins
+  aria:
+  - The mass-spring-damper under PID control
+  - Position, reference and force over time
+  - 'Loop analysis: Bode, Nyquist or poles'
+  goal: Read how stable the tuned loop is, and how much delay or gain it can take, from its frequency response.
+  recall: You tuned the loop by watching the response. A loop can look fine and still be a delay away from oscillating.
+  predict:
+    question: You add 100 ms of delay to the tuned loop. What happens to its phase margin?
+    options:
+    - It shrinks
+    - It grows
+    - It does not change
+    answer: 0
+    try: Pick <strong>Bode</strong>, then drag <strong>Delay</strong> from 0 to 100 ms.
+    explain: 'A delay changes when the signal arrives, not how big it is: it has gain 1 and phase &#8722;&#969;T. The phase loss grows with frequency, so the margin shrinks.'
+  note_title: Cut the loop open
+  note: <p>Cut the loop at the force. The <strong>loop gain</strong> L(s)&#8201;=&#8201;C(s)G(s) is one trip round the loop; if it comes back inverted at the same size (0&nbsp;dB, &#8722;180&#176;) the loop oscillates by itself. <strong>Phase</strong>, <strong>gain</strong> and <strong>delay margin</strong> say how far you are. <strong>Nyquist</strong> draws the same numbers as one curve that must keep clear of &#8722;1; <strong>Poles</strong> shows the closed loop's own motions, and you can drag one to place it.</p>
+  tasks:
+  - Pick <strong>Bode</strong> and read the phase margin and crossover on the readout.
+  - Drag <strong>Delay</strong> up to the delay margin and watch the sim start to oscillate.
+  - 'Switch <strong>View</strong> to Nyquist: how close does the curve get to &#8722;1?'
+  - 'Switch to <strong>Poles</strong> and drag a closed-loop pole: the gains follow.'
+  check:
+  - question: On the Nyquist plot the curve passes exactly through &#8722;1. What does the loop do?
+    options:
+    - Oscillates forever at that frequency
+    - Settles faster
+    - Nothing special
+    answer: 0
+    explain: 'Passing through &#8722;1 means gain 1 and phase &#8722;180&#176;: the signal returns inverted and the same size, so it sustains itself.'
+    why:
+    - ''
+    - Faster settling is a different property.
+    - It is the exact condition for sustained oscillation.
+  - question: Which poles make the closed loop unstable?
+    options:
+    - Any with a positive real part
+    - Any with a large imaginary part
+    - Any close to the origin
+    answer: 0
+    explain: A pole in the right half-plane grows exponentially. A large imaginary part only means it rings faster.
+    why:
+    - ''
+    - Ringing fast is not growing.
+    - Close to the origin means slow, not unstable.
+  recap: read phase, gain and delay margin off a Bode plot and say what a Nyquist curve near &#8722;1 means.
+  needs:
+  - msd
 - id: arx
-  label: Fit a model
+  label: 'Fit: least squares'
   lab: fit
   top: sysid-replay
   row1: sysid-data
@@ -246,30 +323,50 @@ tabs:
     - Speed is not the problem.
     - It can be read, using its slowest oscillating pair.
   recap: fit a mass-spring-damper from data and say why the input signal and the model order matter.
+  needs:
+  - stable
 - id: era
-  label: From a tap
+  label: 'Fit: Ho–Kalman'
   lab: fit
   method: era
   top: id-replay
   row1: id-era
-  row2: id-result
+  row2: analysis
   controls:
   - idrun
+  - view
   aria:
   - The mass replaying a hammer tap
   - The Hankel matrix of the impulse response, its singular values, and the measured and realized impulse responses
-  - Estimated mass, damping and spring against the true values
+  - Estimated mass, damping and spring against the true values, the hidden states, or three methods compared
   note_title: Realize a state-space model from the impulse response
-  note: |
-    <p>Tap the mass and record how it rings. Stacked into a <strong>Hankel matrix</strong>, that impulse response has a
-    rank equal to the number of states, and the <strong>singular values</strong> show it: two are large, the rest are
-    noise. Keep the large ones and the model follows (the dashed curve). Turn the noise up and the gap shrinks, so
-    choosing where to cut becomes a judgement. Keeping 1 reads nothing; 3 or 4 read from the slowest oscillating
-    pair.</p>
+  note: |-
+    <p>You can only see the position. But a mass on a spring has a second, unseen state, its velocity, and the position's future depends
+    on both. <strong>Ho&#8211;Kalman</strong> (1966) says that if one tap gives you the whole ringing record, a state-space model that
+    reproduces it is already hidden in the numbers.</p>
+    <p><strong>1. Record the impulse response.</strong> The positions after the tap, h<sub>1</sub>, h<sub>2</sub>, &#8230;, are the
+    <em>Markov parameters</em>. Any linear model x<sup>+</sup>&#8201;=&#8201;Ax&#8201;+&#8201;Bu, y&#8201;=&#8201;Cx has h<sub>k</sub>&#8201;=&#8201;CA<sup>k&#8722;1</sup>B.</p>
+    <p><strong>2. Stack them into a Hankel matrix</strong>, each row the one above shifted by one sample (the diagonal stripes in the heatmap).
+    It factors into what the output can see of the states times what the input can reach, so its <em>rank</em> is the number of states.
+    The <strong>singular values</strong> show that rank: two are large, the rest are noise.</p>
+    <p><strong>3. Keep those and read off the model.</strong> The factors give B, C and, from the shifted matrix, A. The dashed curve is the
+    model's own impulse response.</p>
+    <p><strong>4. What the unseen states are.</strong> They are not position and velocity. Any invertible mixing T gives a model with
+    identical input and output, so data alone cannot say which coordinates are &#8220;real&#8221;. Ho&#8211;Kalman returns one particular
+    choice, a <em>balanced</em> one, where the states are equally easy to reach and to see. Switch the lower plot to
+    <strong>Hidden states</strong>: each realized state is a fixed mix of the true position and velocity, and the model has the same poles.
+    To read m, c and k the panel maps the model back to a second-order mass-spring form.</p>
+    <p>One limit: only the part of the system that is both reachable by the input and visible in the output can be recovered. A state
+    that cannot be moved or cannot be seen leaves no trace in the tap.</p>
+    <p><strong>Compare methods</strong> fits the same noisy recording three ways. With clean data, least squares and state-space least squares
+    (measuring position and velocity) are exact, and Ho&#8211;Kalman starts a few percent off because its impulse response is truncated. Add sensor noise
+    and the picture flips: least squares on noisy states is <em>biased</em> (its regressors carry the noise), the output-only ARX fit drifts, and Ho&#8211;Kalman,
+    which keeps only the large singular values, barely moves.</p>
+    <p>The <strong>next lesson</strong> drives the change of basis directly; the aircraft and cart-pole lessons use it to read states that have no sensor.</p>
   demo: msd
-  minutes: 6
-  goal: Read the number of states straight from how the mass rings after one tap.
-  recall: Least squares made you choose the model order. Can the data tell you instead?
+  minutes: 10
+  goal: Build a state-space model from one tap, and see what its unseen states are.
+  recall: Least squares made you choose the model order and only ever used the measured position. Can the data tell you the order, and what the unseen states are?
   predict:
     question: You tap the mass once and look at the singular values of the Hankel matrix. How many are large?
     options:
@@ -282,8 +379,9 @@ tabs:
   tasks:
   - Press <strong>Tap it</strong> with 2 bars kept. How many bars stand out?
   - Raise <strong>Sensor noise</strong> and tap again. What happens to the gap after the 2nd bar?
-  - Keep 1 bar. What do m, c and k read?
-  - 'Keep 4 bars: do m, c and k change?'
+  - Switch <strong>View</strong> to Hidden states. How closely does the fixed mix of position and velocity match each realized state?
+  - Switch <strong>View</strong> to Compare methods and sweep the sensor noise from 0 to 100 mm. Which method wins at each end?
+  - Keep 1 bar, then 4. What do m, c and k read, and why does Hidden states need exactly 2?
   check:
   - question: What does the size of the gap in the singular values tell you?
     options:
@@ -296,59 +394,254 @@ tabs:
     - ''
     - Noise sets the floor, but the gap itself marks the order.
     - The sample time is fixed here.
-  recap: find a system's order from one tap and say when noise makes that call hard.
-- id: yours
-  label: Your own data
-  lab: fit
-  top: sim
-  row1: rec-data
-  row2: rec-fit
-  startManual: true
-  manualHint: <strong>Manual:</strong> drag the mass to push it yourself. Or switch to PID and let the controller move it.
-  controls:
-  - mode
-  - record
-  aria:
-  - 'The live mass-spring-damper: drag it, tap it, or let the PID drive it while recording'
-  - Your recorded force and position
-  - Models identified from your recording, checked on the part held back
-  note_title: Collect your own data
-  note: |
-    <p>Press <strong>Record</strong> and move the mass any way you like: drag it, tap it, switch on the shaker, or let
-    the PID chase its reference. Then <strong>Identify</strong>: both methods fit the first 70% and are checked on the
-    last 30%. Gentle pushes barely excite the resonance, and data recorded under PID control is closed-loop, which
-    biases the fit unless the shaker also excites it.</p>
-  demo: msd
-  minutes: 10
-  goal: Record your own data and see which fit survives data it has never seen.
-  recall: Both methods worked on a scripted experiment. Real data is messier.
-  predict:
-    question: You record using only slow, gentle pushes. Which constant comes out worst?
+  - question: The realized states are not position and velocity. Why is that not a problem?
     options:
-    - Spring k
-    - Damping c
-    - Mass m
-    answer: 1
-    try: Press <strong>Record</strong>, push gently for 20 s, then press <strong>Identify</strong>.
-    explain: Damping shows in how fast things ring down. Slow pushes barely excite the resonance, so there is little to measure.
-  tasks:
-  - Record 20 s of varied pushes (drag the mass, or press <strong>Tap the mass</strong>), then press <strong>Identify</strong>.
-  - Record again with the <strong>Shaker</strong> on. Which fit improves?
-  - Switch to PID and record with the controller running. Why is that data harder to fit?
-  - Press <strong>Download CSV</strong> and fit it with your own tools.
-  check:
-  - question: Why hold back the last 30% of the recording?
-    options:
-    - To check each model on data it never saw
-    - To speed up the fit
-    - To remove noise
+    - Any invertible mixing of the states gives the same input-output behaviour
+    - Ho–Kalman secretly measures velocity
+    - The states are never used
     answer: 0
-    explain: A model always fits its own training data well. Only data held back shows whether it generalises.
+    explain: (A, B, C) and (TAT⁻¹, TB, CT⁻¹) produce the same impulse response, so the data fix the model only up to a change of coordinates. Poles, margins and simulations do not depend on T.
     why:
     - ''
-    - It does not change the speed.
-    - It does not remove noise; it keeps data unseen.
-  recap: collect and check your own identification data, and explain why closed-loop data is harder.
+    - Only the position is measured.
+    - They are used; their coordinates are just arbitrary.
+  - question: A state the input can never move. What does Ho–Kalman do with it?
+    options:
+    - 'Cannot find it: it leaves no trace in the tap'
+    - Finds it with a small singular value
+    - Reports it as noise
+    answer: 0
+    explain: The Hankel matrix only holds what is both reachable by the input and visible in the output. A hidden, unreachable state adds nothing to it.
+    why:
+    - ''
+    - A state with no effect on the record has no singular value at all.
+    - It would not even appear as noise.
+  - question: At high sensor noise, which fit holds up best, and why?
+    options:
+    - 'Ho–Kalman: it keeps only the large singular values, so noise is discarded'
+    - 'Plain state least squares: it uses more signals'
+    - They are all identical
+    answer: 0
+    explain: With noisy states on both sides of the regression, plain least squares is biased and the output-only ARX fit drifts. Truncating the Hankel matrix to its large singular values removes most of the noise, so Ho–Kalman barely moves.
+    why:
+    - ''
+    - State least squares has the noisy states in its regressors, which biases it; more signals does not cure that.
+    - They agree only without noise.
+  recap: build a state-space model from one tap, find the order from the singular values, say why its states are only defined up to a change of coordinates, and say when Ho–Kalman beats least squares.
+  needs:
+  - arx
+  analysis:
+  - id-result
+  - id-hidden
+  - id-vs
+  maths: |-
+    <p>Impulse response: <code>h<sub>k</sub> = C A<sup>k&#8722;1</sup> B</code>.</p>
+    <p>Hankel matrix: <code>H = [h<sub>i+j&#8722;1</sub>] = &#120106; &#120094;</code>, with observability <code>&#120106; = [C; CA; CA&#178;; &#8230;]</code> and
+    controllability <code>&#120094; = [B, AB, A&#178;B, &#8230;]</code>, so <code>rank H = n</code>.</p>
+    <p>SVD: <code>H = U&#931;V<sup>T</sup></code>. Keep n values: <code>&#120106; = U<sub>n</sub>&#931;<sub>n</sub><sup>1/2</sup></code>,
+    <code>&#120094; = &#931;<sub>n</sub><sup>1/2</sup>V<sub>n</sub><sup>T</sup></code>. Then C is the first row of &#120106;, B the first column of &#120094;, and
+    <code>A = &#931;<sub>n</sub><sup>&#8722;1/2</sup> U<sub>n</sub><sup>T</sup> H<sub>2</sub> V<sub>n</sub> &#931;<sub>n</sub><sup>&#8722;1/2</sup></code>, where H<sub>2</sub> is H shifted by one sample.</p>
+    <p>Non-uniqueness: <code>(A, B, C) &#8594; (TAT<sup>&#8722;1</sup>, TB, CT<sup>&#8722;1</sup>)</code> has the same h<sub>k</sub> for every invertible T.</p>
+- id: basis
+  label: Change of basis
+  demo: msd
+  lab: basis
+  minutes: 8
+  top: basis-phase
+  row1: basis-time
+  row2: basis-matrices
+  controls:
+  - basis
+  aria:
+  - The same motion drawn in the physical coordinates and in the realized coordinates
+  - The output and the realized states over time
+  - The matrices before and after the change of basis, and the poles
+  goal: See that a model's states are only a choice of coordinates, and what stays the same when you change them.
+  recall: Ho–Kalman returned states that were a mix of position and velocity. Is that a different system, or the same one in other coordinates?
+  predict:
+    question: You rotate and stretch the state coordinates. What happens to the poles of the model?
+    options:
+    - They do not change
+    - They rotate too
+    - They scale with the stretch
+    answer: 0
+    try: Drag <strong>Rotation</strong> and the stretches, and watch the poles in the bottom plot.
+    explain: A′ = T A T⁻¹ is a similar matrix, and similar matrices have the same eigenvalues. The poles belong to the system, not to the coordinates.
+  note_title: Same system, different axes
+  note: |-
+    <p>A <strong>basis</strong> is a set of axes. The motion of the mass does not depend on which axes you draw it in; only the numbers
+    that describe it do. The map <code>x&#771; = T x</code> turns physical coordinates (position, velocity) into new ones. The left plot is the
+    path of the mass; the right plot is the same path in the new axes, with the images of the old axes drawn as arrows.</p>
+    <p>The model follows the same rule: <code>A&#8242; = T A T<sup>&#8722;1</sup></code>, <code>B&#8242; = T B</code>, <code>C&#8242; = C T<sup>&#8722;1</sup></code>.
+    The output is <code>y = C&#8242; x&#771; = C T<sup>&#8722;1</sup> T x = C x</code>, so it does not move when you drag T.</p>
+    <p><strong>What changes:</strong> every number in A, B and C, and what each state means. <strong>What stays:</strong> the poles, stability,
+    the output and the impulse response. So data about inputs and outputs cannot choose T. Ho&#8211;Kalman picks one (a balanced one),
+    which is why its states are a mix of position and velocity and not the physical ones. To call a state &#8220;the angle of attack&#8221;
+    you need one more piece of information: a physical model, or a calibration against a sensor, as the next lessons do.</p>
+  tasks:
+  - 'Drag <strong>Rotation</strong>: the right-hand path turns, the position curve does not.'
+  - 'Stretch <strong>state 1</strong>: which entries of A′ change, and do the poles?'
+  - 'Look at the arrows: where do the position axis and the velocity axis land in the new coordinates?'
+  - 'Set rotation 0° and both stretches ×1: A′ becomes A again.'
+  check:
+  - question: Which of these changes when you change the basis?
+    options:
+    - The entries of A
+    - The poles
+    - The output y
+    answer: 0
+    explain: A′ = T A T⁻¹ has different entries, while its eigenvalues (the poles) and the output y = C x are unchanged.
+    why:
+    - ''
+    - Poles are eigenvalues of similar matrices, so they are the same.
+    - The output is C′x̃ = Cx.
+  - question: Why can recorded inputs and outputs not say which coordinates are the physical ones?
+    options:
+    - Every invertible T gives identical input-output behaviour
+    - The sensor is always noisy
+    - The model is too small
+    answer: 0
+    explain: If (A, B, C) reproduces the data, so does (TAT⁻¹, TB, CT⁻¹) for any invertible T. The data are blind to the choice.
+    why:
+    - ''
+    - 'Noise does not explain it: even perfect data cannot choose T.'
+    - Even a full-size model has this freedom.
+  recap: say what a change of basis does to A, B and C, and why identified states do not line up with physical ones.
+  needs:
+  - era
+- id: lqr
+  label: State feedback
+  demo: msd
+  lab: sf
+  minutes: 8
+  top: sim
+  row1: states
+  row2: analysis
+  analysis:
+  - contrib
+  - bode
+  - poles
+  controls:
+  - reference
+  - gains
+  - delay
+  - noise
+  - view
+  - margins
+  loadLabel: Load LQR gains
+  noiseMax: 0.1
+  noiseUnit: m
+  aria:
+  - The mass-spring-damper under state feedback
+  - Position and velocity over time
+  - What each gain contributes, or the loop analysis
+  goal: Feed back both position and velocity, and let LQR choose the gains.
+  recall: 'PID reacted to the error and its slope. Here the controller uses the states themselves: position and velocity.'
+  predict:
+    question: You double the velocity gain k<sub>v</sub>. What does it do to the mass?
+    options:
+    - Adds damping, so it settles faster
+    - Makes it ring more
+    - Nothing
+    answer: 0
+    try: Press <strong>Load LQR gains</strong>, pick Step, then change k<sub>v</sub>.
+    explain: The velocity term pushes against the motion, which is damping. More of it removes energy faster.
+  note_title: u = K x
+  note: '<p>With both states measured, the force is a weighted sum: u&#8201;=&#8201;K&nbsp;x. <strong>LQR</strong> picks K by trading state error (Q) against force (R), by solving a Riccati equation for the plant, so you never tune it by hand. <strong>Load LQR gains</strong> fills in that K. In <strong>Poles</strong> the open-loop pair at &#8722;0.2&#8201;&#177;&#8201;2<em>j</em> moves left: the feedback added damping.</p>'
+  tasks:
+  - 'Press <strong>Load LQR gains</strong> and pick <strong>Step</strong>: how fast does it settle?'
+  - 'Set k<sub>v</sub> to zero: what comes back?'
+  - 'Switch <strong>View</strong> to Poles: where are the closed-loop poles, compared with the PID?'
+  - 'Add <strong>Sensor noise</strong>: which gain passes it into the force most?'
+  check:
+  - question: What does LQR trade off when it picks K?
+    options:
+    - State error against how much force it uses
+    - Speed against memory use
+    - Position against time
+    answer: 0
+    explain: Q weights how much each state error costs and R weights the force. A large R gives a gentle controller, a large Q a tight one.
+    why:
+    - ''
+    - LQR is about the plant, not the computer.
+    - It trades costs, not units.
+  - question: You measure only the position. Can you use k<sub>v</sub>?
+    options:
+    - 'Not directly: the velocity has to be estimated'
+    - Yes, position is enough
+    - No, drop k<sub>v</sub>
+    answer: 0
+    explain: State feedback needs the velocity. With a position sensor you estimate it, which is the next lesson.
+    why:
+    - ''
+    - The controller reads velocity, and a position sensor does not give it.
+    - Dropping it throws away the damping.
+  recap: use LQR to set state-feedback gains and see them as pole placement.
+  needs:
+  - stable
+- id: estimate
+  label: Estimate the speed
+  demo: msd
+  lab: est
+  minutes: 8
+  top: sim
+  row1: est-states
+  row2: contrib
+  controls:
+  - estimator
+  - noise
+  - reference
+  noiseMax: 0.1
+  noiseUnit: m
+  aria:
+  - The mass under LQR with only a position sensor
+  - Measured and true position, and estimated and true velocity
+  - What each gain contributes to the force
+  goal: Control the mass with only a position sensor, estimating the speed you cannot measure.
+  recall: State feedback needed the velocity. Real sensors often give position only.
+  predict:
+    question: Raise the sensor noise with <strong>Differencing</strong> on. What happens to the force?
+    options:
+    - It chatters
+    - It gets smoother
+    - Nothing
+    answer: 0
+    try: Raise <strong>Sensor noise</strong>, then switch to <strong>Kalman filter</strong>.
+    explain: Differencing divides the noise by a small time step, so a tiny position error becomes a large velocity error, and the gain k<sub>v</sub> passes it straight into the force.
+  note_title: Predict, then correct
+  note: '<p>Differencing estimates speed as (this reading &#8722; last reading) &#247; time step, which amplifies noise. A <strong>Kalman filter</strong> runs a model of the mass alongside it: <strong>predict</strong> with the force just applied, then <strong>correct</strong> toward the position reading. The <strong>trust</strong> slider trades smoothing against lag.</p>'
+  tasks:
+  - With <strong>Differencing</strong>, raise <strong>Sensor noise</strong> until the force chatters.
+  - 'Switch to <strong>Kalman filter</strong> at the same noise: what changes?'
+  - 'Slide <strong>Trust</strong> to sensors: the estimate gets noisier. Why?'
+  - 'Compare the estimated and true velocity: where does the filter lag?'
+  check:
+  - question: Why does the Kalman filter beat differencing at high noise?
+    options:
+    - It uses the model to smooth each reading instead of dividing noise by a time step
+    - It measures velocity directly
+    - It uses a bigger gain
+    answer: 0
+    explain: The filter predicts with the model and corrects only part of the way toward each reading, so noise is averaged, not amplified.
+    why:
+    - ''
+    - It still only has the position sensor.
+    - The gain is the same; the estimate is better.
+  - question: You slide trust all the way to the model. What is the risk?
+    options:
+    - It lags if the plant does something the model did not expect
+    - It becomes noisy
+    - It stops working
+    answer: 0
+    explain: Trusting the model smooths hard but reacts slowly to a real change the model does not know about.
+    why:
+    - ''
+    - That is trusting the sensors.
+    - It keeps working, just slowly.
+  recap: estimate an unmeasured state with a Kalman filter and say what the trust setting trades.
+  needs:
+  - lqr
+  - arx
 - id: sampling
   label: Sampling
   lab: shaken
@@ -373,7 +666,7 @@ tabs:
   demo: msd
   minutes: 8
   goal: See what a computer loses when it only reads a signal every T seconds.
-  recall: The Bode view shook the mass at one frequency at a time. Now only look at it every T seconds.
+  recall: Is it stable? shook the mass at one frequency at a time. Now only look at it every T seconds.
   predict:
     question: A 3 Hz vibration is sampled at 4 Hz. What does the controller see?
     options:
@@ -401,6 +694,8 @@ tabs:
     - By then it is indistinguishable from a real slower signal.
     - Gain does not change what the samples are.
   recap: say why a signal aliases and what has to happen before sampling to prevent it.
+  needs:
+  - stable
 - id: discretise
   label: Discretise
   lab: disc
@@ -455,6 +750,8 @@ tabs:
   - 'Pick <strong>Backward Euler</strong>: the poles stay inside, but what is wrong with the step response?'
   - 'Pick <strong>Tustin</strong> and raise T: what happens on the Bode plot?'
   - Pick <strong>All</strong> and shrink T. Do the methods agree?
+  needs:
+  - sampling
 - id: loop
   label: Sample rate
   lab: rate
@@ -504,6 +801,9 @@ tabs:
     - A hold does cost phase.
     - The sensor delay is not part of the hold.
   recap: set a controller rate from the crossover frequency instead of guessing.
+  needs:
+  - discretise
+  - stable
 - id: requirements
   label: 'Design: requirements'
   lab: design
@@ -551,6 +851,8 @@ tabs:
     - Numbers do not change how long design takes.
     - The model comes from data, not from requirements.
   recap: turn a vague goal into measurable requirements and see them as a pole region.
+  needs:
+  - stable
 - id: dmodel
   label: 'Design: model'
   lab: design
@@ -599,6 +901,9 @@ tabs:
     - A fit is never exact.
     - Speed is not the reason.
   recap: identify the real plant before designing, and say why the test uses the real plant.
+  needs:
+  - arx
+  - requirements
 - id: design
   label: 'Design: controller'
   lab: design
@@ -625,7 +930,7 @@ tabs:
   demo: msd
   minutes: 10
   goal: Pick gains that meet the requirements, then prove the loop is stable with room to spare.
-  recall: You have requirements and a model. Drag poles into the allowed region and the gains follow.
+  recall: You have requirements and a model. Drag poles into the allowed region and the gains follow; margins tell you how much room is left.
   predict:
     question: You drag the closed-loop poles further left. What does it cost?
     options:
@@ -652,6 +957,9 @@ tabs:
     - A step is useful but covers one case.
     - It is computed on the real plant.
   recap: place poles to meet requirements and use margins as a budget for model error.
+  needs:
+  - dmodel
+  - lqr
 - id: dtest
   label: 'Design: test'
   lab: design
@@ -704,64 +1012,67 @@ tabs:
     - Not always the beginning; the failure tells you which step.
     - The checklist is the contract.
   recap: test a design against its requirements and decide which step to revisit when one fails.
-- id: cbf
-  label: Safety filter
-  lab: safe
+  needs:
+  - design
+  - loop
+- id: yours
+  label: Your own data
+  lab: fit
   top: sim
-  row1: time
-  row2: cbf
-  refAmp:
-  - 0.5
-  - 2.5
+  row1: rec-data
+  row2: rec-fit
+  startManual: true
+  manualHint: <strong>Manual:</strong> drag the mass to push it yourself. Or switch to PID and let the controller move it.
   controls:
-  - cbf
-  - reference
-  - gains
-  - restart
+  - mode
+  - record
   aria:
-  - The mass-spring-damper between two hard stops, chasing a reference that goes past them
-  - Position, reference and force over time
-  - Phase plane with the safe set, and the requested versus allowed force
-  note: |-
-    <p>The mass now has hard stops at &#177;1.4&nbsp;m and a reference that goes past them. With the <strong>safety filter</strong> on,
-    every force first passes through a <strong>control barrier function</strong>: h&#8201;=&#8201;limit&#8201;&#8722;&#8201;|x| may shrink, but only
-    slower as it gets small. That leaves a band of allowed forces (shaded, right), and the filter sends the nearest one. In the
-    phase plane the shaded region is the safe set. On the cart-pole the same filter makes the pole fall: a barrier on one state of
-    an underactuated plant isn't enough.</p>
+  - 'The live mass-spring-damper: drag it, tap it, or let the PID drive it while recording'
+  - Your recorded force and position
+  - Models identified from your recording, checked on the part held back
+  note_title: Collect your own data
+  note: |
+    <p>Press <strong>Record</strong> and move the mass any way you like: drag it, tap it, switch on the shaker, or let
+    the PID chase its reference. Then <strong>Identify</strong>: both methods fit the first 70% and are checked on the
+    last 30%. Gentle pushes barely excite the resonance, and data recorded under PID control is closed-loop, which
+    biases the fit unless the shaker also excites it.</p>
   demo: msd
-  minutes: 8
-  goal: Keep a controller from hitting the stops, whatever it asks for.
-  recall: A PID does exactly what it is told, even when that means a collision.
+  minutes: 10
+  goal: Record your own data and see which fit survives data it has never seen.
+  recall: Every method so far worked on a scripted experiment. Real data is messier, and you design the experiment yourself.
   predict:
-    question: The reference goes past the hard stop. With the safety filter on, what does the mass do?
+    question: You record using only slow, gentle pushes. Which constant comes out worst?
     options:
-    - Slams into the stop
-    - Comes up to the stop and stops short
-    - Ignores the reference
+    - Spring k
+    - Damping c
+    - Mass m
     answer: 1
-    try: Turn the <strong>Safety filter</strong> on and press <strong>Restart</strong>.
-    explain: The filter keeps the state inside the safe set, so the mass slows down before the stop whatever the controller asks for.
+    try: Press <strong>Record</strong>, push gently for 20 s, then press <strong>Identify</strong>.
+    explain: Damping shows in how fast things ring down. Slow pushes barely excite the resonance, so there is little to measure.
   tasks:
-  - With the filter <strong>Off</strong>, watch the mass hit the stop.
-  - Turn it <strong>On</strong> and watch it stop short.
-  - 'Change <strong>Caution &#955;</strong>: does it brake earlier or later?'
-  - 'Look at the phase plane: where is the safe region?'
-  note_title: A filter that proves, not hopes
+  - Record 20 s of varied pushes (drag the mass, or press <strong>Tap the mass</strong>), then press <strong>Identify</strong>.
+  - Record again with the <strong>Shaker</strong> on. Which fit improves?
+  - Switch to PID and record with the controller running. Why is that data harder to fit?
+  - Press <strong>Download CSV</strong> and fit it with your own tools.
   check:
-  - question: How does the safety filter treat the controller's command?
+  - question: Why hold back the last 30% of the recording?
     options:
-    - It sends the allowed command nearest to the request
-    - It replaces the controller
-    - It averages old commands
+    - To check each model on data it never saw
+    - To speed up the fit
+    - To remove noise
     answer: 0
-    explain: 'The controller proposes and the filter disposes: it passes the command unless that would leave the safe set, then the nearest allowed one.'
+    explain: A model always fits its own training data well. Only data held back shows whether it generalises.
     why:
     - ''
-    - The controller still does the work; the filter only clips.
-    - It does not use past commands.
-  recap: explain a control barrier function and how it lets an untrusted controller run safely.
+    - It does not change the speed.
+    - It does not remove noise; it keeps data unseen.
+  recap: collect and check your own identification data, and explain why closed-loop data is harder.
+  needs:
+  - arx
+  - era
+  - dtest
 - id: tilt
-  label: Tune
+  label: Tune the tilt table
   lab: tilt
   top: sim
   row1: states
@@ -845,10 +1156,12 @@ tabs:
     K<sub>i</sub> removes offset. The run restarts if the ball rolls off an end.</p>
   demo: tilt
   minutes: 8
-  recall: On the Intro mass-spring you used K<sub>d</sub> to stop the ringing. Here the plant has no spring at all.
+  recall: 'On the mass on a spring you tuned a PID. A ball on a beam has no spring pulling it back, and the servo can only turn so fast: what do you expect to change?'
   recap: explain why a plant without a spring needs derivative action, and read the servo limit off the state plot.
+  needs:
+  - msd
 - id: flight
-  label: Tune
+  label: Tune the aircraft
   lab: flight
   top: sim
   row1: states
@@ -952,8 +1265,91 @@ tabs:
           </div>
   demo: flight
   minutes: 10
-  recall: 'You have tuned a mass and a ball. Altitude is slower: the elevator moves the nose, the nose moves the climb, the climb moves the altitude.'
+  recall: On the mass on a spring the plant answered the force directly. Here the elevator moves the nose, the nose moves the climb, and the climb moves the altitude.
   recap: tune an autopilot against a lagging plant and spot when the wing is the limit, not the gains.
+  needs:
+  - msd
+- id: hiddenac
+  label: Unseen angle of attack
+  demo: flight
+  lab: fl_un
+  minutes: 8
+  top: sim
+  row1: unseen-map
+  row2: unseen-fit
+  controls:
+  - unseen
+  unseen:
+    outs:
+    - 0
+    - 4
+    targets:
+    - 1
+    - 2
+    - 3
+    order: 5
+    orders:
+    - 3
+    - 4
+    - 5
+    amp: 0.01
+  aria:
+  - The plant, running
+  - Singular values of the Hankel matrix, and how each physical state mixes the realized ones
+  - The hidden state, true and read from the model
+  goal: Read the angle of attack, which is hard to measure, from a model built out of airspeed and altitude.
+  recall: On the mass you saw that identified states are a mix of the physical ones. An aircraft has six states, and angle of attack is one of the hardest to sense.
+  predict:
+    question: Airspeed and altitude are easy to measure; angle of attack is not. Can angle of attack be read from a model built from airspeed and altitude alone?
+    options:
+    - Yes, once you learn how it mixes into the realized states
+    - No, it never appears in the data
+    - Only if you also measure the pitch rate
+    answer: 0
+    try: Pick <strong>&#945;</strong> as the hidden state and press <strong>Recalibrate</strong>.
+    explain: Angle of attack shapes how airspeed and altitude change after an elevator tap, so it is in the data. The realized states carry it mixed with the rest, and a calibration unmixes it.
+  note_title: Label the states by calibration
+  note: |-
+    <p>Measured through airspeed and altitude only, one elevator tap of the linearised aircraft reveals <strong>five</strong> observable states (the bars;
+    the sixth, the distance flown, does not affect either measurement). The realized states are mixes of V, &#947;, &#945;, q and h: the map has no row that
+    picks out one of them, so none of them is &#8220;angle of attack&#8221;.</p>
+    <p>A flight-test <strong>calibration</strong>, with a vane or a flow probe fitted once, gives the weights <code>w</code> with
+    <code>&#945; &#8776; w&#183;x&#771;</code>. Afterwards, on a fresh elevator input, &#945; is read from the model driven by the same input (bottom plot). Calibration
+    noise and a model order that is too low both cost accuracy.</p><p>In practice the calibration is a flight test, a test rig or a tachometer, done once. After it, the hard sensor can go. On an unstable
+    plant, put the same model in a Kalman filter with the live outputs so errors do not build up, then read the hidden state from the filter&#8217;s
+    realized states with the same weights.</p>
+  tasks:
+  - 'Read the bars: how many states does the elevator tap reveal from V and h?'
+  - 'Look at the map: which realized states make up &#945;?'
+  - Raise <strong>Calibration noise</strong> to 30% and press <strong>Recalibrate</strong>.
+  - 'Switch the hidden state to the pitch rate q and lower the order to 3: what is lost?'
+  check:
+  - question: Which sensor can be removed after the calibration flight?
+    options:
+    - The angle-of-attack vane
+    - Airspeed
+    - Altitude
+    answer: 0
+    explain: Airspeed and altitude stay as inputs to the model. The vane was only needed to find the weights that unmix the realized states.
+    why:
+    - ''
+    - They are the sensors the model is built on.
+    - They are the sensors the model is built on.
+  - question: Why is the sixth state, the distance flown, not among the realized states?
+    options:
+    - It affects neither airspeed nor altitude, so the tap cannot see it
+    - It is too large
+    - It is not a state
+    answer: 0
+    explain: Ho–Kalman only recovers the part of the system that is both reachable by the input and visible in the output. Distance flown is reachable but invisible here.
+    why:
+    - ''
+    - Size is not the issue.
+    - It is a state of the model, just not an observable one.
+  recap: read a hard-to-measure aircraft state from identified states and say which states a given sensor set can see.
+  needs:
+  - basis
+  - flight
 - id: mimo
   label: Two loops
   lab: mimo
@@ -983,7 +1379,7 @@ tabs:
   demo: flight
   minutes: 6
   goal: Test the elevator loop and the throttle loop together instead of one at a time.
-  recall: You tuned the altitude loop alone, with the other held perfect.
+  recall: On the mass on a spring one loop had margins to spare. Here two loops share one aircraft.
   predict:
     question: Each loop has a big margin on its own. Both are weakened by 10% at once. Is the aircraft safe?
     options:
@@ -1011,8 +1407,11 @@ tabs:
     - Each margin is right for one loop at a time.
     - Speed is not shown here.
   recap: explain why single-loop margins are not enough on a plant with two loops.
+  needs:
+  - flight
+  - stable
 - id: cartpole
-  label: Tune
+  label: Balance the pole
   lab: cartpole
   top: sim
   row1: est-states
@@ -1113,8 +1512,92 @@ tabs:
           </div>
   demo: cartpole
   minutes: 12
-  recall: The earlier demos were stable on their own. This one falls without a controller, and only two of its four states are measured.
+  recall: On the mass on a spring you used state feedback and estimated the speed with a Kalman filter. Here the same two steps are applied to a plant that falls over without them.
   recap: balance an unstable plant from two noisy sensors and read what the estimator does to its margins.
+  needs:
+  - lqr
+  - estimate
+- id: hiddencp
+  label: Unseen velocities
+  demo: cartpole
+  lab: cp_un
+  minutes: 8
+  top: sim
+  row1: unseen-map
+  row2: unseen-fit
+  controls:
+  - unseen
+  unseen:
+    outs:
+    - 0
+    - 2
+    targets:
+    - 1
+    - 3
+    order: 4
+    orders:
+    - 2
+    - 3
+    - 4
+    amp: 0.02
+    N: 40
+  aria:
+  - The plant, running
+  - Singular values of the Hankel matrix, and how each physical state mixes the realized ones
+  - The hidden state, true and read from the model
+  goal: Read the cart and pole velocities, which have no sensor, from a model built out of the position and the angle.
+  recall: On the mass you saw that identified states are a mix of the physical ones. The cart-pole has four states but only two sensors.
+  predict:
+    question: Only the cart position and pole angle are measured. Can the cart velocity be read from a model built from those two alone?
+    options:
+    - Yes, once you learn how it mixes into the realized states
+    - No, it never appears in the data
+    - Only if a velocity sensor stays installed
+    answer: 0
+    try: Press <strong>Recalibrate</strong> and look at the fit in the bottom plot.
+    explain: The velocity shapes how the position and angle move, so it is in the data. The realized states carry it, mixed with the others; a one-off calibration finds the mix.
+  note_title: Label the states by calibration
+  note: |-
+    <p>One tap of the linearised cart-pole, measured only through the cart position and the pole angle, is enough for Ho&#8211;Kalman to find
+    that the system has <strong>four</strong> states (the bars). But the realized states are not x, &#7819;, &#952; and &#952;&#775;: each physical state is a
+    different mix of them (the map). Nothing in the tap says which realized state is the velocity.</p>
+    <p>A short <strong>calibration</strong> fixes that: excite the plant while measuring the hard state once, and fit one row of weights
+    <code>w</code> so that <code>state &#8776; w&#183;x&#771;</code>. Afterwards, on a fresh input, the state is read from the model alone (bottom plot).
+    More calibration noise means a worse <code>w</code>; a model order too small loses part of the state.</p><p>In practice the calibration is a flight test, a test rig or a tachometer, done once. After it, the hard sensor can go. On an unstable
+    plant, put the same model in a Kalman filter with the live outputs so errors do not build up, then read the hidden state from the filter&#8217;s
+    realized states with the same weights.</p>
+  tasks:
+  - 'Read the bars: how many states does the tap reveal from x and &#952; alone?'
+  - 'Look at the map: does any physical state equal one realized state?'
+  - 'Raise <strong>Calibration noise</strong> to 30% and press <strong>Recalibrate</strong>: how far does the fit fall?'
+  - 'Switch to the pole rate and set the model order to 3: what is lost?'
+  check:
+  - question: What does the calibration give you?
+    options:
+    - The weights that turn realized states into one physical state
+    - A new sensor for the cart
+    - The poles of the cart-pole
+    answer: 0
+    explain: The realized states are an unknown mix of the physical ones. Calibration measures the hard state once and fits the row that unmixes it.
+    why:
+    - ''
+    - The sensor is only needed during calibration.
+    - The poles come from the model, not the calibration.
+  - question: Why do the realized states not line up with the physical ones?
+    options:
+    - Input and output data only fix the model up to a change of basis
+    - The cart-pole is nonlinear
+    - The singular values are too small
+    answer: 0
+    explain: Any invertible T gives the same input-output behaviour, so Ho–Kalman can return any of them; it returns a balanced one.
+    why:
+    - ''
+    - 'Nonlinearity is not the cause here: the model is linear.'
+    - The size of the singular values only sets the order.
+  recap: read an unmeasured physical state from identified states using a one-off calibration.
+  needs:
+  - basis
+  - cartpole
 - id: verify
   label: Verify a network
   lab: net
@@ -1140,7 +1623,7 @@ tabs:
   demo: cartpole
   minutes: 8
   goal: Prove what a neural-network controller will do, instead of watching it balance and hoping.
-  recall: LQR gains are a short list of numbers you can analyse. A network is not.
+  recall: LQR gains are a short list of numbers you can analyse. A network that copies them is not.
   predict:
     question: A sensor error moves the angle by &#949;. Can bounds on the network's output be proved for every error up to &#949;?
     options:
@@ -1169,3 +1652,6 @@ tabs:
     - The network is unchanged.
     - Splitting only changes how the box is bounded.
   recap: say what a verified bound promises and how branch and bound tightens it.
+  needs:
+  - cartpole
+problem: 'A 1&nbsp;kg mass hangs on a spring with light damping and has to follow a moving position. Every lesson in the first row uses this one mass: tune it, check it is stable, fit a model of it from data, feed back its states, estimate its speed, run the controller on a computer, design it against requirements, and finish with your own recording. Then the same steps on a tilt table, an aircraft and a cart-pole.'

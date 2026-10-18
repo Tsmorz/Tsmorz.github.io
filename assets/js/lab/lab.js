@@ -4,12 +4,12 @@
 // the three canvas slots (top, row1, row2), and which controls the side panel gets.
 // Labs can be shared between tabs (the design page walks one lab through six steps).
 //
-// Views:    sim, time, states, contrib, analysis (toggle of bode | nyquist | poles), step, cbf,
+// Views:    sim, time, states, contrib, analysis (toggle of bode | nyquist | poles), step,
 //           verify-map, verify-proof, mimo, sysid-replay, sysid-data, sysid-bode, checklist,
 //           id-replay, id-era, id-result,
 //           rec-data, rec-fit, est-states, samp-time, samp-fold, disc-z, disc-step, disc-bode, disc-loop
 // Controls: mode, hint, freq, view, channel, reference, gains, controller, delay, noise, limit,
-//           margins, cbf, verify, mimo, sysid, idrun, record, estimator, sampling, discretize, ctrlrate,
+//           margins, verify, mimo, sysid, idrun, record, estimator, sampling, discretize, ctrlrate,
 //           requirements, score, reset, restart
 // All maths is in LabCore (lab-core.js); plants and their pictures in LabPlants.
 (function () {
@@ -92,10 +92,9 @@
       suggested: ctrl.channels.map(function (ch) { return Object.assign({}, ch.gains); }),
       refs: plant.refs.map(function (r, i) { return Object.assign({}, r, (lc.refs || [])[i] || {}); }),
       noise: lc.noise || 0, delay: lc.delay || 0, w: lc.w || 1, scale: ctrl.channels.map(function () { return 1; }),
-      shake: lc.shake || null, stops: lc.cbf ? lc.cbf.stops : null,
-      cbf: lc.cbf ? { on: lc.cbf.on !== false, input: 0, pos: lc.cbf.pos || 0, vel: lc.cbf.vel || 1, lim: lc.cbf.lim, lambda: lc.cbf.lambda || 2 } : null,
+      shake: lc.shake || null,
       req: lc.requirements ? Object.assign({}, lc.requirements) : null,
-      useNet: false, net: null, wantsNet: !!lc.net, dirty: true, acc: 0, failT: null, hits: 0, cbfFrames: 0, frames: 0,
+      useNet: false, net: null, wantsNet: !!lc.net, dirty: true, acc: 0, failT: null, frames: 0,
       sysid: lc.sysid ? Object.assign({ exc: 'chirp', noise: 0.01, T: 20, order: 2 }, lc.sysid) : null,
       ui: [], uiSync: [], manual: false, drag: null, trials: 0, ring: [], best: null, adjusts: 0,
       estimator: lc.estimator || null, logQ: lc.logQ !== undefined ? lc.logQ : 0, estDirty: true, estAt: 0
@@ -180,7 +179,6 @@
 
   V.sim = function (c, lab) {
     lab.plant.draw(c.ctx, c.W, c.H, lab.sim, lab, col);
-    if (lab.cbf) text(c.ctx, (lab.cbf.on ? 'Safety filter on' : 'Safety filter off') + (lab.sim.cbfActive ? ' · acting' : ''), 14, 50, lab.cbf.on ? col.accent : col.muted, { size: 12 });
   };
 
   // State history: one lane per state the plant lists, each on its own scale.
@@ -219,11 +217,13 @@
     text(ctx, lab.manual ? 'Manual: no controller output' : lab.plant.contribUnit, x1, 4, col.muted, { align: 'right', size: 11 });
   };
 
-  function timePlot(ctx, x0, y0, x1, y1, series, yr, title) {
-    function Y(v) { return y1 - (clamp(v, yr[0], yr[1]) - yr[0]) / (yr[1] - yr[0]) * (y1 - y0); }
-    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
+  // `head` (optional) reserves a band above the plot for the title and legend on one line, so curves never cross the text.
+  function timePlot(ctx, x0, y0, x1, y1, series, yr, title, head) {
+    var top = y0 + (head || 0);
+    function Y(v) { return y1 - (clamp(v, yr[0], yr[1]) - yr[0]) / (yr[1] - yr[0]) * (y1 - top); }
+    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
     if (yr[0] < 0 && yr[1] > 0) { ctx.save(); ctx.strokeStyle = col.border; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke(); ctx.restore(); }
-    text(ctx, fmtG(yr[1]), x0 - 4, y0, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, fmtG(yr[1]), x0 - 4, top, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
     text(ctx, fmtG(yr[0]), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
     series.forEach(function (s) {
       if (!s.data.length) return;
@@ -232,10 +232,10 @@
       ctx.stroke(); ctx.setLineDash([]);
     });
     text(ctx, title, x0 + 8, y0, col.text, { size: 11 });
-    var lx = x0 + 8;
+    ctx.font = '400 11px ' + col.font; var lx = x0 + 8 + (head ? ctx.measureText(title).width + 16 : 0), ly = head ? y0 : y0 + 16;
     series.forEach(function (s) {
-      if (!s.name) return; ctx.font = '600 11px ' + col.font; ctx.fillStyle = s.color; ctx.fillRect(lx, y0 + 21, 12, 3);
-      ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.fillText(s.name, lx + 16, y0 + 16); lx += 28 + ctx.measureText(s.name).width;
+      if (!s.name) return; ctx.font = '600 11px ' + col.font; ctx.fillStyle = s.color; ctx.fillRect(lx, ly + 5, 12, 3);
+      ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.fillText(s.name, lx + 16, ly); lx += 28 + ctx.measureText(s.name).width;
     });
   }
   function range(arrs, minSpan) {
@@ -525,46 +525,6 @@
     text(ctx, T + ' s', x1, y1 + 3, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
   };
 
-  /* ---- safety filter: the phase plane and the allowed input ---- */
-  V.cbf = function (c, lab) {
-    var ctx = c.ctx, cb = lab.cbf, h = lab.hist, narrow = c.W < 560, w = narrow ? c.W - 16 : c.W * 0.6;
-    var box = { x0: 40, x1: 8 + w, y0: 20, y1: c.H - 22 }, P = cb.lim * 1.6, Vm = Math.max(3, cb.lambda * cb.lim * 1.4);
-    function X(v) { return box.x0 + (v + P) / (2 * P) * (box.x1 - box.x0); }
-    function Y(v) { return box.y1 - (v + Vm) / (2 * Vm) * (box.y1 - box.y0); }
-    text(ctx, 'Phase plane: position vs velocity', box.x0, 2, col.text, { size: 11 });
-    ctx.fillStyle = withAlpha(col.bad, 0.1); ctx.fillRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
-    ctx.fillStyle = withAlpha(col.accent, 0.16); ctx.beginPath();     // safe set: |x| ≤ lim, λ(lim − x) ≥ v ≥ −λ(lim + x)
-    ctx.moveTo(X(-cb.lim), Y(0)); ctx.lineTo(X(-cb.lim), Y(Math.min(Vm, 2 * cb.lambda * cb.lim)));
-    ctx.lineTo(X(cb.lim), Y(0)); ctx.lineTo(X(cb.lim), Y(-Math.min(Vm, 2 * cb.lambda * cb.lim))); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.strokeStyle = col.bad; ctx.lineWidth = 2.5; [-1, 1].forEach(function (s) { ctx.beginPath(); ctx.moveTo(X(s * lab.stops), box.y0); ctx.lineTo(X(s * lab.stops), box.y1); ctx.stroke(); });
-    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(box.x0, Y(0)); ctx.lineTo(box.x1, Y(0)); ctx.moveTo(X(0), box.y0); ctx.lineTo(X(0), box.y1); ctx.stroke();
-    var px = h.x[cb.pos] || [], pv = h.x[cb.vel] || [];
-    ctx.save(); ctx.beginPath(); ctx.rect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0); ctx.clip();
-    for (var i = 1; i < px.length; i++) { ctx.strokeStyle = withAlpha(col.viz2, 0.15 + 0.85 * i / px.length); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(px[i - 1]), Y(pv[i - 1])); ctx.lineTo(X(px[i]), Y(pv[i])); ctx.stroke(); }
-    ctx.restore();
-    if (px.length) dot(ctx, X(px[px.length - 1]), Y(clamp(pv[pv.length - 1], -Vm, Vm)), col.text);
-    text(ctx, 'hard stop', X(lab.stops) - 4, box.y0 + 2, col.bad, { align: 'right', size: 10 });
-    text(ctx, 'position (m)', box.x1, box.y1 + 4, col.muted, { align: 'right', size: 10, mono: true });
-    text(ctx, 'safe set', X(0) + 4, Y(0) + 4, col.accent, { size: 10 });
-    if (narrow) return;
-    // the input: requested vs the interval the filter allows
-    var bx0 = box.x1 + 30, bx1 = c.W - 12, Fm = 40, by = c.H * 0.42;
-    function FX(F) { return bx0 + (clamp(F, -Fm, Fm) + Fm) / (2 * Fm) * (bx1 - bx0); }
-    text(ctx, 'Force: requested vs allowed', bx0, 2, col.text, { size: 11 });
-    var bd = lab.sim.cbfBounds;
-    ctx.fillStyle = withAlpha(col.bad, 0.12); ctx.fillRect(bx0, by - 12, bx1 - bx0, 24);
-    if (bd && cb.on) { ctx.fillStyle = withAlpha(col.accent, 0.3); ctx.fillRect(FX(bd[0]), by - 12, FX(bd[1]) - FX(bd[0]), 24); }
-    else { ctx.fillStyle = withAlpha(col.accent, 0.3); ctx.fillRect(bx0, by - 12, bx1 - bx0, 24); }
-    ctx.strokeStyle = col.border; ctx.strokeRect(bx0, by - 12, bx1 - bx0, 24);
-    var req = lab.sim.uReq ? lab.sim.uReq[cb.input] : 0, sent = lab.sim.u[cb.input];
-    ctx.strokeStyle = col.viz1; ctx.lineWidth = 3; ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.moveTo(FX(req), by - 22); ctx.lineTo(FX(req), by + 22); ctx.stroke(); ctx.setLineDash([]);
-    ctx.strokeStyle = col.viz2; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(FX(sent), by - 22); ctx.lineTo(FX(sent), by + 22); ctx.stroke();
-    text(ctx, 'requested', FX(req), by - 38, col.viz1, { align: 'center', size: 10 }); text(ctx, 'sent', FX(sent), by + 26, col.viz2, { align: 'center', size: 10 });
-    text(ctx, '−' + Fm + ' N', bx0, by + 44, col.muted, { size: 10, mono: true, w: '400' }); text(ctx, '+' + Fm + ' N', bx1, by + 44, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
-    wrapText(ctx, 'Teal: forces that keep ḣ ≥ −αh (here written ḧ + 2λḣ + λ²h ≥ 0, since force sets acceleration). The filter sends the allowed force nearest the request.', bx0, by + 62, bx1 - bx0, col.muted, { size: 11 });
-  };
-
   /* ---- verifying the cart-pole's network ---- */
   var TH = 0.5, TD = 1.5;
   function verifyState(lab) {
@@ -784,7 +744,7 @@
 
   /* ---- identification methods: Ho–Kalman (ERA), compared with least squares ---- */
   var ID_DT = 0.05, ID_NAMES = ['M', 'c', 'k'], ID_LABEL = { arx: 'Least squares (ARX)', era: 'Ho–Kalman (ERA)' };
-  function idState(lab) { return lab.idm || (lab.idm = { noise: 0.01, eraOrder: 2 }); }
+  function idState(lab) { return lab.idm || (lab.idm = { noise: 0.01, eraOrder: 2, seed: 1 }); }
   function seeded(seed) { return function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }; }
   function idEstimate(lab, method) {
     var I = idState(lab);
@@ -794,6 +754,7 @@
   function runId(lab, method) {
     var I = idState(lab), plant = lab.plant, p = lab.p, rng = seeded(4242 + Math.floor(Math.random() * 1000));
     if (method === 'era') {
+      I.seed++;
       // A hammer tap: 20 N for one sample. The sampled response divided by the tap is the impulse response.
       var A = 20, de = C.experiment(plant, p, function (t) { return t < ID_DT ? A : 0; }, 20, ID_DT, I.noise, rng);
       I.era = { data: de, t0: performance.now() }; eraFit(I.era, de.y.slice(1).map(function (v) { return v / A; }), I.eraOrder);
@@ -875,6 +836,184 @@
       text(ctx, fmt(est, 3) + ' (' + (err >= 0 ? '+' : '') + fmt(err, 1) + '%)', x + bw * 0.62, y1 - Hh(est) - 16, Math.abs(err) < 5 ? col.accent : col.text, { align: 'center', size: 11, mono: true });
     });
     text(ctx, 'grey: true   colour: estimate', c.W - 12, 4, col.muted, { align: 'right', size: 10, w: '400' });
+  };
+
+  // The states Ho–Kalman builds are not position and velocity: any invertible T gives the same input-output
+  // behaviour. For a 2nd-order fit, compare the realized states after the tap with T × the true (position, velocity).
+  function hiddenStates(lab, E) {
+    if (E.hid && E.hid.order === E.order && E.hid.model === E.model) return E.hid;
+    if (E.order !== 2) return (E.hid = { order: E.order, model: E.model, none: true });
+    var lin = C.linearize(lab.plant, lab.p), d = C.zohDiscretize(lin.A, lin.B, ID_DT), A = E.model.A, B = E.model.B, K = Math.min(E.h.length, 160);
+    var r = [B[0], B[1]], q = [d.Gam[0][0], d.Gam[1][0]], xr = [], xp = [], k, a, b;
+    for (k = 0; k < K; k++) {                                   // after a unit tap: realized state A^k B, true state Φ^k Γ
+      xr.push(r); xp.push(q);
+      r = [A[0][0] * r[0] + A[0][1] * r[1], A[1][0] * r[0] + A[1][1] * r[1]];
+      q = [d.Phi[0][0] * q[0] + d.Phi[0][1] * q[1], d.Phi[1][0] * q[0] + d.Phi[1][1] * q[1]];
+    }
+    var S = [[0, 0], [0, 0]], Z = [[0, 0], [0, 0]];             // T = X̃ Xᵀ (X Xᵀ)⁻¹, the best fixed mix
+    xp.forEach(function (v, i) { for (a = 0; a < 2; a++) for (b = 0; b < 2; b++) { S[a][b] += v[a] * v[b]; Z[a][b] += xr[i][a] * v[b]; } });
+    var det = S[0][0] * S[1][1] - S[0][1] * S[1][0], Si = [[S[1][1] / det, -S[0][1] / det], [-S[1][0] / det, S[0][0] / det]];
+    var Tm = [0, 1].map(function (i) { return [0, 1].map(function (j) { return Z[i][0] * Si[0][j] + Z[i][1] * Si[1][j]; }); });
+    var fitted = xp.map(function (v) { return [Tm[0][0] * v[0] + Tm[0][1] * v[1], Tm[1][0] * v[0] + Tm[1][1] * v[1]]; }), e2 = 0, v2 = 0;
+    xr.forEach(function (v, i) { for (var c2 = 0; c2 < 2; c2++) { e2 += Math.pow(v[c2] - fitted[i][c2], 2); v2 += v[c2] * v[c2]; } });
+    return (E.hid = { order: 2, model: E.model, xr: xr, fitted: fitted, T: Tm, err: Math.sqrt(e2 / v2) });
+  }
+  V['id-hidden'] = function (c, lab) {
+    var ctx = c.ctx, E = idState(lab).era; if (!E) return;
+    var H = hiddenStates(lab, E);
+    if (H.none) { text(ctx, 'Order ' + E.order + ': keep exactly 2 bars to compare the realized states with position and velocity.', 12, 12, col.muted, { size: 12 }); return; }
+    var wide = c.W >= 560, x1 = wide ? c.W * 0.62 : c.W - 10, mid = c.H * 0.5, n = H.xr.length;
+    [0, 1].forEach(function (j) {
+      var rr = H.xr.map(function (v) { return v[j]; }), ff = H.fitted.map(function (v) { return v[j]; }), y0 = j ? mid + 8 : 4, y1 = j ? c.H - 6 : mid - 2;
+      timePlot(ctx, 44, y0, x1, y1, [{ data: rr, cap: n, color: j ? col.viz2 : col.viz1, name: 'realized' }, { data: ff, cap: n, color: col.text, width: 1.4, name: 'mix of true x, ẋ' }],
+        range([rr, ff], 1e-9), 'Realized state ' + (j + 1) + ' (solid) vs a mix of x, ẋ (dashed)', 18);
+    });
+    if (wide) notes(ctx, { x0: x1 + 18, x1: c.W - 10, y: 6 }, [
+      ['Only the position is measured, but the model has 2 states. The ones Ho–Kalman builds are not position and velocity.', col.muted, '400'],
+      ['Each is a fixed mix of them: x̃ = T·(x, ẋ), with T = [' + fmt(H.T[0][0], 2) + ', ' + fmt(H.T[0][1], 2) + '; ' + fmt(H.T[1][0], 2) + ', ' + fmt(H.T[1][1], 2) + '].', col.viz1],
+      ['Mismatch after the best T: ' + fmt(100 * H.err, 2) + '%', H.err < 0.05 ? col.accent : col.bad],
+      ['Any invertible T gives the same input and output, so the data cannot say which coordinates are "real".', col.muted, '400']
+    ]);
+  };
+
+  // Three ways to fit the same noisy recording, side by side: mean error in m, c, k over a few recordings (LabCore.compareFits).
+  V['id-vs'] = function (c, lab) {
+    var ctx = c.ctx, I = idState(lab), V2 = I.vs, now = performance.now();
+    if ((!V2 || V2.noise !== I.noise || V2.seed !== I.seed) && (!V2 || now - V2.at > 350)) V2 = I.vs = { noise: I.noise, seed: I.seed, at: now, res: C.compareFits(lab.plant, lab.p, I.noise, I.seed, 4) };
+    var R = V2.res, stale = V2.noise !== I.noise || V2.seed !== I.seed, narrow = c.W < 560, x0 = 46, x1 = narrow ? c.W - 10 : c.W * 0.64, y0 = 30, y1 = c.H - 24;
+    var meth = [['arx', 'Least squares (ARX), position only', col.viz1], ['era', 'Ho–Kalman, position only', col.viz2], ['ss', 'State least squares, position and velocity', col.viz4]];
+    var cap = 100, Y = function (v) { return y1 - Math.min(v, cap) / cap * (y1 - y0); };
+    text(ctx, 'Mean error of each constant over 4 noisy recordings' + (stale ? ' (updating…)' : ''), x0, 2, col.text, { size: 11 });
+    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
+    [0, 50, 100].forEach(function (v) { text(ctx, v + (v === 100 ? '%+' : '%'), x0 - 4, Y(v) - 5, col.muted, { align: 'right', size: 10, mono: true, w: '400' }); });
+    var gw = (x1 - x0) / 3;
+    ['mass m', 'damping c', 'spring k'].forEach(function (nm, g) {
+      text(ctx, nm, x0 + g * gw + gw / 2, y1 + 4, col.text, { align: 'center', size: 11 });
+      meth.forEach(function (m, i) {
+        var v = R[m[0]] ? R[m[0]][g] : null, bw = (gw - 16) / 3, bx = x0 + g * gw + 8 + i * bw;
+        if (v === null) { text(ctx, 'none', bx + bw / 2, y1 - 14, col.muted, { align: 'center', size: 10 }); return; }
+        ctx.fillStyle = m[2]; ctx.fillRect(bx + 1, Y(v), bw - 2, y1 - Y(v));
+        text(ctx, fmt(v, v < 10 ? 1 : 0) + '%', bx + bw / 2, Y(v) - 13, v > 50 ? col.bad : col.text, { align: 'center', size: 10, mono: true, w: '400' });
+      });
+    });
+    if (!narrow) {
+      var ny = 6; meth.forEach(function (m) { ctx.fillStyle = m[2]; ctx.fillRect(x1 + 18, ny + 4, 10, 10); text(ctx, m[1], x1 + 34, ny + 3, col.text, { size: 11 }); ny += 18; });
+      notes(ctx, { x0: x1 + 18, x1: c.W - 10, y: ny + 6 }, [
+        ['No noise: all agree. Noise biases state least squares and drifts ARX.', col.muted, '400'],
+        ['Ho–Kalman drops the small singular values, so it stays put.', col.muted, '400']
+      ]);
+    }
+  };
+
+  /* ---- change of basis: the same motion in different coordinates ---- */
+  var BASIS_A = [[0, 1], [-4, -0.4]], BASIS_B = [0, 1], BASIS_C = [1, 0];
+  function basisState(tab) { return tab.basis || (tab.basis = { phi: 35, s1: 1.4, s2: 0.7 }); }
+  function basisModel(tab) {                                   // T = R(φ) · diag(s1, s2); x̃ = T x
+    var b = basisState(tab), cs = Math.cos(b.phi * Math.PI / 180), sn = Math.sin(b.phi * Math.PI / 180);
+    var T = [[cs * b.s1, -sn * b.s2], [sn * b.s1, cs * b.s2]], det = T[0][0] * T[1][1] - T[0][1] * T[1][0];
+    var Ti = [[T[1][1] / det, -T[0][1] / det], [-T[1][0] / det, T[0][0] / det]];
+    function mm(X, Y) { return X.map(function (r) { return Y[0].map(function (_, j) { return r[0] * Y[0][j] + r[1] * Y[1][j]; }); }); }
+    var Ap = mm(mm(T, BASIS_A), Ti), Bp = [T[0][1] * BASIS_B[1], T[1][1] * BASIS_B[1]], Cp = [BASIS_C[0] * Ti[0][0], BASIS_C[0] * Ti[0][1]];
+    var d = C.zohDiscretize(BASIS_A, [[0], [1]], 0.02), x = [1, 0], xs = [], xt = [];
+    for (var k = 0; k < 300; k++) { xs.push(x); xt.push([T[0][0] * x[0] + T[0][1] * x[1], T[1][0] * x[0] + T[1][1] * x[1]]); x = [d.Phi[0][0] * x[0] + d.Phi[0][1] * x[1], d.Phi[1][0] * x[0] + d.Phi[1][1] * x[1]]; }
+    return { T: T, Ti: Ti, Ap: Ap, Bp: Bp, Cp: Cp, xs: xs, xt: xt, t: xs.map(function (_, k) { return k * 0.02; }) };
+  }
+  function phasePlot(ctx, box, traj, title, arrows) {
+    var x0 = box.x0, y0 = box.y0, w = box.x1 - box.x0, h = box.y1 - box.y0, side = Math.min(w, h - 16), cx = x0 + w / 2, cy = y0 + 16 + (h - 16) / 2, m = 1e-6;
+    traj.forEach(function (v) { m = Math.max(m, Math.abs(v[0]), Math.abs(v[1])); }); (arrows || []).forEach(function (a) { m = Math.max(m, Math.abs(a.v[0]), Math.abs(a.v[1])); }); m *= 1.15;
+    var X = function (v) { return cx + v / m * side / 2; }, Y = function (v) { return cy - v / m * side / 2; };
+    text(ctx, title, x0, y0, col.text, { size: 11 });
+    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.strokeRect(cx - side / 2 + .5, cy - side / 2 + .5, side - 1, side - 1);
+    ctx.beginPath(); ctx.moveTo(cx - side / 2, cy); ctx.lineTo(cx + side / 2, cy); ctx.moveTo(cx, cy - side / 2); ctx.lineTo(cx, cy + side / 2); ctx.stroke();
+    ctx.strokeStyle = col.viz1; ctx.lineWidth = 1.8; ctx.beginPath(); traj.forEach(function (v, i) { if (i) ctx.lineTo(X(v[0]), Y(v[1])); else ctx.moveTo(X(v[0]), Y(v[1])); }); ctx.stroke();
+    dot(ctx, X(traj[0][0]), Y(traj[0][1]), col.viz1);
+    (arrows || []).forEach(function (a) {
+      var ex = X(a.v[0]), ey = Y(a.v[1]), ang = Math.atan2(ey - cy, ex - cx);
+      ctx.strokeStyle = a.color; ctx.fillStyle = a.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex - 8 * Math.cos(ang - 0.4), ey - 8 * Math.sin(ang - 0.4)); ctx.lineTo(ex - 8 * Math.cos(ang + 0.4), ey - 8 * Math.sin(ang + 0.4)); ctx.fill();
+      text(ctx, a.label, ex + (ex > cx ? 4 : -4), ey - 6, a.color, { size: 10, align: ex > cx ? 'left' : 'right' });
+    });
+  }
+  V['basis-phase'] = function (c, lab, tab) {
+    var M = basisModel(tab), ctx = c.ctx, half = c.W / 2 - 6;
+    phasePlot(ctx, { x0: 8, y0: 4, x1: half, y1: c.H - 4 }, M.xs, 'Physical states: position x, velocity ẋ', [{ v: [0.5, 0], color: col.viz2, label: 'x axis' }, { v: [0, 0.5], color: col.viz3, label: 'ẋ axis' }]);
+    var e1 = [M.T[0][0] * 0.5, M.T[1][0] * 0.5], e2 = [M.T[0][1] * 0.5, M.T[1][1] * 0.5];
+    phasePlot(ctx, { x0: half + 12, y0: 4, x1: c.W - 8, y1: c.H - 4 }, M.xt, 'The same motion in realized states x̃ = T x', [{ v: e1, color: col.viz2, label: 'x axis' }, { v: e2, color: col.viz3, label: 'ẋ axis' }]);
+  };
+  V['basis-time'] = function (c, lab, tab) {
+    var M = basisModel(tab), ctx = c.ctx, n = M.t.length, mid = c.H * 0.4, y = M.Cp[0], out = M.xt.map(function (v) { return M.Cp[0] * v[0] + M.Cp[1] * v[1]; });
+    var xp = M.xs.map(function (v) { return v[0]; });
+    timePlot(ctx, 44, 4, c.W - 10, mid - 4, [{ data: out, cap: n, color: col.text, width: 2, name: 'y = C′ x̃' }, { data: xp, cap: n, color: col.accent, width: 1, name: 'position x' }], range([xp], 0.1),
+      'The output y = C′x̃ is the position, whatever T is', 18);
+    var a = M.xt.map(function (v) { return v[0]; }), b = M.xt.map(function (v) { return v[1]; });
+    timePlot(ctx, 44, mid + 4, c.W - 10, c.H - 6, [{ data: a, cap: n, color: col.viz1, name: 'x̃₁' }, { data: b, cap: n, color: col.viz2, name: 'x̃₂' }], range([a, b], 0.1),
+      'The realized states change with T: mixes of x and ẋ', 18);
+  };
+  V['basis-matrices'] = function (c, lab, tab) {
+    var M = basisModel(tab), ctx = c.ctx, f = function (v) { return (v >= 0 ? ' ' : '') + v.toFixed(2); }, row = function (m, i) { return m[i].map(f).join('  '); };
+    var lam = function (A) { return C.eig(A).map(function (z) { return fmt(z[0], 2) + (z[1] ? (z[1] >= 0 ? ' + ' : ' − ') + fmt(Math.abs(z[1]), 2) + 'j' : ''); }).join(',  '); };
+    var lines = [
+      ['Physical model   A = [' + row(BASIS_A, 0) + ' ; ' + row(BASIS_A, 1) + ']', col.text],
+      ['Change of basis  T = [' + row(M.T, 0) + ' ; ' + row(M.T, 1) + ']', col.viz1],
+      ['Realized model   A′ = T A T⁻¹ = [' + row(M.Ap, 0) + ' ; ' + row(M.Ap, 1) + ']', col.viz1],
+      ['                 B′ = T B = [' + f(M.Bp[0]) + ' ; ' + f(M.Bp[1]) + ']      C′ = C T⁻¹ = [' + f(M.Cp[0]) + '  ' + f(M.Cp[1]) + ']', col.viz1],
+      ['Poles of A:   ' + lam(BASIS_A), col.accent], ['Poles of A′:  ' + lam(M.Ap) + '   (the same)', col.accent],
+      ['Changes: every number in A, B, C and what each state means.  Stays: poles, stability, the output, the impulse response.', col.muted]
+    ];
+    var y = 8; lines.forEach(function (l, i) { text(ctx, l[0], 12, y, l[1], { size: i === 6 ? 11 : 12, mono: i < 6, w: i === 6 ? '400' : '500' }); y += i === 6 ? 20 : 19; });
+  };
+  var ctrlBasis = function (panel, lab, tab) {
+    var b = basisState(tab);
+    h3(panel, 'Change the coordinates');
+    slider(panel, tab.id + '-phi', 'Rotation', -90, 90, 1, b.phi, function (v) { return fmt(v, 0) + '°'; }, function (v) { b.phi = v; });
+    slider(panel, tab.id + '-s1', 'Stretch state 1', -1, 1, 0.02, Math.log10(b.s1), function (v) { return '×' + fmt(Math.pow(10, v), 2); }, function (v) { b.s1 = Math.pow(10, v); });
+    slider(panel, tab.id + '-s2', 'Stretch state 2', -1, 1, 0.02, Math.log10(b.s2), function (v) { return '×' + fmt(Math.pow(10, v), 2); }, function (v) { b.s2 = Math.pow(10, v); });
+    hint(panel, 'T = rotation × stretch. Identity is rotation 0°, stretch ×1.');
+  };
+
+  /* ---- unseen states: read a hard-to-measure state from a model built out of the cheap sensors ---- */
+  function dispUnit(plant, i) { var u = plant.units[i]; return u === 'rad' ? { k: 180 / Math.PI, u: '°' } : u === 'rad/s' ? { k: 180 / Math.PI, u: '°/s' } : { k: 1, u: u }; }
+  function unseenState(tab) { return tab.un || (tab.un = { target: tab.unseen.targets[0], order: tab.unseen.order, noise: 0.1, seed: 1, res: null }); }
+  function unseenRun(lab, tab) {
+    var U = unseenState(tab);
+    U.res = C.unseen(lab.plant, Object.assign({}, lab.plant.params), { outs: tab.unseen.outs, target: U.target, order: U.order, noise: U.noise, seed: U.seed, dt: 0.05, amp: tab.unseen.amp, N: tab.unseen.N });
+  }
+  V['unseen-map'] = function (c, lab, tab) {
+    var U = unseenState(tab), R = U.res; if (!R) return;
+    var ctx = c.ctx, plant = lab.plant, n = plant.n, narrow = c.W < 560, x = 10, w1 = narrow ? c.W * 0.34 : c.W * 0.3, y0 = 24, y1 = c.H - 22;
+    text(ctx, 'Singular values (log): the states the tap reveals', x, 4, col.text, { size: 11 });
+    var S = R.S.slice(0, 8), lo = -14, bw = w1 / S.length, Yv = function (v) { var l = Math.log10(Math.max(v / S[0], 1e-14)); return y1 - (l - lo) / (0 - lo) * (y1 - y0); };
+    S.forEach(function (v, i) { var keep = i < R.order; ctx.fillStyle = keep ? col.accent : withAlpha(col.muted, 0.45); ctx.fillRect(x + i * bw + 2, Yv(v), bw - 4, y1 - Yv(v)); text(ctx, String(i + 1), x + i * bw + bw / 2, y1 + 3, col.muted, { align: 'center', size: 10, mono: true, w: '400' }); });
+    var hx = x + w1 + 24, cw = Math.min(46, (c.W - hx - 90) / R.order), rh = Math.min(22, (y1 - y0) / n);
+    text(ctx, 'Each physical state as a mix of the realized ones (● measured, boxed: to read)', hx, 4, col.text, { size: 11 });
+    var neg = hexRgb(col.bad), zer = hexRgb(col.zero), pos = hexRgb(col.pos);
+    plant.stateNames.forEach(function (nm, i) {
+      var wv = R.W[i].w, mx = 1e-12, measured = tab.unseen.outs.indexOf(i) >= 0, yy = y0 + i * rh; wv.forEach(function (v) { mx = Math.max(mx, Math.abs(v)); });
+      wv.forEach(function (v, j) { var q = v / mx, cc = q < 0 ? mix(zer, neg, Math.min(1, -q)) : mix(zer, pos, Math.min(1, q)); ctx.fillStyle = 'rgb(' + cc.join(',') + ')'; ctx.fillRect(hx + 60 + j * cw, yy, cw - 1, rh - 2); });
+      text(ctx, nm + (measured ? ' ●' : ''), hx + 54, yy + 3, i === U.target ? col.accent : col.text, { align: 'right', size: 11, w: i === U.target ? '700' : '400' });
+      if (i === U.target) { ctx.strokeStyle = col.accent; ctx.lineWidth = 1.5; ctx.strokeRect(hx + 60 - 1, yy - 1, R.order * cw + 1, rh); }
+    });
+    for (var j = 0; j < R.order; j++) text(ctx, 'x̃' + (j + 1), hx + 60 + j * cw + cw / 2, y0 + n * rh + 2, col.muted, { align: 'center', size: 10, mono: true, w: '400' });
+  };
+  V['unseen-fit'] = function (c, lab, tab) {
+    var U = unseenState(tab), R = U.res; if (!R) return;
+    var plant = lab.plant, dsp = dispUnit(plant, U.target), n = R.t.length, tr = R.truth.map(function (v) { return v * dsp.k; }), es = R.est.map(function (v) { return v * dsp.k; });
+    timePlot(c.ctx, 44, 4, c.W - 10, c.H - 18, [{ data: tr, cap: n, color: col.muted, width: 2, name: 'true' }, { data: es, cap: n, color: col.accent, width: 1.6, name: 'read from the realized states' }], range([tr, es], 1e-9),
+      plant.stateNames[U.target] + ' (' + dsp.u + '), fresh input: true vs read from the model (fit ' + fmt(R.fit, 1) + '%)', 18);
+    text(c.ctx, 'Calibrated once against the hard sensor (noise ' + fmt(100 * U.noise, 0) + '% of the signal), then read from ' + tab.unseen.outs.map(function (o) { return plant.stateNames[o]; }).join(' and ') + ' alone.', 48, c.H - 14, col.muted, { size: 10, w: '400' });
+  };
+  var ctrlUnseen = function (panel, lab, tab) {
+    var U = unseenState(tab), plant = lab.plant;
+    h3(panel, 'Hidden state to read');
+    toggle(panel, 'Hidden state', tab.unseen.targets.map(function (i) { return [i, plant.stateNames[i]]; }), U.target, function (v) { U.target = v; unseenRun(lab, tab); });
+    h3(panel, 'Model order (bars kept)');
+    toggle(panel, 'Model order', tab.unseen.orders.map(function (o) { return [o, String(o)]; }), U.order, function (v) { U.order = v; unseenRun(lab, tab); });
+    slider(panel, tab.id + '-un-noise', 'Calibration noise', 0, 0.5, 0.01, U.noise, function (v) { return fmt(100 * v, 0) + '%'; }, function (v) { U.noise = v; unseenRun(lab, tab); });
+    button(panel, 'Recalibrate', function () { U.seed++; unseenRun(lab, tab); });
+    hint(panel, 'Calibrating means measuring the hard state once (a vane, a tachometer, a test rig) while exciting the plant.');
+    var t = telemetry(panel, [['fit', 'Fit on fresh input']]);
+    tab.syncUnseen = function () { var r = U.res; setV(t.fit, r ? fmt(r.fit, 1) + '%' : '-', r && r.fit < 90); };
+    unseenRun(lab, tab);
   };
 
   /* ---- your own data: record from the live sim, then identify ---- */
@@ -976,27 +1115,26 @@
   }
   // True vs estimated rates, and the noisy angle the estimator is given.
   V['est-states'] = function (c, lab) {
-    var ctx = c.ctx, E = lab.hist.est || {}, lanes = [
-      ['Pole angle θ (°): measured vs true', E.thm, E.th, col.muted, col.text],
-      ['Pole rate θ̇ (°/s): estimate vs true', E.wh, E.w, col.viz2, col.text],
-      ['Cart velocity ẋ (m/s): estimate vs true', E.vh, E.v, col.viz2, col.text]], n = lanes.length, lh = (c.H - 6) / n, x0 = 10, x1 = c.W - 10;
+    var ctx = c.ctx, E = lab.hist.est || [], spec = lab.plant.est, lanes = spec.lanes.map(function (ln, k) {
+      return [ln.label, E[k] && E[k].m, E[k] && E[k].t, ln.measured ? col.muted : col.viz2, col.text, ln.measured];
+    }), n = lanes.length, lh = (c.H - 6) / n, x0 = 10, x1 = c.W - 10;
     lanes.forEach(function (ln, k) {
       var a = ln[1] || [], b = ln[2] || [], y0 = 4 + k * lh, y1 = y0 + lh - 6, m = 1e-6;
       b.forEach(function (v) { m = Math.max(m, Math.abs(v)); }); a.forEach(function (v) { m = Math.max(m, Math.min(Math.abs(v), 4 * m + 1e-6)); }); m *= 1.15;
       var Y = function (v) { return (y0 + y1) / 2 + 8 - clamp(v / m, -1, 1) * (y1 - y0 - 16) / 2; };
-      [[a, ln[3], k === 0 ? 1 : 1.6], [b, ln[4], 1.4]].forEach(function (sr, si) {
+      [[a, ln[3], ln[5] ? 1 : 1.6], [b, ln[4], 1.4]].forEach(function (sr, si) {
         ctx.strokeStyle = sr[1]; ctx.lineWidth = sr[2]; ctx.setLineDash(si === 1 ? [5, 3] : []); ctx.beginPath();
         sr[0].forEach(function (v, i) { var x = x0 + (i + CAP - sr[0].length) / (CAP - 1) * (x1 - x0); if (i) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke(); ctx.setLineDash([]);
       });
       var err = 0; a.forEach(function (v, i) { err += Math.pow(v - (b[i] || 0), 2); }); err = a.length ? Math.sqrt(err / a.length) : 0;
       text(ctx, ln[0], x0 + 4, y0, col.text, { size: 11 });
-      if (a.length) text(ctx, 'error ' + fmtG(err), x1 - 4, y0, k === 0 ? col.muted : err > 0.25 * m ? col.bad : col.accent, { size: 11, mono: true, align: 'right' });
+      if (a.length) text(ctx, 'error ' + fmtG(err), x1 - 4, y0, ln[5] ? col.muted : err > 0.25 * m ? col.bad : col.accent, { size: 11, mono: true, align: 'right' });
     });
   };
   function estStats(lab) {
-    var E = lab.hist.est || {}, w = E.w || [], wh = E.wh || [], u = lab.hist.u[0] || [], e = 0, uu = 0;
-    w.forEach(function (v, i) { e += Math.pow(wh[i] - v, 2); }); u.forEach(function (v) { uu += v * v; });
-    return { rate: w.length ? Math.sqrt(e / w.length) : null, force: u.length ? Math.sqrt(uu / u.length) : null };
+    var E = lab.hist.est || [], L = E[lab.plant.est.rate] || { m: [], t: [] }, u = lab.hist.u[0] || [], e = 0, uu = 0;
+    L.t.forEach(function (v, i) { e += Math.pow(L.m[i] - v, 2); }); u.forEach(function (v) { uu += v * v; });
+    return { rate: L.t.length ? Math.sqrt(e / L.t.length) : null, force: u.length ? Math.sqrt(uu / u.length) : null };
   }
   var ctrlEstimator = function (panel, lab, tab) {
     h3(panel, 'Where the rates come from');
@@ -1014,7 +1152,7 @@
     }
     tab.syncEst = function () {
       var st = estStats(lab);
-      setV(t.r, st.rate === null ? '-' : fmt(st.rate, st.rate < 10 ? 1 : 0) + '°/s', st.rate > 20);
+      setV(t.r, st.rate === null ? '-' : fmt(st.rate, st.rate < 10 ? 1 : 0) + ' ' + lab.plant.est.unit, st.rate > (lab.plant.est.unit === 'm/s' ? 0.5 : 20));
       setV(t.f, st.force === null ? '-' : fmt(st.force, 1) + ' N', st.force > 5);
       setV(t.falls, String(lab.trials), lab.trials > 0);
       if (lqrM) {
@@ -1266,7 +1404,7 @@
   }
   function setV(span, v, bad) { if (!span) return; if (span.textContent !== v) span.textContent = v; span.classList.toggle('lab-bad', !!bad); }
 
-  var CTRL = { record: ctrlRecord, estimator: ctrlEstimator };
+  var CTRL = { record: ctrlRecord, estimator: ctrlEstimator, basis: ctrlBasis, unseen: ctrlUnseen };
   CTRL.sampling = function (panel, lab, tab) {
     var S = sampState(lab); lab.hiRes = lab.hiRes || { t: [], y: [], dt: lab.plant.dt };
     h3(panel, 'Sampling');
@@ -1306,7 +1444,7 @@
   };
   CTRL.view = function (panel, lab, tab) {
     h3(panel, 'View');
-    var names = { contrib: 'Terms', bode: 'Bode', nyquist: 'Nyquist', poles: 'Poles' };
+    var names = { contrib: 'Terms', bode: 'Bode', nyquist: 'Nyquist', poles: 'Poles', 'id-result': 'Estimates', 'id-hidden': 'Hidden states', 'id-vs': 'Compare methods' };
     toggle(panel, 'Plot shown', tab.analysis.map(function (v) { return [v, names[v]]; }), tab.view, function (v) { tab.view = v; });
   };
   CTRL.channel = function (panel, lab, tab) {
@@ -1368,14 +1506,6 @@
       setV(t.up, ok ? (mg.gmUp === null ? '∞' : '+' + fmt(mg.gmUp, 1) + ' dB') : '-'); setV(t.dn, ok ? (mg.gmDown === null ? '∞' : fmt(mg.gmDown, 1) + ' dB') : '-');
       setV(t.dm, ok && mg.delayMargin ? fmt(mg.delayMargin * 1000, 0) + ' ms' : '-');
     };
-  };
-  CTRL.cbf = function (panel, lab, tab) {
-    h3(panel, 'Safety filter');
-    toggle(panel, 'Safety filter', [[false, 'Off'], [true, 'On']], lab.cbf.on, function (v) { lab.cbf.on = v; lab.hits = 0; lab.cbfFrames = 0; lab.frames = 0; });
-    slider(panel, tab.id + '-lambda', 'Caution λ', 0.5, 8, 0.1, lab.cbf.lambda, function (v) { return fmt(v, 1) + ' /s'; }, function (v) { lab.cbf.lambda = v; });
-    hint(panel, 'Small λ brakes early and gently; large λ waits until the last moment.');
-    var t = telemetry(panel, [['hits', 'Hits on a stop'], ['act', 'Filter acting']]);
-    tab.syncCbf = function () { setV(t.hits, String(lab.hits), lab.hits > 0); setV(t.act, lab.frames ? fmt(100 * lab.cbfFrames / lab.frames, 0) + '%' : '-'); };
   };
   CTRL.verify = function (panel, lab, tab) {
     lab.verify = lab.verify || { eps: Math.pow(10, -2.8), delta: 0.5, depth: 0, follow: true, e: [0, 0, 0.1, 0] };
@@ -1504,7 +1634,8 @@
   // prediction uses it); `why[i]` says why a wrong option i is wrong; onReveal runs after the answer.
   function quizCard(P, title, phase, onReveal) {
     var card = el('div', 'lab-card lab-quiz');
-    card.appendChild(el('span', 'lab-phase', phase)); card.appendChild(el('h4', 'lab-card-title', title));
+    if (phase) card.appendChild(el('span', 'lab-phase', phase));
+    card.appendChild(el('h4', 'lab-card-title', title));
     card.appendChild(el('p', 'lab-q', P.question));
     var opts = el('div', 'lab-opts'), follow = el('div', 'lab-follow'); follow.hidden = true;
     var picked = null, btns = P.options.map(function (o, i) {
@@ -1530,7 +1661,7 @@
   // Reactivate: a prediction above the sim (its answer opens the explanation). Evaluate: closing checks.
   function buildLearn(tab) {
     var sec = document.getElementById('sec-' + tab.id), slot = sec && sec.querySelector('.lab-check-slot'), pslot = sec && sec.querySelector('.lab-predict-slot');
-    if (tab.predict && pslot) pslot.appendChild(quizCard(tab.predict, 'Predict first', '2 · Reactivate', function () { var d = sec.querySelector('.lab-inform'); if (d) d.open = true; }));
+    if (tab.predict && pslot) pslot.appendChild(quizCard(tab.predict, 'Predict first', '', function () { var d = sec.querySelector('.lab-inform'); if (d) d.open = true; }));
     var checks = tab.check ? (Array.isArray(tab.check) ? tab.check : [tab.check]) : [];
     if (slot) checks.forEach(function (c, i) { slot.appendChild(quizCard(c, checks.length > 1 ? 'Check yourself (' + (i + 1) + ' of ' + checks.length + ')' : 'Check yourself', '5 · Evaluate')); });
   }
@@ -1590,18 +1721,14 @@
       lab.acc -= plant.dt;
       if (lab.failT !== null) { if (lab.sim.t - lab.failT > 1) { lab.sim.reset(); lab.failT = null; } else { lab.sim.t += plant.dt; continue; } }
       lab.sim.step(); lab.frames++;
-      if (lab.manual) lab.aliveMan = (lab.aliveMan || 0) + plant.dt; else lab.aliveAuto = (lab.aliveAuto || 0) + plant.dt; if (lab.sim.cbfActive) lab.cbfFrames++;
-      if (lab.stops) {                                    // hard stops: an impact, not a crash
-        var x = lab.sim.x, pi = lab.cbf.pos;
-        if (Math.abs(x[pi]) > lab.stops) { x[pi] = Math.sign(x[pi]) * lab.stops; if (x[lab.cbf.vel] * Math.sign(x[pi]) > 0) { x[lab.cbf.vel] = 0; lab.hits++; lab.hitFlash = 20; } }
-      }
+      if (lab.manual) lab.aliveMan = (lab.aliveMan || 0) + plant.dt; else lab.aliveAuto = (lab.aliveAuto || 0) + plant.dt;
       if (lab.sim.failed && lab.failT === null) { lab.failT = lab.sim.t; lab.trials++; lab.ring = []; lab.aliveMan = 0; lab.aliveAuto = 0; }
       lab.tick = (lab.tick || 0) + 1;
       if (lab.rec) recordTick(lab);
       if (lab.hiRes) { push(lab.hiRes.t, lab.sim.t, 1200); push(lab.hiRes.y, lab.sim.x[0], 1200); }
       if (lab.sim.xhat && lab.tick % every === 0) {
-        var E = lab.hist.est || (lab.hist.est = { th: [], thm: [], w: [], wh: [], v: [], vh: [] }), xs3 = lab.sim.x, xh3 = lab.sim.xhat, pm3 = lab.sim.prevMeas || xs3, r2d = 180 / Math.PI;
-        push(E.th, xs3[2] * r2d, CAP); push(E.thm, pm3[2] * r2d, CAP); push(E.w, xs3[3] * r2d, CAP); push(E.wh, xh3[3] * r2d, CAP); push(E.v, xs3[1], CAP); push(E.vh, xh3[1], CAP);
+        var spec3 = lab.plant.est, E = lab.hist.est || (lab.hist.est = spec3.lanes.map(function () { return { m: [], t: [] }; })), xs3 = lab.sim.x, xh3 = lab.sim.xhat, pm3 = lab.sim.prevMeas || xs3;
+        spec3.lanes.forEach(function (ln, k) { push(E[k].t, xs3[ln.idx] * ln.scale, CAP); push(E[k].m, (ln.measured ? pm3[ln.idx] : xh3[ln.idx]) * ln.scale, CAP); });
       }
       if (lab.tick % every === 0) {
         var x0 = plant.x0(lab.p), u0 = plant.u0(lab.p), xs = lab.sim.x;
@@ -1623,7 +1750,6 @@
         }
       }
     }
-    if (lab.hitFlash) lab.hitFlash--;
   }
   function xs2deg(r) { return r * 180 / Math.PI; }
   var last = null;
@@ -1637,13 +1763,13 @@
       if (tab.syncFreq) tab.syncFreq();
       if (lab.estimator && lab.estDirty && performance.now() - lab.estAt > 150) updateEstimator(lab);
       if (lab.sysid && lab.sysid.data) lab.sysid.replayT = Math.min(lab.sysid.replayT + dt * 4, lab.sysid.T);
-      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'cbf' || v === 'verify-map' || v === 'states' || v === 'contrib' || v === 'est-states' || v === 'samp-time' || v === 'samp-fold'; });
+      var simShown = [tab.top, tab.row1, tab.row2].some(function (v) { return v === 'sim' || v === 'time' || v === 'verify-map' || v === 'states' || v === 'contrib' || v === 'est-states' || v === 'samp-time' || v === 'samp-fold'; });
       if (simShown) stepLab(lab, dt, tab);
       [tab.top, tab.row1, tab.row2].forEach(function (vname, k) {
         var cv = tab.canvases[k]; if (!cv || !V[vname]) return;
         V[vname](fit(cv), lab, tab, cv);
       });
-      ['syncMargins', 'syncCbf', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec', 'syncEst', 'syncSamp', 'syncRate'].forEach(function (f) { if (tab[f]) tab[f](); });
+      ['syncMargins', 'syncUnseen', 'syncVerify', 'syncMimo', 'syncSysid', 'syncScore', 'syncId', 'syncRec', 'syncEst', 'syncSamp', 'syncRate'].forEach(function (f) { if (tab[f]) tab[f](); });
     });
     requestAnimationFrame(frame);
   }
