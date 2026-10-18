@@ -74,6 +74,11 @@ tasks:
     cmds:
       - script/test-swingup
 
+  check:fit:
+    desc: Check the CSV, model fit and LQR behind /controls/fit/ (Node, no build)
+    cmds:
+      - script/test-fit
+
   check:lab:
     desc: Check the lab template (assets/js/lab/) and every _data/labs page (Node, no build)
     cmds:
@@ -85,11 +90,12 @@ tasks:
       - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt
 
   check:fast:
-    desc: "Quick checks, no build: _data content, swing-up port, lab maths"
+    desc: "Quick checks, no build: _data content, swing-up port, lab maths, CSV fit"
     cmds:
       - task: check:data
       - task: check:swingup
       - task: check:lab
+      - task: check:fit
 
   check:
     desc: "Everything CI runs: quick checks, then build, JS references, internal links"

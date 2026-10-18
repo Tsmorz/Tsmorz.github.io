@@ -1,5 +1,6 @@
-# /controls/ — the four original demos, on the lab template (see _includes/lab.html).
-# Notes and hints carried over from the hand-built page; edit them here.
+# /controls/ — every demo, as lessons. A demo (Intro, Tilt Table, ...) holds lessons; each lesson follows ARIVA:
+# goal (Arrive), recall + predict (Reactivate), note (Inform), tasks (Process), check + recap (Evaluate).
+# Rendered by _includes/lab.html; views and controls are listed at the top of assets/js/lab/lab.js.
 labs:
   msd:
     plant: msd
@@ -16,9 +17,89 @@ labs:
     estimator: kalman
     noise: 0.5
     logQ: 0
-tabs:
+  fit:
+    plant: msd
+    controller: pid
+    params:
+      M: 1
+      k: 4
+      c: 0.4
+    sysid:
+      exc: prbs
+      noise: 0.01
+      T: 30
+      order: 2
+      amp: 2
+  shaken:
+    plant: msd
+    controller: open
+    w: 1
+  disc:
+    plant: msd
+    controller: open
+  rate:
+    plant: msd
+    controller: pid
+    refs:
+    - type: step
+  design:
+    plant: msd
+    controller: pid
+    params:
+      M: 1.6
+      c: 0.9
+      k: 6.5
+    model:
+      M: 1.0
+      c: 0.4
+      k: 4.0
+    gains:
+    - kp: 10
+      ki: 2
+      kd: 2
+    limit: 60
+    requirements:
+      overshoot: 10
+      settle: 3
+      pm: 45
+      delay: 50
+      force: 30
+    sysid:
+      exc: chirp
+      noise: 0.01
+      T: 30
+      order: 2
+      amp: 2
+    refs:
+    - type: step
+  safe:
+    plant: msd
+    controller: pid
+    cbf:
+      lim: 1.2
+      stops: 1.4
+      lambda: 2
+    refs:
+    - amp: 1.8
+  net:
+    plant: cartpole
+    controller: lqr
+    net: true
+  mimo:
+    plant: flight
+    controller: both
+demos:
 - id: msd
   label: Intro
+- id: tilt
+  label: Tilt Table
+- id: flight
+  label: Flight Sim
+- id: cartpole
+  label: Cart-Pole
+tabs:
+- id: msd
+  label: Tune
   lab: msd
   top: sim
   row1: states
@@ -31,8 +112,7 @@ tabs:
   startManual: true
   zeroGains: true
   manualHint: <strong>Manual:</strong> drag the mass up or down. Delay and noise apply to PID only.
-  hint: |-
-    <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;40, K<sub>i</sub>&#8201;=&#8201;5, K<sub>d</sub>&#8201;=&#8201;6. A high K<sub>p</sub> tracks the sine closely, K<sub>d</sub> stops the spring from ringing, and a little K<sub>i</sub> removes the offset.
+  hint: <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;40, K<sub>i</sub>&#8201;=&#8201;5, K<sub>d</sub>&#8201;=&#8201;6. A high K<sub>p</sub> tracks the sine closely, K<sub>d</sub> stops the spring from ringing, and a little K<sub>i</sub> removes the offset.
   rangeBoxes: true
   disturbances: true
   delayMax: 1000
@@ -51,20 +131,35 @@ tabs:
     answer: 1
     try: Switch to PID, pick Step, set K<sub>p</sub> to 40 and watch a few jumps.
     explain: Proportional action alone behaves like a stiffer spring. Nothing removes energy, so the mass rings, and the real spring pushes back with a force only an error can balance, so it stops short. K<sub>d</sub> adds the damping and K<sub>i</sub> the missing push.
-  goal: Tune a PID so the mass tracks the reference without ringing, then see what delay, noise and a slow controller do to it.
+  goal: Tune a PID so the mass tracks the reference without ringing, then see what delay and noise do to it.
   tasks:
   - Press <strong>PID</strong> and <strong>Load suggested gains</strong>, and watch it track the wave.
   - 'Set K<sub>i</sub> and K<sub>d</sub> to zero and raise K<sub>p</sub>: it rings. Bring K<sub>d</sub> back to stop it.'
   - Switch <strong>View</strong> to Bode and read the phase margin. Drag <strong>Delay</strong> up until the margin runs out, then watch the sim.
   - Slow the controller with <strong>Runs every</strong> until the readout says unstable.
   check:
-    question: You add delay and the loop turns unstable. Which number on the margins readout told you how much delay it could take?
+  - question: You add delay and the loop turns unstable. Which number on the margins readout told you how much delay it could take?
     options:
     - Gain up
     - Delay margin
     - Crossover
     answer: 1
     explain: A delay costs phase of &#969;T at crossover. The delay margin is the delay that uses up the whole phase margin, so past it the loop oscillates.
+    why:
+    - Gain up is how much more gain the loop tolerates, not how much delay.
+    - ''
+    - Crossover is a frequency, not a time.
+  - question: A PID makes a stiff, heavy cart track well. You swap in a lighter cart with the same gains and it rings. What changed?
+    options:
+    - The loop gain is higher, so the phase margin is smaller
+    - The integral term stopped working
+    - The reference got faster
+    answer: 0
+    explain: A lighter mass makes the same gains act harder, which raises the crossover and eats phase margin. The View toggle shows it as a smaller phase margin.
+    why:
+    - ''
+    - 'The integral term is unchanged: it still sums error.'
+    - The reference is the same; the plant is what changed.
   controls:
   - mode
   - reference
@@ -72,7 +167,6 @@ tabs:
   - gains
   - delay
   - noise
-  - ctrlrate
   - view
   - freq
   - margins
@@ -88,8 +182,586 @@ tabs:
     to the error, the integral term removes offset, and the derivative term damps ringing. Start with K<sub>p</sub>, add
     K<sub>d</sub>, then a little K<sub>i</sub>. Then add <strong>delay</strong> (it eats phase margin) or <strong>noise</strong>
     (the derivative term amplifies it). The score is RMSE over the last 5&nbsp;s.</p>
+  demo: msd
+  minutes: 10
+  recap: tune a PID by watching its phase margin, and predict how much delay it can take.
+- id: arx
+  label: Fit a model
+  lab: fit
+  top: sysid-replay
+  row1: sysid-data
+  row2: sysid-bode
+  controls:
+  - sysid
+  aria:
+  - The mass replaying the identification experiment
+  - The input, the noisy measurement, and the fitted model's prediction
+  - Bode plot of the true plant and the fitted model
+  note_title: Fit a difference equation by least squares
+  note: |
+    <p>Record input and output, then find the difference equation that best predicts each output sample from the
+    ones before it. That is linear in the unknowns, so one least-squares solve finds them. It is biased by sensor
+    noise, so the fit is refined with <strong>instrumental variables</strong>. A 2nd-order fit reads back as m, c
+    and k; a 3rd or 4th keeps its slowest oscillating pair (marked <strong>*</strong>); a 1st cannot oscillate, so there
+    is nothing to read. A step barely excites the resonance, so try a chirp or random input.</p>
+  demo: msd
+  minutes: 8
+  goal: Recover the mass, damper and spring from nothing but a recorded force and position.
+  recall: On the tuning lesson the constants were handed to you. On real hardware they are not.
+  predict:
+    question: You fit a 1st-order model to a mass on a spring. What does its Bode plot miss?
+    options:
+    - 'Nothing: it matches'
+    - The resonance, because a 1st-order model cannot ring
+    - The DC gain
+    answer: 1
+    try: Pick <strong>Chirp</strong>, set <strong>1st</strong> order and press <strong>Run experiment</strong>.
+    explain: One pole cannot oscillate, so the model has no resonant peak. A mass on a spring needs at least 2nd order.
+  tasks:
+  - Pick <strong>Chirp</strong>, <strong>2nd</strong> order and press <strong>Run experiment</strong>. How close are m, c and k to 1, 0.4 and 4?
+  - Switch the input to <strong>Step</strong> and run again. Which estimate gets worse?
+  - Raise <strong>Sensor noise</strong> and run again. How does the fit change?
+  - 'Set <strong>4th</strong> order: the fit rises, but is it a better model? Read the <strong>*</strong> note.'
+  check:
+  - question: Why does a step input give a poor damping estimate?
+    options:
+    - A step barely excites the resonance, so the data say little about damping
+    - Least squares cannot use a step
+    - A step adds more sensor noise
+    answer: 0
+    explain: Damping shows in how a system rings. A step is one jump, so the record holds little ringing to measure.
+    why:
+    - ''
+    - Least squares uses any input; it is the information in it that matters.
+    - Noise is the same; the signal is what is thin.
+  - question: A higher order always fits the recorded data better. Why not use the highest order?
+    options:
+    - It starts fitting the noise, so it predicts new data worse
+    - It runs slower in the browser
+    - It cannot be read as m, c and k
+    answer: 0
+    explain: Extra poles let the model chase noise. A good fit on old data is not a good model; the last lesson in this row checks on data held back.
+    why:
+    - ''
+    - Speed is not the problem.
+    - It can be read, using its slowest oscillating pair.
+  recap: fit a mass-spring-damper from data and say why the input signal and the model order matter.
+- id: era
+  label: From a tap
+  lab: fit
+  method: era
+  top: id-replay
+  row1: id-era
+  row2: id-result
+  controls:
+  - idrun
+  aria:
+  - The mass replaying a hammer tap
+  - The Hankel matrix of the impulse response, its singular values, and the measured and realized impulse responses
+  - Estimated mass, damping and spring against the true values
+  note_title: Realize a state-space model from the impulse response
+  note: |
+    <p>Tap the mass and record how it rings. Stacked into a <strong>Hankel matrix</strong>, that impulse response has a
+    rank equal to the number of states, and the <strong>singular values</strong> show it: two are large, the rest are
+    noise. Keep the large ones and the model follows (the dashed curve). Turn the noise up and the gap shrinks, so
+    choosing where to cut becomes a judgement. Keeping 1 reads nothing; 3 or 4 read from the slowest oscillating
+    pair.</p>
+  demo: msd
+  minutes: 6
+  goal: Read the number of states straight from how the mass rings after one tap.
+  recall: Least squares made you choose the model order. Can the data tell you instead?
+  predict:
+    question: You tap the mass once and look at the singular values of the Hankel matrix. How many are large?
+    options:
+    - One
+    - Two
+    - Four
+    answer: 1
+    try: Press <strong>Tap it</strong> and look at the bars.
+    explain: A mass on a spring has two states (position and velocity), and the number of large singular values is the number of states.
+  tasks:
+  - Press <strong>Tap it</strong> with 2 bars kept. How many bars stand out?
+  - Raise <strong>Sensor noise</strong> and tap again. What happens to the gap after the 2nd bar?
+  - Keep 1 bar. What do m, c and k read?
+  - 'Keep 4 bars: do m, c and k change?'
+  check:
+  - question: What does the size of the gap in the singular values tell you?
+    options:
+    - The number of states in the system
+    - The sensor noise level
+    - The sample time
+    answer: 0
+    explain: The rank of the Hankel matrix is the number of states, and the singular values show it. Noise fills the gap, which is why cutting there takes judgement.
+    why:
+    - ''
+    - Noise sets the floor, but the gap itself marks the order.
+    - The sample time is fixed here.
+  recap: find a system's order from one tap and say when noise makes that call hard.
+- id: yours
+  label: Your own data
+  lab: fit
+  top: sim
+  row1: rec-data
+  row2: rec-fit
+  startManual: true
+  manualHint: <strong>Manual:</strong> drag the mass to push it yourself. Or switch to PID and let the controller move it.
+  controls:
+  - mode
+  - record
+  aria:
+  - 'The live mass-spring-damper: drag it, tap it, or let the PID drive it while recording'
+  - Your recorded force and position
+  - Models identified from your recording, checked on the part held back
+  note_title: Collect your own data
+  note: |
+    <p>Press <strong>Record</strong> and move the mass any way you like: drag it, tap it, switch on the shaker, or let
+    the PID chase its reference. Then <strong>Identify</strong>: both methods fit the first 70% and are checked on the
+    last 30%. Gentle pushes barely excite the resonance, and data recorded under PID control is closed-loop, which
+    biases the fit unless the shaker also excites it.</p>
+  demo: msd
+  minutes: 10
+  goal: Record your own data and see which fit survives data it has never seen.
+  recall: Both methods worked on a scripted experiment. Real data is messier.
+  predict:
+    question: You record using only slow, gentle pushes. Which constant comes out worst?
+    options:
+    - Spring k
+    - Damping c
+    - Mass m
+    answer: 1
+    try: Press <strong>Record</strong>, push gently for 20 s, then press <strong>Identify</strong>.
+    explain: Damping shows in how fast things ring down. Slow pushes barely excite the resonance, so there is little to measure.
+  tasks:
+  - Record 20 s of varied pushes (drag the mass, or press <strong>Tap the mass</strong>), then press <strong>Identify</strong>.
+  - Record again with the <strong>Shaker</strong> on. Which fit improves?
+  - Switch to PID and record with the controller running. Why is that data harder to fit?
+  - Press <strong>Download CSV</strong> and fit it with your own tools.
+  check:
+  - question: Why hold back the last 30% of the recording?
+    options:
+    - To check each model on data it never saw
+    - To speed up the fit
+    - To remove noise
+    answer: 0
+    explain: A model always fits its own training data well. Only data held back shows whether it generalises.
+    why:
+    - ''
+    - It does not change the speed.
+    - It does not remove noise; it keeps data unseen.
+  recap: collect and check your own identification data, and explain why closed-loop data is harder.
+- id: sampling
+  label: Sampling
+  lab: shaken
+  top: sim
+  row1: samp-time
+  row2: samp-fold
+  shake: true
+  shakeAmp: 1
+  controls:
+  - freq
+  - sampling
+  aria:
+  - The mass, shaken by a sine-wave force
+  - Its position, continuous, sampled, and rebuilt from the samples
+  - 'Frequency folding: where a sampled frequency appears'
+  note_title: A computer only sees samples
+  note: |-
+    <p>A controller sees a number every T seconds (the dots) and nothing in between. It is <strong>sampled</strong> in time and
+    <strong>quantised</strong> in value (try 2 bits), and its output is held until the next update: a <strong>zero-order hold</strong>.
+    Push the signal past <strong>fs/2</strong>, the <strong>Nyquist frequency</strong>, and the dots trace a slower, wrong wave
+    (dashed red): <strong>aliasing</strong>. Only an analogue filter before sampling can remove it.</p>
+  demo: msd
+  minutes: 8
+  goal: See what a computer loses when it only reads a signal every T seconds.
+  recall: The Bode view shook the mass at one frequency at a time. Now only look at it every T seconds.
+  predict:
+    question: A 3 Hz vibration is sampled at 4 Hz. What does the controller see?
+    options:
+    - 3 Hz
+    - A slower, wrong 1 Hz wave
+    - Nothing
+    answer: 1
+    try: Set the sample rate near 4 Hz and raise &#969; until the dashed alias appears.
+    explain: Above half the sample rate the samples are identical to a slower wave's, so nothing afterwards can tell them apart.
+  tasks:
+  - Raise &#969; past half the <strong>Sample rate</strong> and watch the dashed alias appear.
+  - Raise the sample rate until the alias goes away. Where does that happen?
+  - Set <strong>Bits</strong> to 2 and watch the dots snap to a grid.
+  - 'Look at the fold diagram: where does a frequency above half the rate land?'
+  check:
+  - question: What is the only cure for aliasing?
+    options:
+    - Filter the signal before sampling it
+    - Filter the samples afterwards
+    - Raise the controller gain
+    answer: 0
+    explain: After sampling the alias looks like a real signal, so only an analogue filter before the sampler can remove it.
+    why:
+    - ''
+    - By then it is indistinguishable from a real slower signal.
+    - Gain does not change what the samples are.
+  recap: say why a signal aliases and what has to happen before sampling to prevent it.
+- id: discretise
+  label: Discretise
+  lab: disc
+  top: disc-z
+  row1: disc-step
+  row2: disc-bode
+  predict:
+    question: Convert the mass-spring with forward Euler at T = 0.2 s. What is the discrete model like?
+    options:
+    - A bit less accurate, but fine
+    - Unstable, though the real system is stable
+    - Identical to the hold method
+    answer: 1
+    try: Set T to 0.2 s and pick Fwd.
+    explain: Forward Euler maps a pole s to 1 + sT. A lightly damped pole sits close to the imaginary axis, so 1 + sT leaves the unit circle as soon as T is longer than 2ζ/ω<sub>n</sub>, only 0.1 s for this mass-spring. The hold method and Tustin keep a stable pole stable at any T.
+  controls:
+  - discretize
+  aria:
+  - The z-plane with the plant's poles as each discretisation method places them
+  - Step responses of the continuous plant and each discrete model
+  - Gain of the continuous plant and each discrete model, up to the Nyquist frequency
+  note_title: Four ways to turn ẋ = f(x) into a step-by-step rule
+  note: |-
+    <p>Discretisation turns a continuous model into an update every T seconds. A discrete system is stable when its poles
+    are inside the unit circle.</p>
+    <ul>
+    <li><strong>Zero-order hold</strong>: exact when the input is held between samples. The reference for the others.</li>
+    <li><strong>Forward Euler</strong>: at T&#8201;=&#8201;0.2&nbsp;s the poles leave the circle, so a stable plant becomes an unstable model.</li>
+    <li><strong>Backward Euler</strong>: always stable, but adds damping that isn't there.</li>
+    <li><strong>Tustin</strong>: stable stays stable, at the cost of a squeezed frequency axis. The usual choice for code.</li>
+    </ul>
+    <p>At small T all four agree: sample fast and the method barely matters.</p>
+  demo: msd
+  minutes: 8
+  goal: Turn a continuous model into an update a computer can run, and see which methods keep it stable.
+  recall: A computer cannot integrate; it repeats an update every T seconds.
+  check:
+  - question: Which method is the usual choice for turning a continuous controller into code?
+    options:
+    - Tustin
+    - Forward Euler
+    - 'None: they are all the same'
+    answer: 0
+    explain: Tustin maps the stable half-plane exactly onto the unit disk, so stable stays stable. Its cost is a squeezed frequency axis.
+    why:
+    - ''
+    - Forward Euler can turn a stable plant into an unstable model.
+    - They agree only at small T.
+  recap: pick a discretisation method and say why forward Euler fails at a large sample time.
+  tasks:
+  - Slide <strong>T</strong> up to 0.2 s with the <strong>Forward Euler</strong> method. Where do the poles go?
+  - 'Pick <strong>Backward Euler</strong>: the poles stay inside, but what is wrong with the step response?'
+  - 'Pick <strong>Tustin</strong> and raise T: what happens on the Bode plot?'
+  - Pick <strong>All</strong> and shrink T. Do the methods agree?
+- id: loop
+  label: Sample rate
+  lab: rate
+  top: sim
+  row1: time
+  row2: disc-loop
+  predict:
+    question: The PID runs every 20 ms. Slow it to 100 ms. What happens?
+    options:
+    - Nothing much, 100 ms is still quick
+    - It still works, with more overshoot
+    - It goes unstable
+    answer: 1
+    try: Drag "Runs every" to 100 ms and watch the step and the poles.
+    explain: Holding each command for one period acts like a delay of about half a period, which costs phase margin. With these gains the loop survives up to about 135 ms, but overshoot grows well before that.
+  controls:
+  - ctrlrate
+  - gains
+  - reference
+  aria:
+  - The mass under PID control, the controller running at the chosen rate
+  - Position, reference and the staircase force over time
+  - Closed-loop poles of the sampled loop in the z-plane
+  note_title: How slow can the controller run?
+  note: |-
+    <p>The PID now runs at period T with a zero-order hold, and the loop is analysed exactly in discrete time. These gains are
+    stable at 130&nbsp;ms and fall apart at 140&nbsp;ms. The "hold is half a sample of delay" shortcut predicts about 230&nbsp;ms, so treat it
+    as an upper bound. In practice run the loop 10&#8211;30 times per crossover period (the panel counts it).</p>
+  demo: msd
+  minutes: 6
+  goal: Find how slowly a PID can run before the loop falls apart.
+  recall: You can discretise a model. Now the controller itself runs once every T seconds with a hold between.
+  tasks:
+  - 'Drag <strong>Runs every</strong> to 100 ms: is it still stable?'
+  - 'Go to 140 ms: this is the limit for these gains. Compare the exact limit to the rule of thumb.'
+  - Run the loop 10 to 30 times per crossover period. Does the method barely matter?
+  check:
+  - question: Holding each command for a period acts like how much delay?
+    options:
+    - About half a period
+    - None
+    - A full period plus the sensor delay
+    answer: 0
+    explain: A zero-order hold delays the signal by half a period on average, which costs phase margin at crossover.
+    why:
+    - ''
+    - A hold does cost phase.
+    - The sensor delay is not part of the hold.
+  recap: set a controller rate from the crossover frequency instead of guessing.
+- id: requirements
+  label: 'Design: requirements'
+  lab: design
+  top: step
+  row1: poles
+  row2: checklist
+  controls:
+  - requirements
+  aria:
+  - Step response on the real plant against the overshoot and settling limits
+  - Where closed-loop poles must sit to meet the requirements
+  - The requirements checklist
+  note_title: Say what good means
+  note: |-
+    <p>Write down what the controller must achieve, as numbers: overshoot, settling time, margins, force. Each becomes a
+    picture: an envelope the step response must stay inside, and a region of the s-plane for the poles. The checklist is the
+    contract for the test lesson.</p>
+  demo: msd
+  minutes: 5
+  goal: Write down what the controller must achieve, as numbers, before any design.
+  recall: In the Tune lesson you stopped when it looked good. Real designs stop when a checklist is green.
+  predict:
+    question: You halve the allowed settling time. What happens to the region where the poles must sit?
+    options:
+    - It moves further left
+    - It gets wider on the right
+    - Nothing
+    answer: 0
+    try: Drag the <strong>Settle within</strong> slider and watch the pole region.
+    explain: Faster settling needs poles further left, so the allowed region moves left.
+  tasks:
+  - Move <strong>Max overshoot</strong> and watch the cone in the pole plot change.
+  - Tighten <strong>Settle within</strong> and watch the region move.
+  - 'Read the checklist: this is the contract for the last lesson.'
+  check:
+  - question: Why write requirements as numbers?
+    options:
+    - So the last step can pass or fail the design objectively
+    - So the design is faster to compute
+    - Because the model needs them
+    answer: 0
+    explain: 'A number can be checked: the checklist turns green or red. "Looks good" cannot be tested.'
+    why:
+    - ''
+    - Numbers do not change how long design takes.
+    - The model comes from data, not from requirements.
+  recap: turn a vague goal into measurable requirements and see them as a pole region.
+- id: dmodel
+  label: 'Design: model'
+  lab: design
+  top: sysid-replay
+  row1: sysid-data
+  row2: sysid-bode
+  controls:
+  - sysid
+  useModel: true
+  aria:
+  - The real plant replaying the identification experiment
+  - The recorded data and the fitted model
+  - Bode plot of the real plant and the fitted model
+  note_title: Find out what you're controlling
+  note: |-
+    <p>The textbook says 1&nbsp;kg, spring 4, damping 0.4. The real plant differs, and you only find out by measuring. Run the
+    experiment, then press <strong>Design with this model</strong>. Later lessons use this model; the test runs on the real thing. (See
+    <a href="/controls/#arx">Fit a model</a>.)</p>
+  demo: msd
+  minutes: 6
+  goal: Find out what you are really controlling, because the textbook numbers are wrong.
+  recall: The requirements are set. A design needs a model of the plant, and the nominal one is not the real thing.
+  predict:
+    question: The real plant is 1.6 kg, not 1 kg. After you fit a model, which will it be closer to?
+    options:
+    - The textbook 1 kg
+    - About 1.6 kg
+    - Neither
+    answer: 1
+    try: Press <strong>Run experiment</strong> and read the fitted mass.
+    explain: The fit comes from data recorded on the real plant, so it lands near the real constants and not the textbook ones.
+  tasks:
+  - 'Press <strong>Run experiment</strong>: what mass, damping and spring does it find?'
+  - 'Press <strong>Design with this model</strong>: later lessons now use it.'
+  - 'Raise the noise and run again: how stable is the estimate?'
+  check:
+  - question: Why does the last design step run on the real plant, not on your model?
+    options:
+    - A bad model only shows up when tested on the real thing
+    - The model is always exact
+    - It is faster
+    answer: 0
+    explain: Everything up to then uses the model. Only the real plant tells you whether the model was good enough.
+    why:
+    - ''
+    - A fit is never exact.
+    - Speed is not the reason.
+  recap: identify the real plant before designing, and say why the test uses the real plant.
+- id: design
+  label: 'Design: controller'
+  lab: design
+  top: step
+  row1: poles
+  row2: analysis
+  controls:
+  - gains
+  - view
+  - delay
+  - margins
+  aria:
+  - Step response on the real plant
+  - 'Closed-loop poles on your model: drag them into the shaded region'
+  - Bode plot of the loop on your model
+  note_title: Design the controller
+  note: |-
+    <p>Three gains, three closed-loop poles: <strong>drag the poles into the shaded region</strong> from the requirements and the gains are
+    solved (pole placement). Faster poles settle sooner but need more force. The step response is on the <em>real</em> plant.</p>
+  analysis:
+  - bode
+  - nyquist
+  - poles
+  demo: msd
+  minutes: 10
+  goal: Pick gains that meet the requirements, then prove the loop is stable with room to spare.
+  recall: You have requirements and a model. Drag poles into the allowed region and the gains follow.
+  predict:
+    question: You drag the closed-loop poles further left. What does it cost?
+    options:
+    - More force from the actuator
+    - A bigger overshoot
+    - Nothing
+    answer: 0
+    try: Drag a pole left in the pole plot and watch the force on the step.
+    explain: Faster poles settle sooner but need more force. The actuator limit is the real price.
+  tasks:
+  - Drag the poles into the shaded region from the requirements.
+  - 'Switch <strong>View</strong> to Nyquist: does the curve avoid &#8722;1 with room to spare?'
+  - Add <strong>Delay</strong> until the margin runs out. How much did the design have?
+  check:
+  - question: A step response looks fine. Why is that not enough?
+    options:
+    - It says nothing about the cases you did not try; margins do
+    - The step is always misleading
+    - It ignores the model
+    answer: 0
+    explain: Margins say how much gain or delay the loop can absorb before it goes unstable. That is the budget for everything the model gets wrong.
+    why:
+    - ''
+    - A step is useful but covers one case.
+    - It is computed on the real plant.
+  recap: place poles to meet requirements and use margins as a budget for model error.
+- id: dtest
+  label: 'Design: test'
+  lab: design
+  top: sim
+  row1: step
+  row2: checklist
+  controls:
+  - limit
+  - noise
+  - delay
+  - reference
+  - restart
+  noiseMax: 0.02
+  aria:
+  - The real plant running your controller
+  - Position, reference and force over time
+  - Step response with the current limit, noise and delay
+  note_title: Meet the real world
+  note: |-
+    <p>Add noise, a force limit and delay, and see what breaks first. The D term amplifies noise; a force limit makes the
+    integrator wind up and overshoot (the cure is <em>anti-windup</em>); delay eats the margin you proved.</p>
+  demo: msd
+  minutes: 8
+  goal: Run your design on the real plant with noise, a force limit and delay, and check every requirement.
+  recall: On paper the controller is perfect. On hardware it has noise, limits and delay.
+  predict:
+    question: You add a force limit to a design that was fine without one. What happens to the overshoot?
+    options:
+    - It grows, because the integrator winds up while the force is clipped
+    - It shrinks
+    - Nothing
+    answer: 0
+    try: Lower <strong>Force limit</strong> and watch the step.
+    explain: When the force clips, the error persists and the integrator keeps summing. That extra stored push shows up as overshoot (the cure is anti-windup).
+  tasks:
+  - 'Add <strong>Sensor noise</strong>: what happens to the force trace?'
+  - Lower <strong>Force limit</strong> until the checklist turns red.
+  - 'Add <strong>Delay</strong>: which requirement fails first?'
+  - Press <strong>Restart</strong> and get every line green.
+  check:
+  - question: A requirement fails on the real plant. Where do you go back to?
+    options:
+    - 'The step that caused it: design, model or requirements'
+    - Always to the beginning
+    - 'Nowhere: accept it'
+    answer: 0
+    explain: 'Red lines point back: a different trade-off (design), a wrong model, or requirements the actuator cannot meet. Most designs loop several times.'
+    why:
+    - ''
+    - Not always the beginning; the failure tells you which step.
+    - The checklist is the contract.
+  recap: test a design against its requirements and decide which step to revisit when one fails.
+- id: cbf
+  label: Safety filter
+  lab: safe
+  top: sim
+  row1: time
+  row2: cbf
+  refAmp:
+  - 0.5
+  - 2.5
+  controls:
+  - cbf
+  - reference
+  - gains
+  - restart
+  aria:
+  - The mass-spring-damper between two hard stops, chasing a reference that goes past them
+  - Position, reference and force over time
+  - Phase plane with the safe set, and the requested versus allowed force
+  note: |-
+    <p>The mass now has hard stops at &#177;1.4&nbsp;m and a reference that goes past them. With the <strong>safety filter</strong> on,
+    every force first passes through a <strong>control barrier function</strong>: h&#8201;=&#8201;limit&#8201;&#8722;&#8201;|x| may shrink, but only
+    slower as it gets small. That leaves a band of allowed forces (teal, right), and the filter sends the nearest one. In the
+    phase plane the teal region is the safe set. On the cart-pole the same filter makes the pole fall: a barrier on one state of
+    an underactuated plant isn't enough.</p>
+  demo: msd
+  minutes: 8
+  goal: Keep a controller from hitting the stops, whatever it asks for.
+  recall: A PID does exactly what it is told, even when that means a collision.
+  predict:
+    question: The reference goes past the hard stop. With the safety filter on, what does the mass do?
+    options:
+    - Slams into the stop
+    - Comes up to the stop and stops short
+    - Ignores the reference
+    answer: 1
+    try: Turn the <strong>Safety filter</strong> on and press <strong>Restart</strong>.
+    explain: The filter keeps the state inside the safe set, so the mass slows down before the stop whatever the controller asks for.
+  tasks:
+  - With the filter <strong>Off</strong>, watch the mass hit the stop.
+  - Turn it <strong>On</strong> and watch it stop short.
+  - 'Change <strong>Caution &#955;</strong>: does it brake earlier or later?'
+  - 'Look at the phase plane: where is the safe region?'
+  note_title: A filter that proves, not hopes
+  check:
+  - question: How does the safety filter treat the controller's command?
+    options:
+    - It sends the allowed command nearest to the request
+    - It replaces the controller
+    - It averages old commands
+    answer: 0
+    explain: 'The controller proposes and the filter disposes: it passes the command unless that would leave the safe set, then the nearest allowed one.'
+    why:
+    - ''
+    - The controller still does the work; the filter only clips.
+    - It does not use past commands.
+  recap: explain a control barrier function and how it lets an untrusted controller run safely.
 - id: tilt
-  label: Tilt Table
+  label: Tune
   lab: tilt
   top: sim
   row1: states
@@ -102,8 +774,7 @@ tabs:
   startManual: true
   zeroGains: true
   manualHint: <strong>Manual:</strong> drag the beam ends to tilt it. Delay and noise apply to PID only.
-  hint: |-
-    <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;3, K<sub>i</sub>&#8201;=&#8201;0, K<sub>d</sub>&#8201;=&#8201;2. Enough K<sub>p</sub> to chase the reference, and K<sub>d</sub> to brake the ball before it overshoots.
+  hint: <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;3, K<sub>i</sub>&#8201;=&#8201;0, K<sub>d</sub>&#8201;=&#8201;2. Enough K<sub>p</sub> to chase the reference, and K<sub>d</sub> to brake the ball before it overshoots.
   rangeBoxes: true
   disturbances: true
   delayMax: 1000
@@ -129,13 +800,28 @@ tabs:
   - Pick <strong>Step</strong> and watch &#952;&#775; hit the 60&nbsp;&#176;/s servo limit in the state plot.
   - Switch <strong>View</strong> to Poles and see where the poles move as you raise K<sub>d</sub>.
   check:
-    question: What does the derivative term K<sub>d</sub> react to?
+  - question: What does the derivative term K<sub>d</sub> react to?
     options:
     - How far the ball is from the target
     - How fast the error is changing, so it brakes before overshooting
     - The sum of all past errors
     answer: 1
     explain: K<sub>d</sub> acts on the rate of change of the error. It is the damper that K<sub>p</sub> alone lacks; the integral term is the one that sums past error.
+    why:
+    - The proportional term reacts to distance.
+    - ''
+    - That describes the integral term.
+  - question: The tilt table and the mass-spring both have PID loops. Which one has a spring pulling it back by itself?
+    options:
+    - The mass-spring
+    - The tilt table
+    - Both
+    answer: 0
+    explain: 'A ball on a beam has no restoring force of its own: tilting sets acceleration, so a lone K<sub>p</sub> is a spring with no damper.'
+    why:
+    - ''
+    - Tilting the beam only sets how fast the ball speeds up.
+    - Only the mass-spring has a real spring.
   controls:
   - mode
   - reference
@@ -157,8 +843,12 @@ tabs:
     <p>A <strong>PID</strong> controller tilts a beam so a ball tracks a reference (the dashed ring). A servo turns the beam at
     no more than 60&nbsp;&#176;/s, so watch &#952;&#775; saturate. K<sub>p</sub> alone oscillates, K<sub>d</sub> damps it, and a little
     K<sub>i</sub> removes offset. The run restarts if the ball rolls off an end.</p>
+  demo: tilt
+  minutes: 8
+  recall: On the Intro mass-spring you used K<sub>d</sub> to stop the ringing. Here the plant has no spring at all.
+  recap: explain why a plant without a spring needs derivative action, and read the servo limit off the state plot.
 - id: flight
-  label: Flight Sim
+  label: Tune
   lab: flight
   top: sim
   row1: states
@@ -170,10 +860,8 @@ tabs:
   - poles
   startManual: true
   zeroGains: true
-  manualHint: |-
-    <strong>Manual:</strong> drag up to pitch the nose up, down for nose down; release to return to trim. Delay and noise apply to PID only.
-  hint: |-
-    <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;0.5, K<sub>i</sub>&#8201;=&#8201;0.1, K<sub>d</sub>&#8201;=&#8201;0.35. K<sub>d</sub> damps the climb rate, and K<sub>i</sub> holds the altitude against drift.
+  manualHint: <strong>Manual:</strong> drag up to pitch the nose up, down for nose down; release to return to trim. Delay and noise apply to PID only.
+  hint: <strong>Stuck?</strong> A good solution is K<sub>p</sub>&#8201;=&#8201;0.5, K<sub>i</sub>&#8201;=&#8201;0.1, K<sub>d</sub>&#8201;=&#8201;0.35. K<sub>d</sub> damps the climb rate, and K<sub>i</sub> holds the altitude against drift.
   rangeBoxes: true
   disturbances: true
   delayMax: 1000
@@ -199,13 +887,28 @@ tabs:
   - Raise all the gains until the wing stalls, then back off.
   - Switch <strong>View</strong> to Nyquist and see how close the curve gets to &#8722;1 as you raise K<sub>p</sub>.
   check:
-    question: You push the gains much too high. What happens to the aircraft?
+  - question: You push the gains much too high. What happens to the aircraft?
     options:
     - 'Nothing: the elevator command is clamped'
     - The wing stalls and it loses altitude
     - It flies faster but stays level
     answer: 1
     explain: Lift drops sharply past about 16&#176; angle of attack. A harder pull makes the angle bigger, so past the limit more command means less lift.
+    why:
+    - Clamped elevator still pulls the angle of attack past the stall.
+    - ''
+    - Speed is not what limits lift here.
+  - question: Altitude lags the elevator by pitch and climb angle. Which control term helps most with that lag?
+    options:
+    - Proportional
+    - Derivative on climb rate
+    - Integral
+    answer: 1
+    explain: The derivative acts on how fast the error is changing, so it brakes the climb before the target is reached.
+    why:
+    - Proportional reacts to the error now, so it overshoots a lagging plant.
+    - ''
+    - Integral removes offset but adds more lag.
   controls:
   - mode
   - reference
@@ -227,9 +930,9 @@ tabs:
     <p>A <strong>PID autopilot</strong> tracks an altitude reference by moving the elevator away from trim. Altitude can only
     change through pitch and flight-path angle, so K<sub>p</sub> alone oscillates; K<sub>d</sub> on climb rate damps it. Push too
     hard and the wing stalls. In Manual the canvas is a control stick.</p>
-    </div>
-    <div class="demo-note">
-    <h4 class="demo-note-title">Equations of motion</h4>
+  sprite: /assets/img/controls/cessna.png
+  maths: |-
+    <h5>Equations of motion</h5>
           <div class="eqn-block">
             <div class="eqn-row"><span class="eqn-lhs">V&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T cos&#945; &#8722; D] / m &#8722; g sin&#947;</span></div>
             <div class="eqn-row"><span class="eqn-lhs">&#947;&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[T sin&#945; + L &#8722; mg cos&#947;] / (mV)</span></div>
@@ -239,18 +942,77 @@ tabs:
             <div class="eqn-row"><span class="eqn-lhs">x&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs">V cos&#947;</span></div>
             <p class="eqn-note">L, D, M<sub>y</sub> from nonlinear aero (sigmoid stall ~16&#176;). T = trim thrust. RK4 at 200 Hz.</p>
           </div>
-    </div>
-    <div class="demo-note">
-    <h4 class="demo-note-title">PID autopilot</h4>
+
+    <h5>PID autopilot</h5>
           <div class="eqn-block">
             <div class="eqn-row"><span class="eqn-lhs">e</span><span class="eqn-eq">=</span><span class="eqn-rhs">h<sub>ref</sub>(t) &#8722; h<sub>meas</sub>,&#160;&#160; h<sub>ref</sub> = 23 + 6 sin(2&#960;t / 16)&#160;m</span></div>
             <div class="eqn-row"><span class="eqn-lhs">u</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>e + K<sub>i</sub>&#8747;e&#8202;dt + K<sub>d</sub>&#8202;&#279;&#160;&#160;&#160;(nose-up command, &#176;)</span></div>
             <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>e,trim</sub> &#8722; u</span></div>
             <p class="eqn-note">Elevator clamped &#177;15&#176; and slew-limited to 40&#176;/s. The run resets on a crash, a stall, a loop, or a climb past 590&#160;m. The score is altitude RMSE over the last 6 s.</p>
           </div>
+  demo: flight
+  minutes: 10
+  recall: 'You have tuned a mass and a ball. Altitude is slower: the elevator moves the nose, the nose moves the climb, the climb moves the altitude.'
+  recap: tune an autopilot against a lagging plant and spot when the wing is the limit, not the gains.
+- id: mimo
+  label: Two loops
+  lab: mimo
+  top: sim
   sprite: /assets/img/controls/cessna.png
+  row1: time
+  row2: mimo
+  channels:
+  - 0
+  - 1
+  window: 20
+  mimoRange:
+  - -0.9
+  - 1.5
+  mimoNote: 'Here the coloured region fills the box: the elevator and throttle loops barely interact at these gains, so checking each loop alone was enough. That is something to check, not assume: on strongly coupled plants (a spinning satellite is the textbook case) loops that each have huge margins fail together at 10%.'
+  controls:
+  - mimo
+  - gains
+  aria:
+  - The aircraft with both loops closed
+  - Altitude and airspeed errors over time
+  - Map of which pairs of gain errors keep both loops stable
+  note: |-
+    <p>Real hardware errs in every channel at once. Drag the dot to give each loop a gain error. The <strong>dashed box</strong> is
+    what each loop's own margins predict; the <strong>coloured map</strong> is the truth, both errors together. Where they disagree,
+    the loops interact.</p>
+  demo: flight
+  minutes: 6
+  goal: Test the elevator loop and the throttle loop together instead of one at a time.
+  recall: You tuned the altitude loop alone, with the other held perfect.
+  predict:
+    question: Each loop has a big margin on its own. Both are weakened by 10% at once. Is the aircraft safe?
+    options:
+    - Yes, each loop is fine
+    - 'Not necessarily: the errors can combine'
+    - No, never
+    answer: 1
+    try: Drag the dot on the map and compare it with the dashed box.
+    explain: A single-loop margin tests one channel while the other is perfect. Simultaneous errors can break loops that each look safe.
+  tasks:
+  - Drag the dot to give each loop a gain error and watch the aircraft.
+  - Compare the <strong>dashed box</strong> (single-loop margins) with the coloured map (the truth).
+  - 'Press <strong>No errors</strong> and try a corner: does the aircraft hold?'
+  note_title: Both loops at once
+  check:
+  - question: When the coloured map is smaller than the dashed box, what does that mean?
+    options:
+    - 'The loops interact: together they are less robust than alone'
+    - The margins are wrong
+    - The aircraft is faster
+    answer: 0
+    explain: The box is what each loop's own margin predicts. If the true safe region is smaller, the loops interact.
+    why:
+    - ''
+    - Each margin is right for one loop at a time.
+    - Speed is not shown here.
+  recap: explain why single-loop margins are not enough on a plant with two loops.
 - id: cartpole
-  label: Cart-Pole
+  label: Tune
   lab: cartpole
   top: sim
   row1: est-states
@@ -263,8 +1025,7 @@ tabs:
   startManual: true
   zeroGains: true
   manualHint: <strong>Manual:</strong> drag the cart. Delay and noise apply to the controller only.
-  hint: |-
-    <strong>Stuck?</strong> A good solution is k<sub>x</sub>&#8201;=&#8201;3.1, k<sub>&#7819;</sub>&#8201;=&#8201;5.9, k<sub>&#952;</sub>&#8201;=&#8201;43.5, k<sub>&#952;&#775;</sub>&#8201;=&#8201;18.1. These are the LQR gains. The pole terms keep it up and the cart terms pull it back to the middle.
+  hint: <strong>Stuck?</strong> A good solution is k<sub>x</sub>&#8201;=&#8201;3.1, k<sub>&#7819;</sub>&#8201;=&#8201;5.9, k<sub>&#952;</sub>&#8201;=&#8201;43.5, k<sub>&#952;&#775;</sub>&#8201;=&#8201;18.1. These are the LQR gains. The pole terms keep it up and the cart terms pull it back to the middle.
   rangeBoxes: true
   disturbances: true
   delayMax: 1000
@@ -290,13 +1051,28 @@ tabs:
   - Slide <strong>Trust</strong> from model to sensors and watch the rate estimate get noisier.
   - 'Switch <strong>View</strong> to Poles: four of the eight poles are the filter''s and only they move with Trust. Check the margins readout.'
   check:
-    question: At 2&#176; of noise, why does differencing drop the pole while the Kalman filter does not?
+  - question: At 2&#176; of noise, why does differencing drop the pole while the Kalman filter does not?
     options:
     - Differencing divides noise by a tiny time step, so the rate estimate is useless
     - The Kalman filter uses a stronger controller
     - Differencing only measures the cart
     answer: 0
     explain: A reading off by half a degree, divided by 25&nbsp;ms, is a rate off by about 20&nbsp;&#176;/s. The Kalman filter uses the model to smooth that out.
+    why:
+    - ''
+    - The Kalman filter uses the same gains as the LQR.
+    - Differencing measures both the cart and the pole.
+  - question: The Bode plot of the LQR loop shows plenty of margin, but the real cart-pole fails with the filter in. Why?
+    options:
+    - The filter adds lag that LQR's margin guarantees did not count
+    - The Bode plot was wrong
+    - LQR needs more gain
+    answer: 0
+    explain: 'LQR''s 60° margin assumes every state is measured. A filter in the loop removes that guarantee (Doyle, 1978: "There are none."), so read the margins with the filter on.'
+    why:
+    - ''
+    - The plot is right; its assumptions changed.
+    - More gain would not restore a guarantee that does not apply.
   controls:
   - mode
   - reference
@@ -322,9 +1098,9 @@ tabs:
     readings (noise gets amplified) or by a <strong>Kalman filter</strong> (a model of the plant corrected by the sensors, with a
     <strong>trust</strong> slider). Raise the noise and compare. <strong>Load LQR gains</strong> fills in the optimal set. Switch
     <strong>View</strong> to Bode, Nyquist or Poles: the filter is part of the loop, and LQR's guaranteed margins are gone (Doyle, 1978).</p>
-    </div>
-    <div class="demo-note">
-    <h4 class="demo-note-title">Equations of motion &amp; control law</h4>
+  loadLabel: Load LQR gains
+  maths: |-
+    <h5>Equations of motion &amp; control law</h5>
           <div class="eqn-block">
             <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
             <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
@@ -335,4 +1111,61 @@ tabs:
             <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>&#8722;3.1</span><span>&#8722;5.9</span><span>&#8722;43.5</span><span>&#8722;18.1</span></span>,&#160;&#160; F = &#8722;K<b>s</b></span></div>
             <p class="eqn-note">M = 0.3 kg cart, m = 0.3 kg pole, &#8467; = 1.5 m half-length, b = 0.8 N&#183;s/m cart friction, g = 9.81 m/s&#178;. Force saturates at &#177;10 N; LQR's K comes out negative in every entry (u = &#8722;K<b>s</b>), so the sliders show &#8722;K and all four gains are positive. &#952; is in rad, measured from vertical. The trial ends when |&#952;| &gt; 45&#176; or the cart hits a rail end at &#177;4 m. RK4 at 200 Hz.</p>
           </div>
-  loadLabel: Load LQR gains
+  demo: cartpole
+  minutes: 12
+  recall: The earlier demos were stable on their own. This one falls without a controller, and only two of its four states are measured.
+  recap: balance an unstable plant from two noisy sensors and read what the estimator does to its margins.
+- id: verify
+  label: Verify a network
+  lab: net
+  top: sim
+  row1: verify-map
+  row2: verify-proof
+  controls:
+  - controller
+  - noise
+  - verify
+  noiseMax: 2
+  noiseUnit: °
+  aria:
+  - The cart-pole, balanced by the LQR or the neural network
+  - The network's force over pole angle and rate, and where its robustness is proved
+  - The proof against sampled inputs, the split box, and the bound's width by layer
+  note: |-
+    <p>The small network trained to copy the cart-pole's LQR. Verification proves something for <em>every</em> input in a region:
+    can a sensor error up to &#949; on the angle move the force by more than &#948;? <strong>Interval bound propagation</strong> pushes the whole
+    box through the network. The answer is <strong>proved</strong>, <strong>disproved</strong> (with a counterexample) or <strong>unknown</strong>;
+    split the box and bound each piece to tighten it (<strong>branch and bound</strong>). The right map runs the proof at every
+    state.</p>
+  demo: cartpole
+  minutes: 8
+  goal: Prove what a neural-network controller will do, instead of watching it balance and hoping.
+  recall: LQR gains are a short list of numbers you can analyse. A network is not.
+  predict:
+    question: A sensor error moves the angle by &#949;. Can bounds on the network's output be proved for every error up to &#949;?
+    options:
+    - Yes, for the whole region
+    - Only for the errors you tried
+    - Never
+    answer: 0
+    try: Switch the controller to the <strong>Neural net</strong> and read the verdict.
+    explain: Interval bound propagation pushes the whole box of inputs through the network, so its answer covers every input in the region.
+  tasks:
+  - Switch <strong>Controller</strong> to the neural net and watch it balance.
+  - 'Read the answer to the question: proved, disproved or unknown?'
+  - Raise <strong>Split</strong> to tighten the bound. Does an unknown become a proof?
+  - 'Look at the map: where is the force provably unaffected?'
+  note_title: Proving what a network will do
+  check:
+  - question: Why does splitting the box help?
+    options:
+    - Bounds on small pieces are tighter than one bound on the whole box
+    - It makes the network smaller
+    - It adds noise
+    answer: 0
+    explain: Interval bounds add slack at each layer. Smaller input boxes have less slack, so more questions become provable.
+    why:
+    - ''
+    - The network is unchanged.
+    - Splitting only changes how the box is bounded.
+  recap: say what a verified bound promises and how branch and bound tightens it.

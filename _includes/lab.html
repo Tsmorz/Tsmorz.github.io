@@ -7,28 +7,37 @@
 {%- endcomment -%}
 {%- assign L = site.data.labs[page.lab] -%}
 {%- assign base_href = 'href="' | append: site.baseurl | append: '/' -%}
-{%- comment -%} Where this page sits on the learning path: "You'll need" and the last "Next". {%- endcomment -%}
-{%- assign lp = site.data.learning_path -%}
-{%- assign here = nil -%}{%- assign next_step = nil -%}
-{%- for st in lp -%}{%- if st.url == page.url -%}{%- assign here = st -%}{%- assign next_step = lp[forloop.index] -%}{%- endif -%}{%- endfor -%}
 <div class="wrap" style="padding-bottom:3rem">
   <div class="sim-tabs-row">
     <div class="sim-tabs" role="tablist" aria-label="Demo selector">
-      {%- for t in L.tabs %}
-      <button class="sim-tab{% if forloop.first %} active{% endif %}" role="tab" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" aria-controls="sec-{{ t.id }}" id="tab-{{ t.id }}" type="button">{{ t.label }}</button>
+      {%- for d in L.demos %}
+      <button class="demo-tab{% if forloop.first %} active{% endif %}" data-demo="{{ d.id }}" type="button">{{ d.label }}</button>
       {%- endfor %}
     </div>
     {%- for l in L.links %}
     <a class="sim-tab-link" href="{{ l.href | relative_url }}">{{ l.label }} &#8594;</a>
     {%- endfor %}
   </div>
+  {%- for d in L.demos %}
+  <div class="lesson-row" data-demo="{{ d.id }}" role="tablist" aria-label="{{ d.label }} lessons"{% unless forloop.first %} hidden{% endunless %}>
+    {%- for t in L.tabs %}{% if t.demo == d.id %}
+    <button class="sim-tab lesson-tab{% if forloop.first %} active{% endif %}" role="tab" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" aria-controls="sec-{{ t.id }}" id="tab-{{ t.id }}" type="button">{{ t.label }}</button>
+    {%- endif %}{% endfor %}
+  </div>
+  {%- endfor %}
   {%- for t in L.tabs %}
-  {%- assign is_first = forloop.first -%}{%- assign is_last = forloop.last -%}{%- assign idx = forloop.index -%}
+  {%- assign idx = forloop.index -%}
   <section class="sim-section{% if forloop.first %} active{% endif %}" id="sec-{{ t.id }}" role="tabpanel" aria-labelledby="tab-{{ t.id }}">
     {%- comment -%} The tab's own anchor, so links like /controls/#cartpole (and html-proofer's hash check) find a target. {%- endcomment %}
     <span class="lab-anchor" id="{{ t.id }}"></span>
-    {%- if t.goal %}
-    <p class="lab-goal"><span class="lab-phase">1 &middot; Arrive</span> {{ t.goal }}</p>
+    <p class="lab-goal"><span class="lab-phase">1 &middot; Arrive</span> {{ t.goal }}{% if t.minutes %} <span class="lab-time">about {{ t.minutes }} min</span>{% endif %}</p>
+    {%- if t.recall %}<p class="lab-recall"><span class="lab-phase">2 &middot; Reactivate</span> {{ t.recall }}</p>{% endif %}
+    <div class="lab-learn lab-predict-slot"></div>
+    {%- if t.note %}
+    <details class="demo-note lab-inform"{% unless t.predict %} open{% endunless %}>
+      <summary><span class="lab-phase">3 &middot; Inform</span> {{ t.note_title | default: 'About this demo' }}</summary>
+      {{ t.note | replace: 'href="/', base_href }}
+    </details>
     {%- endif %}
     <div class="sim-layout">
       <div class="sim-canvas-wrap sim-stack">
@@ -40,31 +49,25 @@
       </div>
       <div class="sim-panel" id="{{ t.id }}-panel"></div>
     </div>
-    {%- if t.note %}
-    <div class="demo-note">
-      <span class="lab-phase">3 &middot; Inform</span>
-      <h4 class="demo-note-title">{{ t.note_title | default: 'About this demo' }}</h4>
-      {{ t.note | replace: 'href="/', base_href }}
-    </div>
-    {%- endif %}
     {%- if t.tasks %}
     <div class="lab-card lab-tasks">
       <span class="lab-phase">4 &middot; Process</span>
       <h4 class="lab-card-title">Try it</h4>
-      <ol>{% for task in t.tasks %}<li>{{ task }}</li>{% endfor %}</ol>
+      <ol>{% for task in t.tasks %}<li><label><input type="checkbox"> <span>{{ task }}</span></label></li>{% endfor %}</ol>
     </div>
     {%- endif %}
-    {%- if t.check %}<div class="lab-check-slot"></div>{% endif %}
+    {%- if t.maths %}
+    <details class="lab-maths"><summary>Show the maths</summary>{{ t.maths }}</details>
+    {%- endif %}
+    <div class="lab-check-slot"></div>
+    {%- if t.recap %}<p class="lab-recap"><strong>You can now:</strong> {{ t.recap }}</p>{% endif %}
     <div class="lab-next">
-      {%- if is_first and here and here.needs.size > 0 %}
-      <span class="lab-needs">You'll need:
-        {%- for nid in here.needs %}{% assign ns = lp | where: 'id', nid | first %} <a href="{{ ns.url | relative_url }}">{{ ns.title }}</a>{% unless forloop.last %},{% endunless %}{% endfor %}</span>
+      {%- if forloop.last %}
+      <a class="lab-next-link" href="{{ '/controls/swingup/' | relative_url }}">Next: swing up a double pendulum &#8594;</a>
+      {%- else %}
+      {%- assign nx = L.tabs[idx] -%}
+      <a class="lab-next-link" href="#{{ nx.id }}">Next: {% if nx.demo != t.demo %}{% for d in L.demos %}{% if d.id == nx.demo %}{{ d.label }}{% endif %}{% endfor %}{% else %}{{ nx.label }}{% endif %} &#8594;</a>
       {%- endif %}
-      {%- unless is_last %}
-      <a class="lab-next-link" href="#{{ L.tabs[idx].id }}">Next: {{ L.tabs[idx].label }} &#8594;</a>
-      {%- else %}{% if next_step %}
-      <a class="lab-next-link" href="{{ next_step.url | relative_url }}">Next: {{ next_step.title }} &#8594;</a>
-      {%- endif %}{% endunless %}
     </div>
   </section>
   {%- endfor %}
@@ -97,6 +100,16 @@
 .range-row{display:flex;align-items:center;gap:.25rem}
 .range-lbl{font-size:.75rem;color:var(--text-muted);white-space:nowrap}
 .range-input{width:3.6rem;font-size:.78rem;padding:.15rem .3rem;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
+.lab-recap{margin:1rem 0 0;font-size:.9rem;color:var(--text-muted)}
+.lab-recall{margin:0 0 .8rem;font-size:.9rem;color:var(--text-muted)}
+.lab-time{font:400 .72rem var(--mono);color:var(--text-muted);margin-left:.4rem}
+.lab-inform>summary,.lab-maths>summary{cursor:pointer;font-weight:600;font-size:.92rem}
+.lab-maths{margin-top:1rem}
+.lab-tasks label{cursor:pointer}
+.lab-tasks input{margin-right:.35rem}
+.lesson-row{display:flex;gap:.35rem;flex-wrap:wrap;margin:-.9rem 0 1.5rem}
+.lesson-row[hidden]{display:none}
+.lesson-tab{font-size:.8rem;padding:.25rem .65rem}
 .lab-phase{display:inline-block;font:600 .68rem var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--accent);margin-bottom:.25rem}
 .lab-goal{margin:0 0 .8rem;font-size:.95rem}
 .lab-goal .lab-phase{margin-right:.5rem}

@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+// Check the CSV → linear model → LQR pipeline behind /controls/fit/ (assets/js/fit.js), in Node.
+//   1. a CSV with timestamps and a header is read, columns are assigned roles, uneven time is resampled
+//   2. a known discrete system is recovered by the fit, with noise
+//   3. the LQR stabilises an unstable model (spectral radius below 1)
+//   4. the built-in example (a cart-pole recording) fits, and its LQR stabilises the identified model
+const path = require('path');
+const F = require(path.join(__dirname, '..', 'assets/js/fit.js'));
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+let seed = 3; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+const radius = (eig) => Math.max(...eig.map((z) => Math.hypot(z[0], z[1])));
+
+console.log('1. reading a CSV');
+{
+  const csv = 'time,pos,vel,force\n' + Array.from({ length: 40 }, (_, k) => `${k * 20},${k * 0.1},${k * 0.01},${k % 3}`).join('\n');
+  const d = F.parseCsv(csv), roles = F.guessRoles(d.header, d.cols);
+  check(d.header.join() === 'time,pos,vel,force' && roles.join() === 'time,state,state,input', 'header and roles guessed: ' + roles.join());
+  const p = F.prepare(d, roles, 0.001);
+  check(Math.abs(p.dt - 0.02) < 1e-9 && p.X.length === 40 && p.U[0].length === 1, 'milliseconds become seconds (dt ' + p.dt + ')');
+  const iso = 'timestamp;a;u\n' + Array.from({ length: 30 }, (_, k) => `2026-01-01T00:00:${String(k).padStart(2, '0')}Z;${k};${k % 2}`).join('\n');
+  const di = F.parseCsv(iso), pi = F.prepare(di, F.guessRoles(di.header, di.cols), 1);
+  check(pi && Math.abs(pi.dt - 1) < 1e-9, 'ISO timestamps and semicolons are read');
+  const un = 't,x,u\n' + Array.from({ length: 60 }, (_, k) => `${(k + (k % 2) * 0.4).toFixed(2)},${k},${k % 5}`).join('\n');
+  const du = F.parseCsv(un), pu = F.prepare(du, ['time', 'state', 'input'], 1);
+  check(pu.uneven && pu.X.length > 40, 'uneven time is resampled');
+}
+
+console.log('2. recovering a known system');
+{
+  const A = [[0.98, 0.05], [-0.1, 0.95]], B = [[0], [0.1]], X = [[1, 0]], U = [];
+  for (let k = 0; k < 600; k++) { const u = rnd() < 0.5 ? -1 : 1; U.push([u]); const x = X[k]; X.push([A[0][0] * x[0] + A[0][1] * x[1] + 0.001 * (rnd() - 0.5), A[1][0] * x[0] + A[1][1] * x[1] + B[1][0] * u + 0.001 * (rnd() - 0.5)]); }
+  U.push([0]);
+  const m = F.fitLinear(X, U, false), err = Math.max(...[0, 1].flatMap((i) => [0, 1].map((j) => Math.abs(m.A[i][j] - A[i][j]))), Math.abs(m.B[1][0] - 0.1));
+  check(err < 0.01, `A and B recovered within ${err.toFixed(4)} from noisy data`);
+  check(m.fit.every((f) => f > 80), 'one-step fit above 80% on both states (' + m.fit.map((f) => f.toFixed(0)).join(', ') + ')');
+}
+
+console.log('2b. changing the sample rate');
+{
+  const A = [[0.97, 0.1], [-0.1, 0.97]], B = [[0], [0.05]], rows = ['t,x1,x2,u'];
+  let x = [1, 0];
+  for (let k = 0; k < 800; k++) { const u = 0.05 * (rnd() - 0.5); rows.push([(k * 0.01).toFixed(2), x[0].toFixed(6), x[1].toFixed(6), u.toFixed(5)].join(',')); x = [A[0][0] * x[0] + A[0][1] * x[1], A[1][0] * x[0] + A[1][1] * x[1] + B[1][0] * u]; }
+  const d = F.parseCsv(rows.join('\n')), roles = F.guessRoles(d.header, d.cols), p1 = F.prepare(d, roles, 1, 1), p3 = F.prepare(d, roles, 1, 3);
+  const r1 = radius(F.fitLinear(p1.X, p1.U, false).eig), r3 = radius(F.fitLinear(p3.X, p3.U, false).eig);
+  check(Math.abs(p3.dt - 3 * p1.dt) < 1e-9 && Math.abs(p3.t.length - p1.t.length / 3) < 3, `3× slower: dt ${p3.dt.toFixed(3)} s, ${p3.t.length} samples`);
+  check(Math.abs(r3 - Math.pow(r1, 3)) < 0.01, `poles follow the rate: |z| ${r1.toFixed(3)} at 0.01 s, ${r3.toFixed(3)} at 0.03 s (cube ${Math.pow(r1, 3).toFixed(3)})`);
+  check(F.prepare(d, roles, 1, 100).error !== undefined || F.prepare(d, roles, 1, 100).t.length >= 20, 'a rate too slow for the data is refused or still has 20 samples');
+}
+
+console.log('3. LQR');
+{
+  const A = [[1.1, 0.1], [0, 1.05]], B = [[0], [0.1]], lq = F.dlqr(A, B, [1, 1], [1]);
+  check(lq && lq.stable && radius(lq.eig) < 1, 'an unstable model (|z| 1.1) is stabilised: closed-loop |z| ' + (lq ? radius(lq.eig).toFixed(3) : '-'));
+  const cheap = F.dlqr(A, B, [1, 1], [0.01]), dear = F.dlqr(A, B, [1, 1], [100]);
+  check(Math.abs(cheap.K[0][1]) > Math.abs(dear.K[0][1]), 'cheaper input (smaller R) gives a larger gain');
+}
+
+console.log('4. the example recording');
+{
+  const csv = F.exampleCsv(), d = F.parseCsv(csv), roles = F.guessRoles(d.header, d.cols), p = F.prepare(d, roles, 1), m = F.fitLinear(p.X, p.U, true);
+  check(roles.join() === 'time,state,state,state,state,input' && p.X.length === 600, 'columns: ' + roles.join());
+  check(m.fit.every((f) => f > 40), 'every state predicted (fit ' + m.fit.map((f) => f.toFixed(0)).join(', ') + '%)');
+  check(radius(m.eig) > 0.999, 'the identified cart-pole is unstable on its own (|z| ' + radius(m.eig).toFixed(3) + ')');
+  const lq = F.dlqr(m.A, m.B, [1, 1, 10, 1], [1]);
+  check(lq && lq.stable, 'LQR on the identified model stabilises it (|z| ' + (lq ? radius(lq.eig).toFixed(3) : '-') + ')');
+}
+
+if (failed) { console.log('\ntest-fit: FAILED'); process.exit(1); }
+console.log('\ntest-fit: all checks passed');

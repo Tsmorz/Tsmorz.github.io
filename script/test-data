@@ -67,18 +67,23 @@ Dir.glob("_data/labs/*.yml").sort.each do |path|
   (doc.is_a?(Hash) ? doc["tabs"] || [] : []).each do |tab|
     where = "#{path} tab #{tab["id"]}"
     { "predict" => %w[question try explain], "check" => %w[question explain] }.each do |key, need|
-      next unless (pr = tab[key])
-      need.each { |k| errors << "#{where}: #{key} needs #{k}" if pr[k].to_s.strip.empty? }
-      opts = pr["options"]
-      if !opts.is_a?(Array) || opts.size < 2
-        errors << "#{where}: #{key} needs at least two options"
-      elsif !pr["answer"].is_a?(Integer) || !pr["answer"].between?(0, opts.size - 1)
-        errors << "#{where}: #{key} answer must index one of its #{opts.size} options (0-based)"
+      Array(tab[key].is_a?(Hash) ? [tab[key]] : tab[key]).each_with_index do |pr, i|
+        qw = "#{where} #{key} #{i + 1}"
+        need.each { |k| errors << "#{qw}: needs #{k}" if pr[k].to_s.strip.empty? }
+        opts = pr["options"]
+        if !opts.is_a?(Array) || opts.size < 2
+          errors << "#{qw}: needs at least two options"
+        elsif !pr["answer"].is_a?(Integer) || !pr["answer"].between?(0, opts.size - 1)
+          errors << "#{qw}: answer must index one of its #{opts.size} options (0-based)"
+        elsif pr["why"] && pr["why"].size != opts.size
+          errors << "#{qw}: why needs one entry per option"
+        end
       end
     end
-    # ARIVA: every /controls/ demo tab states a goal and has tasks and a closing check.
+    # ARIVA: every lesson has a goal, a prediction, a note, tasks and a closing check.
     if path.end_with?("controls.yml")
-      %w[goal tasks check predict].each { |k| errors << "#{where}: needs #{k} (ARIVA)" if tab[k].to_s.strip.empty? }
+      %w[goal predict note tasks check].each { |k| errors << "#{where}: needs #{k} (ARIVA)" if tab[k].to_s.strip.empty? }
+      errors << "#{where}: needs a demo" unless (doc["demos"] || []).any? { |d| d["id"] == tab["demo"] }
     end
   end
 end

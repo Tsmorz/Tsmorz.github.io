@@ -45,21 +45,20 @@ Content lives in `_data/` and a few pages, not in HTML.
 | Bio and education timeline | `about.md` |
 | Home page headline and intro | `index.html` |
 | Colors, spacing, type | `assets/css/main.css` (tokens at the top) |
-| A controls demo | `_data/labs/controls.yml` |
-| System ID, sampling, design, modern methods pages | `_data/labs/<page>.yml` |
-| Order of the controls pages | `_data/learning_path.yml` |
+| A controls lesson (every demo and lesson) | `_data/labs/controls.yml` |
+| The upload-a-CSV fit page | `fit.md` and `assets/js/fit.js` |
 
-### Editing a controls demo
+### Editing a controls lesson
 
-Each tab in `_data/labs/controls.yml` follows the five ARIVA steps, and `task check:fast` fails if one is missing:
+Each demo (Intro, Tilt Table, Flight Sim, Cart-Pole) in `_data/labs/controls.yml` holds lessons. Every lesson follows the five ARIVA steps, and `task check:fast` fails if one is missing:
 
 | Step | Field | What it is |
 | --- | --- | --- |
 | Arrive | `goal` | One sentence above the sim |
-| Reactivate | `predict` | A prediction card under the sim |
-| Inform | `note` | A short explanation (HTML) |
+| Reactivate | `recall`, `predict` | A line tying back to an earlier lesson, and a prediction card before the sim |
+| Inform | `note` | A short, folded explanation (HTML); `maths` is an optional "Show the maths" |
 | Process | `tasks` | A numbered list of things to do in the sim |
-| Evaluate | `check` | A closing multiple-choice question |
+| Evaluate | `check`, `recap` | Closing multiple-choice questions (`why` explains each wrong answer) and a "You can now" line |
 
 After any edit, run `task check:fast`, then `task serve` to look at it.
 
