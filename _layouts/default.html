@@ -27,7 +27,8 @@
     <header class="site-header">
       <nav class="nav" aria-label="Primary">
         <a class="nav-brand" href="{{ '/' | relative_url }}">
-          <img src="{{ site.author.photo | relative_url }}" alt="" width="32" height="32">
+          {% if page.url == '/' %}<img src="{{ '/assets/img/favicon.svg' | relative_url }}?v=7" alt="" width="32" height="32">
+          {% else %}<img src="{{ site.author.photo | relative_url }}" alt="" width="32" height="32">{% endif %}
           <span>{{ site.title }}</span>
         </a>
         <ul class="nav-links">
