@@ -113,7 +113,7 @@ permalink: /controls/fit/
 .fit-example{font:.78rem/1.5 var(--mono);background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem .8rem;overflow-x:auto;margin:.4rem 0}
 .lab-format{margin-top:.75rem}
 .fit-msg{font-size:.82rem;color:var(--text-muted);margin:.4rem 0}
-.fit-msg.bad{color:var(--nn-act-neg)}
+.fit-msg.bad{color:var(--bad)}
 .fit-info{font:.74rem/1.45 var(--mono);white-space:pre;overflow-x:auto;margin:0}
 </style>
 <script src="{{ '/assets/js/lab/lab-core.js' | relative_url }}"></script>

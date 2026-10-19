@@ -42,7 +42,7 @@
   function readColors() {
     var m = { text: '--text', muted: '--text-muted', border: '--border', borderStrong: '--border-strong', accent: '--accent',
       bgSoft: '--bg-soft', bg: '--bg', viz1: '--viz-1', viz2: '--viz-2', viz3: '--viz-3', viz4: '--viz-4',
-      bad: '--nn-act-neg', zero: '--nn-act-zero', pos: '--nn-act-pos', mono: '--mono', font: '--font' };
+      bad: '--bad', zero: '--nn-act-zero', pos: '--nn-act-pos', mono: '--mono', font: '--font' };
     Object.keys(m).forEach(function (k) { col[k] = cssVar(m[k]); });
   }
   function fit(canvas) {

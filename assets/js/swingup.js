@@ -933,7 +933,7 @@
     var ox = cx + gap + 8, fmax = meta.physics.force_max, f = tr.force / fmax;
     ctx.fillStyle = mix(zero, zero, 0); ctx.fillRect(ox, midY - 48, 16, 96);
     ctx.fillStyle = f < 0 ? mix(zero, neg, 1) : mix(zero, pos, 1);
-    ctx.fillRect(ox, f < 0 ? midY : midY + f * 48, 16, Math.abs(f) * 48);
+    ctx.fillRect(ox, f < 0 ? midY : midY - f * 48, 16, Math.abs(f) * 48);   // positive grows up from the zero line
     ctx.fillStyle = border; ctx.fillRect(ox - 3, midY, 22, 1);
     ctx.textAlign = 'left'; ctx.fillStyle = text; ctx.font = '600 13px ' + mono;
     ctx.fillText(tr.force.toFixed(1) + ' N', ox + 26, midY + 4);
