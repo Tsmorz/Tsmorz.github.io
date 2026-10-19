@@ -215,8 +215,6 @@ pre code { background: none; border: 0; padding: 0; }
 
 @media (max-width: 620px) {
   .nav-brand span { display: none; }
-  .nav-home { display: none; }
-  .nav-links a { padding: .4rem .5rem; font-size: .9rem; }
 }
 
 /* ---------------------------------------------------------------
@@ -823,10 +821,31 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 .theme-toggle:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .theme-toggle::before { transition: none; } }
 
-/* phone: keep brand, three links, the dropdown caret and the theme toggle on one line */
+/* phone: links collapse into a menu button; the theme toggle stays in the bar */
+.nav-burger { display: none; }
 @media (max-width: 620px) {
-  .nav { gap: .5rem; padding-inline: 1rem; }
-  .nav-links { gap: .1rem; }
-  .nav-links a { padding-inline: .35rem; }
-  .nav-menu-btn { padding-inline: .2rem; margin-left: -.1rem; }
+  .nav { gap: .6rem; padding-inline: 1rem; }
+  .nav-burger {
+    display: grid; place-items: center; padding: .4rem; border: 0; border-radius: 3px;
+    background: none; color: var(--text-muted); cursor: pointer;
+  }
+  .nav-burger:hover, .nav-burger[aria-expanded="true"] { color: var(--text); background: var(--bg-soft); }
+  .nav-burger .nb-close, .nav-burger[aria-expanded="true"] .nb-open { display: none; }
+  .nav-burger[aria-expanded="true"] .nb-close { display: block; }
+  .nav-links {
+    display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 60;
+    flex-direction: column; gap: .15rem; padding: .6rem 1rem 1rem;
+    background: var(--bg); border-bottom: 1px solid var(--border-strong); box-shadow: var(--shadow-lift);
+  }
+  .nav.menu-open .nav-links { display: flex; }
+  .nav-home { display: block; }
+  .nav-links a { padding: .7rem .6rem; font-size: .95rem; }
+  /* the Controls Lab pages sit inline under their parent; no caret or hover popup */
+  .nav-menu { display: block; }
+  .nav-menu-btn { display: none; }
+  .nav-menu-list, .nav-menu.shut .nav-menu-list {
+    display: block; position: static; min-width: 0; margin: .1rem 0 0 .9rem; padding: 0 0 0 .6rem;
+    border: 0; border-left: 1px solid var(--border-strong); box-shadow: none; background: none;
+  }
+  .nav-menu-list::before { display: none; }
 }
