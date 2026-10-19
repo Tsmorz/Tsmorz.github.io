@@ -246,30 +246,73 @@ Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (m
   }
 })();
 
-// Footer cat — after 30 s on a page, a pixel orange tabby walks in from the right along the footer's top line and lies
-// down at the left (above the copyright). It waits until that stretch of the footer is on screen, so the walk is seen.
-// Sprites are rows of letters (o orange, s stripe, w cream, e eye); the colors are in main.css (.cat-o ...).
+// Footer cat — after 30 s on a page, a pompous orange tabby (chin up, tail like a flagpole, high-stepping) struts in from
+// the right along the footer's top line, surveys the place at the left (above the copyright), then lies down.
+// It waits until that stretch of the footer is on screen, so the walk is seen.
+// Sprites are rows of letters (o orange, s stripe, w cream, e eye, p nose); the colors are in main.css (.cat-o ...).
 (function () {
   var footer = document.querySelector('.site-footer');
   if (!footer || !window.IntersectionObserver || !footer.animate) return;
-  var ROWS = 8, COLS = 16, PX = 3, SPEED = 70, DELAY = 30000;   // sprite grid, px per sprite pixel, walking px/s, ms on the page
+  var ROWS = 14, COLS = 24, PX = 4, SPEED = 45, STEP = 320, POSE = 1800, DELAY = 30000;   // sprite grid, px per sprite pixel, walking px/s, ms per step, ms spent posing, ms on the page
+  // one gait frame lifts the front-left and back-right legs, the other the opposite pair: a high-stepping strut
   var walkA = [
-    '.o..o...........',
-    '.osso.........s.',
-    '.weooo........o.',
-    '..woosoosoosooo.',
-    '...osoosoosooo..',
-    '....owwwwwwwo...',
-    '....o.o...o.o...',
-    '...w...w.w...w..'
+    '..o..o..............ss..',
+    '.osooso.............oo..',
+    'woeoooo.............ss..',
+    'pwooooo.............oo..',
+    '.wwoooo.............ss..',
+    '..wwwoo.............oo..',
+    '..wwwoosoosoosoosoooss..',
+    '..wwwwooosooosooosoooo..',
+    '..wwwwooosoooosooososs..',
+    '..wwwwooooosoooosooooo..',
+    '...owwwwwwwwwwwwwwwoss..',
+    '..o...o........o...o....',
+    '.w....o........o...w....',
+    '......w........w........'
   ];
-  var walkB = walkA.slice(0, 7).concat(['....w.w...w.w...']);
+  var walkB = [
+    '..o..o..............ss..',
+    '.osooso.............oo..',
+    'woeoooo.............ss..',
+    'pwooooo.............oo..',
+    '.wwoooo.............ss..',
+    '..wwwoo.............oo..',
+    '..wwwoosoosoosoosoooss..',
+    '..wwwwooosooosooosoooo..',
+    '..wwwwooosoooosooososs..',
+    '..wwwwooooosoooosooooo..',
+    '...owwwwwwwwwwwwwwwoss..',
+    '...o.o.........o.o......',
+    '...ow............wo.....',
+    '...w..............w.....'
+  ];
+  var stand = [
+    '..o..o..............ss..',
+    '.osooso.............oo..',
+    'woeoooo.............ss..',
+    'pwooooo.............oo..',
+    '.wwoooo.............ss..',
+    '..wwwoo.............oo..',
+    '..wwwoosoosoosoosoooss..',
+    '..wwwwooosooosooosoooo..',
+    '..wwwwooosoooosooososs..',
+    '..wwwwooooosoooosooooo..',
+    '...owwwwwwwwwwwwwwwoss..',
+    '...o..o........o..o.....',
+    '...o..o........o..o.....',
+    '...w..w........w..w.....'
+  ];
   var lie = [
-    '.o..o...........',
-    '.osso...........',
-    '.weooosoosoosooo',
-    '..osoosoosoosooo',
-    '...ooooooooooo..'
+    '..o..o..................',
+    '.osooso.................',
+    'woeoooo.................',
+    'pwooooo.................',
+    '.wwoooo.................',
+    '..wwwoosoosoosoosooo....',
+    '..wwwwooosooosooosoo....',
+    '..wwwwooosoooosoooso...s',
+    '...owwwwwwwwwwwwwwwoosos'
   ];
 
   function frame(cls, rows) {
@@ -286,7 +329,7 @@ Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (m
     lane.className = 'cat-lane';
     lane.setAttribute('aria-hidden', 'true');
     lane.innerHTML = '<svg class="cat" viewBox="0 0 ' + COLS + ' ' + ROWS + '" width="' + COLS * PX + '" height="' + ROWS * PX + '" shape-rendering="crispEdges">' +
-      frame('cat-a', walkA) + frame('cat-b', walkB) + frame('cat-lie', lie) + '</svg>';
+      frame('cat-a', walkA) + frame('cat-b', walkB) + frame('cat-stand', stand) + frame('cat-lie', lie) + '</svg>';
     footer.appendChild(lane);
     var cat = lane.firstChild, anim = null, stepper = null;
 
@@ -295,10 +338,10 @@ Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (m
       var p = footer.querySelector('.footer-inner p');
       return p ? p.getBoundingClientRect().left - footer.getBoundingClientRect().left : 24;
     }
-    function settle() {
+    function settle(pose) {
       if (anim) { anim.cancel(); anim = null; }
       clearInterval(stepper);
-      cat.setAttribute('class', 'cat lying');
+      cat.setAttribute('class', 'cat ' + pose);
       cat.style.transform = 'translateX(' + restX() + 'px)';
     }
     window.addEventListener('resize', function () { if (!anim) cat.style.transform = 'translateX(' + restX() + 'px)'; });
@@ -307,13 +350,14 @@ Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (m
     var io = new IntersectionObserver(function (entries) {
       if (!entries[0].isIntersecting) return;
       io.disconnect();
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { settle(); return; }
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { settle('lying'); return; }
       var from = lane.clientWidth, to = restX();
       cat.setAttribute('class', 'cat walking');
       anim = cat.animate([{ transform: 'translateX(' + from + 'px)' }, { transform: 'translateX(' + to + 'px)' }],
         { duration: (from - to) / SPEED * 1000, easing: 'linear', fill: 'forwards' });
-      stepper = setInterval(function () { cat.classList.toggle('step'); }, 220);
-      anim.onfinish = settle;
+      stepper = setInterval(function () { cat.classList.toggle('step'); }, STEP);
+      // arrived: stand a while, nose in the air, surveying the footer, then deign to lie down
+      anim.onfinish = function () { settle('standing'); setTimeout(function () { settle('lying'); }, POSE); };
     }, { threshold: 1 });
     cat.style.transform = 'translateX(' + lane.clientWidth + 'px)';
     io.observe(lane);

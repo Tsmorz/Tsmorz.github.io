@@ -409,13 +409,13 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 
 /* Footer cat (site.js): an orange tabby that walks along the footer's top line. Its colors are its own, the same in both themes. */
 .site-footer { position: relative; }
-.cat-lane { position: absolute; left: 0; right: 0; bottom: calc(100% + 1px); height: 24px; overflow: hidden; pointer-events: none; }
+.cat-lane { position: absolute; left: 0; right: 0; bottom: calc(100% + 1px); height: 56px; overflow: hidden; pointer-events: none; }
 .cat { position: absolute; left: 0; bottom: 0; }
-.cat-o { fill: #e8903a; } .cat-s { fill: #b3601c; } .cat-w { fill: #f6dcb4; } .cat-e { fill: #2b2118; }
+.cat-o { fill: #e8903a; } .cat-s { fill: #b3601c; } .cat-w { fill: #f6dcb4; } .cat-e { fill: #2b2118; } .cat-p { fill: #e58aa0; }
 .cat g { display: none; }
-.cat.walking .cat-a, .cat.walking.step .cat-b, .cat.lying .cat-lie { display: inline; }
+.cat.walking .cat-a, .cat.walking.step .cat-b, .cat.standing .cat-stand, .cat.lying .cat-lie { display: inline; }
 .cat.walking.step .cat-a { display: none; }
-.cat.walking.step { bottom: 1px; }   /* a small bounce with each step */
+.cat.walking.step { bottom: 2px; }   /* a small bounce with each step */
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
