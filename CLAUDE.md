@@ -41,7 +41,8 @@ _data/*.yml              all page content that repeats
 _layouts/                default (nav, theme toggle, footer) and page (+ title header, .prose)
 _includes/               project-card, learning-path, lab: take params, not globals
 assets/css/main.css      hand-written, token-based, no build step
-assets/js/site.js        theme toggle, tag filter
+assets/js/site.js        theme toggle, tag filter, nav menus, hero symbols, and the footer cat (an orange tabby that
+                         walks along the footer line 30 s after load; sprites are letter grids in the JS, colors in main.css)
 assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab and swingup.js (load first)
 assets/js/swingup.js     /controls/swingup/: double cart-pole + goal-conditioned TQC policy in vanilla JS
 assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax + Bu, design a discrete LQR; FitCore has no DOM
