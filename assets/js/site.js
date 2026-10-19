@@ -40,17 +40,6 @@
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && menu.classList.contains('open')) { set(false); btn.focus(); } });
 })();
 
-// Phone menu: the burger opens the link panel; choosing a page, Escape or a tap outside closes it.
-(function () {
-  var nav = document.querySelector('.nav'), btn = nav && nav.querySelector('.nav-burger');
-  if (!btn) return;
-  function set(open) { nav.classList.toggle('menu-open', open); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
-  btn.addEventListener('click', function (e) { e.stopPropagation(); set(!nav.classList.contains('menu-open')); });
-  document.addEventListener('click', function (e) { if (!nav.contains(e.target)) set(false); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && nav.classList.contains('menu-open')) { set(false); btn.focus(); } });
-  window.addEventListener('resize', function () { if (window.innerWidth > 620) set(false); });
-})();
-
 // Hero field — math symbols that spring back to a home point, pushed by the cursor.
 (function () {
   var hero = document.querySelector('.hero');
