@@ -692,7 +692,13 @@ button, input, select, textarea { font-family: var(--mono); }
 .su-net-wrap { margin-top: 1.5rem; }
 .su-net-title { margin: 0 0 .6rem; font-size: 1rem; }
 .su-net { display: block; width: 100%; height: 300px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg-soft); }
-@media (max-width: 720px) { .su-net { height: 220px; } }
+/* The diagram is drawn on a 960 x 290 layout. Squeezed into a phone width it is tiny, so on narrow screens it keeps a readable width and scrolls sideways. */
+.su-net-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 3px; }
+.su-net-hint { display: none; margin: .4rem 0 0; font-size: .78rem; color: var(--text-muted); }
+@media (max-width: 720px) {
+  .su-net { min-width: 760px; height: 250px; }
+  .su-net-hint { display: block; }
+}
 .su-reset-row { display: flex; gap: .4rem; }
 .su-reset-row .sim-btn { padding: .45rem .3rem; font-size: .8rem; white-space: nowrap; }
 .su-layout .sim-panel { gap: .5rem; padding: .8rem .9rem; }
