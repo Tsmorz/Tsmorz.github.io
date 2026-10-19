@@ -355,19 +355,19 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 /* one unbroken line: each item draws from its own circle's center to the next circle's center; the first starts a little above its circle, the last ends a little below its circle */
 .timeline li::after { content: ""; position: absolute; left: -2px; width: 2px; z-index: 0; background: var(--border); top: calc(.45rem + 5px); bottom: calc(-.45rem - 5px); }
 .timeline li:first-child::after { top: calc(.45rem - .4rem); }
-.timeline li:last-child::after { bottom: auto; height: calc(5px + .4rem); }
+.timeline li:last-child::after { bottom: -.6rem; }   /* the last line runs on, just past the text of the last entry */
 .timeline li::before {
   content: ""; position: absolute; left: -6px; top: .45rem;
   width: 10px; height: 10px; border-radius: 50%;
   background: var(--accent); z-index: 1;
 }
 .timeline .t-when { font-family: var(--mono); font-size: .8rem; color: var(--text-muted); }
-.timeline .t-what { font-weight: 600; margin: .1rem 0 .1rem; }
+.timeline .t-what { font-weight: 600; margin: .1rem 0 .1rem; color: var(--text); }
 .timeline .t-where { color: var(--text-muted); font-size: .95rem; }
 
-.prose { padding-bottom: 3rem; color: var(--text-muted); font-size: 1.02rem; }   /* body copy reads like the rest of the site: muted, with names and terms in --text */
+.prose { padding-bottom: 3rem; color: var(--text-muted); font-size: 1.02rem; }   /* bottom padding matches .section, so every page leaves the same gap above the footer; body copy is muted like the rest of the site, with names and terms in --text */
 .prose strong, .prose h2 { color: var(--text); }
-.prose strong { font-weight: 600; }   /* matches .section, so every page leaves the same gap above the footer */
+.prose strong { font-weight: 600; }
 .prose > * + * { margin-top: 1rem; }
 .prose > :first-child { margin-top: 0; }   /* content starts flush under the title block, as on the other pages */
 .prose h2 { margin-top: 2.5rem; }
