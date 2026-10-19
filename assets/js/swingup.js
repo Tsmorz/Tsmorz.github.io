@@ -863,7 +863,7 @@
     var net = meta.network, B = net.blocks, side = Math.round(Math.sqrt(net.hidden)), side2 = Math.round(Math.sqrt(net.hidden * net.expand));
     if (!policy) {
       ctx.fillStyle = muted; ctx.font = '13px ' + font;
-      ctx.fillText(policyLoading ? 'Loading the network…' : 'Pick AI to load the network and watch it think.', W / 2, H / 2);
+      ctx.fillText(policyLoading ? 'Loading the network…' : 'Pick AI to load the network and watch it think.', Math.min(W / 2, 175), H / 2);   // stays in view when the canvas scrolls sideways on a phone
       return;
     }
     // While a human drives, show what the network would do from here.
