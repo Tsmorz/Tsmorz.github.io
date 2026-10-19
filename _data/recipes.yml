@@ -1,0 +1,107 @@
+# Recipes shown on /recipes/ and in the Recipes nav dropdown. Every amount is a weight, so the whole thing
+# runs on a kitchen scale; assets/js/recipes.js converts to ounces and °F when the visitor picks imperial.
+#
+#   id            slug used in the URL hash (#carrot-cake)
+#   name, blurb   required
+#   makes, time   optional one-liners
+#   ingredients   groups of items, in the order they are used. A group's `group` name is optional.
+#     item:       name + either `g` (grams) or `qty` (text, for things that can't be weighed)
+#                 id (needed only to point at it from a step), note, spoon (a volume equivalent for tiny amounts)
+#   steps         one string each. [[...]] tokens are converted to the visitor's units:
+#                 [[i:sugar]] the amount of that ingredient   [[g:700]] grams   [[t:175]] or [[t:22-26]] °C
+#                 [[len:20]] cm   [[ml:175]] millilitres
+# script/test-data checks the shape; script/test-recipes checks the conversions and renders every recipe.
+
+- id: kombucha
+  name: Kombucha
+  blurb: Sweet tea turned tart and fizzy by a SCOBY. One jar, first fermentation.
+  makes: One [[ml:4000]] jar
+  time: 7 to 10 days, 30 minutes of work
+  ingredients:
+    - items:
+        - { id: water-hot, name: Water, note: "for the tea", g: 1000 }
+        - { id: sugar, name: Sugar, g: 200 }
+        - { id: tea, name: Black or green tea, note: "loose leaf, or 8 tea bags", g: 16, spoon: 2 tbsp }
+        - { id: water-cold, name: Cold filtered water, g: 2000 }
+        - { id: starter, name: Unflavored kombucha, note: "from your last batch or a bottle of raw kombucha", g: 400 }
+        - { name: SCOBY, qty: "1" }
+  steps:
+    - "Wash a [[ml:4000]] glass jar and your hands with hot water. Skip the soap; its film can harm the culture."
+    - "Put the pot on the scale, tare, and weigh in the hot water. Bring it to a boil."
+    - "Off the heat, stir in the sugar until it dissolves, then add the tea."
+    - "Steep for 10 minutes, then strain the tea out."
+    - "Pour into the jar and add the cold water. Wait until it is below [[t:30]] before the next step, or the heat will kill the culture."
+    - "Add the starter kombucha, then slide in the SCOBY."
+    - "Cover with a clean cloth and a rubber band. Keep at [[t:22-26]], out of direct sun, for 7 to 10 days."
+    - "From day 7, taste a spoonful each day. Stop when it is as sweet and tart as you like; longer means more sour."
+    - "Set aside [[g:400]] of the finished kombucha with the SCOBY as the starter for your next batch. Bottle the rest and chill at [[t:4]]."
+  notes:
+    - "Brown strings and bubbles under the SCOBY are yeast, and normal. Fuzzy, dry mold that is blue, green or black on top means throw it all out."
+
+- id: carrot-cake
+  name: Carrot cake
+  blurb: Two moist spiced layers with cream cheese frosting.
+  makes: Two [[len:20]] layers, 12 slices
+  time: About 2½ hours, most of it cooling
+  ingredients:
+    - group: Cake
+      items:
+        - { id: flour, name: Plain flour, g: 250 }
+        - { name: Baking powder, g: 6, spoon: 1½ tsp }
+        - { name: Baking soda, g: 5, spoon: 1 tsp }
+        - { name: Ground cinnamon, g: 8, spoon: 1 tbsp }
+        - { name: Salt, g: 3, spoon: ½ tsp }
+        - { name: Brown sugar, note: "light or dark", g: 200 }
+        - { name: Granulated sugar, g: 100 }
+        - { name: Neutral oil, g: 220 }
+        - { name: Eggs, note: "beaten, about 4 large", g: 200 }
+        - { name: Vanilla extract, g: 8, spoon: 2 tsp }
+        - { name: Carrots, note: "peeled and finely grated, about 3 medium", g: 300 }
+        - { name: Walnuts or pecans, note: "chopped, optional", g: 100 }
+    - group: Cream cheese frosting
+      items:
+        - { name: Unsalted butter, note: "soft", g: 113 }
+        - { name: Full-fat cream cheese, note: "soft, from the block", g: 340 }
+        - { name: Powdered sugar, note: "sifted", g: 300 }
+        - { name: Vanilla extract, g: 4, spoon: 1 tsp }
+  steps:
+    - "Heat the oven to [[t:175]]. Grease two [[len:20]] round pans and line the bottoms with parchment."
+    - "Optional, for the nuts: toast them on a tray for 8 minutes, then let them cool."
+    - "Weigh the flour, baking powder, baking soda, cinnamon and salt into a large bowl, tare between each, and whisk."
+    - "In a second bowl, weigh in the eggs, oil, both sugars and the vanilla. Whisk until smooth."
+    - "Fold the dry mix into the wet until just combined, then fold in the carrots and nuts."
+    - "Weigh the batter into the pans, about [[g:700]] each, so the layers match."
+    - "Bake 30 to 35 minutes, until a toothpick comes out clean or the middle reads [[t:96]]."
+    - "Cool 10 minutes in the pans, turn out onto a rack, and cool completely, about an hour. Warm cake melts the frosting."
+    - "For the frosting, beat the butter and cream cheese until smooth. Add the powdered sugar and vanilla and beat just until combined. Chill 15 minutes if it is runny."
+    - "Spread [[g:250]] of frosting between the layers, then the rest over the top and sides."
+    - "Chill 30 minutes before slicing. It keeps 4 days at [[t:4]]."
+
+- id: creme-brulee
+  name: Crème brûlée
+  blurb: Vanilla custard baked in a water bath, under a glass-thin caramel top.
+  makes: 4 ramekins of [[ml:175]]
+  time: 1 hour of work, plus 4 hours to chill
+  ingredients:
+    - group: Custard
+      items:
+        - { name: Heavy cream, note: "at least 35% fat", g: 500 }
+        - { name: Vanilla bean, note: "or [[g:8]] vanilla paste", qty: 1 pod }
+        - { name: Egg yolks, note: "about 5 large", g: 90 }
+        - { name: Sugar, g: 70 }
+        - { name: Hot water, note: "for the bath", qty: from the kettle }
+    - group: To finish
+      items:
+        - { name: Sugar, note: "for the tops, [[g:10]] per ramekin", g: 40 }
+  steps:
+    - "Heat the oven to [[t:150]]. Put 4 ramekins in a deep roasting tin and boil the kettle."
+    - "Warm the cream in a saucepan with the vanilla (split the bean and scrape in the seeds) until it steams, about [[t:80]]. Do not let it boil. Take it off the heat and steep 10 minutes."
+    - "Weigh the yolks and sugar into a bowl and whisk for a minute, until smooth and pale. Do not whip in air."
+    - "Pour the warm cream into the yolks in a thin stream, whisking all the time. Strain through a sieve and skim off any foam."
+    - "Weigh [[g:165]] of custard into each ramekin."
+    - "Pour hot water into the tin until it comes halfway up the ramekins. Bake 30 to 35 minutes, until the edges are set and the middle wobbles like jelly (about [[t:77]] in the center)."
+    - "Lift the ramekins out and cool 30 minutes. Cover and chill at [[t:4]] for at least 4 hours, up to 3 days."
+    - "Blot any moisture off the tops. Weigh [[g:10]] of sugar onto each and tilt the ramekin to coat it evenly."
+    - "Torch, or grill close to the element, until amber and bubbling, about a minute each. Rest 2 minutes to harden and serve within the hour."
+  notes:
+    - "Use a fine granulated sugar for the top; coarse crystals melt unevenly."

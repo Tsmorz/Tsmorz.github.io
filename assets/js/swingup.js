@@ -461,7 +461,7 @@
 
   // Disturbance sliders
   (function () {
-    var delaySl = document.getElementById('su-delay'), delayAmt = document.getElementById('su-delay-amt');
+    var delaySl = document.getElementById('su-delay');
     var delayVal = document.getElementById('su-delay-val');
     var noiseSl = document.getElementById('su-noise'), noiseVal = document.getElementById('su-noise-val');
     function sync() {
@@ -469,13 +469,9 @@
       delayMs = ms;
       noiseSigma = noiseSl ? (parseFloat(noiseSl.value) || 0) : 0;
       if (delayVal) delayVal.textContent = Math.round(ms) + ' ms';
-      if (noiseVal) noiseVal.textContent = noiseSigma.toFixed(3);
+      if (noiseVal) noiseVal.textContent = noiseSigma.toFixed(2);
     }
-    if (delaySl) delaySl.addEventListener('input', function () { if (delayAmt) delayAmt.value = delaySl.value; sync(); });
-    if (delaySl && delayAmt) delayAmt.addEventListener('input', function () {
-      delaySl.value = clamp(parseFloat(delayAmt.value) || 0, 0, parseFloat(delaySl.max) || 100);
-      sync();
-    });
+    if (delaySl) delaySl.addEventListener('input', sync);
     if (noiseSl) noiseSl.addEventListener('input', sync);
     sync();
   })();

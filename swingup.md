@@ -60,14 +60,13 @@ permalink: /controls/swingup/
       <h3>Disturbances</h3>
       <div class="pid-group">
         <label>Delay <span id="su-delay-val">0 ms</span></label>
-        <input type="range" id="su-delay" min="0" max="100" step="10" value="0">
-        <div class="range-row"><label class="range-lbl visually-hidden" for="su-delay-amt">Delay amount (ms)</label><input type="number" id="su-delay-amt" class="range-input" value="0" min="0" max="100" step="10"></div>
+        <input type="range" id="su-delay" min="0" max="50" step="10" value="0">
       </div>
       <div class="pid-group">
-        <label>Sensor noise <span class="sigma">&#963;</span> <span id="su-noise-val">0.000</span></label>
-        <input type="range" id="su-noise" min="0" max="0.05" step="0.005" value="0">
+        <label>Sensor noise <span class="sigma">&#963;</span> <span id="su-noise-val">0.00</span></label>
+        <input type="range" id="su-noise" min="0" max="0.1" step="0.01" value="0">
       </div>
-      <p class="panel-hint">Delay holds back the force; noise corrupts what the network measures, never the force. It was trained with neither, so about 50 ms of delay or noise above 0.03 usually breaks it.</p>
+      <p class="panel-hint">Delay holds back the force; noise corrupts what the network measures, never the force. It was trained with neither, so 50 ms of delay or noise above 0.03 usually breaks it.</p>
       <div class="score-block">
         <span class="score-value" id="su-score">-</span>
         <span class="score-label" id="su-score-label">Time to target (s)</span>
