@@ -16,22 +16,9 @@ permalink: /solutions/
     <article class="card">
       <h3>{{ svc.name }}</h3>
       <p>{{ svc.blurb }}</p>
-      <ul class="card-list">
-        {%- for w in svc.work %}<li>{{ w }}</li>{% endfor %}
-      </ul>
-      {%- if svc.link %}
-      <div class="card-foot"><ul class="card-links"><li><a href="{{ svc.link.url | relative_url }}">{{ svc.link.label }}</a></li></ul></div>
-      {%- endif %}
     </article>
     {%- endfor %}
   </div>
-</section>
-
-<section class="wrap section" style="padding-top: 0;">
-  <h2>How it works</h2>
-  <ol class="steps">
-    {%- for st in s.process %}<li><strong>{{ st.name }}</strong><span>{{ st.blurb }}</span></li>{% endfor %}
-  </ol>
 </section>
 
 <section class="wrap section" style="padding-top: 0;">

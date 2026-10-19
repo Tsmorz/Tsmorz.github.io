@@ -33,6 +33,11 @@
   --pend-rod: #556070;
   --pend-1: #8576f0;
   --pend-2: #5fae16;  /* double pendulum: grey cart, violet upper bob, lime lower bob, grey rods */
+  --logo-ground: #4b505e;
+  --logo-cart: #5d6373;
+  --logo-rod: #2f3340;
+  --logo-b1: #5a4fd6;
+  --logo-b2: #35a02a;
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -71,6 +76,11 @@
     --pend-rod: #9aa7b6;
     --pend-1: #a798ff;
     --pend-2: #adf45d;
+    --logo-ground: #aab0c0;
+    --logo-cart: #c4c9d6;
+    --logo-rod: #f1efff;
+    --logo-b1: #b3a8ff;
+    --logo-b2: #b8ff6a;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -104,6 +114,11 @@
   --pend-rod: #9aa7b6;
   --pend-1: #a798ff;
   --pend-2: #adf45d;
+  --logo-ground: #aab0c0;
+  --logo-cart: #c4c9d6;
+  --logo-rod: #f1efff;
+  --logo-b1: #b3a8ff;
+  --logo-b2: #b8ff6a;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }
@@ -300,6 +315,10 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .card h3 { margin: 0 0 .5rem; }
 .card h3 a { color: var(--text); }
 .card h3 a:hover { color: var(--accent); text-decoration: none; }
+/* the title link stretches over the whole card, so a click anywhere opens it; the footer links stay on top */
+.card h3 a::after { content: ""; position: absolute; inset: 0; z-index: 1; }
+.card-links a { position: relative; z-index: 2; }
+.card:has(h3 a) { cursor: pointer; }
 .card-year { font-size: .8rem; color: var(--text-muted); font-family: var(--mono); white-space: nowrap; }
 .card p { margin: 0 0 1rem; color: var(--text-muted); font-size: .96rem; }
 .card-foot { margin-top: auto; display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: center; }
@@ -839,10 +858,10 @@ main:not(:has(> .hero))::before {
   .nav-menu-list::before { display: none; }
 }
 
-/* /solutions/ */
-.card-list { margin: 0 0 1rem; padding-left: 1.1rem; color: var(--text-muted); font-size: .92rem; }
-.card-list li { margin: .2rem 0; }
-.steps { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); list-style: none; counter-reset: step; margin: 1rem 0 0; padding: 0; }
-.steps li { counter-increment: step; border-top: 2px solid var(--lime); padding-top: .6rem; display: flex; flex-direction: column; gap: .25rem; }
-.steps li::before { content: "0" counter(step); font-family: var(--mono); font-size: .78rem; color: var(--accent); }
-.steps span { color: var(--text-muted); font-size: .94rem; }
+/* the home-page logo: the favicon drawing, inline so it follows the theme toggle */
+.logo-ground { stroke: var(--logo-ground); }
+.logo-cart { fill: var(--logo-cart); }
+.logo-rod { stroke: var(--logo-rod); }
+.logo-b1 { fill: var(--logo-b1); }
+.logo-b2 { fill: var(--logo-b2); }
+.nav-brand svg { width: 32px; height: 32px; border-radius: 3px; flex-shrink: 0; outline: 1px solid var(--lav); outline-offset: 2px; }

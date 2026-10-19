@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)">
     {% seo %}
-    <link rel="icon" type="image/svg+xml" href="{{ '/assets/img/favicon.svg' | relative_url }}?v=8">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ '/assets/img/favicon-32.png' | relative_url }}?v=8">
+    <link rel="icon" type="image/svg+xml" href="{{ '/assets/img/favicon.svg' | relative_url }}?v=10">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ '/assets/img/favicon-32.png' | relative_url }}?v=10">
     <link rel="apple-touch-icon" href="{{ '/assets/img/apple-touch-icon.png' | relative_url }}?v=7">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,7 +28,7 @@
     <header class="site-header">
       <nav class="nav" aria-label="Primary">
         <a class="nav-brand" href="{{ '/' | relative_url }}">
-          {% if page.url == '/' %}<img src="{{ '/assets/img/favicon.svg' | relative_url }}?v=8" alt="" width="32" height="32">
+          {% if page.url == '/' %}{% include logo.html %}
           {% else %}<img src="{{ site.author.photo | relative_url }}" alt="" width="32" height="32">{% endif %}
           <span>{{ site.title }}</span>
         </a>
@@ -37,7 +37,6 @@
           <li class="nav-home"><a href="{{ '/' | relative_url }}" {% if p == '/' %}aria-current="page"{% endif %}>Home</a></li>
           <li><a href="{{ '/about/' | relative_url }}" {% if p contains '/about' %}aria-current="page"{% endif %}>About</a></li>
           <li><a href="{{ '/projects/' | relative_url }}" {% if p contains '/projects' %}aria-current="page"{% endif %}>Projects</a></li>
-          <li><a href="{{ '/solutions/' | relative_url }}" {% if p contains '/solutions' %}aria-current="page"{% endif %}>Solutions</a></li>
           <li class="nav-menu">
             <a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' %}aria-current="page"{% endif %}>Controls Lab</a>
             <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="controls-menu" aria-label="Controls Lab pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
@@ -47,6 +46,7 @@
               <li><a href="{{ '/controls/fit/' | relative_url }}" {% if p contains '/controls/fit' %}aria-current="page"{% endif %}>Upload data</a></li>
             </ul>
           </li>
+          <li><a href="{{ '/solutions/' | relative_url }}" {% if p contains '/solutions' %}aria-current="page"{% endif %}>Solutions</a></li>
         </ul>
         <button class="nav-burger" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Menu"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path class="nb-open" d="M3 6h14M3 10h14M3 14h14"/><path class="nb-close" d="M5 5l10 10M15 5L5 15"/></svg></button>
         <button class="theme-toggle" type="button" role="switch" aria-label="Dark mode" title="Toggle color theme">
