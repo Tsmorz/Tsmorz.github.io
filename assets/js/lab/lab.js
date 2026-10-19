@@ -37,6 +37,7 @@
   function fmt(v, d) { var s = v.toFixed(d); return /^-0(\.0+)?$/.test(s) ? s.slice(1) : s; }
   function fmtW(w) { return w < 1 ? fmt(w, 2) : w < 10 ? fmt(w, 1) : fmt(w, 0); }
   function fmtG(v) { var a = Math.abs(v); return a >= 100 ? fmt(v, 0) : a >= 10 ? fmt(v, 1) : fmt(v, 2); }
+  function fmtAx(v) { var a = Math.abs(v); return a >= 100 ? fmt(v, 0) : a >= 0.1 ? fmt(v, 1) : fmt(v, 2); }   // plot readouts: one decimal, two only for tiny axes
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var col = {};
   function readColors() {
@@ -199,7 +200,7 @@
       ctx.strokeStyle = tokens[k % 4]; ctx.lineWidth = 1.8; ctx.beginPath();
       d.forEach(function (v, i) { var x = x0 + (i + CAP - d.length) / (CAP - 1) * (x1 - x0); if (i) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke();
       text(ctx, sp.label, 6, y0 + 2, tokens[k % 4], { size: 11 });
-      if (d.length) text(ctx, fmtG(d[d.length - 1]), 6, y0 + 16, col.muted, { size: 10, mono: true, w: '400' });
+      if (d.length) text(ctx, fmtAx(d[d.length - 1]), 6, y0 + 16, col.muted, { size: 10, mono: true, w: '400' });
     });
   };
 
@@ -209,8 +210,8 @@
     keys.forEach(function (k) { hc[k].forEach(function (v) { m = Math.max(m, Math.abs(v)); }); }); m *= 1.1;
     var Y = function (v) { return (y0 + y1) / 2 - clamp(v / m, -1, 1) * (y1 - y0) / 2; };
     ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.stroke();
-    text(ctx, '+' + fmtG(m), x0 - 4, y0 - 2, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
-    text(ctx, '−' + fmtG(m), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, '+' + fmtAx(m), x0 - 4, y0 - 2, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, '−' + fmtAx(m), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
     var names = { p: 'P', i: 'I', d: 'D', total: 'Total', kx: 'k·x', kv: 'k·ẋ', kth: 'k·θ', kw: 'k·θ̇', net: 'Network' };
     var colors = [col.viz1, col.viz2, col.viz3, col.viz4], lx = x0 + 8;
     keys.forEach(function (k, i) {
@@ -229,8 +230,8 @@
     function Y(v) { return y1 - (clamp(v, yr[0], yr[1]) - yr[0]) / (yr[1] - yr[0]) * (y1 - top); }
     ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
     if (yr[0] < 0 && yr[1] > 0) { ctx.save(); ctx.strokeStyle = col.border; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke(); ctx.restore(); }
-    text(ctx, fmtG(yr[1]), x0 - 4, top, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
-    text(ctx, fmtG(yr[0]), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, fmtAx(yr[1]), x0 - 4, top, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, fmtAx(yr[0]), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
     series.forEach(function (s) {
       if (!s.data.length) return;
       ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 2; ctx.setLineDash(s.dash || []); ctx.beginPath();

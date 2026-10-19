@@ -736,13 +736,13 @@
 
     // State box, lower right (the shared panel from statebox.js)
     var rows = [
-      { label: 'x', value: state[0], decimals: 2, unit: 'm' },
-      { label: 'ẋ', value: state[1], decimals: 2, unit: 'm/s' }
+      { label: 'x', value: state[0], unit: 'm' },
+      { label: 'ẋ', value: state[1], unit: 'm/s' }
     ];
     for (var li = 0; li < meta.n_links; li++) {
-      rows.push({ label: 'θ' + (li + 1), value: state[2 + 2 * li] * 180 / Math.PI, decimals: 0, unit: '°' });
+      rows.push({ label: 'θ' + (li + 1), value: state[2 + 2 * li] * 180 / Math.PI, unit: '°' });
     }
-    rows.push({ label: 'F', value: applied, decimals: 1, unit: 'N' });
+    rows.push({ label: 'F', value: applied, unit: 'N' });
     window.drawStateBox(ctx, W, H, rows);
   }
 
@@ -818,7 +818,7 @@
       ctx.fillStyle = muted;
       ctx.fillText(s.label, PAD_L - 6, mid - 7);
       ctx.fillStyle = text;
-      ctx.fillText(cur.toFixed(s.lim === 180 ? 0 : 2), PAD_L - 6, mid + 7);
+      ctx.fillText((+cur.toFixed(1) === 0 ? 0 : cur).toFixed(1).replace('-', '\u2212'), PAD_L - 6, mid + 7);
     });
     if (hk >= 0 && dots.length) {
       var cx = PAD_L + hk * xStep;

@@ -431,11 +431,11 @@
 
       // Telemetry overlay (bottom-right; the altitude scale owns the left edge)
       drawStateBox(ctx, W, H, [
-        { label: 'ref', value: refH(simT), decimals: 1, unit: 'm' },
-        { label: 'h',   value: h, decimals: 1, unit: 'm' },
-        { label: 'V',   value: V, decimals: 1, unit: 'm/s' },
-        { label: 'α',   value: rad2deg(alpha), decimals: 1, unit: '°' },
-        { label: 'q',   value: rad2deg(q), decimals: 2, unit: '°/s' }
+        { label: 'ref', value: refH(simT), unit: 'm' },
+        { label: 'h',   value: h, unit: 'm' },
+        { label: 'V',   value: V, unit: 'm/s' },
+        { label: 'α',   value: rad2deg(alpha), unit: '°' },
+        { label: 'q',   value: rad2deg(q), unit: '°/s' }
       ]);
 
       // Stop-condition overlay

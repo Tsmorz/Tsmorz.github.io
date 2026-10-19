@@ -149,9 +149,9 @@
       }
       var w = who(lab, lab.shake ? 'Shaken by a sine-wave force' : lab.controller.label + ' tracking');
       statusLine(ctx, w === null ? 'Manual - drag the mass' : w === 'none' ? 'No control - raise Kp' : w, w === 'none' ? muted : accent, 't = ' + t.toFixed(1) + ' s', col);
-      stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], decimals: 2, unit: 'm' }, { label: 'ẋ', value: sim.x[1], decimals: 2, unit: 'm/s' }]
-        .concat(lab.replay ? [] : [{ label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, decimals: 2, unit: lab.shake ? 'rad/s' : 'm' }])
-        .concat([{ label: 'F', value: lab.replay ? F / 4 : F, decimals: 1, unit: 'N' }]));
+      stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], unit: 'm' }, { label: 'ẋ', value: sim.x[1], unit: 'm/s' }]
+        .concat(lab.replay ? [] : [{ label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, unit: lab.shake ? 'rad/s' : 'm' }])
+        .concat([{ label: 'F', value: lab.replay ? F / 4 : F, unit: 'N' }]));
     }
   };
 
@@ -211,8 +211,8 @@
       var w = who(lab, 'PID tracking');
       statusLine(ctx, sim.failed ? 'The ball rolled off - new trial…' : w === null ? 'Manual - drag a beam end' : w === 'none' ? 'No control - raise Kp' : w,
         sim.failed ? col.viz2 : w === 'none' ? col.muted : col.accent, 't = ' + sim.t.toFixed(1) + ' s   falls = ' + (lab.trials || 0), col);
-      stateBox(ctx, W, H, [{ label: 'x', value: bx, decimals: 2, unit: 'm' }, { label: 'ẋ', value: sim.x[1], decimals: 2, unit: 'm/s' },
-        { label: 'ref', value: refNow, decimals: 2, unit: 'm' }, { label: 'θ', value: deg(tiltX), decimals: 1, unit: '°' }]);
+      stateBox(ctx, W, H, [{ label: 'x', value: bx, unit: 'm' }, { label: 'ẋ', value: sim.x[1], unit: 'm/s' },
+        { label: 'ref', value: refNow, unit: 'm' }, { label: 'θ', value: deg(tiltX), unit: '°' }]);
     }
   };
 
@@ -305,8 +305,8 @@
       else if (w === 'none') label = 'No control - set the gains or load LQR';
       else { label = w; colr = accent; }
       statusLine(ctx, label, colr, 't = ' + sim.t.toFixed(1) + ' s   F = ' + uForce.toFixed(1) + ' N', col);
-      stateBox(ctx, W, H, [{ label: 'x', value: state[0], decimals: 2, unit: 'm' }, { label: 'ẋ', value: state[1], decimals: 2, unit: 'm/s' },
-        { label: 'ref', value: refNowC, decimals: 2, unit: 'm' }, { label: 'θ', value: deg(state[2]), decimals: 1, unit: '°' }]);
+      stateBox(ctx, W, H, [{ label: 'x', value: state[0], unit: 'm' }, { label: 'ẋ', value: state[1], unit: 'm/s' },
+        { label: 'ref', value: refNowC, unit: 'm' }, { label: 'θ', value: deg(state[2]), unit: '°' }]);
     }
   };
 

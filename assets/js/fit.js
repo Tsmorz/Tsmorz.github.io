@@ -301,6 +301,7 @@
     return { ctx: ctx, W: W, H: H };
   }
   function label(ctx, s, x, y, color, align, size) { ctx.fillStyle = color; ctx.font = (size || 11) + 'px system-ui, sans-serif'; ctx.textAlign = align || 'left'; ctx.textBaseline = 'top'; ctx.fillText(s, x, y); }
+  function axisNum(v) { var a = Math.abs(v); return a === 0 ? '0' : a >= 100 ? v.toFixed(0) : a >= 0.1 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toExponential(1); }   // plot axis ends: one decimal
   function num(v) { var a = Math.abs(v); return a === 0 ? '0' : a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toExponential(1); }
 
   // Stacked lanes sharing a time axis. lane = { name, series: [{ x, y, color, dash, clip }] }; series with clip
@@ -324,7 +325,7 @@
       });
       ctx.restore();
       label(ctx, l.name, x0 + 4, y0 + 2, col.text, 'left', 11);
-      label(ctx, num(hi), x0 - 4, y0 - 1, col.muted, 'right', 9); label(ctx, num(lo), x0 - 4, y1 - 9, col.muted, 'right', 9);
+      label(ctx, axisNum(hi), x0 - 4, y0 - 1, col.muted, 'right', 9); label(ctx, axisNum(lo), x0 - 4, y1 - 9, col.muted, 'right', 9);
     });
     label(ctx, '0', x0, c.H - 13, col.muted, 'center', 9); label(ctx, num(tmax) + ' s', x1, c.H - 13, col.muted, 'right', 9);
   }
