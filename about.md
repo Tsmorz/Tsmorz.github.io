@@ -48,7 +48,7 @@ purely because the idea was too good to leave alone.
 - **Autonomous aerial vehicles** - still trying to get a drone to fly from scratch
 - **Teaching** - actively mentoring for [Polygence](https://www.polygence.org/) and previously with the [Boston Youth Farm Project](https://bostonyfp.org/)
 
-## Racing
+## Professional Athlete
 
 Before robotics was the day job, I raced as a professional triathlete for Team USA. At one point I was ranked top 40 in the world. The 2019 and 2020 seasons were the
 highlight - top finishes on the World Cup circuit, on an actual hardware setup I'd designed and built
