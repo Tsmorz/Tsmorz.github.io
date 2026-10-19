@@ -21,8 +21,8 @@
   }
 
   // One line's highlight, w x h px: several overlapping pen passes. The ink is translucent, so wherever two passes cross it is darker,
-  // at random places along the line (the pen going back over a word, or two strokes meeting mid-line), not just at the ends.
-  function stroke(w, h, seed, i) {
+  // at random places along the line (the pen going back over a few letters, or two strokes meeting mid-line), never more than ~4 letters.
+  function stroke(w, h, seed, i, letter) {
     var rnd = rng(seed), r = function (a, b) { return a + (b - a) * rnd(); };
     var svg = el('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h, 'aria-hidden': 'true' });
     svg.style.cssText = 'position:absolute;overflow:visible;transform:rotate(' + r(-0.5, 0.5).toFixed(2) + 'deg)';
@@ -47,11 +47,11 @@
 
     var x0 = r(2, 11), x1 = w - r(2, 11), L = x1 - x0;
     if (L > 260 && rnd() < 0.35) {                                  // the line took two pen strokes, which meet (and overlap) somewhere in the middle
-      var m = x0 + L * r(0.35, 0.65), ov = r(6, 22);
+      var m = x0 + L * r(0.35, 0.65), ov = letter * r(1, 4) / 2;      // the two strokes overlap by 1 to 4 letters
       pass(x0, m + ov, r(-0.8, 0.8)); pass(m - ov, x1, r(-0.8, 0.8));
     } else pass(x0, x1, 0);
     if (rnd() < 0.5) {                                             // sometimes the pen goes back over part of it
-      var len = L * r(0.15, 0.35), a = x0 + (L - len) * rnd();
+      var len = letter * r(1, 4), a = x0 + (L - len) * rnd();        // 1 to 4 letters
       pass(a, a + len, r(-2.5, 2.5));
     }
     return svg;
@@ -61,10 +61,11 @@
     var old = h1.querySelector('.marker-layer'); if (old) old.remove();
     var rects = Array.prototype.filter.call(span.getClientRects(), function (q) { return q.width > 8 && q.height > 8; });
     if (!rects.length) return;
+    var letter = parseFloat(getComputedStyle(span).fontSize) * 0.5;   // about one letter of the headline serif
     var hb = h1.getBoundingClientRect(), layer = document.createElement('span');
     layer.className = 'marker-layer'; layer.setAttribute('aria-hidden', 'true');
     rects.forEach(function (q, i) {
-      var s = stroke(Math.round(q.width), Math.round(q.height), base + i * 7919, i);
+      var s = stroke(Math.round(q.width), Math.round(q.height), base + i * 7919, i, letter);
       s.style.left = (q.left - hb.left) + 'px'; s.style.top = (q.top - hb.top) + 'px';
       layer.appendChild(s);
     });
