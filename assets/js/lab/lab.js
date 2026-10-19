@@ -100,7 +100,7 @@
       estimator: lc.estimator || null, logQ: lc.logQ !== undefined ? lc.logQ : 0, estDirty: true, estAt: 0
     };
     lab.manualInput = function (sim) { return lab.plant.manual ? lab.plant.manual(lab.drag, sim, lab) : null; };
-    if (lc.limit) lab.p.Fmax = lc.limit;
+    if (lc.limit) lab.p.Fmax = lab.p.Fcap ? Math.min(lc.limit, lab.p.Fcap) : lc.limit;
     lab.sim = C.createSim(plant, lab);
     if (lab.estimator) lab.est = C.buildEstimator(plant, lab.pm, ctrl.channels[0], lab.noise, lab.logQ, plant.dt);
     lab.hist = { r: [], y: [], u: [], x: [], s: [], c: {} };
@@ -1506,7 +1506,8 @@
     slider(panel, tab.id + '-noise', 'Sensor noise σ', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; lab.estDirty = true; changed(lab); });
   };
   CTRL.limit = function (panel, lab, tab) {
-    slider(panel, tab.id + '-limit', 'Force limit', 2, 60, 1, Math.min(lab.p.Fmax, 60), function (v) { return v >= 60 ? 'none' : fmt(v, 0) + ' N'; }, function (v) { lab.p.Fmax = v >= 60 ? 1e9 : v; changed(lab); });
+    var cap = lab.p.Fcap || 60;   // a plant with Fcap has no "none" end: its force is always clamped
+    slider(panel, tab.id + '-limit', 'Force limit', 2, cap, 1, Math.min(lab.p.Fmax, cap), function (v) { return v >= cap && !lab.p.Fcap ? 'none' : fmt(v, 0) + ' N'; }, function (v) { lab.p.Fmax = v >= cap && !lab.p.Fcap ? 1e9 : v; changed(lab); });
   };
   CTRL.margins = function (panel, lab, tab) {
     var t = telemetry(panel, [['st', 'Stability'], ['pm', 'Phase margin'], ['wc', 'Crossover'], ['up', 'Gain up'], ['dn', 'Gain down'], ['dm', 'Delay margin']]);
