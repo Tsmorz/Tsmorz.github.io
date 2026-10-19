@@ -73,7 +73,7 @@
     {%- if t.recap %}<p class="lab-recap"><strong>You can now:</strong> {{ t.recap }}</p>{% endif %}
     <div class="lab-next">
       {%- if forloop.last %}
-      <a class="lab-next-link" href="{{ '/controls/swingup/' | relative_url }}">Next: swing up a double pendulum &#8594;</a>
+      <a class="lab-next-link" href="{{ '/controls/swingup/' | relative_url }}">Next: Double Pendulum Control &#8594;</a>
       {%- else %}
       {%- assign nx = L.tabs[idx] -%}
       <a class="lab-next-link" href="#{{ nx.id }}">Next: {% if nx.demo != t.demo %}{% for d in L.demos %}{% if d.id == nx.demo %}{{ d.label }}{% endif %}{% endfor %}{% else %}{{ nx.label }}{% endif %} &#8594;</a>
