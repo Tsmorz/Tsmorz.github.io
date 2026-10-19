@@ -29,6 +29,8 @@
   --viz-4: #12a599;  /* teal   */
   --viz-7: #556070;  /* slate — the simulated mass; kept off the series colors */
   --viz-total: #556070;  /* neutral gray — aggregate / total lines */
+  --mass: #5fae16;       /* the simulated mass on /controls/ (the site's lime) */
+  --mass-edge: #3f7a0a;
   --pend-cart: #9aa3af;
   --pend-rod: #556070;
   --pend-1: #8576f0;
@@ -72,6 +74,8 @@
     --viz-4: #88fce9;
     --viz-7: #9aa7b6;
     --viz-total: #9aa7b6;
+    --mass: #adf45d;
+    --mass-edge: #7bbf2e;
     --pend-cart: #6b7686;
     --pend-rod: #9aa7b6;
     --pend-1: #a798ff;
@@ -110,6 +114,8 @@
   --viz-4: #88fce9;
   --viz-7: #9aa7b6;
   --viz-total: #9aa7b6;
+  --mass: #adf45d;
+  --mass-edge: #7bbf2e;
   --pend-cart: #6b7686;
   --pend-rod: #9aa7b6;
   --pend-1: #a798ff;

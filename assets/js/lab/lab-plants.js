@@ -59,7 +59,7 @@
   var msd = {
     id: 'msd', name: 'Mass-spring-damper', n: 2, m: 1, dt: 0.01, substeps: 2,
     stateNames: ['x', 'ẋ'], inputNames: ['F'], units: ['m', 'm/s'], inputUnits: ['N'],
-    params: { M: 1, k: 4, c: 0.4, Fmax: 20, Fcap: 20, xstop: 1.5 },        // underdamped, ζ ≈ 0.1 (controls.js); force always clamped to ±20 N
+    params: { M: 1, k: 4, c: 0.4, Fmax: 20, Fcap: 20 },        // underdamped, ζ ≈ 0.1 (controls.js); force always clamped to ±20 N
     x0: function () { return [0, 0]; },
     u0: function () { return [0]; },
     start: function () { return [0, 0]; },
@@ -84,24 +84,20 @@
     contribUnit: 'F (N)', contribScale: 1,
     // Drag the plant's own poles (the Poles view): the pair −σ ± jω_d sets c and k.
     setPoles: function (p, re, im) { p.c = -2 * re * p.M; p.k = p.M * (re * re + im * im); },
-    // Manual: drag the mass; a damped virtual spring pulls it toward the pointer, ±10 N.
+    // Manual: drag the mass; a damped virtual spring pulls it toward the pointer (kept on screen), ±10 N.
     manual: function (drag, sim, lab) {
       if (!drag || !lab.view) return [0];
       var xt = (drag.y - lab.view.mid) / lab.view.scale;
-      return [clamp(40 * (clamp(xt, -lab.p.xstop, lab.p.xstop) - sim.x[0]) - 8 * sim.x[1], -10, 10)];
+      return [clamp(40 * (clamp(xt, -lab.view.half, lab.view.half) - sim.x[0]) - 8 * sim.x[1], -10, 10)];
     },
     draw: function (ctx, W, H, sim, lab, col) {
-      var accent = col.accent, muted = col.muted, strong = col.borderStrong, bgSoft = col.bgSoft, massColor = cssVar('--viz-7'), forceColor = cssVar('--viz-total');
+      var accent = col.accent, muted = col.muted, strong = col.borderStrong, bgSoft = col.bgSoft, massColor = cssVar('--mass'), massEdge = cssVar('--mass-edge'), forceColor = cssVar('--viz-total');
       ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
       var cx = clamp(W * 0.35, 110, 300), anchorY = 26, massH = 42, massW = 54, scale = Math.min(80, (H - 130) / 3);
       var t = sim.t, refType = lab.refs[0], rv = function (tt) { return LabCore.refValue(refType, tt); };
       var massY = H / 2 + sim.x[0] * scale, massTop = massY - massH / 2, refNow = rv(t), refY = H / 2 + refNow * scale;
       var springX = cx - 13, damperX = cx + 14;
-      lab.view = { mid: H / 2, scale: scale };
-      // Hard stops at +-xstop: the mass cannot go past them.
-      ctx.save(); ctx.strokeStyle = strong; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
-      [-1, 1].forEach(function (sg) { var yy = H / 2 + sg * lab.p.xstop * scale; ctx.beginPath(); ctx.moveTo(cx - 60, yy); ctx.lineTo(W - 8, yy); ctx.stroke(); });
-      ctx.restore();
+      lab.view = { mid: H / 2, scale: scale, half: (H / 2 - massH / 2 - 8) / scale };
       // Reference path: faint dashed future ahead, fading tail behind, a soft dot now.
       var LOOK = 8, pxPerSec = Math.max(20, (W - 16 - cx) / LOOK);
       var refPy = function (tt) { return H / 2 + rv(tt) * scale; };
@@ -117,8 +113,8 @@
       var pistonY = clamp(massTop - 36, anchorY + 10, anchorY + 2 + cylH);
       ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(damperX, pistonY); ctx.lineTo(damperX, massTop);
       ctx.moveTo(damperX - cylW / 2 + 2, pistonY); ctx.lineTo(damperX + cylW / 2 - 2, pistonY); ctx.stroke();
-      ctx.fillStyle = lab.hitFlash ? col.bad : massColor;
-      ctx.beginPath(); (ctx.roundRect ? ctx.roundRect(cx - massW / 2, massTop, massW, massH, 6) : ctx.rect(cx - massW / 2, massTop, massW, massH)); ctx.fill();
+      ctx.fillStyle = massColor; ctx.strokeStyle = massEdge; ctx.lineWidth = 1.5;
+      ctx.beginPath(); (ctx.roundRect ? ctx.roundRect(cx - massW / 2, massTop, massW, massH, 6) : ctx.rect(cx - massW / 2, massTop, massW, massH)); ctx.fill(); ctx.stroke();
       // Reference path on top of the mass, so the dot and the tail stay visible when they overlap it.
       if (!lab.shake) {
         ctx.save(); ctx.globalAlpha = 0.32; ctx.strokeStyle = accent; ctx.lineWidth = 1.2; ctx.setLineDash([8, 5]); ctx.beginPath();
@@ -134,12 +130,6 @@
         ctx.restore();
         ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(cx, refY, 9, 0, 7); ctx.fill(); ctx.restore();
       }
-      // Center of mass: the quartered black-and-white target.
-      var cr = 8;
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, massY, cr, 0, 2 * Math.PI); ctx.fill();
-      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(cx, massY); ctx.arc(cx, massY, cr, -Math.PI / 2, 0); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(cx, massY); ctx.arc(cx, massY, cr, Math.PI / 2, Math.PI); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, massY, cr, 0, 2 * Math.PI); ctx.stroke();
       var F = sim.u[0] || 0;
       if (Math.abs(F) > 0.05) {
         var len = 46 * Math.tanh(Math.abs(F) / 4), dir = F > 0 ? 1 : -1, ax = cx + massW / 2 + 12, ay1 = massY + dir * len;
