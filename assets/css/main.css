@@ -767,6 +767,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 
 /* page heads */
 .page-head { position: relative; }
+/* title strip: the home page's plot-paper grid, fading out to the right of the title */
+.page-head::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px; background-position: left top;
+  -webkit-mask-image: radial-gradient(ellipse 80% 110% at 20% 40%, #000 20%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 110% at 20% 40%, #000 20%, transparent 100%);
+}
+.page-head > * { position: relative; z-index: 1; }
 .page-title { font-weight: 500; }
 
 

@@ -74,7 +74,7 @@ permalink: /controls/swingup/
         <label>Sensor noise &#963; <span id="su-noise-val">0.000</span></label>
         <input type="range" id="su-noise" min="0" max="0.05" step="0.005" value="0">
       </div>
-      <p class="panel-hint">Delay holds back the force in both modes. Noise corrupts what the network measures (position, angles and both rates), never the force. The network was trained without either, so it is fragile: even 50 ms of delay usually breaks it, and noise above about 0.03 does too.</p>
+      <p class="panel-hint">Delay holds back the force in both modes. Noise corrupts what the network measures (position, angles and both rates), never the force. The plots draw that noisy measurement faintly behind the true state. The network was trained without either, so it is fragile: even 50 ms of delay usually breaks it, and noise above about 0.03 does too.</p>
       <div class="score-block">
         <span class="score-value" id="su-score">-</span>
         <span class="score-label" id="su-score-label">Time to target (s)</span>

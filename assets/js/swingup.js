@@ -322,7 +322,7 @@
   var applied = 0, crashTimer = null;
   var best = {};                      // goal label → { manual, tqc } in seconds
   var dragX = null;
-  var hist = { x: [], th1: [], th2: [], F: [] };
+  var hist = { x: [], th1: [], th2: [], F: [], xm: [], th1m: [], th2m: [] };   // xm, th1m, th2m: as the sensors report them
   var view = { W: 0, H: 0, scale: 1, cx: 0, trackY: 0 };
 
   fetch(canvas.dataset.meta)
@@ -451,7 +451,7 @@
     actuator.reset();
     cmdBuf.length = 0;
     applied = 0; simT = 0;
-    hist = { x: [], th1: [], th2: [], F: [] };
+    hist = { x: [], th1: [], th2: [], F: [], xm: [], th1m: [], th2m: [] };
     status = 'running';
     startClock();
   }
@@ -542,10 +542,10 @@
   /* ---- Simulation step (100 Hz) ---- */
   function simStep() {
     var p = meta.physics, cmd;
+    // Sensors report noisy measurements of every state; the plant itself is untouched. The plots show them too.
+    var seen = state;
+    if (noiseSigma > 0) seen = Array.prototype.map.call(state, function (v) { return v + noiseSigma * gaussian(); });
     if (mode === 'tqc' && policy) {
-      // The network sees noisy measurements of every state; the plant itself is untouched.
-      var seen = state;
-      if (noiseSigma > 0) seen = Array.prototype.map.call(state, function (v) { return v + noiseSigma * gaussian(); });
       cmd = policy.act(Core.encodeObs(seen, meta.n_links, meta.goals ? target : null));
       modesUsed.tqc = true;
     } else {
@@ -591,7 +591,10 @@
     hist.th1.push(Core.wrapAngle(state[2]) * 180 / Math.PI);
     hist.th2.push(Core.wrapAngle(state[4]) * 180 / Math.PI);
     hist.F.push(applied);
-    if (hist.x.length > HIST) { hist.x.shift(); hist.th1.shift(); hist.th2.shift(); hist.F.shift(); }
+    hist.xm.push(seen[0]);
+    hist.th1m.push(Core.wrapAngle(seen[2]) * 180 / Math.PI);
+    hist.th2m.push(Core.wrapAngle(seen[4]) * 180 / Math.PI);
+    if (hist.x.length > HIST) { for (var hk in hist) hist[hk].shift(); }
   }
 
   function updateScore() {
@@ -782,17 +785,24 @@
       }
       ctx.strokeStyle = border; ctx.lineWidth = 0.5;      // zero line: solid hairline
       ctx.beginPath(); ctx.moveTo(PAD_L, mid); ctx.lineTo(W - PAD_R, mid); ctx.stroke();
-      ctx.strokeStyle = colors[si]; ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      var off = HIST - vals.length, prev = null;
-      for (var i = 0; i < vals.length; i++) {
-        var xp = PAD_L + (i + off) * xStep, yp = yPx(vals[i]);
-        // Break the line where a wrapped angle jumps across ±180°.
-        if (i === 0 || (s.lim === 180 && Math.abs(vals[i] - prev) > 180)) ctx.moveTo(xp, yp);
-        else ctx.lineTo(xp, yp);
-        prev = vals[i];
+      var off = HIST - vals.length;
+      function trace(v) {
+        ctx.beginPath();
+        var prev = null;
+        for (var i = 0; i < v.length; i++) {
+          var xp = PAD_L + (i + off) * xStep, yp = yPx(v[i]);
+          // Break the line where a wrapped angle jumps across ±180°.
+          if (i === 0 || (s.lim === 180 && Math.abs(v[i] - prev) > 180)) ctx.moveTo(xp, yp);
+          else ctx.lineTo(xp, yp);
+          prev = v[i];
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
+      ctx.strokeStyle = colors[si];
+      if (noiseSigma > 0 && hist[s.key + 'm']) {          // the noisy measurement, faint, behind the true state
+        ctx.globalAlpha = 0.45; ctx.lineWidth = 1; trace(hist[s.key + 'm']); ctx.globalAlpha = 1;
+      }
+      ctx.lineWidth = 1.4; trace(vals);
 
       // Label (swatch + text-colored name) and value, live or at the crosshair.
       var hj = hk - off, hovered = hk >= 0 && hj >= 0 && hj < vals.length;

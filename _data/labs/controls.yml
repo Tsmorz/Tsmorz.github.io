@@ -983,7 +983,7 @@ tabs:
     integrator wind up and overshoot (the cure is <em>anti-windup</em>); delay eats the margin you proved.</p>
   demo: msd
   minutes: 8
-  goal: Run your design on the real plant with noise, a force limit and delay, and check every requirement.
+  goal: Run your design on the real plant with a force limit and delay, try some noise, and check every requirement.
   recall: On paper the controller is perfect. On hardware it has noise, limits and delay.
   predict:
     question: You add a force limit to a design that was fine without one. What happens to the overshoot?
@@ -995,7 +995,7 @@ tabs:
     try: Lower <strong>Force limit</strong> and watch the step.
     explain: When the force clips, the error persists and the integrator keeps summing. That extra stored push shows up as overshoot (the cure is anti-windup).
   tasks:
-  - 'Add <strong>Sensor noise</strong>: what happens to the force trace?'
+  - 'Add <strong>Sensor noise</strong> and watch the mass shiver as the controller reacts to bad readings. The checklist is computed without noise, so it will not change.'
   - Lower <strong>Force limit</strong> until a line of the checklist shows a cross.
   - 'Add <strong>Delay</strong>: which requirement fails first?'
   - Press <strong>Restart</strong> and get every line ticked.

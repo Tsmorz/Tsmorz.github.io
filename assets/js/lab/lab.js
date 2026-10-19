@@ -190,6 +190,12 @@
       d.forEach(function (v) { m = Math.max(m, Math.abs(v)); }); m *= 1.15;
       var Y = function (v) { return (y0 + y1) / 2 - v / m * (y1 - y0) / 2; };
       ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke();
+      var dm = lab.noise > 0 && lab.hist.sm && lab.hist.sm[k];       // the noisy sensor reading, faint behind the true state
+      if (dm) {
+        ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+        ctx.strokeStyle = tokens[k % 4]; ctx.globalAlpha = 0.45; ctx.lineWidth = 1; ctx.beginPath();
+        dm.forEach(function (v, i) { var x = x0 + (i + CAP - dm.length) / (CAP - 1) * (x1 - x0); if (i) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke(); ctx.restore();
+      }
       ctx.strokeStyle = tokens[k % 4]; ctx.lineWidth = 1.8; ctx.beginPath();
       d.forEach(function (v, i) { var x = x0 + (i + CAP - d.length) / (CAP - 1) * (x1 - x0); if (i) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke();
       text(ctx, sp.label, 6, y0 + 2, tokens[k % 4], { size: 11 });
@@ -529,7 +535,8 @@
   var TH = 0.5, TD = 1.5;
   function verifyState(lab) {
     var v = lab.verify;
-    if (v.follow) { var x = lab.sim.x, r = C.refValue(lab.refs[0], lab.sim.t); v.e = [x[0] - r, x[1], clamp(x[2], -TH, TH), clamp(x[3], -TD, TD)]; }
+    // Following the run, the query is the state the network is fed: the noisy measurement, not the true state.
+    if (v.follow) { var x = lab.sim.meas || lab.sim.x, r = C.refValue(lab.refs[0], lab.sim.t); v.e = [x[0] - r, x[1], clamp(x[2], -TH, TH), clamp(x[3], -TD, TD)]; }
     return v.e;
   }
   function verifyQuery(lab) {
@@ -584,6 +591,11 @@
       var cx = X(q.e[2]), cy = Y(q.e[3]), hw = Math.max(4, X(q.e[2] + v.eps) - cx), hh = Math.max(4, cy - Y(q.e[3] + C.RATE_PER_ANGLE * v.eps));
       ctx.strokeStyle = col.bg; ctx.lineWidth = 4; ctx.strokeRect(cx - hw, cy - hh, 2 * hw, 2 * hh);
       ctx.strokeStyle = vc; ctx.lineWidth = 2; ctx.strokeRect(cx - hw, cy - hh, 2 * hw, 2 * hh);
+      if (v.follow && lab.noise > 0 && lab.sim.x) {      // the true state, a dot, so the box's offset from it is the noise
+        var tx = X(clamp(lab.sim.x[2], -TH, TH)), ty = Y(clamp(lab.sim.x[3], -TD, TD));
+        ctx.fillStyle = col.bg; ctx.beginPath(); ctx.arc(tx, ty, 4.5, 0, 2 * Math.PI); ctx.fill();
+        ctx.fillStyle = col.text; ctx.beginPath(); ctx.arc(tx, ty, 3, 0, 2 * Math.PI); ctx.fill();
+      }
     });
   };
   function bindVerifyClick(canvas, lab) {
@@ -1760,7 +1772,8 @@
         lab.refs.forEach(function (r, ci) { (lab.hist.y[ci] = lab.hist.y[ci] || []); push(lab.hist.y[ci], xs[r.idx] - x0[r.idx], CAP); (lab.hist.r[ci] = lab.hist.r[ci] || []); push(lab.hist.r[ci], C.refValue(r, lab.sim.t), CAP); });
         for (var i = 0; i < plant.m; i++) { (lab.hist.u[i] = lab.hist.u[i] || []); push(lab.hist.u[i], lab.sim.u[i] - u0[i], CAP); }
         for (var j = 0; j < plant.n; j++) { (lab.hist.x[j] = lab.hist.x[j] || []); push(lab.hist.x[j], xs[j], 300); }
-        (plant.states || []).forEach(function (sp, k) { (lab.hist.s[k] = lab.hist.s[k] || []); push(lab.hist.s[k], sp.f(xs, lab.sim.u, lab.p), CAP); });
+        var sm = lab.hist.sm || (lab.hist.sm = []), xm = lab.sim.meas || xs;
+        (plant.states || []).forEach(function (sp, k) { (lab.hist.s[k] = lab.hist.s[k] || []); push(lab.hist.s[k], sp.f(xs, lab.sim.u, lab.p), CAP); (sm[k] = sm[k] || []); push(sm[k], sp.f(xm, lab.sim.u, lab.p), CAP); });
         var cb = lab.sim.contrib[0], sc = plant.contribScale || 1, tot = 0;
         if (cb) Object.keys(cb).forEach(function (k) { tot += cb[k]; (lab.hist.c[k] = lab.hist.c[k] || []); push(lab.hist.c[k], cb[k] * sc, CAP); });
         if (cb && Object.keys(cb).length > 1) { (lab.hist.c.total = lab.hist.c.total || []); push(lab.hist.c.total, tot * sc, CAP); }

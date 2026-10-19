@@ -822,7 +822,7 @@
     var sim = { t: 0, x: null, z: [], prevY: [], prevE: [], buf: [], u: plant.u0(lab.p), uReq: null, failed: false, contrib: [] };
     sim.reset = function (x) {
       sim.t = 0; sim.x = x || plant.start(lab.p, rng); sim.z = lab.controller.channels.map(function () { return 0; });
-      sim.prevY = null; sim.prevE = []; sim.xhat = null; sim.prevMeas = null; sim.uHeld = null; sim.holdLeft = 0; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
+      sim.prevY = null; sim.prevE = []; sim.xhat = null; sim.prevMeas = null; sim.meas = null; sim.uHeld = null; sim.holdLeft = 0; sim.buf = []; sim.u = plant.u0(lab.p); sim.failed = false; sim.status = 'ok'; sim.contrib = [];
     };
     sim.reset();
     // One control period: measure, compute, filter, then integrate the plant.
@@ -833,6 +833,7 @@
       var Ts = lab.ctrlPeriod && lab.ctrlPeriod > dt + 1e-12 && !lab.manual ? lab.ctrlPeriod : dt;
       if (Ts > dt && sim.uHeld && sim.holdLeft > 1e-9) { sim.holdLeft -= dt; return finish(sim.uHeld.slice(), null); }
       var meas = sim.x.map(function (v, i) { return v + (plant.noise[i] || 0) * lab.noise * gaussian(rng); });
+      sim.meas = meas;           // what the sensors reported this period; the plots draw it behind the true state
       var r = lab.refs.map(function (ref) { return refValue(ref, sim.t); }), rr = lab.refs.map(function (ref) { return refRate(ref, sim.t); });
       var u = u0.slice();
       // Manual mode: the page supplies the input (a drag), and the controller rests.

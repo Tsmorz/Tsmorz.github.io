@@ -101,20 +101,6 @@
       // Reference path: faint dashed future ahead, fading tail behind, a soft dot now.
       var LOOK = 8, pxPerSec = Math.max(20, (W - 16 - cx) / LOOK);
       var refPy = function (tt) { return H / 2 + rv(tt) * scale; };
-      if (!lab.shake) {
-        ctx.save(); ctx.globalAlpha = 0.32; ctx.strokeStyle = accent; ctx.lineWidth = 1.2; ctx.setLineDash([8, 5]); ctx.beginPath();
-        for (var fx = cx; fx <= W; fx += 3) { var fy = refPy(t + (fx - cx) / pxPerSec); if (fx === cx) ctx.moveTo(fx, fy); else ctx.lineTo(fx, fy); }
-        ctx.stroke(); ctx.restore();
-        ctx.save(); ctx.strokeStyle = accent; ctx.lineCap = 'round';
-        for (var tx = cx; tx > 6; tx -= 3) {
-          var ta = (cx - tx) / pxPerSec, tb = (cx - tx + 3) / pxPerSec; if (tb > t) break;
-          var age = (cx - tx) / cx; if (age >= 1) break;
-          ctx.globalAlpha = Math.max(0, 1 - age); ctx.lineWidth = 0.5 + 2.2 * (1 - age);
-          ctx.beginPath(); ctx.moveTo(tx, refPy(t - ta)); ctx.lineTo(tx - 3, refPy(t - tb)); ctx.stroke();
-        }
-        ctx.restore();
-        ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(cx, refY, 9, 0, 7); ctx.fill(); ctx.restore();
-      }
       ctx.fillStyle = muted; ctx.fillRect(cx - 36, anchorY - 8, 72, 8);
       ctx.strokeStyle = muted; ctx.lineWidth = 1.5; drawSpring(ctx, springX, anchorY, springX, massTop, 7);
       var cylH = 46, cylW = 14;
@@ -129,7 +115,27 @@
       ctx.moveTo(damperX - cylW / 2 + 2, pistonY); ctx.lineTo(damperX + cylW / 2 - 2, pistonY); ctx.stroke();
       ctx.fillStyle = lab.hitFlash ? col.bad : massColor;
       ctx.beginPath(); (ctx.roundRect ? ctx.roundRect(cx - massW / 2, massTop, massW, massH, 6) : ctx.rect(cx - massW / 2, massTop, massW, massH)); ctx.fill();
-      ctx.fillStyle = col.bg; ctx.font = '600 13px ' + col.font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('m', cx, massY);
+      // Reference path on top of the mass, so the dot and the tail stay visible when they overlap it.
+      if (!lab.shake) {
+        ctx.save(); ctx.globalAlpha = 0.32; ctx.strokeStyle = accent; ctx.lineWidth = 1.2; ctx.setLineDash([8, 5]); ctx.beginPath();
+        for (var fx = cx; fx <= W; fx += 3) { var fy = refPy(t + (fx - cx) / pxPerSec); if (fx === cx) ctx.moveTo(fx, fy); else ctx.lineTo(fx, fy); }
+        ctx.stroke(); ctx.restore();
+        ctx.save(); ctx.strokeStyle = accent; ctx.lineCap = 'round';
+        for (var tx = cx; tx > 6; tx -= 3) {
+          var ta = (cx - tx) / pxPerSec, tb = (cx - tx + 3) / pxPerSec; if (tb > t) break;
+          var age = (cx - tx) / cx; if (age >= 1) break;
+          ctx.globalAlpha = Math.max(0, 1 - age); ctx.lineWidth = 0.5 + 2.2 * (1 - age);
+          ctx.beginPath(); ctx.moveTo(tx, refPy(t - ta)); ctx.lineTo(tx - 3, refPy(t - tb)); ctx.stroke();
+        }
+        ctx.restore();
+        ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(cx, refY, 9, 0, 7); ctx.fill(); ctx.restore();
+      }
+      // Centre of mass: the quartered black-and-white target.
+      var cr = 8;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, massY, cr, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(cx, massY); ctx.arc(cx, massY, cr, -Math.PI / 2, 0); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx, massY); ctx.arc(cx, massY, cr, Math.PI / 2, Math.PI); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, massY, cr, 0, 2 * Math.PI); ctx.stroke();
       var F = sim.u[0] || 0;
       if (Math.abs(F) > 0.05) {
         var len = 46 * Math.tanh(Math.abs(F) / 4), dir = F > 0 ? 1 : -1, ax = cx + massW / 2 + 12, ay1 = massY + dir * len;
