@@ -37,7 +37,7 @@
   function fmt(v, d) { var s = v.toFixed(d); return /^-0(\.0+)?$/.test(s) ? s.slice(1) : s; }
   function fmtW(w) { return w < 1 ? fmt(w, 2) : w < 10 ? fmt(w, 1) : fmt(w, 0); }
   function fmtG(v) { var a = Math.abs(v); return a >= 100 ? fmt(v, 0) : a >= 10 ? fmt(v, 1) : fmt(v, 2); }
-  function fmtAx(v) { var a = Math.abs(v); return a >= 100 ? fmt(v, 0) : a >= 0.1 ? fmt(v, 1) : fmt(v, 2); }   // plot readouts: one decimal, two only for tiny axes
+  function fmtAx(v) { return Math.abs(v) >= 100 ? fmt(v, 0) : fmt(v, 1); }   // plot readouts: one decimal
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var col = {};
   function readColors() {

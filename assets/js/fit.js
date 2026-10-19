@@ -301,7 +301,7 @@
     return { ctx: ctx, W: W, H: H };
   }
   function label(ctx, s, x, y, color, align, size) { ctx.fillStyle = color; ctx.font = (size || 11) + 'px system-ui, sans-serif'; ctx.textAlign = align || 'left'; ctx.textBaseline = 'top'; ctx.fillText(s, x, y); }
-  function axisNum(v) { var a = Math.abs(v); return a === 0 ? '0' : a >= 100 ? v.toFixed(0) : a >= 0.1 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toExponential(1); }   // plot axis ends: one decimal
+  function axisNum(v) { return Math.abs(v) >= 100 ? v.toFixed(0) : (+v.toFixed(1) === 0 ? 0 : v).toFixed(1); }   // plot axis ends: one decimal
   function num(v) { var a = Math.abs(v); return a === 0 ? '0' : a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toExponential(1); }
 
   // Stacked lanes sharing a time axis. lane = { name, series: [{ x, y, color, dash, clip }] }; series with clip
