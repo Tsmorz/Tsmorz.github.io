@@ -867,14 +867,14 @@
     var tr = policy.trace;
 
     // Layout in design units (DW wide), scaled to fit.
-    var DW = 960, DH = 290, sc = Math.min(W / DW, H / DH);
+    var DW = 1000, DH = 290, sc = Math.min(W / DW, H / DH);
     ctx.save();
     ctx.translate((W - DW * sc) / 2, (H - DH * sc) / 2);
     ctx.scale(sc, sc);
 
     var gridY = 70, cellH = 6, cellU = 4;          // 16 x 6 = 96 px; 32 x 4 = 128 px
     var hs = side * cellH, us = side2 * cellU;
-    var x = 120, gap = 40;
+    var x = 152, gap = 40;                           // the embedding starts 40 px right of the input bars
     var boxes = [];                                 // {x, y, size, kind}
     function grid(vals, bx, by, n, cell, signed, label, sub) {
       var m = 1e-6, i;
