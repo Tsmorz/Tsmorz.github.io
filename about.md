@@ -46,7 +46,6 @@ purely because the idea was too good to leave alone.
 - **Robot fleet software** - over-the-air updates and low-latency teleoperation
 - **State estimation & sensor fusion** - Kalman filtering, IMU fusion, SLAM
 - **Autonomous aerial vehicles** - still trying to get a drone to fly from scratch
-- **Learning for control** - vision-based policies for flight and other underactuated systems
 - **Teaching** - actively mentoring for [Polygence](https://www.polygence.org/) and previously with the [Boston Youth Farm Project](https://bostonyfp.org/)
 
 ## Racing
