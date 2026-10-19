@@ -76,11 +76,16 @@ closed-loop runs of every transition); if it fails after a re-export, the port h
 
 `fit.md` + `assets/js/fit.js`. The visitor uploads a CSV with a header row and exactly three kinds of column:
 `t` (seconds), `x` or `x1, x2, ...` (states) and `u` or `u1, u2, ...` (inputs); other columns are ignored. There is no
-column picker or unit setting, on purpose. `FitCore` resamples an uneven time base, fits A and B by least squares
-(optionally after subtracting the mean), and `dlqr` solves the Riccati recursion on that model. A slider refits at a
-slower sample rate. The page plots data against one-step predictions, the z-plane poles, and the model with and without
-LQR. It is its own page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
-(`task check:fit`, in `check:fast`) guards the parser, the fit and the LQR.
+column picker or unit setting, on purpose. `FitCore` resamples to a uniform time base: states are interpolated, and each
+input (held between samples) is averaged over every interval, so a slower model sample rate still gets the input the plant
+received. Two fits give `x[k+1] = Ax + Bu`: least squares, and Ho–Kalman, which estimates the impulse response from the
+recording by a regression on past inputs and states (OKID, so feedback data is fine) and splits its Hankel matrix with an
+SVD; the order slider keeps that many singular values (shown in a bar plot). `dlqr` solves the Riccati recursion on the
+model, and tracking uses `u = u_ss r − K(x − x_ss r)` with the steady state from `steadyState` (one state is tracked, chosen
+in the panel); a second mode releases the model from a push. A slider refits at a slower sample rate. The page plots data
+against one-step predictions, the z-plane poles, and the closed-loop run. It is its own page, not a lab lesson, so it has a
+goal, an explanation and tasks but no predict or check cards. `script/test-fit` (`task check:fit`, in `check:fast`) guards
+the parser, the resampling, both fits, the LQR and the tracking.
 
 ### The lab template (`/controls/`)
 

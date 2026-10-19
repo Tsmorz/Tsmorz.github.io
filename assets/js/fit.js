@@ -41,11 +41,31 @@
     return header.map(function (h) { return /^t$/i.test(h) ? 'time' : /^x\d*$/i.test(h) ? 'state' : /^u\d*$/i.test(h) ? 'input' : 'ignore'; });
   }
 
-  // Linear interpolation of each series (sampled at times t) onto a uniform grid of spacing dt.
-  function resample(t, series, dt) {
-    var N = Math.floor((t[t.length - 1] - t[0]) / dt + 1e-9) + 1, tt = [], p = 0, n;
+  // Put the recording on a uniform grid of spacing dt. States are measured at an instant, so they are linearly
+  // interpolated. An input is held between samples (the input in row k acts until row k+1), so on the grid it is the
+  // average of that held signal over each interval: the average is what the plant actually received. Reading the input
+  // at the grid instant instead would drop everything it did in between, and bias B at slow sample rates.
+  function resample(t, states, inputs, dt) {
+    var N = Math.floor((t[t.length - 1] - t[0]) / dt + 1e-9) + 1, tt = [], n;
     for (n = 0; n < N; n++) tt.push(t[0] + n * dt);
-    return { t: tt, series: series.map(function (y) { p = 0; return tt.map(function (x) { while (p + 1 < t.length - 1 && t[p + 1] < x) p++; var f = (x - t[p]) / (t[p + 1] - t[p]); return y[p] + Math.min(1, Math.max(0, f)) * (y[p + 1] - y[p]); }); }) };
+    function lerp(y) {
+      var p = 0;
+      return tt.map(function (x) { while (p + 1 < t.length - 1 && t[p + 1] < x) p++; var f = (x - t[p]) / (t[p + 1] - t[p]); return y[p] + Math.min(1, Math.max(0, f)) * (y[p + 1] - y[p]); });
+    }
+    function holdAverage(y) {
+      var p = 0;
+      return tt.map(function (x0) {
+        var x1 = x0 + dt, acc = 0, a = x0;
+        while (p + 1 < t.length && t[p + 1] <= x0) p++;
+        for (var q = p; a < x1 - 1e-12; q++) {
+          var end = q + 1 < t.length ? Math.min(t[q + 1], x1) : x1;       // the last input is held past the last sample
+          if (end > a) { acc += y[q] * (end - a); a = end; }
+          if (q + 1 >= t.length) break;
+        }
+        return acc / dt;
+      });
+    }
+    return { t: tt, series: states.map(lerp).concat(inputs.map(holdAverage)) };
   }
 
   // Roles → uniform samples. Rows with a missing value are dropped; an uneven time base is resampled
@@ -67,15 +87,16 @@
     var sorted = diffs.slice().sort(function (a, b) { return a - b; }), dt0 = sorted[Math.floor(sorted.length / 2)];
     var uneven = sorted[sorted.length - 1] > 1.05 * dt0 || sorted[0] < 0.95 * dt0;
     var series = use.slice(1).map(function (j) { return rows.map(function (k) { return data.cols[j][k]; }); });
-    var dt = dt0 * Math.max(1, mult || 1), grid = (uneven || dt > dt0 * 1.0001) ? resample(t, series, dt) : { t: t, series: series };
+    var dt = dt0 * Math.max(1, mult || 1), grid = (uneven || dt > dt0 * 1.0001) ? resample(t, series.slice(0, si.length), series.slice(si.length), dt) : { t: t, series: series };
     if (grid.t.length < 20) return { error: 'Too few samples at that sample time: choose a faster one.' };
     var X = grid.t.map(function (_, k) { return grid.series.slice(0, si.length).map(function (s) { return s[k]; }); });
     var U = grid.t.map(function (_, k) { return grid.series.slice(si.length).map(function (s) { return s[k]; }); });
-    return { dt: dt, dt0: dt0, t: grid.t.map(function (v) { return v - grid.t[0]; }), X: X, U: U, uneven: uneven,
+    return { dt: dt, dt0: dt0, mult: dt / dt0, N0: rows.length, t: grid.t.map(function (v) { return v - grid.t[0]; }), X: X, U: U, uneven: uneven,
              sNames: si.map(function (j) { return data.header[j]; }), uNames: ui.map(function (j) { return data.header[j]; }) };
   }
 
   /* ---------------- the model ---------------- */
+  function colRms(M) { return M[0].map(function (_, j) { var s = 0; M.forEach(function (r) { s += r[j] * r[j]; }); return Math.sqrt(s / M.length) || 1; }); }
   function colMean(M) { return M[0].map(function (_, j) { var s = 0; M.forEach(function (r) { s += r[j]; }); return s / M.length; }); }
   function centred(M, mu) { return M.map(function (r) { return r.map(function (v, j) { return v - mu[j]; }); }); }
 
@@ -89,14 +110,81 @@
     var inver = inv(ZtZ); if (!inver) return { error: 'The columns are linearly dependent; drop or change one.' };
     var Th = T(mul(inver, mul(T(Z), Y)));              // n × (n+m)
     var A = Th.map(function (r) { return r.slice(0, n); }), B = Th.map(function (r) { return r.slice(n); });
-    var pred = Z.map(function (z) { return A.map(function (r, a) { var s = 0; for (var q = 0; q < n; q++) s += r[q] * z[q]; for (var q2 = 0; q2 < m; q2++) s += B[a][q2] * z[n + q2]; return s; }); });
-    var fit = [], j2;
-    for (j2 = 0; j2 < n; j2++) {                       // 100·(1 − ‖error‖ / ‖y − mean y‖), per state
+    return modelStats(A, B, Xc, Uc, xm, um, 'ls');
+  }
+  // One-step predictions of x[k+1] from x[k], u[k], and 100·(1 − ‖error‖ / ‖y − mean y‖) per state.
+  function modelStats(A, B, Xc, Uc, xm, um, method) {
+    var n = A.length, m = B[0].length, K = Xc.length - 1, Y = Xc.slice(1), pred = [], k, j2;
+    for (k = 0; k < K; k++) pred.push(A.map(function (r, a) { var s = 0; for (var q = 0; q < n; q++) s += r[q] * Xc[k][q]; for (var q2 = 0; q2 < m; q2++) s += B[a][q2] * Uc[k][q2]; return s; }));
+    var fit = [];
+    for (j2 = 0; j2 < n; j2++) {
       var my = 0, e2 = 0, v2 = 0; Y.forEach(function (r) { my += r[j2]; }); my /= Y.length;
       Y.forEach(function (r, k2) { e2 += Math.pow(r[j2] - pred[k2][j2], 2); v2 += Math.pow(r[j2] - my, 2); });
       fit.push(v2 > 0 ? 100 * (1 - Math.sqrt(e2 / v2)) : NaN);
     }
-    return { A: A, B: B, xm: xm, um: um, pred: pred, Xc: Xc, Uc: Uc, fit: fit, eig: C.eig(A) };
+    return { A: A, B: B, xm: xm, um: um, pred: pred, Xc: Xc, Uc: Uc, fit: fit, eig: C.eig(A), method: method };
+  }
+
+  /* ---------------- Ho–Kalman from a recording ---------------- */
+  // Ho–Kalman needs the impulse response (Markov parameters h_i = A^(i-1) B, since every state is measured). A
+  // recording is not an impulse test, and it may come from a feedback loop, so they are found in two steps (OKID):
+  //   1. regress each state on the p previous inputs AND states, y[k] = Σ P_i u[k-i] + Σ Q_i y[k-i]. This is a
+  //      plain least-squares fit, and stays consistent when the input depended on the states (feedback);
+  //   2. unfold it into the impulse response: h_1 = P_1, h_l = P_l + Σ_{i<l} Q_i h_{l-i} (P_l = 0 beyond p).
+  // Then the Hankel matrix of h is split by SVD (its singular values show how many states the data supports) and the
+  // realization (A_r, B_r, C_r) is read from the leading `order` of them. Every state is an output, so C_r maps the
+  // realized state z back to x, and A = C_r A_r C_r⁺, B = C_r B_r is the model in the recording's own coordinates.
+  function svdAny(M) {
+    if (M.length >= M[0].length) return C.svd(M);
+    var t = C.svd(T(M)); return { U: t.V, S: t.S, V: t.U };
+  }
+  function markov(X, U, p) {
+    var n = X[0].length, m = U[0].length, K = X.length, rows = [], tg = [], k, i;
+    for (k = p; k < K; k++) {
+      var z = []; for (i = 1; i <= p; i++) z = z.concat(U[k - i], X[k - i]);
+      rows.push(z); tg.push(X[k]);
+    }
+    var ZtZ = mul(T(rows), rows), q = ZtZ.length, tr = 0; ZtZ.forEach(function (r, a) { tr += r[a]; });
+    for (i = 0; i < q; i++) ZtZ[i][i] += 1e-9 * (tr / q + 1e-12);
+    var iv = inv(ZtZ); if (!iv) return null;
+    var Th = T(mul(iv, mul(T(rows), tg)));              // n × (p (m+n)), column blocks [P_i (n×m), Q_i (n×n)]
+    var P = [], Q = [];
+    for (i = 0; i < p; i++) { P.push(Th.map(function (r) { return r.slice(i * (m + n), i * (m + n) + m); })); Q.push(Th.map(function (r) { return r.slice(i * (m + n) + m, (i + 1) * (m + n)); })); }
+    return { P: P, Q: Q };
+  }
+  function fitHoKalman(X, U, order, subtractMean) {
+    var n = X[0].length, m = U[0].length, xm = subtractMean ? colMean(X) : new Array(n).fill(0), um = subtractMean ? colMean(U) : new Array(m).fill(0);
+    var Xc = centred(X, xm), Uc = centred(U, um), K = Xc.length;
+    // Work in units of each signal's own spread, so a small but real state (an angle in radians next to a speed in m/s)
+    // is not buried under the noise floor of the SVD; the model is scaled back at the end.
+    var sx = colRms(Xc), su = colRms(Uc), Xs = Xc.map(function (r) { return r.map(function (v, j) { return v / sx[j]; }); }), Us = Uc.map(function (r) { return r.map(function (v, j) { return v / su[j]; }); });
+    var p = Math.min(20, Math.floor(K / (3 * (n + m))));
+    if (p < n + 2) return { error: 'Ho–Kalman needs more samples than this: about ' + 3 * (n + m) * (n + 2) + ' for ' + n + ' states and ' + m + ' inputs. Use a longer recording or a faster sample rate.' };
+    // A big Hankel matrix (up to 40 block rows) averages the noise in the estimated impulse response; the observer
+    // Markov parameters stop at p lags, and the rest of the response is unfolded from them.
+    var al = Math.max(n + 2, Math.min(40, Math.floor(200 / Math.max(n, m)))), L = 2 * al, h = [], i, j, a, b, o;
+    var okid = markov(Xs, Us, p); if (!okid) return { error: 'The columns are linearly dependent; drop or change one.' };
+    for (var l = 1; l <= L + 1; l++) {                  // h[l-1] = h_l, an n × m matrix
+      var hl = l <= p ? okid.P[l - 1].map(function (r) { return r.slice(); }) : zeros(n, m);
+      for (i = 1; i <= Math.min(l - 1, p); i++) hl = add(hl, mul(okid.Q[i - 1], h[l - i - 1]));
+      h.push(hl);
+    }
+    var nr = al * n, nc = al * m, H0 = zeros(nr, nc), H1 = zeros(nr, nc);
+    for (i = 0; i < al; i++) for (j = 0; j < al; j++) for (o = 0; o < n; o++) for (a = 0; a < m; a++) { H0[i * n + o][j * m + a] = h[i + j][o][a]; H1[i * n + o][j * m + a] = h[i + j + 1][o][a]; }
+    var sv = svdAny(H0), r = Math.max(1, Math.min(order || n, n, sv.S.length));
+    var Ur = sv.U.map(function (row) { return row.slice(0, r); }), Vr = sv.V.map(function (row) { return row.slice(0, r); }), sq = sv.S.slice(0, r).map(function (v) { return Math.sqrt(Math.max(v, 1e-300)); });
+    var Ar = mul(T(Ur), mul(H1, Vr)).map(function (row, ra) { return row.map(function (v, cb) { return v / (sq[ra] * sq[cb]); }); });
+    var Br = zeros(r, m), Cr = zeros(n, r);
+    for (a = 0; a < r; a++) { for (b = 0; b < m; b++) Br[a][b] = sq[a] * Vr[b][a]; for (o = 0; o < n; o++) Cr[o][a] = sq[a] * Ur[o][a]; }
+    // C_r⁺ with a touch of ridge: a direction the noise has buried is shrunk, not blown up.
+    var CtC = mul(T(Cr), Cr), mu = 1e-3 * Math.max.apply(null, CtC.map(function (row, q) { return row[q]; }));
+    for (i = 0; i < r; i++) CtC[i][i] += mu;
+    var Cp = mul(inv(CtC) || zeros(r, r), T(Cr));
+    var As = mul(Cr, mul(Ar, Cp)), Bs = mul(Cr, Br);
+    var Ax = As.map(function (row, i) { return row.map(function (v, j) { return v * sx[i] / sx[j]; }); }), Bx = Bs.map(function (row, i) { return row.map(function (v, j) { return v * sx[i] / su[j]; }); });
+    var res = modelStats(Ax, Bx, Xc, Uc, xm, um, 'hk');
+    res.sv = sv.S; res.order = r; res.maxOrder = n; res.p = p; res.markovLen = L;
+    return res;
   }
 
   /* ---------------- LQR ---------------- */
@@ -117,6 +205,38 @@
     var stable = eig.every(function (z) { return Math.hypot(z[0], z[1]) < 1 - 1e-9; });
     return { K: K, P: P, Acl: Acl, eig: eig, stable: stable };
   }
+  // Holding state j at r takes a steady state: (A − I) x_ss + B u_ss = 0 with x_ss[j] = r. This is linear in r, so solve it
+  // once for r = 1: [A − I, B; e_jᵀ, 0] [x_ss; u_ss] = [0; 1]. With more than one input there are many answers; take the
+  // one with the least input. Returns null when no steady state holds that state (the residual does not vanish).
+  function steadyState(A, B, j) {
+    var n = A.length, m = B[0].length, M = zeros(n + 1, n + m), i, k;
+    for (i = 0; i < n; i++) { for (k = 0; k < n; k++) M[i][k] = A[i][k] - (i === k ? 1 : 0); for (k = 0; k < m; k++) M[i][n + k] = B[i][k]; }
+    M[n][j] = 1;
+    var MMt = mul(M, T(M)), tr = 0; MMt.forEach(function (r, a) { tr += r[a]; });
+    for (i = 0; i <= n; i++) MMt[i][i] += 1e-12 * (tr / (n + 1) + 1e-12);
+    var iv = inv(MMt); if (!iv) return null;
+    var b = zeros(n + 1, 1); b[n][0] = 1;
+    var z = mul(T(M), mul(iv, b)), back = mul(M, z), res = 0;
+    for (i = 0; i <= n; i++) res = Math.max(res, Math.abs(back[i][0] - b[i][0]));
+    if (res > 1e-6) return null;
+    return { xss: z.slice(0, n).map(function (r) { return r[0]; }), uss: z.slice(n).map(function (r) { return r[0]; }) };
+  }
+  // LQR tracking of a reference r[k] on state j: u = u_ss r − K (x − x_ss r). Runs the model from x0; returns states and inputs.
+  function track(A, B, K, ss, r, x0) {
+    var x = x0.slice(), xs = [], us = [];
+    r.forEach(function (rk) {
+      var u = ss.uss.map(function (uu, a) { var e = 0; K[a].forEach(function (kk, i) { e += kk * (x[i] - ss.xss[i] * rk); }); return uu * rk - e; });
+      xs.push(x); us.push(u);
+      x = A.map(function (row, i) { var v = 0; row.forEach(function (aa, q) { v += aa * x[q]; }); B[i].forEach(function (bb, q) { v += bb * u[q]; }); return v; });
+    });
+    return { x: xs, u: us };
+  }
+  // Segment length for the tracking run: seven slowest closed-loop time constants, so each step settles in view.
+  function segmentLength(lq, maxLen) {
+    var rho = Math.max.apply(null, lq.eig.map(function (z) { return Math.hypot(z[0], z[1]); }));
+    var tc = rho > 0 && rho < 1 ? -1 / Math.log(rho) : 20;
+    return Math.max(10, Math.min(Math.floor(maxLen / 3), Math.ceil(7 * tc)));
+  }
   // Free run of x[k+1] = M x[k] from x0.
   function run(M, x0, N) { var xs = [x0], x = x0; for (var k = 1; k < N; k++) { x = mul(M, colVec(x)).map(function (r) { return r[0]; }); xs.push(x); } return xs; }
 
@@ -124,12 +244,13 @@
   function exampleCsv() {
     var LP = root.LabPlants || (typeof require !== 'undefined' ? require('./lab/lab-plants.js') : null), plant = LP && LP.cartpole; if (!plant || !C) return null;
     var p = Object.assign({}, plant.params), dt = 0.05, lin = C.linearize(plant, p), d = C.zohDiscretize(lin.A, lin.B, dt);
+    var NOISE = [0.02, 0.05, 0.008, 0.04];                   // sensor noise σ per state (m, m/s, rad, rad/s): a few percent of each signal's swing
     var lq = dlqr(d.Phi, d.Gam, [1, 0.1, 10, 0.1], [0.1]), x = [0, 0, 0.08, 0], seed = 7, level = 0, hold = 0, out = ['t,x1,x2,x3,x4,u1'];
     function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
     for (var k = 0; k < 600; k++) {
-      if (hold <= 0) { level = (rnd() < 0.5 ? -2 : 2); hold = 0.3 + 0.7 * rnd(); } hold -= dt;
-      var u = Math.max(-10, Math.min(10, -lq.K[0].reduce(function (s, kk, i) { return s + kk * x[i]; }, 0) + level));
-      out.push([(k * dt).toFixed(2)].concat(x.map(function (v) { return (v + 0.002 * C.gaussian(rnd)).toFixed(5); }), u.toFixed(4)).join(','));
+      if (hold <= 0) { level = (rnd() < 0.5 ? -3 : 3); hold = 0.3 + 0.7 * rnd(); } hold -= dt;
+      var u = Math.max(-15, Math.min(15, -lq.K[0].reduce(function (s, kk, i) { return s + kk * x[i]; }, 0) + level));
+      out.push([(k * dt).toFixed(2)].concat(x.map(function (v, i) { return (v + NOISE[i] * C.gaussian(rnd)).toFixed(5); }), u.toFixed(4)).join(','));
       for (var s = 0; s < 4; s++) {                    // RK4, four substeps per sample
         var h = dt / 4, f = function (xx) { return plant.deriv(xx, [u], p); };
         var k1 = f(x), k2 = f(x.map(function (v, i) { return v + k1[i] * h / 2; })), k3 = f(x.map(function (v, i) { return v + k2[i] * h / 2; })), k4 = f(x.map(function (v, i) { return v + k3[i] * h; }));
@@ -139,14 +260,14 @@
     return out.join('\n');
   }
 
-  var FitCore = { parseCsv: parseCsv, guessRoles: guessRoles, prepare: prepare, fitLinear: fitLinear, dlqr: dlqr, run: run, exampleCsv: exampleCsv, mul: mul, T: T };
+  var FitCore = { parseCsv: parseCsv, guessRoles: guessRoles, prepare: prepare, fitLinear: fitLinear, fitHoKalman: fitHoKalman, dlqr: dlqr, steadyState: steadyState, track: track, segmentLength: segmentLength, run: run, exampleCsv: exampleCsv, mul: mul, T: T };
   if (typeof module !== 'undefined' && module.exports) module.exports = FitCore;
   root.FitCore = FitCore;
 
   /* ================= the page ================= */
   if (typeof document === 'undefined' || !document.getElementById('fit-root')) return;
   var $ = function (id) { return document.getElementById(id); };
-  var S = { data: null, roles: [], mult: 1, subtractMean: true, qw: [], rw: 0.1, prep: null, model: null, lq: null };
+  var S = { data: null, roles: [], mult: 1, subtractMean: true, qw: [], rw: [], prep: null, model: null, lq: null, method: 'ls', order: 1, run: 'track', trackIdx: 0, fellBack: '' };
   var col = {};
   function cssVar(n, fb) { var v = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return v || fb; }
   function readColors() {
@@ -227,35 +348,68 @@
     }
     S.prep.sNames.forEach(function (nm, i) { slider('Q: ' + nm, Math.log10(S.qw[i]), function (v) { S.qw[i] = v; design(); }); });
     S.prep.uNames.forEach(function (nm, i) { slider('R: ' + nm, Math.log10(S.rw[i]), function (v) { S.rw[i] = v; design(); }); });
+    var sel = $('fit-track'); sel.innerHTML = '';
+    S.prep.sNames.forEach(function (nm, i) { var o = document.createElement('option'); o.value = i; o.textContent = nm; sel.appendChild(o); });
+    sel.value = S.trackIdx;
   }
 
-  // The sample time the model is fitted at: the recording's own, up to 20 times slower.
+  // The sample time the model is fitted at: the recording's own, up to as slow as still leaves 40 samples.
   function buildRate(prep) {
     var box = $('fit-rate'), inp = box.querySelector('input'), val = box.querySelector('.fit-rate-val');
+    var maxMult = Math.max(1, Math.min(20, (prep.N0 - 1) / 39));
+    inp.max = Math.max(1, Math.round(Math.log10(maxMult) * 100)); inp.disabled = maxMult < 1.05;
     inp.value = Math.log10(S.mult) * 100; box.hidden = false;
-    val.textContent = num(prep.dt) + ' s  (' + num(1 / prep.dt) + ' Hz, every ' + (S.mult < 1.005 ? '1st' : num(S.mult) + '×') + ' sample)';
+    val.textContent = num(prep.dt) + ' s (' + num(1 / prep.dt) + ' Hz)' + (S.mult > 1.005 ? ', ' + num(S.mult) + '× slower than recorded' : '');
+  }
+  function buildOrder(n) {
+    var box = $('fit-order'), inp = box.querySelector('input'); box.hidden = S.method !== 'hk';
+    inp.max = n; inp.value = S.order; box.querySelector('span').textContent = S.order + ' of ' + n;
   }
   function analyze(reset) {
     if (reset) S.mult = 1;
-    var prep = prepare(S.data, S.roles, S.mult); S.prep = null; S.model = null; S.lq = null;
+    var prep = prepare(S.data, S.roles, S.mult); S.prep = null; S.model = null; S.lq = null; S.fellBack = '';
     if (prep.error) { say(prep.error, true); draw(); return; }
     buildRate(prep);
-    var model = fitLinear(prep.X, prep.U, S.subtractMean);
+    var n = prep.sNames.length;
+    if (reset || S.order > n || S.order < 1) S.order = n;
+    var model = S.method === 'hk' ? fitHoKalman(prep.X, prep.U, S.order, S.subtractMean) : fitLinear(prep.X, prep.U, S.subtractMean);
+    if (model.error && S.method === 'hk') { S.fellBack = model.error; model = fitLinear(prep.X, prep.U, S.subtractMean); }
     if (model.error) { say(model.error, true); draw(); return; }
-    S.prep = prep; S.model = model;
-    if (reset || S.qw.length !== prep.sNames.length || S.rw.length !== prep.uNames.length) {
+    S.prep = prep; S.model = model; buildOrder(n);
+    if (reset || S.qw.length !== n || S.rw.length !== prep.uNames.length) {
       var sd = prep.X[0].map(function (_, j) { var m = colMean(prep.X)[j], s = 0; prep.X.forEach(function (r) { s += Math.pow(r[j] - m, 2); }); return Math.sqrt(s / prep.X.length) || 1; });
       S.qw = sd.map(function (s) { return 1 / (s * s); }); S.rw = prep.uNames.map(function () { return 1; });   // weight by 1 / spread, so units do not matter
       S.qw = S.qw.map(function (q) { return Math.pow(10, Math.max(-3, Math.min(3, Math.log10(q)))); });
+      if (reset) S.trackIdx = 0;
       buildWeights();
     }
     $('fit-found').textContent = 'Found: t, ' + prep.sNames.join(', ') + ', ' + prep.uNames.join(', ');
-    say(prep.uneven || S.mult > 1 ? 'Resampled to ' + num(prep.dt) + ' s (recorded at ' + num(prep.dt0) + ' s, ' + num(1 / prep.dt) + ' Hz fit).' : '');
+    var notes = [];
+    if (prep.uneven) notes.push('The times are uneven, so the recording was resampled to its median spacing.');
+    if (S.mult > 1.005) notes.push('Resampled to ' + num(prep.dt) + ' s; each input is the average of what it did over that interval.');
+    if (S.fellBack) notes.push(S.fellBack + ' Showing least squares instead.');
+    say(notes.join(' '), !!S.fellBack);
     design();
   }
   function design() {
     if (!S.model) return;
     S.lq = dlqr(S.model.A, S.model.B, S.qw, S.rw); draw();
+  }
+
+  // Hankel singular values (log scale): the ones kept by the order are filled, the rest are outlined.
+  function singulars(c, sv, order, n) {
+    var ctx = c.ctx, x0 = 48, x1 = c.W - 12, y0 = 22, y1 = c.H - 22, k = Math.min(sv.length, Math.max(12, n + 4)), vals = sv.slice(0, k).map(function (v) { return Math.log10(Math.max(v, 1e-300)); });
+    var hi = Math.ceil(Math.max.apply(null, vals)), lo = Math.floor(Math.min(Math.min.apply(null, vals), hi - 2)), bw = (x1 - x0) / k;
+    var Y = function (v) { return y1 - (v - lo) / (hi - lo) * (y1 - y0); };
+    label(ctx, 'Hankel singular values: a drop shows how many states the data supports', x0, 2, col.text, 'left', 11);
+    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.strokeRect(x0 + .5, y0 + .5, x1 - x0 - 1, y1 - y0 - 1);
+    for (var d = lo; d <= hi; d++) { ctx.beginPath(); ctx.moveTo(x0, Y(d)); ctx.lineTo(x1, Y(d)); ctx.stroke(); label(ctx, '1e' + d, x0 - 4, Y(d) - 5, col.muted, 'right', 9); }
+    vals.forEach(function (v, i) {
+      var bx = x0 + i * bw + bw * 0.2, w = bw * 0.6, top = Y(v);
+      if (i < order) { ctx.fillStyle = col.v1; ctx.fillRect(bx, top, w, y1 - top); } else { ctx.strokeStyle = col.muted; ctx.lineWidth = 1.2; ctx.strokeRect(bx + .5, top + .5, w - 1, y1 - top - 1); }
+      label(ctx, String(i + 1), bx + w / 2, y1 + 4, col.muted, 'center', 9);
+    });
+    label(ctx, 'kept: ' + order, x1 - 4, y0 + 3, col.v1, 'right', 10);
   }
 
   function draw() {
@@ -264,11 +418,12 @@
     // Height follows the number of lanes (set as a CSS variable, never from the pixel buffer).
     $('fit-c1').style.setProperty('--lanes', P ? P.sNames.length + P.uNames.length : 4);
     $('fit-c2').parentNode.style.setProperty('--lanes', P ? P.sNames.length + 1 : 4);
+    $('fit-c4').hidden = !(M && M.method === 'hk');
     var c1 = fitCanvas($('fit-c1')), c2 = fitCanvas($('fit-c2')), c3 = fitCanvas($('fit-c3'));
     if (!P || !M) {
       label(c1.ctx, 'Load a CSV or press "Load an example".', 14, 14, col.muted, 'left', 13); info.textContent = ''; return;
     }
-    var n = P.sNames.length, m = P.uNames.length, K = P.t.length - 1, t1 = P.t.slice(1), pal = [col.v1, col.v2, col.v3, col.v4];
+    var n = P.sNames.length, m = P.uNames.length, t1 = P.t.slice(1), pal = [col.v1, col.v2, col.v3, col.v4], hk = M.method === 'hk';
     // 1. data and the model's one-step predictions
     var L = P.sNames.map(function (nm, j) {
       return { name: nm + '  (fit ' + num(M.fit[j]) + '%)', series: [{ x: P.t, y: P.X.map(function (r) { return r[j]; }), color: col.muted }, { x: t1, y: M.pred.map(function (r) { return r[j] + M.xm[j]; }), color: pal[j % 4], dash: [5, 3] }] };
@@ -276,21 +431,44 @@
     lanes(c1, L, 'Data (grey) and the model\'s one-step prediction (dashed)');
     // 2. poles
     zplane(c2, M.eig, S.lq ? S.lq.eig : null);
-    // 3. closed loop on the model
+    // 3. the LQR on the model: tracking a reference, or recovering from a push
+    var runNote = '';
     if (S.lq && S.lq.stable) {
-      var sd = P.X[0].map(function (_, j) { var s = 0; M.Xc.forEach(function (r) { s += r[j] * r[j]; }); return Math.sqrt(s / M.Xc.length); });
-      var x0 = M.Xc[0].map(function (v, j) { return Math.abs(v) < 0.1 * sd[j] ? sd[j] : v; }), N = Math.min(P.t.length, 200), tt = P.t.slice(0, N);
-      var cl = run(S.lq.Acl, x0, N), ol = run(M.A, x0, N), uu = cl.map(function (x) { return -S.lq.K[0].reduce(function (s, kk, i) { return s + kk * x[i]; }, 0); });
-      var L3 = P.sNames.map(function (nm, j) { return { name: nm + ' (change from rest)', series: [{ x: tt, y: ol.map(function (r) { return r[j]; }), color: col.v3, dash: [5, 3], clip: true }, { x: tt, y: cl.map(function (r) { return r[j]; }), color: col.v2 }] }; });
-      L3.push({ name: P.uNames[0] + ' (LQR effort)', series: [{ x: tt, y: uu, color: col.v1 }] });
-      lanes(c3, L3, 'LQR on the model: with control (solid), without (dashed)');
+      var sdv = P.X[0].map(function (_, j) { var s = 0; M.Xc.forEach(function (r) { s += r[j] * r[j]; }); return Math.sqrt(s / M.Xc.length) || 1; });
+      if (S.run === 'track') {
+        var j = Math.min(S.trackIdx, n - 1), ss = steadyState(M.A, M.B, j), a = sdv[j];
+        if (!ss) {
+          label(c3.ctx, 'No steady state holds ' + P.sNames[j] + ' at a constant value in this model, so it cannot be tracked. Pick another state.', 12, 14, col.v3, 'left', 12);
+        } else {
+          var seg = segmentLength(S.lq, P.t.length), N = 3 * seg, ref = [], k;
+          for (k = 0; k < N; k++) ref.push(k < seg ? a : k < 2 * seg ? -a : a);
+          var tr = track(M.A, M.B, S.lq.K, ss, ref, new Array(n).fill(0)), tt = P.t.slice(0, N).map(function (_, q) { return q * P.dt; });
+          var L3 = P.sNames.map(function (nm, q) {
+            var ser = [{ x: tt, y: tr.x.map(function (r) { return r[q]; }), color: pal[q % 4] }];
+            if (q === j) ser.unshift({ x: tt, y: ref, color: col.muted, dash: [5, 3] });
+            return { name: nm + (q === j ? ' (tracked, reference dashed)' : ' (change from operating point)'), series: ser };
+          });
+          L3.push({ name: P.uNames[0] + ' (LQR effort)', series: [{ x: tt, y: tr.u.map(function (r) { return r[0]; }), color: col.v1 }] });
+          lanes(c3, L3, 'LQR tracking ' + P.sNames[j] + ' on the model');
+          var errs = [0, 1, 2].map(function (q) { var e = 0, cnt = 0; for (var w = Math.floor((q + 0.85) * seg); w < (q + 1) * seg; w++) { e += Math.abs(tr.x[w][j] - ref[w]); cnt++; } return e / cnt / a; });
+          runNote = 'Tracking ' + P.sNames[j] + ': error at the end of each step ' + errs.map(function (e) { return (100 * e).toFixed(1) + '%'; }).join(', ') + ' of the step size.';
+        }
+      } else {
+        var x0 = M.Xc[0].map(function (v, q) { return Math.abs(v) < 0.1 * sdv[q] ? sdv[q] : v; }), N2 = Math.min(P.t.length, 200), tt2 = P.t.slice(0, N2);
+        var cl = run(S.lq.Acl, x0, N2), ol = run(M.A, x0, N2), uu = cl.map(function (x) { return -S.lq.K[0].reduce(function (s, kk, i) { return s + kk * x[i]; }, 0); });
+        var L4 = P.sNames.map(function (nm, q) { return { name: nm + ' (change from rest)', series: [{ x: tt2, y: ol.map(function (r) { return r[q]; }), color: col.v3, dash: [5, 3], clip: true }, { x: tt2, y: cl.map(function (r) { return r[q]; }), color: col.v2 }] }; });
+        L4.push({ name: P.uNames[0] + ' (LQR effort)', series: [{ x: tt2, y: uu, color: col.v1 }] });
+        lanes(c3, L4, 'LQR on the model from a push: with control (solid), without (dashed)');
+      }
     } else {
       label(c3.ctx, S.lq ? 'This LQR does not stabilise the model: raise a Q or lower R, or check the model.' : 'No LQR: the model is not stabilisable (or the data is too flat).', 12, 14, col.v3, 'left', 12);
     }
-    var lines = ['Model  x[k+1] = A x[k] + B u[k]   (sample time ' + num(P.dt) + ' s, ' + P.t.length + ' samples)', '', 'A =\n' + mat(M.A), '', 'B =\n' + mat(M.B)];
+    if (hk) singulars(fitCanvas($('fit-c4')), M.sv, M.order, n);
+    var lines = ['Model  x[k+1] = A x[k] + B u[k]   (' + (hk ? 'Ho–Kalman, order ' + M.order : 'least squares') + '; sample time ' + num(P.dt) + ' s, ' + P.t.length + ' samples)', '', 'A =\n' + mat(M.A), '', 'B =\n' + mat(M.B)];
     var rho = Math.max.apply(null, M.eig.map(function (z) { return Math.hypot(z[0], z[1]); }));
     lines.push('', 'Model poles: largest |z| = ' + rho.toFixed(3) + (rho >= 1 ? '  (open loop unstable)' : '  (open loop stable)'));
     if (S.lq) lines.push('', 'LQR gain  u = −K x\nK =\n' + mat(S.lq.K), 'Closed-loop largest |z| = ' + Math.max.apply(null, S.lq.eig.map(function (z) { return Math.hypot(z[0], z[1]); })).toFixed(3));
+    if (runNote) lines.push('', runNote);
     info.textContent = lines.join('\n');
   }
 
@@ -303,6 +481,10 @@
     $('fit-example').addEventListener('click', function () { var t = exampleCsv(); if (t) load(t); });
     $('fit-rate').querySelector('input').addEventListener('input', function (e) { S.mult = Math.pow(10, e.target.value / 100); if (S.data) analyze(false); });
     $('fit-mean').addEventListener('change', function (e) { S.subtractMean = e.target.checked; if (S.data) analyze(true); });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="fit-method"]'), function (r) { r.addEventListener('change', function (e) { if (!e.target.checked) return; S.method = e.target.value; if (S.data) analyze(false); else buildOrder(1); }); });
+    $('fit-order').querySelector('input').addEventListener('input', function (e) { S.order = +e.target.value; if (S.data) analyze(false); });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="fit-run"]'), function (r) { r.addEventListener('change', function (e) { if (e.target.checked) { S.run = e.target.value; $('fit-track-row').hidden = S.run !== 'track'; draw(); } }); });
+    $('fit-track').addEventListener('change', function (e) { S.trackIdx = +e.target.value; draw(); });
     $('fit-csv').addEventListener('click', function () { var t = exampleCsv(); if (!t) return; var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], { type: 'text/csv' })); a.download = 'cartpole-example.csv'; document.body.appendChild(a); a.click(); a.remove(); });
     window.addEventListener('resize', draw);
     new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });

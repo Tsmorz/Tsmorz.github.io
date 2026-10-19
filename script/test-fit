@@ -51,6 +51,44 @@ console.log('2b. changing the sample rate');
   check(F.prepare(d, roles, 100).error !== undefined || F.prepare(d, roles, 100).t.length >= 20, 'a rate too slow for the data is refused or still has 20 samples');
 }
 
+console.log('2c. slower rates average the held input');
+{
+  // A 2-state plant sampled at 0.01 s whose input changes every 1-5 samples. At 3× slower, the input the plant received over
+  // an interval is its average; reading it at the grid instant misses the rest. The average must predict at least as well.
+  const A = [[0.97, 0.1], [-0.1, 0.97]], B = [0.0, 0.2], rows = ['t,x1,x2,u'], Ux = [];
+  let x = [0, 0], held = 0, level = 0;
+  for (let k = 0; k < 1500; k++) {
+    if (held <= 0) { level = rnd() < 0.5 ? -1 : 1; held = 1 + Math.floor(rnd() * 5); } held--;
+    Ux.push(level); rows.push([(k * 0.01).toFixed(2), x[0].toFixed(6), x[1].toFixed(6), level].join(','));
+    x = [A[0][0] * x[0] + A[0][1] * x[1], A[1][0] * x[0] + A[1][1] * x[1] + B[1] * level];
+  }
+  const d = F.parseCsv(rows.join('\n')), roles = F.guessRoles(d.header), p3 = F.prepare(d, roles, 3), p1 = F.prepare(d, roles, 1);
+  const Xs = p1.X.filter((_, k) => k % 3 === 0), Us = p1.U.filter((_, k) => k % 3 === 0), n3 = Math.min(Xs.length, p3.X.length);
+  const avg = F.fitLinear(p3.X, p3.U, false), pt = F.fitLinear(Xs.slice(0, n3), Us.slice(0, n3), false);
+  const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  check(Math.abs(p3.U[0][0] - mean(p1.U.slice(0, 3).map((r) => r[0]))) < 1e-9, 'a slow-rate input is the mean of the fast ones in its interval (' + p3.U[0][0].toFixed(3) + ')');
+  check(Math.abs(p3.X[5][0] - p1.X[15][0]) < 1e-9, 'states are read at the grid instants');
+  check(mean(avg.fit) >= mean(pt.fit), `averaged input predicts at least as well as a sampled one (fit ${mean(avg.fit).toFixed(1)}% vs ${mean(pt.fit).toFixed(1)}%)`);
+  const hold = F.parseCsv('t,x,u\n' + Array.from({ length: 80 }, (_, k) => `${k * 0.5},${k},${k < 40 ? 1 : 3}`).join('\n'));
+  const ph = F.prepare(hold, F.guessRoles(hold.header), 2);
+  check(Math.abs(ph.U[0][0] - 1) < 1e-9 && Math.abs(ph.U[ph.U.length - 1][0] - 3) < 1e-9, 'a held input keeps its level when resampled');
+}
+
+console.log('2d. Ho–Kalman from data');
+{
+  const A = [[0.98, 0.1], [-0.1, 0.95]], B = [[0], [0.1]], X = [[1, 0]], U = [];
+  for (let k = 0; k < 800; k++) { const u = rnd() < 0.5 ? -1 : 1; U.push([u]); const x = X[k]; X.push([A[0][0] * x[0] + A[0][1] * x[1] + 0.001 * (rnd() - 0.5), A[1][0] * x[0] + A[1][1] * x[1] + B[1][0] * u + 0.001 * (rnd() - 0.5)]); }
+  U.push([0]);
+  const m = F.fitHoKalman(X, U, 2, false), ls = F.fitLinear(X, U, false);
+  const e1 = m.eig.map((z) => Math.hypot(z[0], z[1])).sort(), e2 = ls.eig.map((z) => Math.hypot(z[0], z[1])).sort();
+  check(!m.error && Math.abs(e1[0] - e2[0]) < 0.02 && Math.abs(e1[1] - e2[1]) < 0.02, 'poles agree with least squares: |z| ' + e1.map((v) => v.toFixed(3)).join(', ') + ' vs ' + e2.map((v) => v.toFixed(3)).join(', '));
+  check(m.fit.every((f) => f > 80), 'one-step fit above 80% (' + m.fit.map((f) => f.toFixed(0)).join(', ') + ')');
+  check(m.sv[1] > 20 * m.sv[2], 'the Hankel singular values drop after the true order of 2 (' + m.sv.slice(0, 4).map((v) => v.toExponential(1)).join(', ') + ')');
+  const m1 = F.fitHoKalman(X, U, 1, false);
+  check(m1.order === 1 && m1.fit.reduce((s, v) => s + v, 0) < m.fit.reduce((s, v) => s + v, 0), 'order 1 is a coarser model than order 2');
+  check(F.fitHoKalman(X.slice(0, 12), U.slice(0, 12), 2, false).error !== undefined, 'a recording that is too short is reported');
+}
+
 console.log('3. LQR');
 {
   const A = [[1.1, 0.1], [0, 1.05]], B = [[0], [0.1]], lq = F.dlqr(A, B, [1, 1], [1]);
@@ -67,6 +105,28 @@ console.log('4. the example recording');
   check(radius(m.eig) > 0.999, 'the identified cart-pole is unstable on its own (|z| ' + radius(m.eig).toFixed(3) + ')');
   const lq = F.dlqr(m.A, m.B, [1, 1, 10, 1], [1]);
   check(lq && lq.stable, 'LQR on the identified model stabilises it (|z| ' + (lq ? radius(lq.eig).toFixed(3) : '-') + ')');
+}
+
+console.log('5. the example with Ho–Kalman, and tracking');
+{
+  const d = F.parseCsv(F.exampleCsv()), p = F.prepare(d, F.guessRoles(d.header), 1);
+  const ls = F.fitLinear(p.X, p.U, true), hk = F.fitHoKalman(p.X, p.U, 4, true);
+  check(!hk.error && hk.fit.every((f) => f > 40), 'Ho–Kalman predicts every state (fit ' + hk.fit.map((f) => f.toFixed(0)).join(', ') + '%)');
+  // The cart-pole's true unstable pole is exp(2.55 · 0.05) = 1.136. Noise in the states pulls least squares toward the origin; Ho–Kalman is not fooled.
+  check(Math.abs(radius(hk.eig) - 1.136) < 0.03 && radius(ls.eig) < radius(hk.eig), `noise biases least squares, Ho–Kalman is closer to the true 1.136 (|z| ${radius(hk.eig).toFixed(3)} vs ${radius(ls.eig).toFixed(3)})`);
+  const sd = p.X[0].map((_, j) => Math.sqrt(ls.Xc.reduce((s, r) => s + r[j] * r[j], 0) / ls.Xc.length));
+  const qw = sd.map((s) => Math.pow(10, Math.max(-3, Math.min(3, Math.log10(1 / (s * s))))));
+  [['least squares', ls], ['Ho–Kalman', hk]].forEach(([name, m]) => {
+    const lq = F.dlqr(m.A, m.B, qw, [1]), ss = F.steadyState(m.A, m.B, 0);
+    const seg = F.segmentLength(lq, p.t.length), ref = [];
+    for (let k = 0; k < 3 * seg; k++) ref.push(k < seg ? 0.5 : k < 2 * seg ? -0.5 : 0.5);
+    check(lq && lq.stable && ss !== null, name + ': stabilised, and a steady state holds the cart position');
+    const tr = F.track(m.A, m.B, lq.K, ss, ref, [0, 0, 0, 0]);
+    const err = [0, 1, 2].map((q) => Math.abs(tr.x[(q + 1) * seg - 1][0] - ref[(q + 1) * seg - 1]) / 0.5);
+    check(err.every((e) => e < 0.05), name + ': cart position within 5% of each step by its end (' + err.map((e) => (100 * e).toFixed(1) + '%').join(', ') + ')');
+    check(Math.max(...tr.x.map((r) => Math.abs(r[2]))) < 0.5, name + ': the pole stays within 0.5 rad while tracking');
+  });
+  check(F.steadyState([[1, 0], [0, 0.5]], [[0], [0]], 0) !== null && F.steadyState([[0.5, 0], [0, 0.5]], [[0], [0]], 0) === null, 'a state that no input can hold steady is reported');
 }
 
 if (failed) { console.log('\ntest-fit: FAILED'); process.exit(1); }
