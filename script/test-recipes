@@ -1,0 +1,87 @@
+#!/usr/bin/env node
+// Check the unit conversions behind /recipes/ (assets/js/recipes.js) and that every recipe in _data/recipes.yml renders, in Node.
+//   1. grams, °C, cm and mL read right in both systems
+//   2. tokens in a sentence are replaced, ranges share one unit, an unknown token shows as "?"
+//   3. every recipe renders in metric and imperial with no leftover token and no "?"
+//   4. the batter and custard weights quoted in the steps match the ingredients
+const path = require('path');
+const { execFileSync } = require('child_process');
+const R = require(path.join(__dirname, '..', 'assets/js/recipes.js'));
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+function eq(got, want, label) { check(got === want, label + ': ' + got + (got === want ? '' : '   (wanted ' + want + ')')); }
+
+console.log('1. conversions');
+eq(R.mass(200, 'metric'), '200 g', '200 g');
+eq(R.mass(1000, 'metric'), '1 kg', '1000 g');
+eq(R.mass(200, 'imperial'), '7.1 oz', '200 g in ounces');
+eq(R.mass(340, 'imperial'), '12 oz', '340 g cream cheese is the 12 oz block');
+eq(R.mass(113, 'imperial'), '4 oz', '113 g butter is a stick');
+eq(R.mass(5, 'imperial'), '0.18 oz', '5 g stays readable below an ounce');
+eq(R.mass(3000, 'imperial'), '6 lb 9.8 oz', '3 kg in pounds and ounces');
+eq(R.mass(453.59237, 'imperial'), '1 lb', 'a pound has no ounces left over');
+eq(R.mass(450, 'imperial'), '15.9 oz', 'just under a pound stays in ounces');
+eq(R.temp(175, 'metric'), '175 °C', '175 °C');
+eq(R.temp(175, 'imperial'), '350 °F', '175 °C oven');
+eq(R.temp(150, 'imperial'), '300 °F', '150 °C oven');
+eq(R.temp(96, 'imperial'), '205 °F', '96 °C cake center');
+eq(R.temp(80, 'imperial'), '175 °F', '80 °C scalded cream');
+eq(R.temp(77, 'imperial'), '170 °F', '77 °C custard');
+eq(R.temp(180, 'imperial'), '350 °F', '180 °C oven');
+eq(R.temp(4, 'imperial'), '39 °F', '4 °C fridge');
+eq(R.temp(22, 'imperial'), '72 °F', '22 °C room temperature (exact below 60 °C)');
+eq(R.length(20, 'imperial'), '8 in', '20 cm pan');
+eq(R.length(23, 'imperial'), '9 in', '23 cm pan');
+eq(R.length(20, 'metric'), '20 cm', '20 cm');
+eq(R.volume(4000, 'metric'), '4 L', '4000 mL');
+eq(R.volume(4000, 'imperial'), '1 gal', '4 L jar is a gallon jar');
+eq(R.volume(175, 'metric'), '175 mL', '175 mL');
+eq(R.volume(175, 'imperial'), '6 fl oz', '175 mL ramekin is a 6 oz ramekin');
+// the imperial reading stays within rounding of the true weight
+let worst = 0;
+[4, 5, 6, 8, 10, 16, 40, 70, 90, 100, 113, 200, 220, 250, 300, 340, 400, 500, 1000, 2000].forEach((g) => {
+  const s = R.mass(g, 'imperial'), lb = /(\d+) lb/.exec(s), oz = /([\d.]+) oz/.exec(s);
+  const back = ((lb ? +lb[1] * 16 : 0) + (oz ? +oz[1] : 0)) * R.GRAMS_PER_OZ;
+  worst = Math.max(worst, Math.abs(back - g) / g);
+});
+check(worst < 0.03, 'imperial weights come back within 3% of the grams (from 4 g up; tinier amounts come with a spoon measure) (worst ' + (worst * 100).toFixed(1) + '%)');
+
+console.log('2. tokens');
+const sugar = { id: 'sugar', name: 'Sugar', g: 200 }, pod = { id: 'v', name: 'Vanilla bean', qty: '1 pod' };
+const find = (id) => ({ sugar, v: pod })[id] || null;
+eq(R.render('Heat to [[t:175]].', 'imperial', find), 'Heat to 350 °F.', 'a temperature in a sentence');
+eq(R.render('Keep at [[t:22-26]].', 'metric', find), 'Keep at 22–26 °C.', 'a range, metric');
+eq(R.render('Keep at [[t:22-26]].', 'imperial', find), 'Keep at 72–79 °F.', 'a range, imperial');
+eq(R.render('Add [[i:sugar]] and [[i:v]].', 'imperial', find), 'Add 7.1 oz and 1 pod.', 'ingredient amounts, weighed and counted');
+eq(R.render('Weigh [[g:10]].', 'metric', find), 'Weigh 10 g.', 'grams');
+eq(R.render('No tokens here.', 'metric', find), 'No tokens here.', 'plain text is untouched');
+eq(R.render('[[i:nope]] [[zz:1]] [[t:hot]]', 'metric', find), '? ? ?', 'unknown tokens show as ?');
+
+console.log('3. every recipe renders');
+const rb = 'puts JSON.generate(YAML.safe_load(File.read(ARGV[0])))';
+const recipes = JSON.parse(execFileSync('ruby', ['-ryaml', '-rjson', '-e', rb, path.join(__dirname, '..', '_data/recipes.yml')], { encoding: 'utf8' }));
+recipes.forEach((r) => {
+  ['metric', 'imperial'].forEach((unit) => {
+    const f = (id) => R.find(r, id), texts = [r.makes || '', r.time || ''].concat(r.steps, r.notes || []);
+    r.ingredients.forEach((g) => g.items.forEach((it) => { texts.push(R.amount(it, unit), it.note || ''); }));
+    const out = texts.map((t) => R.render(t, unit, f));
+    const bad = out.filter((t) => /\?|\[\[|\]\]|NaN|undefined/.test(t));
+    check(bad.length === 0, r.id + ' in ' + unit + ': ' + out.length + ' strings' + (bad.length ? ', bad: ' + bad[0] : ''));
+  });
+});
+
+console.log('4. quoted weights match the ingredients');
+{
+  const sum = (r, group) => r.ingredients.filter((g) => !group || g.group === group).reduce((a, g) => a + g.items.reduce((b, it) => b + (it.g || 0), 0), 0);
+  const quoted = (r, re) => { const m = re.exec(r.steps.join(' ')); return m ? +m[1] : NaN; };
+  const cake = recipes.find((r) => r.id === 'carrot-cake'), brulee = recipes.find((r) => r.id === 'creme-brulee');
+  const perPan = sum(cake, 'Cake') / 2, perRamekin = (500 + 90 + 70) / 4;
+  check(Math.abs(quoted(cake, /batter into the pans, about \[\[g:(\d+)\]\]/) - perPan) / perPan < 0.05, 'carrot cake: ' + perPan + ' g of batter per pan');
+  check(Math.abs(quoted(cake, /Spread \[\[g:(\d+)\]\] of frosting/) - sum(cake, 'Cream cheese frosting') / 3) / (sum(cake, 'Cream cheese frosting') / 3) < 0.05, 'carrot cake: a third of the frosting between the layers');
+  check(Math.abs(quoted(brulee, /Weigh \[\[g:(\d+)\]\] of custard/) - perRamekin) / perRamekin < 0.05, 'crème brûlée: ' + perRamekin + ' g of custard per ramekin');
+  const top = brulee.ingredients.flatMap((g) => g.items).find((it) => it.note && /for the tops/.test(it.note));
+  check(top && top.g === 4 * quoted(brulee, /Weigh \[\[g:(\d+)\]\] of sugar onto each/), 'crème brûlée: the sugar for the tops is 4 ramekins of it');
+}
+
+if (failed) { console.log('\nFAILED'); process.exit(1); }
+console.log('\nOK');

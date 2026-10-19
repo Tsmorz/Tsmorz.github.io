@@ -22,6 +22,7 @@ To change what the site says, edit YAML, not HTML.
 | --- | --- |
 | Projects shown anywhere | `_data/projects.yml` |
 | Services, process, contact on /solutions/ | `_data/solutions.yml` |
+| Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Name, bio links, CV button | `_config.yml` |
 | Bio prose, education timeline | `about.md` |
 | Hero headline / intro paragraph | `index.html` |
@@ -44,9 +45,10 @@ assets/js/site.js        theme toggle, tag filter
 assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab and swingup.js (load first)
 assets/js/swingup.js     /controls/swingup/: double cart-pole + goal-conditioned TQC policy in vanilla JS
 assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax + Bu, design a discrete LQR; FitCore has no DOM
+assets/js/recipes.js     /recipes/ (recipes.md): tick lists, metric/imperial; RecipeCore (unit conversion) has no DOM
 assets/js/lab/           the lab template behind /controls/
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
-script/                  serve, check, test-data, test-swingup, test-lab, test-fit, train-verify-net
+script/                  serve, check, test-data, test-swingup, test-lab, test-fit, test-recipes, train-verify-net
 ```
 
 ### Conventions
@@ -72,6 +74,17 @@ plant it was trained on, so **`swingup.js` hard-codes no physical constants**: e
 The dynamics are a line-for-line port of `n_cartpole/env/dynamics.py`. The page opens with the network on (button "AI") and Random targets cycling, so the ~2 MB weights download on load; Manual
 is a click away. `script/test-swingup` guards the port (JS vs torch actions, JS vs Python trajectory,
 closed-loop runs of every transition); if it fails after a re-export, the port has drifted.
+
+### Recipes (`/recipes/`)
+
+`recipes.md` + `assets/js/recipes.js`, all content in `_data/recipes.yml` (the file's header comment documents the fields). **Every amount
+is a weight in grams**, so each recipe runs on a kitchen scale (eggs, cream and water included); `RecipeCore` shows ounces, pounds and
+°F when the visitor picks imperial. Steps are plain strings with `[[...]]` tokens (`[[i:id]]` an ingredient's amount, `[[g:700]]`,
+`[[t:175]]` or `[[t:22-26]]`, `[[len:20]]`, `[[ml:175]]`); never write a unit into a step by hand. Ingredients and steps each get a tick
+box, and the ticks and the unit choice live in `localStorage`. A recipe is its `id` in the URL hash, and the nav dropdown (built from the
+same data, `.nav-menu` in the layout) links to those hashes. **Adding a recipe:** append to the YAML. `script/test-data` checks the shape and
+the tokens; `script/test-recipes` (`task check:recipes`, in `check:fast`) checks the conversions, renders every recipe in both systems
+and checks that the batter and custard weights quoted in the steps match the ingredients.
 
 ### The custom data page (`/controls/fit/`)
 

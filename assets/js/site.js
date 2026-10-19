@@ -19,26 +19,26 @@
   });
 })();
 
-// Controls Lab dropdown: the caret button toggles it (touch); hover and focus open it by CSS.
+// Nav dropdowns (Controls Lab, Recipes): the caret button toggles one (touch); hover and focus open it by CSS.
 // Choosing a page shuts it, and it stays shut (even though the pointer is still over it, also on the next page)
-// until the pointer leaves or the caret is pressed.
-(function () {
-  var menu = document.querySelector('.nav-menu'), btn = menu && menu.querySelector('.nav-menu-btn');
+// until the pointer leaves or the caret is pressed. sessionStorage remembers which menu, by position.
+Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (menu, index) {
+  var btn = menu.querySelector('.nav-menu-btn');
   if (!btn) return;
   function set(open) { menu.classList.toggle('open', open); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
   function shut(on) { menu.classList.toggle('shut', on); }
-  try { if (sessionStorage.getItem('navShut')) { shut(true); sessionStorage.removeItem('navShut'); } } catch (e) {}
+  try { if (sessionStorage.getItem('navShut') === String(index)) { shut(true); sessionStorage.removeItem('navShut'); } } catch (e) {}
   btn.addEventListener('click', function (e) { e.stopPropagation(); shut(false); set(!menu.classList.contains('open')); });
   menu.addEventListener('mouseleave', function () { shut(false); });
   Array.prototype.forEach.call(menu.querySelectorAll('.nav-menu-list a'), function (a) {
     a.addEventListener('click', function () {
       set(false); shut(true); a.blur();
-      try { sessionStorage.setItem('navShut', '1'); } catch (e) {}
+      try { sessionStorage.setItem('navShut', String(index)); } catch (e) {}
     });
   });
   document.addEventListener('click', function (e) { if (!menu.contains(e.target)) { set(false); shut(false); } });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && menu.classList.contains('open')) { set(false); btn.focus(); } });
-})();
+});
 
 // Phone menu: the burger opens the link panel; choosing a page, Escape or a tap outside closes it.
 (function () {
@@ -47,8 +47,10 @@
   function set(open) { nav.classList.toggle('menu-open', open); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
   btn.addEventListener('click', function (e) { e.stopPropagation(); set(!nav.classList.contains('menu-open')); });
   document.addEventListener('click', function (e) { if (!nav.contains(e.target)) set(false); });
+  // a link that only changes the hash (a recipe on /recipes/) doesn't reload the page, so close the panel by hand
+  nav.querySelector('.nav-links').addEventListener('click', function (e) { if (e.target.closest('a')) set(false); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && nav.classList.contains('menu-open')) { set(false); btn.focus(); } });
-  window.addEventListener('resize', function () { if (window.innerWidth > 620) set(false); });
+  window.addEventListener('resize', function () { if (window.innerWidth > 820) set(false); });
 })();
 
 // Hero field — math symbols that spring back to a home point, pushed by the cursor.

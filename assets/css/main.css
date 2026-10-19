@@ -227,7 +227,7 @@ pre code { background: none; border: 0; padding: 0; }
 /* the caret hugs the link text; its right padding matches the space the other links leave */
 .nav-menu > a { padding-right: .2rem; }
 /* one box around the link and its caret (desktop): the highlight sits on the wrapper, not the link */
-@media (min-width: 621px) {
+@media (min-width: 821px) {
   .nav-menu { border-radius: 3px; }
   .nav-menu:hover, .nav-menu:focus-within { background: var(--bg-soft); }
   .nav-menu:has(> a[aria-current="page"]) { background: var(--accent-soft); }
@@ -883,9 +883,9 @@ main:not(:has(> .hero))::before {
 .theme-toggle:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .theme-toggle::before { transition: none; } }
 
-/* phone: links collapse into a menu button; the theme toggle stays in the bar */
+/* phone and narrow tablet: links collapse into a menu button; the theme toggle stays in the bar */
 .nav-burger { display: none; }
-@media (max-width: 620px) {
+@media (max-width: 820px) {
   .nav { gap: .6rem; padding-inline: 1rem; }
   .nav-burger {
     display: grid; place-items: center; padding: .4rem; border: 0; border-radius: 3px;

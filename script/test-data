@@ -45,6 +45,41 @@ load_yaml("_data/projects.yml", errors).each_with_index do |proj, i|
   end
 end
 
+# --- recipes (read by assets/js/recipes.js) ---
+# Each recipe needs an id (its URL hash), a name, a blurb, ingredients that carry a weight in grams or a `qty`, and steps.
+# [[kind:arg]] tokens must be a known kind, and [[i:id]] must name an ingredient of the same recipe.
+recipes = load_yaml("_data/recipes.yml", errors)
+ids = recipes.map { |r| r["id"] }
+recipes.each_with_index do |r, i|
+  label = "recipes.yml: #{r["name"] || "recipe ##{i + 1}"}"
+  errors << "#{label} needs an id made of lowercase letters, digits and dashes" unless r["id"].to_s.match?(/\A[a-z0-9-]+\z/)
+  errors << "#{label} has a duplicate id" if ids.count(r["id"]) > 1
+  %w[name blurb].each { |k| errors << "#{label} is missing `#{k}`" if r[k].to_s.strip.empty? }
+  groups = r["ingredients"]
+  items = groups.is_a?(Array) ? groups.flat_map { |g| g.is_a?(Hash) && g["items"].is_a?(Array) ? g["items"] : [] } : []
+  errors << "#{label} needs ingredients as a list of groups, each with `items`" if items.empty?
+  items.each do |it|
+    errors << "#{label}: an ingredient is missing `name`" if it["name"].to_s.strip.empty?
+    unless (it["g"].is_a?(Numeric) && it["g"].positive?) || !it["qty"].to_s.strip.empty?
+      errors << "#{label}: #{it["name"]} needs `g` (a positive number of grams) or `qty`"
+    end
+  end
+  have = items.map { |it| it["id"] }.compact
+  errors << "#{label} has two ingredients with the same id" if have.uniq.size != have.size
+  errors << "#{label} needs steps" unless r["steps"].is_a?(Array) && r["steps"].all? { |s| s.is_a?(String) && !s.strip.empty? } && !r["steps"].empty?
+  texts = Array(r["steps"]) + Array(r["notes"]) + [r["makes"], r["time"]].compact + items.flat_map { |it| [it["note"], it["qty"]].compact }
+  texts.each do |t|
+    t.to_s.scan(/\[\[(\w+):([^\]]*)\]\]/) do |kind, arg|
+      if kind == "i"
+        errors << "#{label}: [[i:#{arg}]] names no ingredient" unless have.include?(arg)
+      elsif !%w[g t len ml].include?(kind) || !arg.match?(/\A-?[\d.]+(-[\d.]+)?\z/)
+        errors << "#{label}: bad token [[#{kind}:#{arg}]]"
+      end
+    end
+    errors << "#{label}: unbalanced [[ ]] in #{t.to_s[0, 40].inspect}" if t.to_s.scan("[[").size != t.to_s.scan(/\[\[\w+:[^\]]*\]\]/).size
+  end
+end
+
 # --- page front matter ---
 # Jekyll skips a page whose front matter isn't valid YAML (an unquoted ": " in a description is
 # enough), and the build still succeeds: the page just isn't there. Catch it here instead.

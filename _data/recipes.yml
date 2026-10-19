@@ -89,7 +89,7 @@
         - { name: Vanilla bean, note: "or [[g:8]] vanilla paste", qty: 1 pod }
         - { name: Egg yolks, note: "about 5 large", g: 90 }
         - { name: Sugar, g: 70 }
-        - { name: Hot water, note: "for the bath", qty: from the kettle }
+        - { name: Hot water, note: "for the bath", qty: as needed }
     - group: To finish
       items:
         - { name: Sugar, note: "for the tops, [[g:10]] per ramekin", g: 40 }
