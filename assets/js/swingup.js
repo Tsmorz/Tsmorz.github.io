@@ -945,7 +945,10 @@
     ctx.fillRect(ox, f < 0 ? midY : midY - f * 48, 16, Math.abs(f) * 48);   // positive grows up from the zero line
     ctx.fillStyle = border; ctx.fillRect(ox - 3, midY, 22, 1);
     ctx.textAlign = 'left'; ctx.fillStyle = text; ctx.font = '600 13px ' + mono;
-    ctx.fillText(tr.force.toFixed(1) + ' N', ox + 26, midY + 4);
+    var fs = tr.force.toFixed(1); if (fs === '-0.0') fs = '0.0';
+    var minusW = ctx.measureText('\u2212').width;                        // the digits always start after room for a minus sign
+    if (fs.charAt(0) === '-') { ctx.fillText('\u2212', ox + 26, midY + 4); fs = fs.slice(1); }
+    ctx.fillText(fs + ' N', ox + 26 + minusW, midY + 4);
     ctx.textAlign = 'center'; ctx.font = '600 12px ' + font;
     ctx.fillText('Force', ox + 8, gridY + hs + 20);
     ctx.fillStyle = muted; ctx.font = '11px ' + font;
