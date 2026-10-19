@@ -46,12 +46,12 @@
     var g = el('g', { filter: 'url(#' + id + ')' }, svg);
 
     var x0 = r(2, 11), x1 = w - r(2, 11), L = x1 - x0;
-    if (L > 260 && rnd() < 0.7) {                                  // the line took two pen strokes, which meet (and overlap) somewhere in the middle
-      var m = x0 + L * r(0.35, 0.65), ov = r(8, 34);
+    if (L > 260 && rnd() < 0.35) {                                  // the line took two pen strokes, which meet (and overlap) somewhere in the middle
+      var m = x0 + L * r(0.35, 0.65), ov = r(6, 22);
       pass(x0, m + ov, r(-0.8, 0.8)); pass(m - ov, x1, r(-0.8, 0.8));
     } else pass(x0, x1, 0);
-    for (var k = rnd() < 0.8 ? 1 + (rnd() < 0.4 ? 1 : 0) : 0; k > 0; k--) {   // the pen goes back over part of it
-      var len = L * r(0.2, 0.5), a = x0 + (L - len) * rnd();
+    if (rnd() < 0.5) {                                             // sometimes the pen goes back over part of it
+      var len = L * r(0.15, 0.35), a = x0 + (L - len) * rnd();
       pass(a, a + len, r(-2.5, 2.5));
     }
     return svg;
