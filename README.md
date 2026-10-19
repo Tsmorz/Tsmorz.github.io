@@ -40,7 +40,7 @@ Content lives in `_data/` and a few pages, not in HTML.
 
 | To change | Edit |
 | --- | --- |
-| A project | `_data/projects.yml` (`featured: true` lists it on /projects/, `on_cv: true` badges it, `tags` make the filter buttons) |
+| A project | `_data/projects.yml` (`featured: true` lists it on /projects/; `tags` and `on_cv` are kept as data but not shown) |
 | Name, bio links, CV button | `_config.yml` |
 | Bio and education timeline | `about.md` |
 | Home page headline and intro | `index.html` |
