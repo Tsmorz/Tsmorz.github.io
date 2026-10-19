@@ -1,7 +1,7 @@
 # Recipes shown on /recipes/ and in the Recipes nav dropdown. Every amount is a weight, so the whole thing
 # runs on a kitchen scale; assets/js/recipes.js converts to ounces and °F when the visitor picks imperial.
 #
-#   id            slug used in the URL hash (#carrot-cake)
+#   id            slug used in the URL hash (#hummingbird-cake)
 #   name, blurb   required
 #   makes, time   optional one-liners
 #   ingredients   groups of items, in the order they are used. A group's `group` name is optional.
@@ -38,44 +38,46 @@
   notes:
     - "Brown strings and bubbles under the SCOBY are yeast, and normal. Fuzzy, dry mold that is blue, green or black on top means throw it all out."
 
-- id: carrot-cake
-  name: Carrot cake
-  blurb: Two moist spiced layers with cream cheese frosting.
+- id: hummingbird-cake
+  name: Hummingbird cake
+  blurb: Two moist layers of banana, pineapple and pecans, spiced with cinnamon and finished with cream cheese frosting.
   makes: Two [[len:20]] layers, 12 slices
   time: About 2½ hours, most of it cooling
   ingredients:
     - group: Cake
       items:
-        - { id: flour, name: Plain flour, g: 250 }
-        - { name: Baking powder, g: 6, spoon: 1½ tsp }
-        - { name: Baking soda, g: 5, spoon: 1 tsp }
-        - { name: Ground cinnamon, g: 8, spoon: 1 tbsp }
-        - { name: Salt, g: 3, spoon: ½ tsp }
-        - { name: Brown sugar, note: "light or dark", g: 200 }
-        - { name: Granulated sugar, g: 100 }
-        - { name: Neutral oil, g: 220 }
-        - { name: Eggs, note: "beaten, about 4 large", g: 200 }
-        - { name: Vanilla extract, g: 8, spoon: 2 tsp }
-        - { name: Carrots, note: "peeled and finely grated, about 3 medium", g: 300 }
-        - { name: Walnuts or pecans, note: "chopped, optional", g: 100 }
+        - { name: Plain flour, g: 330 }
+        - { name: Baking soda, g: 5, spoon: "1 tsp" }
+        - { name: Ground cinnamon, g: 5, spoon: "2 tsp" }
+        - { name: Salt, g: 3, spoon: "½ tsp" }
+        - { name: Very ripe bananas, note: "peeled, about 3 medium", g: 280 }
+        - { name: Crushed pineapple, note: "one 8 oz can, with its juice", g: 227 }
+        - { name: Granulated sugar, g: 300 }
+        - { name: Neutral oil, g: 200 }
+        - { name: Eggs, note: "beaten, about 3 large", g: 150 }
+        - { name: Vanilla extract, g: 8, spoon: "2 tsp" }
+        - { id: pecans, name: Pecans, note: "chopped", g: 115 }
     - group: Cream cheese frosting
       items:
         - { name: Unsalted butter, note: "soft", g: 113 }
         - { name: Full-fat cream cheese, note: "soft, from the block", g: 340 }
         - { name: Powdered sugar, note: "sifted", g: 300 }
-        - { name: Vanilla extract, g: 4, spoon: 1 tsp }
+        - { name: Vanilla extract, g: 4, spoon: "1 tsp" }
+        - { name: Pecan halves, note: "for the top", g: 30 }
   steps:
     - "Heat the oven to [[t:175]]. Grease two [[len:20]] round pans and line the bottoms with parchment."
-    - "Optional, for the nuts: toast them on a tray for 8 minutes, then let them cool."
-    - "Weigh the flour, baking powder, baking soda, cinnamon and salt into a large bowl, tare between each, and whisk."
-    - "In a second bowl, weigh in the eggs, oil, both sugars and the vanilla. Whisk until smooth."
-    - "Fold the dry mix into the wet until just combined, then fold in the carrots and nuts."
-    - "Weigh the batter into the pans, about [[g:700]] each, so the layers match."
+    - "Toast all the pecans, the chopped and the halves, on a tray for 8 minutes, then let them cool."
+    - "Weigh the flour, baking soda, cinnamon and salt into a large bowl, tare between each, and whisk."
+    - "In a second bowl, weigh in the bananas and mash them. Add the pineapple with its juice, the sugar, oil, eggs and vanilla, and whisk until smooth."
+    - "Fold the dry mix into the wet until just combined, then fold in the [[i:pecans]] of chopped pecans."
+    - "Weigh the batter into the pans, about [[g:810]] each, so the layers match."
     - "Bake 30 to 35 minutes, until a toothpick comes out clean or the middle reads [[t:96]]."
     - "Cool 10 minutes in the pans, turn out onto a rack, and cool completely, about an hour. Warm cake melts the frosting."
     - "For the frosting, beat the butter and cream cheese until smooth. Add the powdered sugar and vanilla and beat just until combined. Chill 15 minutes if it is runny."
-    - "Spread [[g:250]] of frosting between the layers, then the rest over the top and sides."
+    - "Spread [[g:250]] of frosting between the layers, then the rest over the top and sides. Press the pecan halves around the top edge."
     - "Chill 30 minutes before slicing. It keeps 4 days at [[t:4]]."
+  notes:
+    - "The batter is wet. Bake the layers in the middle of the oven and do not open the door before 30 minutes."
 
 - id: creme-brulee
   name: Crème brûlée
