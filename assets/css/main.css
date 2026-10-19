@@ -830,3 +830,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
   .nav-links a { padding-inline: .35rem; }
   .nav-menu-btn { padding-inline: .2rem; margin-left: -.1rem; }
 }
+@media (max-width: 620px) {
+  .nav-lab { display: none; }
+  .nav-links { flex-shrink: 0; }
+}
+@media (max-width: 400px) {
+  .nav { gap: .4rem; padding-inline: .75rem; }
+  .nav-links a { font-size: .8rem; padding-inline: .3rem; }
+}

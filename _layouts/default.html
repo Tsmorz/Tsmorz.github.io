@@ -38,7 +38,7 @@
           <li><a href="{{ '/about/' | relative_url }}" {% if p contains '/about' %}aria-current="page"{% endif %}>About</a></li>
           <li><a href="{{ '/projects/' | relative_url }}" {% if p contains '/projects' %}aria-current="page"{% endif %}>Projects</a></li>
           <li class="nav-menu">
-            <a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' %}aria-current="page"{% endif %}>Controls Lab</a>
+            <a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' %}aria-current="page"{% endif %}>Controls<span class="nav-lab"> Lab</span></a>
             <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="controls-menu" aria-label="Controls Lab pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
             <ul class="nav-menu-list" id="controls-menu">
               <li><a href="{{ '/controls/' | relative_url }}" {% if p == '/controls/' %}aria-current="page"{% endif %}>Lessons</a></li>
