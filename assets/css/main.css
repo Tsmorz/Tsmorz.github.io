@@ -888,4 +888,7 @@ main:not(:has(> .hero))::before {
 .nav-brand svg { width: 32px; height: 32px; border-radius: 3px; flex-shrink: 0; outline: 1px solid var(--lav); outline-offset: 2px; }
 
 /* /solutions/ */
-.solution-list { margin: 0; padding-left: 1.2rem; font-size: 1.1rem; line-height: 1.9; }
+.solution-list { margin: 0; padding: 0; list-style: none; display: grid; gap: .9rem; max-width: 62ch; }
+.solution-list li { border-left: 2px solid var(--lime); padding-left: 1rem; display: flex; flex-direction: column; gap: .15rem; }
+.solution-list strong { font-size: 1.1rem; }
+.solution-list span { color: var(--text-muted); font-size: .98rem; }

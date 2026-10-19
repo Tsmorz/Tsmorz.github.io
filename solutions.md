@@ -12,7 +12,7 @@ permalink: /solutions/
 
 <section class="wrap section" style="padding-top: 0;">
   <ul class="solution-list">
-    {%- for svc in s.services %}<li>{{ svc }}</li>{% endfor %}
+    {%- for svc in s.services %}<li><strong>{{ svc.name }}</strong><span>{{ svc.blurb }}</span></li>{% endfor %}
   </ul>
 </section>
 
