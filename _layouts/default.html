@@ -8,7 +8,7 @@
     {% seo %}
     <link rel="icon" type="image/svg+xml" href="{{ '/assets/img/favicon.svg' | relative_url }}?v=10">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ '/assets/img/favicon-32.png' | relative_url }}?v=10">
-    <link rel="apple-touch-icon" href="{{ '/assets/img/apple-touch-icon.png' | relative_url }}?v=7">
+    <link rel="apple-touch-icon" href="{{ '/assets/img/apple-touch-icon.png' | relative_url }}?v=10">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=STIX+Two+Text:ital,wght@0,500;0,600;1,400&display=swap" rel="stylesheet">
@@ -27,7 +27,7 @@
 
     <header class="site-header">
       <nav class="nav" aria-label="Primary">
-        <a class="nav-brand" href="{{ '/' | relative_url }}">
+        <a class="nav-brand" href="{{ '/' | relative_url }}" aria-label="{{ site.title }}, home">
           {% if page.url == '/' %}{% include logo.html %}
           {% else %}<img src="{{ site.author.photo | relative_url }}" alt="" width="32" height="32">{% endif %}
           <span>{{ site.title }}</span>

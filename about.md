@@ -7,8 +7,8 @@ I'm a **Robotics Software Engineer at Agile Robots SE** in Munich, building the 
 that keeps a fleet of robots connected and controllable - remote over-the-air updates and
 low-latency teleoperation for machines deployed around the world.
 
-Before Agile Robots I was briefly a PhD candidate at the **Technical University of Munich**,
-working under **Prof. Lorenzo Masia** on sensor fusion for soft exosuits.
+Before Agile Robots I started a PhD at the **Technical University of Munich**, working under
+**Prof. Lorenzo Masia** on sensor fusion for soft exosuits, before dropping out.
 
 <div class="about-photos">
   <img src="{{ '/assets/img/about/exosuit-1.jpg' | relative_url }}" alt="Soft exosuit research at TU Munich">

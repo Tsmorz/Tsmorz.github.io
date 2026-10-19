@@ -33,14 +33,7 @@ permalink: /controls/swingup/
         <button class="mode-btn active" type="button" data-mode="manual" aria-pressed="true">Manual</button>
         <button class="mode-btn" type="button" data-mode="tqc" aria-pressed="false">TQC network</button>
       </div>
-      <p class="panel-hint">
-        <strong>Manual:</strong> drag the cart.
-        <strong>TQC:</strong> the network drives to the target.
-        Picking a target hands it control.
-      </p>
-      <p class="panel-hint">
-        Swinging both poles up by hand is very likely impossible, but you can try Manual.
-      </p>
+      <p class="panel-hint"><strong>Manual:</strong> drag the cart. <strong>TQC:</strong> the network drives to the target; picking a target hands it control.</p>
       <p class="panel-hint su-model-status" id="su-model-status" aria-live="polite"></p>
       <div class="su-targets" id="su-targets" hidden>
         <h3>Target</h3>
@@ -74,7 +67,7 @@ permalink: /controls/swingup/
         <label>Sensor noise &#963; <span id="su-noise-val">0.000</span></label>
         <input type="range" id="su-noise" min="0" max="0.05" step="0.005" value="0">
       </div>
-      <p class="panel-hint">Delay holds back the force in both modes. Noise corrupts what the network measures (position, angles and both rates), never the force. The plots draw that noisy measurement faintly behind the true state. The network was trained without either, so it is fragile: even 50 ms of delay usually breaks it, and noise above about 0.03 does too.</p>
+      <p class="panel-hint">Delay holds back the force; noise corrupts what the network measures, never the force. It was trained with neither, so about 50 ms of delay or noise above 0.03 usually breaks it.</p>
       <div class="score-block">
         <span class="score-value" id="su-score">-</span>
         <span class="score-label" id="su-score-label">Time to target (s)</span>
