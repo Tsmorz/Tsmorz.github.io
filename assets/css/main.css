@@ -772,8 +772,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
   content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 48px 48px; background-position: left top;
-  -webkit-mask-image: radial-gradient(ellipse 80% 110% at 20% 40%, #000 20%, transparent 100%);
-  mask-image: radial-gradient(ellipse 80% 110% at 20% 40%, #000 20%, transparent 100%);
+  /* fade on every side, so the grid has no visible box edge */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18%, #000 60%, transparent), linear-gradient(to bottom, transparent, #000 25%, #000 55%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 18%, #000 60%, transparent), linear-gradient(to bottom, transparent, #000 25%, #000 55%, transparent);
+  mask-composite: intersect;
 }
 .page-head > * { position: relative; z-index: 1; }
 .page-title { font-weight: 500; }
