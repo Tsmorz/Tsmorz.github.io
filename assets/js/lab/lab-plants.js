@@ -59,7 +59,7 @@
   var msd = {
     id: 'msd', name: 'Mass-spring-damper', n: 2, m: 1, dt: 0.01, substeps: 2,
     stateNames: ['x', 'ẋ'], inputNames: ['F'], units: ['m', 'm/s'], inputUnits: ['N'],
-    params: { M: 1, k: 4, c: 0.4, Fmax: 20, Fcap: 20 },        // underdamped, ζ ≈ 0.1 (controls.js); force always clamped to ±20 N
+    params: { M: 1, k: 4, c: 0.4, Fmax: 20, Fcap: 20, xstop: 1.5 },        // underdamped, ζ ≈ 0.1 (controls.js); force always clamped to ±20 N
     x0: function () { return [0, 0]; },
     u0: function () { return [0]; },
     start: function () { return [0, 0]; },
@@ -88,16 +88,20 @@
     manual: function (drag, sim, lab) {
       if (!drag || !lab.view) return [0];
       var xt = (drag.y - lab.view.mid) / lab.view.scale;
-      return [clamp(40 * (xt - sim.x[0]) - 8 * sim.x[1], -10, 10)];
+      return [clamp(40 * (clamp(xt, -lab.p.xstop, lab.p.xstop) - sim.x[0]) - 8 * sim.x[1], -10, 10)];
     },
     draw: function (ctx, W, H, sim, lab, col) {
       var accent = col.accent, muted = col.muted, strong = col.borderStrong, bgSoft = col.bgSoft, massColor = cssVar('--viz-7'), forceColor = cssVar('--viz-total');
       ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
-      var cx = clamp(W * 0.35, 110, 300), anchorY = 26, massH = 42, massW = 54, scale = Math.min(80, (H - 90) / 3);
+      var cx = clamp(W * 0.35, 110, 300), anchorY = 26, massH = 42, massW = 54, scale = Math.min(80, (H - 130) / 3);
       var t = sim.t, refType = lab.refs[0], rv = function (tt) { return LabCore.refValue(refType, tt); };
       var massY = H / 2 + sim.x[0] * scale, massTop = massY - massH / 2, refNow = rv(t), refY = H / 2 + refNow * scale;
       var springX = cx - 13, damperX = cx + 14;
       lab.view = { mid: H / 2, scale: scale };
+      // Hard stops at +-xstop: the mass cannot go past them.
+      ctx.save(); ctx.strokeStyle = strong; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+      [-1, 1].forEach(function (sg) { var yy = H / 2 + sg * lab.p.xstop * scale; ctx.beginPath(); ctx.moveTo(cx - 60, yy); ctx.lineTo(W - 8, yy); ctx.stroke(); });
+      ctx.restore();
       // Reference path: faint dashed future ahead, fading tail behind, a soft dot now.
       var LOOK = 8, pxPerSec = Math.max(20, (W - 16 - cx) / LOOK);
       var refPy = function (tt) { return H / 2 + rv(tt) * scale; };

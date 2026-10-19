@@ -1489,7 +1489,11 @@
         sliders.push(function () { s.set(lab.gains[ci][g]); });
       });
     });
-    button(panel, tab.loadLabel || 'Load suggested gains', function () { lab.suggested.forEach(function (g, ci) { Object.assign(lab.gains[ci], g); }); changed(lab); });
+    button(panel, tab.loadLabel || 'Load suggested gains', function () {
+      lab.suggested.forEach(function (g, ci) { Object.assign(lab.gains[ci], g); });
+      if (lab.manual && tab.setMode) { lab.manual = false; tab.setMode(false); restart(lab); }   // the gains only matter once the controller is driving
+      changed(lab);
+    });
     lab.uiSync.push(function () { sliders.forEach(function (f) { f(); }); });
   };
   CTRL.controller = function (panel, lab) {
