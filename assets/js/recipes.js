@@ -185,7 +185,7 @@
     });
     view.appendChild(ing);
 
-    var met = section('Method', 'step');
+    var met = section('Steps', 'step');
     met.setAttribute('data-sec', 'step');
     var ol = el('ol', 'rc-list');
     r.steps.forEach(function (s, si) {
