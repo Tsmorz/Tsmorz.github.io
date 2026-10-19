@@ -32,13 +32,13 @@
           {% else %}<img src="{{ site.author.photo | relative_url }}" alt="" width="32" height="32">{% endif %}
           <span>{{ site.title }}</span>
         </a>
-        <ul class="nav-links">
+        <ul class="nav-links" id="nav-links">
           {% assign p = page.url %}
           <li class="nav-home"><a href="{{ '/' | relative_url }}" {% if p == '/' %}aria-current="page"{% endif %}>Home</a></li>
           <li><a href="{{ '/about/' | relative_url }}" {% if p contains '/about' %}aria-current="page"{% endif %}>About</a></li>
           <li><a href="{{ '/projects/' | relative_url }}" {% if p contains '/projects' %}aria-current="page"{% endif %}>Projects</a></li>
           <li class="nav-menu">
-            <a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' %}aria-current="page"{% endif %}>Controls<span class="nav-lab"> Lab</span></a>
+            <a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' %}aria-current="page"{% endif %}>Controls Lab</a>
             <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="controls-menu" aria-label="Controls Lab pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
             <ul class="nav-menu-list" id="controls-menu">
               <li><a href="{{ '/controls/' | relative_url }}" {% if p == '/controls/' %}aria-current="page"{% endif %}>Lessons</a></li>
@@ -47,6 +47,7 @@
             </ul>
           </li>
         </ul>
+        <button class="nav-burger" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Menu"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path class="nb-open" d="M3 6h14M3 10h14M3 14h14"/><path class="nb-close" d="M5 5l10 10M15 5L5 15"/></svg></button>
         <button class="theme-toggle" type="button" role="switch" aria-label="Dark mode" title="Toggle color theme">
           <span class="tt-opt tt-light"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.4"/><path d="M12 2.5v1.5M12 21.5V20M2.5 12H4M21.5 12H20M5.3 5.3l1.1 1.1M18.7 5.3l-1.1 1.1M5.3 18.7l1.1-1.1M18.7 18.7l-1.1-1.1"/></svg></span>
           <span class="tt-opt tt-dark"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path transform="translate(1.3 -1.3)" d="M5.6 5.6A9 9 0 0 0 18.4 18.4A12 12 0 0 1 5.6 5.6Z"/></svg></span>
