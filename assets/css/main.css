@@ -364,7 +364,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .timeline .t-what { font-weight: 600; margin: .1rem 0 .1rem; }
 .timeline .t-where { color: var(--text-muted); font-size: .95rem; }
 
-.prose { padding-bottom: 4rem; }
+.prose { padding-bottom: 3rem; }   /* matches .section, so every page leaves the same gap above the footer */
 .prose > * + * { margin-top: 1rem; }
 .prose h2 { margin-top: 2.5rem; }
 .prose ul, .prose ol { padding-left: 1.3rem; }

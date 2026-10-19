@@ -50,7 +50,7 @@ Content lives in `_data/` and a few pages, not in HTML.
 
 ### Editing a controls lesson
 
-`_data/labs/controls.yml` is one course: a running problem (a mass on a spring) taken through every idea, then the same steps on a tilt table, an aircraft and a cart-pole. Teach a new idea on the mass first, then add what changes on the other plants. Every lesson follows the five ARIVA steps, and `task check:fast` fails if one is missing:
+`_data/labs/controls.yml` is one course: a running problem (a mass on a spring) taken through every idea, then some of the ideas on a tilt table, an aircraft and a cart-pole. Teach a new idea on the mass first, then add what changes on the other plants. Every lesson follows the five ARIVA steps, and `task check:fast` fails if one is missing:
 
 | Step | Field | What it is |
 | --- | --- | --- |

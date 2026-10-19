@@ -1,4 +1,4 @@
-# /controls/ — one running problem (a mass on a spring) taken through every idea, then the same steps on other plants.
+# /controls/ — one running problem (a mass on a spring) taken through every idea, then some of the same ideas on other plants.
 # `demos` are the buttons on top (`extend: true` ones are the other plants); `tabs` are the lessons in each. Each lesson follows ARIVA:
 # goal (Arrive), needs + recall + predict (Reactivate), note (Inform), tasks (Process), check + recap (Evaluate).
 # Rendered by _includes/lab.html; views and controls are listed at the top of assets/js/lab/lab.js.
@@ -1654,4 +1654,4 @@ tabs:
   recap: say what a verified bound promises and how branch and bound tightens it.
   needs:
   - cartpole
-problem: 'A 1&nbsp;kg mass hangs on a spring with light damping and has to follow a moving position. Every lesson in the first row uses this one mass: tune it, check it is stable, fit a model of it from data, feed back its states, estimate its speed, run the controller on a computer, design it against requirements, and finish with your own recording. Then the same steps on a tilt table, an aircraft and a cart-pole.'
+problem: 'A 1&nbsp;kg mass hangs on a spring with light damping and has to follow a moving position. Every lesson in the first row uses this one mass: tune it, check it is stable, fit a model of it from data, feed back its states, estimate its speed, run the controller on a computer, design it against requirements, and finish with your own recording. Then some of these ideas on a tilt table, an aircraft and a cart-pole.'
