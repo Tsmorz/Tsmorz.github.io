@@ -612,7 +612,7 @@
   // The layout sets each canvas's CSS box (half the panel height each); only
   // the pixel buffer is sized here.
   function sizeCanvas(cv) {
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = Math.min(window.devicePixelRatio || 1, 3);
     var W = cv.clientWidth || 720, H = cv.clientHeight || 300;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
       cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);

@@ -14,17 +14,11 @@
     {%- if proj.year %}<span class="card-year">{{ proj.year }}</span>{% endif %}
   </div>
   <p>{{ proj.blurb }}</p>
-  {%- if proj.tags %}
-  <ul class="tags">
-    {%- for t in proj.tags %}<li class="tag">{{ t }}</li>{% endfor %}
-  </ul>
-  {%- endif %}
   <div class="card-foot">
     {%- if proj.links %}
     <ul class="card-links">
       {%- for l in proj.links %}<li><a href="{% if l.url contains '://' %}{{ l.url }}{% else %}{{ l.url | relative_url }}{% endif %}">{{ l.label }}</a></li>{% endfor %}
     </ul>
     {%- endif %}
-    {%- if proj.on_cv %}<span class="cv-flag">On my CV</span>{% endif %}
   </div>
 </article>

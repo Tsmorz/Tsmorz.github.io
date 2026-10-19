@@ -15,7 +15,7 @@
     - label: GitHub
       url: https://github.com/Tsmorz/UAV-Code
 
-- name: n-cartpole
+- name: Double Pendulum
   blurb: >-
     Reinforcement learning for a double pendulum on a cart. One goal-conditioned
     TQC policy swings both poles up, folds either one over the other, and moves

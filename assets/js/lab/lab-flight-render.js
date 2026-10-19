@@ -70,7 +70,7 @@
 
   function makeFlightRenderer(canvas) {
     var ctx = canvas.getContext('2d');
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var dpr = Math.min(window.devicePixelRatio || 1, 3);
 
     function resize() {
       var w = canvas.clientWidth || 720, h = canvas.clientHeight || 380;   // set by the layout
