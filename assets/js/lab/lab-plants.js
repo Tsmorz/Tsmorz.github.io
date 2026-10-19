@@ -59,7 +59,7 @@
   var msd = {
     id: 'msd', name: 'Mass-spring-damper', n: 2, m: 1, dt: 0.01, substeps: 2,
     stateNames: ['x', 'ẋ'], inputNames: ['F'], units: ['m', 'm/s'], inputUnits: ['N'],
-    params: { M: 1, k: 4, c: 0.4, Fmax: 20, Fcap: 20, xstop: 1.5 },        // underdamped, ζ ≈ 0.1 (controls.js); force always clamped to ±20 N
+    params: { M: 1, k: 4, c: 0.4, Fmax: 20, Fcap: 20 },        // underdamped, ζ ≈ 0.1 (controls.js); force always clamped to ±20 N
     x0: function () { return [0, 0]; },
     u0: function () { return [0]; },
     start: function () { return [0, 0]; },
@@ -84,24 +84,20 @@
     contribUnit: 'F (N)', contribScale: 1,
     // Drag the plant's own poles (the Poles view): the pair −σ ± jω_d sets c and k.
     setPoles: function (p, re, im) { p.c = -2 * re * p.M; p.k = p.M * (re * re + im * im); },
-    // Manual: drag the mass; a damped virtual spring pulls it toward the pointer, ±10 N.
+    // Manual: drag the mass; a damped virtual spring pulls it toward the pointer (kept on screen), ±10 N.
     manual: function (drag, sim, lab) {
       if (!drag || !lab.view) return [0];
       var xt = (drag.y - lab.view.mid) / lab.view.scale;
-      return [clamp(40 * (clamp(xt, -lab.p.xstop, lab.p.xstop) - sim.x[0]) - 8 * sim.x[1], -10, 10)];
+      return [clamp(40 * (clamp(xt, -lab.view.half, lab.view.half) - sim.x[0]) - 8 * sim.x[1], -10, 10)];
     },
     draw: function (ctx, W, H, sim, lab, col) {
-      var accent = col.accent, muted = col.muted, strong = col.borderStrong, bgSoft = col.bgSoft, massColor = cssVar('--viz-7'), forceColor = cssVar('--viz-total');
+      var accent = col.accent, muted = col.muted, strong = col.borderStrong, bgSoft = col.bgSoft, massColor = cssVar('--mass'), massEdge = cssVar('--mass-edge'), forceColor = cssVar('--viz-total');
       ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
       var cx = clamp(W * 0.35, 110, 300), anchorY = 26, massH = 42, massW = 54, scale = Math.min(80, (H - 130) / 3);
       var t = sim.t, refType = lab.refs[0], rv = function (tt) { return LabCore.refValue(refType, tt); };
       var massY = H / 2 + sim.x[0] * scale, massTop = massY - massH / 2, refNow = rv(t), refY = H / 2 + refNow * scale;
       var springX = cx - 13, damperX = cx + 14;
-      lab.view = { mid: H / 2, scale: scale };
-      // Hard stops at +-xstop: the mass cannot go past them.
-      ctx.save(); ctx.strokeStyle = strong; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
-      [-1, 1].forEach(function (sg) { var yy = H / 2 + sg * lab.p.xstop * scale; ctx.beginPath(); ctx.moveTo(cx - 60, yy); ctx.lineTo(W - 8, yy); ctx.stroke(); });
-      ctx.restore();
+      lab.view = { mid: H / 2, scale: scale, half: (H / 2 - massH / 2 - 8) / scale };
       // Reference path: faint dashed future ahead, fading tail behind, a soft dot now.
       var LOOK = 8, pxPerSec = Math.max(20, (W - 16 - cx) / LOOK);
       var refPy = function (tt) { return H / 2 + rv(tt) * scale; };
@@ -117,8 +113,8 @@
       var pistonY = clamp(massTop - 36, anchorY + 10, anchorY + 2 + cylH);
       ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(damperX, pistonY); ctx.lineTo(damperX, massTop);
       ctx.moveTo(damperX - cylW / 2 + 2, pistonY); ctx.lineTo(damperX + cylW / 2 - 2, pistonY); ctx.stroke();
-      ctx.fillStyle = lab.hitFlash ? col.bad : massColor;
-      ctx.beginPath(); (ctx.roundRect ? ctx.roundRect(cx - massW / 2, massTop, massW, massH, 6) : ctx.rect(cx - massW / 2, massTop, massW, massH)); ctx.fill();
+      ctx.fillStyle = massColor; ctx.strokeStyle = massEdge; ctx.lineWidth = 1.5;
+      ctx.beginPath(); (ctx.roundRect ? ctx.roundRect(cx - massW / 2, massTop, massW, massH, 6) : ctx.rect(cx - massW / 2, massTop, massW, massH)); ctx.fill(); ctx.stroke();
       // Reference path on top of the mass, so the dot and the tail stay visible when they overlap it.
       if (!lab.shake) {
         ctx.save(); ctx.globalAlpha = 0.32; ctx.strokeStyle = accent; ctx.lineWidth = 1.2; ctx.setLineDash([8, 5]); ctx.beginPath();
@@ -134,12 +130,6 @@
         ctx.restore();
         ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(cx, refY, 9, 0, 7); ctx.fill(); ctx.restore();
       }
-      // Centre of mass: the quartered black-and-white target.
-      var cr = 8;
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, massY, cr, 0, 2 * Math.PI); ctx.fill();
-      ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(cx, massY); ctx.arc(cx, massY, cr, -Math.PI / 2, 0); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(cx, massY); ctx.arc(cx, massY, cr, Math.PI / 2, Math.PI); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, massY, cr, 0, 2 * Math.PI); ctx.stroke();
       var F = sim.u[0] || 0;
       if (Math.abs(F) > 0.05) {
         var len = 46 * Math.tanh(Math.abs(F) / 4), dir = F > 0 ? 1 : -1, ax = cx + massW / 2 + 12, ay1 = massY + dir * len;
@@ -149,9 +139,9 @@
       }
       var w = who(lab, lab.shake ? 'Shaken by a sine-wave force' : lab.controller.label + ' tracking');
       statusLine(ctx, w === null ? 'Manual - drag the mass' : w === 'none' ? 'No control - raise Kp' : w, w === 'none' ? muted : accent, 't = ' + t.toFixed(1) + ' s', col);
-      stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], decimals: 2, unit: 'm' }, { label: 'ẋ', value: sim.x[1], decimals: 2, unit: 'm/s' }]
-        .concat(lab.replay ? [] : [{ label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, decimals: 2, unit: lab.shake ? 'rad/s' : 'm' }])
-        .concat([{ label: 'F', value: lab.replay ? F / 4 : F, decimals: 1, unit: 'N' }]));
+      stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], unit: 'm' }, { label: 'ẋ', value: sim.x[1], unit: 'm/s' }]
+        .concat(lab.replay ? [] : [{ label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, unit: lab.shake ? 'rad/s' : 'm' }])
+        .concat([{ label: 'F', value: lab.replay ? F / 4 : F, unit: 'N' }]));
     }
   };
 
@@ -178,7 +168,7 @@
     states: [{ label: 'x (m)', f: function (x) { return x[0]; } }, { label: 'ẋ (m/s)', f: function (x) { return x[1]; } },
              { label: 'θ (°)', f: function (x, u) { return deg(u[0]); } }],
     contribUnit: 'tilt cmd (°)', contribScale: 180 / Math.PI,
-    // Manual: the beam swings toward the line from its centre to the pointer, and holds.
+    // Manual: the beam swings toward the line from its center to the pointer, and holds.
     manual: function (drag, sim, lab) {
       if (!drag || !lab.view) return [sim.u[0]];
       var dx = drag.x - lab.view.cx, dy = drag.y - lab.view.cy;
@@ -211,8 +201,8 @@
       var w = who(lab, 'PID tracking');
       statusLine(ctx, sim.failed ? 'The ball rolled off - new trial…' : w === null ? 'Manual - drag a beam end' : w === 'none' ? 'No control - raise Kp' : w,
         sim.failed ? col.viz2 : w === 'none' ? col.muted : col.accent, 't = ' + sim.t.toFixed(1) + ' s   falls = ' + (lab.trials || 0), col);
-      stateBox(ctx, W, H, [{ label: 'x', value: bx, decimals: 2, unit: 'm' }, { label: 'ẋ', value: sim.x[1], decimals: 2, unit: 'm/s' },
-        { label: 'ref', value: refNow, decimals: 2, unit: 'm' }, { label: 'θ', value: deg(tiltX), decimals: 1, unit: '°' }]);
+      stateBox(ctx, W, H, [{ label: 'x', value: bx, unit: 'm' }, { label: 'ẋ', value: sim.x[1], unit: 'm/s' },
+        { label: 'ref', value: refNow, unit: 'm' }, { label: 'θ', value: deg(tiltX), unit: '°' }]);
     }
   };
 
@@ -305,8 +295,8 @@
       else if (w === 'none') label = 'No control - set the gains or load LQR';
       else { label = w; colr = accent; }
       statusLine(ctx, label, colr, 't = ' + sim.t.toFixed(1) + ' s   F = ' + uForce.toFixed(1) + ' N', col);
-      stateBox(ctx, W, H, [{ label: 'x', value: state[0], decimals: 2, unit: 'm' }, { label: 'ẋ', value: state[1], decimals: 2, unit: 'm/s' },
-        { label: 'ref', value: refNowC, decimals: 2, unit: 'm' }, { label: 'θ', value: deg(state[2]), decimals: 1, unit: '°' }]);
+      stateBox(ctx, W, H, [{ label: 'x', value: state[0], unit: 'm' }, { label: 'ẋ', value: state[1], unit: 'm/s' },
+        { label: 'ref', value: refNowC, unit: 'm' }, { label: 'θ', value: deg(state[2]), unit: '°' }]);
     }
   };
 
@@ -325,7 +315,7 @@
   // Trim at 65 m/s level flight. controls.js uses a closed form that treats the stall blend
   // as exactly 1 (it is ≈ 0.92 at trim) and ignores T·sin α, so its "trim" slowly sinks and
   // slows. Here Newton's method starts from that closed form and solves V̇ = γ̇ = q̇ = 0 for
-  // (α, δe, T), so analyses linearise about a true equilibrium.
+  // (α, δe, T), so analyzes linearize about a true equilibrium.
   var TRIM = (function () {
     var V = 65, qbar = 0.5 * AC.rho * V * V, CLreq = AC.m * AC.g / (qbar * AC.S);
     var a = (CLreq - AC.CL0 + AC.CLde * AC.Cm0 / AC.Cmde) / (AC.CLa - AC.CLde * AC.Cma / AC.Cmde);
@@ -373,7 +363,7 @@
     noise: [0, 0, 0, 0, 1, 0],
     trim: TRIM,
     controllers: {
-      // Altitude PID → elevator (gains in degrees of elevator per metre; nose-up elevator
+      // Altitude PID → elevator (gains in degrees of elevator per meter; nose-up elevator
       // is negative δe, hence the sign). Thrust held at trim, as on /controls/.
       alt: { label: 'PID', channels: [
         { type: 'pid', input: 0, out: 4, sign: -Math.PI / 180, gains: { kp: 0.5, ki: 0.1, kd: 0.35 }, label: 'Altitude → elevator',
@@ -385,7 +375,7 @@
         { type: 'pid', input: 1, out: 0, sign: 1, gains: { kp: 300, ki: 60 }, label: 'Airspeed → throttle',
           ranges: { kp: [0, 1500], ki: [0, 400] } }] }
     },
-    refs: [{ type: 'wave', amp: 6, omega: 2 * Math.PI / 16, label: 'h', unit: 'm', idx: 4 },
+    refs: [{ type: 'wave', amp: 6, omega: 1.2 * 2 * Math.PI / 16, label: 'h', unit: 'm', idx: 4 },
            { type: 'hold', hold: 0, amp: 0, omega: 0, label: 'V', unit: 'm/s', idx: 0 }],
     states: [{ label: 'h (m)', f: function (x, u, p) { return x[4] - p.H0; } }, { label: 'V (m/s)', f: function (x) { return x[0] - TRIM.V; } },
              { label: 'θ (°)', f: function (x) { return deg(x[1] + x[2]); } }, { label: 'α (°)', f: function (x) { return deg(x[2]); } }],

@@ -58,13 +58,13 @@
   // Shared reference trajectory constants (used by all flight demos + renderer)
   // The band (17–29 m) sits just above the 5–12 m trees and inside the ground-anchored
   // view, so the trees stay on screen while the autopilot tracks.
-  var H_CENTER  = 23;   // m — reference altitude centre
+  var H_CENTER  = 23;   // m — reference altitude center
   var REF_AMP   = 6;    // m — sine amplitude → 12 m peak-to-peak
-  var REF_OMEGA = 2 * Math.PI / 16;  // rad/s — period = 16 s
+  var REF_OMEGA = 1.2 * 2 * Math.PI / 16;  // rad/s — period ≈ 13.3 s
   var flightRef = { type: 'wave' };  // 'wave' | 'step' (set by the Reference toggle)
-  // World scale, px per metre, on BOTH axes: the altitude view, the plane and trees,
+  // World scale, px per meter, on BOTH axes: the altitude view, the plane and trees,
   // and the scroll speed of the ground marks, trees and reference path all derive
-  // from it, so sizes agree with the altitude labels.
+  // from it, so sizes agree with the h and ref readouts.
   var PX_PER_M = 8;
   var PLANE_LEN_M = 8.3;   // Cessna 172 overall length
 
@@ -247,7 +247,7 @@
         (!document.documentElement.getAttribute('data-theme') &&
          window.matchMedia('(prefers-color-scheme: dark)').matches);
 
-      // Viewport: as many metres as fit at PX_PER_M, anchored at the ground so the trees
+      // Viewport: as many meters as fit at PX_PER_M, anchored at the ground so the trees
       // stay in view; it only rises if the plane climbs within VIEW_HEADROOM of the top.
       // hToY is rebound each frame so everything else (ref line, ticks, plane) just calls it.
       var VIEW_RANGE = (H - GROUND_PX) / PX_PER_M;
@@ -257,7 +257,7 @@
         return (H - GROUND_PX) * (1 - (altH - viewLo) / VIEW_RANGE);
       };
 
-      // Horizon sits at h=0 on the altitude scale, so it moves with the plane's altitude
+      // Horizon sits at h=0, so it moves with the plane's altitude
       // (off-canvas once the viewport is above the ground).
       var horizonY = hToY(0, H);
 
@@ -383,32 +383,9 @@
       drawPlane(planeScreenX, hToY(h, H), theta, isDark);
       drawTrees(W, horizonY, downrange, isDark, 1);   // front row passes in front of the plane
 
-      // Altitude scale (left side, clear of the δe bar) — ticks every 10 m
-      ctx.fillStyle = mutedColor;
-      ctx.font = '11px ' + cssVar('--mono');
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      var tickStep = 10;
-      var tickStart = Math.ceil(viewLo / tickStep) * tickStep;
-      for (var ah = tickStart; ah <= viewHi; ah += tickStep) {
-        var ay = hToY(ah, H);
-        if (ay < 12 || ay > H - 12) continue;
-        // Pill behind the label so it stays legible over the trees.
-        ctx.fillStyle = isDark ? 'rgba(11,15,20,0.72)' : 'rgba(245,246,248,0.82)';
-        ctx.beginPath(); ctx.roundRect(4, ay - 8, 38, 16, 4); ctx.fill();
-        ctx.fillStyle = mutedColor;
-        ctx.fillText(ah + 'm', 8, ay);
-        ctx.strokeStyle = borderColor;
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(45, ay);
-        ctx.lineTo(55, ay);
-        ctx.stroke();
-      }
-
       // Elevator indicator bar (right edge).
       // Shows the nose-up command about trim: Cmde < 0, so de below trim pitches the
-      // nose up and the thumb moves UP; centred at trim.
+      // nose up and the thumb moves UP; centered at trim.
       var eiFrac = clamp(((TRIM.de - de_rad) / deg2rad(15) + 1) / 2, 0, 1);  // 0 = full nose-down, 1 = full nose-up
       var eiX = W - 22, eiTop = 50, eiH = 80;
       ctx.fillStyle = bgSoft;
@@ -429,13 +406,13 @@
       ctx.textBaseline = 'bottom';
       ctx.fillText('δe', eiX, eiTop - 2);
 
-      // Telemetry overlay (bottom-right; the altitude scale owns the left edge)
+      // Telemetry overlay (bottom-right)
       drawStateBox(ctx, W, H, [
-        { label: 'ref', value: refH(simT), decimals: 1, unit: 'm' },
-        { label: 'h',   value: h, decimals: 1, unit: 'm' },
-        { label: 'V',   value: V, decimals: 1, unit: 'm/s' },
-        { label: 'α',   value: rad2deg(alpha), decimals: 1, unit: '°' },
-        { label: 'q',   value: rad2deg(q), decimals: 2, unit: '°/s' }
+        { label: 'ref', value: refH(simT), unit: 'm' },
+        { label: 'h',   value: h, unit: 'm' },
+        { label: 'V',   value: V, unit: 'm/s' },
+        { label: 'α',   value: rad2deg(alpha), unit: '°' },
+        { label: 'q',   value: rad2deg(q), unit: '°/s' }
       ]);
 
       // Stop-condition overlay

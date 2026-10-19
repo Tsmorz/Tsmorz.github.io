@@ -9,7 +9,7 @@ services:
   - name: Modern and classical controls
     blurb: PID and LQR designs, models fitted to your recorded data, and learning-based control, all tried in simulation first.
   - name: Sensor fusion
-    blurb: Kalman filters, IMU and GPS fusion, and SLAM that hold up on real, noisy sensors.
+    blurb: Kalman filters, IMU and GPS fusion, and SLAM, built to hold up on real, noisy sensors rather than only in clean simulation.
 
 cta:
   heading: Have a problem in mind?

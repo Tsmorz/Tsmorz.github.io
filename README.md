@@ -23,7 +23,7 @@ Run `task` (or `task --list`) to see them all.
 | Command | What it does |
 | --- | --- |
 | `task serve` | Run the site at <http://127.0.0.1:4000> with live reload. Extra flags go after `--`, e.g. `task serve -- --port 4001`. |
-| `task check:fast` | Quick checks with no build (a few seconds): `_data` content, swing-up port, lab maths. |
+| `task check:fast` | Quick checks with no build (a few seconds): `_data` content, swing-up port, lab math. |
 | `task check` | Everything CI runs: the quick checks, then build, JS references and internal links. Run it before you push. |
 | `task build` | Build into `_site/`. For a subpath: `task build BASEURL=/subpath`. |
 | `task clean` | Remove `_site/` and the Jekyll cache. |
@@ -50,13 +50,13 @@ Content lives in `_data/` and a few pages, not in HTML.
 
 ### Editing a controls lesson
 
-`_data/labs/controls.yml` is one course: a running problem (a mass on a spring) taken through every idea, then the same steps on a tilt table, an aircraft and a cart-pole. Teach a new idea on the mass first, then add what changes on the other plants. Every lesson follows the five ARIVA steps, and `task check:fast` fails if one is missing:
+`_data/labs/controls.yml` is one course: a running problem (a mass on a spring) taken through every idea, then some of the ideas on a tilt table, an aircraft and a cart-pole. Teach a new idea on the mass first, then add what changes on the other plants. Every lesson follows the five ARIVA steps, and `task check:fast` fails if one is missing:
 
 | Step | Field | What it is |
 | --- | --- | --- |
 | Arrive | `goal` | One sentence above the sim |
 | Reactivate | `needs`, `recall`, `predict` | The lessons it builds on (ids), a line tying back, and a prediction card before the sim |
-| Inform | `note` | A short, folded explanation (HTML); `maths` is an optional "Show the maths" |
+| Inform | `note` | A short, folded explanation (HTML); `maths` is an optional "Show the math" |
 | Process | `tasks` | A numbered list of things to do in the sim |
 | Evaluate | `check`, `recap` | Closing multiple-choice questions (`why` explains each wrong answer) and a "You can now" line |
 

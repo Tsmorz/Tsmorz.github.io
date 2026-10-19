@@ -12,7 +12,7 @@
     <div class="lab-map-rows" role="tablist" aria-label="Lessons">
       {%- assign ext_shown = false -%}
       {%- for d in L.demos %}
-      {%- if d.extend and ext_shown == false %}{% assign ext_shown = true %}<p class="lab-map-sep">Then the same steps on</p>{% endif %}
+      {%- if d.extend and ext_shown == false %}{% assign ext_shown = true %}<p class="lab-map-sep">Then some of these ideas on</p>{% endif %}
       <div class="lab-map-row" data-demo="{{ d.id }}">
         <span class="lab-map-label">{{ d.label }}</span>
         <div class="lab-map-pills">
@@ -67,7 +67,7 @@
     </div>
     {%- endif %}
     {%- if t.maths %}
-    <details class="lab-maths"><summary>Show the maths</summary>{{ t.maths }}</details>
+    <details class="lab-maths"><summary>Show the math</summary>{{ t.maths }}</details>
     {%- endif %}
     <div class="lab-check-slot"></div>
     {%- if t.recap %}<p class="lab-recap"><strong>You can now:</strong> {{ t.recap }}</p>{% endif %}

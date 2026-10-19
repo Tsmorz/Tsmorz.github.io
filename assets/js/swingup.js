@@ -461,7 +461,7 @@
 
   // Disturbance sliders
   (function () {
-    var delaySl = document.getElementById('su-delay'), delayAmt = document.getElementById('su-delay-amt');
+    var delaySl = document.getElementById('su-delay');
     var delayVal = document.getElementById('su-delay-val');
     var noiseSl = document.getElementById('su-noise'), noiseVal = document.getElementById('su-noise-val');
     function sync() {
@@ -469,13 +469,9 @@
       delayMs = ms;
       noiseSigma = noiseSl ? (parseFloat(noiseSl.value) || 0) : 0;
       if (delayVal) delayVal.textContent = Math.round(ms) + ' ms';
-      if (noiseVal) noiseVal.textContent = noiseSigma.toFixed(3);
+      if (noiseVal) noiseVal.textContent = noiseSigma.toFixed(2);
     }
-    if (delaySl) delaySl.addEventListener('input', function () { if (delayAmt) delayAmt.value = delaySl.value; sync(); });
-    if (delaySl && delayAmt) delayAmt.addEventListener('input', function () {
-      delaySl.value = clamp(parseFloat(delayAmt.value) || 0, 0, parseFloat(delaySl.max) || 100);
-      sync();
-    });
+    if (delaySl) delaySl.addEventListener('input', sync);
     if (noiseSl) noiseSl.addEventListener('input', sync);
     sync();
   })();
@@ -649,7 +645,7 @@
     view = { W: W, H: H, scale: scale, cx: cx, trackY: trackY };
     function sx(xm) { return cx + xm * scale; }
 
-    // Rail with hard stops where the cart centre reaches ±x_lim.
+    // Rail with hard stops where the cart center reaches ±x_lim.
     var railL = sx(-p.x_lim - cartHalf), railR = sx(p.x_lim + cartHalf);
     ctx.strokeStyle = strong; ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(railL, trackY); ctx.lineTo(railR, trackY); ctx.stroke();
@@ -736,13 +732,13 @@
 
     // State box, lower right (the shared panel from statebox.js)
     var rows = [
-      { label: 'x', value: state[0], decimals: 2, unit: 'm' },
-      { label: 'ẋ', value: state[1], decimals: 2, unit: 'm/s' }
+      { label: 'x', value: state[0], unit: 'm' },
+      { label: 'ẋ', value: state[1], unit: 'm/s' }
     ];
     for (var li = 0; li < meta.n_links; li++) {
-      rows.push({ label: 'θ' + (li + 1), value: state[2 + 2 * li] * 180 / Math.PI, decimals: 0, unit: '°' });
+      rows.push({ label: 'θ' + (li + 1), value: state[2 + 2 * li] * 180 / Math.PI, unit: '°' });
     }
-    rows.push({ label: 'F', value: applied, decimals: 1, unit: 'N' });
+    rows.push({ label: 'F', value: applied, unit: 'N' });
     window.drawStateBox(ctx, W, H, rows);
   }
 
@@ -818,7 +814,7 @@
       ctx.fillStyle = muted;
       ctx.fillText(s.label, PAD_L - 6, mid - 7);
       ctx.fillStyle = text;
-      ctx.fillText(cur.toFixed(s.lim === 180 ? 0 : 2), PAD_L - 6, mid + 7);
+      ctx.fillText((+cur.toFixed(1) === 0 ? 0 : cur).toFixed(1).replace('-', '\u2212'), PAD_L - 6, mid + 7);
     });
     if (hk >= 0 && dots.length) {
       var cx = PAD_L + hk * xStep;
@@ -871,14 +867,14 @@
     var tr = policy.trace;
 
     // Layout in design units (DW wide), scaled to fit.
-    var DW = 960, DH = 290, sc = Math.min(W / DW, H / DH);
+    var DW = 1000, DH = 290, sc = Math.min(W / DW, H / DH);
     ctx.save();
     ctx.translate((W - DW * sc) / 2, (H - DH * sc) / 2);
     ctx.scale(sc, sc);
 
     var gridY = 70, cellH = 6, cellU = 4;          // 16 x 6 = 96 px; 32 x 4 = 128 px
     var hs = side * cellH, us = side2 * cellU;
-    var x = 120, gap = 40;
+    var x = 152, gap = 40;                           // the embedding starts 40 px right of the input bars
     var boxes = [];                                 // {x, y, size, kind}
     function grid(vals, bx, by, n, cell, signed, label, sub) {
       var m = 1e-6, i;
@@ -900,7 +896,7 @@
       ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x1 - 5, y - 3.5); ctx.lineTo(x1 - 5, y + 3.5); ctx.closePath(); ctx.fill();
     }
 
-    // Inputs: ten labelled bars.
+    // Inputs: ten labeled bars.
     var rowH = 22, ix = 10, iy = 30;
     ctx.font = '11px ' + mono;
     for (var k = 0; k < tr.obs.length; k++) {
@@ -949,7 +945,13 @@
     ctx.fillRect(ox, f < 0 ? midY : midY - f * 48, 16, Math.abs(f) * 48);   // positive grows up from the zero line
     ctx.fillStyle = border; ctx.fillRect(ox - 3, midY, 22, 1);
     ctx.textAlign = 'left'; ctx.fillStyle = text; ctx.font = '600 13px ' + mono;
-    ctx.fillText(tr.force.toFixed(1) + ' N', ox + 26, midY + 4);
+    // The number sits in fixed columns (sign, two integer digits, point, one decimal, unit), so the decimal point never moves.
+    var fs = tr.force.toFixed(1); if (fs === '-0.0') fs = '0.0';
+    var isNeg = fs.charAt(0) === '-', parts = fs.replace('-', '').split('.');
+    var minusW = ctx.measureText('\u2212').width, digitW = ctx.measureText('0').width, pointX = ox + 26 + minusW + 2 * digitW;
+    ctx.textAlign = 'right'; ctx.fillText(parts[0], pointX, midY + 4);                 // integer part, right-aligned at the point
+    if (isNeg) ctx.fillText('\u2212', pointX - parts[0].length * digitW, midY + 4);    // the sign hugs the first digit
+    ctx.textAlign = 'left'; ctx.fillText('.' + parts[1] + ' N', pointX, midY + 4);
     ctx.textAlign = 'center'; ctx.font = '600 12px ' + font;
     ctx.fillText('Force', ox + 8, gridY + hs + 20);
     ctx.fillStyle = muted; ctx.font = '11px ' + font;

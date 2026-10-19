@@ -301,6 +301,7 @@
     return { ctx: ctx, W: W, H: H };
   }
   function label(ctx, s, x, y, color, align, size) { ctx.fillStyle = color; ctx.font = (size || 11) + 'px system-ui, sans-serif'; ctx.textAlign = align || 'left'; ctx.textBaseline = 'top'; ctx.fillText(s, x, y); }
+  function axisNum(v) { return Math.abs(v) >= 100 ? v.toFixed(0) : (+v.toFixed(1) === 0 ? 0 : v).toFixed(1); }   // plot axis ends: one decimal
   function num(v) { var a = Math.abs(v); return a === 0 ? '0' : a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 0.01 ? v.toFixed(2) : v.toExponential(1); }
 
   // Stacked lanes sharing a time axis. lane = { name, series: [{ x, y, color, dash, clip }] }; series with clip
@@ -324,7 +325,7 @@
       });
       ctx.restore();
       label(ctx, l.name, x0 + 4, y0 + 2, col.text, 'left', 11);
-      label(ctx, num(hi), x0 - 4, y0 - 1, col.muted, 'right', 9); label(ctx, num(lo), x0 - 4, y1 - 9, col.muted, 'right', 9);
+      label(ctx, axisNum(hi), x0 - 4, y0 - 1, col.muted, 'right', 9); label(ctx, axisNum(lo), x0 - 4, y1 - 9, col.muted, 'right', 9);
     });
     label(ctx, '0', x0, c.H - 13, col.muted, 'center', 9); label(ctx, num(tmax) + ' s', x1, c.H - 13, col.muted, 'right', 9);
   }
@@ -450,7 +451,7 @@
     });
     L.push({ name: P.uNames[0] + (ok && ctrl ? ' (LQR effort)' : ' (input)'), series: [{ x: tt, y: sim.hu.map(function (r) { return r[0]; }), color: col.v1 }] });
     lanes(c3, L, 'Live simulation of the fitted model' + (ok && ctrl ? ' under LQR' : ' with no control') + ' (time in model seconds)');
-    var msg = !ok ? 'This LQR does not stabilise the model: raise a Q or lower R, or check the model.' : !S.ss ? 'No steady state holds ' + P.sNames[j] + ' constant, so it cannot be tracked: the controller only regulates. Pick another state.' : sim.blown ? 'The states ran away and were reset to the operating point.' : '';
+    var msg = !ok ? 'This LQR does not stabilize the model: raise a Q or lower R, or check the model.' : !S.ss ? 'No steady state holds ' + P.sNames[j] + ' constant, so it cannot be tracked: the controller only regulates. Pick another state.' : sim.blown ? 'The states ran away and were reset to the operating point.' : '';
     if (msg) label(c3.ctx, msg, c3.W - 12, c3.H - 30, col.v3, 'right', 11);
   }
 
@@ -469,7 +470,7 @@
     var L = P.sNames.map(function (nm, j) {
       return { name: nm + '  (fit ' + num(M.fit[j]) + '%)', series: [{ x: P.t, y: P.X.map(function (r) { return r[j]; }), color: col.muted }, { x: t1, y: M.pred.map(function (r) { return r[j] + M.xm[j]; }), color: pal[j % 4], dash: [4, 3] }] };
     }).concat(P.uNames.map(function (nm, j) { return { name: nm + ' (input)', series: [{ x: P.t, y: P.U.map(function (r) { return r[j]; }), color: col.v2 }] }; }));
-    lanes(c1, L, 'Data (grey) and the model\'s one-step prediction (dashed)');
+    lanes(c1, L, 'Data (gray) and the model\'s one-step prediction (dashed)');
     // 2. poles
     zplane(c2, M.eig, S.lq ? S.lq.eig : null);
     // 3. the live simulation (drawn every frame by drawSim)

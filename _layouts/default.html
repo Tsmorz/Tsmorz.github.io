@@ -46,6 +46,15 @@
               <li><a href="{{ '/controls/fit/' | relative_url }}" {% if p contains '/controls/fit' %}aria-current="page"{% endif %}>Custom data</a></li>
             </ul>
           </li>
+          <li class="nav-menu">
+            <a href="{{ '/recipes/' | relative_url }}" {% if p contains '/recipes' %}aria-current="page"{% endif %}>Recipes</a>
+            <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="recipes-menu" aria-label="Recipes pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+            <ul class="nav-menu-list" id="recipes-menu">
+              {%- for r in site.data.recipes %}
+              <li><a href="{{ '/recipes/' | relative_url }}#{{ r.id }}">{{ r.name }}</a></li>
+              {%- endfor %}
+            </ul>
+          </li>
           <li><a href="{{ '/solutions/' | relative_url }}" {% if p contains '/solutions' %}aria-current="page"{% endif %}>Solutions</a></li>
         </ul>
         <button class="nav-burger" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Menu"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path class="nb-open" d="M3 6h14M3 10h14M3 14h14"/><path class="nb-close" d="M5 5l10 10M15 5L5 15"/></svg></button>

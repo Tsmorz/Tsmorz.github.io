@@ -1,9 +1,10 @@
 // State/units panel for the lower right of a sim canvas, shared by /controls/ and the swing-up page.
 //
-//   drawStateBox(ctx, W, H, [{ label: 'x', value: 0.123, decimals: 2, unit: 'm' }, ...])
+//   drawStateBox(ctx, W, H, [{ label: 'x', value: 0.123, unit: 'm' }, ...])
 //
-// Integer parts are right-aligned and fractions left-aligned at one x, so the decimal points
-// stack; the units sit in their own column just after the widest fraction.
+// Every value shows one decimal. Integer parts are right-aligned and fractions left-aligned at
+// one x, so the decimal points stack; the integer column always has room for a minus sign, so
+// nothing moves when a value goes negative. The units sit in their own column after the fractions.
 (function () {
   'use strict';
 
@@ -18,8 +19,9 @@
     ctx.save();
     ctx.font = '12px ' + css('--mono');
     var parts = rows.map(function (r) {
-      var s = r.value.toFixed(r.decimals);
-      if (/^-0(\.0+)?$/.test(s)) s = s.slice(1);              // no "-0.00"
+      var s = r.value.toFixed(1);
+      if (s === '-0.0') s = '0.0';                            // no "-0.0"
+      s = s.replace('-', '\u2212');
       var dot = s.indexOf('.');
       return {
         label: r.label,
@@ -31,7 +33,10 @@
     function widest(key) {
       return Math.max.apply(null, parts.map(function (p) { return ctx.measureText(p[key]).width; }));
     }
-    var labelW = widest('label'), intW = widest('int'), fracW = widest('frac'), unitW = widest('unit');
+    // Width of the widest integer part without its sign, plus a sign's worth of room, so negatives fit in place.
+    var minusW = ctx.measureText('\u2212').width;
+    var intW = minusW + Math.max.apply(null, parts.map(function (p) { return ctx.measureText(p.int.replace('\u2212', '')).width; }));
+    var labelW = widest('label'), fracW = widest('frac'), unitW = widest('unit');
     var bw = Math.ceil(PAD_X * 2 + labelW + GAP + intW + fracW + (unitW ? GAP + unitW : 0));
     var bh = rows.length * LH + 10;
     var bx = W - bw - 10, by = H - bh - 10;

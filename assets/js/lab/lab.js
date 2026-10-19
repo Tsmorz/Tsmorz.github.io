@@ -11,7 +11,7 @@
 // Controls: mode, hint, freq, view, channel, reference, gains, controller, delay, noise, limit,
 //           margins, verify, mimo, sysid, idrun, record, estimator, sampling, discretize, ctrlrate,
 //           requirements, score, reset, restart
-// All maths is in LabCore (lab-core.js); plants and their pictures in LabPlants.
+// All math is in LabCore (lab-core.js); plants and their pictures in LabPlants.
 (function () {
   'use strict';
   if (typeof document === 'undefined') return;
@@ -37,6 +37,7 @@
   function fmt(v, d) { var s = v.toFixed(d); return /^-0(\.0+)?$/.test(s) ? s.slice(1) : s; }
   function fmtW(w) { return w < 1 ? fmt(w, 2) : w < 10 ? fmt(w, 1) : fmt(w, 0); }
   function fmtG(v) { var a = Math.abs(v); return a >= 100 ? fmt(v, 0) : a >= 10 ? fmt(v, 1) : fmt(v, 2); }
+  function fmtAx(v) { return Math.abs(v) >= 100 ? fmt(v, 0) : fmt(v, 1); }   // plot readouts: one decimal
   var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var col = {};
   function readColors() {
@@ -199,7 +200,7 @@
       ctx.strokeStyle = tokens[k % 4]; ctx.lineWidth = 1.8; ctx.beginPath();
       d.forEach(function (v, i) { var x = x0 + (i + CAP - d.length) / (CAP - 1) * (x1 - x0); if (i) ctx.lineTo(x, Y(v)); else ctx.moveTo(x, Y(v)); }); ctx.stroke();
       text(ctx, sp.label, 6, y0 + 2, tokens[k % 4], { size: 11 });
-      if (d.length) text(ctx, fmtG(d[d.length - 1]), 6, y0 + 16, col.muted, { size: 10, mono: true, w: '400' });
+      if (d.length) text(ctx, fmtAx(d[d.length - 1]), 6, y0 + 16, col.muted, { size: 10, mono: true, w: '400' });
     });
   };
 
@@ -209,8 +210,8 @@
     keys.forEach(function (k) { hc[k].forEach(function (v) { m = Math.max(m, Math.abs(v)); }); }); m *= 1.1;
     var Y = function (v) { return (y0 + y1) / 2 - clamp(v / m, -1, 1) * (y1 - y0) / 2; };
     ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.stroke();
-    text(ctx, '+' + fmtG(m), x0 - 4, y0 - 2, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
-    text(ctx, '−' + fmtG(m), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, '+' + fmtAx(m), x0 - 4, y0 - 2, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, '−' + fmtAx(m), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
     var names = { p: 'P', i: 'I', d: 'D', total: 'Total', kx: 'k·x', kv: 'k·ẋ', kth: 'k·θ', kw: 'k·θ̇', net: 'Network' };
     var colors = [col.viz1, col.viz2, col.viz3, col.viz4], lx = x0 + 8;
     keys.forEach(function (k, i) {
@@ -229,8 +230,8 @@
     function Y(v) { return y1 - (clamp(v, yr[0], yr[1]) - yr[0]) / (yr[1] - yr[0]) * (y1 - top); }
     ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, top); ctx.lineTo(x0, y1); ctx.lineTo(x1, y1); ctx.stroke();
     if (yr[0] < 0 && yr[1] > 0) { ctx.save(); ctx.strokeStyle = col.border; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke(); ctx.restore(); }
-    text(ctx, fmtG(yr[1]), x0 - 4, top, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
-    text(ctx, fmtG(yr[0]), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, fmtAx(yr[1]), x0 - 4, top, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
+    text(ctx, fmtAx(yr[0]), x0 - 4, y1 - 10, col.muted, { align: 'right', size: 10, mono: true, w: '400' });
     series.forEach(function (s) {
       if (!s.data.length) return;
       ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 2; ctx.setLineDash(s.dash || []); ctx.beginPath();
@@ -398,8 +399,8 @@
     var nq = ch.nyqc, N = nq.N;
     var circ = N === 0 ? 'The curve never circles −1.' : 'The curve circles −1 ' + (Math.abs(N) === 1 ? 'once ' : Math.abs(N) + ' times ') + (N > 0 ? 'clockwise.' : 'counterclockwise.');
     notes(ctx, lay.notes, [
-      c.W >= 560 ? ['Each point is L(jω): distance from the centre is the gain, angle is the phase. Arrows show ω rising; dashed is negative ω. Gains above 1 are on a log scale.', col.muted, '400'] : null,
-      [circ + (nq.P ? ' The open loop has ' + nq.P + ' unstable pole' + (nq.P > 1 ? 's' : '') + ', cancelled only by circling −1 counterclockwise that many times.' : '')],
+      c.W >= 560 ? ['Each point is L(jω): distance from the center is the gain, angle is the phase. Arrows show ω rising; dashed is negative ω. Gains above 1 are on a log scale.', col.muted, '400'] : null,
+      [circ + (nq.P ? ' The open loop has ' + nq.P + ' unstable pole' + (nq.P > 1 ? 's' : '') + ', canceled only by circling −1 counterclockwise that many times.' : '')],
       ['Unstable closed-loop poles = ' + nq.P + ' + ' + N + ' = ' + nq.Z + (nq.Z === 0 ? ': stable.' : ': unstable.'), nq.Z === 0 ? col.accent : col.bad]
     ]);
   };
@@ -681,7 +682,7 @@
     if (narrow) return;
     notes(ctx, { x0: bx + side + 22, x1: c.W - 10, y: by }, [
       ['Dashed box: what the two loops\' own gain margins predict, each checked alone (break one loop, keep the other closed).', col.muted, '400'],
-      ['Coloured map: the truth, every pair of gain errors checked together.', col.muted, '400'],
+      ['Colored map: the truth, every pair of gain errors checked together.', col.muted, '400'],
       [mm.note || 'Where they agree, one-loop-at-a-time analysis is enough. Where the map is smaller than the box, the loops interact and single-loop margins overstate the safety.', col.text]
     ]);
   };
@@ -749,7 +750,7 @@
       });
       text(ctx, title, x0 + 8, y0 + 1, col.text, { size: 11 });
     }
-    draw(4, mid - 4, function (v) { return 20 * Math.log10(C.cabs(v)); }, -80, 20, 'Gain (dB): true plant (thick grey) vs fitted model (dashed)', 20);
+    draw(4, mid - 4, function (v) { return 20 * Math.log10(C.cabs(v)); }, -80, 20, 'Gain (dB): true plant (thick gray) vs fitted model (dashed)', 20);
     draw(mid + 4, c.H - 18, function (v, prev) { var a = C.carg(v) * 180 / Math.PI; if (prev !== null) a = prev + C.wrap180(a - prev); return a; }, -360, 0, 'Phase (°)', 90);
     [0.01, 0.1, 1, 10].forEach(function (om) { text(ctx, String(om), X(om), c.H - 14, col.muted, { align: 'center', size: 10, mono: true, w: '400' }); });
   };
@@ -829,7 +830,7 @@
     text(ctx, title, x, 4, col.text, { size: 11 });
     ctx.strokeStyle = withAlpha(col.muted, 0.8); ctx.lineWidth = 1; ctx.beginPath(); h.forEach(function (v, i) { if (i) ctx.lineTo(X(i), Yh(v)); else ctx.moveTo(X(i), Yh(v)); }); ctx.stroke();
     ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = col.accent; ctx.lineWidth = 2; ctx.beginPath(); hh.forEach(function (v, i) { if (i) ctx.lineTo(X(i), Yh(v)); else ctx.moveTo(X(i), Yh(v)); }); ctx.stroke(); ctx.restore();
-    text(ctx, 'grey: measured   dashed: order-' + E.order + ' model', x, y1 + 3, col.muted, { size: 10, w: '400' });
+    text(ctx, 'gray: measured   dashed: order-' + E.order + ' model', x, y1 + 3, col.muted, { size: 10, w: '400' });
   }
   V['id-era'] = function (c, lab) { var E = idState(lab).era; if (E) drawEra(c, lab, E, 'Impulse response: the tap, measured'); };
 
@@ -847,11 +848,11 @@
       text(ctx, { M: 'mass m', c: 'damping c', k: 'spring k' }[nm], x + bw * 0.47, y1 + 4, col.text, { align: 'center', size: 11 });
       text(ctx, fmt(est, 3) + ' (' + (err >= 0 ? '+' : '') + fmt(err, 1) + '%)', x + bw * 0.62, y1 - Hh(est) - 16, Math.abs(err) < 5 ? col.accent : col.text, { align: 'center', size: 11, mono: true });
     });
-    text(ctx, 'grey: true   colour: estimate', c.W - 12, 4, col.muted, { align: 'right', size: 10, w: '400' });
+    text(ctx, 'gray: true   color: estimate', c.W - 12, 4, col.muted, { align: 'right', size: 10, w: '400' });
   };
 
   // The states Ho–Kalman builds are not position and velocity: any invertible T gives the same input-output
-  // behaviour. For a 2nd-order fit, compare the realized states after the tap with T × the true (position, velocity).
+  // behavior. For a 2nd-order fit, compare the realized states after the tap with T × the true (position, velocity).
   function hiddenStates(lab, E) {
     if (E.hid && E.hid.order === E.order && E.hid.model === E.model) return E.hid;
     if (E.order !== 2) return (E.hid = { order: E.order, model: E.model, none: true });
@@ -1175,7 +1176,7 @@
     };
   };
 
-  /* ---- discretisation ---- */
+  /* ---- discretization ---- */
   var DM = { zoh: 'Zero-order hold', fe: 'Forward Euler', be: 'Backward Euler', tu: 'Tustin' };
   function dmColors() { return { zoh: col.accent, fe: col.bad, be: col.viz1, tu: col.viz3 }; }
   function sampState(lab) { return lab.samp || (lab.samp = { fs: 4, hold: 'zoh', bits: 0 }); }
@@ -1195,7 +1196,7 @@
     ctx.strokeStyle = col.border; ctx.beginPath(); ctx.moveTo(x0, Y(0)); ctx.lineTo(x1, Y(0)); ctx.stroke();
     ctx.strokeStyle = withAlpha(col.muted, 0.7); ctx.lineWidth = 1.5; ctx.beginPath();
     tt.forEach(function (t, i) { if (i) ctx.lineTo(X(t), Y(yy[i])); else ctx.moveTo(X(t), Y(yy[i])); }); ctx.stroke();
-    // samples on an absolute time grid, quantised like an ADC with a ±(1.2·amplitude) range
+    // samples on an absolute time grid, quantized like an ADC with a ±(1.2·amplitude) range
     var levels = S.bits ? Math.pow(2, S.bits) : 0, full = amp * 1.2, samples = [];
     for (var k = Math.ceil(t0 / Ts); k * Ts <= tEnd; k++) {
       var ts = k * Ts, j = Math.min(tt.length - 1, Math.max(0, Math.round((ts - tt[0]) / (H.dt || 0.01)))), v = yy[j];
@@ -1223,7 +1224,7 @@
         if (i) ctx.lineTo(X(t), Y(yv)); else ctx.moveTo(X(t), Y(yv)); }
       ctx.stroke(); ctx.restore();
     }
-    text(ctx, 'Position: continuous (grey), samples every ' + (Ts < 1 ? fmt(Ts * 1000, 0) + ' ms' : fmt(Ts, 2) + ' s') + (S.hold === 'zoh' ? ', held (zero-order hold)' : S.hold === 'foh' ? ', joined by straight lines' : '') + (S.bits ? ', ' + S.bits + '-bit' : ''), x0 + 6, 2, col.text, { size: 11 });
+    text(ctx, 'Position: continuous (gray), samples every ' + (Ts < 1 ? fmt(Ts * 1000, 0) + ' ms' : fmt(Ts, 2) + ' s') + (S.hold === 'zoh' ? ', held (zero-order hold)' : S.hold === 'foh' ? ', joined by straight lines' : '') + (S.bits ? ', ' + S.bits + '-bit' : ''), x0 + 6, 2, col.text, { size: 11 });
     if (aliased) text(ctx, 'Aliased: the samples trace a ' + fmt(Math.abs(fa), 2) + ' Hz wave (dashed) that isn\'t there', x0 + 6, c.H - 16, col.bad, { size: 11 });
     else text(ctx, 'last ' + fmt(win, 1) + ' s', x1, c.H - 16, col.muted, { size: 10, align: 'right', w: '400' });
   };
@@ -1306,7 +1307,7 @@
       if (T > 0.08) resp[m].forEach(function (v, k) { ctx.fillStyle = cols[m]; ctx.beginPath(); ctx.arc(X(k * T), Y(v), 2.5, 0, 7); ctx.fill(); });
     });
     ctx.restore();
-    text(ctx, 'Step response: continuous (thick grey) vs each discrete model at T = ' + fmt(T, 2) + ' s', x0 + 6, 2, col.text, { size: 11 });
+    text(ctx, 'Step response: continuous (thick gray) vs each discrete model at T = ' + fmt(T, 2) + ' s', x0 + 6, 2, col.text, { size: 11 });
     var lx = x0 + 6;
     ['zoh', 'fe', 'be', 'tu'].forEach(function (m) { if (D.method !== 'all' && D.method !== m) return; ctx.font = '600 11px ' + col.font; ctx.fillStyle = cols[m]; ctx.fillText(DM[m], lx, y1 - 14); lx += ctx.measureText(DM[m]).width + 14; });
   };
@@ -1329,7 +1330,7 @@
     });
     ctx.save(); ctx.strokeStyle = col.bad; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(wN), y0); ctx.lineTo(X(wN), y1); ctx.stroke(); ctx.restore();
     text(ctx, 'Nyquist ω = π/T', X(wN) - 4, y0 + 2, col.bad, { align: 'right', size: 10 });
-    text(ctx, 'Gain (dB): continuous (thick grey) vs discrete, up to the Nyquist frequency', x0 + 6, 2, col.text, { size: 11 });
+    text(ctx, 'Gain (dB): continuous (thick gray) vs discrete, up to the Nyquist frequency', x0 + 6, 2, col.text, { size: 11 });
     [0.1, 1, 10].forEach(function (om) { text(ctx, String(om), X(om), c.H - 14, col.muted, { align: 'center', size: 10, mono: true, w: '400' }); });
   };
 
@@ -1507,7 +1508,7 @@
   };
   CTRL.noise = function (panel, lab, tab) {
     var mx = tab.noiseMax || 0.05;
-    slider(panel, tab.id + '-noise', 'Sensor noise σ', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; lab.estDirty = true; changed(lab); });
+    slider(panel, tab.id + '-noise', 'Sensor noise <span class="sigma">σ</span>', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; lab.estDirty = true; changed(lab); });
   };
   CTRL.limit = function (panel, lab, tab) {
     var cap = lab.p.Fcap || 60;   // a plant with Fcap has no "none" end: its force is always clamped
