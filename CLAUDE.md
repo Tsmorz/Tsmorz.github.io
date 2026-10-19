@@ -41,8 +41,8 @@ _data/*.yml              all page content that repeats
 _layouts/                default (nav, theme toggle, footer) and page (+ title header, .prose)
 _includes/               project-card, learning-path, lab: take params, not globals
 assets/css/main.css      hand-written, token-based, no build step
-assets/js/site.js        theme toggle, tag filter, nav menus, hero symbols, and the footer cat (an orange tabby that
-                         walks along the footer line 30 s after load; sprites are letter grids in the JS, colors in main.css)
+assets/js/site.js        theme toggle, tag filter, nav menus, hero symbols
+assets/js/cat.js         the footer cat: a pixel-art orange tabby that lives on the footer line (see below)
 assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab and swingup.js (load first)
 assets/js/swingup.js     /controls/swingup/: double cart-pole + goal-conditioned TQC policy in vanilla JS
 assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax + Bu, design a discrete LQR; FitCore has no DOM
@@ -75,6 +75,17 @@ plant it was trained on, so **`swingup.js` hard-codes no physical constants**: e
 The dynamics are a line-for-line port of `n_cartpole/env/dynamics.py`. The page opens with the network on (button "AI") and Random targets cycling, so the ~2 MB weights download on load; Manual
 is a click away. `script/test-swingup` guards the port (JS vs torch actions, JS vs Python trajectory,
 closed-loop runs of every transition); if it fails after a re-export, the port has drifted.
+
+### The footer cat (`assets/js/cat.js`)
+
+30 s after load an orange tabby walks in along the footer line, washes, yawns, circles and curls up above the copyright
+with its tail wrapped round its front, purring (a one-pixel buzz). Every 30 s it wakes, stretches, walks to the screen edge
+it faces, scratches it, turns and walks to the other end of the footer to wash and sleep again, forever. Hover: content
+`^` eyes; click: a slow blink and a heart. It is pixel art drawn from a **rig** (body, head, two-bone IK legs, a tail
+chain) posed by a timeline of acts; each frame is drawn 4x fine on an offscreen canvas and every art pixel takes the
+majority palette color of its block, so it stays crisp. Eye and nose are stamped as exact pixels; curling up and sleeping
+are hand-drawn letter-grid sprites (`CURL1`, `CURL2`, `SLEEP_IN`, `SLEEP_OUT`). It draws at 15 fps and its clock only runs
+while the footer is on screen; reduced motion shows it asleep. Coat colors are CSS variables on `.cat-lane` in main.css.
 
 ### Recipes (`/recipes/`)
 
