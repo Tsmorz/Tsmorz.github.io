@@ -64,7 +64,7 @@ permalink: /controls/swingup/
         <div class="range-row"><label class="range-lbl visually-hidden" for="su-delay-amt">Delay amount (ms)</label><input type="number" id="su-delay-amt" class="range-input" value="0" min="0" max="100" step="10"></div>
       </div>
       <div class="pid-group">
-        <label>Sensor noise &#963; <span id="su-noise-val">0.000</span></label>
+        <label>Sensor noise <span class="sigma">&#963;</span> <span id="su-noise-val">0.000</span></label>
         <input type="range" id="su-noise" min="0" max="0.05" step="0.005" value="0">
       </div>
       <p class="panel-hint">Delay holds back the force; noise corrupts what the network measures, never the force. It was trained with neither, so about 50 ms of delay or noise above 0.03 usually breaks it.</p>

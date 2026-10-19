@@ -1508,7 +1508,7 @@
   };
   CTRL.noise = function (panel, lab, tab) {
     var mx = tab.noiseMax || 0.05;
-    slider(panel, tab.id + '-noise', 'Sensor noise σ', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; lab.estDirty = true; changed(lab); });
+    slider(panel, tab.id + '-noise', 'Sensor noise <span class="sigma">σ</span>', 0, mx, mx / 100, lab.noise, function (v) { return fmt(v, mx >= 1 ? 2 : 3) + (tab.noiseUnit ? ' ' + tab.noiseUnit : ''); }, function (v) { lab.noise = v; lab.estDirty = true; changed(lab); });
   };
   CTRL.limit = function (panel, lab, tab) {
     var cap = lab.p.Fcap || 60;   // a plant with Fcap has no "none" end: its force is always clamped
