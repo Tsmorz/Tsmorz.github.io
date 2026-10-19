@@ -1,6 +1,8 @@
 // RecipeCore + the /recipes/ page. Every amount in _data/recipes.yml is a weight in grams, so the recipes run on a
 // kitchen scale; RecipeCore turns grams, °C, cm and mL into the visitor's units. It has no DOM, so script/test-recipes
-// can load it in Node. The page keeps the unit choice and the ticked boxes in localStorage.
+// can load it in Node. The page keeps the unit choice, each recipe's scale and the ticked boxes in localStorage.
+// Scaling multiplies every ingredient, spoon measure and [[i:]], [[n:]], [[gx:]] or [[mlx:]] token; [[g:]], [[ml:]], [[t:]] and [[len:]]
+// are per piece (a ball of dough, a ramekin, the oven) and stay put.
 (function (root) {
   'use strict';
 
@@ -33,7 +35,27 @@
     return ml >= 3000 ? num(Math.round(ml / GAL * 4) / 4, 2) + ' gal' : num(ml / FLOZ, 0) + ' fl oz';
   }
 
+  // A count or spoon measure in kitchen fractions: 2.5 -> "2½", 0.75 -> "¾"; anything under a sixteenth is "0".
+  var FRACS = [[0, ''], [1 / 8, '⅛'], [1 / 4, '¼'], [1 / 3, '⅓'], [3 / 8, '⅜'], [1 / 2, '½'], [5 / 8, '⅝'], [2 / 3, '⅔'], [3 / 4, '¾'], [7 / 8, '⅞'], [1, '']];
+  function frac(x) {
+    if (x >= 10) return String(Math.round(x));
+    var whole = Math.floor(x), best = FRACS[0];
+    FRACS.forEach(function (f) { if (Math.abs(x - whole - f[0]) < Math.abs(x - whole - best[0])) best = f; });
+    if (best[0] === 1) { whole++; best = FRACS[0]; }
+    return (whole || !best[1] ? String(whole) : '') + best[1];
+  }
+
+  // "1¼ tsp" times 2 -> "2½ tsp". Text with no leading number is left alone.
+  var LEAD = /^(\d+(?:\.\d+)?)?\s*([⅛¼⅓⅜½⅝⅔¾⅞])?/;
+  function spoon(text, scale) {
+    var m = LEAD.exec(text || ''), s = scale || 1;
+    if (!m[0] || s === 1) return text;
+    var v = (m[1] ? Number(m[1]) : 0) + (m[2] ? FRACS.filter(function (f) { return f[1] === m[2]; })[0][0] : 0), out = frac(v * s);
+    return out === '0' ? 'a pinch' : out + text.slice(m[0].length).replace(/^(?=\S)/, ' ');
+  }
+
   var UNITS = { g: mass, t: temp, len: length, ml: volume };
+  var SCALED = { n: frac, gx: mass, mlx: volume };
   var TOKEN = /\[\[(\w+):([^\]]*)\]\]/g;
 
   // "Heat to [[t:175]]." -> [{ text: 'Heat to ' }, { kind: 't', arg: '175' }, { text: '.' }]
@@ -49,25 +71,29 @@
     return out;
   }
 
-  // The amount of an ingredient: its weight, or its `qty` text when it can't be weighed.
-  function amount(item, unit) { return item.g != null ? mass(item.g, unit) : String(item.qty || ''); }
+  // The amount of an ingredient at a scale: its weight, or its `qty` text (which may hold an [[n:]] count) when it can't be weighed.
+  function amount(item, unit, scale) {
+    return item.g != null ? mass(item.g * (scale || 1), unit) : render(String(item.qty || ''), unit, null, scale);
+  }
 
   // One token as text. `find(id)` returns an ingredient (for [[i:id]]); a range "22-26" shares one unit: "22–26 °C".
-  function convert(kind, arg, unit, find) {
-    if (kind === 'i') { var it = find && find(arg); return it ? amount(it, unit) : null; }
-    var f = UNITS[kind], m = /^(-?[\d.]+)(?:-([\d.]+))?$/.exec(arg.trim());
+  // [[n:4]] is a count and [[gx:]], [[mlx:]] are grams and mL, all multiplied by the scale.
+  function convert(kind, arg, unit, find, scale) {
+    var s = scale || 1;
+    if (kind === 'i') { var it = find && find(arg); return it ? amount(it, unit, s) : null; }
+    var f = UNITS[kind] || SCALED[kind], x = SCALED[kind] ? s : 1, m = /^(-?[\d.]+)(?:-([\d.]+))?$/.exec(arg.trim());
     if (!f || !m) return null;
-    var a = f(Number(m[1]), unit);
+    var a = f(Number(m[1]) * x, unit);
     if (m[2] === undefined) return a;
-    var b = f(Number(m[2]), unit), ua = /\s(\S+)$/.exec(a), ub = /\s(\S+)$/.exec(b);
+    var b = f(Number(m[2]) * x, unit), ua = /\s(\S+)$/.exec(a), ub = /\s(\S+)$/.exec(b);
     return (ua && ub && ua[1] === ub[1] ? a.slice(0, a.length - ua[0].length) : a) + '–' + b;
   }
 
   // A whole string with its tokens replaced; an unknown token stays visible as "?" so a typo shows up in the tests.
-  function render(text, unit, find) {
+  function render(text, unit, find, scale) {
     return split(text).map(function (p) {
       if (p.text !== undefined) return p.text;
-      var v = convert(p.kind, p.arg, unit, find);
+      var v = convert(p.kind, p.arg, unit, find, scale);
       return v === null ? '?' : v;
     }).join('');
   }
@@ -80,7 +106,7 @@
     return null;
   }
 
-  var RecipeCore = { mass: mass, temp: temp, length: length, volume: volume, split: split, amount: amount, convert: convert, render: render, find: find, GRAMS_PER_OZ: OZ };
+  var RecipeCore = { mass: mass, temp: temp, length: length, volume: volume, frac: frac, spoon: spoon, split: split, amount: amount, convert: convert, render: render, find: find, GRAMS_PER_OZ: OZ };
   if (typeof module !== 'undefined' && module.exports) module.exports = RecipeCore;
   root.RecipeCore = RecipeCore;
 
@@ -91,11 +117,17 @@
 
   var recipes = JSON.parse(dataEl.textContent);
   var KEY = 'recipes';
-  var state = { unit: 'metric', checks: {} };
-  try { var saved = JSON.parse(localStorage.getItem(KEY) || '{}'); if (saved.unit === 'imperial') state.unit = 'imperial'; if (saved.checks) state.checks = saved.checks; } catch (e) {}
+  var state = { unit: 'metric', checks: {}, scale: {} };
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (saved.unit === 'imperial') state.unit = 'imperial';
+    if (saved.checks) state.checks = saved.checks;
+    if (saved.scale) state.scale = saved.scale;
+  } catch (e) {}
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 
   var current = recipes[0];
+  function scaleOf(r) { var s = Number(state.scale[r.id]); return s > 0 ? s : 1; }
   function fromHash() {
     var id = decodeURIComponent(location.hash.replace(/^#/, ''));
     return recipes.filter(function (r) { return r.id === id; })[0] || recipes[0];
@@ -112,7 +144,7 @@
   function rich(parent, text, recipe) {
     split(text).forEach(function (p) {
       if (p.text !== undefined) { parent.appendChild(document.createTextNode(p.text)); return; }
-      var v = convert(p.kind, p.arg, state.unit, function (id) { return find(recipe, id); });
+      var v = convert(p.kind, p.arg, state.unit, function (id) { return find(recipe, id); }, scaleOf(recipe));
       parent.appendChild(el('span', 'rc-val', v === null ? '?' : v));
     });
   }
@@ -152,7 +184,7 @@
   }
 
   function build() {
-    var r = current;
+    var r = current, sc = scaleOf(r);
     countEls = {};
     view.textContent = '';
 
@@ -162,6 +194,7 @@
     var meta = el('p', 'rc-meta');
     if (r.makes) { var mk = el('span'); rich(mk, r.makes, r); meta.appendChild(mk); }
     if (r.time) { var tm = el('span'); rich(tm, r.time, r); meta.appendChild(tm); }
+    if (sc !== 1) meta.appendChild(el('span', 'rc-scaled', 'scaled ×' + num(sc, 2)));
     head.appendChild(meta);
     view.appendChild(head);
 
@@ -173,10 +206,10 @@
       var ul = el('ul', 'rc-list');
       g.items.forEach(function (it, ii) {
         var x = row(r, 'i' + gi + '.' + ii, 'rc-ing');
-        x.label.appendChild(el('span', 'rc-amt', amount(it, state.unit)));
+        x.label.appendChild(el('span', 'rc-amt', amount(it, state.unit, sc)));
         var name = el('span', 'rc-name', it.name), bits = [];
         if (it.note) bits.push(it.note);
-        if (it.spoon) bits.push('about ' + it.spoon);
+        if (it.spoon) bits.push('about ' + spoon(it.spoon, sc));
         if (bits.length) { name.appendChild(document.createTextNode(' ')); var n = el('span', 'rc-note'); rich(n, bits.join(', '), r); name.appendChild(n); }
         x.label.appendChild(name);
         ul.appendChild(x.li);
@@ -216,8 +249,12 @@
     counts();
   }
 
-  // The recipe tabs, the unit switch and the nav dropdown all show what is current.
+  // The recipe tabs, the unit switch, the scale and the nav dropdown all show what is current.
+  var scaleIn = document.getElementById('rc-scale');
   function sync() {
+    var sc = scaleOf(current);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-scale]'), function (b) { var on = Number(b.getAttribute('data-scale')) === sc; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    if (scaleIn && document.activeElement !== scaleIn) scaleIn.value = sc;
     Array.prototype.forEach.call(document.querySelectorAll('[data-recipe]'), function (b) { b.classList.toggle('active', b.getAttribute('data-recipe') === current.id); b.setAttribute('aria-pressed', b.getAttribute('data-recipe') === current.id ? 'true' : 'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-unit]'), function (b) { b.classList.toggle('active', b.getAttribute('data-unit') === state.unit); b.setAttribute('aria-pressed', b.getAttribute('data-unit') === state.unit ? 'true' : 'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('.nav-menu-list a[href*="/recipes/#"]'), function (a) {
@@ -237,6 +274,18 @@
   Array.prototype.forEach.call(document.querySelectorAll('[data-unit]'), function (b) {
     b.addEventListener('click', function () { state.unit = b.getAttribute('data-unit'); save(); build(); sync(); });
   });
+  function setScale(s) {
+    if (!(s > 0 && s <= 100)) return;
+    if (s === 1) delete state.scale[current.id]; else state.scale[current.id] = s;
+    save(); build(); sync();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-scale]'), function (b) {
+    b.addEventListener('click', function () { setScale(Number(b.getAttribute('data-scale'))); });
+  });
+  if (scaleIn) {
+    scaleIn.addEventListener('input', function () { setScale(parseFloat(scaleIn.value)); });
+    scaleIn.addEventListener('blur', sync);
+  }
   window.addEventListener('hashchange', function () { show(fromHash()); });
 
   show(fromHash());

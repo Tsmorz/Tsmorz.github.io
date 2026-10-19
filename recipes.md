@@ -6,7 +6,7 @@ permalink: /recipes/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Recipes</h1>
-  <p class="page-sub">Everything is weighed, not measured. Tick the ingredients as they go on the scale, then the steps as you finish them.</p>
+  <p class="page-sub">Everything is weighed, not measured. Scale a recipe up or down, tick the ingredients as they go on the scale, then the steps as you finish them.</p>
 </section>
 
 <div class="wrap" style="padding-bottom:3rem">
@@ -17,9 +17,17 @@ permalink: /recipes/
       <button class="sim-tab" type="button" data-recipe="{{ r.id }}" aria-pressed="false">{{ r.name }}</button>
       {%- endfor %}
     </div>
+    <div class="rc-opts">
+    <div class="rc-seg" role="group" aria-label="Scale">
+      <button class="sim-tab" type="button" data-scale="0.5" aria-pressed="false">½×</button>
+      <button class="sim-tab" type="button" data-scale="1" aria-pressed="true">1×</button>
+      <button class="sim-tab" type="button" data-scale="2" aria-pressed="false">2×</button>
+      <label class="rc-x">×<input id="rc-scale" type="number" min="0.25" max="100" step="0.25" value="1" inputmode="decimal" aria-label="Scale by"></label>
+    </div>
     <div class="rc-seg" role="group" aria-label="Units">
       <button class="sim-tab" type="button" data-unit="metric" aria-pressed="true">Metric</button>
       <button class="sim-tab" type="button" data-unit="imperial" aria-pressed="false">Imperial</button>
+    </div>
     </div>
   </div>
 
@@ -31,7 +39,12 @@ permalink: /recipes/
 <style>
 .rc-anchor{display:block;height:0;scroll-margin-top:5rem}   /* targets of the nav dropdown links: the page scrolls to the tabs under the sticky header */
 .rc-bar{display:flex;flex-wrap:wrap;gap:.75rem 2rem;align-items:center;justify-content:space-between;margin-bottom:2rem}
-.rc-seg{display:flex;flex-wrap:wrap;gap:.4rem}
+.rc-opts{display:flex;flex-wrap:wrap;gap:.75rem 1.5rem}
+.rc-seg{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
+.rc-x{display:flex;align-items:center;gap:.3rem;margin-left:.2rem;font:500 .85rem var(--mono);color:var(--text-muted)}
+.rc-x input{width:4.5rem;padding:.4rem .5rem;border:1px solid var(--border);border-radius:3px;background:var(--surface);color:var(--text);font:500 .9rem var(--mono)}
+.rc-x input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.rc-scaled{color:var(--accent)}
 .rc-head h2{margin:0 0 .3rem}
 .rc-blurb{margin:0 0 .6rem;color:var(--text-muted);max-width:60ch}
 .rc-meta{display:flex;flex-wrap:wrap;gap:.25rem 1.5rem;margin:0;font:.78rem var(--mono);color:var(--text-muted)}
