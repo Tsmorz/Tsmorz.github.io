@@ -86,7 +86,10 @@ permalink: /controls/swingup/
 
   <div class="su-net-wrap">
     <h3 class="su-net-title">Inside the network</h3>
-    <canvas class="su-net" id="su-net" aria-label="Diagram of the policy network with live activations: ten inputs, a 256-unit embedding, two residual blocks of 1024 ReLU units each, and one output force."></canvas>
+    <div class="su-net-scroll">
+      <canvas class="su-net" id="su-net" aria-label="Diagram of the policy network with live activations: ten inputs, a 256-unit embedding, two residual blocks of 1024 ReLU units each, and one output force."></canvas>
+    </div>
+    <p class="su-net-hint">Swipe sideways to see the whole network.</p>
     <p class="eqn-note">
       Each square is one neuron, violet when positive and green when negative. The ten inputs feed a
       256-unit embedding, then two residual blocks (each widens to 1024 ReLU units and adds its

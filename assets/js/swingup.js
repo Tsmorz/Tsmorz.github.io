@@ -337,9 +337,12 @@
       if (meta.goals) {
         goalBtns.forEach(function (b) { b.querySelector('.goal-icon').innerHTML = goalIcon(b.dataset.goal); });
         if (targetsEl) targetsEl.hidden = false;
-        selectGoal('UU', false);
+        // Start the way a visitor most likely wants to see it: the network on, cycling through random targets.
+        setRandom(true);
+        selectGoal(meta.goals.labels[Math.floor(Math.random() * meta.goals.labels.length)], false);
       }
       reset('hanging');
+      if (meta.goals) setMode('tqc');   // downloads the weights now; control passes to the network when they arrive
     })
     .catch(function () {
       status = 'error';
