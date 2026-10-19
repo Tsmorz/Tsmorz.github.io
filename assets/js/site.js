@@ -72,7 +72,7 @@
   ];
   var params = { K: 25, DAMPING_RATIO: 1.15, REPEL_R: 135, REPEL_STRENGTH: 240000, CURRENT_PUSH: 3, size: 18, AREA_PER_SYMBOL: 5400, MIN_COUNT: 60, MAX_COUNT: 250 };
 
-  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var dpr = Math.min(window.devicePixelRatio || 1, 3);
   var w = 0, h = 0;
   var symbols = [];
   var t = 0;
@@ -127,6 +127,8 @@
 
   function resize() {
     var rect = canvas.getBoundingClientRect();
+    // The address bar collapsing changes only the height, by a little; reallocating the buffer for that blanks the canvas for a frame.
+    if (symbols.length && Math.abs(rect.width - w) < 1 && Math.abs(rect.height - h) < 140) return;
     w = rect.width; h = rect.height;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);

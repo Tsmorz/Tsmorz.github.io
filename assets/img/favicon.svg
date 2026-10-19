@@ -1,14 +1,13 @@
-<!-- The double pendulum on a cart from /controls/swingup/ (goalIcon in swingup.js), link 2 swung more horizontal, in the site's lime and violet. -->
+<!-- The double pendulum on a cart from /controls/swingup/ (goalIcon in swingup.js), link 2 swung more horizontal, in the site's lime and violet. No background, so it sits on any tab color; mid-tone fills read on light and dark tabs. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 5 32 32">
-  <rect x="0" y="5" width="32" height="32" rx="4" fill="#1b1c1f"/>
-  <line x1="2" y1="29" x2="30" y2="29" stroke="#4a4b55" stroke-width="1.5"/>
+  <line x1="2" y1="29" x2="30" y2="29" stroke="#8a8f9c" stroke-width="1.5" stroke-linecap="round"/>
   <g transform="translate(4.5 0)">
-    <rect x="9.5" y="22.5" width="13" height="6" rx="1.5" fill="#adf45d"/>
-    <g stroke="#c8c0ff" stroke-width="2" stroke-linecap="round">
+    <rect x="9.5" y="22.5" width="13" height="6" rx="1.5" fill="#8a929e"/>
+    <g stroke="#7d7f94" stroke-width="2.2" stroke-linecap="round">
       <line x1="16.0" y1="26.0" x2="14.8" y2="14.1"/>
       <line x1="14.8" y1="14.1" x2="3.2" y2="17.2"/>
     </g>
-    <circle cx="14.8" cy="14.1" r="2.2" fill="#8576f0"/>
-    <circle cx="3.2" cy="17.2" r="2.2" fill="#adf45d"/>
+    <circle cx="14.8" cy="14.1" r="2.6" fill="#8576f0"/>
+    <circle cx="3.2" cy="17.2" r="2.6" fill="#5fae16"/>
   </g>
 </svg>

@@ -27,8 +27,8 @@ To change what the site says, edit YAML, not HTML.
 | Colors, spacing, type | `assets/css/main.css` (tokens at the top) |
 | Swing-up network or its physics | re-run `task export-web` in `../n-cartpole` (never hand-edit `assets/models/`) |
 
-**Adding a project:** append to `_data/projects.yml`. Only `name` and `blurb` are required; `tags` feed the
-filter buttons on `/projects/`, `featured: true` is what lists it there, `on_cv: true` adds the badge, `image`
+**Adding a project:** append to `_data/projects.yml`. Only `name` and `blurb` are required; `featured: true` is what
+lists it on `/projects/` (`tags` and `on_cv` are kept as data but not shown), `image`
 is optional (16:9), and the **first** entry in `links` is what the card title links to.
 
 ## Architecture

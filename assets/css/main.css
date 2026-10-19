@@ -29,10 +29,10 @@
   --viz-4: #12a599;  /* teal   */
   --viz-7: #556070;  /* slate — the simulated mass; kept off the series colors */
   --viz-total: #556070;  /* neutral gray — aggregate / total lines */
-  --pend-cart: #5fae16;
+  --pend-cart: #9aa3af;
   --pend-rod: #556070;
   --pend-1: #8576f0;
-  --pend-2: #5fae16;  /* double pendulum: lime cart and lower bob, violet upper bob, grey rods */
+  --pend-2: #5fae16;  /* double pendulum: grey cart, violet upper bob, lime lower bob, grey rods */
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -67,7 +67,7 @@
     --viz-4: #88fce9;
     --viz-7: #9aa7b6;
     --viz-total: #9aa7b6;
-    --pend-cart: #adf45d;
+    --pend-cart: #6b7686;
     --pend-rod: #9aa7b6;
     --pend-1: #a798ff;
     --pend-2: #adf45d;
@@ -100,7 +100,7 @@
   --viz-4: #88fce9;
   --viz-7: #9aa7b6;
   --viz-total: #9aa7b6;
-  --pend-cart: #adf45d;
+  --pend-cart: #6b7686;
   --pend-rod: #9aa7b6;
   --pend-1: #a798ff;
   --pend-2: #adf45d;
@@ -304,12 +304,6 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .card p { margin: 0 0 1rem; color: var(--text-muted); font-size: .96rem; }
 .card-foot { margin-top: auto; display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: center; }
 
-.tags { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 1rem; padding: 0; list-style: none; }
-.tag {
-  font-size: .74rem; font-weight: 500; letter-spacing: .01em;
-  padding: .18rem .55rem; border-radius:3px;
-  background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-muted);
-}
 
 .card-links { display: flex; flex-wrap: wrap; gap: .9rem; list-style: none; margin: 0; padding: 0; }
 .card-links a { font-size: .9rem; font-weight: 550; display: inline-flex; align-items: center; gap: .3rem; }
@@ -317,11 +311,6 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .card-links a:hover { text-decoration: none; }
 .card-links a:hover::after { transform: translateX(3px); }
 
-.cv-flag {
-  font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--accent); background: var(--accent-soft);
-  padding: .15rem .5rem; border-radius:3px;
-}
 
 /* ---------------------------------------------------------------
    Timeline / about
@@ -721,8 +710,6 @@ button, input, select, textarea { font-family: var(--mono); }
 .nav-links a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .card { border-color: var(--border-strong); }
 .card-year { color: var(--accent); }
-.cv-flag { background: transparent; color: var(--lime-text); border: 1px solid var(--lime); }
-.tag { background: transparent; border: 1px solid var(--lav); color: var(--accent); }
 .timeline li { border-left-color: var(--lav); }
 .timeline li::before { background: var(--bg); border: 2px solid var(--lime); width: 10px; height: 10px; }
 .sim-tab, .demo-tab, .mode-btn, .goal-btn { border-color: var(--lav); }
@@ -734,7 +721,7 @@ button, input, select, textarea { font-family: var(--mono); }
 :root { --radius: 3px; --serif: "Fraunces", "STIX Two Text", Georgia, serif; --grid: rgba(120, 118, 150, .16); }
 :root[data-theme="dark"] { --grid: rgba(199, 192, 255, .09); }
 h1, h2 { font-optical-sizing: auto; font-weight: 500; letter-spacing: -.01em; }
-.btn, .btn-icon, .nav-links a, .sim-tab, .demo-tab, .mode-btn, .goal-btn, .cv-flag, code, .hero h1 .accent, .theme-toggle { border-radius: 3px; }
+.btn, .btn-icon, .nav-links a, .sim-tab, .demo-tab, .mode-btn, .goal-btn, code, .hero h1 .accent, .theme-toggle { border-radius: 3px; }
 .nav-links a { font-family: var(--mono); font-size: .8rem; letter-spacing: .02em; text-transform: lowercase; }
 .btn { font-family: var(--mono); font-size: .85rem; font-weight: 500; }
 .hero h1 .accent { border-radius: 2px; }
@@ -771,27 +758,27 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 .card::before { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; }
 .card::after { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
 .card-media, .card-media img { border-radius: 0; }
+.card { transition: border-color .15s ease, background-color .15s ease; }
+@media (hover: hover) {
+  .card:hover { border-color: var(--lav); background: var(--accent-soft); }
+}
 .card-year { letter-spacing: .04em; }
-.tags { gap: .15rem .9rem; }
-.tag { border: 0; border-radius: 0; padding: 0; background: transparent; font-family: var(--mono); font-size: .75rem; color: var(--accent); }
-.tag::before { content: "#"; opacity: .55; }
 .card-links a { font-family: var(--mono); font-size: .82rem; }
-.cv-flag { font-family: var(--mono); letter-spacing: .04em; }
 
 /* page heads */
 .page-head { position: relative; }
-/* title strip: the home page's plot-paper grid, fading out to the right of the title */
-.page-head::before {
-  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 48px 48px; background-position: left top;
-  /* fade on every side, so the grid has no visible box edge */
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 18%, #000 60%, transparent), linear-gradient(to bottom, transparent, #000 25%, #000 55%, transparent);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to right, transparent, #000 18%, #000 60%, transparent), linear-gradient(to bottom, transparent, #000 25%, #000 55%, transparent);
-  mask-composite: intersect;
+/* phones: the blurred header re-blurs everything behind it on every frame while a canvas animates, which flickers on scroll; a solid header avoids it */
+@media (max-width: 760px), (pointer: coarse) {
+  .site-header { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
-.page-head > * { position: relative; z-index: 1; }
+
+/* every page except the home hero: the same plot-paper grid, edge to edge behind the whole page */
+main:not(:has(> .hero)) { position: relative; z-index: 0; }
+main:not(:has(> .hero))::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px; background-position: center top;
+}
 .page-title { font-weight: 500; }
 
 
