@@ -245,3 +245,79 @@ Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (m
     start();
   }
 })();
+
+// Footer cat — after 30 s on a page, a pixel orange tabby walks in from the right along the footer's top line and lies
+// down at the left (above the copyright). It waits until that stretch of the footer is on screen, so the walk is seen.
+// Sprites are rows of letters (o orange, s stripe, w cream, e eye); the colors are in main.css (.cat-o ...).
+(function () {
+  var footer = document.querySelector('.site-footer');
+  if (!footer || !window.IntersectionObserver || !footer.animate) return;
+  var ROWS = 8, COLS = 16, PX = 3, SPEED = 70, DELAY = 30000;   // sprite grid, px per sprite pixel, walking px/s, ms on the page
+  var walkA = [
+    '.o..o...........',
+    '.osso.........s.',
+    '.weooo........o.',
+    '..woosoosoosooo.',
+    '...osoosoosooo..',
+    '....owwwwwwwo...',
+    '....o.o...o.o...',
+    '...w...w.w...w..'
+  ];
+  var walkB = walkA.slice(0, 7).concat(['....w.w...w.w...']);
+  var lie = [
+    '.o..o...........',
+    '.osso...........',
+    '.weooosoosoosooo',
+    '..osoosoosoosooo',
+    '...ooooooooooo..'
+  ];
+
+  function frame(cls, rows) {
+    var y0 = ROWS - rows.length, out = '';
+    rows.forEach(function (row, y) {
+      var m, re = /([^.])\1*/g;
+      while ((m = re.exec(row))) out += '<rect class="cat-' + m[1] + '" x="' + m.index + '" y="' + (y0 + y) + '" width="' + m[0].length + '" height="1"/>';
+    });
+    return '<g class="' + cls + '">' + out + '</g>';
+  }
+
+  function show() {
+    var lane = document.createElement('div');
+    lane.className = 'cat-lane';
+    lane.setAttribute('aria-hidden', 'true');
+    lane.innerHTML = '<svg class="cat" viewBox="0 0 ' + COLS + ' ' + ROWS + '" width="' + COLS * PX + '" height="' + ROWS * PX + '" shape-rendering="crispEdges">' +
+      frame('cat-a', walkA) + frame('cat-b', walkB) + frame('cat-lie', lie) + '</svg>';
+    footer.appendChild(lane);
+    var cat = lane.firstChild, anim = null, stepper = null;
+
+    // rest above the copyright, so the cat lies where the text starts
+    function restX() {
+      var p = footer.querySelector('.footer-inner p');
+      return p ? p.getBoundingClientRect().left - footer.getBoundingClientRect().left : 24;
+    }
+    function settle() {
+      if (anim) { anim.cancel(); anim = null; }
+      clearInterval(stepper);
+      cat.setAttribute('class', 'cat lying');
+      cat.style.transform = 'translateX(' + restX() + 'px)';
+    }
+    window.addEventListener('resize', function () { if (!anim) cat.style.transform = 'translateX(' + restX() + 'px)'; });
+
+    // wait until the lane is on screen, so the walk isn't spent below the fold
+    var io = new IntersectionObserver(function (entries) {
+      if (!entries[0].isIntersecting) return;
+      io.disconnect();
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { settle(); return; }
+      var from = lane.clientWidth, to = restX();
+      cat.setAttribute('class', 'cat walking');
+      anim = cat.animate([{ transform: 'translateX(' + from + 'px)' }, { transform: 'translateX(' + to + 'px)' }],
+        { duration: (from - to) / SPEED * 1000, easing: 'linear', fill: 'forwards' });
+      stepper = setInterval(function () { cat.classList.toggle('step'); }, 220);
+      anim.onfinish = settle;
+    }, { threshold: 1 });
+    cat.style.transform = 'translateX(' + lane.clientWidth + 'px)';
+    io.observe(lane);
+  }
+
+  setTimeout(show, DELAY);
+})();
