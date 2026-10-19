@@ -300,6 +300,10 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .card h3 { margin: 0 0 .5rem; }
 .card h3 a { color: var(--text); }
 .card h3 a:hover { color: var(--accent); text-decoration: none; }
+/* the title link stretches over the whole card, so a click anywhere opens it; the footer links stay on top */
+.card h3 a::after { content: ""; position: absolute; inset: 0; z-index: 1; }
+.card-links a { position: relative; z-index: 2; }
+.card:has(h3 a) { cursor: pointer; }
 .card-year { font-size: .8rem; color: var(--text-muted); font-family: var(--mono); white-space: nowrap; }
 .card p { margin: 0 0 1rem; color: var(--text-muted); font-size: .96rem; }
 .card-foot { margin-top: auto; display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: center; }
@@ -838,11 +842,3 @@ main:not(:has(> .hero))::before {
   }
   .nav-menu-list::before { display: none; }
 }
-
-/* /solutions/ */
-.card-list { margin: 0 0 1rem; padding-left: 1.1rem; color: var(--text-muted); font-size: .92rem; }
-.card-list li { margin: .2rem 0; }
-.steps { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); list-style: none; counter-reset: step; margin: 1rem 0 0; padding: 0; }
-.steps li { counter-increment: step; border-top: 2px solid var(--lime); padding-top: .6rem; display: flex; flex-direction: column; gap: .25rem; }
-.steps li::before { content: "0" counter(step); font-family: var(--mono); font-size: .78rem; color: var(--accent); }
-.steps span { color: var(--text-muted); font-size: .94rem; }

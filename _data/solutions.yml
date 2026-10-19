@@ -1,66 +1,21 @@
 # Content for /solutions/. Edit here, not in solutions.md.
 intro: >-
-  I take on project-based work for companies that need a robotics, estimation or controls problem
-  solved properly: a clear scope, working code, and results you can check.
+  I take on project-based work for companies with a robotics, estimation or controls problem.
+  A clear scope, working code, results you can check.
 
 services:
   - name: State estimation and sensor fusion
-    blurb: Kalman filters, IMU and GPS fusion, and SLAM that hold up on real, noisy sensors.
-    work:
-      - EKF design, tuning and consistency checks
-      - Orientation and position from IMU, GPS, cameras and tags
-      - Offline replay of your logged data to compare options
-    link: {label: See EKF-SLAM, url: /projects/}
-
+    blurb: Kalman filters, IMU and GPS fusion, and SLAM that hold up on real sensors.
   - name: Controls and system identification
-    blurb: From a model of your plant to a controller you can tune, test and trust.
-    work:
-      - Fit a model to your recorded data
-      - PID, LQR and observer-based designs, with margins and limits checked
-      - Simulation before anything touches hardware
-    link: {label: Try the data fit, url: /controls/fit/}
-
+    blurb: From your recorded data to a model and a controller you can tune and trust.
   - name: Learning-based control
-    blurb: Reinforcement learning for hard, underactuated systems, trained in simulation and checked against a classical baseline.
-    work:
-      - Simulator and reward design
-      - Policy training, evaluation and export to run on-device or in the browser
-      - A fair comparison with a model-based controller
-    link: {label: See the double pendulum, url: /controls/swingup/}
-
+    blurb: Reinforcement learning for hard, underactuated systems, checked against a classical baseline.
   - name: Embedded prototypes
-    blurb: Working firmware on small boards, from sensor to dashboard.
-    work:
-      - ESP32 firmware: camera streaming, AprilTag pose, IMU and GPS
-      - Live telemetry and tuning from a browser
-      - A documented repo you can hand to your team
-    link: {label: See ESP32 Cam, url: /projects/}
-
+    blurb: Working ESP32 firmware, from sensor to browser dashboard.
   - name: Aerial vehicle design
-    blurb: Sizing, aerodynamics and propulsion in one optimization loop, for small drones and RC aircraft.
-    work:
-      - Preliminary design under mass, speed and power limits
-      - Mass and CG budgets, trim and performance estimates
-      - 3D-printable parts exported from the design
-    link: {label: See the UAV work, url: /projects/}
-
+    blurb: Sizing, aerodynamics and propulsion for small drones and RC aircraft.
   - name: Robot fleet software
-    blurb: Keeping many machines connected and controllable.
-    work:
-      - Over-the-air update flows
-      - Low-latency teleoperation
-      - Reliability and monitoring for deployed robots
-    link:
-
-process:
-  - name: Talk
-    blurb: A short call to understand the problem and what a good result looks like.
-  - name: Scope
-    blurb: A written scope with deliverables, a timeline and a fixed price or a day rate.
-  - name: Build
-    blurb: Regular updates with working code, so you see progress and can change direction early.
-  - name: Hand over
-    blurb: Clean code, documentation and a walk-through, so your team can own it.
+    blurb: Over-the-air updates and low-latency teleoperation for deployed robots.
 
 cta:
   heading: Have a problem in mind?
