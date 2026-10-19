@@ -209,7 +209,7 @@ console.log('8. discretisation');
   check(ze.some((z) => Math.hypot(z[0] - zw[0], Math.abs(z[1]) - Math.abs(zw[1])) < 1e-9), 'zero-order hold: e^{AT} has eigenvalues e^{pT}');
   const ch = pl.controllers.pid.channels[0], uns = (T) => C.sampledPidLoop(pl, p, ch, ch.gains, T).some((z) => C.cabs(z) >= 1);
   check(!uns(0.13) && uns(0.14), 'sampled PID (40/5/6): stable at 130 ms, unstable at 140 ms (exact)');
-  const simMax = (T) => { const ctrl = JSON.parse(JSON.stringify(pl.controllers.pid)); const lab = { p, controller: ctrl, gains: [Object.assign({}, ch.gains)], refs: [{ type: 'step', amp: 1, omega: 0.5 }], noise: 0, delay: 0, ctrlPeriod: T };
+  const simMax = (T) => { const p = Object.assign({}, pl.params, { Fmax: 1e9 }); /* linear analysis: no force clamp */ const ctrl = JSON.parse(JSON.stringify(pl.controllers.pid)); const lab = { p, controller: ctrl, gains: [Object.assign({}, ch.gains)], refs: [{ type: 'step', amp: 1, omega: 0.5 }], noise: 0, delay: 0, ctrlPeriod: T };
     const sim = C.createSim(pl, lab, rand); let m = 0; for (let k = 0; k < 4000; k++) { sim.step(); if (k > 2000) m = Math.max(m, Math.abs(sim.x[0])); } return m; };
   check(simMax(0.13) < 3 && simMax(0.14) > 100, 'the simulation with a real hold agrees: settles at 130 ms, diverges at 140 ms');
 }

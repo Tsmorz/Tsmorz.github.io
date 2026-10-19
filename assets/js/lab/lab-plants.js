@@ -59,7 +59,7 @@
   var msd = {
     id: 'msd', name: 'Mass-spring-damper', n: 2, m: 1, dt: 0.01, substeps: 2,
     stateNames: ['x', 'ẋ'], inputNames: ['F'], units: ['m', 'm/s'], inputUnits: ['N'],
-    params: { M: 1, k: 4, c: 0.4, Fmax: 1e9 },        // underdamped, ζ ≈ 0.1 (controls.js)
+    params: { M: 1, k: 4, c: 0.4, Fmax: 20, Fcap: 20 },        // underdamped, ζ ≈ 0.1 (controls.js); force always clamped to ±20 N
     x0: function () { return [0, 0]; },
     u0: function () { return [0]; },
     start: function () { return [0, 0]; },
