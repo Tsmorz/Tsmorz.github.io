@@ -105,3 +105,30 @@
     - "Torch, or grill close to the element, until amber and bubbling, about a minute each. Rest 2 minutes to harden and serve within the hour."
   notes:
     - "Use a fine granulated sugar for the top; coarse crystals melt unevenly."
+
+- id: pizza-dough
+  name: Pizza dough
+  blurb: A wet, slow-rising dough that bakes up blistered and chewy. Four pizzas.
+  makes: 4 pizzas of [[len:30]]
+  time: 30 minutes of work, plus 1 to 2 days in the fridge
+  ingredients:
+    - items:
+        - { id: water, name: Water, note: "cool, about [[t:20]]", g: 390 }
+        - { name: Instant yeast, g: 2, spoon: "⅔ tsp" }
+        - { name: Bread flour, note: "or 00 flour", g: 600 }
+        - { name: Fine salt, g: 16, spoon: "2¾ tsp" }
+        - { name: Olive oil, g: 12, spoon: "1 tbsp" }
+  steps:
+    - "Weigh the water into a large bowl, add the yeast and stir to dissolve."
+    - "Weigh the flour and salt on top. Mix with your hand until no dry flour is left, then rest 20 minutes."
+    - "Add the olive oil and knead on the counter for 8 to 10 minutes, until smooth and springy but still a little tacky. Add water, not flour, if it fights you."
+    - "Cover the bowl and leave it at [[t:20-24]] for 1 hour."
+    - "Put the bowl on the scale and cut the dough into 4 balls of about [[g:255]] each. Roll each one tight and set it in a lightly oiled container with a lid."
+    - "Refrigerate at [[t:4]] for 24 to 48 hours."
+    - "Take the balls out 2 hours before baking so they come up to room temperature."
+    - "Put a pizza stone or steel on the top rack and heat the oven to its highest setting, ideally [[t:260]] or more, for 45 minutes."
+    - "On a well-floured surface, press each ball out from the center and stretch it by hand to about [[len:30]]. Leave a thicker rim, and skip the rolling pin so the bubbles stay in."
+    - "Top lightly and slide onto the stone. Bake 6 to 8 minutes, until the rim is puffed, blistered and browned."
+  notes:
+    - "To freeze, wrap the balls after shaping. Thaw them overnight in the fridge, then give them their 2 hours at room temperature."
+    - "Heavy toppings make a soggy middle. Less sauce and cheese than you think."

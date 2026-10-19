@@ -79,6 +79,8 @@ console.log('4. quoted weights match the ingredients');
   check(Math.abs(quoted(cake, /batter into the pans, about \[\[g:(\d+)\]\]/) - perPan) / perPan < 0.05, 'carrot cake: ' + perPan + ' g of batter per pan');
   check(Math.abs(quoted(cake, /Spread \[\[g:(\d+)\]\] of frosting/) - sum(cake, 'Cream cheese frosting') / 3) / (sum(cake, 'Cream cheese frosting') / 3) < 0.05, 'carrot cake: a third of the frosting between the layers');
   check(Math.abs(quoted(brulee, /Weigh \[\[g:(\d+)\]\] of custard/) - perRamekin) / perRamekin < 0.05, 'crème brûlée: ' + perRamekin + ' g of custard per ramekin');
+  const pizza = recipes.find((r) => r.id === 'pizza-dough'), perBall = sum(pizza) / 4;
+  check(Math.abs(quoted(pizza, /balls of about \[\[g:(\d+)\]\]/) - perBall) / perBall < 0.05, 'pizza dough: ' + perBall + ' g per ball');
   const top = brulee.ingredients.flatMap((g) => g.items).find((it) => it.note && /for the tops/.test(it.note));
   check(top && top.g === 4 * quoted(brulee, /Weigh \[\[g:(\d+)\]\] of sugar onto each/), 'crème brûlée: the sugar for the tops is 4 ramekins of it');
 }

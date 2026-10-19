@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Recipes
-description: Kombucha, carrot cake and crème brûlée, weighed on a kitchen scale, with a tick box for every ingredient and every step and a switch between metric and imperial.
+description: Kombucha, carrot cake, crème brûlée and pizza dough, weighed on a kitchen scale, with a tick box for every ingredient and every step and a switch between metric and imperial.
 permalink: /recipes/
 ---
 <section class="wrap page-head">
