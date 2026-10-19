@@ -649,7 +649,7 @@
     view = { W: W, H: H, scale: scale, cx: cx, trackY: trackY };
     function sx(xm) { return cx + xm * scale; }
 
-    // Rail with hard stops where the cart centre reaches ±x_lim.
+    // Rail with hard stops where the cart center reaches ±x_lim.
     var railL = sx(-p.x_lim - cartHalf), railR = sx(p.x_lim + cartHalf);
     ctx.strokeStyle = strong; ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(railL, trackY); ctx.lineTo(railR, trackY); ctx.stroke();
@@ -900,7 +900,7 @@
       ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x1 - 5, y - 3.5); ctx.lineTo(x1 - 5, y + 3.5); ctx.closePath(); ctx.fill();
     }
 
-    // Inputs: ten labelled bars.
+    // Inputs: ten labeled bars.
     var rowH = 22, ix = 10, iy = 30;
     ctx.font = '11px ' + mono;
     for (var k = 0; k < tr.obs.length; k++) {

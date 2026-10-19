@@ -451,7 +451,7 @@
     });
     L.push({ name: P.uNames[0] + (ok && ctrl ? ' (LQR effort)' : ' (input)'), series: [{ x: tt, y: sim.hu.map(function (r) { return r[0]; }), color: col.v1 }] });
     lanes(c3, L, 'Live simulation of the fitted model' + (ok && ctrl ? ' under LQR' : ' with no control') + ' (time in model seconds)');
-    var msg = !ok ? 'This LQR does not stabilise the model: raise a Q or lower R, or check the model.' : !S.ss ? 'No steady state holds ' + P.sNames[j] + ' constant, so it cannot be tracked: the controller only regulates. Pick another state.' : sim.blown ? 'The states ran away and were reset to the operating point.' : '';
+    var msg = !ok ? 'This LQR does not stabilize the model: raise a Q or lower R, or check the model.' : !S.ss ? 'No steady state holds ' + P.sNames[j] + ' constant, so it cannot be tracked: the controller only regulates. Pick another state.' : sim.blown ? 'The states ran away and were reset to the operating point.' : '';
     if (msg) label(c3.ctx, msg, c3.W - 12, c3.H - 30, col.v3, 'right', 11);
   }
 
@@ -470,7 +470,7 @@
     var L = P.sNames.map(function (nm, j) {
       return { name: nm + '  (fit ' + num(M.fit[j]) + '%)', series: [{ x: P.t, y: P.X.map(function (r) { return r[j]; }), color: col.muted }, { x: t1, y: M.pred.map(function (r) { return r[j] + M.xm[j]; }), color: pal[j % 4], dash: [4, 3] }] };
     }).concat(P.uNames.map(function (nm, j) { return { name: nm + ' (input)', series: [{ x: P.t, y: P.U.map(function (r) { return r[j]; }), color: col.v2 }] }; }));
-    lanes(c1, L, 'Data (grey) and the model\'s one-step prediction (dashed)');
+    lanes(c1, L, 'Data (gray) and the model\'s one-step prediction (dashed)');
     // 2. poles
     zplane(c2, M.eig, S.lq ? S.lq.eig : null);
     // 3. the live simulation (drawn every frame by drawSim)

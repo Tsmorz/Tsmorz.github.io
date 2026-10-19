@@ -58,11 +58,11 @@
   // Shared reference trajectory constants (used by all flight demos + renderer)
   // The band (17–29 m) sits just above the 5–12 m trees and inside the ground-anchored
   // view, so the trees stay on screen while the autopilot tracks.
-  var H_CENTER  = 23;   // m — reference altitude centre
+  var H_CENTER  = 23;   // m — reference altitude center
   var REF_AMP   = 6;    // m — sine amplitude → 12 m peak-to-peak
   var REF_OMEGA = 2 * Math.PI / 16;  // rad/s — period = 16 s
   var flightRef = { type: 'wave' };  // 'wave' | 'step' (set by the Reference toggle)
-  // World scale, px per metre, on BOTH axes: the altitude view, the plane and trees,
+  // World scale, px per meter, on BOTH axes: the altitude view, the plane and trees,
   // and the scroll speed of the ground marks, trees and reference path all derive
   // from it, so sizes agree with the altitude labels.
   var PX_PER_M = 8;
@@ -247,7 +247,7 @@
         (!document.documentElement.getAttribute('data-theme') &&
          window.matchMedia('(prefers-color-scheme: dark)').matches);
 
-      // Viewport: as many metres as fit at PX_PER_M, anchored at the ground so the trees
+      // Viewport: as many meters as fit at PX_PER_M, anchored at the ground so the trees
       // stay in view; it only rises if the plane climbs within VIEW_HEADROOM of the top.
       // hToY is rebound each frame so everything else (ref line, ticks, plane) just calls it.
       var VIEW_RANGE = (H - GROUND_PX) / PX_PER_M;
@@ -408,7 +408,7 @@
 
       // Elevator indicator bar (right edge).
       // Shows the nose-up command about trim: Cmde < 0, so de below trim pitches the
-      // nose up and the thumb moves UP; centred at trim.
+      // nose up and the thumb moves UP; centered at trim.
       var eiFrac = clamp(((TRIM.de - de_rad) / deg2rad(15) + 1) / 2, 0, 1);  // 0 = full nose-down, 1 = full nose-up
       var eiX = W - 22, eiTop = 50, eiH = 80;
       ctx.fillStyle = bgSoft;

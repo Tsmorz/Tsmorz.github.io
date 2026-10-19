@@ -8,7 +8,7 @@ permalink: /controls/swingup/
   <h1 class="page-title">Double Pendulum Control</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
-    Two links hang from a cart on a two-metre rail. Push the cart to swing both links up and
+    Two links hang from a cart on a two-meter rail. Push the cart to swing both links up and
     balance them. That's hard by hand, so a <strong>TQC</strong> reinforcement-learning policy
     is also available. It runs in your browser, and one network handles every target: both
     links up, both down, or either one folded over the other. Pick a target and it moves the
@@ -108,7 +108,7 @@ permalink: /controls/swingup/
       it sees the cart position and velocity, cos&#8201;&#952;, sin&#8201;&#952; and
       &#952;&#775; for each link, and the target as cos of each link's goal angle (+1 up,
       &#8722;1 down). It outputs one horizontal force. Its reward peaks only when both links
-      sit at their targets, still, with the cart near the centre. During training the target
+      sit at their targets, still, with the cart near the center. During training the target
       changed every few seconds, and episodes started at every pose as well as at fully
       random states. That's why it can move between any two targets, and why it can catch a
       swing you started by hand.
@@ -125,7 +125,7 @@ permalink: /controls/swingup/
       <em>AI</em> only if you never pushed the cart yourself, and
       as <em>manual</em> only if the network never drove. Hitting either end of the rail ends
       the run. The network trained on a &#177;0.5&nbsp;m rail; this one runs to &#177;1&nbsp;m
-      so there's room to swing by hand, but past half a metre from centre the network is
+      so there's room to swing by hand, but past half a meter from center the network is
       outside anything it saw in training.
     </p>
     <p class="eqn-note" id="su-params">

@@ -8,7 +8,7 @@
 # Everyday use:
 #   task serve                       edit with live reload at http://127.0.0.1:4000
 #   task serve -- --port 4001        anything after `--` goes to jekyll
-#   task check:fast                  quick data + JS-maths checks, no build (seconds)
+#   task check:fast                  quick data + JS-math checks, no build (seconds)
 #   task check                       everything CI runs; run before pushing
 #   task build BASEURL=/subpath      build for a site that lives under a subpath
 
@@ -90,7 +90,7 @@ tasks:
       - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt
 
   check:fast:
-    desc: "Quick checks, no build: _data content, swing-up port, lab maths, CSV fit"
+    desc: "Quick checks, no build: _data content, swing-up port, lab math, CSV fit"
     cmds:
       - task: check:data
       - task: check:swingup

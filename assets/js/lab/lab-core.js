@@ -1,7 +1,7 @@
-// LabCore — the maths shared by every template page (/controls/, /modern/,
+// LabCore — the math shared by every template page (/controls/, /modern/,
 // /sysid/, /design/). No DOM, so script/test-lab runs it in Node. Everything is
 // generic over a plant from lab-plants.js and a controller spec:
-//   • linearise the plant, build the closed loop as one state-space model
+//   • linearize the plant, build the closed loop as one state-space model
 //   • loop transfer functions, margins, Nyquist count, closed-loop poles, root locus,
 //     pole placement (drag a pole → gains)
 //   • interval bounds on a small policy network
@@ -108,7 +108,7 @@
     return x;
   }
 
-  /* ---------------- linearisation ---------------- */
+  /* ---------------- linearization ---------------- */
   // Plant interface (lab-plants.js): n states, m inputs, deriv(x, u, p), x0, u0.
   function linearize(plant, p) {
     var n = plant.n, m = plant.m, x0 = plant.x0(p), u0 = plant.u0(p), f0 = plant.deriv(x0, u0, p), A = zeros(n, n), B = zeros(n, m), i, j;
@@ -130,7 +130,7 @@
      R (sensor). P solves AP + PAᵀ − PCᵀR⁻¹CP + Qw = 0, found by running the Riccati
      equation forward until it stops changing; the gain is Lo = PCᵀR⁻¹. */
   function kalmanGain(A, C, Qw, R, hStep, B) {
-    // Robust route: discretise at a short step h and iterate the discrete Riccati recursion
+    // Robust route: discretize at a short step h and iterate the discrete Riccati recursion
     //   P ← Ad P Adᵀ + Qw h − Ad P Cᵀ (C P Cᵀ + R/h)⁻¹ C P Adᵀ,
     // which converges where integrating the continuous equation goes stiff (precise sensors).
     var n = A.length, p = C.length, h = hStep || 0.002, i, j;
@@ -425,7 +425,7 @@
     for (var it = 0; it < 13; it++) { var m = (lo + hi) / 2; if (certify(net, e, m, depth).dev <= delta) lo = m; else hi = m; }
     return lo;
   }
-  // Local linearisation of the net = an effective state-feedback row (for the loop views).
+  // Local linearization of the net = an effective state-feedback row (for the loop views).
   function netGains(net) {
     var g = [], h = 1e-4;
     for (var i = 0; i < 4; i++) { var a = [0, 0, 0, 0], b = [0, 0, 0, 0]; a[i] = h; b[i] = -h; g.push((netForward(net, a) - netForward(net, b)) / (2 * h)); }
@@ -632,7 +632,7 @@
     u.forEach(function (uk) { out.push(x); x = A.map(function (row, i) { var s2 = B[i] * uk; for (var q = 0; q < n; q++) s2 += row[q] * x[q]; return s2; }); });
     return out;
   }
-  // Weights w minimising |X w − Y|² (normal equations, Gaussian elimination, a whisper of ridge).
+  // Weights w minimizing |X w − Y|² (normal equations, Gaussian elimination, a whisper of ridge).
   function lsqSolve(X, Y) {
     var m = X[0].length, M = zeros(m, m), b = new Array(m).fill(0), a, c2, r;
     X.forEach(function (row, t2) { for (a = 0; a < m; a++) { b[a] += row[a] * Y[t2]; for (c2 = 0; c2 < m; c2++) M[a][c2] += row[a] * row[c2]; } });
@@ -668,7 +668,7 @@
     var out = {}; Object.keys(sums).forEach(function (key) { out[key] = cnt[key] ? sums[key].map(function (v) { return 100 * v / cnt[key]; }) : null; });
     return out;
   }
-  // The unseen-state example. Measure only the states in `outs`; build a model from one tap of the linearised plant by
+  // The unseen-state example. Measure only the states in `outs`; build a model from one tap of the linearized plant by
   // Ho–Kalman; the realized states are a fixed mix of the physical ones, so a one-off calibration against the hard-to-measure
   // state `target` (noisy) gives weights w with target ≈ w·x̃, checked on a fresh input.
   function unseen(plant, p, cfg) {
@@ -719,7 +719,7 @@
     return 100 * (1 - Math.sqrt(e / v2));
   }
 
-  /* ---------------- discretisation ----------------
+  /* ---------------- discretization ----------------
      Continuous → discrete, four ways. For a pole p and sample period T:
        zero-order hold (exact for a staircase input)  z = e^{pT}
        forward Euler   s ≈ (z − 1)/T                  z = 1 + pT

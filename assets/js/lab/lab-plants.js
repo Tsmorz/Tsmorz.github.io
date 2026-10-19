@@ -134,7 +134,7 @@
         ctx.restore();
         ctx.save(); ctx.globalAlpha = 0.35; ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(cx, refY, 9, 0, 7); ctx.fill(); ctx.restore();
       }
-      // Centre of mass: the quartered black-and-white target.
+      // Center of mass: the quartered black-and-white target.
       var cr = 8;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, massY, cr, 0, 2 * Math.PI); ctx.fill();
       ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(cx, massY); ctx.arc(cx, massY, cr, -Math.PI / 2, 0); ctx.closePath(); ctx.fill();
@@ -178,7 +178,7 @@
     states: [{ label: 'x (m)', f: function (x) { return x[0]; } }, { label: 'ẋ (m/s)', f: function (x) { return x[1]; } },
              { label: 'θ (°)', f: function (x, u) { return deg(u[0]); } }],
     contribUnit: 'tilt cmd (°)', contribScale: 180 / Math.PI,
-    // Manual: the beam swings toward the line from its centre to the pointer, and holds.
+    // Manual: the beam swings toward the line from its center to the pointer, and holds.
     manual: function (drag, sim, lab) {
       if (!drag || !lab.view) return [sim.u[0]];
       var dx = drag.x - lab.view.cx, dy = drag.y - lab.view.cy;
@@ -325,7 +325,7 @@
   // Trim at 65 m/s level flight. controls.js uses a closed form that treats the stall blend
   // as exactly 1 (it is ≈ 0.92 at trim) and ignores T·sin α, so its "trim" slowly sinks and
   // slows. Here Newton's method starts from that closed form and solves V̇ = γ̇ = q̇ = 0 for
-  // (α, δe, T), so analyses linearise about a true equilibrium.
+  // (α, δe, T), so analyzes linearize about a true equilibrium.
   var TRIM = (function () {
     var V = 65, qbar = 0.5 * AC.rho * V * V, CLreq = AC.m * AC.g / (qbar * AC.S);
     var a = (CLreq - AC.CL0 + AC.CLde * AC.Cm0 / AC.Cmde) / (AC.CLa - AC.CLde * AC.Cma / AC.Cmde);
@@ -373,7 +373,7 @@
     noise: [0, 0, 0, 0, 1, 0],
     trim: TRIM,
     controllers: {
-      // Altitude PID → elevator (gains in degrees of elevator per metre; nose-up elevator
+      // Altitude PID → elevator (gains in degrees of elevator per meter; nose-up elevator
       // is negative δe, hence the sign). Thrust held at trim, as on /controls/.
       alt: { label: 'PID', channels: [
         { type: 'pid', input: 0, out: 4, sign: -Math.PI / 180, gains: { kp: 0.5, ki: 0.1, kd: 0.35 }, label: 'Altitude → elevator',

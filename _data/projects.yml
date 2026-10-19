@@ -19,7 +19,7 @@
   blurb: >-
     Reinforcement learning for a double pendulum on a cart. One goal-conditioned
     TQC policy swings both poles up, folds either one over the other, and moves
-    between every up/down pose. It runs live in the browser on this site.
+    between every up/down pose.
   year: "2026"
   tags: [Python, Reinforcement Learning, Controls]
   featured: true

@@ -389,14 +389,14 @@ tabs:
     - The sensor noise level
     - The sample time
     answer: 0
-    explain: The rank of the Hankel matrix is the number of states, and the singular values show it. Noise fills the gap, which is why cutting there takes judgement.
+    explain: The rank of the Hankel matrix is the number of states, and the singular values show it. Noise fills the gap, which is why cutting there takes judgment.
     why:
     - ''
     - Noise sets the floor, but the gap itself marks the order.
     - The sample time is fixed here.
   - question: The realized states are not position and velocity. Why is that not a problem?
     options:
-    - Any invertible mixing of the states gives the same input-output behaviour
+    - Any invertible mixing of the states gives the same input-output behavior
     - Ho–Kalman secretly measures velocity
     - The states are never used
     answer: 0
@@ -497,7 +497,7 @@ tabs:
     - The output is C′x̃ = Cx.
   - question: Why can recorded inputs and outputs not say which coordinates are the physical ones?
     options:
-    - Every invertible T gives identical input-output behaviour
+    - Every invertible T gives identical input-output behavior
     - The sensor is always noisy
     - The model is too small
     answer: 0
@@ -660,9 +660,9 @@ tabs:
   note_title: A computer only sees samples
   note: |-
     <p>A controller sees a number every T seconds (the dots) and nothing in between. It is <strong>sampled</strong> in time and
-    <strong>quantised</strong> in value (try 2 bits), and its output is held until the next update: a <strong>zero-order hold</strong>.
+    <strong>quantized</strong> in value (try 2 bits), and its output is held until the next update: a <strong>zero-order hold</strong>.
     Push the signal past <strong>fs/2</strong>, the <strong>Nyquist frequency</strong>, and the dots trace a slower, wrong wave
-    (dashed): <strong>aliasing</strong>. Only an analogue filter before sampling can remove it.</p>
+    (dashed): <strong>aliasing</strong>. Only an analog filter before sampling can remove it.</p>
   demo: msd
   minutes: 8
   goal: See what a computer loses when it only reads a signal every T seconds.
@@ -688,7 +688,7 @@ tabs:
     - Filter the samples afterwards
     - Raise the controller gain
     answer: 0
-    explain: After sampling the alias looks like a real signal, so only an analogue filter before the sampler can remove it.
+    explain: After sampling the alias looks like a real signal, so only an analog filter before the sampler can remove it.
     why:
     - ''
     - By then it is indistinguishable from a real slower signal.
@@ -697,7 +697,7 @@ tabs:
   needs:
   - stable
 - id: discretise
-  label: Discretise
+  label: Discretize
   lab: disc
   top: disc-z
   row1: disc-step
@@ -714,12 +714,12 @@ tabs:
   controls:
   - discretize
   aria:
-  - The z-plane with the plant's poles as each discretisation method places them
+  - The z-plane with the plant's poles as each discretization method places them
   - Step responses of the continuous plant and each discrete model
   - Gain of the continuous plant and each discrete model, up to the Nyquist frequency
   note_title: Four ways to turn ẋ = f(x) into a step-by-step rule
   note: |-
-    <p>Discretisation turns a continuous model into an update every T seconds. A discrete system is stable when its poles
+    <p>Discretization turns a continuous model into an update every T seconds. A discrete system is stable when its poles
     are inside the unit circle.</p>
     <ul>
     <li><strong>Zero-order hold</strong>: exact when the input is held between samples. The reference for the others.</li>
@@ -744,7 +744,7 @@ tabs:
     - ''
     - Forward Euler can turn a stable plant into an unstable model.
     - They agree only at small T.
-  recap: pick a discretisation method and say why forward Euler fails at a large sample time.
+  recap: pick a discretization method and say why forward Euler fails at a large sample time.
   tasks:
   - Slide <strong>T</strong> up to 0.2 s with the <strong>Forward Euler</strong> method. Where do the poles go?
   - 'Pick <strong>Backward Euler</strong>: the poles stay inside, but what is wrong with the step response?'
@@ -777,13 +777,13 @@ tabs:
   - Closed-loop poles of the sampled loop in the z-plane
   note_title: How slow can the controller run?
   note: |-
-    <p>The PID now runs at period T with a zero-order hold, and the loop is analysed exactly in discrete time. These gains are
+    <p>The PID now runs at period T with a zero-order hold, and the loop is analyzed exactly in discrete time. These gains are
     stable at 130&nbsp;ms and fall apart at 140&nbsp;ms. The "hold is half a sample of delay" shortcut predicts about 230&nbsp;ms, so treat it
     as an upper bound. In practice run the loop 10&#8211;30 times per crossover period (the panel counts it).</p>
   demo: msd
   minutes: 6
   goal: Find how slowly a PID can run before the loop falls apart.
-  recall: You can discretise a model. Now the controller itself runs once every T seconds with a hold between.
+  recall: You can discretize a model. Now the controller itself runs once every T seconds with a hold between.
   tasks:
   - 'Drag <strong>Runs every</strong> to 100 ms: is it still stable?'
   - 'Go to 140 ms: this is the limit for these gains. Compare the exact limit to the rule of thumb.'
@@ -1061,7 +1061,7 @@ tabs:
     - To speed up the fit
     - To remove noise
     answer: 0
-    explain: A model always fits its own training data well. Only data held back shows whether it generalises.
+    explain: A model always fits its own training data well. Only data held back shows whether it generalizes.
     why:
     - ''
     - It does not change the speed.
@@ -1310,7 +1310,7 @@ tabs:
     explain: Angle of attack shapes how airspeed and altitude change after an elevator tap, so it is in the data. The realized states carry it mixed with the rest, and a calibration unmixes it.
   note_title: Label the states by calibration
   note: |-
-    <p>Measured through airspeed and altitude only, one elevator tap of the linearised aircraft reveals <strong>five</strong> observable states (the bars;
+    <p>Measured through airspeed and altitude only, one elevator tap of the linearized aircraft reveals <strong>five</strong> observable states (the bars;
     the sixth, the distance flown, does not affect either measurement). The realized states are mixes of V, &#947;, &#945;, q and h: the map has no row that
     picks out one of them, so none of them is &#8220;angle of attack&#8221;.</p>
     <p>A flight-test <strong>calibration</strong>, with a vane or a flow probe fitted once, gives the weights <code>w</code> with
@@ -1364,7 +1364,7 @@ tabs:
   mimoRange:
   - -0.9
   - 1.5
-  mimoNote: 'Here the coloured region fills the box: the elevator and throttle loops barely interact at these gains, so checking each loop alone was enough. That is something to check, not assume: on strongly coupled plants (a spinning satellite is the textbook case) loops that each have huge margins fail together at 10%.'
+  mimoNote: 'Here the colored region fills the box: the elevator and throttle loops barely interact at these gains, so checking each loop alone was enough. That is something to check, not assume: on strongly coupled plants (a spinning satellite is the textbook case) loops that each have huge margins fail together at 10%.'
   controls:
   - mimo
   - gains
@@ -1374,7 +1374,7 @@ tabs:
   - Map of which pairs of gain errors keep both loops stable
   note: |-
     <p>Real hardware errs in every channel at once. Drag the dot to give each loop a gain error. The <strong>dashed box</strong> is
-    what each loop's own margins predict; the <strong>coloured map</strong> is the truth, both errors together. Where they disagree,
+    what each loop's own margins predict; the <strong>colored map</strong> is the truth, both errors together. Where they disagree,
     the loops interact.</p>
   demo: flight
   minutes: 6
@@ -1391,11 +1391,11 @@ tabs:
     explain: A single-loop margin tests one channel while the other is perfect. Simultaneous errors can break loops that each look safe.
   tasks:
   - Drag the dot to give each loop a gain error and watch the aircraft.
-  - Compare the <strong>dashed box</strong> (single-loop margins) with the coloured map (the truth).
+  - Compare the <strong>dashed box</strong> (single-loop margins) with the colored map (the truth).
   - 'Press <strong>No errors</strong> and try a corner: does the aircraft hold?'
   note_title: Both loops at once
   check:
-  - question: When the coloured map is smaller than the dashed box, what does that mean?
+  - question: When the colored map is smaller than the dashed box, what does that mean?
     options:
     - 'The loops interact: together they are less robust than alone'
     - The margins are wrong
@@ -1504,7 +1504,7 @@ tabs:
             <div class="eqn-row"><span class="eqn-lhs">&#952;&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">[g sin&#952; &#8722; cos&#952;&#183;&#964;] / [&#8467;(4/3 &#8722; m cos&#178;&#952; / (M+m))]</span></div>
             <div class="eqn-row"><span class="eqn-lhs">x&#776;</span><span class="eqn-eq">=</span><span class="eqn-rhs">&#964; &#8722; m&#8467;&#952;&#776; cos&#952; / (M+m),&#160;&#160; &#964; = [F &#8722; b&#7819; + m&#8467;&#952;&#775;&#178; sin&#952;] / (M+m)</span></div>
             <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">F</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>k<sub>x</sub></span><span>k<sub>&#7819;</sub></span><span>k<sub>&#952;</sub></span><span>k<sub>&#952;&#775;</sub></span></span><span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span>&#160;&#160;=&#160;&#160;&#8722;K&#8201;<b>s</b>,&#160;&#160; <b>s</b> =<span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span></span></div>
-            <p class="eqn-note">Linearised about upright (small &#952;), with this cart-pole's numbers. Q and R weight state error against force; the Riccati solution for them gives K.</p>
+            <p class="eqn-note">Linearized about upright (small &#952;), with this cart-pole's numbers. Q and R weight state error against force; the Riccati solution for them gives K.</p>
             <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">s&#775;</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-grid" style="grid-template-columns:repeat(4,auto)"><span>0</span><span>1</span><span>0</span><span>0</span><span>0</span><span>&#8722;2.13</span><span>&#8722;5.89</span><span>0</span><span>0</span><span>0</span><span>0</span><span>1</span><span>0</span><span>1.07</span><span>7.85</span><span>0</span></span><span class="mx mx-col"><span>x</span><span>&#7819;</span><span>&#952;</span><span>&#952;&#775;</span></span> + <span class="mx mx-col"><span>0</span><span>2.67</span><span>0</span><span>&#8722;1.33</span></span>F</span></div>
             <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">Q</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-grid" style="grid-template-columns:repeat(4,auto)"><span>1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0.1</span><span>0</span><span>0</span><span>0</span><span>0</span><span>10</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0.1</span></span>,&#160;&#160; R = 0.1</span></div>
             <div class="eqn-row" style="align-items:center"><span class="eqn-lhs">K</span><span class="eqn-eq">=</span><span class="eqn-rhs"><span class="mx mx-row"><span>&#8722;3.1</span><span>&#8722;5.9</span><span>&#8722;43.5</span><span>&#8722;18.1</span></span>,&#160;&#160; F = &#8722;K<b>s</b></span></div>
@@ -1558,7 +1558,7 @@ tabs:
     explain: The velocity shapes how the position and angle move, so it is in the data. The realized states carry it, mixed with the others; a one-off calibration finds the mix.
   note_title: Label the states by calibration
   note: |-
-    <p>One tap of the linearised cart-pole, measured only through the cart position and the pole angle, is enough for Ho&#8211;Kalman to find
+    <p>One tap of the linearized cart-pole, measured only through the cart position and the pole angle, is enough for Ho&#8211;Kalman to find
     that the system has <strong>four</strong> states (the bars). But the realized states are not x, &#7819;, &#952; and &#952;&#775;: each physical state is a
     different mix of them (the map). Nothing in the tap says which realized state is the velocity.</p>
     <p>A short <strong>calibration</strong> fixes that: excite the plant while measuring the hard state once, and fit one row of weights
@@ -1589,7 +1589,7 @@ tabs:
     - The cart-pole is nonlinear
     - The singular values are too small
     answer: 0
-    explain: Any invertible T gives the same input-output behaviour, so Ho–Kalman can return any of them; it returns a balanced one.
+    explain: Any invertible T gives the same input-output behavior, so Ho–Kalman can return any of them; it returns a balanced one.
     why:
     - ''
     - 'Nonlinearity is not the cause here: the model is linear.'
@@ -1623,7 +1623,7 @@ tabs:
   demo: cartpole
   minutes: 8
   goal: Prove what a neural-network controller will do, instead of watching it balance and hoping.
-  recall: LQR gains are a short list of numbers you can analyse. A network that copies them is not.
+  recall: LQR gains are a short list of numbers you can analyze. A network that copies them is not.
   predict:
     question: A sensor error moves the angle by &#949;. Can bounds on the network's output be proved for every error up to &#949;?
     options:
