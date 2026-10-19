@@ -132,7 +132,7 @@ Other notes:
 - **Teaching structure (ARIVA):** every lesson runs through five labelled steps: **Arrive** (`goal`, plus
   `minutes`), **Reactivate** (`needs`, the lessons it builds on, shown as links; `recall`, one line tying back; and `predict: {question,
   options, answer (0-based), try, explain}`, a card shown before the sim whose answer opens the note), **Inform**
-  (`note`, folded; `maths` is an optional folded "Show the maths"), **Process** (`tasks`, tick-off steps) and
+  (`note`, folded; `maths` is an optional folded "Show the math"), **Process** (`tasks`, tick-off steps) and
   **Evaluate** (`check`, one question or a list: `{question, options, answer, explain, why}` where `why` has one
   line per option saying why a wrong one is wrong; and `recap`, "You can now ..."). `script/test-data` requires
   goal, recall, predict, note, tasks, check, recap, a valid `demo` and valid `needs` on every lesson.
