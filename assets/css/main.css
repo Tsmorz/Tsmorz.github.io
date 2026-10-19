@@ -886,3 +886,6 @@ main:not(:has(> .hero))::before {
 .logo-b1 { fill: var(--logo-b1); }
 .logo-b2 { fill: var(--logo-b2); }
 .nav-brand svg { width: 32px; height: 32px; border-radius: 3px; flex-shrink: 0; outline: 1px solid var(--lav); outline-offset: 2px; }
+
+/* /solutions/ */
+.solution-list { margin: 0; padding-left: 1.2rem; font-size: 1.1rem; line-height: 1.9; }

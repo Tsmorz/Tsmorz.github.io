@@ -11,14 +11,9 @@ permalink: /solutions/
 </section>
 
 <section class="wrap section" style="padding-top: 0;">
-  <div class="card-grid">
-    {%- for svc in s.services %}
-    <article class="card">
-      <h3>{{ svc.name }}</h3>
-      <p>{{ svc.blurb }}</p>
-    </article>
-    {%- endfor %}
-  </div>
+  <ul class="solution-list">
+    {%- for svc in s.services %}<li>{{ svc }}</li>{% endfor %}
+  </ul>
 </section>
 
 <section class="wrap section" style="padding-top: 0;">
