@@ -902,6 +902,10 @@
       sim.u = ua;
       var sub = plant.substeps || 4, h = dt / sub, x = sim.x;
       for (var k = 0; k < sub; k++) x = rk4(plant, x, ua, p, h);
+      if (p.xstop) {                       // hard stops on the first state: it sticks at the stop and loses its outward speed
+        x = x.slice();
+        if (x[0] > p.xstop) { x[0] = p.xstop; if (x[1] > 0) x[1] = 0; } else if (x[0] < -p.xstop) { x[0] = -p.xstop; if (x[1] < 0) x[1] = 0; }
+      }
       sim.x = x; sim.t += dt;
       sim.status = plant.status ? plant.status(sim.x, p) : (plant.failed && plant.failed(sim.x, p) ? 'failed' : 'ok');
       sim.failed = sim.status !== 'ok';
