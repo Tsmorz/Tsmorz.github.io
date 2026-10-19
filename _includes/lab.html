@@ -9,9 +9,6 @@
 {%- assign base_href = 'href="' | append: site.baseurl | append: '/' -%}
 <div class="wrap" style="padding-bottom:3rem">
   <nav class="lab-map" aria-label="Lessons">
-    {%- if L.problem %}
-    <p class="lab-map-problem"><span class="lab-phase">Course map</span> {{ L.problem | split: '. ' | first }}.</p>
-    {%- endif %}
     <div class="lab-map-rows" role="tablist" aria-label="Lessons">
       {%- assign ext_shown = false -%}
       {%- for d in L.demos %}
@@ -122,8 +119,6 @@
 .lab-tasks label{cursor:pointer}
 .lab-tasks input{margin-right:.35rem}
 .lab-map{margin-bottom:1.5rem;display:flex;flex-direction:column;gap:.6rem}
-.lab-map-problem{margin:0;font-size:.9rem;color:var(--text-muted)}
-.lab-map-problem .lab-phase{margin:0 .5rem 0 0}
 .lab-map-rows{display:flex;flex-direction:column;gap:.45rem}
 .lab-map-row{display:grid;grid-template-columns:8.5rem 1fr;gap:.5rem .8rem;align-items:start}
 .lab-map-label{font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);padding-top:.35rem}
