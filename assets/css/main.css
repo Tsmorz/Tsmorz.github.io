@@ -764,6 +764,7 @@ button, input, select, textarea { font-family: var(--mono); }
 h1, h2 { font-optical-sizing: auto; font-weight: 500; letter-spacing: -.01em; }
 .btn, .btn-icon, .nav-links a, .sim-tab, .demo-tab, .mode-btn, .goal-btn, code, .hero h1 .accent, .theme-toggle { border-radius: 3px; }
 .nav-links a { font-family: var(--mono); font-size: .8rem; letter-spacing: .02em; text-transform: lowercase; }
+.nav-brand { font-family: var(--mono); font-size: .8rem; font-weight: 500; letter-spacing: .02em; text-transform: lowercase; }
 .btn { font-family: var(--mono); font-size: .85rem; font-weight: 500; }
 .hero h1 .accent { border-radius: 2px; }
 
