@@ -29,6 +29,8 @@
   --viz-4: #12a599;  /* teal   */
   --viz-7: #556070;  /* slate — the simulated mass; kept off the series colors */
   --viz-total: #556070;  /* neutral gray — aggregate / total lines */
+  --marker: rgba(170, 236, 56, .55);       /* hero highlighter ink, and the darker pooling where a stroke starts and stops */
+  --marker-deep: rgba(140, 208, 30, .42);
   --mass: #5fae16;       /* the simulated mass on /controls/ (the site's lime) */
   --mass-edge: #3f7a0a;
   --pend-cart: #9aa3af;
@@ -74,6 +76,8 @@
     --viz-4: #88fce9;
     --viz-7: #9aa7b6;
     --viz-total: #9aa7b6;
+    --marker: rgba(173, 244, 93, .30);
+    --marker-deep: rgba(173, 244, 93, .22);
     --mass: #adf45d;
     --mass-edge: #7bbf2e;
     --pend-cart: #6b7686;
@@ -114,6 +118,8 @@
   --viz-4: #88fce9;
   --viz-7: #9aa7b6;
   --viz-total: #9aa7b6;
+  --marker: rgba(173, 244, 93, .30);
+  --marker-deep: rgba(173, 244, 93, .22);
   --mass: #adf45d;
   --mass-edge: #7bbf2e;
   --pend-cart: #6b7686;
@@ -749,25 +755,12 @@ button, input, select, textarea { font-family: var(--mono); }
 .hint-row .sim-btn { padding: .25rem .7rem; }
 
 /* ---- accent-only overrides: lavender + lime as outlines or small text, never a fill ---- */
-/* A felt-tip highlighter, drawn as three small SVGs per theme (assets/img/marker/): a streaky body with ragged edges plus a chisel-tip
-   cap at each end, where the ink pools darker as the caps overlap the body. Background only, so the text is untouched, and
-   `clone` gives every wrapped line its own caps. */
-.hero h1 .accent {
-  color: inherit; padding: 0 .3em; margin: 0 -.1em;
-  background-image: url("../img/marker/left-light.svg"), url("../img/marker/right-light.svg"), url("../img/marker/mid-light.svg");
-  background-repeat: no-repeat;
-  background-size: .55em 86%, .55em 86%, calc(100% - .8em) 86%;
-  background-position: left 70%, right 70%, .4em 70%;
-  -webkit-box-decoration-break: clone; box-decoration-break: clone;
-}
-:root[data-theme="dark"] .hero h1 .accent {
-  background-image: url("../img/marker/left-dark.svg"), url("../img/marker/right-dark.svg"), url("../img/marker/mid-dark.svg");
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .hero h1 .accent {
-    background-image: url("../img/marker/left-dark.svg"), url("../img/marker/right-dark.svg"), url("../img/marker/mid-dark.svg");
-  }
-}
+/* A felt-tip highlighter. assets/js/marker.js draws one stroke per wrapped line behind the text (see that file); this is the plain
+   translucent fallback, dropped once the strokes exist. */
+.hero h1 { position: relative; isolation: isolate; }
+.hero h1 .accent { color: inherit; padding: 0 .3em; margin: 0 -.1em; background: linear-gradient(transparent 20%, var(--marker) 20%, var(--marker) 92%, transparent 92%); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.hero h1.has-marker .accent { background: none; }
+.marker-layer { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
 .hero-eyebrow { color: var(--lime-text); }
 .btn { border-color: var(--lav); }
 .btn-primary, :root[data-theme="dark"] .btn-primary { background-color: var(--surface); color: var(--text); border: 1.5px solid var(--lime); }   /* solid, so the grid and floating equations never show through */
