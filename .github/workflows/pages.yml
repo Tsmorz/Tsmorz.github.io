@@ -11,9 +11,11 @@ permissions:
   pages: write
   id-token: write
 
+# One group per branch/PR, so a PR run can't cancel a deploy from main; a newer push to main
+# waits for the running deploy instead of cancelling it.
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -39,7 +41,11 @@ jobs:
       - name: Validate, build, and check the site
         run: task check BASEURL="${{ steps.pages.outputs.base_path }}"
 
+      # Named per attempt: a re-run keeps the earlier attempt's artifact, and deploy-pages
+      # refuses to pick between two with the same name.
       - uses: actions/upload-pages-artifact@v3
+        with:
+          name: github-pages-${{ github.run_attempt }}
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -51,3 +57,5 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_attempt }}
