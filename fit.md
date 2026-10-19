@@ -1,32 +1,29 @@
 ---
 layout: default
-title: Fit and Control
-description: Upload a recording of states and inputs, fit a linear model to it, and design an LQR that stabilises it.
+title: Custom Data
+description: Upload a recording of states and inputs, fit a linear model to it, and run it as a live simulation under an LQR.
 permalink: /controls/fit/
 ---
 <section class="wrap page-head">
-  <h1 class="page-title">Fit and Control</h1>
+  <h1 class="page-title">Custom Data</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
-    Upload a recording with columns <code>t</code>, <code>x1, x2, ...</code> and <code>u1, u2, ...</code>. It is plotted, a linear model
-    <code>x[k+1] = A x[k] + B u[k]</code> is fitted to it by least squares or Ho&ndash;Kalman, and an <strong>LQR</strong> is designed
-    on that model and made to track a reference. Nothing leaves your browser.
+    Upload a recording with columns <code>t</code>, <code>x1, x2, ...</code> and <code>u1, u2, ...</code>. A linear model
+    <code>x[k+1] = A x[k] + B u[k]</code> is fitted to it by least squares, and once it is found your data becomes a <strong>live simulation</strong>
+    you can push and steer with an <strong>LQR</strong>. Nothing leaves your browser.
   </p>
 </section>
 
 <div class="wrap" id="fit-root" style="padding-bottom:3rem">
-  <p class="lab-goal"><span class="lab-phase">1 &middot; Arrive</span> Turn a recording into a model, and the model into a controller that stabilises it and tracks a reference. <span class="lab-time">about 10 min</span></p>
+  <p class="lab-goal"><span class="lab-phase">1 &middot; Arrive</span> Turn a recording into a model, then drive the model as a live simulation with a controller you designed. <span class="lab-time">about 10 min</span></p>
   <details class="demo-note lab-inform" open>
     <summary><span class="lab-phase">2 &middot; Inform</span> What the page does</summary>
-    <p>A recording sampled much faster than the plant moves has all its poles crowded near 1, which makes a model hard to read. The <strong>model sample rate</strong> slider resamples the data to a slower rate before fitting,
-    so the model, its poles and the LQR all live at that rate. Each state is interpolated to the new time points. Each input is held between samples, so the model gets its
-    average over every slower interval, which is what the plant actually received. The dashed lines show the model's one-step predictions against your data; the fit percentage says how close.
+    <p><strong>Least squares</strong> picks the A and B that best predict each sample from the one before. The dashed lines show those one-step predictions against your data; the fit percentage says how close.
     The poles show the model's own motions: any outside the unit circle is unstable.</p>
-    <p>Two ways to find the model. <strong>Least squares</strong> picks the A and B that best predict each sample from the one before.
-    <strong>Ho&ndash;Kalman</strong> first estimates the plant's impulse response from your recording (a regression on past inputs and states, which still works when the data came from a feedback loop),
-    then splits its Hankel matrix with an SVD. The singular values show how many states the data supports, and the <strong>order</strong> slider keeps that many.
-    The <strong>LQR</strong> trades state error (Q) against input effort (R) and gives a feedback u&#8201;=&#8201;&#8722;K(x&#8201;&#8722;&#8201;x<sub>ref</sub>) plus the input that holds the reference.
-    The bottom plot steps the chosen state up and down on the model, or releases the model from a push.</p>
+    <p>The <strong>LQR</strong> trades state error (Q) against input effort (R) and gives a feedback u&#8201;=&#8201;&#8722;K(x&#8201;&#8722;&#8201;x<sub>ref</sub>) plus the input that holds the reference.
+    Once the model is found, the bottom plot becomes a <strong>simulation</strong> of it, running live: drag the reference, push the states, or switch the controller off to see the model on its own.</p>
+    <p><strong>Some states may not be reachable.</strong> The input only moves a state directly or through the other states. If nothing connects a state to the input, no controller can steer it, and a recording that never excited it cannot show how it responds.
+    The page counts the directions the input can move (<em>reachable: r of n</em>) and tells you when some are out of reach. The same goes for tracking: a state can be followed only if some steady input holds it at a constant value.</p>
     <p>The recording is a plain-text CSV, described below. </p>
   </details>
 
@@ -54,9 +51,8 @@ permalink: /controls/fit/
       <canvas class="fit-canvas" id="fit-c1" aria-label="Your data and the model's one-step predictions"></canvas>
       <div class="fit-pair">
         <canvas class="fit-canvas" id="fit-c2" aria-label="Poles of the model and of the model with LQR"></canvas>
-        <canvas class="fit-canvas" id="fit-c3" aria-label="The LQR on the model tracking a reference, or recovering from a small push"></canvas>
+        <canvas class="fit-canvas" id="fit-c3" aria-label="Live simulation of the fitted model, optionally under LQR"></canvas>
       </div>
-      <canvas class="fit-canvas fit-sv" id="fit-c4" hidden aria-label="Hankel singular values from the Ho-Kalman fit"></canvas>
     </div>
     <div class="sim-panel">
       <h3>Recording</h3>
@@ -66,25 +62,19 @@ permalink: /controls/fit/
       <button class="sim-btn" id="fit-csv" type="button">Download the example CSV</button>
       <p class="fit-msg" id="fit-msg" role="status"></p>
       <p class="fit-msg" id="fit-found"></p>
-      <h3>Model sample rate</h3>
-      <div id="fit-rate" class="pid-group" hidden>
-        <label for="fit-rate-in">Fit at <span class="fit-rate-val"></span></label>
-        <input type="range" id="fit-rate-in" min="0" max="130" step="1" value="0">
-      </div>
+      <p class="fit-msg" id="fit-reach"></p>
       <label class="fit-role"><input type="checkbox" id="fit-mean" checked> Subtract the mean (the operating point)</label>
-      <h3>Model fit</h3>
-      <label class="fit-role"><span>Least squares</span><input type="radio" name="fit-method" value="ls" checked></label>
-      <label class="fit-role"><span>Ho&ndash;Kalman</span><input type="radio" name="fit-method" value="hk"></label>
-      <div id="fit-order" class="pid-group" hidden>
-        <label for="fit-order-in">Order <span></span></label>
-        <input type="range" id="fit-order-in" min="1" max="4" step="1" value="4">
-      </div>
       <h3>LQR weights</h3>
       <div id="fit-weights"></div>
-      <h3>Run on the model</h3>
-      <label class="fit-role"><span>Track a reference</span><input type="radio" name="fit-run" value="track" checked></label>
-      <label class="fit-role"><span>Recover from a push</span><input type="radio" name="fit-run" value="push"></label>
-      <label class="fit-role" id="fit-track-row">Track <select id="fit-track" aria-label="State to track"></select></label>
+      <h3>Simulation</h3>
+      <label class="fit-role"><input type="checkbox" id="fit-ctrl" checked> LQR controller on</label>
+      <label class="fit-role">Track <select id="fit-track" aria-label="State to track"></select></label>
+      <div class="pid-group">
+        <label for="fit-ref">Reference <span class="fit-note">(in spreads of the data)</span></label>
+        <input type="range" id="fit-ref" min="-3" max="3" step="0.1" value="0">
+      </div>
+      <button class="sim-btn" id="fit-push" type="button">Push the states</button>
+      <button class="sim-btn" id="fit-reset" type="button">Reset to the operating point</button>
       <h3>Result</h3>
       <pre class="fit-info" id="fit-info"></pre>
     </div>
@@ -96,9 +86,10 @@ permalink: /controls/fit/
     <ol>
       <li>Press <strong>Load an example</strong>: a cart-pole balanced by an LQR with a little dither, recorded through noisy sensors. How well does the model predict each state, noise and all?</li>
       <li>Look at the poles: is the model unstable on its own? Where do the poles go with the LQR?</li>
-      <li>Slow the <strong>model sample rate</strong>: the poles move away from 1 and the fit changes. Which rate gives the cleanest model?</li>
-      <li>Switch the model fit to <strong>Ho&ndash;Kalman</strong>. Look at the unstable pole: noise in the states pulls least squares toward 0, while Ho&ndash;Kalman stays near the true value (1.136 at this sample time). Lower the order until the fit drops: how many states does the data really need?</li>
-      <li>Watch the bottom plot track the cart position up and down. Raise the Q weight of that state and the steps get faster, at the cost of more input. Switch <strong>Run</strong> to a push to see regulation instead.</li>
+      <li>Watch the bottom plot: it is your model running live under the LQR. Drag the <strong>reference</strong> and the tracked state follows it.</li>
+      <li>Press <strong>Push the states</strong>: how fast does the controller recover? Raise a Q weight and it recovers faster, at the cost of more input.</li>
+      <li>Switch the controller <strong>off</strong>. Does the model sit still or run away? Compare with the poles.</li>
+      <li>Change the tracked state. Some states may have no steady state of their own, or may not be reachable at all: read the reachable count above the weights.</li>
       <li>Download the example CSV, rename a state column (say <code>x3</code> to <code>y3</code>) so it is ignored, and see what the model loses. Then try your own recording.</li>
     </ol>
   </div>
@@ -108,7 +99,6 @@ permalink: /controls/fit/
 .fit-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:1rem;align-items:start}
 .fit-plots{display:flex;flex-direction:column;gap:.75rem;min-width:0}
 .fit-canvas{display:block;width:100%;height:calc(var(--lanes, 4) * 100px + 44px);border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-soft)}
-.fit-canvas.fit-sv{height:170px}
 .fit-canvas[hidden],.pid-group[hidden]{display:none}
 .fit-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:.75rem}
 @media (max-width:860px){.fit-layout{grid-template-columns:minmax(0,1fr)}.fit-pair{grid-template-columns:minmax(0,1fr)}}
@@ -134,6 +124,7 @@ permalink: /controls/fit/
 .lab-format{margin-top:.75rem}
 .fit-msg{font-size:.82rem;color:var(--text-muted);margin:.4rem 0}
 .fit-msg.bad{color:var(--bad)}
+.fit-note{font-size:.72rem;color:var(--text-muted)}
 .fit-info{font:.74rem/1.45 var(--mono);white-space:pre;overflow-x:auto;margin:0}
 </style>
 <script src="{{ '/assets/js/lab/lab-core.js' | relative_url }}"></script>
