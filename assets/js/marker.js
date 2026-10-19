@@ -1,6 +1,6 @@
 // The highlighter on the home page headline. Each wrapped line gets its own hand-drawn stroke (an inline SVG behind the text), and
 // every stroke differs: where it starts and stops, the slant of each end, how far it overshoots, wobble along both edges, a slight
-// tilt, and its own ink-streak pattern. Colors come from --marker / --marker-deep, so both themes work. Without JS the CSS keeps
+// tilt, and its own ink-streak pattern. The color comes from --marker (translucent, so overlaps are darker), so both themes work. Without JS the CSS keeps
 // a plain translucent background.
 (function () {
   'use strict';
@@ -20,25 +20,23 @@
     return e;
   }
 
-  // One stroke, w x h px. Edges are polylines with a little wobble every ~40 px; the ends are slanted like a chisel tip.
+  // One line's highlight, w x h px: several overlapping pen passes. The ink is translucent, so wherever two passes cross it is darker,
+  // at random places along the line (the pen going back over a word, or two strokes meeting mid-line), not just at the ends.
   function stroke(w, h, seed, i) {
-    var r = function (a, b) { return a + (b - a) * rnd(); }, rnd = rng(seed);
+    var rnd = rng(seed), r = function (a, b) { return a + (b - a) * rnd(); };
     var svg = el('svg', { width: w, height: h, viewBox: '0 0 ' + w + ' ' + h, 'aria-hidden': 'true' });
     svg.style.cssText = 'position:absolute;overflow:visible;transform:rotate(' + r(-0.5, 0.5).toFixed(2) + 'deg)';
     var topY = h * r(0.17, 0.23), botY = h * r(0.88, 0.95);
-    var x0 = r(2, 11), x1 = w - r(2, 11);
-    var s0 = r(-7, 9), s1 = r(-9, 7);                              // end slants (px between the top and bottom corner)
-    var n = Math.max(3, Math.round((x1 - x0) / 40)), top = [], bot = [];
-    for (var k = 0; k <= n; k++) { top.push(r(-1.6, 1.6)); bot.push(r(-1.6, 1.6)); }
-    function edge(a, y, wob, from, to, dir) {                      // points along an edge between two x positions
-      var pts = [];
-      for (var x = from; dir > 0 ? x < to : x > to; x += dir * 40) pts.push([x, y + wob[Math.min(n, Math.round((x - x0) / ((x1 - x0) / n)))]]);
-      return pts;
+
+    // One pass from x = a to b: wobbly top and bottom edges (a point every ~40 px) and a chisel-tip slant at each end.
+    function pass(a, b, dy) {
+      var sa = r(-7, 9), sb = r(-9, 7), up = [], dn = [], x;
+      for (x = a + 40; x < b - 20; x += 40) { up.push([x, topY + dy + r(-1.6, 1.6)]); dn.push([x, botY + dy + r(-1.6, 1.6)]); }
+      var p = [[a + sa, topY + dy]].concat(up, [[b + sb, topY + dy + r(-1, 1)], [b - sb * 0.6, botY + dy]], dn.reverse(), [[a - sa * 0.6, botY + dy + r(-1, 1)]]);
+      var d = el('path', { d: 'M' + p.map(function (q) { return q[0].toFixed(1) + ' ' + q[1].toFixed(1); }).join(' L') + ' Z' }, g);
+      d.style.fill = 'var(--marker)';
     }
-    function band(a, b, slantA, slantB) {                          // polygon between x = a and b
-      var p = [[a + slantA, topY]].concat(edge(0, topY, top, a + 40, b - 20, 1), [[b + slantB, topY + r(-1, 1)], [b - slantB * 0.6, botY]], edge(0, botY, bot, b - 40, a + 20, -1), [[a - slantA * 0.6, botY + r(-1, 1)]]);
-      return 'M' + p.map(function (q) { return q[0].toFixed(1) + ' ' + q[1].toFixed(1); }).join(' L') + ' Z';
-    }
+
     var id = 'mk' + i, defs = el('defs', {}, svg), f = el('filter', { id: id, x: '-2%', y: '-10%', width: '104%', height: '120%', 'color-interpolation-filters': 'sRGB' }, defs);
     el('feTurbulence', { type: 'fractalNoise', baseFrequency: r(0.008, 0.016).toFixed(4) + ' ' + r(0.45, 0.7).toFixed(3), numOctaves: 2, seed: Math.floor(r(1, 200)), result: 'n' }, f);    // streaks
     el('feColorMatrix', { in: 'n', type: 'matrix', values: '0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.6 0 0 0 0.42', result: 'a' }, f);
@@ -46,10 +44,16 @@
     el('feTurbulence', { type: 'fractalNoise', baseFrequency: '0.04 0.1', numOctaves: 2, seed: Math.floor(r(1, 200)), result: 'd' }, f);                                                    // ragged edges
     el('feDisplacementMap', { in: 't', in2: 'd', scale: r(4, 7).toFixed(1), xChannelSelector: 'R', yChannelSelector: 'G' }, f);
     var g = el('g', { filter: 'url(#' + id + ')' }, svg);
-    var path = el('path', { d: band(x0, x1, s0, s1) }, g); path.style.fill = 'var(--marker)';
-    var p0 = r(6, 16), p1 = r(5, 14);                                // ink pools where the pen touches down and lifts off
-    var a = el('path', { d: band(x0, x0 + p0, s0, 0) }, g); a.style.fill = 'var(--marker-deep)';
-    var b = el('path', { d: band(x1 - p1, x1, 0, s1) }, g); b.style.fill = 'var(--marker-deep)';
+
+    var x0 = r(2, 11), x1 = w - r(2, 11), L = x1 - x0;
+    if (L > 260 && rnd() < 0.7) {                                  // the line took two pen strokes, which meet (and overlap) somewhere in the middle
+      var m = x0 + L * r(0.35, 0.65), ov = r(8, 34);
+      pass(x0, m + ov, r(-0.8, 0.8)); pass(m - ov, x1, r(-0.8, 0.8));
+    } else pass(x0, x1, 0);
+    for (var k = rnd() < 0.8 ? 1 + (rnd() < 0.4 ? 1 : 0) : 0; k > 0; k--) {   // the pen goes back over part of it
+      var len = L * r(0.2, 0.5), a = x0 + (L - len) * rnd();
+      pass(a, a + len, r(-2.5, 2.5));
+    }
     return svg;
   }
 

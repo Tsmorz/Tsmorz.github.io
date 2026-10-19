@@ -29,8 +29,7 @@
   --viz-4: #12a599;  /* teal   */
   --viz-7: #556070;  /* slate — the simulated mass; kept off the series colors */
   --viz-total: #556070;  /* neutral gray — aggregate / total lines */
-  --marker: rgba(170, 236, 56, .55);       /* hero highlighter ink, and the darker pooling where a stroke starts and stops */
-  --marker-deep: rgba(140, 208, 30, .42);
+  --marker: rgba(170, 236, 56, .42);       /* hero highlighter ink: translucent, so overlapping passes read darker */
   --mass: #5fae16;       /* the simulated mass on /controls/ (the site's lime) */
   --mass-edge: #3f7a0a;
   --pend-cart: #9aa3af;
@@ -76,8 +75,7 @@
     --viz-4: #88fce9;
     --viz-7: #9aa7b6;
     --viz-total: #9aa7b6;
-    --marker: rgba(173, 244, 93, .30);
-    --marker-deep: rgba(173, 244, 93, .22);
+    --marker: rgba(173, 244, 93, .20);
     --mass: #adf45d;
     --mass-edge: #7bbf2e;
     --pend-cart: #6b7686;
@@ -118,8 +116,7 @@
   --viz-4: #88fce9;
   --viz-7: #9aa7b6;
   --viz-total: #9aa7b6;
-  --marker: rgba(173, 244, 93, .30);
-  --marker-deep: rgba(173, 244, 93, .22);
+  --marker: rgba(173, 244, 93, .20);
   --mass: #adf45d;
   --mass-edge: #7bbf2e;
   --pend-cart: #6b7686;
