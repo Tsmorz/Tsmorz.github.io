@@ -916,7 +916,7 @@ main:not(:has(> .hero))::before {
 .logo-rod { stroke: var(--logo-rod); }
 .logo-b1 { fill: var(--logo-b1); }
 .logo-b2 { fill: var(--logo-b2); }
-.nav-brand svg { width: 38px; height: 38px; flex-shrink: 0; display: block; margin: 0 -3px 0 -3px; }   /* home only, no frame: it is a logo, not an avatar */
+.nav-brand svg { width: 38px; height: 38px; flex-shrink: 0; display: block; margin: -3px; }   /* drawn 38px but takes the photo's 32px of layout, so the bar keeps one height on every page; home only, no frame (a logo, not an avatar) */
 
 /* /solutions/ */
 .solution-list { margin: 0; padding: 0; list-style: none; display: grid; gap: .9rem; max-width: 62ch; }
