@@ -303,7 +303,8 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 
 .page-head { padding: clamp(2.5rem, 6vw, 4rem) 1.25rem 1.5rem; }
 .page-title { margin-bottom: .35rem; }
-.page-title:last-child { margin-bottom: 0; }   /* no subtitle (About): the gap to the content matches pages that have one */
+.page-title:last-child { margin-bottom: 0; }
+.page-head:not(:has(.page-sub)) { padding-bottom: .35rem; }   /* no subtitle (About): the text starts as close under the title as a subtitle does */
 .page-sub { color: var(--text-muted); font-size: 1.08rem; margin: 0; max-width: 60ch; }
 /* No single word stranded on the last line of a blurb or caption. */
 .card p, .page-sub, .about-caption { text-wrap: pretty; }
