@@ -63,7 +63,7 @@ myself (see the hardware design on my
 
 ## Elsewhere
 
-- [GitHub]({{ site.social.github }}) - most of my work, open source
+- [GitHub]({{ site.social.github }})
 - [LinkedIn]({{ site.social.linkedin }}) - the formal version
 - [{{ site.author.email }}](mailto:{{ site.author.email }}) - the fastest way to reach me
 

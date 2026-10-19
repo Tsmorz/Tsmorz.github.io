@@ -21,6 +21,7 @@ To change what the site says, edit YAML, not HTML.
 | Want to change | Edit |
 | --- | --- |
 | Projects shown anywhere | `_data/projects.yml` |
+| Services, process, contact on /solutions/ | `_data/solutions.yml` |
 | Name, bio links, CV button | `_config.yml` |
 | Bio prose, education timeline | `about.md` |
 | Hero headline / intro paragraph | `index.html` |
