@@ -201,13 +201,17 @@ pre code { background: none; border: 0; padding: 0; }
 .nav-menu-btn svg { transition: transform .15s ease; }
 .nav-menu-btn:hover { color: var(--text); }
 .nav-menu-list {
-  display: none; position: absolute; top: 100%; right: 0; z-index: 30; min-width: 11.5rem;
+  display: none; position: absolute; top: calc(100% + .5rem); right: 0; z-index: 60; min-width: 11.5rem;
   list-style: none; margin: 0; padding: .3rem; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 3px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lift);
 }
+/* bridge the gap under the link so the menu stays open while the pointer crosses it */
+.nav-menu-list::before { content: ""; position: absolute; left: 0; right: 0; top: -.6rem; height: .6rem; }
 .nav-menu-list li { flex-shrink: 1; }
 .nav-menu:hover .nav-menu-list, .nav-menu:focus-within .nav-menu-list, .nav-menu.open .nav-menu-list { display: block; }
 .nav-menu:hover .nav-menu-btn svg, .nav-menu.open .nav-menu-btn svg { transform: rotate(180deg); }
+.nav-menu.shut .nav-menu-list { display: none; }
+.nav-menu.shut .nav-menu-btn svg { transform: none; }
 
 @media (max-width: 620px) {
   .nav-brand span { display: none; }
@@ -291,9 +295,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
   display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1.35rem;
-  transition: border-color .16s ease, background .16s ease;
 }
-.card:hover { border-color: var(--accent); background: var(--bg-soft); }
 .card-media { margin: -1.35rem -1.35rem 1.1rem; border-radius: var(--radius) var(--radius) 0 0; overflow: hidden; }
 .card-media img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
 .card-top { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; }
@@ -720,7 +722,6 @@ button, input, select, textarea { font-family: var(--mono); }
 .btn-primary:hover { background: var(--accent-soft); }
 .nav-links a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
 .card { border-color: var(--border-strong); }
-.card:hover { border-color: var(--lime); background: var(--surface); }
 .card-year { color: var(--accent); }
 .cv-flag { background: transparent; color: var(--lime-text); border: 1px solid var(--lime); }
 .tag { background: transparent; border: 1px solid var(--lav); color: var(--accent); }
@@ -768,11 +769,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 
 /* cards: figure frames with corner brackets, no pills */
 .card { position: relative; border-radius: 3px; box-shadow: none; background: transparent; border-color: var(--border); }
-.card::before, .card::after { content: ""; position: absolute; width: 12px; height: 12px; border: 0 solid var(--lav); pointer-events: none; transition: border-color .15s, width .15s, height .15s; }
+.card::before, .card::after { content: ""; position: absolute; width: 12px; height: 12px; border: 0 solid var(--lime); pointer-events: none; }
 .card::before { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; }
 .card::after { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
-.card:hover { background: transparent; }
-.card:hover::before, .card:hover::after { border-color: var(--lime); width: 20px; height: 20px; }
 .card-media, .card-media img { border-radius: 0; }
 .card-year { letter-spacing: .04em; }
 .tags { gap: .15rem .9rem; }
