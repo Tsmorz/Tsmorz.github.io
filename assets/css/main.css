@@ -15,7 +15,8 @@
   --lav: #8576f0;        /* lavender outlines */
   --lime: #5fae16;       /* outlines, markers */
   --lime-text: #3f7a0a;  /* small text */
-  --nn-act-neg: #8a0f0f;
+  --nn-act-neg: #5fae16;  /* negative activations: lime, with violet for positive */
+  --bad: #8a0f0f;  /* errors and failed checks */
   --nn-act-zero: #e6e6ea;
   --nn-act-pos: #5a4fd6;
   /* Data-viz series palette: violet / gold / red / teal. Chosen by search so that every pair stays at least
@@ -56,7 +57,8 @@
   --lav: #a798ff;
   --lime: #adf45d;
   --lime-text: #adf45d;
-    --nn-act-neg: #eb4763;
+    --nn-act-neg: #adf45d;  /* negative activations: lime, with violet for positive */
+    --bad: #eb4763;  /* errors and failed checks */
     --nn-act-zero: #2c2d32;
     --nn-act-pos: #c8c0ff;
     --viz-1: #a798ff;
@@ -88,7 +90,8 @@
   --lav: #a798ff;
   --lime: #adf45d;
   --lime-text: #adf45d;
-  --nn-act-neg: #eb4763;
+  --nn-act-neg: #adf45d;  /* negative activations: lime, with violet for positive */
+  --bad: #eb4763;  /* errors and failed checks */
   --nn-act-zero: #2c2d32;
   --nn-act-pos: #c8c0ff;
   --viz-1: #a798ff;
@@ -179,9 +182,8 @@ pre code { background: none; border: 0; padding: 0; }
 
 .nav-links {
   display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0;
-  min-width: 0; overflow-x: auto; scrollbar-width: none;
+  min-width: 0;
 }
-.nav-links::-webkit-scrollbar { display: none; }
 .nav-links li { flex-shrink: 0; }
 .nav-links a {
   display: block; padding: .4rem .7rem; border-radius:3px;
@@ -189,6 +191,23 @@ pre code { background: none; border: 0; padding: 0; }
 }
 .nav-links a:hover { background: var(--bg-soft); color: var(--text); text-decoration: none; }
 .nav-links a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+
+/* Controls Lab dropdown: opens on hover, keyboard focus, or the caret button */
+.nav-menu { position: relative; display: flex; align-items: center; }
+.nav-menu-btn {
+  display: grid; place-items: center; padding: .4rem .3rem; margin-left: -.15rem; border: 0; border-radius: 3px;
+  background: none; color: var(--text-muted); cursor: pointer;
+}
+.nav-menu-btn svg { transition: transform .15s ease; }
+.nav-menu-btn:hover { color: var(--text); }
+.nav-menu-list {
+  display: none; position: absolute; top: 100%; right: 0; z-index: 30; min-width: 11.5rem;
+  list-style: none; margin: 0; padding: .3rem; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 3px;
+  box-shadow: var(--shadow);
+}
+.nav-menu-list li { flex-shrink: 1; }
+.nav-menu:hover .nav-menu-list, .nav-menu:focus-within .nav-menu-list, .nav-menu.open .nav-menu-list { display: block; }
+.nav-menu:hover .nav-menu-btn svg, .nav-menu.open .nav-menu-btn svg { transform: rotate(180deg); }
 
 @media (max-width: 620px) {
   .nav-brand span { display: none; }
@@ -764,6 +783,18 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 
 /* page heads */
 .page-head { position: relative; }
+/* title strip: the home page's plot-paper grid, fading out to the right of the title */
+.page-head::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px; background-position: left top;
+  /* fade on every side, so the grid has no visible box edge */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18%, #000 60%, transparent), linear-gradient(to bottom, transparent, #000 25%, #000 55%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 18%, #000 60%, transparent), linear-gradient(to bottom, transparent, #000 25%, #000 55%, transparent);
+  mask-composite: intersect;
+}
+.page-head > * { position: relative; z-index: 1; }
 .page-title { font-weight: 500; }
 
 
@@ -792,3 +823,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 .theme-toggle:hover .tt-opt { color: var(--text); }
 .theme-toggle:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .theme-toggle::before { transition: none; } }
+
+/* phone: keep brand, three links, the dropdown caret and the theme toggle on one line */
+@media (max-width: 620px) {
+  .nav { gap: .5rem; padding-inline: 1rem; }
+  .nav-links { gap: .1rem; }
+  .nav-links a { padding-inline: .35rem; }
+  .nav-menu-btn { padding-inline: .2rem; margin-left: -.1rem; }
+}
