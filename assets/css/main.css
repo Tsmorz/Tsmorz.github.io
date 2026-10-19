@@ -407,6 +407,16 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .footer-links a:hover { color: var(--text); }
 .footer-links .social-icon { width: 20px; height: 20px; display: block; }
 
+/* Footer cat (cat.js): a pixel-art orange tabby on the footer's top line. cat.js snaps every pixel to these coat colors,
+   which are its own and the same in both themes; its z's and claw marks take the page's --text-muted. */
+.site-footer { position: relative; }
+.cat-lane {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 1px); height: 72px; overflow: hidden; pointer-events: none;
+  --fur: #e8903a; --fur-far: #c8742c; --stripe: #b3601c; --cream: #f6dcb4; --cream-far: #d9b98c; --ink: #2b2118; --pink: #e58aa0;
+}
+.cat { position: absolute; left: 0; bottom: 0; height: 72px; image-rendering: pixelated; }
+.cat-hit { position: absolute; bottom: 0; height: 36px; display: none; pointer-events: auto; cursor: pointer; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
