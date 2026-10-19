@@ -1258,7 +1258,7 @@ tabs:
 
     <h5>PID autopilot</h5>
           <div class="eqn-block">
-            <div class="eqn-row"><span class="eqn-lhs">e</span><span class="eqn-eq">=</span><span class="eqn-rhs">h<sub>ref</sub>(t) &#8722; h<sub>meas</sub>,&#160;&#160; h<sub>ref</sub> = 23 + 6 sin(2&#960;t / 16)&#160;m</span></div>
+            <div class="eqn-row"><span class="eqn-lhs">e</span><span class="eqn-eq">=</span><span class="eqn-rhs">h<sub>ref</sub>(t) &#8722; h<sub>meas</sub>,&#160;&#160; h<sub>ref</sub> = 23 + 6 sin(2&#960;t / 13.3)&#160;m</span></div>
             <div class="eqn-row"><span class="eqn-lhs">u</span><span class="eqn-eq">=</span><span class="eqn-rhs">K<sub>p</sub>e + K<sub>i</sub>&#8747;e&#8202;dt + K<sub>d</sub>&#8202;&#279;&#160;&#160;&#160;(nose-up command, &#176;)</span></div>
             <div class="eqn-row"><span class="eqn-lhs">&#948;<sub>e</sub></span><span class="eqn-eq">=</span><span class="eqn-rhs">&#948;<sub>e,trim</sub> &#8722; u</span></div>
             <p class="eqn-note">Elevator clamped &#177;15&#176; and slew-limited to 40&#176;/s. The run resets on a crash, a stall, a loop, or a climb past 590&#160;m. The score is altitude RMSE over the last 6 s.</p>

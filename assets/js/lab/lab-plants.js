@@ -375,7 +375,7 @@
         { type: 'pid', input: 1, out: 0, sign: 1, gains: { kp: 300, ki: 60 }, label: 'Airspeed → throttle',
           ranges: { kp: [0, 1500], ki: [0, 400] } }] }
     },
-    refs: [{ type: 'wave', amp: 6, omega: 2 * Math.PI / 16, label: 'h', unit: 'm', idx: 4 },
+    refs: [{ type: 'wave', amp: 6, omega: 1.2 * 2 * Math.PI / 16, label: 'h', unit: 'm', idx: 4 },
            { type: 'hold', hold: 0, amp: 0, omega: 0, label: 'V', unit: 'm/s', idx: 0 }],
     states: [{ label: 'h (m)', f: function (x, u, p) { return x[4] - p.H0; } }, { label: 'V (m/s)', f: function (x) { return x[0] - TRIM.V; } },
              { label: 'θ (°)', f: function (x) { return deg(x[1] + x[2]); } }, { label: 'α (°)', f: function (x) { return deg(x[2]); } }],
