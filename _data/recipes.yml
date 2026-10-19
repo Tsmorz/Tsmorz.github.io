@@ -10,23 +10,26 @@
 #   steps         one string each. [[...]] tokens are converted to the visitor's units:
 #                 [[i:sugar]] the amount of that ingredient   [[g:700]] grams   [[t:175]] or [[t:22-26]] °C
 #                 [[len:20]] cm   [[ml:175]] millilitres
+#                 Those stay put when the visitor scales the recipe (they are per piece: a ball, a ramekin, the oven).
+#                 These scale with it: [[i:id]]   [[n:4]] a count   [[gx:340]] grams   [[mlx:4000]] millilitres
+#                 `spoon` scales too, so start it with a number ("1¼ tsp").
 # script/test-data checks the shape; script/test-recipes checks the conversions and renders every recipe.
 
 - id: kombucha
   name: Kombucha
   blurb: Sweet tea turned tart and fizzy by a SCOBY. One jar, first fermentation.
-  makes: One [[ml:4000]] jar
+  makes: About [[mlx:4000]], in a [[mlx:6000]] jar
   time: 7 to 10 days, 30 minutes of work
   ingredients:
     - items:
         - { id: water-hot, name: Water, note: "for the tea", g: 1000 }
-        - { id: sugar, name: Sugar, g: 200 }
-        - { id: tea, name: Black or green tea, note: "loose leaf, or 8 tea bags", g: 16, spoon: 2 tbsp }
-        - { id: water-cold, name: Cold filtered water, g: 2000 }
+        - { id: sugar, name: Sugar, g: 330 }
+        - { id: tea, name: Black or green tea, note: "[[n:8]] tea bags, or loose leaf", g: 16, spoon: 2 tbsp }
+        - { id: water-cold, name: Cold filtered water, g: 3000 }
         - { id: starter, name: Unflavored kombucha, note: "from your last batch or a bottle of raw kombucha", g: 400 }
         - { name: SCOBY, qty: "1" }
   steps:
-    - "Wash a [[ml:4000]] glass jar and your hands with hot water. Skip the soap; its film can harm the culture."
+    - "Wash a [[mlx:6000]] glass jar and your hands with hot water. Skip the soap; its film can harm the culture."
     - "Put the pot on the scale, tare, and weigh in the hot water. Bring it to a boil."
     - "Off the heat, stir in the sugar until it dissolves, then add the tea."
     - "Steep for 10 minutes, then strain the tea out."
@@ -34,98 +37,114 @@
     - "Add the starter kombucha, then slide in the SCOBY."
     - "Cover with a clean cloth and a rubber band. Keep at [[t:22-26]], out of direct sun, for 7 to 10 days."
     - "From day 7, taste a spoonful each day. Stop when it is as sweet and tart as you like; longer means more sour."
-    - "Set aside [[g:400]] of the finished kombucha with the SCOBY as the starter for your next batch. Bottle the rest and chill at [[t:4]]."
+    - "Set aside [[i:starter]] of the finished kombucha with the SCOBY as the starter for your next batch. Bottle the rest and chill at [[t:4]]."
   notes:
     - "Brown strings and bubbles under the SCOBY are yeast, and normal. Fuzzy, dry mold that is blue, green or black on top means throw it all out."
 
 - id: hummingbird-cake
   name: Hummingbird cake
-  blurb: Two moist layers of banana, pineapple and pecans, spiced with cinnamon and finished with cream cheese frosting.
-  makes: Two [[len:20]] layers, 12 slices
-  time: About 2½ hours, most of it cooling
+  blurb: Carrot, pineapple, coconut and almonds, lightened with whipped egg whites and finished with cream cheese icing.
+  makes: One half sheet pan, a two-layer cake, or cupcakes
+  time: About 1 hour, plus cooling
   ingredients:
     - group: Cake
       items:
-        - { name: Plain flour, g: 330 }
+        - { name: Carrots, note: "grated fine", g: 454 }
+        - { name: Brown sugar, g: 528 }
+        - { name: Salt, g: 5, spoon: "1 tsp" }
+        - { name: Ground cinnamon, g: 1, spoon: "½ tsp" }
+        - { name: Egg yolks, note: "about [[n:16]] large", g: 295 }
+        - { name: Neutral oil, g: 227 }
+        - { name: Pineapple juice, g: 181 }
+        - { name: Coconut, note: "chopped fine", g: 80 }
+        - { name: Pineapple, note: "chopped medium", g: 227 }
+        - { name: Almonds, note: "chopped fine", g: 227 }
+        - { name: Cake flour, g: 558 }
         - { name: Baking soda, g: 5, spoon: "1 tsp" }
-        - { name: Ground cinnamon, g: 5, spoon: "2 tsp" }
-        - { name: Salt, g: 3, spoon: "½ tsp" }
-        - { name: Very ripe bananas, note: "peeled, about 3 medium", g: 280 }
-        - { name: Crushed pineapple, note: "one 8 oz can, with its juice", g: 227 }
-        - { name: Granulated sugar, g: 300 }
-        - { name: Neutral oil, g: 200 }
-        - { name: Eggs, note: "beaten, about 3 large", g: 150 }
-        - { name: Vanilla extract, g: 8, spoon: "2 tsp" }
-        - { id: pecans, name: Pecans, note: "chopped", g: 115 }
-    - group: Cream cheese frosting
+    - group: Meringue
       items:
-        - { name: Unsalted butter, note: "soft", g: 113 }
-        - { name: Full-fat cream cheese, note: "soft, from the block", g: 340 }
-        - { name: Powdered sugar, note: "sifted", g: 300 }
-        - { name: Vanilla extract, g: 4, spoon: "1 tsp" }
-        - { name: Pecan halves, note: "for the top", g: 30 }
+        - { name: Egg whites, note: "about [[n:14]] large", g: 454 }
+        - { name: Powdered egg whites, g: 23 }
+        - { name: White sugar, g: 454 }
+        - { name: Cream of tartar, g: 4, spoon: "1¼ tsp" }
+    - group: Cream cheese icing
+      items:
+        - { name: Cream cheese, note: "soft, from the block", g: 454 }
+        - { name: Butter, note: "soft", g: 227 }
+        - { name: Fondant sugar, note: "Drivert, or powdered sugar", g: 544 }
+        - { name: Orange, lemon or pineapple juice, note: "optional, to thin", g: 30, spoon: "2 tbsp" }
   steps:
-    - "Heat the oven to [[t:175]]. Grease two [[len:20]] round pans and line the bottoms with parchment."
-    - "Toast all the pecans, the chopped and the halves, on a tray for 8 minutes, then let them cool."
-    - "Weigh the flour, baking soda, cinnamon and salt into a large bowl, tare between each, and whisk."
-    - "In a second bowl, weigh in the bananas and mash them. Add the pineapple with its juice, the sugar, oil, eggs and vanilla, and whisk until smooth."
-    - "Fold the dry mix into the wet until just combined, then fold in the [[i:pecans]] of chopped pecans."
-    - "Weigh the batter into the pans, about [[g:810]] each, so the layers match."
-    - "Bake 30 to 35 minutes, until a toothpick comes out clean or the middle reads [[t:96]]."
-    - "Cool 10 minutes in the pans, turn out onto a rack, and cool completely, about an hour. Warm cake melts the frosting."
-    - "For the frosting, beat the butter and cream cheese until smooth. Add the powdered sugar and vanilla and beat just until combined. Chill 15 minutes if it is runny."
-    - "Spread [[g:250]] of frosting between the layers, then the rest over the top and sides. Press the pecan halves around the top edge."
-    - "Chill 30 minutes before slicing. It keeps 4 days at [[t:4]]."
+    - "Heat the oven to [[t:175]]. Line a half sheet pan ([[len:33]] × [[len:46]]) with parchment and fit a pan extender around it."
+    - "In a stand mixer with the paddle, mix the carrots, brown sugar, salt and cinnamon for 5 minutes on medium-high."
+    - "Add the egg yolks in 3 additions, mixing well after each."
+    - "Add the oil and mix well."
+    - "Add the pineapple juice, coconut, pineapple and almonds, and mix for 2 to 3 minutes."
+    - "Sift the cake flour and baking soda together, add them to the batter and mix quickly."
+    - "In a large, grease-free bowl with the whisk, whip the egg whites, powdered egg whites and cream of tartar to a thick froth. Add the white sugar in a slow, steady stream and whip to thick, moist peaks."
+    - "Fold a small scoop of the whites into the batter to loosen it, then add the rest and fold in gently."
+    - "Pour into the pan and smooth the top. For cupcakes, fill lined cups ¾ full instead."
+    - "Bake 20 to 25 minutes. Do not overbake."
+    - "While the cake bakes, whip the cream cheese, butter and fondant sugar until smooth. Leave out the juice, and stop once it is smooth: over-whipping thins the icing."
+    - "For a thin icing, stir in juice until it is a very thick pouring consistency, pour it over the warm cake and spread quickly. For a thick icing, skip the juice and spread it with a spatula at any time."
+    - "Let the cake cool completely, then cut it into pieces. For a two-layer cake, cut the sheet in half across, spread [[g:420]] of thick icing on one half, stack the other on top and cover with the rest."
   notes:
-    - "The batter is wet. Bake the layers in the middle of the oven and do not open the door before 30 minutes."
+    - "For a richer icing, melt [[gx:340]] of white chocolate and mix it into the butter before the butter goes in with the cream cheese."
+    - "The meringue whips up big. Use the largest bowl your mixer has."
 
 - id: creme-brulee
   name: Crème brûlée
-  blurb: Vanilla custard baked in a water bath, under a glass-thin caramel top.
-  makes: 4 ramekins of [[ml:175]]
-  time: 1 hour of work, plus 4 hours to chill
+  blurb: Vanilla and Grand Marnier custard baked in a water bath, under a glass-thin caramel top.
+  makes: "[[n:8]] ramekins of [[ml:120-175]]"
+  time: 1 hour of work, plus a few hours to chill
   ingredients:
     - group: Custard
       items:
-        - { name: Heavy cream, note: "at least 35% fat", g: 500 }
-        - { name: Vanilla bean, note: "or [[g:8]] vanilla paste", qty: 1 pod }
-        - { name: Egg yolks, note: "about 5 large", g: 90 }
-        - { name: Sugar, g: 70 }
-        - { name: Hot water, note: "for the bath", qty: as needed }
+        - { name: Sugar, g: 67 }
+        - { name: Heavy cream, g: 715 }
+        - { name: Egg yolks, note: "about [[n:4]] extra-large", g: 80 }
+        - { name: Whole egg, note: "about [[n:1]] extra-large", g: 56 }
+        - { name: Vanilla extract, g: 6, spoon: "1½ tsp" }
+        - { name: Grand Marnier, g: 15, spoon: "1 tbsp" }
+    - group: Water bath
+      items:
+        - { name: Water, note: "boiling", g: 950 }
     - group: To finish
       items:
-        - { name: Sugar, note: "for the tops, [[g:10]] per ramekin", g: 40 }
+        - { name: Superfine sugar, note: "for the tops, [[g:4]] per ramekin", g: 32 }
+        - { name: Fresh berries, qty: to garnish }
+        - { name: Fresh mint leaves, qty: to garnish }
   steps:
-    - "Heat the oven to [[t:150]]. Put 4 ramekins in a deep roasting tin and boil the kettle."
-    - "Warm the cream in a saucepan with the vanilla (split the bean and scrape in the seeds) until it steams, about [[t:80]]. Do not let it boil. Take it off the heat and steep 10 minutes."
-    - "Weigh the yolks and sugar into a bowl and whisk for a minute, until smooth and pale. Do not whip in air."
-    - "Pour the warm cream into the yolks in a thin stream, whisking all the time. Strain through a sieve and skim off any foam."
-    - "Weigh [[g:165]] of custard into each ramekin."
-    - "Pour hot water into the tin until it comes halfway up the ramekins. Bake 30 to 35 minutes, until the edges are set and the middle wobbles like jelly (about [[t:77]] in the center)."
-    - "Lift the ramekins out and cool 30 minutes. Cover and chill at [[t:4]] for at least 4 hours, up to 3 days."
-    - "Blot any moisture off the tops. Weigh [[g:10]] of sugar onto each and tilt the ramekin to coat it evenly."
-    - "Torch, or grill close to the element, until amber and bubbling, about a minute each. Rest 2 minutes to harden and serve within the hour."
+    - "Heat the oven to [[t:150]]. Set [[n:8]] ramekins in a baking pan and bring the water to a boil."
+    - "Weigh the cream and sugar into a saucepan. Warm over medium-low heat until the cream simmers and the sugar dissolves."
+    - "While the cream heats, weigh the yolks and whole egg into a large jug and whisk them with an immersion blender. Add the vanilla and Grand Marnier and whisk to combine."
+    - "Slowly pour the hot cream into the eggs, whisking all the time."
+    - "Strain through a fine sieve and weigh [[g:117]] of custard into each ramekin."
+    - "Put the pan in the oven and slowly pour the boiling water in until it comes up to the level of the custard. Bake 30 to 40 minutes, until the custard is set but still jiggles in the center when gently shaken."
+    - "Take the pan out and lift the ramekins from the bath with tongs. Cool to room temperature, then refrigerate until firm."
+    - "Just before serving, sprinkle [[g:4]] of sugar (¾ to 1 tsp) evenly over each custard and torch until it is evenly caramelized."
+    - "Let them sit a few minutes, until the sugar hardens and the ramekins are cool to the touch. Garnish with berries and mint."
   notes:
-    - "Use a fine granulated sugar for the top; coarse crystals melt unevenly."
+    - "You need an immersion blender and a kitchen torch."
+    - "Superfine sugar melts evenly under the torch; coarse crystals burn before they melt."
 
 - id: pizza-dough
   name: Pizza dough
-  blurb: A wet, slow-rising dough that bakes up blistered and chewy. Four pizzas.
-  makes: 4 pizzas of [[len:30]]
+  blurb: A wet, slow-rising dough that bakes up blistered and chewy.
+  makes: "[[n:4]] pizzas of [[len:30]]"
   time: 30 minutes of work, plus 1 to 2 days in the fridge
   ingredients:
     - items:
-        - { id: water, name: Water, note: "cool, about [[t:20]]", g: 390 }
-        - { name: Instant yeast, g: 2, spoon: "⅔ tsp" }
-        - { name: Bread flour, note: "or 00 flour", g: 600 }
-        - { name: Fine salt, g: 16, spoon: "2¾ tsp" }
-        - { name: Olive oil, g: 12, spoon: "1 tbsp" }
+        - { id: water, name: Water, note: "cool, about [[t:20]]", g: 397 }
+        - { name: Sourdough starter, note: "active and bubbly, or [[gx:8]] instant yeast", g: 128 }
+        - { name: 00 flour, note: "or bread flour", g: 640 }
+        - { name: Fine salt, g: 19, spoon: "3¼ tsp" }
+        - { name: Olive oil, g: 8, spoon: "2 tsp" }
   steps:
-    - "Weigh the water into a large bowl, add the yeast and stir to dissolve."
+    - "Weigh the water into a large bowl, add the starter (or yeast) and stir to dissolve."
     - "Weigh the flour and salt on top. Mix with your hand until no dry flour is left, then rest 20 minutes."
     - "Add the olive oil and knead on the counter for 8 to 10 minutes, until smooth and springy but still a little tacky. Add water, not flour, if it fights you."
     - "Cover the bowl and leave it at [[t:20-24]] for 1 hour."
-    - "Put the bowl on the scale and cut the dough into 4 balls of about [[g:255]] each. Roll each one tight and set it in a lightly oiled container with a lid."
+    - "Put the bowl on the scale and cut the dough into [[n:4]] balls of about [[g:298]] each. Roll each one tight and set it in a lightly oiled container with a lid."
     - "Refrigerate at [[t:4]] for 24 to 48 hours."
     - "Take the balls out 2 hours before baking so they come up to room temperature."
     - "Put a pizza stone or steel on the top rack and heat the oven to its highest setting, ideally [[t:260]] or more, for 45 minutes."

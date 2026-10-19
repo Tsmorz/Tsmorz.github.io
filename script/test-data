@@ -72,7 +72,7 @@ recipes.each_with_index do |r, i|
     t.to_s.scan(/\[\[(\w+):([^\]]*)\]\]/) do |kind, arg|
       if kind == "i"
         errors << "#{label}: [[i:#{arg}]] names no ingredient" unless have.include?(arg)
-      elsif !%w[g t len ml].include?(kind) || !arg.match?(/\A-?[\d.]+(-[\d.]+)?\z/)
+      elsif !%w[g t len ml gx mlx n].include?(kind) || !arg.match?(/\A-?[\d.]+(-[\d.]+)?\z/)
         errors << "#{label}: bad token [[#{kind}:#{arg}]]"
       end
     end
