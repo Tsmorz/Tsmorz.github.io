@@ -695,7 +695,15 @@ button, input, select, textarea { font-family: var(--mono); }
 @media (max-width: 720px) { .su-net { height: 220px; } }
 .su-reset-row { display: flex; gap: .4rem; }
 .su-reset-row .sim-btn { padding: .45rem .3rem; font-size: .8rem; white-space: nowrap; }
-.su-layout .sim-panel { gap: .8rem; }
+.su-layout .sim-panel { gap: .5rem; padding: .8rem .9rem; }
+.su-layout .sim-panel h3 { margin: 0; font-size: .92rem; }
+.su-layout .panel-hint { font-size: .72rem; line-height: 1.35; }
+.su-layout .goal-grid { gap: .25rem; }
+.su-layout .goal-icon svg { width: 22px; height: 34px; }
+.su-layout .goal-btn-random { padding: .2rem .4rem; }
+.su-layout .pid-group { row-gap: .05rem; }
+.su-layout .telemetry { gap: .05rem .6rem; }
+.su-layout .sim-btn { padding-block: .35rem; }
 .su-layout .score-block { padding: .2rem 0; }
 .su-layout .mode-btn { white-space: nowrap; padding-inline: .3rem; }
 /* The label changes with the pose ("UD → UU time"); keep it one line so the panel height never moves. */
