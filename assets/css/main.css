@@ -182,9 +182,8 @@ pre code { background: none; border: 0; padding: 0; }
 
 .nav-links {
   display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0;
-  min-width: 0; overflow-x: auto; scrollbar-width: none;
+  min-width: 0;
 }
-.nav-links::-webkit-scrollbar { display: none; }
 .nav-links li { flex-shrink: 0; }
 .nav-links a {
   display: block; padding: .4rem .7rem; border-radius:3px;
@@ -192,6 +191,23 @@ pre code { background: none; border: 0; padding: 0; }
 }
 .nav-links a:hover { background: var(--bg-soft); color: var(--text); text-decoration: none; }
 .nav-links a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+
+/* Controls Lab dropdown: opens on hover, keyboard focus, or the caret button */
+.nav-menu { position: relative; display: flex; align-items: center; }
+.nav-menu-btn {
+  display: grid; place-items: center; padding: .4rem .3rem; margin-left: -.15rem; border: 0; border-radius: 3px;
+  background: none; color: var(--text-muted); cursor: pointer;
+}
+.nav-menu-btn svg { transition: transform .15s ease; }
+.nav-menu-btn:hover { color: var(--text); }
+.nav-menu-list {
+  display: none; position: absolute; top: 100%; right: 0; z-index: 30; min-width: 11.5rem;
+  list-style: none; margin: 0; padding: .3rem; background: var(--bg); border: 1px solid var(--border-strong); border-radius: 3px;
+  box-shadow: var(--shadow);
+}
+.nav-menu-list li { flex-shrink: 1; }
+.nav-menu:hover .nav-menu-list, .nav-menu:focus-within .nav-menu-list, .nav-menu.open .nav-menu-list { display: block; }
+.nav-menu:hover .nav-menu-btn svg, .nav-menu.open .nav-menu-btn svg { transform: rotate(180deg); }
 
 @media (max-width: 620px) {
   .nav-brand span { display: none; }
@@ -807,3 +823,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 .theme-toggle:hover .tt-opt { color: var(--text); }
 .theme-toggle:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .theme-toggle::before { transition: none; } }
+
+/* phone: keep brand, three links, the dropdown caret and the theme toggle on one line */
+@media (max-width: 620px) {
+  .nav { gap: .5rem; padding-inline: 1rem; }
+  .nav-links { gap: .1rem; }
+  .nav-links a { padding-inline: .35rem; }
+  .nav-menu-btn { padding-inline: .2rem; margin-left: -.1rem; }
+}

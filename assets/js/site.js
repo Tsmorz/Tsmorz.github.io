@@ -19,6 +19,16 @@
   });
 })();
 
+// Controls Lab dropdown: the caret button toggles it (touch); hover and focus open it by CSS.
+(function () {
+  var menu = document.querySelector('.nav-menu'), btn = menu && menu.querySelector('.nav-menu-btn');
+  if (!btn) return;
+  function set(open) { menu.classList.toggle('open', open); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  btn.addEventListener('click', function (e) { e.stopPropagation(); set(!menu.classList.contains('open')); });
+  document.addEventListener('click', function (e) { if (!menu.contains(e.target)) set(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && menu.classList.contains('open')) { set(false); btn.focus(); } });
+})();
+
 // Hero field — math symbols that spring back to a home point, pushed by the cursor.
 (function () {
   var hero = document.querySelector('.hero');
