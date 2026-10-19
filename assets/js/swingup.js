@@ -505,7 +505,7 @@
       })
       .then(function () {
         policyLoading = false;
-        if (tqcBtn) { tqcBtn.disabled = false; tqcBtn.textContent = 'TQC network'; }
+        if (tqcBtn) { tqcBtn.disabled = false; tqcBtn.textContent = 'AI'; }
       });
   }
 
@@ -723,7 +723,7 @@
       label = 'Reached ' + goal + ' in ' + reachTime.toFixed(2) + ' s - holding'; colr = accent;
     }
     else if (reachTime !== null)         { label = 'Knocked out of ' + goal + ' - recovering'; colr = accent; }
-    else if (mode === 'tqc')             { label = 'TQC network → ' + goal; colr = accent; }
+    else if (mode === 'tqc')             { label = 'AI → ' + goal; colr = accent; }
     else                                 { label = 'Manual → ' + goal + ' - drag the cart'; }
     if (randomOn && status !== 'crashed') label += '  · random';
     ctx.textAlign = 'left'; ctx.font = '600 13px ' + font; ctx.fillStyle = colr;
@@ -860,7 +860,7 @@
     var net = meta.network, B = net.blocks, side = Math.round(Math.sqrt(net.hidden)), side2 = Math.round(Math.sqrt(net.hidden * net.expand));
     if (!policy) {
       ctx.fillStyle = muted; ctx.font = '13px ' + font;
-      ctx.fillText(policyLoading ? 'Loading the network…' : 'Pick the TQC network to load it and watch it think.', W / 2, H / 2);
+      ctx.fillText(policyLoading ? 'Loading the network…' : 'Pick AI to load the network and watch it think.', W / 2, H / 2);
       return;
     }
     // While a human drives, show what the network would do from here.
