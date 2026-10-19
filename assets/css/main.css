@@ -238,10 +238,6 @@ pre code { background: none; border: 0; padding: 0; }
 .nav-menu.shut .nav-menu-list { display: none; }
 .nav-menu.shut .nav-menu-btn svg { transform: none; }
 
-@media (max-width: 620px) {
-  .nav-brand span { display: none; }
-}
-
 /* ---------------------------------------------------------------
    Hero
    --------------------------------------------------------------- */
