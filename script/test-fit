@@ -129,5 +129,12 @@ console.log('5. the example with Ho–Kalman, and tracking');
   check(F.steadyState([[1, 0], [0, 0.5]], [[0], [0]], 0) !== null && F.steadyState([[0.5, 0], [0, 0.5]], [[0], [0]], 0) === null, 'a state that no input can hold steady is reported');
 }
 
+{
+  const full = F.reachability([[0.9, 0.1], [0, 0.5]], [[0], [1]]), cut = F.reachability([[0.9, 0], [0, 0.5]], [[1], [0]]), scaled = F.reachability([[0.9, 0], [0, 0.5]], [[1], [0]], [1e3, 1e-3]);
+  check(full.rank === 2 && cut.rank === 1 && scaled.rank === 1, 'reachability counts the directions the input can move (a state with no path from the input is out of reach, whatever the units)');
+  const ex = F.prepare(F.parseCsv(F.exampleCsv()), F.guessRoles(F.parseCsv(F.exampleCsv()).header), 1), fit = F.fitLinear(ex.X, ex.U, true);
+  check(F.reachability(fit.A, fit.B).rank === 4, 'the cart-pole example is fully reachable');
+}
+
 if (failed) { console.log('\ntest-fit: FAILED'); process.exit(1); }
 console.log('\ntest-fit: all checks passed');

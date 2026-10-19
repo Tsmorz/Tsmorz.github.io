@@ -10,7 +10,7 @@ lab: controls
   <p class="page-sub controls-intro">
     One problem, taken all the way through: a mass on a spring. Each lesson follows the same five steps (arrive, reactivate, inform,
     process, evaluate), and the same steps are then repeated on a tilt table, an aircraft and a cart-pole. Past what these can do,
-    <a href="{{ '/controls/swingup/' | relative_url }}">swing up a double pendulum</a>, or
+    <a href="{{ '/controls/swingup/' | relative_url }}">control a double pendulum</a>, or
     <a href="{{ '/controls/fit/' | relative_url }}">upload your own recording</a> to fit a model and design an LQR for it.
   </p>
 </section>

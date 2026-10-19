@@ -1,11 +1,11 @@
 ---
 layout: default
-title: Double Pendulum Swing-Up
+title: Double Pendulum Control
 description: Swing a double pendulum on a cart up by hand, or pick a target (both up, both down, or either pole folded) and let a goal-conditioned TQC reinforcement-learning policy running in your browser take it there.
 permalink: /controls/swingup/
 ---
 <section class="wrap page-head">
-  <h1 class="page-title">Double Pendulum Swing-Up</h1>
+  <h1 class="page-title">Double Pendulum Control</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
     Two poles hang from a cart on a two-metre rail. Push the cart to swing both poles up and

@@ -209,8 +209,10 @@ pre code { background: none; border: 0; padding: 0; }
 
 /* Controls Lab dropdown: opens on hover, keyboard focus, or the caret button */
 .nav-menu { position: relative; display: flex; align-items: center; }
+/* the caret hugs the link text; its right padding matches the space the other links leave */
+.nav-menu > a { padding-right: .2rem; }
 .nav-menu-btn {
-  display: grid; place-items: center; padding: .4rem .3rem; margin-left: -.15rem; border: 0; border-radius: 3px;
+  display: grid; place-items: center; padding: .4rem .55rem .4rem .15rem; margin-left: 0; border: 0; border-radius: 3px;
   background: none; color: var(--text-muted); cursor: pointer;
 }
 .nav-menu-btn svg { transition: transform .15s ease; }

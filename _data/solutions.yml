@@ -4,9 +4,9 @@ intro: >-
   A clear scope, working code, results you can check.
 
 services:
-  - name: State estimation and sensor fusion
+  - name: Estimation and fusion
     blurb: Kalman filters, IMU and GPS fusion, and SLAM that hold up on real sensors.
-  - name: Controls and system identification
+  - name: Controls and System ID
     blurb: From your recorded data to a model and a controller you can tune and trust.
   - name: Learning-based control
     blurb: Reinforcement learning for hard, underactuated systems, checked against a classical baseline.
