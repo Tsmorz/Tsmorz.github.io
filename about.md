@@ -4,11 +4,13 @@ title: About
 permalink: /about/
 ---
 I'm a **Robotics Software Engineer at Agile Robots SE** in Munich, building the software
-that keeps a fleet of robots connected and controllable - remote over-the-air updates and
-low-latency teleoperation for machines deployed around the world.
+that keeps robots all over the world connected: sending them software updates over the
+internet, and letting a person drive one from far away with almost no delay.
 
 Before Agile Robots I started a PhD at the **Technical University of Munich**, working under
-**Prof. Lorenzo Masia** on sensor fusion for soft exosuits, before dropping out.
+**Prof. Lorenzo Masia** on soft exosuits (robotic suits made of fabric that help people
+move), combining the readings of their sensors to track how the wearer moves, before
+dropping out.
 
 <div class="about-photos">
   <img src="{{ '/assets/img/about/exosuit-1.jpg' | relative_url }}" alt="Soft exosuit research at TU Munich">
@@ -43,15 +45,15 @@ purely because the idea was too good to leave alone.
 
 ## What I work on
 
-- **Robot fleet software** - over-the-air updates and low-latency teleoperation
-- **State estimation & sensor fusion** - Kalman filtering, IMU fusion, SLAM
-- **Autonomous aerial vehicles** - still trying to get a drone to fly from scratch
+- **Robot fleet software** - updating robots over the internet and driving them remotely without lag
+- **Sensor fusion** - combining noisy sensors (GPS, motion sensors, cameras) so a robot knows where it is and which way it faces
+- **Drones** - still trying to get one I built from scratch to fly
 - **Teaching** - actively mentoring for [Polygence](https://www.polygence.org/) and previously with the [Boston Youth Farm Project](https://bostonyfp.org/)
 
 ## Professional Athlete
 
 Before robotics was the day job, I raced as a professional triathlete for Team USA. At one point I was ranked top 40 in the world. The 2019 and 2020 seasons were the
-highlight - top finishes on the World Cup circuit, on an actual hardware setup I'd designed and built
+highlight - top finishes on the World Cup circuit, on handlebar extensions I'd designed and built
 myself (see the hardware design on my
 [projects page]({{ '/projects/' | relative_url }})). I raced and trained in 25 countries and loved the adventure but I'm more than happy that my income is more reliable than during this time.
 
