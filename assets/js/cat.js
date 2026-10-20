@@ -267,21 +267,21 @@
     hind(p.fh, C.far, C.creamFar);
     tail();
 
-    // body: chest, back, rump and belly as one closed curve around the spine. It is a well-fed cat: fuller than the
-    // poses say, most of all underneath, with a belly that hangs between the legs
-    var ts = p.ts + 0.8, th = p.th + 0.9, bs = p.bs + 1.2, bh = p.bh + 1.8, sag = 2.6;
+    // body: chest, back, rump and belly as one closed curve around the spine. It is a well-fed cat with a straight
+    // back and a slim chest; its weight is in the pouch, a belly that swings low just in front of the hind legs
+    var ts = p.ts + 0.3, th = p.th + 0.3, bs = p.bs + 0.2, bh = p.bh + 1.4, pouch = 4.8;
     var F = add(add(sh, u, 5.2), n, 0.2), Ts = add(sh, n, ts), Th = add(hp, n, th);
     var Rr = add(add(hp, u, -5.8), n, 0.6), Bh = add(hp, n, -bh), Bs = add(sh, n, -bs);
     var body = new Path2D('M' + pt(F) + 'C' + pt(add(F, n, 3.2)) + ' ' + pt(add(Ts, u, 2.8)) + ' ' + pt(Ts) +
-      'C' + pt(add(add(Ts, u, -6), n, 1.4)) + ' ' + pt(add(add(Th, u, 6), n, 1.4)) + ' ' + pt(Th) +
+      'C' + pt(add(Ts, u, -6)) + ' ' + pt(add(Th, u, 6)) + ' ' + pt(Th) +
       'C' + pt(add(Th, u, -3.4)) + ' ' + pt(add(Rr, n, 3.2)) + ' ' + pt(Rr) +
       'C' + pt(add(Rr, n, -3.4)) + ' ' + pt(add(Bh, u, -2.6)) + ' ' + pt(Bh) +
-      'C' + pt(add(add(Bh, u, 6), n, -sag)) + ' ' + pt(add(add(Bs, u, -6), n, -sag)) + ' ' + pt(Bs) +
+      'C' + pt(add(add(Bh, u, 1.5), n, -pouch)) + ' ' + pt(add(add(Bs, u, -5), n, -0.2)) + ' ' + pt(Bs) +
       'C' + pt(add(Bs, u, 2.8)) + ' ' + pt(add(F, n, -3)) + ' ' + pt(F) + 'Z');
     c.fillStyle = C.fur; c.fill(body);
     c.save(); c.clip(body);
     var ang = deg(u);
-    oval(c, C.cream, add(mid(sh, hp), n, -(bs + bh) / 2 - sag * 0.7), L / 2 + 2, 2.8, ang);
+    oval(c, C.cream, add(add(hp, u, L * 0.28), n, -bh - pouch * 0.5), L / 3 + 1, 2.4, ang);
     oval(c, C.cream, add(add(sh, u, 4), n, -1.6), 3.2, 3.6, ang);
     var ns = Math.max(2, Math.round(L / 4.4));
     for (i = 0; i < ns; i++) {                        // tabby stripes down from the spine, raked back, a pixel or two apart
