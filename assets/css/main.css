@@ -889,7 +889,7 @@ main:not(:has(> .hero))::before {
 
 /* the nav mark (_includes/logo.html): 30px so each of its 5 squares is a whole 6px, with a 1px margin to keep the bar's 32px height */
 .nav-brand svg { width: 30px; height: 30px; flex-shrink: 0; display: block; margin: 1px; }
-.nav-brand svg.logo-4 { width: 32px; height: 32px; margin: 0; }   /* the 4x4 mark: 8px squares fill the full 32px */
+.nav-brand svg.logo-4 { width: 24px; height: 24px; margin: 4px 0; }   /* the 4x4 mark: 6px squares, padded top and bottom to the bar's 32px, flush with the page edge */
 .mk-a { fill: var(--mark-a); }
 .mk-b { fill: var(--mark-b); }
 .mk-v { fill: var(--viz-1); }
