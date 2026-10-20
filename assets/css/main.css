@@ -36,11 +36,6 @@
   --pend-rod: #556070;
   --pend-1: #8576f0;
   --pend-2: #5fae16;  /* double pendulum: gray cart, violet upper bob, lime lower bob, gray rods */
-  --logo-ground: #4b505e;
-  --logo-cart: #5d6373;
-  --logo-rod: #2f3340;
-  --logo-b1: #5a4fd6;
-  --logo-b2: #35a02a;
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -82,11 +77,6 @@
     --pend-rod: #9aa7b6;
     --pend-1: #a798ff;
     --pend-2: #adf45d;
-    --logo-ground: #aab0c0;
-    --logo-cart: #c4c9d6;
-    --logo-rod: #f1efff;
-    --logo-b1: #b3a8ff;
-    --logo-b2: #b8ff6a;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -123,11 +113,6 @@
   --pend-rod: #9aa7b6;
   --pend-1: #a798ff;
   --pend-2: #adf45d;
-  --logo-ground: #aab0c0;
-  --logo-cart: #c4c9d6;
-  --logo-rod: #f1efff;
-  --logo-b1: #b3a8ff;
-  --logo-b2: #b8ff6a;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }
@@ -202,7 +187,6 @@ pre code { background: none; border: 0; padding: 0; }
   flex-shrink: 0;
 }
 .nav-brand:hover { text-decoration: none; color: var(--accent); }
-.nav-brand img { width: 32px; height: 32px; border-radius: 3px; object-fit: cover; flex-shrink: 0; outline: 1px solid var(--lav); outline-offset: 2px; }   /* your photo on the inner pages */
 
 .nav-links {
   display: flex; gap: .25rem; list-style: none; margin: 0; padding: 0;
@@ -776,6 +760,9 @@ button, input, select, textarea { font-family: var(--mono); }
 
 /* ---- signature: figure-frame look (sharp corners, plot grid, mono labels) ---- */
 :root { --radius: 3px; --serif: "Fraunces", "STIX Two Text", Georgia, serif; --grid: rgba(100, 100, 140, .09); }
+:root { --mark-a: #1b1b1f; --mark-b: #fff; }   /* nav mark: dark and light squares (_includes/logo.html) */
+:root[data-theme="dark"] { --mark-a: #e9e9ee; --mark-b: #16161a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --mark-a: #e9e9ee; --mark-b: #16161a; } }
 :root[data-theme="dark"] { --grid: rgba(199, 192, 255, .09); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --grid: rgba(199, 192, 255, .09); } }
 h1, h2 { font-optical-sizing: auto; font-weight: 500; letter-spacing: -.01em; }
@@ -900,13 +887,13 @@ main:not(:has(> .hero))::before {
   .nav-menu-list::before { display: none; }
 }
 
-/* the home-page logo: the favicon drawing, inline so it follows the theme toggle */
-.logo-ground { stroke: var(--logo-ground); }
-.logo-cart { fill: var(--logo-cart); }
-.logo-rod { stroke: var(--logo-rod); }
-.logo-b1 { fill: var(--logo-b1); }
-.logo-b2 { fill: var(--logo-b2); }
-.nav-brand svg { width: 38px; height: 38px; flex-shrink: 0; display: block; margin: -3px; }   /* drawn 38px but takes the photo's 32px of layout, so the bar keeps one height on every page; home only, no frame (a logo, not an avatar) */
+/* the nav mark (_includes/logo.html): 30px so each of its 5 squares is a whole 6px, with a 1px margin to keep the bar's 32px height */
+.nav-brand svg { width: 30px; height: 30px; flex-shrink: 0; display: block; margin: 1px; }
+.nav-brand svg.logo-4 { width: 24px; height: 24px; margin: 4px 0; }   /* the 4x4 mark: 6px squares, padded top and bottom to the bar's 32px, flush with the page edge */
+.mk-a { fill: var(--mark-a); }
+.mk-b { fill: var(--mark-b); }
+.mk-v { fill: var(--viz-1); }
+.mk-g { fill: var(--lime); }
 
 /* /solutions/ */
 /* Sized to fit a laptop screen without scrolling: one line per blurb on desktop, tighter section gaps. */

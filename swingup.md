@@ -9,7 +9,7 @@ permalink: /controls/swingup/
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">← Control Systems</a></p>
   <p class="page-sub controls-intro">
     An unactuated pendulum on a sliding cart is a classic controls problem and this two link version extends it.
-    You can push the cart to swing both links up but the sytem dynamics and human reaction time make this impossible. However, a <strong>TQC reinforcement-learning policy</strong>
+    You can push the cart to swing both links up but the system dynamics and human reaction time make this impossible. However, a <strong>TQC reinforcement-learning policy</strong>
     can do this with a high rate of success. Sometimes learned control policies are the only way to achieve stability!
   </p>
 </section>
@@ -81,6 +81,49 @@ permalink: /controls/swingup/
     </div>
   </div>
 
-<script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
+  <div class="su-net-wrap">
+    <h3 class="su-net-title">Inside the network</h3>
+    <div class="su-net-scroll">
+      <canvas class="su-net" id="su-net" aria-label="Diagram of the policy network with live activations: ten inputs, a 256-unit embedding, two residual blocks of 1024 ReLU units each, and one output force."></canvas>
+    </div>
+    <p class="su-net-hint">Swipe sideways to see the whole network.</p>
+    <p class="eqn-note">
+      Each square is one neuron, violet when positive and green when negative. The ten inputs feed a
+      256-unit embedding, then two residual blocks (each widens to 1024 ReLU units and adds its
+      result back through the skip), and a single number comes out. <code>tanh</code> squashes it
+      to a force of at most 20&nbsp;N.
+    </p>
+  </div>
 
+  <div class="demo-note">
+    <h4 class="demo-note-title">About this demo</h4>
+    <p>
+      The policy was trained in <a href="https://github.com/Tsmorz/n-cartpole">n-cartpole</a>
+      with <strong>TQC</strong> (Truncated Quantile Critics), an off-policy actor-critic that
+      learns a whole distribution of returns rather than a single value. At every 10&nbsp;ms step
+      it sees the cart position and velocity, cos&#8201;&#952;, sin&#8201;&#952; and
+      &#952;&#775; for each link, and the target as cos of each link's goal angle (+1 up,
+      &#8722;1 down). It outputs one horizontal force. Its reward peaks only when both links
+      sit at their targets, still, with the cart near the center. During training the target
+      changed every few seconds, and episodes started at every pose as well as at fully
+      random states. That's why it can move between any two targets, and why it can catch a
+      swing you started by hand.
+    </p>
+    <p>
+      "Reached" means both links within 0.3&nbsp;rad of their targets and slower than
+      1.5&nbsp;rad/s for half a second. That's the same test the training repo's evaluation
+      uses. The clock restarts at every reset and every new target. A time counts as
+      <em>AI</em> only if you never pushed the cart yourself, and
+      as <em>manual</em> only if the network never drove. Hitting either end of the rail ends
+      the run. The network trained on a &#177;0.5&nbsp;m rail; this one runs to &#177;1&nbsp;m
+      so there's room to swing by hand, but past half a meter from center the network is
+      outside anything it saw in training.
+    </p>
+    <p class="eqn-note" id="su-params">
+      The simulation uses the exact plant the network was trained on, except the rail.
+    </p>
+  </div>
+</div>
+
+<script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/swingup.js' | relative_url }}"></script>
