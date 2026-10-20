@@ -1,10 +1,9 @@
 // Footer cat — an orange tabby that lives on the footer's top line.
 // 30 s after the page loads it walks in from the right, sits, washes (licks a paw, wipes its face), yawns, turns a
-// circle and curls up above the copyright with its tail wrapped round its front. Every 30 s after that it wakes,
-// stretches (downward dog, then a back leg), walks to the edge of the screen it is facing, scratches it, turns round
-// and walks to the other end of the footer to wash and sleep again, forever. Hover it asleep and it looks content,
-// click it and it slow-blinks at you and purrs for a few seconds, stroke it (the pointer back and forth) and it kneads.
-// Awake, a click stops it to look round at you, purring, and a stroke sits it down to knead; then it carries on.
+// circle and curls up above the copyright with its tail wrapped round its front, and there it stays, asleep. Hover it
+// and it looks content, click it and it slow-blinks at you and purrs for a few seconds, stroke it (the pointer back
+// and forth) and it kneads. On its way in, a click stops it to look round at you, purring, and a stroke sits it down
+// to knead; then it carries on.
 //
 // It is pixel art, but not a sprite sheet: under the pixels is a rig (a body, a head, four jointed legs with two-bone
 // IK and a tail chain) posed in rig units (x forward, y up). Acts (walk, sit, lick ...) give a pose over time and the
@@ -18,10 +17,9 @@
   var PX = 2, K = 0.6, S = PX * K, ROWS = 24, FPS = 15; // px per art pixel; art pixels per rig unit; px per unit; lane rows
   var SPEED = 34, STRIDE = 22, DUTY = 0.62;             // walking: units/s, units per gait cycle, fraction of it a foot is down
   var EXC = DUTY * STRIDE;                              // how far a planted foot travels under the body
-  var SLEEP = 30, DELAY = 30000;                        // s asleep between rounds; ms on the page before it first walks in
+  var DELAY = 30000;                                    // ms on the page before it walks in
   var ARM = 6.5, FORE = 6.6, THIGH = 6, SHIN = 6;       // leg bones
   var TAIL_N = 14, TAIL_LEN = 19;
-  var WALL = 14.6;                                      // how far ahead of the body its front paws reach when it rears up
   var LEGS = ['nh', 'fh', 'nf', 'ff'];                  // near/far, hind/front
   var GAIT = [0, 0.5, 0.25, 0.75];                      // lateral sequence: hind, then the front on the same side
   var LIFT = [2.4, 2.4, 3.2, 3.2], STAGGER = [0, 0.12, 0.22, 0.32];
@@ -68,7 +66,7 @@
   });
   // Curled up asleep is drawn by hand, as the old sprites were: letters are pixels (o fur, s stripe, d shaded fur,
   // w cream, k shaded cream, e eye, p nose, E the eye the engine opens or shuts). Facing left; column 11 sits on the cat's
-  // origin and the last row on the ground. The rig hands over to these when it lies down and takes back when it wakes.
+  // origin and the last row on the ground. The rig hands over to these when it lies down.
   var SPR_O = 11;
   var CURL1 = [
     '..o..o..................', '.oooooo....ooooooo......', '.ooosso.oosoososoooo....', '.egoooodosoososooooooo..',
@@ -97,22 +95,6 @@
     [[-2, 10, 'w'], [-1, 10, 'w'], [-2, 9, 'w'], [-1, 8, 'k'], [-1, 7, 'k']],
     [[-2, 8, 'w'], [-1, 8, 'w'], [-2, 9, 'w'], [-1, 10, 'k'], [0, 10, 'k']]
   ];
-  var DDOG = pose(STAND, {
-    s: [9.5, 6.3], h: [-8.6, 14.6], ts: 4.1, bs: 3.6, th: 5.2, bh: 4.0, hd: [6.2, 2.2], ha: 8,
-    nf: [21, 1.05], ff: [19, 1.05], nh: [-8, 1.05], fh: [-10.4, 1.05], hk: [-0.6, 5.4],
-    ta: 100, tc: 12, tt: -30, tw: 4, eye: 0.3, ear: 14
-  });
-  var HSTRETCH = pose(STAND, {
-    s: [11.5, 12.4], h: [-7.4, 11.4], hd: [6.8, 5.6], ha: 10,
-    nf: [12.6, 1.05], ff: [10.2, 1.05], nh: [-15.5, 4.2], hk: [-4.6, 0.6], fh: [-8, 1.05],
-    ta: 112, tc: 10, tt: -40, eye: 0.45, ear: 8
-  });
-  var REAR = pose(STAND, {
-    s: [3.0, 20.6], h: [-3.4, 8.6], ts: 4.3, bs: 4.1, th: 5.2, bh: 4.4, hd: [4.4, 6.0], ha: 14,
-    nf: [WALL - 1.6, 24.5], ff: [WALL - 2.2, 21.5], nh: [0.4, 1.05], fh: [-1.8, 1.05], hk: [-4.8, 2.0],
-    ta: 226, tc: -16, tt: -55, tw: 6, pf: 0
-  });
-
   // blend two poses; feet travel in a little arc when they move along the ground, hind feet first
   function mix(a, b, e) {
     var o = {}, k, q = smooth(e);
@@ -380,28 +362,26 @@
   }
 
   // ---- the cat ----------------------------------------------------------------------------------------------------
-  // canvas: one pixel per art pixel, ROWS tall; world: { width(), restL(), restR() } in px along the lane
+  // canvas: one pixel per art pixel, ROWS tall; world: { width(), rest() } in px along the lane
   function Cat(canvas, world) {
     var c = canvas.getContext('2d'), C = {}, pal = [], inkAt = -99, SPAN = 32;
     var fine = document.createElement('canvas'), fc = fine.getContext('2d', { willReadFrequently: true });
     fine.width = 2 * SPAN * SS; fine.height = ROWS * SS;
-    var W = world.width(), X = W + 34 * S, F = -1, side = 'L';
-    var cur = null, prev = STAND, queue = [], marks = [], petted = false, blinkAt = -99, T = 0, box = null;
+    var W = world.width(), X = W + 34 * S, F = -1;
+    var cur = null, prev = STAND, queue = [], petted = false, blinkAt = -99, T = 0, box = null;
     var petting = 0, petAt = -1, soften = 0;          // how hard it is being stroked (0..1); since when, asleep
     var purrUntil = -1, PURR = 4;                     // a click sets it purring for PURR s
 
-    function colors() {                               // the coat from main.css; the page ink can change with the theme
+    function colors() {                               // the coat from main.css
       var cs = getComputedStyle(canvas);
       ['fur', 'fur-far', 'stripe', 'cream', 'cream-far', 'ink', 'pink', 'eye'].forEach(function (k) {
         C[k.replace(/-(\w)/, function (m, a) { return a.toUpperCase(); })] = cs.getPropertyValue('--' + k).trim();
       });
-      C.mark = cs.getPropertyValue('--text-muted').trim() || '#888';
       pal = [C.fur, C.furFar, C.stripe, C.cream, C.creamFar, C.ink, C.pink].map(hex);
       C.far = C.furFar;
     }
     colors();
 
-    function rest() { return side === 'L' ? world.restL() : world.restR(); }
     // hand-drawn frames, each held for its time; posed as the loaf, so the rig carries on from there
     function spriteAct(frames, extra) {
       var dur = frames.reduce(function (t, f) { return t + f[1]; }, 0);
@@ -429,7 +409,6 @@
         p.nf[1] += 1.6 * Math.max(0, k); p.ff[1] += 1.6 * Math.max(0, -k);
       }, { busy: true, pet: true });
     }
-    function wallX() { return F < 0 ? WALL * S + 1 : W - WALL * S - 1; }
     function arrive() {
       return [
         function () { return still(STAND, 0.6, 0.5); },
@@ -449,36 +428,10 @@
         function () { return turnAct(F, 2, 1.5); },
         function () { return still(LOAF, 1.1, 1.1, null, { busy: true }); },
         function () { return spriteAct([[CURL1, 0.6], [CURL2, 0.7]]); },   // the tail sweeps round, the head goes down
-        function () { return sleepAct(SLEEP); }
+        function () { return sleepAct(Infinity); }          // and that is where it stays
       ];
     }
-    function round() {
-      return [
-        function () { return spriteAct([[CURL2, 0.5], [CURL1, 0.7]]); },
-        function () { return still(LOAF, 0.9, 0, null, { busy: true }); },
-        function () { return still(STAND, 0.8, 0.8); },
-        function () { return still(DDOG, 2.3, 0.9, function (p, u) { var m = bump(u, 0.6, 0.6, 0.6); p.mouth = 0.35 * m; p.tw = 4 + 6 * m; }); },
-        function () { return still(HSTRETCH, 1.5, 0.7); },
-        function () { return still(STAND, 0.6, 0.6); },
-        function () { return walkAct(X, wallX()); },
-        function () { return still(REAR, 0.8, 0.75, null, { busy: true }); },
-        function () {
-          return still(REAR, 3.2, 0, function (p, u) {
-            [['nf', 0], ['ff', 0.5]].forEach(function (c) {          // claws drag down the wall, then reach up again
-              var q = frac(u / 0.55 + c[1]), base = REAR[c[0]];
-              p[c[0]] = q < 0.6 ? [base[0], base[1] - 4.5 * smooth(q / 0.6)]
-                : [base[0] - 1.4 * Math.sin(Math.PI * (q - 0.6) / 0.4), base[1] - 4.5 + 4.5 * smooth((q - 0.6) / 0.4)];
-            });
-            var w = Math.sin(u * 2 * Math.PI / 0.55);
-            p.s[1] -= 0.4 * w; p.hd[1] += 0.2 * w; p.eye = 0.55; p.ear = 10; p.tw = 10;
-          }, { scratch: true, busy: true });
-        },
-        function () { return still(STAND, 0.7, 0.6); },
-        function () { return turnAct(F, 1, 0.9); },
-        function () { side = side === 'L' ? 'R' : 'L'; return walkAct(X, rest()); }
-      ].concat(arrive());
-    }
-    queue = [function () { return walkAct(X, world.restL()); }].concat(arrive());
+    queue = [function () { return walkAct(X, world.rest()); }].concat(arrive());
 
     function next(t0) {
       if (cur) {
@@ -487,7 +440,7 @@
         F = cur.fEnd !== undefined ? cur.fEnd : typeof cur.f === 'number' ? cur.f : F;
       }
       var a = null;
-      while (!a) { if (!queue.length) queue = round(); a = queue.shift()(); }
+      while (!a) { if (!queue.length) queue = [function () { return sleepAct(Infinity); }]; a = queue.shift()(); }
       if (soften > 0) { soften--; a.blend = Math.max(a.blend, 0.5); }   // no snapping back after an interruption
       a.t0 = t0; cur = a;
     }
@@ -564,23 +517,6 @@
       }
       var hu = (sb - 0.4) / 1.8;
       if (sleeping && hu > 0 && hu < 1) glyph(c, HEART, hx + dir * 3 - 2, hy - 5 - 9 * hu, C.pink);
-
-      // claw marks on the wall, one per stroke, crumbling away pixel by pixel
-      if (cur.scratch) {
-        var j = Math.floor(u / 0.275);
-        cur.marked = cur.marked || 0;
-        for (; cur.marked <= j && cur.marked < 3; cur.marked++) {
-          var m = cur.marked;
-          marks.push({ x: dir < 0 ? 1 + m * 2 : w - 2 - m * 2, y: Math.round(h - K * (REAR.nf[1] + 1)) + (m === 1 ? -1 : 0), born: T, id: m });
-        }
-      }
-      marks = marks.filter(function (m) { return T - m.born < 15; });
-      c.fillStyle = C.mark;
-      c.globalCompositeOperation = 'destination-over';   // on the wall, behind the paws
-      marks.forEach(function (m) {
-        for (var r = 0; r < 4; r++) if (rnd(m.id * 7 + r + m.x) > (T - m.born) / 15) c.fillRect(m.x - (r > 1 ? dir : 0), m.y + r, 1, 1);
-      });
-      c.globalCompositeOperation = 'source-over';
     }
 
     return {
@@ -588,7 +524,7 @@
       resize: function () {
         W = world.width();
         canvas.width = Math.ceil(W / PX); canvas.height = ROWS;
-        if (cur && cur.sleep) X = rest();
+        if (cur && cur.sleep) X = world.rest();
         frame(T);
       },
       hover: function (on) { petted = on; },
@@ -599,7 +535,7 @@
       },
       pet: function (level) { petting = level; if (level > 0.3) interrupt(petAct); },
       box: function () { return box; },
-      settleAsleep: function () { X = world.restL(); cur = sleepAct(1e9); cur.t0 = 0; frame(1); },
+      settleAsleep: function () { X = world.rest(); cur = sleepAct(Infinity); cur.t0 = 0; frame(1); },
       act: function () { return cur; }
     };
   }
@@ -616,16 +552,12 @@
     lane.innerHTML = '<canvas class="cat"></canvas><div class="cat-hit"></div>';
     footer.appendChild(lane);
     var canvas = lane.firstChild, hit = lane.lastChild;
-    function edge(sel, right) {
-      var e = footer.querySelector(sel), box = footer.getBoundingClientRect();
-      if (!e) return right ? lane.clientWidth - 24 : 24;
-      var r = e.getBoundingClientRect();
-      return right ? r.right - box.left : r.left - box.left;
-    }
     var cat = Cat(canvas, {
       width: function () { return lane.clientWidth; },
-      restL: function () { return edge('.footer-inner p') + 21 * S; },     // nose where the copyright starts
-      restR: function () { return edge('.footer-links', true) - 21 * S; }   // and, at the other end, where the links stop
+      rest: function () {                             // nose where the copyright starts
+        var e = footer.querySelector('.footer-inner p');
+        return (e ? e.getBoundingClientRect().left - footer.getBoundingClientRect().left : 24) + 21 * S;
+      }
     });
     // the canvas's height is CSS's; its width is a whole number of art pixels, so every pixel is the same size
     function fit() { cat.resize(); canvas.style.width = canvas.width * PX + 'px'; place(); }

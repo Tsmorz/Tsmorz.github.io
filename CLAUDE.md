@@ -80,13 +80,11 @@ closed-loop runs of every transition); if it fails after a re-export, the port h
 ### The footer cat (`assets/js/cat.js`)
 
 30 s after load an orange tabby walks in along the footer line, washes, yawns, circles and curls up above the copyright
-with its tail wrapped round its front. Every 30 s it wakes, stretches, walks to the screen edge
-it faces, scratches it, turns and walks to the other end of the footer to wash and sleep again, forever. Asleep, hover gives
+with its tail wrapped round its front, and stays there asleep for good (the last act is `sleepAct(Infinity)`). Hover gives
 content `^` eyes, a click a slow blink and a heart, and stroking (the pointer back and forth over it) kneading paws (`KNEAD`).
 It purrs only after a click, for `PURR` seconds: the canvas buzzes by one screen pixel (a CSS transform, finer than an art
-pixel). Awake, a click stops it to look round at you (`lookAct`) and stroking sits it down to knead (`petAct`); both
-`interrupt` the timeline, and a walk then carries on to where it was going. Turns, rearing at the wall and the sprite acts are
-`busy` and ignore it. The hit box follows the drawn pixels. It is pixel art (2 px per art pixel, a 48 px lane) drawn from a **rig** (body, head, two-bone IK legs, a tail
+pixel). On its way in, a click stops it to look round at you (`lookAct`) and stroking sits it down to knead (`petAct`); both
+`interrupt` the timeline, and a walk then carries on to where it was going. The turn and the sprite acts are `busy` and ignore it. The hit box follows the drawn pixels. It is pixel art (2 px per art pixel, a 48 px lane) drawn from a **rig** (body, head, two-bone IK legs, a tail
 chain) posed by a timeline of acts; each frame is drawn 4x fine on an offscreen canvas and every art pixel takes the
 majority palette color of its block, so it stays crisp. Eye (a dark pupil with a greenish-yellow `--eye` iris behind it) and nose are stamped as exact pixels, and the forehead stripes stay clear of the eye so they never read as a second one; curling up and sleeping
 are hand-drawn letter-grid sprites (`CURL1`, `CURL2`, `SLEEP_IN`, `SLEEP_OUT`). It draws at 15 fps and its clock only runs

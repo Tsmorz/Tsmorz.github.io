@@ -392,7 +392,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .footer-links .social-icon { width: 20px; height: 20px; display: block; }
 
 /* Footer cat (cat.js): a pixel-art orange tabby on the footer's top line. cat.js snaps every pixel to these coat colors,
-   which are its own and the same in both themes; its z's and claw marks take the page's --text-muted. */
+   which are its own and the same in both themes. */
 .site-footer { position: relative; }
 .cat-lane {
   position: absolute; left: 0; right: 0; bottom: calc(100% + 1px); height: 48px; overflow: hidden; pointer-events: none;
