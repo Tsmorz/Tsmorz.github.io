@@ -909,7 +909,10 @@ main:not(:has(> .hero))::before {
 .nav-brand svg { width: 38px; height: 38px; flex-shrink: 0; display: block; margin: -3px; }   /* drawn 38px but takes the photo's 32px of layout, so the bar keeps one height on every page; home only, no frame (a logo, not an avatar) */
 
 /* /solutions/ */
-.solution-list { margin: 0; padding: 0; list-style: none; display: grid; gap: .9rem; max-width: 62ch; }
+/* Sized to fit a laptop screen without scrolling: one line per blurb on desktop, tighter section gaps. */
+.solution-list { margin: 0; padding: 0; list-style: none; display: grid; gap: .9rem; max-width: 62rem; }
+.solutions-services { padding-block: 0 2rem; }
+.solutions-cta { padding-block: 0 1.5rem; }
 .solution-list li { border-left: 2px solid var(--lime); padding-left: 1rem; display: flex; flex-direction: column; gap: .15rem; }
 .solution-list strong { font-size: 1.1rem; }
 .solution-list span { color: var(--text-muted); font-size: .98rem; }
