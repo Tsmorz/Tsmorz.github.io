@@ -1,6 +1,6 @@
 // Footer cat — an orange tabby that lives on the footer's top line.
-// 30 s after the page loads it walks in from the right, sits, washes (licks a paw, wipes its face), yawns, turns a
-// circle and curls up above the copyright with its tail wrapped round its front, and there it stays, asleep. Hover it
+// 30 s after the page loads it walks in from the right, sits, washes (licks a paw, wipes its face), yawns and curls
+// up above the copyright with its tail wrapped round its front, and there it stays, asleep. Hover it
 // and it looks content, click it and it slow-blinks at you and purrs for a few seconds, stroke it (the pointer back
 // and forth) and it kneads. On its way in, a click stops it to look round at you, purring, and a stroke sits it down
 // to knead; then it carries on.
@@ -91,20 +91,6 @@
   var SPR_EYE = [1, 5], SPR_HEAD = [3, 4];
   // stroked in its sleep it kneads: two frames of front paws pushing out under the chin ([col, row, letter], cols
   // left of 0 are in front of the face), near paw down and far paw up, then the other way round
-  // turning round, it is never seen edge-on: half way through each half-turn the drawing is one of these, the cat
-  // facing you (head, both eyes, bib, front paws) or facing away (back of the head, hips, tail up); g is the iris.
-  // Centred on the cat's origin, the last row on the ground
-  var FRONT = [
-    '.o.......o.', 'owo.....owo', 'owoo...oowo', 'oooosssoooo', 'ooooosooooo', 'oogeoooegoo', 'oogeoooegoo',
-    '.oowwpwwoo.', '..owwwwwo..', '..owwwwwo..', '.oowwwwwoo.', '.doowwwood.', 'ddoowwwoodd', 'ddoowkwoodd',
-    'ddowo.owodd', 'ddowo.owodd', 'kkww...wwkk'
-  ];
-  var REAR = [
-    '..........ss.', '...........ss', '.o.......o..s', 'ooo.....ooo.o', 'oooo...oooo.s', 'oooosssoooo.o', 'ooooosooooo.s',
-    'ooooooooooo.o', '.ooooooooo..s', '.ooooooooo.oo', '.oooosoooooso', 'osoooooooos..', 'oosoosoosoo..', 'soooooooooos.',
-    '.osoooooos...', '.dow...wod...', '.dow...wod...', '.kww...wwk...'
-  ];
-  var EDGE = 0.7;                                       // how edge-on (|cos| of the turn) before a view takes over
   var KNEAD = [
     [[-2, 10, 'w'], [-1, 10, 'w'], [-2, 9, 'w'], [-1, 8, 'k'], [-1, 7, 'k']],
     [[-2, 8, 'w'], [-1, 8, 'w'], [-2, 9, 'w'], [-1, 10, 'k'], [0, 10, 'k']]
@@ -170,15 +156,6 @@
     }
     return act(dur, 0.35, function (u) { return gait(STAND, dist(u), EXC); },
       { f: dir, to: x1, x: function (u) { return x0 + dir * dist(u) * S; } });
-  }
-  // turning round in place: the profile narrows, stepping all the while, until the cat faces you (or, on the next
-  // half-turn, faces away), then widens again the other way round
-  function turnAct(f0, halves, dur) {
-    function a(u) { return Math.PI * halves * smooth(u / dur); }
-    return act(dur, 0.25, function (u) { return gait(STAND, u * 22, 6); },
-      { f: function (u) { var k = Math.cos(a(u)); return f0 * (k < 0 ? -1 : 1) * Math.max(Math.abs(k), EDGE); },
-        view: function (u) { return Math.abs(Math.cos(a(u))) < EDGE ? (Math.round(a(u) / Math.PI - 0.5) % 2 ? REAR : FRONT) : null; },
-        f0: f0, fEnd: halves % 2 ? -f0 : f0, busy: true });
   }
   function pawAtMouth(p) { p.nf = headPt(p, [7.6, -3.3]); }
   function licking(p, u) {
@@ -442,7 +419,6 @@
           p.ha = 4 + 18 * m; p.mouth = m; p.eye = 1 - 1.2 * m; p.ear = 20 * m; p.hd[1] += 0.6 * m; p.tw = 3 + 8 * m;
         }); },
         function () { return still(STAND, 0.7, 0.7); },
-        function () { return turnAct(F, 2, 2.4); },
         function () { return still(LOAF, 1.1, 1.1, null, { busy: true }); },
         function () { return spriteAct([[CURL1, 0.6], [CURL2, 0.7]]); },   // the tail sweeps round, the head goes down
         function () { return sleepAct(Infinity); }          // and that is where it stays
@@ -454,7 +430,7 @@
       if (cur) {
         prev = cur.pose(cur.dur, t0);
         if (cur.x) X = cur.x(cur.dur);
-        F = cur.fEnd !== undefined ? cur.fEnd : typeof cur.f === 'number' ? cur.f : F;
+        if (cur.f) F = cur.f;
       }
       var a = null;
       while (!a) { if (!queue.length) queue = [function () { return sleepAct(Infinity); }]; a = queue.shift()(); }
@@ -477,7 +453,7 @@
       while (T - cur.t0 >= cur.dur) next(cur.t0 + cur.dur);
       var u = T - cur.t0, raw = cur.pose(u, T);
       var p = cur.blend && u < cur.blend ? mix(prev, raw, u / cur.blend) : raw;
-      var x = cur.x ? cur.x(u) : X, f = typeof cur.f === 'function' ? cur.f(u) : typeof cur.f === 'number' ? cur.f : F;
+      var x = cur.x ? cur.x(u) : X, f = cur.f || F;
       var dir = f < 0 ? -1 : 1;
 
       // a blink every few seconds, and an ear that flicks now and then
@@ -495,19 +471,8 @@
       // after a click it purrs: the whole canvas buzzes by one screen pixel, finer than an art pixel
       canvas.style.transform = T < purrUntil && Math.round(T * FPS) % 2 ? 'translateX(1px)' : '';
       c.clearRect(0, 0, w, h);
-      var hx, hy, eye = clamp(p.eye, 0, 1), view = !cur.sprite && cur.view && cur.view(u);
-      if (view) {                                       // facing you or away, mid-turn: drawn as it is, mirrored to the turn
-        var vy = h - view.length, vo = (view[0].length - 1) >> 1;
-        view.forEach(function (row, gy) {
-          for (var gx = 0; gx < row.length; gx++) if (row[gx] !== '.') {
-            var L = row[gx], col = C[LETTER[L]], below = (view[gy + 1] || '')[gx];
-            if ((L === 'e' || L === 'g') && eye < 0.3) col = below === 'e' || below === 'g' ? C.fur : C.ink;   // a blink
-            c.fillStyle = col; c.fillRect(ax + cur.f0 * (gx - vo), vy + gy, 1, 1);
-          }
-        });
-        hx = ax; hy = vy + 4;
-        box = [(ax - vo - 1) * PX, (ax + vo + 2) * PX, view.length * PX];
-      } else if (cur.sprite) {
+      var hx, hy, eye = clamp(p.eye, 0, 1);
+      if (cur.sprite) {
         var g = cur.sprite(u, T), y0 = h - g.length;
         var px = function (gx, gy, color) { c.fillStyle = color; c.fillRect(ax + dir * (SPR_O - gx), y0 + gy, 1, 1); };
         g.forEach(function (row, gy) {
