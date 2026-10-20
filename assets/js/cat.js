@@ -95,13 +95,13 @@
   // facing you (head, both eyes, bib, front paws) or facing away (back of the head, hips, tail up); g is the iris.
   // Centred on the cat's origin, the last row on the ground
   var FRONT = [
-    '.o.......o.', '.oo.....oo.', '.ooosssooo.', 'ooooosooooo', 'oogeoooegoo', 'oogeoooegoo', '.oowwpwwoo.',
-    '..owwwwwo..', '...owwwo...', '..oowwwoo..', '.doowwwood.', 'ddoowwwoodd', 'ddoowkwoodd', 'ddowo.owodd',
-    'ddowo.owodd', 'kkww...wwkk'
+    '.o.......o.', 'owo.....owo', 'owoo...oowo', 'oooosssoooo', 'ooooosooooo', 'oogeoooegoo', 'oogeoooegoo',
+    '.oowwpwwoo.', '..owwwwwo..', '..owwwwwo..', '.oowwwwwoo.', '.doowwwood.', 'ddoowwwoodd', 'ddoowkwoodd',
+    'ddowo.owodd', 'ddowo.owodd', 'kkww...wwkk'
   ];
   var REAR = [
-    '..........ss.', '...........ss', '............s', '.o.......o..o', '.oo.....oo..s', '.ooosssooo..o', 'ooooosooooo.s',
-    'ooooooooooo.o', '.ooooooooo..s', '..ooooooo..oo', '.oooosoooooso', 'osoooooooos..', 'oosoosoosoo..', 'soooooooooos.',
+    '..........ss.', '...........ss', '.o.......o..s', 'ooo.....ooo.o', 'oooo...oooo.s', 'oooosssoooo.o', 'ooooosooooo.s',
+    'ooooooooooo.o', '.ooooooooo..s', '.ooooooooo.oo', '.oooosoooooso', 'osoooooooos..', 'oosoosoosoo..', 'soooooooooos.',
     '.osoooooos...', '.dow...wod...', '.dow...wod...', '.kww...wwk...'
   ];
   var EDGE = 0.7;                                       // how edge-on (|cos| of the turn) before a view takes over
