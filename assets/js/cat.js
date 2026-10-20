@@ -2,9 +2,9 @@
 // 30 s after the page loads it walks in from the right, sits, washes (licks a paw, wipes its face), yawns, turns a
 // circle and curls up above the copyright with its tail wrapped round its front. Every 30 s after that it wakes,
 // stretches (downward dog, then a back leg), walks to the edge of the screen it is facing, scratches it, turns round
-// and walks to the other end of the footer to wash and sleep again, forever. It purrs in its sleep; hover it and it
-// looks content, click it and it slow-blinks at you, stroke it (the pointer back and forth) and it purrs harder and
-// kneads. Awake, a click stops it to look round at you and a stroke sits it down to knead; then it carries on.
+// and walks to the other end of the footer to wash and sleep again, forever. Hover it asleep and it looks content,
+// click it and it slow-blinks at you and purrs for a few seconds, stroke it (the pointer back and forth) and it kneads.
+// Awake, a click stops it to look round at you, purring, and a stroke sits it down to knead; then it carries on.
 //
 // It is pixel art, but not a sprite sheet: under the pixels is a rig (a body, a head, four jointed legs with two-bone
 // IK and a tail chain) posed in rig units (x forward, y up). Acts (walk, sit, lick ...) give a pose over time and the
@@ -388,6 +388,7 @@
     var W = world.width(), X = W + 34 * S, F = -1, side = 'L';
     var cur = null, prev = STAND, queue = [], marks = [], petted = false, blinkAt = -99, T = 0, box = null;
     var petting = 0, petAt = -1, soften = 0;          // how hard it is being stroked (0..1); since when, asleep
+    var purrUntil = -1, PURR = 4;                     // a click sets it purring for PURR s
 
     function colors() {                               // the coat from main.css; the page ink can change with the theme
       var cs = getComputedStyle(canvas);
@@ -521,13 +522,12 @@
 
       if (T - inkAt > 1) { colors(); inkAt = T; }
       var w = canvas.width, h = canvas.height, ax = Math.round(x / PX);
-      var fr = Math.round(T * FPS), purr = sleeping || cur.pet, lift = 0;
-      if (purr) ax += fr % 2;                                    // it purrs: a steady one-pixel buzz,
-      if (sleeping && petting > 0.3) lift = (fr >> 1) % 2;      // and stroked, a harder one
+      // after a click it purrs: the whole canvas buzzes by one screen pixel, finer than an art pixel
+      canvas.style.transform = T < purrUntil && Math.round(T * FPS) % 2 ? 'translateX(1px)' : '';
       c.clearRect(0, 0, w, h);
       var hx, hy, eye = clamp(p.eye, 0, 1);
       if (cur.sprite) {
-        var g = cur.sprite(u, T), y0 = h - g.length - lift;
+        var g = cur.sprite(u, T), y0 = h - g.length;
         var px = function (gx, gy, color) { c.fillStyle = color; c.fillRect(ax + dir * (SPR_O - gx), y0 + gy, 1, 1); };
         g.forEach(function (row, gy) {
           for (var gx = 0; gx < row.length; gx++) if (row[gx] !== '.') px(gx, gy, C[LETTER[row[gx]]]);
@@ -593,7 +593,9 @@
       },
       hover: function (on) { petted = on; },
       poke: function () {                              // asleep: a slow blink; awake: it stops and looks at you
-        if (cur && cur.sleep) { if (T - blinkAt > 2.2) blinkAt = T; } else interrupt(lookAct);
+        if (!cur || cur.busy && !cur.sleep) return;
+        purrUntil = T + PURR;
+        if (cur.sleep) { if (T - blinkAt > 2.2) blinkAt = T; } else interrupt(lookAct);
       },
       pet: function (level) { petting = level; if (level > 0.3) interrupt(petAct); },
       box: function () { return box; },
