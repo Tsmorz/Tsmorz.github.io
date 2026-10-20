@@ -1,15 +1,15 @@
 # Content for /solutions/. Edit here, not in solutions.md.
 intro: >-
-  I take on project-based work for companies with a robotics, estimation or controls problem.
-  A clear scope, working code, results you can check.
+  I take on project work for companies whose robots or devices need to sense the world, know
+  where they are, or move precisely. A clear scope, working code, results you can check.
 
 services:
   - name: Embedded firmware
-    blurb: Working ESP32 firmware, from sensor to browser dashboard. Camera streaming, AprilTag pose, IMU and GPS, live telemetry.
-  - name: Modern and classical controls
-    blurb: PID and LQR designs, models fitted to your recorded data, and learning-based control, all tried in simulation first.
+    blurb: Software for small circuit boards like the ESP32 that reads cameras and sensors and shows live data in a browser.
+  - name: Control systems
+    blurb: Making machines move where you want and stay steady, from classic methods to AI, all tested in simulation first.
   - name: Sensor fusion
-    blurb: Kalman filters, IMU and GPS fusion, and SLAM, built to hold up on real, noisy sensors rather than only in clean simulation.
+    blurb: Combining GPS, motion sensors and cameras into one reliable answer to where a device is, even when sensors are noisy.
 
 cta:
   heading: Have a problem in mind?

@@ -6,7 +6,6 @@ permalink: /controls/fit/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Custom Data</h1>
-  <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
   <p class="page-sub controls-intro">
     Upload a recording with columns <code>t</code>, <code>x1, x2, ...</code> and <code>u1, u2, ...</code>. A linear model
     <code>x[k+1] = A x[k] + B u[k]</code> is fitted to it by least squares, and once it is found your data becomes a <strong>live simulation</strong>

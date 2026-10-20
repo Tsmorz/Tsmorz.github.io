@@ -3,23 +3,12 @@
 # `image:` is optional (path or URL).
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
-- name: UAV Design Optimization
-  blurb: >-
-    Preliminary design optimization for a tiltrotor drone under 25 kg and
-    slower than 45 m/s - sizing, aerodynamics, and propulsion in one loop.
-  year: "2021"
-  tags: [Python, Aerospace, Optimization]
-  featured: true
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/UAV-Code
 
 - name: Double Pendulum
   blurb: >-
-    Reinforcement learning for a double pendulum on a cart. One goal-conditioned
-    TQC policy swings both poles up, folds either one over the other, and moves
-    between every up/down pose.
+    Two poles hinged end to end on a sliding cart. A neural network that learned
+    by trial and error (reinforcement learning) pushes the cart to swing both poles
+    up and balance them, fold one over the other, or move between any of those poses.
   year: "2026"
   tags: [Python, Reinforcement Learning, Controls]
   featured: true
@@ -30,23 +19,11 @@
     - label: Live demo
       url: /controls/swingup/
 
-- name: EKF-SLAM
+- name: VQF GPS Filter
   blurb: >-
-    Extended Kalman Filter implementation of 3D simultaneous localization
-    and mapping, written to be readable rather than clever.
-  year: "2025"
-  tags: [Python, State Estimation, SLAM]
-  featured: true
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/ekf-slam
-
-- name: VQF GPS Vibes
-  blurb: >-
-    Real-time orientation and position on an ESP32-S3. VQF handles attitude, a
-    9-state EKF fuses the accelerometer with GPS for position, and the board
-    streams it all to a browser over its own Wi-Fi.
+    A small circuit board (an ESP32-S3) that works out which way it's facing and
+    where it is by combining its motion sensor with GPS, and shows both live in a
+    web browser over Wi-Fi.
   year: "2026"
   tags: [C++, ESP32, State Estimation]
   featured: true
@@ -55,23 +32,11 @@
     - label: GitHub
       url: https://github.com/Tsmorz/vqf-gps-vibes
 
-- name: ESP32 Cam
-  blurb: >-
-    Wrist-camera firmware for an ESP32-S3. It streams MJPEG video, detects
-    AprilTags with their pose and distance, runs OV5640 autofocus, and tracks
-    orientation from an optional IMU, all from a dashboard on the camera's own hotspot.
-  year: "2026"
-  tags: [C++, ESP32, Computer Vision]
-  featured: true
-  on_cv: false
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/esp32-cam
-
 - name: RC Plane Design
   blurb: >-
-    Aerodynamic design, mass and CG budget, and 3D-printable rib export for a
-    sub-250 g, ESP32-S3-controlled trainer, built on AeroSandbox and NeuralFoil.
+    Design tools for a beginner radio-controlled plane under 250 g: wing shape,
+    weight and balance, and wing ribs ready to 3D print. A small onboard computer
+    (an ESP32-S3) flies it.
   year: "2026"
   tags: [Python, Aerospace, CAD]
   featured: true
@@ -79,3 +44,43 @@
   links:
     - label: GitHub
       url: https://github.com/Tsmorz/rc-plane-design
+
+- name: UAV Design Optimization
+  blurb: >-
+    Software that searches for the best design for a drone whose rotors tilt so it
+    can hover like a helicopter and cruise like a plane (under 25 kg, up to 45 m/s),
+    working out its size, aerodynamics and motors together.
+  year: "2021"
+  tags: [Python, Aerospace, Optimization]
+  featured: true
+  on_cv: true
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/UAV-Code
+
+- name: EKF-SLAM
+  blurb: >-
+    Lets a robot build a 3D map of its surroundings while working out where it is on
+    that map (SLAM), using an extended Kalman filter, a standard way to combine noisy
+    sensor readings. Written to be easy to read rather than clever.
+  year: "2025"
+  tags: [Python, State Estimation, SLAM]
+  featured: true
+  on_cv: true
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/ekf-slam
+
+- name: ESP32 Cam
+  blurb: >-
+    Software for a small wrist-worn camera (an ESP32-S3). It streams live video,
+    spots printed markers (AprilTags) and measures how far away and how tilted they
+    are, focuses itself, and can track which way it's facing. You control it from a
+    web page on the camera's own Wi-Fi.
+  year: "2026"
+  tags: [C++, ESP32, Computer Vision]
+  featured: true
+  on_cv: false
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/esp32-cam

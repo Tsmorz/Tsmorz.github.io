@@ -1,12 +1,97 @@
-<svg class="logo" viewBox="3 6.6 28 28" width="38" height="38" role="img" aria-label="" aria-hidden="true">
-  <line class="logo-ground" x1="6.5" y1="29" x2="28.5" y2="29" stroke-width="1.5" stroke-linecap="round"/>
-  <g transform="translate(4.5 0)">
-    <rect class="logo-cart" x="9.5" y="22.5" width="13" height="6" rx="1.5"/>
-    <g stroke-width="2.2" stroke-linecap="round">
-      <line class="logo-rod" x1="16.0" y1="26.0" x2="14.8" y2="14.1"/>
-      <line class="logo-rod" x1="14.8" y1="14.1" x2="3.2" y2="17.2"/>
-    </g>
-    <circle class="logo-b1" cx="14.8" cy="14.1" r="2.6"/>
-    <circle class="logo-b2" cx="3.2" cy="17.2" r="2.6"/>
-  </g>
+{%- comment -%}
+The nav mark: a 5x5 (or 4x4, or 3x3) checker in black and white (--mark-a/--mark-b) with the site violet (--viz-1) and lime. `logo` in _config.yml picks the variant (fade when unset):
+  fade      top-left three squares pure black/white, bottom-right three full violet/lime, a linear fade between
+  radial    the middle five squares (a plus) pure black/white, fading out to full violet/lime at the corners
+  pendulum  plain board with the swing-up bobs: violet where the upper bob sits, lime where the lower one does
+  pendulum4 the top-left 4x4 of pendulum (both bobs kept), drawn at 24px so each square is a whole 6px
+  pendulum3 the top-left 3x3 of pendulum (both bobs kept), drawn at 24px so each square is a whole 8px
+{%- endcomment -%}
+{%- if site.logo == "pendulum4" -%}{%- assign n = 4 -%}{%- assign px = 24 -%}{%- elsif site.logo == "pendulum3" -%}{%- assign n = 3 -%}{%- assign px = 24 -%}{%- else -%}{%- assign n = 5 -%}{%- assign px = 30 -%}{%- endif %}
+<svg class="logo logo-{{ n }}" viewBox="0 0 {{ n }} {{ n }}" width="{{ px }}" height="{{ px }}" shape-rendering="crispEdges" aria-hidden="true">
+{%- case site.logo -%}
+{%- when "radial" -%}
+  <rect class="mk-v" x="0" y="0" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="1" y="0" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 55%)" x="2" y="0" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="3" y="0" width="1" height="1"/>
+  <rect class="mk-v" x="4" y="0" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="0" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 23%)" x="1" y="1" width="1" height="1"/>
+  <rect class="mk-b" x="2" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 23%)" x="3" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="4" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 55%)" x="0" y="2" width="1" height="1"/>
+  <rect class="mk-b" x="1" y="2" width="1" height="1"/>
+  <rect class="mk-a" x="2" y="2" width="1" height="1"/>
+  <rect class="mk-b" x="3" y="2" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 55%)" x="4" y="2" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="0" y="3" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 23%)" x="1" y="3" width="1" height="1"/>
+  <rect class="mk-b" x="2" y="3" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 23%)" x="3" y="3" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="4" y="3" width="1" height="1"/>
+  <rect class="mk-v" x="0" y="4" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="1" y="4" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 55%)" x="2" y="4" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 68%)" x="3" y="4" width="1" height="1"/>
+  <rect class="mk-v" x="4" y="4" width="1" height="1"/>
+{%- when "pendulum" -%}
+  <rect class="mk-b" width="5" height="5"/>
+  <rect class="mk-a" x="0" y="0" width="1" height="1"/>
+  <rect class="mk-v" x="2" y="0" width="1" height="1"/>
+  <rect class="mk-a" x="4" y="0" width="1" height="1"/>
+  <rect class="mk-a" x="1" y="1" width="1" height="1"/>
+  <rect class="mk-a" x="3" y="1" width="1" height="1"/>
+  <rect class="mk-g" x="0" y="2" width="1" height="1"/>
+  <rect class="mk-a" x="2" y="2" width="1" height="1"/>
+  <rect class="mk-a" x="4" y="2" width="1" height="1"/>
+  <rect class="mk-a" x="1" y="3" width="1" height="1"/>
+  <rect class="mk-a" x="3" y="3" width="1" height="1"/>
+  <rect class="mk-a" x="0" y="4" width="1" height="1"/>
+  <rect class="mk-a" x="2" y="4" width="1" height="1"/>
+  <rect class="mk-a" x="4" y="4" width="1" height="1"/>
+{%- when "pendulum4" -%}
+  <rect class="mk-b" width="4" height="4"/>
+  <rect class="mk-a" x="0" y="0" width="1" height="1"/>
+  <rect class="mk-v" x="2" y="0" width="1" height="1"/>
+  <rect class="mk-a" x="1" y="1" width="1" height="1"/>
+  <rect class="mk-a" x="3" y="1" width="1" height="1"/>
+  <rect class="mk-g" x="0" y="2" width="1" height="1"/>
+  <rect class="mk-a" x="2" y="2" width="1" height="1"/>
+  <rect class="mk-a" x="1" y="3" width="1" height="1"/>
+  <rect class="mk-a" x="3" y="3" width="1" height="1"/>
+{%- when "pendulum3" -%}
+  <rect class="mk-b" width="3" height="3"/>
+  <rect class="mk-a" x="0" y="0" width="1" height="1"/>
+  <rect class="mk-v" x="2" y="0" width="1" height="1"/>
+  <rect class="mk-a" x="1" y="1" width="1" height="1"/>
+  <rect class="mk-g" x="0" y="2" width="1" height="1"/>
+  <rect class="mk-a" x="2" y="2" width="1" height="1"/>
+{%- else -%}
+  <rect class="mk-a" x="0" y="0" width="1" height="1"/>
+  <rect class="mk-b" x="1" y="0" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 17%)" x="2" y="0" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 33%)" x="3" y="0" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 50%)" x="4" y="0" width="1" height="1"/>
+  <rect class="mk-b" x="0" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 17%)" x="1" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 33%)" x="2" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 50%)" x="3" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 67%)" x="4" y="1" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 17%)" x="0" y="2" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 33%)" x="1" y="2" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 50%)" x="2" y="2" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 67%)" x="3" y="2" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 83%)" x="4" y="2" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 33%)" x="0" y="3" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 50%)" x="1" y="3" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 67%)" x="2" y="3" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 83%)" x="3" y="3" width="1" height="1"/>
+  <rect class="mk-g" x="4" y="3" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 50%)" x="0" y="4" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-b), var(--lime) 67%)" x="1" y="4" width="1" height="1"/>
+  <rect style="fill: color-mix(in oklab, var(--mark-a), var(--viz-1) 83%)" x="2" y="4" width="1" height="1"/>
+  <rect class="mk-g" x="3" y="4" width="1" height="1"/>
+  <rect class="mk-v" x="4" y="4" width="1" height="1"/>
+{%- endcase -%}
 </svg>

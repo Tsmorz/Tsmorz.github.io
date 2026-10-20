@@ -2,8 +2,9 @@
 // Check the unit conversions behind /recipes/ (assets/js/recipes.js) and that every recipe in _data/recipes.yml renders, in Node.
 //   1. grams, °C, cm and mL read right in both systems
 //   2. tokens in a sentence are replaced, ranges share one unit, an unknown token shows as "?"
-//   3. every recipe renders in metric and imperial with no leftover token and no "?"
-//   4. the batter and custard weights quoted in the steps match the ingredients
+//   3. scaling multiplies ingredients, spoons and the scaled tokens, and leaves per-piece amounts alone
+//   4. every recipe renders in metric and imperial, at three scales, with no leftover token and no "?"
+//   5. the batter and custard weights quoted in the steps match the ingredients
 const path = require('path');
 const { execFileSync } = require('child_process');
 const R = require(path.join(__dirname, '..', 'assets/js/recipes.js'));
@@ -57,32 +58,49 @@ eq(R.render('Weigh [[g:10]].', 'metric', find), 'Weigh 10 g.', 'grams');
 eq(R.render('No tokens here.', 'metric', find), 'No tokens here.', 'plain text is untouched');
 eq(R.render('[[i:nope]] [[zz:1]] [[t:hot]]', 'metric', find), '? ? ?', 'unknown tokens show as ?');
 
-console.log('3. every recipe renders');
+console.log('3. scaling');
+eq(R.amount(sugar, 'metric', 2), '400 g', 'an ingredient doubled');
+eq(R.render('Add [[i:sugar]].', 'metric', find, 3), 'Add 600 g.', 'an ingredient token tripled');
+eq(R.amount({ name: 'Vanilla bean', qty: '[[n:1]]' }, 'metric', 2), '2', 'a counted ingredient doubled');
+eq(R.amount({ name: 'SCOBY', qty: '1' }, 'metric', 2), '1', 'a plain qty stays put');
+eq(R.render('[[n:4]] balls of [[g:298]]', 'metric', null, 2), '8 balls of 298 g', 'a count scales, a per-piece weight does not');
+eq(R.render('[[n:5]] yolks', 'metric', null, 0.5), '2½ yolks', 'a half count in fractions');
+eq(R.render('or [[gx:8]] paste', 'metric', null, 0.5), 'or 4 g paste', 'scaled grams');
+eq(R.render('[[mlx:4000]] in a [[mlx:6000]] jar, [[ml:175]] each', 'imperial', null, 2), '2 gal in a 3.25 gal jar, 6 fl oz each', 'scaled and per-piece volumes');
+eq(R.render('[[t:175]], [[len:30]]', 'imperial', null, 2), '350 °F, 12 in', 'temperatures and lengths never scale');
+eq(R.spoon('1¼ tsp', 2), '2½ tsp', 'a spoon measure doubled');
+eq(R.spoon('⅔ tsp', 3), '2 tsp', 'two thirds tripled');
+eq(R.spoon('½ tsp', 0.5), '¼ tsp', 'a spoon measure halved');
+eq(R.spoon('2 tbsp', 1.5), '3 tbsp', 'tablespoons');
+eq(R.spoon('1 tsp', 0.01), 'a pinch', 'too little to measure');
+eq(R.spoon('1 tsp', 1), '1 tsp', 'unscaled is untouched');
+eq(R.frac(13.4), '13', 'big counts are whole');
+
+console.log('4. every recipe renders');
 const rb = 'puts JSON.generate(YAML.safe_load(File.read(ARGV[0])))';
 const recipes = JSON.parse(execFileSync('ruby', ['-ryaml', '-rjson', '-e', rb, path.join(__dirname, '..', '_data/recipes.yml')], { encoding: 'utf8' }));
 recipes.forEach((r) => {
-  ['metric', 'imperial'].forEach((unit) => {
+  ['metric', 'imperial'].forEach((unit) => [1, 0.5, 3].forEach((sc) => {
     const f = (id) => R.find(r, id), texts = [r.makes || '', r.time || ''].concat(r.steps, r.notes || []);
-    r.ingredients.forEach((g) => g.items.forEach((it) => { texts.push(R.amount(it, unit), it.note || ''); }));
-    const out = texts.map((t) => R.render(t, unit, f));
+    r.ingredients.forEach((g) => g.items.forEach((it) => { texts.push(R.amount(it, unit, sc), it.note || '', it.spoon ? R.spoon(it.spoon, sc) : ''); }));
+    const out = texts.map((t) => R.render(t, unit, f, sc));
     const bad = out.filter((t) => /\?|\[\[|\]\]|NaN|undefined/.test(t));
-    check(bad.length === 0, r.id + ' in ' + unit + ': ' + out.length + ' strings' + (bad.length ? ', bad: ' + bad[0] : ''));
-  });
+    check(bad.length === 0, r.id + ' in ' + unit + ' ×' + sc + ': ' + out.length + ' strings' + (bad.length ? ', bad: ' + bad[0] : ''));
+  }));
 });
 
-console.log('4. quoted weights match the ingredients');
+console.log('5. quoted weights match the ingredients');
 {
   const sum = (r, group) => r.ingredients.filter((g) => !group || g.group === group).reduce((a, g) => a + g.items.reduce((b, it) => b + (it.g || 0), 0), 0);
   const quoted = (r, re) => { const m = re.exec(r.steps.join(' ')); return m ? +m[1] : NaN; };
   const cake = recipes.find((r) => r.id === 'hummingbird-cake'), brulee = recipes.find((r) => r.id === 'creme-brulee');
-  const perPan = sum(cake, 'Cake') / 2, perRamekin = (500 + 90 + 70) / 4;
-  check(Math.abs(quoted(cake, /batter into the pans, about \[\[g:(\d+)\]\]/) - perPan) / perPan < 0.05, 'hummingbird cake: ' + perPan + ' g of batter per pan');
-  check(Math.abs(quoted(cake, /Spread \[\[g:(\d+)\]\] of frosting/) - sum(cake, 'Cream cheese frosting') / 3) / (sum(cake, 'Cream cheese frosting') / 3) < 0.05, 'hummingbird cake: a third of the frosting between the layers');
-  check(Math.abs(quoted(brulee, /Weigh \[\[g:(\d+)\]\] of custard/) - perRamekin) / perRamekin < 0.05, 'crème brûlée: ' + perRamekin + ' g of custard per ramekin');
+  const perRamekin = sum(brulee, 'Custard') / 8, icing = sum(cake, 'Cream cheese icing') / 3;
+  check(Math.abs(quoted(cake, /spread \[\[g:(\d+)\]\] of thick icing/) - icing) / icing < 0.05, 'hummingbird cake: a third of the icing between the layers');
+  check(Math.abs(quoted(brulee, /[Ww]eigh \[\[g:(\d+)\]\] of custard/) - perRamekin) / perRamekin < 0.05, 'crème brûlée: ' + perRamekin + ' g of custard per ramekin');
   const pizza = recipes.find((r) => r.id === 'pizza-dough'), perBall = sum(pizza) / 4;
   check(Math.abs(quoted(pizza, /balls of about \[\[g:(\d+)\]\]/) - perBall) / perBall < 0.05, 'pizza dough: ' + perBall + ' g per ball');
   const top = brulee.ingredients.flatMap((g) => g.items).find((it) => it.note && /for the tops/.test(it.note));
-  check(top && top.g === 4 * quoted(brulee, /Weigh \[\[g:(\d+)\]\] of sugar onto each/), 'crème brûlée: the sugar for the tops is 4 ramekins of it');
+  check(top && top.g === 8 * quoted(brulee, /sprinkle \[\[g:(\d+)\]\] of sugar/), 'crème brûlée: the sugar for the tops is 8 ramekins of it');
 }
 
 if (failed) { console.log('\nFAILED'); process.exit(1); }

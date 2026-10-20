@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Solutions
-description: Project-based robotics, state estimation and controls work for companies.
+description: Project work for companies whose robots and devices need to sense, locate themselves and move precisely.
 permalink: /solutions/
 ---
 {%- assign s = site.data.solutions -%}
@@ -10,13 +10,13 @@ permalink: /solutions/
   <p class="page-sub">{{ s.intro }}</p>
 </section>
 
-<section class="wrap section" style="padding-top: 0;">
+<section class="wrap section solutions-services">
   <ul class="solution-list">
     {%- for svc in s.services %}<li><strong>{{ svc.name }}</strong><span>{{ svc.blurb }}</span></li>{% endfor %}
   </ul>
 </section>
 
-<section class="wrap section" style="padding-top: 0;">
+<section class="wrap section solutions-cta">
   <h2>{{ s.cta.heading }}</h2>
   <p>{{ s.cta.text }}</p>
   <div class="btn-row">
