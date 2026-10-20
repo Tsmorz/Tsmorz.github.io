@@ -91,6 +91,20 @@
   var SPR_EYE = [1, 5], SPR_HEAD = [3, 4];
   // stroked in its sleep it kneads: two frames of front paws pushing out under the chin ([col, row, letter], cols
   // left of 0 are in front of the face), near paw down and far paw up, then the other way round
+  // turning round, it is never seen edge-on: half way through each half-turn the drawing is one of these, the cat
+  // facing you (head, both eyes, bib, front paws) or facing away (back of the head, hips, tail up); g is the iris.
+  // Centred on the cat's origin, the last row on the ground
+  var FRONT = [
+    '.o.......o.', '.oo.....oo.', '.ooosssooo.', 'ooooosooooo', 'oogeoooegoo', 'oogeoooegoo', '.oowwpwwoo.',
+    '..owwwwwo..', '...owwwo...', '..oowwwoo..', '.doowwwood.', 'ddoowwwoodd', 'ddoowkwoodd', 'ddowo.owodd',
+    'ddowo.owodd', 'kkww...wwkk'
+  ];
+  var REAR = [
+    '..........ss.', '...........ss', '............s', '.o.......o..o', '.oo.....oo..s', '.ooosssooo..o', 'ooooosooooo.s',
+    'ooooooooooo.o', '.ooooooooo..s', '..ooooooo..oo', '.oooosoooooso', 'osoooooooos..', 'oosoosoosoo..', 'soooooooooos.',
+    '.osoooooos...', '.dow...wod...', '.dow...wod...', '.kww...wwk...'
+  ];
+  var EDGE = 0.7;                                       // how edge-on (|cos| of the turn) before a view takes over
   var KNEAD = [
     [[-2, 10, 'w'], [-1, 10, 'w'], [-2, 9, 'w'], [-1, 8, 'k'], [-1, 7, 'k']],
     [[-2, 8, 'w'], [-1, 8, 'w'], [-2, 9, 'w'], [-1, 10, 'k'], [0, 10, 'k']]
@@ -157,11 +171,14 @@
     return act(dur, 0.35, function (u) { return gait(STAND, dist(u), EXC); },
       { f: dir, to: x1, x: function (u) { return x0 + dir * dist(u) * S; } });
   }
-  // turning round in place is a flip of the drawing through edge-on, stepping all the while
+  // turning round in place: the profile narrows, stepping all the while, until the cat faces you (or, on the next
+  // half-turn, faces away), then widens again the other way round
   function turnAct(f0, halves, dur) {
+    function a(u) { return Math.PI * halves * smooth(u / dur); }
     return act(dur, 0.25, function (u) { return gait(STAND, u * 22, 6); },
-      { f: function (u) { var k = Math.cos(Math.PI * halves * smooth(u / dur)); return f0 * (k < 0 ? -1 : 1) * Math.max(Math.abs(k), 0.4); },
-        fEnd: halves % 2 ? -f0 : f0, busy: true });
+      { f: function (u) { var k = Math.cos(a(u)); return f0 * (k < 0 ? -1 : 1) * Math.max(Math.abs(k), EDGE); },
+        view: function (u) { return Math.abs(Math.cos(a(u))) < EDGE ? (Math.round(a(u) / Math.PI - 0.5) % 2 ? REAR : FRONT) : null; },
+        f0: f0, fEnd: halves % 2 ? -f0 : f0, busy: true });
   }
   function pawAtMouth(p) { p.nf = headPt(p, [7.6, -3.3]); }
   function licking(p, u) {
@@ -425,7 +442,7 @@
           p.ha = 4 + 18 * m; p.mouth = m; p.eye = 1 - 1.2 * m; p.ear = 20 * m; p.hd[1] += 0.6 * m; p.tw = 3 + 8 * m;
         }); },
         function () { return still(STAND, 0.7, 0.7); },
-        function () { return turnAct(F, 2, 1.5); },
+        function () { return turnAct(F, 2, 2.4); },
         function () { return still(LOAF, 1.1, 1.1, null, { busy: true }); },
         function () { return spriteAct([[CURL1, 0.6], [CURL2, 0.7]]); },   // the tail sweeps round, the head goes down
         function () { return sleepAct(Infinity); }          // and that is where it stays
@@ -478,8 +495,19 @@
       // after a click it purrs: the whole canvas buzzes by one screen pixel, finer than an art pixel
       canvas.style.transform = T < purrUntil && Math.round(T * FPS) % 2 ? 'translateX(1px)' : '';
       c.clearRect(0, 0, w, h);
-      var hx, hy, eye = clamp(p.eye, 0, 1);
-      if (cur.sprite) {
+      var hx, hy, eye = clamp(p.eye, 0, 1), view = !cur.sprite && cur.view && cur.view(u);
+      if (view) {                                       // facing you or away, mid-turn: drawn as it is, mirrored to the turn
+        var vy = h - view.length, vo = (view[0].length - 1) >> 1;
+        view.forEach(function (row, gy) {
+          for (var gx = 0; gx < row.length; gx++) if (row[gx] !== '.') {
+            var L = row[gx], col = C[LETTER[L]], below = (view[gy + 1] || '')[gx];
+            if ((L === 'e' || L === 'g') && eye < 0.3) col = below === 'e' || below === 'g' ? C.fur : C.ink;   // a blink
+            c.fillStyle = col; c.fillRect(ax + cur.f0 * (gx - vo), vy + gy, 1, 1);
+          }
+        });
+        hx = ax; hy = vy + 4;
+        box = [(ax - vo - 1) * PX, (ax + vo + 2) * PX, view.length * PX];
+      } else if (cur.sprite) {
         var g = cur.sprite(u, T), y0 = h - g.length;
         var px = function (gx, gy, color) { c.fillStyle = color; c.fillRect(ax + dir * (SPR_O - gx), y0 + gy, 1, 1); };
         g.forEach(function (row, gy) {
