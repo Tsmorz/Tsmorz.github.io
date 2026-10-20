@@ -71,8 +71,8 @@
   // origin and the last row on the ground. The rig hands over to these when it lies down and takes back when it wakes.
   var SPR_O = 11;
   var CURL1 = [
-    '..o..o..................', '.oooooo....ooooooo......', '.ossooo.oosoososoooo....', '.eooooodosoososooooooo..',
-    'peooooodooooooooooooooo.', 'wwooooodooooooooooooooo.', '.wwooooodooooooooooooooo', '..wwoooooooooooooooooooo',
+    '..o..o..................', '.oooooo....ooooooo......', '.ooosso.oosoososoooo....', '.egoooodosoososooooooo..',
+    'pegoooodooooooooooooooo.', 'wwooooodooooooooooooooo.', '.wwooooodooooooooooooooo', '..wwoooooooooooooooooooo',
     '..wwoooooooooooooooooooso.', '..wwwoooooooooooooooossoss', '..kww.ooooooooooooossossoo'
   ];
   var CURL2 = [
@@ -210,9 +210,9 @@
     'L0.6-1.2C0.6-2.4 0.2-3.4-0.6-3.8C-2.8-4-4.6-2.8-5.2-1.4C-5.5-0.8-5.6-0.2-5.6 0.6Z');
   var JAW = new Path2D('M0.6-1.2L6-1.1C6.4-2.2 6-3.4 4.8-3.9C3.4-4.2 1.6-4 0.2-3Z');
   var NEAR_EAR = new Path2D('M-1.6 4.2L0.6 9.6L3.4 3.6Z'), FAR_EAR = new Path2D('M-5.6 1.6L-4.6 8.4L-1.2 4.4Z');
-  var BROW = new Path2D('M-0.6 5.4L0.2 3.4M1.8 5L2.1 3.4');
+  var BROW = new Path2D('M-3.6 4.4L-3 2.6M-1.8 5.1L-1.4 3.6');   // forehead stripes, kept back from the eye
   var HEART = ['.#.#.', '#####', '#####', '.###.', '..#..'];   // floats up after a slow blink
-  var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'ink', p: 'pink' };
+  var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'ink', g: 'eye', p: 'pink' };
 
   function line(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); }
   function len(pts) { var l = 0; for (var i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; }
@@ -389,7 +389,7 @@
 
     function colors() {                               // the coat from main.css; the page ink can change with the theme
       var cs = getComputedStyle(canvas);
-      ['fur', 'fur-far', 'stripe', 'cream', 'cream-far', 'ink', 'pink'].forEach(function (k) {
+      ['fur', 'fur-far', 'stripe', 'cream', 'cream-far', 'ink', 'pink', 'eye'].forEach(function (k) {
         C[k.replace(/-(\w)/, function (m, a) { return a.toUpperCase(); })] = cs.getPropertyValue('--' + k).trim();
       });
       C.mark = cs.getPropertyValue('--text-muted').trim() || '#888';
@@ -530,9 +530,9 @@
         g.forEach(function (row, gy) {
           for (var gx = 0; gx < row.length; gx++) if (row[gx] !== '.') px(gx, gy, C[LETTER[row[gx]]]);
         });
-        var ex = SPR_EYE[0], ey = SPR_EYE[1];           // the eye: shut, or a ^ when content, or open for a slow blink
+        var ex = SPR_EYE[0], ey = SPR_EYE[1];           // the eye: shut, or a ^ when content, or half open under its lid
         if (p.happy) { px(ex + 1, ey, C.fur); px(ex, ey, C.ink); px(ex + 1, ey - 1, C.ink); px(ex + 2, ey, C.ink); }
-        else if (eye > 0.3) { px(ex, ey, C.fur); px(ex + 1, ey - 1, C.ink); }
+        else if (eye > 0.3) { px(ex, ey - 1, C.ink); px(ex + 1, ey - 1, C.ink); px(ex, ey, C.ink); px(ex + 1, ey, C.eye); }
         if (petAt >= 0 && T - petAt > 1) KNEAD[Math.floor(T * 5) % 2].forEach(function (q) { px(q[0], q[1], C[LETTER[q[2]]]); });
         hx = ax + dir * (SPR_O - SPR_HEAD[0]); hy = y0 + SPR_HEAD[1];
         box = [(ax - 14) * PX, (ax + 14) * PX, (g.length + 1) * PX];
@@ -543,16 +543,18 @@
         var hc = drawRig(fc, C, p, T);
         var bb = pixelate(fc, c, ax - SPAN, 2 * SPAN, h, pal);
         box = bb && [bb[0] * PX, (bb[1] + 1) * PX, (h - bb[2]) * PX];
-        // the face is placed by hand, pixel by pixel, where the rig's head says it is: an eye (two tall, a line shut,
-        // or a ^ when happy) and a pink nose; looking at you, both eyes and the nose come round to the front
+        // the face is placed by hand, pixel by pixel, where the rig's head says it is: an eye (a dark pupil with the
+        // greenish-yellow iris behind it, a line shut, or a ^ when happy) and a pink nose; looking at you, both eyes
+        // and the nose come round to the front
         var at = function (q) { var l = headPt(p, q); return [Math.floor(ax + f * K * l[0]), Math.floor(h - K * l[1])]; };
         var ep = at([1.5, 1.6]), no = at([6.2, 0.9]), eyes = [ep];
         if (p.look > 0.5) { eyes = [at([1.2, 1.6]), at([5.0, 1.6])]; no = at([6.4, -0.2]); }
         c.fillStyle = C.ink;
         eyes.forEach(function (ep) {
+          c.fillStyle = C.ink;
           if (p.happy) { c.fillRect(ep[0] - 1, ep[1], 1, 1); c.fillRect(ep[0], ep[1] - 1, 1, 1); c.fillRect(ep[0] + 1, ep[1], 1, 1); }
-          else if (eye > 0.6) c.fillRect(ep[0], ep[1] - 1, 1, 2);
-          else if (eye > 0.3) c.fillRect(ep[0], ep[1], 1, 1);
+          else if (eye > 0.6) { c.fillRect(ep[0], ep[1] - 1, 1, 2); c.fillStyle = C.eye; c.fillRect(ep[0] - dir, ep[1] - 1, 1, 2); }
+          else if (eye > 0.3) { c.fillRect(ep[0], ep[1], 1, 1); c.fillStyle = C.eye; c.fillRect(ep[0] - dir, ep[1], 1, 1); }
           else c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1);
         });
         if (Math.abs(f) > 0.5) { c.fillStyle = C.pink; c.fillRect(no[0], no[1], 1, 1); }
