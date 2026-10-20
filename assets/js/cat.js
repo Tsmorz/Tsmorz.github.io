@@ -3,7 +3,8 @@
 // circle and curls up above the copyright with its tail wrapped round its front. Every 30 s after that it wakes,
 // stretches (downward dog, then a back leg), walks to the edge of the screen it is facing, scratches it, turns round
 // and walks to the other end of the footer to wash and sleep again, forever. It purrs in its sleep; hover it and it
-// looks content, click it and it slow-blinks at you.
+// looks content, click it and it slow-blinks at you, stroke it (the pointer back and forth) and it purrs harder and
+// kneads. Awake, a click stops it to look round at you and a stroke sits it down to knead; then it carries on.
 //
 // It is pixel art, but not a sprite sheet: under the pixels is a rig (a body, a head, four jointed legs with two-bone
 // IK and a tail chain) posed in rig units (x forward, y up). Acts (walk, sit, lick ...) give a pose over time and the
@@ -14,12 +15,12 @@
 (function () {
   'use strict';
   if (!window.Path2D) return;
-  var PX = 3, K = 0.6, S = PX * K, ROWS = 24, FPS = 15; // px per art pixel; art pixels per rig unit; px per unit; lane rows
+  var PX = 2, K = 0.6, S = PX * K, ROWS = 24, FPS = 15; // px per art pixel; art pixels per rig unit; px per unit; lane rows
   var SPEED = 34, STRIDE = 22, DUTY = 0.62;             // walking: units/s, units per gait cycle, fraction of it a foot is down
   var EXC = DUTY * STRIDE;                              // how far a planted foot travels under the body
   var SLEEP = 30, DELAY = 30000;                        // s asleep between rounds; ms on the page before it first walks in
   var ARM = 6.5, FORE = 6.6, THIGH = 6, SHIN = 6;       // leg bones
-  var TAIL_N = 14, TAIL_LEN = 21;
+  var TAIL_N = 14, TAIL_LEN = 19;
   var WALL = 14.6;                                      // how far ahead of the body its front paws reach when it rears up
   var LEGS = ['nh', 'fh', 'nf', 'ff'];                  // near/far, hind/front
   var GAIT = [0, 0.5, 0.25, 0.75];                      // lateral sequence: hind, then the front on the same side
@@ -49,9 +50,9 @@
     return o;
   }
   var STAND = {
-    s: [8, 12.6], h: [-10, 12.9], ts: 4.6, bs: 4.4, th: 5.0, bh: 4.1, hd: [6.4, 5.2], ha: 0,
-    nf: [9.4, 1.05], ff: [6.8, 1.05], nh: [-8.4, 1.05], fh: [-11, 1.05], hk: [-1.2, 5.2],
-    ta: 86, tc: 20, tt: -75, tw: 7, tb: 2.6, pf: 0, eye: 1, mouth: 0, tongue: 0, ear: 0, happy: 0
+    s: [7.2, 12.8], h: [-8.8, 13.0], ts: 5.0, bs: 4.9, th: 4.7, bh: 3.7, hd: [6.4, 5.4], ha: 0,
+    nf: [8.8, 1.05], ff: [6.2, 1.05], nh: [-7.0, 1.05], fh: [-9.6, 1.05], hk: [-1.2, 5.2],
+    ta: 112, tc: 6, tt: -130, tw: 7, tb: 2.2, pf: 0, eye: 1, mouth: 0, tongue: 0, ear: 0, happy: 0
   };
   var SNIFF = pose(STAND, { hd: [7.4, 0.4], ha: -32, ta: 95, tt: -40 });
   var SIT = pose(STAND, {
@@ -70,23 +71,32 @@
   // origin and the last row on the ground. The rig hands over to these when it lies down and takes back when it wakes.
   var SPR_O = 11;
   var CURL1 = [
-    '..o..o....................', '.oooooo...oooooooo........', '.ossooo.oosoosoososo......', '.eooooodoosoososooooo.....',
-    'peooooodooooooooooooo.....', 'wwoooooddooooooooooooo....', '.wwoooodooooooooooooooo...', '..wwoooooooooooooooooooso.',
-    '..wwoooooooooooooooooooss.', '..wwwooooooooooooooooooss.', '..kww.oooooooooooooossoss.'
+    '..o..o..................', '.oooooo....ooooooo......', '.ossooo.oosoososoooo....', '.eooooodosoososooooooo..',
+    'peooooodooooooooooooooo.', 'wwooooodooooooooooooooo.', '.wwooooodooooooooooooooo', '..wwoooooooooooooooooooo',
+    '..wwoooooooooooooooooooso.', '..wwwoooooooooooooooossoss', '..kww.ooooooooooooossossoo'
   ];
   var CURL2 = [
-    '..........................', '..........oooooooo........', '........oosoosoososo......', '..o..o.oosoosoososooo.....',
-    '.oooooodoooooooooooooo....', '.ossooodooooooooooooooo...', 'oEEooodoooooooooooooooos..', 'pwoooodooooooooooooooooss.',
-    'wwwoooooooooooodddddddsso.', 'wwwooooooooooooossoossos..', '.kwwoooooooooooossoossoo..'
+    '........................', '..........oososoo.......', '..o..ooosoososooooooo...', '.oooooodooooooooooooooo.',
+    '.ossooodooooooooooooooo.', 'oEEooodoooooooooooooooso', 'pwooooodoooooooooooooooo', 'wwwoooooooooooooooooooso',
+    'wwwoooooooooooodddddooss', 'wwwooooooooooooossoossos', '.kwwooooooooooooossooss.'
   ];
   var SLEEP_IN = [                                     // breathing in: the back rises a pixel
-    '..........................', '..........oooooooo........', '........oosoosoososo......', '..o..o.oosoosoososooo.....',
-    '.oooooodoooooooooooooo....', '.ossooodooooooooooooooo...', 'oEEooodoooooooooooooooos..', 'pwoooodooooooooooooooooss.',
-    'wwwosoddddddddddddddddsso.', 'wwwssoossoossoossoossoss..', '.kwwossoossoossoossoosso..'
+    '........................', '..........oososoo.......', '..o..ooosoososooooooo...', '.oooooodooooooooooooooo.',
+    '.ossooodooooooooooooooo.', 'oEEooodoooooooooooooooso', 'pwooooodoooooooooooooooo', 'wwwoooodddddddddddddooso',
+    'wwwooooooooooooooooooos.', 'kwsssoossoossoossooosss.', '.ksssoossoossoossooss...'
   ];
-  var SLEEP_OUT = ['..........................', '..........................', '..........oooooooo........',
-    '..o..o.oosoosoososoo......'].concat(SLEEP_IN.slice(4));
-  var SPR_EYE = [1, 6], SPR_HEAD = [3, 3];
+  var SLEEP_OUT = [
+    '........................', '..........oososoo.......', '..o..ooosoososooooo.....', '.oooooodooooooooooooo...',
+    '.ossooodooooooooooooooo.', 'oEEooodooooooooooooooos.', 'pwooooodoooooooooooooooo', 'wwwoooodddddddddddddooso',
+    'wwwooooooooooooooooooos.', 'kwsssoossoossoossooosss.', '.ksssoossoossoossooss...'
+  ];
+  var SPR_EYE = [1, 5], SPR_HEAD = [3, 4];
+  // stroked in its sleep it kneads: two frames of front paws pushing out under the chin ([col, row, letter], cols
+  // left of 0 are in front of the face), near paw down and far paw up, then the other way round
+  var KNEAD = [
+    [[-2, 10, 'w'], [-1, 10, 'w'], [-2, 9, 'w'], [-1, 8, 'k'], [-1, 7, 'k']],
+    [[-2, 8, 'w'], [-1, 8, 'w'], [-2, 9, 'w'], [-1, 10, 'k'], [0, 10, 'k']]
+  ];
   var DDOG = pose(STAND, {
     s: [9.5, 6.3], h: [-8.6, 14.6], ts: 4.1, bs: 3.6, th: 5.2, bh: 4.0, hd: [6.2, 2.2], ha: 8,
     nf: [21, 1.05], ff: [19, 1.05], nh: [-8, 1.05], fh: [-10.4, 1.05], hk: [-0.6, 5.4],
@@ -163,13 +173,13 @@
       return D - v * r * r / (2 * td);
     }
     return act(dur, 0.35, function (u) { return gait(STAND, dist(u), EXC); },
-      { f: dir, x: function (u) { return x0 + dir * dist(u) * S; } });
+      { f: dir, to: x1, x: function (u) { return x0 + dir * dist(u) * S; } });
   }
   // turning round in place is a flip of the drawing through edge-on, stepping all the while
   function turnAct(f0, halves, dur) {
     return act(dur, 0.25, function (u) { return gait(STAND, u * 22, 6); },
       { f: function (u) { var k = Math.cos(Math.PI * halves * smooth(u / dur)); return f0 * (k < 0 ? -1 : 1) * Math.max(Math.abs(k), 0.4); },
-        fEnd: halves % 2 ? -f0 : f0 });
+        fEnd: halves % 2 ? -f0 : f0, busy: true });
   }
   function pawAtMouth(p) { p.nf = headPt(p, [7.6, -3.3]); }
   function licking(p, u) {
@@ -195,9 +205,10 @@
   }
 
   // ---- drawing ----------------------------------------------------------------------------------------------------
-  var HEAD = new Path2D('M-5.6 0.6C-5.6 3.8-3 5.2 0 5.2C2.6 5.2 4.2 4.2 5 2.4C5.6 1.6 7 1.5 7.1 0.4C7.2-0.3 6.7-0.8 6.1-0.9' +
+  // a blunt, round muzzle with the nose at its front, and a chin under it
+  var HEAD = new Path2D('M-5.6 0.6C-5.6 3.8-3 5.2 0 5.2C2.6 5.2 4.4 4.4 5.4 3C6.2 2.6 6.6 1.8 6.6 0.8C6.6-0.2 6.4-0.9 6-1.1' +
     'L0.6-1.2C0.6-2.4 0.2-3.4-0.6-3.8C-2.8-4-4.6-2.8-5.2-1.4C-5.5-0.8-5.6-0.2-5.6 0.6Z');
-  var JAW = new Path2D('M0.6-1.2L6.1-0.9C6.1-2.1 5-3 3.4-3.3C2-3.6 0.8-3.4 0.2-2.9Z');
+  var JAW = new Path2D('M0.6-1.2L6-1.1C6.4-2.2 6-3.4 4.8-3.9C3.4-4.2 1.6-4 0.2-3Z');
   var NEAR_EAR = new Path2D('M-1.6 4.2L0.6 9.6L3.4 3.6Z'), FAR_EAR = new Path2D('M-5.6 1.6L-4.6 8.4L-1.2 4.4Z');
   var BROW = new Path2D('M-0.6 5.4L0.2 3.4M1.8 5L2.1 3.4');
   var HEART = ['.#.#.', '#####', '#####', '.###.', '..#..'];   // floats up after a slow blink
@@ -231,36 +242,43 @@
     var u = [(sh[0] - hp[0]) / L, (sh[1] - hp[1]) / L], n = [-u[1], u[0]];
     var sj = add(add(sh, n, -1), u, 0.4), hj = add(hp, n, -0.6), i;
 
+    // legs taper: a thick upper bone, a slimmer lower one, a round paw
     function front(foot, fur, cream, striped) {
       var j = ik(sj, foot, ARM, FORE, -1), pts = [sj, j[0], j[1]];
-      line(c, pts); stroke(c, fur, 3.4);
-      if (striped) bands(c, pts, C.stripe, 3.4, [0, 0.62, 0.1, 0.1, 0.1, 2]);
-      oval(c, cream, add(j[1], [0.5, 0]), 1.9, 1.15, clamp((j[1][1] - 1.05) * -9, -50, 0));
+      line(c, [sj, j[0]]); stroke(c, fur, 4.2);
+      line(c, [j[0], j[1]]); stroke(c, fur, 3.0);
+      if (striped) bands(c, [j[0], j[1]], C.stripe, 3.0, [0, 0.25, 0.18, 0.2, 0.18, 2]);
+      oval(c, cream, add(j[1], [0.5, 0.1]), 2.2, 1.3, clamp((j[1][1] - 1.05) * -9, -50, 0));
     }
     function hind(foot, fur, cream, near) {
       var j = ik(hj, add(foot, p.hk), THIGH, SHIN, 1), hock = j[1], toe = add(hock, p.hk, -1);
       var tv = [j[0][0] - hj[0], j[0][1] - hj[1]], pts = [j[0], hock, toe];
-      oval(c, fur, add(hj, tv, 0.42), THIGH / 2 + 2.6, 3.7, deg(tv));
-      line(c, pts); stroke(c, fur, 3.1);
+      oval(c, fur, add(hj, tv, 0.38), THIGH / 2 + 2.8, 4.5, deg(tv));    // the haunch
+      line(c, [j[0], hock]); stroke(c, fur, 3.3);
+      line(c, [hock, toe]); stroke(c, fur, 2.8);
       if (near) {
-        bands(c, pts, C.stripe, 3.1, [0, 0.42, 0.12, 0.1, 0.12, 2]);
-        var a = add(hj, tv, 0.2), b = add(hj, tv, 0.75), nn = [-tv[1] / THIGH, tv[0] / THIGH];
-        line(c, [add(a, nn, 2.6), add(mid(a, b), nn, 1), add(b, nn, 1.6)]); stroke(c, C.stripe, 1.6);
+        bands(c, pts, C.stripe, 3.0, [0, 0.3, 0.14, 0.14, 0.14, 2]);
+        var a = add(hj, tv, 0.15), b = add(hj, tv, 0.75), nn = [-tv[1] / THIGH, tv[0] / THIGH];
+        line(c, [add(a, nn, 3.2), add(mid(a, b), nn, 1.2), add(b, nn, 1.8)]); stroke(c, C.stripe, 1.6);
       }
-      oval(c, cream, add(toe, [0.5, 0]), 1.9, 1.15, 0);
+      oval(c, cream, add(toe, [0.5, 0.1]), 2.2, 1.3, 0);
     }
+    // the tail: a chain bent near the base (tc) and at the tip (tt), swaying in an S that grows toward the tip;
+    // it tapers from root to tip, with tabby rings and a dark tip
+    var RINGS = [0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 1];
     function tail() {
       var base = add(add(hp, u, -4.4), n, p.tb), pts = [base], a2 = p.ta, seg = TAIL_LEN / TAIL_N;
-      for (var i = 0; i < TAIL_N; i++) {               // a chain bent near the base (tc) and at the tip (tt), swaying
+      for (var i = 0; i < TAIL_N; i++) {
         var r = i / TAIL_N;
         a2 += (r < 0.4 ? p.tc / (0.4 * TAIL_N) : 0) + (r >= 0.62 ? p.tt / (0.38 * TAIL_N) : 0) +
-          p.tw / TAIL_N * (0.3 + 2 * r) * Math.sin(T * 2 * Math.PI / 2.6 - i * 0.45);
+          p.tw / TAIL_N * (0.2 + 2.6 * r * r) * Math.sin(T * 2 * Math.PI / 3.4 - i * 0.32);
         var q = add(pts[i], [Math.cos(a2 * Math.PI / 180), Math.sin(a2 * Math.PI / 180)], seg);
         if (q[1] < 1.7) q[1] = 1.7;                    // it rests on the ground where it reaches it
         pts.push(q);
       }
-      line(c, pts); stroke(c, C.fur, 3.4);
-      bands(c, pts, C.stripe, 3.4, [0, 0.2, 0.07, 0.08, 0.07, 0.08, 0.07, 0.08, 0.07, 0.08, 0.15, 2]);
+      for (i = 0; i < TAIL_N; i++) {
+        line(c, [pts[i], pts[i + 1]]); stroke(c, RINGS[i] ? C.stripe : C.fur, lerp(4.2, 2.4, i / (TAIL_N - 1)));
+      }
     }
 
     front(p.ff, C.far, C.creamFar);
@@ -302,7 +320,7 @@
     c.fillStyle = C.fur; c.fill(FAR_EAR); c.restore();
     c.fillStyle = C.fur; c.fill(HEAD);
     c.save(); c.clip(HEAD);
-    oval(c, C.cream, [5.4, -0.5], 2.2, 1.6);
+    oval(c, C.cream, [5.2, -0.6], 2.1, 1.8);
     c.strokeStyle = C.stripe; c.lineWidth = 1.5; c.lineCap = 'round'; c.stroke(BROW);
     c.restore();
     if (p.mouth > 0.05) {                              // the yawn: the jaw swings down on its hinge
@@ -327,9 +345,10 @@
   // (snapped to the coat's palette), or stays clear. No soft edges, no in-between colors, and small dark details (an
   // eye, the nose, a stripe) count for more so they survive.
   var SS = 4, WEIGHT = [1, 1, 1.5, 1.1, 1, 3, 2.6];   // fur, far fur, stripe, cream, far cream, ink, pink
+  // returns the first and last columns and the top row it filled, in dst's pixels, or null if it drew nothing
   function pixelate(src, dst, x0, w, h, pal) {
     var d = src.getImageData(0, 0, w * SS, h * SS).data, out = dst.createImageData(w, h), o = out.data;
-    var votes = new Float32Array(pal.length), j;
+    var votes = new Float32Array(pal.length), j, bl = 1e9, br = -1, bt = 1e9;
     for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
       var clear = 0;
       for (j = 0; j < pal.length; j++) votes[j] = 0;
@@ -346,10 +365,12 @@
       var win = -1, wv = clear;
       for (j = 0; j < pal.length; j++) if (votes[j] > wv) { wv = votes[j]; win = j; }
       if (win < 0) continue;
+      bl = Math.min(bl, x); br = Math.max(br, x); bt = Math.min(bt, y);
       var k = (y * w + x) * 4;
       o[k] = pal[win][0]; o[k + 1] = pal[win][1]; o[k + 2] = pal[win][2]; o[k + 3] = 255;
     }
     dst.putImageData(out, x0, 0);
+    return br < 0 ? null : [x0 + bl, x0 + br, bt];
   }
   function glyph(c, g, x, y, color) {
     c.fillStyle = color;
@@ -364,6 +385,7 @@
     fine.width = 2 * SPAN * SS; fine.height = ROWS * SS;
     var W = world.width(), X = W + 34 * S, F = -1, side = 'L';
     var cur = null, prev = STAND, queue = [], marks = [], petted = false, blinkAt = -99, T = 0, box = null;
+    var petting = 0, petAt = -1, soften = 0;          // how hard it is being stroked (0..1); since when, asleep
 
     function colors() {                               // the coat from main.css; the page ink can change with the theme
       var cs = getComputedStyle(canvas);
@@ -380,13 +402,29 @@
     // hand-drawn frames, each held for its time; posed as the loaf, so the rig carries on from there
     function spriteAct(frames, extra) {
       var dur = frames.reduce(function (t, f) { return t + f[1]; }, 0);
-      return act(dur, 0, function () { return pose(LOAF, { eye: 0 }); }, Object.assign({ sprite: function (u) {
+      return act(dur, 0, function () { return pose(LOAF, { eye: 0 }); }, Object.assign({ busy: true, sprite: function (u) {
         for (var i = 0; i < frames.length - 1 && u >= frames[i][1]; i++) u -= frames[i][1];
         return frames[i][0];
       } }, extra));
     }
     function sleepAct(dur) {
       return spriteAct([[SLEEP_IN, dur]], { sleep: true, sprite: function (u, T) { return frac(T / 3.8) < 0.5 ? SLEEP_IN : SLEEP_OUT; } });
+    }
+    // clicked while awake: it stops, turns its face to you, blinks, and goes back to what it was doing
+    function lookAct() {
+      return still(STAND, 1.9, 0.5, function (p, u) {
+        var m = bump(u, 0.3, 1.1, 0.4);
+        p.look = m; p.ha = 10 * m; p.hd[1] += 0.5 * m; p.ear -= 6 * m;
+        if (u > 0.85 && u < 1.05) p.eye = 0;
+      }, { busy: true });
+    }
+    // stroked while awake: it sits, chin up and eyes shut happy, and kneads, for as long as the stroking lasts
+    function petAct() {
+      return still(SIT, 1e9, 0.6, function (p, u) {
+        var k = Math.sin(u * 2 * Math.PI * 1.25);
+        p.ha = 14; p.happy = 1; p.ear = -4; p.tw = 2;
+        p.nf[1] += 1.6 * Math.max(0, k); p.ff[1] += 1.6 * Math.max(0, -k);
+      }, { busy: true, pet: true });
     }
     function wallX() { return F < 0 ? WALL * S + 1 : W - WALL * S - 1; }
     function arrive() {
@@ -406,7 +444,7 @@
         }); },
         function () { return still(STAND, 0.7, 0.7); },
         function () { return turnAct(F, 2, 1.5); },
-        function () { return still(LOAF, 1.1, 1.1); },
+        function () { return still(LOAF, 1.1, 1.1, null, { busy: true }); },
         function () { return spriteAct([[CURL1, 0.6], [CURL2, 0.7]]); },   // the tail sweeps round, the head goes down
         function () { return sleepAct(SLEEP); }
       ];
@@ -414,13 +452,13 @@
     function round() {
       return [
         function () { return spriteAct([[CURL2, 0.5], [CURL1, 0.7]]); },
-        function () { return still(LOAF, 0.9, 0); },
+        function () { return still(LOAF, 0.9, 0, null, { busy: true }); },
         function () { return still(STAND, 0.8, 0.8); },
         function () { return still(DDOG, 2.3, 0.9, function (p, u) { var m = bump(u, 0.6, 0.6, 0.6); p.mouth = 0.35 * m; p.tw = 4 + 6 * m; }); },
         function () { return still(HSTRETCH, 1.5, 0.7); },
         function () { return still(STAND, 0.6, 0.6); },
         function () { return walkAct(X, wallX()); },
-        function () { return still(REAR, 0.8, 0.75); },
+        function () { return still(REAR, 0.8, 0.75, null, { busy: true }); },
         function () {
           return still(REAR, 3.2, 0, function (p, u) {
             [['nf', 0], ['ff', 0.5]].forEach(function (c) {          // claws drag down the wall, then reach up again
@@ -430,7 +468,7 @@
             });
             var w = Math.sin(u * 2 * Math.PI / 0.55);
             p.s[1] -= 0.4 * w; p.hd[1] += 0.2 * w; p.eye = 0.55; p.ear = 10; p.tw = 10;
-          }, { scratch: true });
+          }, { scratch: true, busy: true });
         },
         function () { return still(STAND, 0.7, 0.6); },
         function () { return turnAct(F, 1, 0.9); },
@@ -447,12 +485,22 @@
       }
       var a = null;
       while (!a) { if (!queue.length) queue = round(); a = queue.shift()(); }
+      if (soften > 0) { soften--; a.blend = Math.max(a.blend, 0.5); }   // no snapping back after an interruption
       a.t0 = t0; cur = a;
+    }
+    // stop what it is doing and do this first; a walk then carries on to where it was going
+    function interrupt(make) {
+      if (!cur || cur.busy || cur.sleep) return;
+      var to = cur.to;
+      queue.unshift(make);
+      if (to !== undefined) queue.splice(1, 0, function () { return walkAct(X, to); });
+      soften = 2; cur.dur = T - cur.t0; next(T);
     }
 
     function frame(t) {
       T = t;
       if (!cur) next(0);
+      if (cur.pet && petting < 0.05 && T - cur.t0 > 1.2) cur.dur = T - cur.t0;
       while (T - cur.t0 >= cur.dur) next(cur.t0 + cur.dur);
       var u = T - cur.t0, raw = cur.pose(u, T);
       var p = cur.blend && u < cur.blend ? mix(prev, raw, u / cur.blend) : raw;
@@ -465,16 +513,19 @@
       k = Math.floor(T / 2.9); bt = T - k * 2.9 - rnd(k + 40) * 2;
       if (rnd(k + 70) < 0.4 && bt > 0 && bt < 0.28) p.ear += 30 * Math.sin(Math.PI * bt / 0.28);
       var sleeping = !!cur.sleep && u > 0.4, sb = T - blinkAt;
-      if (sleeping && petted) { p.happy = 1; p.ear = 0; }
+      if (sleeping && (petted || petting > 0.05)) { p.happy = 1; p.ear = 0; }
+      if (sleeping && petting > 0.3) { if (petAt < 0) petAt = T; } else petAt = -1;
       if (sleeping && sb < 2.2) { p.happy = 0; p.eye = bump(sb, 0.45, 0.5, 1.2) > 0.4 ? 0.6 : 0; }   // a slow blink, when clicked
 
       if (T - inkAt > 1) { colors(); inkAt = T; }
       var w = canvas.width, h = canvas.height, ax = Math.round(x / PX);
-      if (sleeping) ax += Math.round(T * FPS) % 2;               // asleep, it purrs: a steady one-pixel buzz
+      var fr = Math.round(T * FPS), purr = sleeping || cur.pet, lift = 0;
+      if (purr) ax += fr % 2;                                    // it purrs: a steady one-pixel buzz,
+      if (sleeping && petting > 0.3) lift = (fr >> 1) % 2;      // and stroked, a harder one
       c.clearRect(0, 0, w, h);
       var hx, hy, eye = clamp(p.eye, 0, 1);
       if (cur.sprite) {
-        var g = cur.sprite(u, T), y0 = h - g.length;
+        var g = cur.sprite(u, T), y0 = h - g.length - lift;
         var px = function (gx, gy, color) { c.fillStyle = color; c.fillRect(ax + dir * (SPR_O - gx), y0 + gy, 1, 1); };
         g.forEach(function (row, gy) {
           for (var gx = 0; gx < row.length; gx++) if (row[gx] !== '.') px(gx, gy, C[LETTER[row[gx]]]);
@@ -482,23 +533,28 @@
         var ex = SPR_EYE[0], ey = SPR_EYE[1];           // the eye: shut, or a ^ when content, or open for a slow blink
         if (p.happy) { px(ex + 1, ey, C.fur); px(ex, ey, C.ink); px(ex + 1, ey - 1, C.ink); px(ex + 2, ey, C.ink); }
         else if (eye > 0.3) { px(ex, ey, C.fur); px(ex + 1, ey - 1, C.ink); }
+        if (petAt >= 0 && T - petAt > 1) KNEAD[Math.floor(T * 5) % 2].forEach(function (q) { px(q[0], q[1], C[LETTER[q[2]]]); });
         hx = ax + dir * (SPR_O - SPR_HEAD[0]); hy = y0 + SPR_HEAD[1];
-        box = [(ax - 13) * PX, (ax + 13) * PX];
+        box = [(ax - 14) * PX, (ax + 14) * PX, (g.length + 1) * PX];
       } else {
         fc.setTransform(1, 0, 0, 1, 0, 0);
         fc.clearRect(0, 0, fine.width, fine.height);
         fc.setTransform(f * K * SS, 0, 0, -K * SS, SPAN * SS, h * SS);
         var hc = drawRig(fc, C, p, T);
-        pixelate(fc, c, ax - SPAN, 2 * SPAN, h, pal);
-        box = null;
-        // the face is placed by hand, pixel by pixel, where the rig's head says it is: an eye (two tall, or a line
-        // shut) and a pink nose
+        var bb = pixelate(fc, c, ax - SPAN, 2 * SPAN, h, pal);
+        box = bb && [bb[0] * PX, (bb[1] + 1) * PX, (h - bb[2]) * PX];
+        // the face is placed by hand, pixel by pixel, where the rig's head says it is: an eye (two tall, a line shut,
+        // or a ^ when happy) and a pink nose; looking at you, both eyes and the nose come round to the front
         var at = function (q) { var l = headPt(p, q); return [Math.floor(ax + f * K * l[0]), Math.floor(h - K * l[1])]; };
-        var ep = at([1.5, 1.6]), no = at([7.1, 0.9]);
+        var ep = at([1.5, 1.6]), no = at([6.2, 0.9]), eyes = [ep];
+        if (p.look > 0.5) { eyes = [at([1.2, 1.6]), at([5.0, 1.6])]; no = at([6.4, -0.2]); }
         c.fillStyle = C.ink;
-        if (eye > 0.6) c.fillRect(ep[0], ep[1] - 1, 1, 2);
-        else if (eye > 0.3) c.fillRect(ep[0], ep[1], 1, 1);
-        else c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1);
+        eyes.forEach(function (ep) {
+          if (p.happy) { c.fillRect(ep[0] - 1, ep[1], 1, 1); c.fillRect(ep[0], ep[1] - 1, 1, 1); c.fillRect(ep[0] + 1, ep[1], 1, 1); }
+          else if (eye > 0.6) c.fillRect(ep[0], ep[1] - 1, 1, 2);
+          else if (eye > 0.3) c.fillRect(ep[0], ep[1], 1, 1);
+          else c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1);
+        });
         if (Math.abs(f) > 0.5) { c.fillStyle = C.pink; c.fillRect(no[0], no[1], 1, 1); }
         hx = ax + f * K * hc[0]; hy = h - K * hc[1];
       }
@@ -532,7 +588,10 @@
         frame(T);
       },
       hover: function (on) { petted = on; },
-      poke: function () { if (cur && cur.sleep && T - blinkAt > 2.2) blinkAt = T; },
+      poke: function () {                              // asleep: a slow blink; awake: it stops and looks at you
+        if (cur && cur.sleep) { if (T - blinkAt > 2.2) blinkAt = T; } else interrupt(lookAct);
+      },
+      pet: function (level) { petting = level; if (level > 0.3) interrupt(petAct); },
       box: function () { return box; },
       settleAsleep: function () { X = world.restL(); cur = sleepAct(1e9); cur.t0 = 0; frame(1); },
       act: function () { return cur; }
@@ -567,11 +626,22 @@
     function place() {
       var b = cat.box();
       hit.style.display = b ? 'block' : 'none';
-      if (b) { hit.style.left = b[0] + 'px'; hit.style.width = (b[1] - b[0]) + 'px'; }
+      if (b) { hit.style.left = b[0] + 'px'; hit.style.width = (b[1] - b[0]) + 'px'; hit.style.height = b[2] + 'px'; }
     }
+    // stroking: the pointer going back and forth over the cat, turning at least twice in a second and a half
+    var strokeX = null, strokeDir = 0, flips = [], stroked = 0;
+    hit.addEventListener('pointermove', function (e) {
+      if (strokeX !== null) {
+        var dx = e.clientX - strokeX, d = dx > 1 ? 1 : dx < -1 ? -1 : 0;
+        if (!d) return;
+        if (strokeDir && d !== strokeDir) flips.push(e.timeStamp);
+        strokeDir = d; stroked = Math.min(1.5, stroked + Math.abs(dx) / 60);
+      }
+      strokeX = e.clientX;
+    });
     fit();
     hit.addEventListener('pointerenter', function () { cat.hover(true); });
-    hit.addEventListener('pointerleave', function () { cat.hover(false); });
+    hit.addEventListener('pointerleave', function () { cat.hover(false); strokeX = null; strokeDir = 0; });
     hit.addEventListener('click', function () { cat.poke(); });
     window.addEventListener('resize', fit);
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { cat.settleAsleep(); place(); return; }
@@ -581,8 +651,11 @@
     function tick(now) {
       raf = 0;
       if (!visible) { last = null; return; }
-      if (last !== null) T += Math.min(0.1, (now - last) / 1000);
-      last = now;
+      var dt = last === null ? 0 : Math.min(0.1, (now - last) / 1000);
+      T += dt; last = now;
+      stroked *= Math.exp(-dt / 0.5);
+      flips = flips.filter(function (t) { return now - t < 1500; });
+      cat.pet(flips.length >= 2 ? Math.min(1, stroked) : 0);
       var fr = Math.floor(T * FPS);
       if (fr !== shown) { shown = fr; cat.frame(fr / FPS); place(); }
       raf = requestAnimationFrame(tick);
