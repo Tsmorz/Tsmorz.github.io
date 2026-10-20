@@ -6,7 +6,7 @@ description: >-
 url: https://tsmorz.github.io
 lang: en-US
 image: /assets/img/logo.jpg
-logo: pendulum3  # nav mark: fade | radial | pendulum | pendulum4 | pendulum3 (see _includes/logo.html)
+logo: cartpole  # nav mark: cartpole | fade | radial | pendulum | pendulum4 | pendulum3 (see _includes/logo.html)
 
 author:
   name: Tony Smoragiewicz
