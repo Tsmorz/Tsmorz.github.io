@@ -6,7 +6,6 @@ permalink: /controls/swingup/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Double Pendulum Control</h1>
-  <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">← Control Systems</a></p>
   <p class="page-sub controls-intro">
     An unactuated pendulum on a sliding cart is a classic controls problem and this two link version extends it.
     You can push the cart to swing both links up but the system dynamics and human reaction time make this impossible. However, a <strong>TQC reinforcement-learning policy</strong>
