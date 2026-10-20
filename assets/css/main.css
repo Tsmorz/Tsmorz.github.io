@@ -653,7 +653,6 @@ button, input, select, textarea { font-family: var(--mono); }
 .eqn-note{margin:.5rem 0 0;font-size:.74rem;color:var(--text-muted);font-family:var(--font);font-style:italic}
 
 /* Swing-up page */
-.su-crumb { margin: 0 0 .9rem; font-size: .88rem; }
 .su-layout .sim-stack { min-height: 646px; }   /* same sim size as the /controls/ tabs */
 .su-canvas { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 .su-canvas:active { cursor: grabbing; }
