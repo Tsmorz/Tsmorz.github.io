@@ -95,6 +95,40 @@ permalink: /controls/swingup/
       leave the pendulum in.
     </p>
   </div>
+
+  <div class="demo-note">
+    <h4 class="demo-note-title">About this demo</h4>
+    <p>
+      The policy was trained in <a href="https://github.com/Tsmorz/n-cartpole">n-cartpole</a>
+      with <strong>TQC</strong> (Truncated Quantile Critics), an off-policy actor-critic that
+      learns a whole distribution of returns rather than a single value. At every 10&nbsp;ms step
+      it sees the cart position and velocity, cos&#8201;&#952;, sin&#8201;&#952; and
+      &#952;&#775; for each link, and the target as cos of each link's goal angle (+1 up,
+      &#8722;1 down). It outputs one horizontal force. Its reward peaks only when both links
+      sit at their targets, still, with the cart near the center. During training the target
+      changed every few seconds, and episodes started at every pose as well as at fully
+      random states. That's why it can move between any two targets, and why it can catch a
+      swing you started by hand.
+    </p>
+    <p>
+      Labels give one letter per link, base link (&#952;&#8321;) first: <strong>U</strong> is up,
+      <strong>D</strong> is down. Only DD is stable on its own. The other three have to be
+      balanced actively, and in UD and DU one link is folded back over the other.
+    </p>
+    <p>
+      "Reached" means both links within 0.3&nbsp;rad of their targets and slower than
+      1.5&nbsp;rad/s for half a second. That's the same test the training repo's evaluation
+      uses. The clock restarts at every reset and every new target. A time counts as
+      <em>AI</em> only if you never pushed the cart yourself, and
+      as <em>manual</em> only if the network never drove. Hitting either end of the rail ends
+      the run. The network trained on a &#177;0.5&nbsp;m rail; this one runs to &#177;1&nbsp;m
+      so there's room to swing by hand, but past half a meter from center the network is
+      outside anything it saw in training.
+    </p>
+    <p class="eqn-note" id="su-params">
+      The simulation uses the exact plant the network was trained on, except the rail.
+    </p>
+  </div>
 </div>
 
 <script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
