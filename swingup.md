@@ -6,7 +6,7 @@ permalink: /controls/swingup/
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Double Pendulum Control</h1>
-  <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">&#8592; Control Systems</a></p>
+  <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">← Control Systems</a></p>
   <p class="page-sub controls-intro">
     Two links hang from a cart on a two-meter rail. Push the cart to swing both links up and
     balance them. That's hard by hand, so a <strong>TQC</strong> reinforcement-learning policy
@@ -42,10 +42,10 @@ permalink: /controls/swingup/
           <button class="goal-btn" type="button" data-goal="UU" aria-pressed="false" title="Both up" aria-label="UU: both up">
             <span class="goal-icon" aria-hidden="true"></span><span class="goal-label">UU</span>
           </button>
-          <button class="goal-btn" type="button" data-goal="UD" aria-pressed="false" title="&#952;&#8321; up, &#952;&#8322; down" aria-label="UD: link 1 up, link 2 down">
+          <button class="goal-btn" type="button" data-goal="UD" aria-pressed="false" title="θ₁ up, θ₂ down" aria-label="UD: link 1 up, link 2 down">
             <span class="goal-icon" aria-hidden="true"></span><span class="goal-label">UD</span>
           </button>
-          <button class="goal-btn" type="button" data-goal="DU" aria-pressed="false" title="&#952;&#8321; down, &#952;&#8322; up" aria-label="DU: link 1 down, link 2 up">
+          <button class="goal-btn" type="button" data-goal="DU" aria-pressed="false" title="θ₁ down, θ₂ up" aria-label="DU: link 1 down, link 2 up">
             <span class="goal-icon" aria-hidden="true"></span><span class="goal-label">DU</span>
           </button>
           <button class="goal-btn" type="button" data-goal="DD" aria-pressed="false" title="Both down" aria-label="DD: both down">
@@ -63,7 +63,7 @@ permalink: /controls/swingup/
         <input type="range" id="su-delay" min="0" max="50" step="10" value="0">
       </div>
       <div class="pid-group">
-        <label>Sensor noise <span class="sigma">&#963;</span> <span id="su-noise-val">0.00</span></label>
+        <label>Sensor noise <span class="sigma">σ</span> <span id="su-noise-val">0.00</span></label>
         <input type="range" id="su-noise" min="0" max="0.1" step="0.01" value="0">
       </div>
       <p class="panel-hint">Delay holds back the force; noise corrupts what the network measures, never the force. It was trained with neither, so 50 ms of delay or noise above 0.03 usually breaks it.</p>
@@ -83,55 +83,6 @@ permalink: /controls/swingup/
     </div>
   </div>
 
-  <div class="su-net-wrap">
-    <h3 class="su-net-title">Inside the network</h3>
-    <div class="su-net-scroll">
-      <canvas class="su-net" id="su-net" aria-label="Diagram of the policy network with live activations: ten inputs, a 256-unit embedding, two residual blocks of 1024 ReLU units each, and one output force."></canvas>
-    </div>
-    <p class="su-net-hint">Swipe sideways to see the whole network.</p>
-    <p class="eqn-note">
-      Each square is one neuron, violet when positive and green when negative. The ten inputs feed a
-      256-unit embedding, then two residual blocks (each widens to 1024 ReLU units and adds its
-      result back through the skip), and a single number comes out. <code>tanh</code> squashes it
-      to a force of at most 20&nbsp;N. In Manual it shows what the network would do from whatever pose you
-      leave the pendulum in.
-    </p>
-  </div>
-
-  <div class="demo-note">
-    <h4 class="demo-note-title">About this demo</h4>
-    <p>
-      The policy was trained in <a href="https://github.com/Tsmorz/n-cartpole">n-cartpole</a>
-      with <strong>TQC</strong> (Truncated Quantile Critics), an off-policy actor-critic that
-      learns a whole distribution of returns rather than a single value. At every 10&nbsp;ms step
-      it sees the cart position and velocity, cos&#8201;&#952;, sin&#8201;&#952; and
-      &#952;&#775; for each link, and the target as cos of each link's goal angle (+1 up,
-      &#8722;1 down). It outputs one horizontal force. Its reward peaks only when both links
-      sit at their targets, still, with the cart near the center. During training the target
-      changed every few seconds, and episodes started at every pose as well as at fully
-      random states. That's why it can move between any two targets, and why it can catch a
-      swing you started by hand.
-    </p>
-    <p>
-      Labels give one letter per link, base link (&#952;&#8321;) first: <strong>U</strong> is up,
-      <strong>D</strong> is down. Only DD is stable on its own. The other three have to be
-      balanced actively, and in UD and DU one link is folded back over the other.
-    </p>
-    <p>
-      "Reached" means both links within 0.3&nbsp;rad of their targets and slower than
-      1.5&nbsp;rad/s for half a second. That's the same test the training repo's evaluation
-      uses. The clock restarts at every reset and every new target. A time counts as
-      <em>AI</em> only if you never pushed the cart yourself, and
-      as <em>manual</em> only if the network never drove. Hitting either end of the rail ends
-      the run. The network trained on a &#177;0.5&nbsp;m rail; this one runs to &#177;1&nbsp;m
-      so there's room to swing by hand, but past half a meter from center the network is
-      outside anything it saw in training.
-    </p>
-    <p class="eqn-note" id="su-params">
-      The simulation uses the exact plant the network was trained on, except the rail.
-    </p>
-  </div>
-</div>
-
 <script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
+
 <script src="{{ '/assets/js/swingup.js' | relative_url }}"></script>

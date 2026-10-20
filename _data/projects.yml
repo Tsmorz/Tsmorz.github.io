@@ -3,17 +3,6 @@
 # `image:` is optional (path or URL).
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
-- name: UAV Design Optimization
-  blurb: >-
-    Preliminary design optimization for a tiltrotor drone under 25 kg and
-    slower than 45 m/s - sizing, aerodynamics, and propulsion in one loop.
-  year: "2021"
-  tags: [Python, Aerospace, Optimization]
-  featured: true
-  on_cv: true
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/UAV-Code
 
 - name: Double Pendulum
   blurb: >-
@@ -30,6 +19,43 @@
     - label: Live demo
       url: /controls/swingup/
 
+- name: VQF GPS Filter
+  blurb: >-
+    Real-time orientation and position on an ESP32-S3. VQF handles attitude, a
+    9-state EKF fuses the accelerometer with GPS for position. The board
+    streams it all to a browser over Wi-Fi.
+  year: "2026"
+  tags: [C++, ESP32, State Estimation]
+  featured: true
+  on_cv: false
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/vqf-gps-vibes
+
+- name: RC Plane Design
+  blurb: >-
+    Aerodynamic design, mass and CG budget, and 3D-printable rib export for a
+    sub-250 g, ESP32-S3-controlled trainer, built on AeroSandbox and NeuralFoil.
+  year: "2026"
+  tags: [Python, Aerospace, CAD]
+  featured: true
+  on_cv: false
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/rc-plane-design
+
+- name: UAV Design Optimization
+  blurb: >-
+    Preliminary design optimization for a tiltrotor drone under 25 kg and
+    slower than 45 m/s - sizing, aerodynamics, and propulsion in one loop.
+  year: "2021"
+  tags: [Python, Aerospace, Optimization]
+  featured: true
+  on_cv: true
+  links:
+    - label: GitHub
+      url: https://github.com/Tsmorz/UAV-Code
+
 - name: EKF-SLAM
   blurb: >-
     Extended Kalman Filter implementation of 3D simultaneous localization
@@ -41,19 +67,6 @@
   links:
     - label: GitHub
       url: https://github.com/Tsmorz/ekf-slam
-
-- name: VQF GPS Vibes
-  blurb: >-
-    Real-time orientation and position on an ESP32-S3. VQF handles attitude, a
-    9-state EKF fuses the accelerometer with GPS for position, and the board
-    streams it all to a browser over its own Wi-Fi.
-  year: "2026"
-  tags: [C++, ESP32, State Estimation]
-  featured: true
-  on_cv: false
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/vqf-gps-vibes
 
 - name: ESP32 Cam
   blurb: >-
@@ -67,15 +80,3 @@
   links:
     - label: GitHub
       url: https://github.com/Tsmorz/esp32-cam
-
-- name: RC Plane Design
-  blurb: >-
-    Aerodynamic design, mass and CG budget, and 3D-printable rib export for a
-    sub-250 g, ESP32-S3-controlled trainer, built on AeroSandbox and NeuralFoil.
-  year: "2026"
-  tags: [Python, Aerospace, CAD]
-  featured: true
-  on_cv: false
-  links:
-    - label: GitHub
-      url: https://github.com/Tsmorz/rc-plane-design
