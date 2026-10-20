@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Projects
-description: Robotics, aerospace, and software projects - from CV research work to weekend builds.
+description: Robotics, aerospace, and software projects - from research work to weekend builds.
 permalink: /projects/
 ---
 <section class="wrap page-head">
@@ -26,11 +26,12 @@ permalink: /projects/
     <img style="--r: 0.75" src="{{ '/assets/img/about/aerobar-bike-front.jpg' | relative_url }}" alt="Front view of the aerobar mounted on my bike" loading="lazy">
     <img style="--r: 0.667" src="{{ '/assets/img/about/aerobar-bike-deer.jpg' | relative_url }}" alt="My bike with the aerobar, parked at a fence with deer behind it" loading="lazy">
   </div>
-  <p class="about-caption">In 2020 I designed, built, and raced on custom hardware for my bike. Modern aerodynamic
-  road handlebars aren't round, so they can't accept standard clamp-on aerobars, and I needed
+  <p class="about-caption">In 2020 I designed, built, and raced on custom hardware for my bike. Aerobars are the
+  extensions you rest your forearms on to ride low and cut through the wind. Modern aerodynamic
+  road handlebars aren't round, so standard clamp-on aerobars don't fit them, and I needed
   something purpose-built. Aerobars give a big advantage in the moments that decide a race, so
   I knew the effort would be worthwhile. The design was inspired by an earlier product from
-  Oval Concepts. It worked well for racing, but fatigue testing showed the bolts would fail
-  too early for it to ever become a product. You can <a href="https://cad.onshape.com/documents/7ba426488dc4cee808e2ab41/w/6d04e286156affca42996beb/e/86fb2f0a3aa78e48a1cfdd21?renderMode=0&amp;uiState=6abe3bc36909f7bf5121492c">view the aerobars in Onshape</a>
+  Oval Concepts. It worked well for racing, but repeated-load testing showed the bolts would wear out and
+  break too early for it to ever become a product. You can <a href="https://cad.onshape.com/documents/7ba426488dc4cee808e2ab41/w/6d04e286156affca42996beb/e/86fb2f0a3aa78e48a1cfdd21?renderMode=0&amp;uiState=6abe3bc36909f7bf5121492c">view the 3D model in Onshape</a>
   (you'll need a free Onshape account).</p>
 </section>

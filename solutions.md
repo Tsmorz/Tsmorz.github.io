@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Solutions
-description: Project-based robotics, state estimation and controls work for companies.
+description: Project work for companies whose robots and devices need to sense, locate themselves and move precisely.
 permalink: /solutions/
 ---
 {%- assign s = site.data.solutions -%}
