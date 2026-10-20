@@ -1,14 +1,17 @@
-<!-- The nav mark (_includes/logo.html, "pendulum3"): a 3x3 checker with violet and lime squares where the swing-up bobs sit.
-     Colors follow the browser theme, like the nav: dark squares on light tabs, light ones on dark tabs. -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 3" shape-rendering="crispEdges">
+<!-- The double pendulum on a cart from /controls/swingup/, no background so it sits on any tab. Colors follow the browser theme: dark strokes on light tabs, bright ones on dark tabs. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 7.5 27 27">
   <style>
-    .a{fill:#1b1b1f} .b{fill:#fff} .v{fill:#5a4fd6} .g{fill:#5fae16}
-    @media (prefers-color-scheme: dark) { .a{fill:#e9e9ee} .b{fill:#16161a} .v{fill:#a798ff} .g{fill:#adf45d} }
+    .g{stroke:#4b505e} .c{fill:#5d6373} .r{stroke:#2f3340} .b1{fill:#5a4fd6} .b2{fill:#35a02a}
+    @media (prefers-color-scheme: dark) { .g{stroke:#aab0c0} .c{fill:#c4c9d6} .r{stroke:#f1efff} .b1{fill:#b3a8ff} .b2{fill:#b8ff6a} }
   </style>
-  <rect class="b" width="3" height="3"/>
-  <rect class="a" x="0" y="0" width="1" height="1"/>
-  <rect class="v" x="2" y="0" width="1" height="1"/>
-  <rect class="a" x="1" y="1" width="1" height="1"/>
-  <rect class="g" x="0" y="2" width="1" height="1"/>
-  <rect class="a" x="2" y="2" width="1" height="1"/>
+  <line class="g" x1="5" y1="29" x2="30" y2="29" stroke-width="1.5" stroke-linecap="round"/>
+  <g transform="translate(4.5 0)">
+    <rect class="c" x="9.5" y="22.5" width="13" height="6" rx="1.5"/>
+    <g stroke-width="2.2" stroke-linecap="round">
+      <line class="r" x1="16.0" y1="26.0" x2="14.8" y2="14.1"/>
+      <line class="r" x1="14.8" y1="14.1" x2="3.2" y2="17.2"/>
+    </g>
+    <circle class="b1" cx="14.8" cy="14.1" r="2.6"/>
+    <circle class="b2" cx="3.2" cy="17.2" r="2.6"/>
+  </g>
 </svg>
