@@ -28,9 +28,7 @@
     <header class="site-header">
       <nav class="nav" aria-label="Primary">
         <a class="nav-brand" href="{{ '/' | relative_url }}" aria-label="{{ site.title }}, home">
-          {% if page.url == '/' %}{% include logo.html %}
-          {% else %}<img src="{{ site.author.photo | relative_url }}" alt="" width="32" height="32">{% endif %}
-          <span>{{ site.title }}</span>
+          {% include logo.html %}
         </a>
         <ul class="nav-links" id="nav-links">
           {% assign p = page.url %}
