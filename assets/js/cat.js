@@ -76,18 +76,18 @@
     '..wwoooooooooooooooooooso.', '..wwwoooooooooooooooossoss', '..kww.ooooooooooooossossoo'
   ];
   var CURL2 = [
-    '........................', '..........oososoo.......', '..o..ooosoososooooooo...', '.oooooodooooooooooooooo.',
-    '.ossooodooooooooooooooo.', 'oEEooodoooooooooooooooso', 'pwooooodoooooooooooooooo', 'wwwoooooooooooooooooooso',
+    '..........ooooooo.......', '.......oosoososoooo.....', '..o..ooosoososooooooo...', '.oooooodooooooooooooooo.',
+    '.ooossodooooooooooooooo.', 'oEEooodoooooooooooooooso', 'pwooooodoooooooooooooooo', 'wwwoooooooooooooooooooso',
     'wwwoooooooooooodddddooss', 'wwwooooooooooooossoossos', '.kwwooooooooooooossooss.'
   ];
-  var SLEEP_IN = [                                     // breathing in: the back rises a pixel
-    '........................', '..........oososoo.......', '..o..ooosoososooooooo...', '.oooooodooooooooooooooo.',
-    '.ossooodooooooooooooooo.', 'oEEooodoooooooooooooooso', 'pwooooodoooooooooooooooo', 'wwwoooodddddddddddddooso',
+  var SLEEP_IN = [                                     // breathing in: the middle of the back rises a pixel
+    '..........ooooooo.......', '.......oosoososoooo.....', '..o..ooosoososooooooo...', '.oooooodooooooooooooooo.',
+    '.ooossodooooooooooooooo.', 'oEEooodoooooooooooooooso', 'pwooooodoooooooooooooooo', 'wwwoooodddddddddddddooso',
     'wwwooooooooooooooooooos.', 'kwsssoossoossoossooosss.', '.ksssoossoossoossooss...'
   ];
   var SLEEP_OUT = [
-    '........................', '..........oososoo.......', '..o..ooosoososooooo.....', '.oooooodooooooooooooo...',
-    '.ossooodooooooooooooooo.', 'oEEooodooooooooooooooos.', 'pwooooodoooooooooooooooo', 'wwwoooodddddddddddddooso',
+    '........................', '.......oosoososoooo.....', '..o..ooosoososooooooo...', '.oooooodooooooooooooooo.',
+    '.ooossodooooooooooooooo.', 'oEEooodoooooooooooooooso', 'pwooooodoooooooooooooooo', 'wwwoooodddddddddddddooso',
     'wwwooooooooooooooooooos.', 'kwsssoossoossoossooosss.', '.ksssoossoossoossooss...'
   ];
   var SPR_EYE = [1, 5], SPR_HEAD = [3, 4];
