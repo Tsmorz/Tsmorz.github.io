@@ -111,11 +111,6 @@ permalink: /controls/swingup/
       swing you started by hand.
     </p>
     <p>
-      Labels give one letter per link, base link (&#952;&#8321;) first: <strong>U</strong> is up,
-      <strong>D</strong> is down. Only DD is stable on its own. The other three have to be
-      balanced actively, and in UD and DU one link is folded back over the other.
-    </p>
-    <p>
       "Reached" means both links within 0.3&nbsp;rad of their targets and slower than
       1.5&nbsp;rad/s for half a second. That's the same test the training repo's evaluation
       uses. The clock restarts at every reset and every new target. A time counts as
