@@ -8,11 +8,9 @@ permalink: /controls/swingup/
   <h1 class="page-title">Double Pendulum Control</h1>
   <p class="su-crumb"><a href="{{ '/controls/' | relative_url }}">← Control Systems</a></p>
   <p class="page-sub controls-intro">
-    Two links hang from a cart on a two-meter rail. Push the cart to swing both links up and
-    balance them. That's hard by hand, so a <strong>TQC</strong> reinforcement-learning policy
-    is also available. It runs in your browser, and one network handles every target: both
-    links up, both down, or either one folded over the other. Pick a target and it moves the
-    links there from wherever they are.
+    An unactuated pendulum on a sliding cart is a classic controls problem and this two link version extends it.
+    You can push the cart to swing both links up but the sytem dynamics and human reaction time make this impossible. However, a <strong>TQC reinforcement-learning policy</strong>
+    can do this with a high rate of success. Sometimes learned control policies are the only way to achieve stability!
   </p>
 </section>
 
@@ -66,7 +64,7 @@ permalink: /controls/swingup/
         <label>Sensor noise <span class="sigma">σ</span> <span id="su-noise-val">0.00</span></label>
         <input type="range" id="su-noise" min="0" max="0.1" step="0.01" value="0">
       </div>
-      <p class="panel-hint">Delay holds back the force; noise corrupts what the network measures, never the force. It was trained with neither, so 50 ms of delay or noise above 0.03 usually breaks it.</p>
+      <p class="panel-hint">Delay holds back the force; noise corrupts what the network measures, never the force. It was trained with neither, so 30 ms of delay or noise above 0.05 usually breaks it.</p>
       <div class="score-block">
         <span class="score-value" id="su-score">-</span>
         <span class="score-label" id="su-score-label">Time to target (s)</span>
