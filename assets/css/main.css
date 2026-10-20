@@ -395,14 +395,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 /* ---------------------------------------------------------------
    Footer
    --------------------------------------------------------------- */
-.site-footer { border-top: 1px solid var(--border); background: var(--bg-soft); margin-top: 2rem; position: relative; }
-/* finish line: a two-row black/white checker along the footer's top edge, its ends faded out */
-.site-footer::before {
-  content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 12px; pointer-events: none;
-  background: repeating-conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%) 0 0 / 12px 12px;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-}
+.site-footer { border-top: 1px solid var(--border); background: var(--bg-soft); margin-top: 2rem; }
 .footer-inner {
   display: flex; flex-wrap: wrap; gap: .75rem 1.5rem;
   align-items: center; justify-content: space-between;
@@ -783,9 +776,8 @@ button, input, select, textarea { font-family: var(--mono); }
 
 /* ---- signature: figure-frame look (sharp corners, plot grid, mono labels) ---- */
 :root { --radius: 3px; --serif: "Fraunces", "STIX Two Text", Georgia, serif; --grid: rgba(100, 100, 140, .09); }
-:root { --check-a: #1b1b1f; --check-b: #fff; }   /* footer finish line */
-:root[data-theme="dark"] { --grid: rgba(199, 192, 255, .09); --check-a: #e9e9ee; --check-b: #16161a; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --grid: rgba(199, 192, 255, .09); --check-a: #e9e9ee; --check-b: #16161a; } }
+:root[data-theme="dark"] { --grid: rgba(199, 192, 255, .09); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --grid: rgba(199, 192, 255, .09); } }
 h1, h2 { font-optical-sizing: auto; font-weight: 500; letter-spacing: -.01em; }
 .btn, .btn-icon, .nav-links a, .sim-tab, .demo-tab, .mode-btn, .goal-btn, code, .theme-toggle { border-radius: 3px; }
 .nav-links a { font-family: var(--mono); font-size: .8rem; letter-spacing: .02em; text-transform: lowercase; }
