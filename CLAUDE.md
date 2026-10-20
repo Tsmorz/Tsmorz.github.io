@@ -24,7 +24,7 @@ To change what the site says, edit YAML, not HTML.
 | Services, process, contact on /solutions/ | `_data/solutions.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Name, bio links, CV button | `_config.yml` |
-| Nav logo (fade, radial, pendulum or pendulum4) | `logo:` in `_config.yml`; the squares are drawn in `_includes/logo.html` |
+| Nav logo (fade, radial, pendulum, pendulum4 or pendulum3) | `logo:` in `_config.yml`; the squares are drawn in `_includes/logo.html` |
 | Bio prose, education timeline | `about.md` |
 | Hero headline / intro paragraph | `index.html` |
 | Colors, spacing, type | `assets/css/main.css` (tokens at the top) |
