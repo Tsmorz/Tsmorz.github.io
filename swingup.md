@@ -91,8 +91,7 @@ permalink: /controls/swingup/
       Each square is one neuron, violet when positive and green when negative. The ten inputs feed a
       256-unit embedding, then two residual blocks (each widens to 1024 ReLU units and adds its
       result back through the skip), and a single number comes out. <code>tanh</code> squashes it
-      to a force of at most 20&nbsp;N. In Manual it shows what the network would do from whatever pose you
-      leave the pendulum in.
+      to a force of at most 20&nbsp;N.
     </p>
   </div>
 
