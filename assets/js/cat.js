@@ -245,17 +245,17 @@
     // legs taper: a thick upper bone, a slimmer lower one, a round paw
     function front(foot, fur, cream, striped) {
       var j = ik(sj, foot, ARM, FORE, -1), pts = [sj, j[0], j[1]];
-      line(c, [sj, j[0]]); stroke(c, fur, 4.2);
-      line(c, [j[0], j[1]]); stroke(c, fur, 3.0);
+      line(c, [sj, j[0]]); stroke(c, fur, 4.8);
+      line(c, [j[0], j[1]]); stroke(c, fur, 3.4);
       if (striped) bands(c, [j[0], j[1]], C.stripe, 3.0, [0, 0.25, 0.18, 0.2, 0.18, 2]);
       oval(c, cream, add(j[1], [0.5, 0.1]), 2.2, 1.3, clamp((j[1][1] - 1.05) * -9, -50, 0));
     }
     function hind(foot, fur, cream, near) {
       var j = ik(hj, add(foot, p.hk), THIGH, SHIN, 1), hock = j[1], toe = add(hock, p.hk, -1);
       var tv = [j[0][0] - hj[0], j[0][1] - hj[1]], pts = [j[0], hock, toe];
-      oval(c, fur, add(hj, tv, 0.38), THIGH / 2 + 2.8, 4.5, deg(tv));    // the haunch
-      line(c, [j[0], hock]); stroke(c, fur, 3.3);
-      line(c, [hock, toe]); stroke(c, fur, 2.8);
+      oval(c, fur, add(hj, tv, 0.36), THIGH / 2 + 3.2, 5.3, deg(tv));    // the haunch
+      line(c, [j[0], hock]); stroke(c, fur, 3.6);
+      line(c, [hock, toe]); stroke(c, fur, 3.0);
       if (near) {
         bands(c, pts, C.stripe, 3.0, [0, 0.3, 0.14, 0.14, 0.14, 2]);
         var a = add(hj, tv, 0.15), b = add(hj, tv, 0.75), nn = [-tv[1] / THIGH, tv[0] / THIGH];
@@ -285,30 +285,32 @@
     hind(p.fh, C.far, C.creamFar);
     tail();
 
-    // body: chest, back, rump and belly as one closed curve around the spine
-    var F = add(add(sh, u, 4.8), n, 0.5), Ts = add(sh, n, p.ts), Th = add(hp, n, p.th);
-    var Rr = add(add(hp, u, -5.2), n, 0.8), Bh = add(hp, n, -p.bh), Bs = add(sh, n, -p.bs);
+    // body: chest, back, rump and belly as one closed curve around the spine. It is a well-fed cat: fuller than the
+    // poses say, most of all underneath, with a belly that hangs between the legs
+    var ts = p.ts + 0.8, th = p.th + 0.9, bs = p.bs + 1.2, bh = p.bh + 1.8, sag = 2.6;
+    var F = add(add(sh, u, 5.2), n, 0.2), Ts = add(sh, n, ts), Th = add(hp, n, th);
+    var Rr = add(add(hp, u, -5.8), n, 0.6), Bh = add(hp, n, -bh), Bs = add(sh, n, -bs);
     var body = new Path2D('M' + pt(F) + 'C' + pt(add(F, n, 3.2)) + ' ' + pt(add(Ts, u, 2.8)) + ' ' + pt(Ts) +
-      'C' + pt(add(Ts, u, -6)) + ' ' + pt(add(Th, u, 6)) + ' ' + pt(Th) +
+      'C' + pt(add(add(Ts, u, -6), n, 1.4)) + ' ' + pt(add(add(Th, u, 6), n, 1.4)) + ' ' + pt(Th) +
       'C' + pt(add(Th, u, -3.4)) + ' ' + pt(add(Rr, n, 3.2)) + ' ' + pt(Rr) +
       'C' + pt(add(Rr, n, -3.4)) + ' ' + pt(add(Bh, u, -2.6)) + ' ' + pt(Bh) +
-      'C' + pt(add(add(Bh, u, 6), n, -0.8)) + ' ' + pt(add(add(Bs, u, -6), n, -0.8)) + ' ' + pt(Bs) +
+      'C' + pt(add(add(Bh, u, 6), n, -sag)) + ' ' + pt(add(add(Bs, u, -6), n, -sag)) + ' ' + pt(Bs) +
       'C' + pt(add(Bs, u, 2.8)) + ' ' + pt(add(F, n, -3)) + ' ' + pt(F) + 'Z');
     c.fillStyle = C.fur; c.fill(body);
     c.save(); c.clip(body);
     var ang = deg(u);
-    oval(c, C.cream, add(mid(sh, hp), n, -(p.bs + p.bh) / 2 - 0.6), L / 2 + 2, 2.4, ang);
+    oval(c, C.cream, add(mid(sh, hp), n, -(bs + bh) / 2 - sag * 0.7), L / 2 + 2, 2.8, ang);
     oval(c, C.cream, add(add(sh, u, 4), n, -1.6), 3.2, 3.6, ang);
     var ns = Math.max(2, Math.round(L / 4.4));
     for (i = 0; i < ns; i++) {                        // tabby stripes down from the spine, raked back, a pixel or two apart
-      var k = (i + 0.4) / ns, top = add(add(sh, u, -k * L), n, lerp(p.ts, p.th, k) + 1);
+      var k = (i + 0.4) / ns, top = add(add(sh, u, -k * L), n, lerp(ts, th, k) + 1);
       var bot = add(add(top, n, i === ns - 1 ? -5 : -4.2), u, -1.4);
       line(c, [top, add(mid(top, bot), u, 0.6), bot]); stroke(c, C.stripe, 2);
     }
     c.restore();
 
     // neck and bib, then the near legs and the head
-    line(c, [add(add(sh, u, 1.4), n, 1.6), headPt(p, [-2, -1.2])]); stroke(c, C.fur, 7);
+    line(c, [add(add(sh, u, 1.4), n, 1.6), headPt(p, [-2, -1.2])]); stroke(c, C.fur, 8);
     line(c, [add(add(sh, u, 4.4), n, -1.2), headPt(p, [2.4, -2.6])]); stroke(c, C.cream, 3);
     hind(p.nh, C.fur, C.cream, true);
     if (p.pf <= 0.5) front(p.nf, C.fur, C.cream, true);
