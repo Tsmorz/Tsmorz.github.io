@@ -182,6 +182,13 @@ or rely on CI. `Taskfile.yml` is the single entrypoint (`task --list`); `script/
   `script/test-data` compares exact basenames to catch it.
 - **External links aren't checked** (`--disable-external`) on purpose, so a typo'd external URL won't be caught.
 
+### The nrf-controller dashboard (`/dashboard/`)
+
+`dashboard/` is a copy of `tools/dashboard/` from the private nrf-controller repo, written by `task
+publish-dashboard` there (it replaces the whole folder). **Never edit it here**: change it in
+nrf-controller and publish again. It is a standalone Web Bluetooth page with its own look, outside the
+site's layouts (no front matter, so Jekyll copies it as-is).
+
 ## When editing, don't
 
 - Reintroduce theme boilerplate (`_sass/`, a gemspec, `docs/`, bundled font files).
