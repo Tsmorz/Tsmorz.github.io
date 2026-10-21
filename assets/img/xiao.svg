@@ -1,0 +1,22 @@
+<!-- A Seeed XIAO in the footer cat's pixel style (cat.js): one art pixel per unit, flat colors, lit top-left and shaded
+     bottom-right, no outline. Site violet board, gold pads, the cat's face pressed into the shield can, a lime user LED and
+     an orange (the cat's fur) charge LED. Draw it at a whole multiple of 22 x 27 px (44 x 54 is the cat's 2 px). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 27" width="44" height="54" shape-rendering="crispEdges">
+  <path fill="#5a4fd6" d="M1 3h6v1h-6zM15 3h6v1h-6zM1 4h20v1h-20zM2 5h18v1h-18zM2 6h2v1h-2zM18 6h2v1h-2zM1 7h3v1h-3zM18 7h3v1h-3zM2 8h2v1h-2zM18 8h2v1h-2zM2 9h2v1h-2zM18 9h2v1h-2zM1 10h3v1h-3zM18 10h3v1h-3zM2 11h2v1h-2zM18 11h2v1h-2zM2 12h2v1h-2zM18 12h2v1h-2zM1 13h3v1h-3zM18 13h3v1h-3zM2 14h2v1h-2zM18 14h2v1h-2zM2 15h2v1h-2zM18 15h2v1h-2zM1 16h3v1h-3zM18 16h3v1h-3zM2 17h18v1h-18zM2 18h3v1h-3zM7 18h2v1h-2zM10 18h2v1h-2zM13 18h2v1h-2zM17 18h3v1h-3zM1 19h4v1h-4zM7 19h2v1h-2zM10 19h2v1h-2zM13 19h2v1h-2zM17 19h4v1h-4zM2 20h18v1h-18zM2 21h1v1h-1zM5 21h12v1h-12zM19 21h1v1h-1zM1 22h2v1h-2zM5 22h3v1h-3zM14 22h3v1h-3zM19 22h2v1h-2zM2 23h6v1h-6zM14 23h6v1h-6zM2 24h18v1h-18zM1 25h20v1h-20z"/>
+  <path fill="#7d72ea" d="M1 2h6v1h-6zM15 2h6v1h-6zM0 3h1v1h-1zM0 4h1v1h-1zM0 7h1v1h-1zM0 10h1v1h-1zM0 13h1v1h-1zM0 16h1v1h-1zM0 19h1v1h-1zM0 22h1v1h-1zM0 25h1v1h-1z"/>
+  <path fill="#463cb3" d="M21 3h1v1h-1zM21 4h1v1h-1zM21 7h1v1h-1zM21 10h1v1h-1zM21 13h1v1h-1zM21 16h1v1h-1zM21 19h1v1h-1zM21 22h1v1h-1zM21 25h1v1h-1zM1 26h20v1h-20z"/>
+  <path fill="#e0b23c" d="M1 5h1v1h-1zM20 5h1v1h-1zM1 6h1v1h-1zM20 6h1v1h-1zM1 8h1v1h-1zM20 8h1v1h-1zM1 9h1v1h-1zM20 9h1v1h-1zM1 11h1v1h-1zM20 11h1v1h-1zM1 12h1v1h-1zM20 12h1v1h-1zM1 14h1v1h-1zM20 14h1v1h-1zM1 15h1v1h-1zM20 15h1v1h-1zM1 17h1v1h-1zM20 17h1v1h-1zM1 18h1v1h-1zM20 18h1v1h-1zM1 20h1v1h-1zM20 20h1v1h-1zM1 21h1v1h-1zM20 21h1v1h-1zM1 23h1v1h-1zM20 23h1v1h-1zM1 24h1v1h-1zM20 24h1v1h-1z"/>
+  <path fill="#a58d12" d="M0 5h1v1h-1zM21 5h1v1h-1zM0 6h1v1h-1zM21 6h1v1h-1zM0 8h1v1h-1zM21 8h1v1h-1zM0 9h1v1h-1zM21 9h1v1h-1zM0 11h1v1h-1zM21 11h1v1h-1zM0 12h1v1h-1zM21 12h1v1h-1zM0 14h1v1h-1zM21 14h1v1h-1zM0 15h1v1h-1zM21 15h1v1h-1zM0 17h1v1h-1zM21 17h1v1h-1zM0 18h1v1h-1zM21 18h1v1h-1zM0 20h1v1h-1zM21 20h1v1h-1zM0 21h1v1h-1zM21 21h1v1h-1zM0 23h1v1h-1zM21 23h1v1h-1zM0 24h1v1h-1zM21 24h1v1h-1z"/>
+  <path fill="#c4c9d6" d="M8 0h6v1h-6zM7 1h1v1h-1zM14 1h1v1h-1zM7 2h1v1h-1zM14 2h1v1h-1zM7 3h8v1h-8z"/>
+  <path fill="#2f3340" d="M8 1h6v1h-6zM8 2h6v1h-6z"/>
+  <path fill="#eef0f4" d="M4 6h14v1h-14zM4 7h1v1h-1zM4 8h1v1h-1zM4 9h1v1h-1zM4 10h1v1h-1zM4 11h1v1h-1zM4 12h1v1h-1zM4 13h1v1h-1zM4 14h1v1h-1zM4 15h1v1h-1zM4 16h1v1h-1z"/>
+  <path fill="#c9ced8" d="M5 7h12v1h-12zM5 8h12v1h-12zM5 9h3v1h-3zM9 9h4v1h-4zM14 9h3v1h-3zM5 10h3v1h-3zM10 10h2v1h-2zM14 10h3v1h-3zM5 11h3v1h-3zM14 11h3v1h-3zM5 12h3v1h-3zM14 12h3v1h-3zM5 13h3v1h-3zM14 13h3v1h-3zM5 14h4v1h-4zM13 14h4v1h-4zM5 15h12v1h-12z"/>
+  <path fill="#9aa3af" d="M17 7h1v1h-1zM17 8h1v1h-1zM8 9h1v1h-1zM13 9h1v1h-1zM17 9h1v1h-1zM8 10h2v1h-2zM12 10h2v1h-2zM17 10h1v1h-1zM8 11h6v1h-6zM17 11h1v1h-1zM8 12h1v1h-1zM10 12h2v1h-2zM13 12h1v1h-1zM17 12h1v1h-1zM8 13h6v1h-6zM17 13h1v1h-1zM9 14h4v1h-4zM17 14h1v1h-1zM17 15h1v1h-1zM5 16h13v1h-13z"/>
+  <path fill="#b8c934" d="M9 12h1v1h-1zM12 12h1v1h-1z"/>
+  <path fill="#adf45d" d="M5 18h2v1h-2zM5 19h2v1h-2z"/>
+  <path fill="#e8903a" d="M15 18h2v1h-2zM15 19h2v1h-2z"/>
+  <path fill="#f6dcb4" d="M9 18h1v1h-1zM12 18h1v1h-1zM9 19h1v1h-1zM12 19h1v1h-1zM8 22h6v1h-6z"/>
+  <path fill="#d9b98c" d="M8 23h6v1h-6z"/>
+  <path fill="#2b2118" d="M3 22h2v1h-2zM17 22h2v1h-2z"/>
+  <path fill="#5d6373" d="M3 21h2v1h-2zM17 21h2v1h-2z"/>
+</svg>
