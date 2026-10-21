@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f4f2ec">
+<title>nRF Data Logger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // Apply a saved theme before first paint so the page doesn't flash the other one.
+  try {
+    const saved = localStorage.getItem("theme");
+    if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+  } catch { /* storage blocked: follow the OS setting */ }
+</script>
+<style>
+  /* A bench instrument's front panel: a warm chassis (ivory in light, graphite in dark) holding
+     numbered modules that butt together on hairline seams, with condensed silkscreen-style labels.
+     Plots and readouts sit on recessed "screens": paper-white in light, near-black in dark. X/Y/Z
+     follow the 3D-axis convention (X red, Y green, Z blue, as in the pose view), muted, with a set
+     per theme; red and green differ in lightness too, so every pair stays apart under
+     deuteranopia, protanopia and tritanopia (Machado 2009 simulation, CIEDE2000 >= 22) and clears
+     3:1 against its screen. Amber is for numeric readouts, safety orange for the one primary key
+     and pressed-button lamps, green only for "connected", "at rest" and "seen working" lamps. */
+  :root {
+    color-scheme: light;
+    --page: #e3e0d8; --panel: #f4f2ec; --inset: #ebe8e0; --line-strong: #b4aea1;
+    --text: #1d1c19; --text-2: #46433c; --muted: #6a655b;
+    --signal: #ff5f1f; --signal-edge: #c7440c; --signal-hover: #ff7337; --signal-ink: #b13f06;
+    --pressed-bg: rgba(255, 95, 31, .16); --pressed-ink: #1d1c19; --pressed-glow: transparent; --pressed-lamp: var(--signal);
+    --good: #1f8a3e; --bad: #b8322a; --lamp-off: #cbc6ba; --key-shadow: #c9c3b5;
+    --screen: #fbfaf6; --screen-raised: #ffffff; --screen-edge: #b4aea1; --screen-rim: #c9c3b5; --screen-shade: rgba(60, 50, 30, .08);
+    --screen-grid: rgba(29, 28, 25, .07); --screen-line: rgba(29, 28, 25, .25);
+    --screen-text: #2b2a26; --screen-muted: #6a655b;
+    --readout: #a35a00; --readout-glow: transparent; --board: #46433c; --slot: #2f2d29;
+    --series-x: #8e3329; --series-y: #6f9e2e; --series-z: #0e57aa;
+    --led-red: #ff3b30; --led-green: #2fd158; /* the pose view's board LEDs: lit colours in both themes */
+    --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0f0f0e; --panel: #1a1a18; --inset: #222220; --line-strong: #3d3b36;
+      --text: #ebe9e3; --text-2: #c3c0b7; --muted: #959187;
+      --signal: #ff6a2b; --signal-edge: #b8470f; --signal-hover: #ff8048; --signal-ink: #ff8a52;
+      --pressed-bg: #ff6a2b; --pressed-ink: #1a0c04; --pressed-glow: rgba(255, 106, 43, .5); --pressed-lamp: #fff4d6;
+      --good: #4ade80; --bad: #ff6b5e; --lamp-off: #3a3935; --key-shadow: #0b0b0a;
+      --screen: #0f100f; --screen-raised: #1d1e1d; --screen-edge: #3d3b36; --screen-rim: #3d3b36; --screen-shade: rgba(0, 0, 0, .5);
+      --screen-grid: rgba(236, 233, 224, .07); --screen-line: rgba(236, 233, 224, .22);
+      --screen-text: #d8d5cc; --screen-muted: #8f8b81;
+      --readout: #ffb23f; --readout-glow: rgba(255, 178, 63, .45); --board: #e8e4d9; --slot: #0d0e0e;
+      --series-x: #d16161; --series-y: #b7e774; --series-z: #6896f3;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0f0f0e; --panel: #1a1a18; --inset: #222220; --line-strong: #3d3b36;
+    --text: #ebe9e3; --text-2: #c3c0b7; --muted: #959187;
+    --signal: #ff6a2b; --signal-edge: #b8470f; --signal-hover: #ff8048; --signal-ink: #ff8a52;
+    --pressed-bg: #ff6a2b; --pressed-ink: #1a0c04; --pressed-glow: rgba(255, 106, 43, .5); --pressed-lamp: #fff4d6;
+    --good: #4ade80; --bad: #ff6b5e; --lamp-off: #3a3935; --key-shadow: #0b0b0a;
+    --screen: #0f100f; --screen-raised: #1d1e1d; --screen-edge: #3d3b36; --screen-rim: #3d3b36; --screen-shade: rgba(0, 0, 0, .5);
+    --screen-grid: rgba(236, 233, 224, .07); --screen-line: rgba(236, 233, 224, .22);
+    --screen-text: #d8d5cc; --screen-muted: #8f8b81;
+    --readout: #ffb23f; --readout-glow: rgba(255, 178, 63, .45); --board: #e8e4d9; --slot: #0d0e0e;
+    --series-x: #d16161; --series-y: #b7e774; --series-z: #6896f3;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  /* `hidden` must win over the display rules below (labels and buttons are inline-flex/blocks). */
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--page); color: var(--text); font: 13.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  code { font: 11.5px var(--mono); padding: 1px 5px; border-radius: 2px; background: var(--inset); border: 1px solid var(--line-strong); }
+
+  /* Nameplate. */
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+           padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line-strong); }
+  .title { margin-right: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  h1 { margin: 0; font: 800 19px/1.1 var(--sans); font-stretch: 120%; letter-spacing: -.01em; }
+  .subtitle { font: 500 11px/1 var(--mono); color: var(--text-2); padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 2px; }
+
+  /* Modules: butted together on 1px seams (each draws a 1px ring into the 1px gap, so shared
+     edges stay one line and an empty grid cell shows plain chassis), numbered in order. */
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 1px; counter-reset: module;
+         width: calc(100% - 32px); max-width: 1680px; margin: 14px auto; }
+  section { display: flex; flex-direction: column; background: var(--panel); box-shadow: 0 0 0 1px var(--line-strong); padding: 14px; min-width: 0; counter-increment: module; }
+  /* The board list and the recorder sit on top; on narrow screens they take the full width. Their
+     wrapper only becomes a row of its own on laptop screens (below). */
+  .top-row { display: contents; }
+  .boards-section, .recording-section { grid-column: 1 / -1; }
+  .seam { display: none; }
+  /* While a seam is dragged the cursor stays a resize arrow everywhere and nothing gets selected. */
+  body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select: none; }
+  body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select: none; }
+  /* Three columns on wide screens: Boards beside Recording, then the selected board's panels. */
+  @media (min-width: 1040px) {
+    main { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .boards-section { grid-column: span 2; }
+    .recording-section { grid-column: span 1; }
+  }
+  /* Laptop screens and up: the whole dashboard fits the window in two rows. On top, the board list
+     is as wide as its table (so it doesn't scroll sideways), from about half the window to two
+     thirds, and the recorder takes the rest; below, the selected board's panels, Motion's two plots
+     twice as wide as the others. The top row takes what it needs; the panels share the rest, with
+     the plots and the pose view stretched to fill it. Each module scrolls inside itself rather than
+     pushing the page past the window. Shorter windows fall back to the scrolling layout above
+     rather than squashing content. Settings open over the page (the drawer below). The seams can
+     be dragged to resize: app.js then sets --top-tracks, --bottom-tracks or --rows-tracks, and
+     marks main top-sized, bottom-sized or rows-sized, replacing those defaults. */
+  @media (min-width: 1200px) and (min-height: 600px) {
+    body { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+    main { position: relative; flex: 1; min-height: 0;
+           grid-template-columns: var(--bottom-tracks, minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr));
+           grid-template-rows: var(--rows-tracks, auto minmax(0, 1fr)); }
+    .top-row { grid-column: 1 / -1; min-height: 0; display: grid; gap: 1px;
+               grid-template-columns: var(--top-tracks, fit-content(66%) minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); }
+    .boards-section, .recording-section { grid-column: auto; }
+    main:not(.top-sized) .boards-section { min-width: 46vw; }
+    main:not(.rows-sized) .boards-section { max-height: 34vh; }
+    /* The hints wrap to the table's width rather than widening the panel to fit their lines. */
+    .boards-section .hint { contain: inline-size; }
+    /* Seams: a strip over each 1px join that lights orange under the pointer or while dragged. */
+    .seam { display: block; position: absolute; z-index: 1; touch-action: none; }
+    .seam.vertical { width: 9px; margin-left: -4px; cursor: col-resize; }
+    .seam.horizontal { height: 9px; margin-top: -4px; cursor: row-resize; }
+    .seam::after { content: ""; position: absolute; background: transparent; transition: background-color .1s; }
+    .seam.vertical::after { top: 0; bottom: 0; left: 3px; width: 3px; }
+    .seam.horizontal::after { left: 0; right: 0; top: 3px; height: 3px; }
+    .seam:hover::after, .seam.dragging::after, .seam:focus-visible::after { background: var(--signal); }
+    .seam:focus-visible { outline: none; }
+    section { overflow-y: auto; }
+    .plot { flex: 1 1 0; height: auto; min-height: 64px; }
+  }
+
+  /* Silkscreen labels. */
+  h2 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 12px; font: 650 11.5px/1.2 var(--sans); font-stretch: 80%;
+       letter-spacing: .09em; text-transform: uppercase; }
+  section > h2:first-child::before { content: counter(module, decimal-leading-zero); font: 500 10.5px var(--mono); letter-spacing: 0; color: var(--signal-ink); }
+  section > h2:not(:first-child) { padding-top: 12px; border-top: 1px dashed var(--line-strong); }
+  h2 .muted { font: 400 10.5px var(--mono); letter-spacing: 0; text-transform: none; }
+
+  /* Keys: square, with a darker bottom edge that closes up when pressed. */
+  button { font: 600 12px/1.4 var(--sans); font-stretch: 88%; letter-spacing: .02em; padding: 5px 12px 6px; border-radius: 2px;
+           border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); cursor: pointer;
+           box-shadow: inset 0 -2px 0 var(--key-shadow); transition: background-color .1s ease, transform .05s ease; }
+  button:hover:not(:disabled) { background: var(--inset); }
+  button:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 -1px 0 var(--key-shadow); }
+  button.primary { background: var(--signal); border-color: var(--signal-edge); color: #1a0c04; box-shadow: inset 0 -2px 0 var(--signal-edge); }
+  button.primary:hover:not(:disabled) { background: var(--signal-hover); }
+  button.primary:active:not(:disabled) { box-shadow: inset 0 -1px 0 var(--signal-edge); }
+  button.primary:disabled { background: var(--panel); border-color: var(--line-strong); color: var(--signal-ink); box-shadow: inset 0 -2px 0 var(--key-shadow); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  /* Two-position selectors (theme, cursor input): a recessed track, the chosen side inverted. The
+     theme toggle's position comes from the theme selectors rather than aria-checked, so it is
+     right on first paint, before app.js runs. */
+  .theme-toggle, .segmented { display: inline-grid; grid-auto-flow: column; padding: 2px; border: 1px solid var(--line-strong); border-radius: 2px; background: var(--inset); }
+  .theme-toggle { position: relative; grid-template-columns: 1fr 1fr; color: var(--muted); box-shadow: none; }
+  .theme-toggle:hover:not(:disabled) { background: var(--inset); }
+  .theme-toggle:active:not(:disabled) { transform: none; box-shadow: none; }
+  .theme-toggle::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); pointer-events: none;
+                          border-radius: 1px; background: var(--text); transition: transform .2s cubic-bezier(.3, .7, .2, 1); }
+  .tt-opt { position: relative; z-index: 1; display: grid; place-items: center; width: 24px; height: 22px; transition: color .2s; }
+  .tt-opt svg { display: block; }
+  .tt-light { color: var(--panel); }
+  :root[data-theme="dark"] .theme-toggle::before { transform: translateX(100%); }
+  :root[data-theme="dark"] .tt-light { color: var(--muted); }
+  :root[data-theme="dark"] .tt-dark { color: var(--panel); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle::before { transform: translateX(100%); }
+    :root:not([data-theme="light"]) .tt-light { color: var(--muted); }
+    :root:not([data-theme="light"]) .tt-dark { color: var(--panel); }
+  }
+  @media (prefers-reduced-motion: reduce) { .theme-toggle::before, .tt-opt { transition: none; } }
+  .segmented { gap: 2px; }
+  .segmented label { position: relative; padding: 2px 12px; border-radius: 1px; font-weight: 600; font-stretch: 88%; color: var(--text-2); cursor: pointer; }
+  .segmented label:hover { color: var(--text); }
+  .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+  .segmented label:has(input:checked) { background: var(--text); color: var(--panel); }
+  .segmented label:has(input:focus-visible) { outline: 2px solid var(--signal); outline-offset: 1px; }
+  .segmented label:has(input:disabled) { cursor: default; opacity: .45; }
+
+  input[type=text], select { font: 12px var(--mono); padding: 5px 8px; border-radius: 2px; border: 1px solid var(--line-strong); background: var(--inset); color: var(--text); }
+  input[type=checkbox] { accent-color: var(--signal); }
+  /* The LED colour as a round lamp lens: a recessed rim, the colour, and a soft highlight on top. */
+  input[type=color] { -webkit-appearance: none; appearance: none; position: relative; width: 26px; height: 26px; padding: 3px; border: 1px solid var(--line-strong);
+                      border-radius: 50%; background: var(--inset); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25); vertical-align: middle; cursor: pointer; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .25), inset 0 2px 2px rgba(255, 255, 255, .45); }
+  input[type=color]::-moz-color-swatch { border: 0; border-radius: 50%; box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .25), inset 0 2px 2px rgba(255, 255, 255, .45); }
+  input[type=color]:hover { border-color: var(--text-2); }
+  /* Sliders are faders: a dark slot and a square cap with an orange index line. */
+  input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; height: 22px; margin: 0; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--slot); box-shadow: 0 0 0 1px var(--screen-rim); }
+  input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--slot); box-shadow: 0 0 0 1px var(--screen-rim); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 20px; margin-top: -8px; border-radius: 2px;
+    border: 1px solid var(--line-strong); background: linear-gradient(var(--signal), var(--signal)) center / 100% 2px no-repeat, var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+  input[type=range]::-moz-range-thumb { width: 12px; height: 20px; border-radius: 2px;
+    border: 1px solid var(--line-strong); background: linear-gradient(var(--signal), var(--signal)) center / 100% 2px no-repeat, var(--panel); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
+  input[type=range]:focus-visible { outline: none; }
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--signal); }
+  input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--signal); }
+  input[type=range]:disabled { opacity: .4; cursor: default; }
+  label { color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+
+  .muted { color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+
+  /* Lamps: unlit is a dark recess, lit glows, so on/off reads by brightness as well as colour. */
+  .pill, .chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px 3px 8px; border: 1px solid var(--line-strong); border-radius: 2px;
+                 background: var(--inset); font: 500 11.5px var(--mono); color: var(--text-2); }
+  .dot, .chip::before { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  .chip::before { content: ""; width: 7px; height: 7px; }
+  .dot.on { background: var(--good); box-shadow: 0 0 6px var(--good); }
+  .chip { transition: color .08s; }
+  .chip.on { color: var(--text); }
+  .chip.on::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  #at-rest.on::before { background: var(--good); box-shadow: 0 0 6px var(--good); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  #mark-lamp.on::before, .user-lamp.on::before { background: var(--pressed-lamp); box-shadow: 0 0 4px var(--pressed-lamp), 0 0 10px var(--pressed-lamp); }
+  #mark-lamp.on { color: var(--text); }
+  h2 .chip { margin-left: auto; padding: 1px 8px 1px 6px; font-size: 10.5px; letter-spacing: 0; text-transform: none; }
+  #status.bad { color: var(--bad); }
+  #status.bad::before, .bad-text::before { content: "⚠ "; }
+  .bad-text { color: var(--bad); }
+  #rate:empty { display: none; }
+  #firmware { font-size: 11.5px; }
+
+  /* Mic level meters as LED bar graphs. */
+  .bar { position: relative; height: 10px; background: var(--screen); border-radius: 2px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--screen-rim); }
+  .bar > i { position: absolute; top: 2px; bottom: 2px; margin-left: 2px; background: repeating-linear-gradient(90deg, var(--readout) 0 5px, transparent 5px 7px); }
+
+  /* Plot heading: name and current range on the left, live X/Y/Z values (which double as the
+     series legend) on the right. */
+  .plot-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; font-size: 12px; margin: 0 0 6px; }
+  .plot-head > span:first-child { font-weight: 600; }
+  .plot-head .muted { font: 400 11px var(--mono); }
+  .plot-head + .plot + .plot-head { margin-top: 12px; }
+  .live { display: flex; gap: 12px; color: var(--text-2); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
+  .live span[style]::before { content: ""; display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle;
+                              border-radius: 1px; background: var(--key); }
+  .live b { font-weight: 500; color: var(--text); display: inline-block; min-width: 46px; text-align: right; }
+
+  /* Screens. */
+  .plot { position: relative; }
+  .plot.trace, .plot.wave, .plot.pose { background: var(--screen); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--screen-rim), inset 0 2px 10px var(--screen-shade); }
+  .plot.trace { height: 120px; }
+  .plot.wave { height: 100px; }
+  /* Absolutely placed so the canvas's own pixel size never feeds back into the layout. */
+  .plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: pan-y; }
+  .x-axis { display: flex; justify-content: space-between; font: 10.5px var(--mono); color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tooltip { position: absolute; top: 6px; z-index: 1; pointer-events: none; padding: 6px 9px; border-radius: 2px; font: 11.5px/1.5 var(--mono); white-space: nowrap;
+             background: var(--screen-raised); color: var(--screen-text); border: 1px solid var(--screen-edge); box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
+  .tooltip[hidden] { display: none; }
+  .tooltip .when, .tooltip .name { color: var(--screen-muted); }
+  .tooltip .val { font-weight: 500; font-variant-numeric: tabular-nums; display: inline-block; min-width: 48px; text-align: right; margin-right: 6px; }
+  .tooltip .key { display: inline-block; width: 10px; height: 3px; margin-right: 6px; vertical-align: middle; }
+
+  .plot.pose { flex: 1 0 170px; height: auto; }
+  .plot.pose canvas { cursor: default; }
+  /* Wraps rather than clipping Zero yaw where the column is narrow: mono figures are wide. */
+  .angles { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 8px 0 10px; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+  .angles b { font: 500 12px var(--mono); color: var(--text); display: inline-block; min-width: 7ch; font-variant-numeric: tabular-nums; }
+  .angles button { margin-left: auto; padding: 2px 8px 3px; font-size: 11.5px; }
+
+  /* Board list: one row per board; the selected row is lit along its left edge. */
+  .table-scroll { overflow-x: auto; }
+  .boards { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .boards th { text-align: left; font: 650 10px var(--sans); font-stretch: 80%; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+               padding: 0 6px 6px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+  .boards td { padding: 5px 6px; border-bottom: 1px dashed var(--line-strong); vertical-align: middle; white-space: nowrap; }
+  .boards tbody tr { cursor: pointer; }
+  .boards tbody tr:hover td { background: var(--inset); }
+  .boards tr.selected td { background: var(--inset); }
+  .boards tr.selected .name { color: var(--text); font-weight: 600; }
+  /* Each row's left edge is lit in the colour its board's LED shows (app.js sets --led), so a row
+     matches the board on the bench; unlit while it's off or the firmware doesn't report it. */
+  .boards tbody td:first-child { box-shadow: inset 3px 0 0 var(--led, var(--lamp-off)); }
+  .boards input[type=text] { width: 10ch; padding: 3px 6px; }
+  .boards .bar { width: 44px; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .boards .user-lamp { padding: 3px 6px; }
+  .boards button { padding: 2px 8px 3px; font-size: 11.5px; }
+  .boards td.actions { display: flex; gap: 4px; }
+  /* The table takes the panel's spare height, so the hints sit at its foot. */
+  .boards-section .table-scroll { flex: 1 0 auto; }
+  .h2-key { margin-left: auto; padding: 1px 8px 2px; font-size: 10.5px; letter-spacing: 0; text-transform: none; }
+  #rec-boards:empty { display: none; }
+  #rec-boards { margin: 10px 0 0; padding: 0; list-style: none; font: 11.5px var(--mono); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  #record.recording { background: var(--bad); border-color: var(--bad); color: #fff; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .3); }
+  .readout { font: 12px var(--mono); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .h2-key + .h2-key { margin-left: 0; }
+
+  /* Settings and Replay keys, lit while their drawer or view is open. */
+  #settings, #mouse-toggle, #replay-key { display: inline-flex; align-items: center; gap: 6px; }
+  #settings[aria-expanded="true"], #replay-key[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-ink); box-shadow: inset 0 -1px 0 var(--key-shadow), 0 0 8px var(--pressed-glow); }
+  /* Mouse switch: a lamp that lights while the selected board sends mouse reports. */
+  #mouse-toggle::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  #mouse-toggle[aria-checked="true"]::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  /* The settings drawer: modules on the same seams as the page, over its right edge, below the
+     header (app.js sets top), numbered on from the page's. */
+  .drawer { position: fixed; z-index: 3; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); overflow-y: auto;
+            display: flex; flex-direction: column; gap: 1px; background: var(--line-strong); counter-reset: module 5;
+            box-shadow: -1px 0 0 var(--line-strong), -14px 0 36px rgba(0, 0, 0, .2); }
+  .drawer section { box-shadow: none; flex: none; }
+  .drawer section:last-child { flex: 1 0 auto; }
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 14px; background: var(--inset);
+                 font: 650 11.5px/1.2 var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; }
+  /* Which board the per-board settings apply to. */
+  #settings-board { margin-left: 8px; font: 500 10.5px var(--mono); letter-spacing: 0; text-transform: none; color: var(--signal-ink); }
+  .drawer-head button, .dialog-head button { padding: 2px 8px 3px; }
+
+  /* Firmware update dialog. */
+  dialog { width: min(560px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line-strong); border-radius: 3px;
+           background: var(--panel); color: var(--text); box-shadow: 0 24px 64px rgba(0, 0, 0, .35); }
+  dialog::backdrop { background: rgba(15, 14, 12, .45); }
+  .dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line-strong); }
+  .dialog-head h2 { margin: 0; }
+  .dialog-body { padding: 16px; }
+  .drop { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 22px 16px; text-align: center;
+          border: 1.5px dashed var(--line-strong); border-radius: 3px; background: var(--screen); color: var(--text-2); cursor: pointer; }
+  .drop b { font-weight: 650; color: var(--text); }
+  .drop:hover, .drop.over { border-color: var(--signal); background: var(--pressed-bg); }
+  .drop:has(input:focus-visible) { outline: 2px solid var(--signal); outline-offset: 2px; }
+  /* Invisible but still reachable from the keyboard. */
+  .drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  #fw-image { margin: 10px 0 0; overflow-wrap: anywhere; }
+  .fw-targets { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px dashed var(--line-strong); }
+  .fw-targets li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 6px 0; border-bottom: 1px dashed var(--line-strong); }
+  /* Upload progress, under the board's name while its update runs; full once the image is across. */
+  .fw-targets .bar { flex: 1 0 100%; }
+  .fw-targets .state { font: 11.5px var(--mono); color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
+  .fw-targets li.failed .state { color: var(--bad); }
+  #fw-empty { margin: 12px 0 0; font-size: 12.5px; }
+  #fw-status { font-size: 12.5px; }
+
+  /* Latency figures as small amber displays. */
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+  .stats div { background: var(--screen); border-radius: 3px; padding: 6px 9px 7px; box-shadow: inset 0 0 0 1px var(--screen-rim), inset 0 2px 8px var(--screen-shade); }
+  .stats span { display: block; font: 650 10px var(--sans); font-stretch: 80%; letter-spacing: .1em; text-transform: uppercase; color: var(--screen-muted); }
+  .stats b { font: 500 20px/1.2 var(--mono); color: var(--readout); font-variant-numeric: tabular-nums; text-shadow: 0 0 10px var(--readout-glow); }
+  #latency-lines { margin: 0 0 10px; padding: 0; list-style: none; font: 11.5px var(--mono); color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px 20px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); font-size: 12.5px; color: var(--muted); }
+  .checks li { display: flex; gap: 9px; }
+  .checks li::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  .checks li.done { color: var(--text); }
+  .checks li.done::before { background: var(--good); box-shadow: 0 0 6px var(--good); }
+
+  /* Replay (replay-view.js): the session and its boards on top, then a lane per board on one time
+     axis, a tick scale and the whole session's overview strip. Like the live panels it fits a
+     laptop window, the lanes sharing the height; below that size the page scrolls. */
+  main.replay { grid-template-columns: minmax(0, 1fr); }
+  .replay-session, .replay-signals { grid-column: 1 / -1; }
+  .replay-controls { margin-bottom: 10px; }
+  .replay-controls .hint { margin: 0; }
+  .replay-signals h2 .readout { margin-left: auto; letter-spacing: 0; text-transform: none; }
+  .replay-boards input[type=checkbox] { margin: 0; vertical-align: middle; }
+  .replay-lanes { display: flex; flex-direction: column; gap: 8px; outline: none; border-radius: 2px; }
+  .replay-lanes:focus-visible { outline: 2px solid var(--signal); outline-offset: 4px; }
+  .replay-lanes.panning, .replay-lanes.panning canvas { cursor: grabbing; }
+  .lane .plot-head { margin-bottom: 4px; }
+  .plot.axis { height: 18px; }
+  .plot.axis canvas, .plot.overview canvas { touch-action: none; }
+  .plot.overview { height: 34px; margin-top: 2px; background: var(--screen); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--screen-rim), inset 0 2px 10px var(--screen-shade); }
+  .plot.overview canvas { cursor: pointer; }
+  @media (min-width: 1200px) and (min-height: 600px) {
+    main.replay { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+    .replay-session { max-height: 34vh; }
+    .replay-lanes { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+    .lane { flex: 1 1 0; min-height: 96px; display: flex; flex-direction: column; }
+    .lane .plot.trace { flex: 1 1 0; height: auto; min-height: 60px; }
+    .plot.axis, .plot.overview { flex: none; min-height: 0; }
+  }
+
+  /* Phones: the header scrolls away instead of holding a tenth of the screen, laid out as name and
+     theme on top, status and Connect below. */
+  @media (max-width: 520px) {
+    header { position: static; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+    .title { grid-area: 1 / 1; }
+    #theme { grid-area: 1 / 2; justify-self: end; }
+    #settings { grid-area: 3 / 2; justify-self: end; }
+    #replay-key { grid-area: 4 / 2; justify-self: end; }
+    header > .pill:not(#rate) { grid-area: 2 / 1; justify-self: start; }
+    #connect { grid-area: 2 / 2; }
+    #rate { grid-area: 3 / 1; justify-self: start; }
+    #firmware { grid-area: 4 / 1; justify-self: start; }
+    main { margin-top: 10px; }
+    .subtitle { display: none; }
+    main { grid-template-columns: minmax(0, 1fr); }
+  }
+  /* Fingers: keys, selectors and fader caps get room to be hit, and taps don't wait for a zoom. */
+  @media (pointer: coarse) {
+    button, label, input { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    button { min-height: 40px; padding-inline: 14px; }
+    .angles button { min-height: 34px; }
+    .theme-toggle { min-height: 0; padding: 2px; }
+    .tt-opt { width: 34px; height: 32px; }
+    .segmented label { padding: 7px 16px; }
+    input[type=text] { font-size: 16px; min-height: 40px; }
+    input[type=color] { width: 36px; height: 36px; }
+    input[type=checkbox] { width: 20px; height: 20px; }
+    input[type=range] { height: 36px; }
+    input[type=range]::-webkit-slider-thumb { width: 18px; height: 30px; margin-top: -13px; }
+    input[type=range]::-moz-range-thumb { width: 18px; height: 30px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <h1>nRF Controller</h1>
+    <div class="subtitle">XIAO nRF54LM20A Sense · data collection</div>
+  </div>
+  <span class="pill"><span class="dot" id="link-dot"></span><span id="status">No boards connected</span></span>
+  <span class="pill num" id="rate"></span>
+  <span class="muted num" id="firmware"></span>
+  <button id="settings" type="button" aria-expanded="false" aria-controls="settings-drawer" title="Settings: mouse, lights, firmware update, latency and the seen-working checklist">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
+  <button id="replay-key" type="button" aria-pressed="false" aria-controls="replay" title="Replay: open a recorded session and plot it (boards stay connected)">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h3l2-5 3 10 3-8 2 3h5"/></svg>Replay</button>
+  <button class="theme-toggle" id="theme" type="button" role="switch" aria-checked="false" aria-label="Dark theme" title="Toggle color theme">
+    <span class="tt-opt tt-light" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.4"/><path d="M12 2.5v1.5M12 21.5V20M2.5 12H4M21.5 12H20M5.3 5.3l1.1 1.1M18.7 5.3l-1.1 1.1M5.3 18.7l1.1-1.1M18.7 18.7l-1.1-1.1"/></svg></span>
+    <span class="tt-opt tt-dark" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path transform="translate(1.3 -1.3)" d="M5.6 5.6A9 9 0 0 0 18.4 18.4A12 12 0 0 1 5.6 5.6Z"/></svg></span>
+  </button>
+  <button class="primary" id="connect">Add board</button>
+</header>
+
+<main>
+  <div class="top-row">
+  <section class="boards-section">
+    <h2>Boards <span class="muted" id="board-count"></span><button id="sleep-all" class="h2-key" hidden>Sleep all…</button></h2>
+    <div class="table-scroll">
+      <table class="boards">
+        <thead><tr><th>Board</th><th>Label</th><th title="Estimated from voltage, so it reads high while charging">Battery</th><th>IMU</th><th>Mic</th><th>Claps</th><th>Flash</th><th title="Firmware version">FW</th><th>USER</th><th></th></tr></thead>
+        <tbody id="boards"></tbody>
+      </table>
+    </div>
+    <p class="hint" id="boards-hint">Add each board in turn; pick one to see it below. Labels are remembered per board in this browser and name its folder in recordings.</p>
+    <p class="hint">⏾ (or holding USER for 5 s) puts a board to sleep; pressing USER wakes it.</p>
+  </section>
+
+  <section class="recording-section">
+    <h2>Recording <span class="muted num" id="rec-elapsed"></span></h2>
+    <div class="row">
+      <div class="segmented" role="radiogroup" aria-label="Record to">
+        <label><input type="radio" name="rec-target" value="live" checked> This computer</label>
+        <label><input type="radio" name="rec-target" value="flash"> Boards' flash</label>
+      </div>
+      <label id="session-label">Session <input type="text" id="session" size="20"></label>
+      <button id="pick-folder">Choose folder…</button>
+      <span class="muted" id="folder">No folder: files download instead.</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" id="record" disabled>Record</button>
+      <button id="upload" disabled hidden>Upload from boards</button>
+      <button id="erase" disabled hidden>Erase boards…</button>
+      <span class="muted" id="rec-status">Connect a board first.</span>
+    </div>
+    <ul id="rec-boards"></ul>
+    <p class="hint">Just after Record, and again just before Stop, clap 2–3 times about a second apart, close to all the boards and the same distance from each: their clocks are lined up on those claps (<code>task align</code>). Each board's LED flashes when it hears one.</p>
+    <p class="hint" id="flash-hint" hidden>Boards' flash: each board records on its own (LED dim red) and keeps going if you disconnect or carry it off. Upload runs at ~12 KB/s per board, all boards at once: a full 8 MB takes about 11 minutes.</p>
+  </section>
+  </div>
+
+  <section class="orientation-section">
+    <h2>Orientation <span class="muted">VQF, 6-axis</span>
+      <span class="chip" id="at-rest" title="Lit while VQF sees the board as still: only then does it quickly learn the gyro bias that stops yaw drift">At rest</span></h2>
+    <div class="plot pose"><canvas id="pose" aria-label="Board orientation: its X, Y and Z axes in the world frame"></canvas></div>
+    <div class="angles">
+      <span>Roll <b id="roll">–</b></span><span>Pitch <b id="pitch">–</b></span><span>Yaw <b id="yaw">–</b></span>
+      <button id="zero-yaw" title="Yaw is relative (no magnetometer): make the current heading 0°">Zero yaw</button>
+    </div>
+  </section>
+
+  <section class="motion-section">
+    <h2>Motion <span class="muted">gyro bias removed</span></h2>
+    <div class="plot-head"><span>Angular rate <span class="muted">°/s · <span id="gyro-range">±250</span></span></span><span class="live" id="gyro-live"></span></div>
+    <div class="plot trace">
+      <canvas id="gyro-trace" aria-label="Gyro X, Y and Z over the last 4 seconds"></canvas>
+      <div class="tooltip" id="gyro-tip" hidden></div>
+    </div>
+    <div class="plot-head"><span>Acceleration <span class="muted">g · <span id="accel-range">±2</span></span></span><span class="live" id="accel-live"></span></div>
+    <div class="plot trace">
+      <canvas id="accel-trace" aria-label="Accelerometer X, Y and Z over the last 4 seconds"></canvas>
+      <div class="tooltip" id="accel-tip" hidden></div>
+    </div>
+    <div class="x-axis"><span>−4 s</span><span>now</span></div>
+  </section>
+
+  <section class="mic-section">
+    <h2>Microphone <span class="muted">peak per ms, dBFS</span>
+      <span class="chip" id="mark-lamp" title="Lights when the board hears a clap and records a sync mark">Clap</span></h2>
+    <div class="plot-head"><span>Level <span class="muted num" id="mic-level">–</span></span><span class="readout" id="mark-count">No claps yet</span></div>
+    <div class="plot wave">
+      <canvas id="envelope" aria-label="Microphone level over the last 4 seconds, with the claps heard marked"></canvas>
+      <div class="tooltip" id="envelope-tip" hidden></div>
+    </div>
+    <div class="x-axis"><span>−4 s</span><span>−2 s</span><span>now</span></div>
+    <p class="hint">Orange lines are claps the board heard (sync marks). A sound counts if it starts sharply and peaks above −30 dBFS, well clear of the room's noise: a clap within a few metres does.</p>
+  </section>
+
+</main>
+
+<main class="replay" id="replay" hidden>
+  <section class="replay-session">
+    <h2>Replay <span class="muted" id="replay-name">no session open</span>
+      <span class="chip" id="replay-aligned" title="Lit when the boards are lined up on their claps by task align (the session's aligned/ folder); otherwise they are on the computer's clock">Aligned</span></h2>
+    <div class="row">
+      <button id="replay-open-folder">Open session folder…</button>
+      <button id="replay-open-files" title="For a session that was downloaded rather than saved to a folder: pick its session__… files">Files…</button>
+      <label id="replay-pick-label" hidden>Session <select id="replay-pick"></select></label>
+      <input type="file" id="replay-folder" webkitdirectory hidden>
+      <input type="file" id="replay-files" multiple accept=".csv,.json" hidden>
+      <span class="muted" id="replay-status">Open a session's folder (or a folder of sessions) to plot it. The files stay in this browser: Chrome's "upload" prompt only means this page may read them.</span>
+    </div>
+    <div class="table-scroll">
+      <table class="boards replay-boards">
+        <thead><tr><th>Show</th><th>Board</th><th>Length</th><th>Samples</th><th>Rate</th><th title="IMU samples missing from the recording (gaps in seq)">Lost</th><th title="Sync marks: at least 2 per board let task align correct its drift">Claps</th><th>Presses</th></tr></thead>
+        <tbody id="replay-boards"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="replay-signals">
+    <h2>Signals <span class="muted"><span id="replay-units"></span><span id="replay-range"></span></span><span class="readout" id="replay-time"></span></h2>
+    <div class="row replay-controls">
+      <div class="segmented" role="radiogroup" aria-label="Signal">
+        <label><input type="radio" name="replay-signal" value="gyro" checked> Gyro</label>
+        <label><input type="radio" name="replay-signal" value="accel"> Accel</label>
+        <label><input type="radio" name="replay-signal" value="orientation"> Orientation</label>
+        <label><input type="radio" name="replay-signal" value="mic"> Mic</label>
+      </div>
+      <button id="replay-fit" title="Show the whole session (or double-click a lane)">Whole session</button>
+      <span class="hint">Scroll to zoom, drag to pan. Orange: claps · shaded: USER held · red: lost samples.</span>
+    </div>
+    <div class="replay-lanes" id="replay-lanes" tabindex="0" role="group" aria-label="Signal lanes, one per board: scroll to zoom, drag or arrow keys to pan, + and - to zoom, 0 for the whole session"></div>
+    <div class="plot axis"><canvas id="replay-axis" aria-hidden="true"></canvas></div>
+    <div class="plot overview"><canvas id="replay-overview" aria-label="The whole session, with the part shown above outlined: click or drag to move it"></canvas></div>
+  </section>
+</main>
+
+<aside class="drawer" id="settings-drawer" aria-label="Settings" hidden>
+  <div class="drawer-head"><span>Settings<span id="settings-board" title="The board selected in the Boards panel: Mouse, Lights, Latency and Seen working apply to it"></span></span><button type="button" id="settings-close" aria-label="Close settings">✕</button></div>
+  <section>
+    <h2>Mouse <span class="muted">saved on the board</span></h2>
+    <div class="row">
+      <button id="mouse-toggle" type="button" role="switch" aria-checked="false" disabled title="Connect a board to switch its mouse on or off">Enabled</button>
+      <label>Speed <input type="range" id="mouse-speed" min="10" max="300" step="10" value="100" disabled>
+        <span class="num" id="mouse-speed-value">100%</span></label>
+    </div>
+    <p class="hint" id="mouse-status">Switch the mouse off on boards you are only recording, so they don't move your cursor.</p>
+  </section>
+  <section>
+    <h2>Lights</h2>
+    <div class="row">
+      <label>RGB <input type="color" id="led-color" value="#ffb23f"></label>
+      <label>Brightness <input type="range" id="led-level" min="0" max="255" value="40"></label>
+      <button id="led-off">Off</button>
+    </div>
+    <p class="hint">Overrides the status LED (blue advertising, green connected) until the next connect, disconnect or clap.</p>
+  </section>
+  <section>
+    <h2>Firmware <span class="muted">over Bluetooth</span></h2>
+    <div class="row"><button id="fw-open">Update firmware…</button></div>
+    <p class="hint">Updates any or all connected boards. Dropping a <code>.bin</code> anywhere on the page opens it too.</p>
+  </section>
+  <section>
+    <h2>Latency <span class="muted">ms · IMU sample → host radio ACK</span></h2>
+    <div class="stats" id="latency-tiles">
+      <div><span>Median</span><b>–</b></div><div><span>p90</span><b>–</b></div>
+      <div><span>p99</span><b>–</b></div><div><span>Max</span><b>–</b></div>
+    </div>
+    <ul id="latency-lines"></ul>
+    <div class="row">
+      <button id="latency-reset" disabled>Reset</button>
+      <button id="latency-copy" disabled>Copy results row</button>
+      <span class="muted" id="latency-status">Connect to measure.</span>
+    </div>
+    <p class="hint">Reset, then turn the board steadily for 30 s with the board paired as a mouse. Leaves out the IMU's filter delay and the computer's own processing: see <code>docs/latency-bench-test.md</code>.</p>
+  </section>
+
+  <section class="checks-section">
+    <h2>Seen working <span class="muted num" id="check-count"></span></h2>
+    <ul class="checks" id="checks"></ul>
+  </section>
+</aside>
+
+<dialog id="fw-dialog" aria-labelledby="fw-title">
+  <div class="dialog-head"><h2 id="fw-title">Update firmware <span class="muted">over Bluetooth</span></h2>
+    <button type="button" id="fw-close" aria-label="Close">✕</button></div>
+  <div class="dialog-body">
+    <label class="drop" id="fw-drop">
+      <input type="file" id="fw-file" accept=".bin" aria-label="Firmware image">
+      <b>Drop zephyr.signed.bin here</b>
+      <span>or click to choose it</span>
+      <span class="muted num">build/app/nrf-controller/zephyr/, after task build</span>
+    </label>
+    <p class="readout" id="fw-image">No image chosen</p>
+    <ul class="fw-targets" id="fw-targets"></ul>
+    <p class="muted" id="fw-empty">No boards connected: add them first.</p>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="fw-update" disabled>Update</button>
+      <span class="muted" id="fw-status"></span>
+    </div>
+    <p class="hint">Ticked boards update together, about 30 s each, then restart into the new firmware and reconnect. One that doesn't come up on it rolls back by itself. Closing this keeps them going.</p>
+  </div>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

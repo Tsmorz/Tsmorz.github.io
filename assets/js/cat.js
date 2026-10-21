@@ -1,7 +1,7 @@
 // Footer cat — an orange tabby that lives on the footer's top line.
-// 30 s after the page loads it walks in from the right, sits, washes (licks a paw, wipes its face), yawns and curls
+// 30 s after the page loads it walks in from the right, stops to sniff the GitHub logo (it looks like a cat), sits, washes (licks a paw, wipes its face), yawns and curls
 // up above the copyright with its tail wrapped round its front, and there it stays, asleep. Hover it
-// and it looks content, click it and it slow-blinks at you and purrs for a few seconds, stroke it (the pointer back
+// and it looks content, click it and it slow-blinks at you and purrs for a few seconds (a heart for every click), stroke it (the pointer back
 // and forth) and it kneads. On its way in, a click stops it to look round at you, purring, and a stroke sits it down
 // to knead; then it carries on.
 //
@@ -21,7 +21,8 @@
   var ARM = 6.5, FORE = 6.6, THIGH = 6, SHIN = 6;       // leg bones
   var TAIL_N = 14, TAIL_LEN = 19;
   var LEGS = ['nh', 'fh', 'nf', 'ff'];                  // near/far, hind/front
-  var GAIT = [0, 0.5, 0.25, 0.75];                      // lateral sequence: hind, then the front on the same side
+  var GAIT = [0, 0.5, 0.75, 0.25];                      // lateral sequence: near hind, near front, far hind, far front
+                                                        // (a leg further on in its cycle steps sooner)
   var LIFT = [2.4, 2.4, 3.2, 3.2], STAGGER = [0, 0.12, 0.22, 0.32];
 
   function clamp(x, a, b) { return x < a ? a : x > b ? b : x; }
@@ -128,7 +129,7 @@
     p.s[1] -= 0.3 * Math.cos(2 * w);                 // the shoulders dip as each front foot takes the weight,
     p.h[1] -= 0.25 * Math.cos(2 * w + 1.6);           // the hips a beat later,
     p.hd[1] += 0.22 * Math.cos(2 * w);                // and the head holds still against both
-    p.ts += 0.4 * Math.max(0, Math.sin(w + 1.6));     // shoulder blade rolling up over the near front leg
+    p.ts += 0.4 * Math.max(0, -Math.sin(w + 1.6));    // shoulder blade rolling up over the near front leg
     return p;
   }
 
@@ -188,6 +189,7 @@
   var NEAR_EAR = new Path2D('M-1.6 4.2L0.6 9.6L3.4 3.6Z'), FAR_EAR = new Path2D('M-5.6 1.6L-4.6 8.4L-1.2 4.4Z');
   var BROW = new Path2D('M-3.6 4.4L-3 2.6M-1.8 5.1L-1.4 3.6');   // forehead stripes, kept back from the eye
   var HEART = ['.#.#.', '#####', '#####', '.###.', '..#..'];   // floats up after a slow blink
+  var FAN = [0, 7, -6, 4, -9, 10];                              // where each heart of a run of clicks rises, in px
   var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'ink', g: 'eye', p: 'pink' };
 
   function line(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); }
@@ -362,7 +364,7 @@
     var fine = document.createElement('canvas'), fc = fine.getContext('2d', { willReadFrequently: true });
     fine.width = 2 * SPAN * SS; fine.height = ROWS * SS;
     var W = world.width(), X = W + 34 * S, F = -1;
-    var cur = null, prev = STAND, queue = [], petted = false, blinkAt = -99, T = 0, box = null;
+    var cur = null, prev = STAND, queue = [], petted = false, blinkAt = -99, hearts = [], nHeart = 0, T = 0, box = null;
     var petting = 0, petAt = -1, soften = 0;          // how hard it is being stroked (0..1); since when, asleep
     var purrUntil = -1, PURR = 4;                     // a click sets it purring for PURR s
 
@@ -403,10 +405,11 @@
         p.nf[1] += 1.6 * Math.max(0, k); p.ff[1] += 1.6 * Math.max(0, -k);
       }, { busy: true, pet: true });
     }
+    function sniff() { return still(SNIFF, 1.6, 0.6, function (p, u) { p.hd[1] += 0.35 * Math.sin(u * 22) * bump(u, 0.5, 0.6, 0.3); }); }
     function arrive() {
       return [
         function () { return still(STAND, 0.6, 0.5); },
-        function () { return still(SNIFF, 1.6, 0.6, function (p, u) { p.hd[1] += 0.35 * Math.sin(u * 22) * bump(u, 0.5, 0.6, 0.3); }); },
+        sniff,
         function () { return still(STAND, 0.7, 0.5, function (p) { p.ha = 6; }); },
         function () { return still(SIT, 0.9, 0.9); },
         function () { return still(LICK, 0.55, 0.55, pawAtMouth); },
@@ -425,6 +428,13 @@
       ];
     }
     queue = [function () { return walkAct(X, world.rest()); }].concat(arrive());
+    var logo = world.logo && world.logo();             // on the way, it stops with its nose over the GitHub logo
+    if (logo !== null && logo !== undefined && logo > world.rest() + 30 * S && logo < W) queue = [
+      function () { return walkAct(X, logo); },
+      function () { return still(STAND, 0.4, 0.4); },
+      sniff,
+      function () { return still(STAND, 0.5, 0.5, function (p) { p.ha = 6; }); }
+    ].concat(queue);
 
     function next(t0) {
       if (cur) {
@@ -508,8 +518,11 @@
         if (Math.abs(f) > 0.5) { c.fillStyle = C.pink; c.fillRect(no[0], no[1], 1, 1); }
         hx = ax + f * K * hc[0]; hy = h - K * hc[1];
       }
-      var hu = (sb - 0.4) / 1.8;
-      if (sleeping && hu > 0 && hu < 1) glyph(c, HEART, hx + dir * 3 - 2, hy - 5 - 9 * hu, C.pink);
+      hearts = hearts.filter(function (q) { return T - q[0] < 2.2; });
+      if (sleeping) hearts.forEach(function (q) {     // one per click, fanned out to either side, each on its own wobble
+        var hu = (T - q[0] - 0.4) / 1.8;
+        if (hu > 0) glyph(c, HEART, hx + dir * 3 - 2 + FAN[q[1] % FAN.length] + Math.sin(hu * 5 + q[1]), hy - 5 - 9 * hu, C.pink);
+      });
     }
 
     return {
@@ -524,7 +537,7 @@
       poke: function () {                              // asleep: a slow blink; awake: it stops and looks at you
         if (!cur || cur.busy && !cur.sleep) return;
         purrUntil = T + PURR;
-        if (cur.sleep) { if (T - blinkAt > 2.2) blinkAt = T; } else interrupt(lookAct);
+        if (cur.sleep) { if (T - blinkAt > 2.2) blinkAt = T; hearts.push([T, nHeart++]); } else interrupt(lookAct);
       },
       pet: function (level) { petting = level; if (level > 0.3) interrupt(petAct); },
       box: function () { return box; },
@@ -550,6 +563,12 @@
       rest: function () {                             // nose where the copyright starts
         var e = footer.querySelector('.footer-inner p');
         return (e ? e.getBoundingClientRect().left - footer.getBoundingClientRect().left : 24) + 21 * S;
+      },
+      logo: function () {                             // origin that puts its sniffing nose over the GitHub icon
+        var e = footer.querySelector('.footer-links a[aria-label="GitHub"]');
+        if (!e) return null;
+        var b = e.getBoundingClientRect();
+        return b.left + b.width / 2 - footer.getBoundingClientRect().left + 20 * S;
       }
     });
     // the canvas's height is CSS's; its width is a whole number of art pixels, so every pixel is the same size
