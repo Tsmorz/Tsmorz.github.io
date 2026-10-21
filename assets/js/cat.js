@@ -229,7 +229,10 @@
       oval(c, cream, add(j[1], [0.5, 0.1]), 2.2, 1.3, clamp((j[1][1] - 1.05) * -9, -50, 0));
     }
     function hind(foot, fur, cream, near) {
-      var j = ik(hj, add(foot, p.hk), THIGH, SHIN, 1), hock = j[1], toe = add(hock, p.hk, -1);
+      // as the paw reaches back behind the hip to push off, the heel lifts: the hock comes forward over the paw, so the
+      // foot slants back and down to toes that trail behind
+      var e = smooth((hj[0] - foot[0] + 1) / 6), hk = rot(p.hk, -55 * e);
+      var j = ik(hj, add(foot, hk), THIGH, SHIN, 1), hock = j[1], toe = add(hock, hk, -1);
       var tv = [j[0][0] - hj[0], j[0][1] - hj[1]], pts = [j[0], hock, toe];
       oval(c, fur, add(hj, tv, 0.36), THIGH / 2 + 3.2, 5.3, deg(tv));    // the haunch
       line(c, [j[0], hock]); stroke(c, fur, 3.6);
@@ -239,7 +242,7 @@
         var a = add(hj, tv, 0.15), b = add(hj, tv, 0.75), nn = [-tv[1] / THIGH, tv[0] / THIGH];
         line(c, [add(a, nn, 3.2), add(mid(a, b), nn, 1.2), add(b, nn, 1.8)]); stroke(c, C.stripe, 1.6);
       }
-      oval(c, cream, add(toe, [0.5, 0.1]), 2.2, 1.3, 0);
+      oval(c, cream, add(toe, [0.5 - 1.4 * e, 0.1]), 2.2, 1.3, 18 * e);
     }
     // the tail: a chain bent near the base (tc) and at the tip (tt), swaying in an S that grows toward the tip;
     // it tapers from root to tip, with tabby rings and a dark tip
