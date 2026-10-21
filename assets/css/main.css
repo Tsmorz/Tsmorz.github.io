@@ -36,6 +36,11 @@
   --pend-rod: #556070;
   --pend-1: #8576f0;
   --pend-2: #5fae16;  /* double pendulum: gray cart, violet upper bob, lime lower bob, gray rods */
+  --logo-ground: #4b505e;
+  --logo-cart: #5d6373;
+  --logo-rod: #2f3340;
+  --logo-b1: #5a4fd6;
+  --logo-b2: #35a02a;
   --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 8px 24px rgba(16, 24, 40, .06);
   --shadow-lift: 0 2px 4px rgba(16, 24, 40, .06), 0 16px 40px rgba(16, 24, 40, .12);
   --radius: 14px;
@@ -77,6 +82,11 @@
     --pend-rod: #9aa7b6;
     --pend-1: #a798ff;
     --pend-2: #adf45d;
+    --logo-ground: #aab0c0;
+    --logo-cart: #c4c9d6;
+    --logo-rod: #f1efff;
+    --logo-b1: #b3a8ff;
+    --logo-b2: #b8ff6a;
     --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
     --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
   }
@@ -113,6 +123,11 @@
   --pend-rod: #9aa7b6;
   --pend-1: #a798ff;
   --pend-2: #adf45d;
+  --logo-ground: #aab0c0;
+  --logo-cart: #c4c9d6;
+  --logo-rod: #f1efff;
+  --logo-b1: #b3a8ff;
+  --logo-b2: #b8ff6a;
   --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .35);
   --shadow-lift: 0 2px 4px rgba(0, 0, 0, .45), 0 16px 40px rgba(0, 0, 0, .5);
 }
@@ -903,6 +918,13 @@ main:not(:has(> .hero))::before {
 .mk-b { fill: var(--mark-b); }
 .mk-v { fill: var(--viz-1); }
 .mk-g { fill: var(--lime); }
+/* the cartpole mark: the favicon drawing, inline so it follows the theme toggle; drawn 38px but takes 32px of layout so the bar keeps its height */
+.nav-brand svg.logo-cartpole { width: 38px; height: 38px; margin: -3px; }
+.logo-ground { stroke: var(--logo-ground); }
+.logo-cart { fill: var(--logo-cart); }
+.logo-rod { stroke: var(--logo-rod); }
+.logo-b1 { fill: var(--logo-b1); }
+.logo-b2 { fill: var(--logo-b2); }
 
 /* /solutions/ */
 /* Sized to fit a laptop screen without scrolling: one line per blurb on desktop, tighter section gaps. */

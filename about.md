@@ -12,16 +12,17 @@ Before Agile Robots I started a PhD at the **Technical University of Munich**, w
 move), combining the readings of their sensors to track how the wearer moves, before
 dropping out.
 
+Before that, an **MSc in Robotics** at Northeastern University and a **BSc in Aerospace
+Engineering** at the University of Michigan.
+
+Outside of work I'm usually outside: hiking, and above all on a bike, because I love cycling.
+Otherwise I'm baking, visiting family and friends around the world, or building the occasional
+robot purely because the idea was too good to leave alone.
+
 <div class="about-photos">
   <img src="{{ '/assets/img/about/exosuit-1.jpg' | relative_url }}" alt="Soft exosuit research at TU Munich">
   <img src="{{ '/assets/img/about/exosuit-2.jpg' | relative_url }}" alt="Soft exosuit research at TU Munich">
 </div>
-
-Before that, an **MSc in Robotics** at Northeastern University and a **BSc in Aerospace
-Engineering** at the University of Michigan.
-
-Outside of work I'm usually outside: photography, travel, and the occasional robot built
-purely because the idea was too good to leave alone.
 
 ## Education
 
