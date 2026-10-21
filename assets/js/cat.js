@@ -229,7 +229,9 @@
       oval(c, cream, add(j[1], [0.5, 0.1]), 2.2, 1.3, clamp((j[1][1] - 1.05) * -9, -50, 0));
     }
     function hind(foot, fur, cream, near) {
-      var j = ik(hj, add(foot, p.hk), THIGH, SHIN, 1), hock = j[1], toe = add(hock, p.hk, -1);
+      // as the paw reaches back behind the hip the hock opens, so shin and foot straighten into one line
+      var hk = rot(p.hk, 34 * smooth((hj[0] - foot[0] + 1) / 6));
+      var j = ik(hj, add(foot, hk), THIGH, SHIN, 1), hock = j[1], toe = add(hock, hk, -1);
       var tv = [j[0][0] - hj[0], j[0][1] - hj[1]], pts = [j[0], hock, toe];
       oval(c, fur, add(hj, tv, 0.36), THIGH / 2 + 3.2, 5.3, deg(tv));    // the haunch
       line(c, [j[0], hock]); stroke(c, fur, 3.6);
