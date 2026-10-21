@@ -405,6 +405,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .footer-links a { display: inline-flex; align-items: center; color: var(--text-muted); }
 .footer-links a:hover { color: var(--text); }
 .footer-links .social-icon { width: 20px; height: 20px; display: block; }
+.footer-xiao img { display: block; image-rendering: pixelated; }   /* the XIAO at one screen pixel per art pixel: a quiet link to /dashboard/ */
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
