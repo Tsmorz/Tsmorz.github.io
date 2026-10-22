@@ -412,7 +412,7 @@ main:has(> .hero) { display: flex; flex-direction: column; }
 .cat-lane {
   position: absolute; left: 0; right: 0; bottom: calc(100% + 1px); height: 48px; overflow: hidden; pointer-events: none;
   --fur: #e8903a; --fur-far: #c8742c; --stripe: #b3601c; --cream: #f6dcb4; --cream-far: #d9b98c; --ink: #2b2118; --pink: #e58aa0; --eye: #b8c934;
-  --hat: #fbfaf6; --hat-edge: #9c958a;   /* a hat, on pages that give it one */
+  --hat: #fbfaf6; --hat-shade: #dcd6ca; --hat-edge: #9c958a;   /* a hat, on pages that give it one */
 }
 .cat { position: absolute; left: 0; bottom: 0; height: 48px; image-rendering: pixelated; }
 .cat-hit { position: absolute; bottom: 0; display: none; pointer-events: auto; cursor: pointer; }

@@ -192,9 +192,18 @@
   var FAN = [0, 7, -6, 4, -9, 10];                              // where each heart of a run of clicks rises, in px
   var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'stripe', g: 'eye', p: 'pink' };
   // a hat, when the page asks for one (`cat_hat:` in its front matter): stamped like the eye, its bottom row on the top
-  // of the head and its middle column between the ears; h the hat, H its outline
+  // of the head and its middle column between the ears; h the hat, x its shading, H its outline
   var HATS = {
-    baker: ['.HH.HH.', 'HhhHhhH', 'HhhhhhH', '.HhhhH.', '.HhhhH.', '.HHHHH.']   // a toque: two puffs over a band
+    baker: [                                           // a toque: one round puff, shaded on its far side, over a pleated band
+      '..HHHHH..',
+      '.HhhhhhH.',
+      'HhhhhhhxH',
+      'HhhhhhxxH',
+      '.HHhhxHH.',
+      '..HhxhH..',
+      '..HhxhH..',
+      '..HHHHH..'
+    ]
   };
 
   function line(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); }
@@ -386,7 +395,7 @@
 
     function colors() {                               // the coat from main.css
       var cs = getComputedStyle(canvas);
-      ['fur', 'fur-far', 'stripe', 'cream', 'cream-far', 'ink', 'pink', 'eye', 'hat', 'hat-edge'].forEach(function (k) {
+      ['fur', 'fur-far', 'stripe', 'cream', 'cream-far', 'ink', 'pink', 'eye', 'hat', 'hat-shade', 'hat-edge'].forEach(function (k) {
         C[k.replace(/-(\w)/, function (m, a) { return a.toUpperCase(); })] = cs.getPropertyValue('--' + k).trim();
       });
       pal = [C.fur, C.furFar, C.stripe, C.cream, C.creamFar, C.ink, C.pink].map(hex);
@@ -396,7 +405,7 @@
 
     // hand-drawn frames, each held for its time; posed as the loaf, so the rig carries on from there
     function stamp(g, put) {
-      g.forEach(function (row, r) { for (var j = 0; j < row.length; j++) if (row[j] !== '.') put(j, r, row[j] === 'h' ? C.hat : C.hatEdge); });
+      g.forEach(function (row, r) { for (var j = 0; j < row.length; j++) if (row[j] !== '.') put(j, r, row[j] === 'h' ? C.hat : row[j] === 'x' ? C.hatShade : C.hatEdge); });
     }
     function spriteAct(frames, extra) {
       var dur = frames.reduce(function (t, f) { return t + f[1]; }, 0);
@@ -513,7 +522,7 @@
         if (petAt >= 0 && T - petAt > 1) KNEAD[Math.floor(T * 5) % 2].forEach(function (q) { px(q[0], q[1], C[LETTER[q[2]]]); });
         if (hat) {                                     // on the first row the head (or an ear) reaches
           for (var top = 0; top < g.length && !/[^.]/.test(g[top].slice(1, 6)); top++);
-          stamp(hat, function (j, r, color) { px(j, top - hat.length + 1 + r, color); });
+          stamp(hat, function (j, r, color) { px(j - (hat[0].length - 7) / 2, top - hat.length + 1 + r, color); });
         }
         hx = ax + dir * (SPR_O - SPR_HEAD[0]); hy = y0 + SPR_HEAD[1];
         box = [(ax - 14) * PX, (ax + 14) * PX, (g.length + 1) * PX];
@@ -540,8 +549,8 @@
         });
         if (Math.abs(f) > 0.5) { c.fillStyle = C.pink; c.fillRect(no[0], no[1], 1, 1); }
         if (hat) {
-          var hb = at([-1.2, 5.2]);
-          stamp(hat, function (j, r, color) { c.fillStyle = color; c.fillRect(hb[0] - 3 + j, hb[1] - hat.length + 1 + r, 1, 1); });
+          var hb = at([-1.2, 5.2]), hw = (hat[0].length - 1) / 2;
+          stamp(hat, function (j, r, color) { c.fillStyle = color; c.fillRect(hb[0] - hw + j, hb[1] - hat.length + 1 + r, 1, 1); });
         }
         hx = ax + f * K * hc[0]; hy = h - K * hc[1];
       }
