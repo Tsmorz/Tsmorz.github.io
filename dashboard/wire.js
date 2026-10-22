@@ -18,6 +18,7 @@ export const DATA_IMU = "6f524c03-0002-4a3c-9d21-1122334455aa";
 export const DATA_ENVELOPE = "6f524c03-0003-4a3c-9d21-1122334455aa";
 export const DATA_EVENTS = "6f524c03-0004-4a3c-9d21-1122334455aa";
 export const DATA_INFO = "6f524c03-0005-4a3c-9d21-1122334455aa";
+export const DATA_SPECTRUM = "6f524c03-0006-4a3c-9d21-1122334455aa";
 // On-board recording (src/logger/log_service.c; formats in src/log_format.h, LOG_WIRE_VERSION).
 export const LOG_SERVICE = "6f524c04-0001-4a3c-9d21-1122334455aa";
 export const LOG_COMMAND = "6f524c04-0002-4a3c-9d21-1122334455aa";
@@ -38,6 +39,9 @@ export const LATENCY_COMMAND_RESET = 1;
 const IMU_HEADER_BYTES = 12;
 const IMU_SAMPLE_BYTES = 25;
 const ENVELOPE_HEADER_BYTES = 10;
+const SPECTRUM_HEADER_BYTES = 13;
+// A spectrum level byte is half-dB steps above this (MIC_SPECTRUM_FLOOR_DBFS in mic_spectrum.h).
+export const SPECTRUM_FLOOR_DBFS = -127.5;
 const EVENT_BYTES = 12;
 const BOARD_INFO_BYTES = 20;
 const Q14 = 16384;
@@ -77,6 +81,30 @@ export function decodeEnvelopeBatch(view) {
   if (view.byteLength !== ENVELOPE_HEADER_BYTES + count * 2) return null;
   const peaks = Array.from({ length: count }, (_, i) => view.getUint16(ENVELOPE_HEADER_BYTES + i * 2, true));
   return { firstWindow: view.getUint32(2, true), tUs: view.getUint32(6, true), peaks };
+}
+
+/**
+ * Decodes one mic spectrum batch: consecutive frames, each the level of every frequency bin in
+ * dBFS (SPECTRUM_FLOOR_DBFS or below reads as the floor). Bin b is centred on
+ * b * micRateHz / (2 * bins); frames start frameSamples mic samples apart.
+ */
+export function decodeSpectrumBatch(view) {
+  if (view.byteLength < SPECTRUM_HEADER_BYTES || view.getUint8(0) !== DATA_VERSION) return null;
+  const count = view.getUint8(1);
+  const bins = view.getUint8(2);
+  if (!bins || view.byteLength !== SPECTRUM_HEADER_BYTES + count * bins) return null;
+  const frames = Array.from({ length: count }, (_, frame) => {
+    const levels = new Float32Array(bins);
+    for (let b = 0; b < bins; b++) levels[b] = view.getUint8(SPECTRUM_HEADER_BYTES + frame * bins + b) / 2 + SPECTRUM_FLOOR_DBFS;
+    return levels;
+  });
+  return {
+    frameSamples: view.getUint16(3, true),
+    firstFrame: view.getUint32(5, true),
+    tUs: view.getUint32(9, true),
+    bins,
+    frames,
+  };
 }
 
 /** Decodes one event: a clap sync mark or a USER button press/release. */

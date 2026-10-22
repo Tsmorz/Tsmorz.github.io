@@ -4,10 +4,10 @@
 // (a checklist item was seen working) and "disconnected" events.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
+  DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_SERVICE, crc32,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
-  decodeEvent, decodeImuBatch, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings,
+  decodeEvent, decodeImuBatch, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch,
   encodeLatencyReset, encodeLedColor, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
 } from "./wire.js";
@@ -49,6 +49,7 @@ export class Board extends EventTarget {
     this.led = null; // the colour the board's LED shows, if this firmware reports it
     this.download = null;
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
+    this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
     this.seen = new Set();
     // Removed again on disconnect: a reconnect makes a new Board for the same device.
     this.handleGattDisconnect = () => this.onDisconnected();
@@ -65,6 +66,8 @@ export class Board extends EventTarget {
     this.userPressHostMs = 0;
     this.envelope = [];
     this.envelopeEndUs = null;
+    this.spectrum = []; // the last ENVELOPE_SECONDS of { tUs, levels } frames, levels in dBFS per bin
+    this.spectrumFrameUs = 0;
     this.marks = []; // the latest few, for drawing
     this.markCount = 0;
     this.lastMarkHostMs = null;
@@ -137,6 +140,7 @@ export class Board extends EventTarget {
     this.chars.imu = await subscribe(data, DATA_IMU, (view) => this.onImu(view));
     this.chars.envelope = await subscribe(data, DATA_ENVELOPE, (view) => this.onEnvelope(view));
     this.chars.events = await subscribe(data, DATA_EVENTS, (view) => this.onEvent(view));
+    await this.connectSpectrum(data, subscribe);
 
     const control = await server.getPrimaryService(TELEMETRY_SERVICE);
     await this.connectLed(control, subscribe);
@@ -156,6 +160,16 @@ export class Board extends EventTarget {
       this.firmwareVersion = "";
     }
     this.changed();
+  }
+
+  // Firmware from before the spectrum view doesn't send it; the rest still works.
+  async connectSpectrum(data, subscribe) {
+    try {
+      await subscribe(data, DATA_SPECTRUM, (view) => this.onSpectrum(view));
+    } catch {
+      return;
+    }
+    this.hasSpectrum = true;
   }
 
   // Firmware from before on-board recording has no log service; the rest still works.
@@ -329,6 +343,18 @@ export class Board extends EventTarget {
     if (this.envelope.length > keep) this.envelope.splice(0, this.envelope.length - keep);
     this.envelopeEndUs = tUs + batch.peaks.length * windowUs;
     this.markSeen("mic");
+  }
+
+  onSpectrum(view) {
+    const batch = decodeSpectrumBatch(view);
+    if (!batch?.frames.length || !this.info) return;
+
+    const tUs = this.unwrap.unwrap(batch.tUs);
+    this.spectrumFrameUs = (1e6 * batch.frameSamples) / this.info.micRateHz;
+    batch.frames.forEach((levels, i) => this.spectrum.push({ tUs: tUs + i * this.spectrumFrameUs, levels }));
+    const oldest = this.spectrum.at(-1).tUs - ENVELOPE_SECONDS * 1e6;
+    while (this.spectrum[0].tUs < oldest) this.spectrum.shift();
+    this.markSeen("spectrum");
   }
 
   onEvent(view) {
