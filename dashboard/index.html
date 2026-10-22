@@ -232,8 +232,6 @@
   #status.bad { color: var(--bad); }
   #status.bad::before, .bad-text::before { content: "⚠ "; }
   .bad-text { color: var(--bad); }
-  #rate:empty { display: none; }
-  #firmware { font-size: 11.5px; }
 
   /* Mic level meters as LED bar graphs. */
   .bar { position: relative; height: 10px; background: var(--screen); border-radius: 2px; overflow: hidden; box-shadow: inset 0 0 0 1px var(--screen-rim); }
@@ -382,17 +380,15 @@
   }
 
   /* Phones: the header scrolls away instead of holding a tenth of the screen, laid out as name and
-     theme on top, status and Connect below. */
+     theme on top, status and Connect, then Settings and Replay. */
   @media (max-width: 520px) {
     header { position: static; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
     .title { grid-area: 1 / 1; }
     #theme { grid-area: 1 / 2; justify-self: end; }
-    #settings { grid-area: 3 / 2; justify-self: end; }
-    #replay-key { grid-area: 4 / 2; justify-self: end; }
-    header > .pill:not(#rate) { grid-area: 2 / 1; justify-self: start; }
+    #settings { grid-area: 3 / 1; justify-self: start; }
+    #replay-key { grid-area: 3 / 2; justify-self: end; }
+    header > .pill { grid-area: 2 / 1; justify-self: start; }
     #connect { grid-area: 2 / 2; }
-    #rate { grid-area: 3 / 1; justify-self: start; }
-    #firmware { grid-area: 4 / 1; justify-self: start; }
     main { margin-top: 10px; }
     .subtitle { display: none; }
     main { grid-template-columns: minmax(0, 1fr); }
@@ -422,8 +418,6 @@
     <div class="subtitle">XIAO nRF54LM20A Sense · data collection</div>
   </div>
   <span class="pill"><span class="dot" id="link-dot"></span><span id="status">No boards connected</span></span>
-  <span class="pill num" id="rate"></span>
-  <span class="muted num" id="firmware"></span>
   <button id="settings" type="button" aria-expanded="false" aria-controls="settings-drawer" title="Settings: mouse, lights, firmware update, latency and the seen-working checklist">
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
   <button id="replay-key" type="button" aria-pressed="false" aria-controls="replay" title="Replay: open a recorded session and plot it (boards stay connected)">
@@ -567,8 +561,8 @@
   <section>
     <h2>IMU ranges <span class="muted">saved on the board</span></h2>
     <div class="row">
-      <label>Gyro <select id="gyro-range" disabled></select></label>
-      <label>Accel <select id="accel-range" disabled></select></label>
+      <label>Gyro <select id="imu-gyro-range" disabled></select></label>
+      <label>Accel <select id="imu-accel-range" disabled></select></label>
     </div>
     <p class="hint" id="imu-ranges-status">A narrower range resolves smaller motions but clips faster ones.</p>
   </section>
