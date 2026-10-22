@@ -66,7 +66,7 @@
     ta: 212, tc: -24, tt: -55, tw: 3
   });
   // Curled up asleep is drawn by hand, as the old sprites were: letters are pixels (o fur, s stripe, d shaded fur,
-  // w cream, k shaded cream, e eye, p nose, E the eye the engine opens or shuts). Facing left; column 11 sits on the cat's
+  // w cream, k shaded cream, e eye, p nose, E the eye the engine opens or shuts, a dark orange line while shut). Facing left; column 11 sits on the cat's
   // origin and the last row on the ground. The rig hands over to these when it lies down.
   var SPR_O = 11;
   var CURL1 = [
@@ -190,7 +190,7 @@
   var BROW = new Path2D('M-3.6 4.4L-3 2.6M-1.8 5.1L-1.4 3.6');   // forehead stripes, kept back from the eye
   var HEART = ['.#.#.', '#####', '#####', '.###.', '..#..'];   // floats up after a slow blink
   var FAN = [0, 7, -6, 4, -9, 10];                              // where each heart of a run of clicks rises, in px
-  var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'ink', g: 'eye', p: 'pink' };
+  var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'stripe', g: 'eye', p: 'pink' };
 
   function line(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); }
   function len(pts) { var l = 0; for (var i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; }
@@ -513,7 +513,7 @@
         var bb = pixelate(fc, c, ax - SPAN, 2 * SPAN, h, pal);
         box = bb && [bb[0] * PX, (bb[1] + 1) * PX, (h - bb[2]) * PX];
         // the face is placed by hand, pixel by pixel, where the rig's head says it is: an eye (a dark pupil with the
-        // greenish-yellow iris behind it, a line shut, or a ^ when happy) and a pink nose; looking at you, both eyes
+        // greenish-yellow iris behind it, a dark orange line shut, or a ^ when happy) and a pink nose; looking at you, both eyes
         // and the nose come round to the front
         var at = function (q) { var l = headPt(p, q); return [Math.floor(ax + f * K * l[0]), Math.floor(h - K * l[1])]; };
         var ep = at([1.5, 1.6]), no = at([6.2, 0.9]), eyes = [ep];
@@ -524,7 +524,7 @@
           if (p.happy) { c.fillRect(ep[0] - 1, ep[1], 1, 1); c.fillRect(ep[0], ep[1] - 1, 1, 1); c.fillRect(ep[0] + 1, ep[1], 1, 1); }
           else if (eye > 0.6) { c.fillRect(ep[0], ep[1] - 1, 1, 2); c.fillStyle = C.eye; c.fillRect(ep[0] - dir, ep[1] - 1, 1, 2); }
           else if (eye > 0.3) { c.fillRect(ep[0], ep[1], 1, 1); c.fillStyle = C.eye; c.fillRect(ep[0] - dir, ep[1], 1, 1); }
-          else c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1);
+          else { c.fillStyle = C.stripe; c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1); }   // shut: a dark orange line
         });
         if (Math.abs(f) > 0.5) { c.fillStyle = C.pink; c.fillRect(no[0], no[1], 1, 1); }
         hx = ax + f * K * hc[0]; hy = h - K * hc[1];
