@@ -74,7 +74,7 @@
 
     <footer class="site-footer">
       <div class="wrap footer-inner">
-        <p>&copy; {{ 'now' | date: '%Y' }} {{ site.author.name }}{% if site.author.location %} &middot; {{ site.author.location }}{% endif %}</p>
+        <p>&copy; {{ 'now' | date: '%Y' }} {{ site.author.name }}{% if site.author.location %} &middot; {{ site.author.location }}{% endif %} &middot; <span class="footer-updated">Updated <time datetime="{{ site.time | date_to_xmlschema }}">{{ site.time | date: '%-d %b %Y' }}</time></span></p>
         <ul class="footer-links">
           {% if site.social.github %}<li><a href="{{ site.social.github }}" aria-label="GitHub">{% include social-icon.html name="github" %}</a></li>{% endif %}
           {% if site.social.linkedin %}<li><a href="{{ site.social.linkedin }}" aria-label="LinkedIn">{% include social-icon.html name="linkedin" %}</a></li>{% endif %}
