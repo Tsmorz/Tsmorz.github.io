@@ -78,6 +78,10 @@ plant it was trained on, so **`swingup.js` hard-codes no physical constants**: e
 The dynamics are a line-for-line port of `n_cartpole/env/dynamics.py`. The page opens with the network on (button "AI") and Random targets cycling, so the ~2 MB weights download on load; Manual
 is a click away. `script/test-swingup` guards the port (JS vs torch actions, JS vs Python trajectory,
 closed-loop runs of every transition); if it fails after a re-export, the port has drifted.
+The page wears the Journal (`style: journal`, see Recipes) with its own rules in a `<style>` block at the bottom of
+`swingup.md`: § marks in the panel, Manual / AI as words, a ruled target table. Its canvases read tokens off `<html>`, not
+`body`, so that block points the root tokens at the Journal's ink too, with a second ink (red) for the lower bob and
+negative activations.
 
 ### The footer cat (`assets/js/cat.js`)
 
