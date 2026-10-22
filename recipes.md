@@ -54,11 +54,12 @@ style: journal
 .rc-page{padding-bottom:4rem}
 .rc-index{margin-top:2.5rem;border-top:1px solid var(--ink)}
 .rc-bar{display:flex;flex-wrap:wrap;gap:.75rem 2.5rem;align-items:center;justify-content:space-between;margin:2.5rem 0 3rem;padding:.75rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
-.rc-seg{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}
-.rc-seg .j-label{margin-right:.5rem}
-.rc-x{display:flex;align-items:center;gap:.3rem;margin-left:.3rem;font:.8rem var(--j-mono);color:var(--ink-muted)}
-.rc-x input{width:4.5rem;min-height:2.5rem;padding:0 .5rem;border:1px solid var(--rule);border-radius:0;background:transparent;color:var(--ink);font:500 .85rem var(--j-mono)}
-.rc-x input:focus{outline:2px solid var(--ink-accent);outline-offset:1px;border-color:var(--ink-accent)}
+.rc-seg{display:flex;flex-wrap:wrap;gap:0 .35rem;align-items:baseline}
+.rc-seg .j-label{margin-right:.6rem}
+.rc-x{display:flex;align-items:baseline;gap:.15rem;margin-left:.45rem;font:italic 1.2rem var(--j-serif);color:var(--ink-muted)}
+.rc-x input{width:3.2rem;height:2rem;padding:0 .1rem;border:0;border-bottom:1px solid var(--ink-muted);border-radius:0;background:transparent;color:var(--ink);font:1.2rem var(--j-serif);text-align:center;-moz-appearance:textfield}
+.rc-x input::-webkit-inner-spin-button,.rc-x input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.rc-x input:focus{outline:none;border-bottom:1.5px solid var(--ink-accent)}
 
 /* The open recipe: its head across the top, ingredients and notes in the narrow column, steps beside them. */
 #rc-view{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-areas:"head head" "ing steps" "notes steps" "clear steps";grid-template-rows:auto auto auto 1fr;gap:0 4rem;align-items:start;counter-reset:rc-sec}
@@ -66,7 +67,8 @@ style: journal
 .rc-sec[data-sec="ing"]{grid-area:ing}
 .rc-sec[data-sec="step"]{grid-area:steps}
 .rc-sec.rc-notes-sec{grid-area:notes}
-.rc-clear{grid-area:clear;justify-self:start}
+.rc-clear{grid-area:clear;justify-self:start;margin-left:-.45rem}
+.journal .rc-clear{font-style:italic;font-size:1.05rem;color:var(--ink-2);text-decoration-color:var(--ink-accent)}
 .rc-kicker{margin:0 0 .75rem}
 .rc-head h2{margin:0 0 .75rem;font-size:clamp(2.4rem,5vw,3.6rem);line-height:1.04;font-weight:380;letter-spacing:-.022em;font-variation-settings:"opsz" 72}
 .rc-blurb{margin:0 0 1rem;max-width:34em;font-size:1.25rem;line-height:1.5;font-style:italic;color:var(--ink-2)}

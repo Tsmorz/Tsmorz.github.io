@@ -82,8 +82,9 @@ closed-loop runs of every transition); if it fails after a re-export, the port h
 
 The page has its own look, **the Journal** (`assets/css/journal.css`, loaded with Newsreader and Geist Mono by the
 default layout when the front matter says `style: journal`): ink on paper, a serif for everything you read and mono only
-for marginalia (§ marks, numbers, amounts, keys), hairline rules instead of cards, square corners and one ink colour
-(ultramarine) for what you act on. It re-points the site's tokens on `body`, so the nav and footer turn to paper too; keep
+for marginalia (§ marks, numbers, amounts, labels), hairline rules instead of cards, and one ink colour (ultramarine)
+for what you act on. Choices are words, not keys: serif, greyed until chosen, the chosen one underlined like a link
+(`.journal .sim-tab`); don't bring back boxed buttons, which read as the nrf-controller dashboard. It re-points the site's tokens on `body`, so the nav and footer turn to paper too; keep
 its colors in journal.css, defined three times like main.css. The recipes index is a numbered list of `[data-recipe]`
 buttons, ingredients and notes sit beside the steps, and the page prints as just the open recipe (`.j-print-hide`).
 `recipes.md` + `assets/js/recipes.js`, all content in `_data/recipes.yml` (the file's header comment documents the fields). **Every amount
