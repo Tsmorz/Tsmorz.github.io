@@ -3,9 +3,9 @@
 
 /**
  * The splits whose seams can be dragged, and how many tracks each divides: the top row's panels,
- * the bottom row's panels, and the two rows themselves.
+ * the bottom row's panels, the two rows themselves, and Microphone's two plots.
  */
-export const LAYOUT_SPLITS = { top: 2, bottom: 3, rows: 2 };
+export const LAYOUT_SPLITS = { top: 2, bottom: 3, rows: 2, mic: 2 };
 
 /**
  * Sizes (px; widths, or heights for the rows) after dragging the seam after track `index` by dx
@@ -33,7 +33,7 @@ export function gridTracks(fractions) {
   return fractions.map((fraction) => `minmax(0, ${fraction}fr)`).join(" ");
 }
 
-/** The saved layout ({ top?, bottom?, rows? } fractions), dropping anything malformed; {} if none. */
+/** The saved layout ({ top?, bottom?, rows?, mic? } fractions), dropping anything malformed; {} if none. */
 export function parseSavedLayout(text) {
   let saved;
   try {

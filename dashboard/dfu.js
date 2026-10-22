@@ -182,13 +182,22 @@ export async function updateFirmware(client, bytes, { onStage, onProgress } = {}
 
 /**
  * After the board comes back: whether it runs `image` and has confirmed it. A board that rolled
- * back runs its previous firmware, the new one sitting unconfirmed in the second slot.
+ * back runs its previous firmware, the new one swapped back into the second slot. One whose
+ * bootloader refused the image (not signed with the key it trusts, or damaged) never ran it, and
+ * MCUboot erased it from the second slot.
  */
 export async function verifyUpdate(client, image) {
-  const running = (await client.imageState()).find((slot) => slot.active);
+  const slots = await client.imageState();
+  const running = slots.find((slot) => slot.active);
   if (!running) return { ok: false, reason: "the board didn't report its running firmware" };
   if (toHex(running.hash) !== toHex(image.hash)) {
-    return { ok: false, reason: `the board rolled back to v${running.version}: the new firmware didn't start properly` };
+    const rolledBack = slots.some((slot) => slot.slot === 1 && toHex(slot.hash) === toHex(image.hash));
+    return {
+      ok: false,
+      reason: rolledBack
+        ? `the board rolled back to v${running.version}: the new firmware didn't start properly`
+        : `the board refused the image and kept v${running.version}: it isn't signed with the key this board's bootloader trusts (or it was damaged)`,
+    };
   }
   if (!running.confirmed) return { ok: false, pending: true, reason: "the new firmware hasn't confirmed itself yet" };
   return { ok: true };

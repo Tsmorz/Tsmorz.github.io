@@ -1,7 +1,7 @@
 // Reading a recorded session back for the Replay view: finding its files among those picked,
 // parsing the CSVs, putting every board on one timebase, and thinning traces to the screen's pixel
 // columns. Pure functions only, no DOM, so tests/dashboard/replay.test.mjs can run them in Node.
-// The file formats are in docs/data-collection.md; sysid/align.py writes aligned/.
+// The file formats are in docs/data-collection.md.
 import { headingChangeDegrees, quatToEulerDegrees } from "./pose.js";
 import { peakToDbfs } from "./signal.js";
 
@@ -18,9 +18,8 @@ export function pathParts(path) {
 
 /**
  * The sessions among picked files: each folder whose subfolders hold an imu.csv, with those boards'
- * files, its session.json and, once `task align` has run, its aligned/ output. Newest (by name)
- * first. Every path returned is one of `paths`:
- * [{ name, manifest: path | null, boards: [{ folder, files: { "imu.csv": path, ... } }], aligned: { "imu_<folder>.csv": path } }]
+ * files and its session.json. Newest (by name) first. Every path returned is one of `paths`:
+ * [{ name, manifest: path | null, boards: [{ folder, files: { "imu.csv": path, ... } }] }]
  */
 export function findSessions(paths) {
   const dirs = new Map(); // folder path -> { file name: path }
@@ -41,7 +40,6 @@ export function findSessions(paths) {
         name: parts.at(-1) || "session",
         manifest: dirs.get(root)?.["session.json"] ?? null,
         boards: [],
-        aligned: dirs.get(root ? `${root}/aligned` : "aligned") ?? {},
       });
     }
     sessions.get(root).boards.push({ folder, files });
@@ -122,30 +120,6 @@ export function loadBoard(folder, meta, { imu, events = EMPTY_EVENTS, envelope =
 // A clock maps one board's microseconds to seconds on the session's timebase:
 // t = t0 + (us - us0) * perUs.
 
-/**
- * The clock `task align` fitted for a board, from the first and last rows of its
- * aligned/imu_<board>.csv (t_s is linear in board_time_us there). head: the file's first few KB,
- * tail: its last few; the line where either is cut is ignored. null if it has no rows.
- */
-export function alignedClock(head, tail) {
-  const headLines = head.split(/\r?\n/);
-  const header = headLines[0].split(",");
-  const tIndex = header.indexOf("t_s");
-  const usIndex = header.indexOf("board_time_us");
-  if (tIndex < 0 || usIndex < 0) return null;
-  const row = (line) => {
-    const cells = line?.split(",");
-    if (cells?.length !== header.length) return null;
-    const point = { t: Number(cells[tIndex]), us: Number(cells[usIndex]) };
-    return Number.isFinite(point.t) && Number.isFinite(point.us) ? point : null;
-  };
-  const first = row(headLines[1]);
-  if (!first) return null;
-  const last = row(tail.split(/\r?\n/).filter(Boolean).at(-1));
-  const perUs = last && last.us !== first.us ? (last.t - first.t) / (last.us - first.us) : 1e-6;
-  return { us0: first.us, t0: first.t, perUs };
-}
-
 // Arrivals later than the earliest by more than this are left out of the rough map's second pass.
 const LATE_ARRIVAL_MS = 20;
 
@@ -166,8 +140,7 @@ function lineFit(x, y, keep) {
 /**
  * A rough map from a live recording's board clock to the computer's, from when each IMU batch
  * arrived (host_ms): { us0, h0 (host ms at us0), perUs (host ms per board µs) }. A batch only ever
- * arrives late, so the line rests on the earliest arrivals. Good to ~10-20 ms; it follows the first
- * step of sysid/align.py (coarse_board_to_host), which then lines the boards up on their claps.
+ * arrives late, so the line rests on the earliest arrivals. Good to ~10-20 ms.
  */
 export function roughHostClock(us, hostMs) {
   const us0 = us[0];
@@ -203,25 +176,19 @@ function hostClock(board) {
 
 /**
  * Every board's clock on one timebase, in seconds, from the best that the files allow:
- * - "aligned": `task align`'s fit, when aligned/ covers every board (alignedClocks: folder -> alignedClock()),
- *   with t = 0 at the reference board's first clap, as in aligned/;
  * - "computer": the computer's clock (live: when data arrived; flash: the start command's time),
  *   t = 0 at the earliest board's first sample;
  * - "board": each board's own clock from its own first sample, no shared time at all.
- * Every board needs at least one IMU sample. `missing` lists boards aligned/ left out, if it exists.
+ * Every board needs at least one IMU sample.
  */
-export function sessionTimebase(boards, alignedClocks = new Map()) {
-  if (boards.length && boards.every((board) => alignedClocks.get(board.folder))) {
-    return { kind: "aligned", clocks: new Map(boards.map((board) => [board.folder, alignedClocks.get(board.folder)])), missing: [] };
-  }
-  const missing = alignedClocks.size ? boards.filter((board) => !alignedClocks.get(board.folder)).map((board) => board.folder) : [];
+export function sessionTimebase(boards) {
   const host = boards.map(hostClock);
   if (boards.length && host.every(Boolean)) {
     const start = Math.min(...host.map((clock, i) => clock.h0 + (boards[i].imu.us[0] - clock.us0) * clock.perUs));
     const clocks = boards.map((board, i) => [board.folder, { us0: host[i].us0, t0: (host[i].h0 - start) / 1000, perUs: host[i].perUs / 1000 }]);
-    return { kind: "computer", clocks: new Map(clocks), missing };
+    return { kind: "computer", clocks: new Map(clocks) };
   }
-  return { kind: "board", clocks: new Map(boards.map((board) => [board.folder, { us0: board.imu.us[0], t0: 0, perUs: 1e-6 }])), missing };
+  return { kind: "board", clocks: new Map(boards.map((board) => [board.folder, { us0: board.imu.us[0], t0: 0, perUs: 1e-6 }])) };
 }
 
 /**
@@ -320,6 +287,16 @@ export function zoomView(view, factor, anchor, bounds, minSpan) {
 /** `view` moved later by dt seconds (earlier if negative), within bounds. */
 export function panView(view, dt, bounds) {
   return clampView({ t0: view.t0 + dt, t1: view.t1 + dt }, bounds);
+}
+
+/**
+ * The multiples of `step` from t0 to t1. Rounding can put a session's start a hair after 0 (or its
+ * end a hair before a tick); those ticks still count.
+ */
+export function tickTimes(t0, t1, step) {
+  const ticks = [];
+  for (let k = Math.ceil(t0 / step - 1e-6); k * step <= t1 + step * 1e-6; k++) ticks.push(k * step || 0); // not -0
+  return ticks;
 }
 
 /** A round tick step (1, 2 or 5 × a power of ten) giving about `count` ticks across `span`. */

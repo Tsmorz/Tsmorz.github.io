@@ -3,7 +3,6 @@
 // maths; this file is the DOM and the drawing. See docs/dashboard.md.
 import { fitCanvas, hairline } from "./canvas.js";
 import {
-  alignedClock,
   columnExtents,
   findSessions,
   loadBoard,
@@ -14,6 +13,7 @@ import {
   parseCsv,
   placeBoard,
   sessionTimebase,
+  tickTimes,
   zoomView,
 } from "./replay.js";
 import { meterFraction, pickRange } from "./signal.js";
@@ -22,9 +22,6 @@ const $ = (id) => document.getElementById(id);
 const MIN_SPAN_S = 0.05;
 const PAD_Y = 8;
 const ENVELOPE_FLOOR_DBFS = -80;
-// task align's fit is read from the first and last rows of each aligned/imu_<board>.csv, not the
-// whole file.
-const ALIGNED_PEEK_BYTES = 4096;
 const CSV_FILES = { imu: "imu.csv", events: "events.csv", envelope: "mic_envelope.csv", orientation: "orientation.csv" };
 
 // What a lane can show: series(track) gives [times (s), [values per channel]], or null if the
@@ -35,7 +32,7 @@ const SIGNALS = {
     series: (track) => [track.imuT, track.board.imu.gyro],
   },
   accel: {
-    units: "g", ladder: [2, 4, 8], decimals: 2, names: ["X", "Y", "Z"],
+    units: "g", ladder: [2, 4, 8, 16], decimals: 2, names: ["X", "Y", "Z"],
     series: (track) => [track.imuT, track.board.imu.accel],
   },
   orientation: {
@@ -133,16 +130,7 @@ async function loadSession(session) {
       else boards.push(loadBoard(folder, entries[position(folder)] ?? {}, tables));
     }
 
-    const alignedClocks = new Map();
-    for (const board of boards) {
-      const file = state.files.get(session.aligned[`imu_${board.folder}.csv`]);
-      if (!file) continue;
-      const head = await file.slice(0, ALIGNED_PEEK_BYTES).text();
-      const tail = await file.slice(Math.max(0, file.size - ALIGNED_PEEK_BYTES)).text();
-      const clock = alignedClock(head, tail);
-      if (clock) alignedClocks.set(board.folder, clock);
-    }
-    const timebase = sessionTimebase(boards, alignedClocks);
+    const timebase = sessionTimebase(boards);
     state.tracks = boards.map((board) => placeBoard(board, timebase.clocks.get(board.folder)));
     state.shown = new Set(boards.map((board) => board.folder));
     if (state.tracks.length) {
@@ -155,7 +143,7 @@ async function loadSession(session) {
     state.view = state.bounds;
     const live = boards.some((board) => board.imu.hostMs);
     $("replay-name").textContent = `${session.name} · ${manifest.source === "flash" || !live ? "boards' flash" : "live"}`;
-    renderTimebase(timebase, session, empty);
+    renderTimebase(timebase, empty);
     renderBoards();
     buildLanes();
   } catch (error) {
@@ -163,20 +151,16 @@ async function loadSession(session) {
   }
 }
 
-function renderTimebase(timebase, session, empty) {
-  const aligned = timebase.kind === "aligned";
-  $("replay-aligned").classList.toggle("on", aligned);
-  const leftOut = timebase.missing.length ? `aligned/ leaves out ${timebase.missing.join(", ")} (no clap shared?), so ` : "";
+function renderTimebase(timebase, empty) {
   const text = {
-    aligned: "Lined up on the claps by task align (aligned/): t = 0 at the reference board's first clap.",
-    computer: `${leftOut}${leftOut ? "boards are" : "Boards are"} on the computer's clock, good to tens of ms. For sub-millisecond alignment run task align SESSION=…/${session.name} and open the session again.`,
+    computer: "Boards are on the computer's clock, good to tens of ms.",
     board: "These files share no clock: each board starts at 0 on its own.",
   }[timebase.kind];
   const skipped = empty.length ? ` No IMU samples from ${empty.join(", ")}.` : "";
-  setStatus(text + skipped, { bad: Boolean(empty.length || timebase.missing.length) });
+  setStatus(text + skipped, { bad: Boolean(empty.length) });
 }
 
-// One row per board: what it recorded and anything that would spoil alignment or identification.
+// One row per board: what it recorded and anything that would spoil identification.
 function renderBoards() {
   const body = $("replay-boards");
   body.replaceChildren();
@@ -194,8 +178,6 @@ function renderBoards() {
     [folder, minutes(seconds), samples.toLocaleString(), `${rateHz.toFixed(1)} Hz`, String(lost), String(claps), String(presses)]
       .forEach((text, i) => (cells[i + 1].textContent = text));
     cells[5].classList.toggle("bad-text", lost > 0);
-    cells[6].classList.toggle("bad-text", claps < 2);
-    if (claps < 2) cells[6].title = "Fewer than 2 claps: task align can't correct this board's clock drift";
     const box = row.querySelector("input");
     box.checked = state.shown.has(folder);
     const toggle = () => {
@@ -313,9 +295,7 @@ function planLane({ track, canvas }, signal) {
 function timeTicks(width) {
   const { t0, t1 } = state.view;
   const step = niceStep(t1 - t0, Math.max(2, Math.floor(width / 90)));
-  const ticks = [];
-  for (let k = Math.ceil(t0 / step); k * step <= t1; k++) ticks.push(k * step);
-  return { ticks, step };
+  return { ticks: tickTimes(t0, t1, step), step };
 }
 
 function message(ctx, width, height, text) {

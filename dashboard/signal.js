@@ -44,3 +44,16 @@ export function recentPeak(values, count) {
   for (let i = Math.max(0, values.length - count); i < values.length; i++) peak = Math.max(peak, values[i]);
   return peak;
 }
+
+/** Where a level sits between lowDbfs (0) and highDbfs (1), clamped: a spectrum cell's brightness. */
+export function levelFraction(dbfs, lowDbfs, highDbfs) {
+  if (!(dbfs > lowDbfs)) return 0;
+  return Math.min(1, (dbfs - lowDbfs) / (highDbfs - lowDbfs));
+}
+
+/** Index of the largest of levels[fromIndex..], the first such on a tie; -1 if there are none. */
+export function loudestIndex(levels, fromIndex = 0) {
+  let loudest = -1;
+  for (let i = fromIndex; i < levels.length; i++) if (loudest < 0 || levels[i] > levels[loudest]) loudest = i;
+  return loudest;
+}

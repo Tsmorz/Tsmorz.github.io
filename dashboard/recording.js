@@ -2,6 +2,7 @@
 // functions and classes only, no DOM or Bluetooth, so tests/dashboard/recording.test.mjs can run
 // them in Node. The file formats are documented in docs/data-collection.md; sysid/align.py reads
 // them.
+import { temperatureFromEvent } from "./wire.js";
 
 const WRAP = 2 ** 32;
 
@@ -39,10 +40,22 @@ export const IMU_COLUMNS = [
 ];
 export const ENVELOPE_COLUMNS = ["board_time_us", "host_ms", "window", "peak"];
 export const EVENT_COLUMNS = ["board_time_us", "host_ms", "seq", "type", "peak"];
+export const TEMPERATURE_COLUMNS = ["board_time_us", "host_ms", "temperature_c"];
 
 // The board sends its scales as float32, so 0.07 arrives as 0.0700000003; trim that back.
 const cleanScale = (scale) => Math.round(scale * 1e9) / 1e9;
 const fixed = (value, digits) => value.toFixed(digits);
+
+/**
+ * Decimal places that write every multiple of a (cleaned) scale exactly: 2 for 0.07 dps, 4 for
+ * 0.0175, 6 for 0.004375. Fewer would round away part of a count at the finer ranges.
+ */
+export function scaleDecimals(scale) {
+  const text = String(cleanScale(scale));
+  const exponent = text.match(/e-(\d+)$/);
+  if (exponent) return Number(exponent[1]) + (text.split("e")[0].split(".")[1]?.length ?? 0);
+  return text.split(".")[1]?.length ?? 0;
+}
 
 /** A folder- and file-name-safe version of a label: letters, digits, - and _ only. */
 export function safeName(label) {
@@ -78,10 +91,13 @@ export class BoardRecording {
   constructor(info) {
     this.gyroScale = cleanScale(info.gyroDpsPerLsb);
     this.accelScale = cleanScale(info.accelGPerLsb);
+    this.gyroDecimals = scaleDecimals(this.gyroScale);
+    this.accelDecimals = scaleDecimals(this.accelScale);
     this.windowUs = (1e6 * info.envelopeWindowSamples) / info.micRateHz;
     this.imu = [];
     this.envelope = [];
     this.events = [];
+    this.temperatures = []; // [board_time_us, host_ms, temperature_c]
   }
 
   /** samples: decodeImuBatch() samples with tUs unwrapped; biasDps: the batch's gyro bias. */
@@ -94,9 +110,10 @@ export class BoardRecording {
     peaks.forEach((peak, i) => this.envelope.push([Math.round(tUs + i * this.windowUs), hostMs, firstWindow + i, peak]));
   }
 
-  /** event: decodeEvent() output with tUs unwrapped. */
+  /** event: decodeEvent() output with tUs unwrapped. Temperatures go to their own file. */
   addEvent(event, hostMs) {
-    this.events.push({ ...event, hostMs });
+    if (event.type === "temperature") this.temperatures.push([event.tUs, hostMs, temperatureFromEvent(event.peak)]);
+    else this.events.push({ ...event, hostMs });
   }
 
   get counts() {
@@ -113,14 +130,14 @@ export class BoardRecording {
     return buttonStatesAt(this.imu.map((s) => s.tUs), this.events);
   }
 
-  /** The three CSV files, as text, keyed by file name. */
+  /** The CSV files, as text, keyed by file name: temperature.csv only if the firmware sent it. */
   files() {
     const csv = (columns, rows) => [columns.join(","), ...rows.map((row) => row.join(","))].join("\n") + "\n";
     const buttons = this.buttonStates();
     const imuRows = this.imu.map((s, i) => [
       s.tUs, fixed(s.hostMs, 3), s.seq,
-      ...s.gyroRaw.map((raw) => fixed(raw * this.gyroScale, 2)),
-      ...s.accelRaw.map((raw) => fixed(raw * this.accelScale, 6)),
+      ...s.gyroRaw.map((raw) => fixed(raw * this.gyroScale, this.gyroDecimals)),
+      ...s.accelRaw.map((raw) => fixed(raw * this.accelScale, this.accelDecimals)),
       ...s.biasDps.map((bias) => fixed(bias, 2)),
       ...[s.quat.w, s.quat.x, s.quat.y, s.quat.z].map((c) => fixed(c, 5)),
       s.atRest ? 1 : 0, buttons[i],
@@ -131,6 +148,9 @@ export class BoardRecording {
       "imu.csv": csv(IMU_COLUMNS, imuRows),
       "mic_envelope.csv": csv(ENVELOPE_COLUMNS, envelopeRows),
       "events.csv": csv(EVENT_COLUMNS, eventRows),
+      ...(this.temperatures.length && {
+        "temperature.csv": csv(TEMPERATURE_COLUMNS, this.temperatures.map(([t, hostMs, c]) => [t, fixed(hostMs, 3), fixed(c, 3)])),
+      }),
     };
   }
 }
