@@ -79,6 +79,8 @@
   header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
            padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line-strong); }
   .title { margin-right: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  /* The board itself, in pixel art, as the maker's badge: whole pixels only (xiao.svg). */
+  .logo { display: block; flex: none; }
   h1 { margin: 0; font: 800 19px/1.1 var(--sans); font-stretch: 120%; letter-spacing: -.01em; }
   .subtitle { font: 500 11px/1 var(--mono); color: var(--text-2); padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 2px; }
 
@@ -414,6 +416,7 @@
 <body>
 <header>
   <div class="title">
+    <img class="logo" src="xiao.svg" alt="" width="22" height="27">
     <h1>nRF Controller</h1>
     <div class="subtitle">XIAO nRF54LM20A Sense · data collection</div>
   </div>
