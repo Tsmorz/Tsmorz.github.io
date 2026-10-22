@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#f4f2ec">
 <title>nRF Data Logger</title>
+<link rel="icon" href="xiao.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -466,7 +467,7 @@
       <span class="muted" id="rec-status">Connect a board first.</span>
     </div>
     <ul id="rec-boards"></ul>
-    <p class="hint">Just after Record, and again just before Stop, clap 2–3 times about a second apart, close to all the boards and the same distance from each: their clocks are lined up on those claps (<code>task align</code>). Each board's LED flashes when it hears one.</p>
+    <p class="hint">Just after Record, and again just before Stop, clap 2–3 times about a second apart, close to all the boards and the same distance from each: their clocks are lined up on those claps afterwards. Each board's LED flashes when it hears one.</p>
     <p class="hint" id="flash-hint" hidden>Boards' flash: each board records on its own (LED dim red) and keeps going if you disconnect or carry it off. Upload runs at ~12 KB/s per board, all boards at once: a full 8 MB takes about 11 minutes.</p>
   </section>
   </div>
@@ -517,8 +518,7 @@
 
 <main class="replay" id="replay" hidden>
   <section class="replay-session">
-    <h2>Replay <span class="muted" id="replay-name">no session open</span>
-      <span class="chip" id="replay-aligned" title="Lit when the boards are lined up on their claps by task align (the session's aligned/ folder); otherwise they are on the computer's clock">Aligned</span></h2>
+    <h2>Replay <span class="muted" id="replay-name">no session open</span></h2>
     <div class="row">
       <button id="replay-open-folder">Open session folder…</button>
       <button id="replay-open-files" title="For a session that was downloaded rather than saved to a folder: pick its session__… files">Files…</button>
@@ -529,7 +529,7 @@
     </div>
     <div class="table-scroll">
       <table class="boards replay-boards">
-        <thead><tr><th>Show</th><th>Board</th><th>Length</th><th>Samples</th><th>Rate</th><th title="IMU samples missing from the recording (gaps in seq)">Lost</th><th title="Sync marks: at least 2 per board let task align correct its drift">Claps</th><th>Presses</th></tr></thead>
+        <thead><tr><th>Show</th><th>Board</th><th>Length</th><th>Samples</th><th>Rate</th><th title="IMU samples missing from the recording (gaps in seq)">Lost</th><th title="Sync marks: the claps this board heard">Claps</th><th>Presses</th></tr></thead>
         <tbody id="replay-boards"></tbody>
       </table>
     </div>

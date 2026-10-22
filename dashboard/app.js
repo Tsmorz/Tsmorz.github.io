@@ -99,6 +99,14 @@ window.addEventListener("resize", () => !$("settings-drawer").hidden && setSetti
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !$("fw-dialog").open) setSettingsOpen(false);
 });
+// A press anywhere else closes it too, except on its own key (which toggles it) and in the
+// firmware dialog it opens. The press still does whatever it was for, e.g. picks a board.
+document.addEventListener("pointerdown", (event) => {
+  const drawer = $("settings-drawer");
+  if (drawer.hidden || $("fw-dialog").open) return;
+  if (drawer.contains(event.target) || $("settings").contains(event.target)) return;
+  setSettingsOpen(false);
+});
 
 // ---- draggable seams ----------------------------------------------------------------------
 // In the laptop layout the seams between panels can be dragged, or moved with the arrow keys once
@@ -1126,8 +1134,8 @@ async function stopRecording() {
   const where = recorder.dirHandle ? `${recorder.dirHandle.name}/${session}/` : "your downloads";
   $("rec-status").className = fewClaps.length ? "bad-text" : "muted";
   $("rec-status").textContent = fewClaps.length
-    ? `Saved to ${where}, but ${fewClaps.join(", ")} heard fewer than 2 claps: alignment can't correct clock drift for ${fewClaps.length === 1 ? "it" : "them"}.`
-    : `Saved ${results.length} board${results.length === 1 ? "" : "s"} to ${where}. Line them up with: task align SESSION=<that folder>`;
+    ? `Saved to ${where}, but ${fewClaps.join(", ")} heard fewer than 2 claps: too few to line up ${fewClaps.length === 1 ? "its clock" : "their clocks"} with the others.`
+    : `Saved ${results.length} board${results.length === 1 ? "" : "s"} to ${where}. Open it in Replay to check it.`;
   $("session").value = timestamp();
   renderRecorder();
 }
@@ -1237,7 +1245,7 @@ async function uploadFlash() {
       `Saved ${written.length} session${written.length === 1 ? "" : "s"} (${written.join(", ")}) in ${seconds} s.`,
       failed.length ? `Failed: ${failed.join(", ")}.` : "",
       problems.length ? `Damaged data skipped: ${problems.join("; ")}.` : "",
-      written.length ? "Line them up with: task align SESSION=<folder>" : "",
+      written.length ? "Open it in Replay to check it." : "",
     ].filter(Boolean).join(" ");
   } catch (error) {
     $("rec-status").className = "bad-text";
