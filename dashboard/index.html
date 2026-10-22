@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#f4f2ec">
 <title>nRF Data Logger</title>
+<link rel="icon" href="xiao.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -79,13 +80,15 @@
   header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
            padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line-strong); }
   .title { margin-right: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+  /* The board itself, in pixel art, as the maker's badge: whole pixels only (xiao.svg). */
+  .logo { display: block; flex: none; }
   h1 { margin: 0; font: 800 19px/1.1 var(--sans); font-stretch: 120%; letter-spacing: -.01em; }
   .subtitle { font: 500 11px/1 var(--mono); color: var(--text-2); padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 2px; }
 
   /* Modules: butted together on 1px seams (each draws a 1px ring into the 1px gap, so shared
      edges stay one line and an empty grid cell shows plain chassis), numbered in order. */
   main { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 1px; counter-reset: module;
-         width: calc(100% - 32px); max-width: 1680px; margin: 14px auto; }
+         width: calc(100% - 32px); margin: 14px auto; }
   section { display: flex; flex-direction: column; background: var(--panel); box-shadow: 0 0 0 1px var(--line-strong); padding: 14px; min-width: 0; counter-increment: module; }
   /* The board list and the recorder sit on top; on narrow screens they take the full width. Their
      wrapper only becomes a row of its own on laptop screens (below). */
@@ -414,6 +417,7 @@
 <body>
 <header>
   <div class="title">
+    <img class="logo" src="xiao.svg" alt="" width="22" height="27">
     <h1>nRF Controller</h1>
     <div class="subtitle">XIAO nRF54LM20A Sense · data collection</div>
   </div>
@@ -463,7 +467,7 @@
       <span class="muted" id="rec-status">Connect a board first.</span>
     </div>
     <ul id="rec-boards"></ul>
-    <p class="hint">Just after Record, and again just before Stop, clap 2–3 times about a second apart, close to all the boards and the same distance from each: their clocks are lined up on those claps (<code>task align</code>). Each board's LED flashes when it hears one.</p>
+    <p class="hint">Just after Record, and again just before Stop, clap 2–3 times about a second apart, close to all the boards and the same distance from each: their clocks are lined up on those claps afterwards. Each board's LED flashes when it hears one.</p>
     <p class="hint" id="flash-hint" hidden>Boards' flash: each board records on its own (LED dim red) and keeps going if you disconnect or carry it off. Upload runs at ~12 KB/s per board, all boards at once: a full 8 MB takes about 11 minutes.</p>
   </section>
   </div>
@@ -497,20 +501,24 @@
     <h2>Microphone <span class="muted">peak per ms, dBFS</span>
       <span class="chip" id="mark-lamp" title="Lights when the board hears a clap and records a sync mark">Clap</span></h2>
     <div class="plot-head"><span>Level <span class="muted num" id="mic-level">–</span></span><span class="readout" id="mark-count">No claps yet</span></div>
-    <div class="plot wave">
+    <div class="plot wave" id="envelope-plot">
       <canvas id="envelope" aria-label="Microphone level over the last 4 seconds, with the claps heard marked"></canvas>
       <div class="tooltip" id="envelope-tip" hidden></div>
     </div>
+    <div class="plot-head"><span>Spectrum <span class="muted">kHz</span></span><span class="readout" id="spectrum-peak">–</span></div>
+    <div class="plot wave" id="spectrum-plot">
+      <canvas id="spectrum" aria-label="Microphone spectrum over the last 4 seconds, 0 to 8 kHz from bottom to top, brighter where louder"></canvas>
+      <div class="tooltip" id="spectrum-tip" hidden></div>
+    </div>
     <div class="x-axis"><span>−4 s</span><span>−2 s</span><span>now</span></div>
-    <p class="hint">Orange lines are claps the board heard (sync marks). A sound counts if it starts sharply and peaks above −30 dBFS, well clear of the room's noise: a clap within a few metres does.</p>
+    <p class="hint">Orange lines are claps the board heard (sync marks). A sound counts if it starts sharply and peaks above −30 dBFS, well clear of the room's noise: a clap within a few metres does. In the spectrum, brighter is louder.</p>
   </section>
 
 </main>
 
 <main class="replay" id="replay" hidden>
   <section class="replay-session">
-    <h2>Replay <span class="muted" id="replay-name">no session open</span>
-      <span class="chip" id="replay-aligned" title="Lit when the boards are lined up on their claps by task align (the session's aligned/ folder); otherwise they are on the computer's clock">Aligned</span></h2>
+    <h2>Replay <span class="muted" id="replay-name">no session open</span></h2>
     <div class="row">
       <button id="replay-open-folder">Open session folder…</button>
       <button id="replay-open-files" title="For a session that was downloaded rather than saved to a folder: pick its session__… files">Files…</button>
@@ -521,7 +529,7 @@
     </div>
     <div class="table-scroll">
       <table class="boards replay-boards">
-        <thead><tr><th>Show</th><th>Board</th><th>Length</th><th>Samples</th><th>Rate</th><th title="IMU samples missing from the recording (gaps in seq)">Lost</th><th title="Sync marks: at least 2 per board let task align correct its drift">Claps</th><th>Presses</th></tr></thead>
+        <thead><tr><th>Show</th><th>Board</th><th>Length</th><th>Samples</th><th>Rate</th><th title="IMU samples missing from the recording (gaps in seq)">Lost</th><th title="Sync marks: the claps this board heard">Claps</th><th>Presses</th></tr></thead>
         <tbody id="replay-boards"></tbody>
       </table>
     </div>

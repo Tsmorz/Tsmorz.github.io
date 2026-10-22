@@ -6,7 +6,9 @@ import { headingChangeDegrees, quatToEulerDegrees, removeYaw, rotateVector } fro
 import { decodeFlashLog, flashSessionFiles, groupSessions, lostSamples } from "./flashlog.js";
 import { safeName } from "./recording.js";
 import { initReplay } from "./replay-view.js";
-import { ledDisplayColor, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak } from "./signal.js";
+import {
+  ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
+} from "./signal.js";
 import { DATA_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 
@@ -32,6 +34,7 @@ const CHECKS = [
   ["gyro-y", "Gyro Y responded to rotation"],
   ["gyro-z", "Gyro Z responded to rotation"],
   ["mic", "Microphone envelope arriving"],
+  ["spectrum", "Microphone spectrum arriving"],
   ["sync", "Clap heard (sync mark)"],
   ["button", "USER button press recorded"],
   ["led", "LED command accepted"],
@@ -96,11 +99,20 @@ window.addEventListener("resize", () => !$("settings-drawer").hidden && setSetti
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !$("fw-dialog").open) setSettingsOpen(false);
 });
+// A press anywhere else closes it too, except on its own key (which toggles it) and in the
+// firmware dialog it opens. The press still does whatever it was for, e.g. picks a board.
+document.addEventListener("pointerdown", (event) => {
+  const drawer = $("settings-drawer");
+  if (drawer.hidden || $("fw-dialog").open) return;
+  if (drawer.contains(event.target) || $("settings").contains(event.target)) return;
+  setSettingsOpen(false);
+});
 
 // ---- draggable seams ----------------------------------------------------------------------
 // In the laptop layout the seams between panels can be dragged, or moved with the arrow keys once
 // focused, to resize them; a double-click puts that split back to its default. The sizes are kept
-// as fractions in this browser (layout.js), so they scale with the window.
+// as fractions in this browser (layout.js), so they scale with the window. Most splits are the
+// page grid's tracks; one `within` a module shares that module's height between its plots instead.
 const LAYOUT_KEY = "layout";
 const WIDE_LAYOUT = matchMedia("(min-width: 1200px) and (min-height: 600px)");
 const mainEl = document.querySelector("main");
@@ -108,6 +120,7 @@ const SPLITS = {
   top: { axis: "x", minPx: 320, panels: [".boards-section", ".recording-section"] },
   bottom: { axis: "x", minPx: 240, panels: [".orientation-section", ".motion-section", ".mic-section"] },
   rows: { axis: "y", minPx: 150, panels: [".top-row", ".motion-section"] },
+  mic: { axis: "y", minPx: 64, panels: ["#envelope-plot", "#spectrum-plot"], within: ".mic-section" },
 };
 let savedLayout = {};
 try {
@@ -122,6 +135,11 @@ function saveLayout() {
 
 function applySplit(name) {
   const fractions = savedLayout[name];
+  if (SPLITS[name].within) {
+    // The plots grow from no height (flex-basis 0), so their heights keep these proportions.
+    SPLITS[name].panels.forEach((selector, i) => (document.querySelector(selector).style.flexGrow = fractions?.[i] ?? ""));
+    return;
+  }
   if (fractions) mainEl.style.setProperty(`--${name}-tracks`, gridTracks(fractions));
   else mainEl.style.removeProperty(`--${name}-tracks`);
   mainEl.classList.toggle(`${name}-sized`, Boolean(fractions));
@@ -135,6 +153,10 @@ function placeSeams() {
     const panel = document.querySelector(split.panels[index]).getBoundingClientRect();
     if (split.axis === "x") {
       Object.assign(seam.style, { left: `${panel.right - box.left}px`, top: `${panel.top - box.top}px`, height: `${panel.height}px` });
+    } else if (split.within) {
+      // Just under the upper plot, in the gap above the lower one's heading.
+      const area = document.querySelector(split.within).getBoundingClientRect();
+      Object.assign(seam.style, { left: `${area.left - box.left}px`, top: `${panel.bottom - box.top + 6}px`, width: `${area.width}px` });
     } else {
       Object.assign(seam.style, { left: "0px", top: `${panel.bottom - box.top}px`, width: `${box.width}px` });
     }
@@ -148,7 +170,7 @@ function addSeam(name, split, index) {
   seam.title = "Drag to resize; double-click to reset";
   seam.setAttribute("role", "separator");
   seam.setAttribute("aria-orientation", split.axis === "x" ? "vertical" : "horizontal");
-  seam.setAttribute("aria-label", "Resize panels");
+  seam.setAttribute("aria-label", split.within ? "Resize plots" : "Resize panels");
   mainEl.append(seam);
   seams.push({ seam, split, index });
 
@@ -208,10 +230,11 @@ WIDE_LAYOUT.addEventListener("change", placeSeams);
 // ---- canvas helpers -----------------------------------------------------------------------
 // Tracks the pointer over a plot as a 0..1 fraction of its width (null when outside).
 function trackHover(canvas) {
-  const hover = { fraction: null };
+  const hover = { fraction: null, fractionY: null };
   const update = (event) => {
     const box = canvas.getBoundingClientRect();
     hover.fraction = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
+    hover.fractionY = Math.max(0, Math.min(1, (event.clientY - box.top) / box.height));
   };
   canvas.addEventListener("pointermove", update);
   canvas.addEventListener("pointerdown", update);
@@ -584,6 +607,97 @@ function drawEnvelope() {
     [[Number.isFinite(dbfs) ? `${dbfs.toFixed(1)}` : "–∞", "dBFS peak"]]);
 }
 
+// The board's spectrum frames (64 ms each) on the same 4 s as the level above, so a clap's spike
+// sits over its stripe: 0 Hz at the bottom to 8 kHz at the top, each bin lit in the readout colour
+// by its level. The newest frames lag the level by a frame or two, the time they take to arrive.
+const SPECTRUM_DIM_DBFS = -110;
+const SPECTRUM_BRIGHT_DBFS = -50;
+const spectrumHover = trackHover($("spectrum"));
+// One pixel per frame and bin, stretched over the plot.
+const spectrumImage = document.createElement("canvas");
+
+function paintSpectrumImage(frames) {
+  const bins = frames[0].levels.length;
+  if (spectrumImage.width !== frames.length || spectrumImage.height !== bins) {
+    spectrumImage.width = frames.length;
+    spectrumImage.height = bins;
+  }
+  const image = spectrumImage.getContext("2d");
+  const pixels = image.createImageData(frames.length, bins);
+  frames.forEach(({ levels }, x) => {
+    for (let b = 0; b < bins; b++) {
+      const at = ((bins - 1 - b) * frames.length + x) * 4;
+      pixels.data.fill(255, at, at + 3);
+      pixels.data[at + 3] = Math.round(levelFraction(levels[b], SPECTRUM_DIM_DBFS, SPECTRUM_BRIGHT_DBFS) * 255);
+    }
+  });
+  // Lightness as alpha, then tinted: no need to parse the theme's colour.
+  image.putImageData(pixels, 0, 0);
+  image.globalCompositeOperation = "source-in";
+  image.fillStyle = colors.readout;
+  image.fillRect(0, 0, frames.length, bins);
+  image.globalCompositeOperation = "source-over";
+}
+
+function drawSpectrum() {
+  const canvas = $("spectrum");
+  const { ctx, width, height } = fitCanvas(canvas);
+  const board = selected;
+  const frames = board?.spectrum ?? [];
+  const nyquistHz = (board?.info?.micRateHz ?? 16000) / 2;
+  const toY = (hz) => height - (hz / nyquistHz) * height;
+  const tip = $("spectrum-tip");
+
+  if (frames.length) {
+    paintSpectrumImage(frames);
+    const endUs = board.envelopeEndUs ?? frames.at(-1).tUs + board.spectrumFrameUs;
+    const startUs = endUs - ENVELOPE_SECONDS * 1e6;
+    const toX = (tUs) => Math.round(((tUs - startUs) / (ENVELOPE_SECONDS * 1e6)) * width);
+    ctx.imageSmoothingEnabled = false;
+    frames.forEach(({ tUs }, x) => {
+      const left = toX(tUs);
+      const right = toX(tUs + board.spectrumFrameUs);
+      if (right > left) ctx.drawImage(spectrumImage, x, 0, 1, frames[0].levels.length, left, 0, right - left, height);
+    });
+  }
+
+  ctx.font = `11px ${colors.mono}`;
+  ctx.textBaseline = "middle";
+  for (let i = 1; i < ENVELOPE_SECONDS * 2; i++) {
+    const x = (i / (ENVELOPE_SECONDS * 2)) * width;
+    hairline(ctx, x, 0, x, height, colors.grid);
+  }
+  for (const khz of [2, 4, 6]) {
+    hairline(ctx, 0, toY(khz * 1000), width, toY(khz * 1000), colors.grid);
+    ctx.fillStyle = colors.muted;
+    ctx.fillText(`${khz}k`, 4, toY(khz * 1000) - 7);
+  }
+
+  if (!frames.length || spectrumHover.fraction === null) {
+    tip.hidden = true;
+    return;
+  }
+  const endUs = board.envelopeEndUs ?? frames.at(-1).tUs + board.spectrumFrameUs;
+  const hoverUs = endUs - ENVELOPE_SECONDS * 1e6 * (1 - spectrumHover.fraction);
+  const frame = frames.find(({ tUs }) => hoverUs >= tUs && hoverUs < tUs + board.spectrumFrameUs);
+  if (!frame) {
+    tip.hidden = true;
+    return;
+  }
+  const bins = frame.levels.length;
+  const bin = Math.min(bins - 1, Math.floor((1 - spectrumHover.fractionY) * bins));
+  const x = spectrumHover.fraction * width;
+  const y = spectrumHover.fractionY * height;
+  hairline(ctx, x, 0, x, height, colors.muted);
+  hairline(ctx, 0, y, width, y, colors.muted);
+  const secondsAgo = (endUs - hoverUs) / 1e6;
+  const level = frame.levels[bin];
+  showTooltip(tip, canvas, spectrumHover.fraction, `${secondsAgo.toFixed(2)} s ago`, [
+    [((bin * nyquistHz) / bins / 1000).toFixed(2), "kHz"],
+    [level > -127.5 ? level.toFixed(1) : "floor", "dBFS"],
+  ]);
+}
+
 function renderMic() {
   const board = selected;
   const levelDbfs = board ? peakToDbfs(recentPeak(board.envelope, 100)) : -Infinity;
@@ -591,6 +705,17 @@ function renderMic() {
   const lit = Boolean(board?.lastMarkHostMs && performance.timeOrigin + performance.now() - board.lastMarkHostMs < MARK_LAMP_MS);
   $("mark-lamp").classList.toggle("on", lit);
   $("mark-count").textContent = !board?.markCount ? "No claps yet" : `${board.markCount} clap${board.markCount === 1 ? "" : "s"} heard`;
+  $("spectrum-peak").textContent = spectrumSummary(board);
+}
+
+// The loudest frequency in the newest frame, above the lowest bin (what's left of the DC offset).
+function spectrumSummary(board) {
+  if (board?.connected && !board.hasSpectrum) return "Update this board's firmware to see it";
+  const levels = board?.spectrum.at(-1)?.levels;
+  if (!levels) return "–";
+  const bin = loudestIndex(levels, 1);
+  const khz = (bin * board.info.micRateHz) / (2 * levels.length) / 1000;
+  return `loudest ${khz.toFixed(2)} kHz · ${levels[bin].toFixed(0)} dBFS`;
 }
 
 function drawFrame() {
@@ -603,6 +728,7 @@ function drawFrame() {
   drawTrace(traces.accel, selected?.accel ?? []);
   drawPose();
   drawEnvelope();
+  drawSpectrum();
   renderLive();
   renderAngles();
   renderMic();
@@ -1008,8 +1134,8 @@ async function stopRecording() {
   const where = recorder.dirHandle ? `${recorder.dirHandle.name}/${session}/` : "your downloads";
   $("rec-status").className = fewClaps.length ? "bad-text" : "muted";
   $("rec-status").textContent = fewClaps.length
-    ? `Saved to ${where}, but ${fewClaps.join(", ")} heard fewer than 2 claps: alignment can't correct clock drift for ${fewClaps.length === 1 ? "it" : "them"}.`
-    : `Saved ${results.length} board${results.length === 1 ? "" : "s"} to ${where}. Line them up with: task align SESSION=<that folder>`;
+    ? `Saved to ${where}, but ${fewClaps.join(", ")} heard fewer than 2 claps: too few to line up ${fewClaps.length === 1 ? "its clock" : "their clocks"} with the others.`
+    : `Saved ${results.length} board${results.length === 1 ? "" : "s"} to ${where}. Open it in Replay to check it.`;
   $("session").value = timestamp();
   renderRecorder();
 }
@@ -1119,7 +1245,7 @@ async function uploadFlash() {
       `Saved ${written.length} session${written.length === 1 ? "" : "s"} (${written.join(", ")}) in ${seconds} s.`,
       failed.length ? `Failed: ${failed.join(", ")}.` : "",
       problems.length ? `Damaged data skipped: ${problems.join("; ")}.` : "",
-      written.length ? "Line them up with: task align SESSION=<folder>" : "",
+      written.length ? "Open it in Replay to check it." : "",
     ].filter(Boolean).join(" ");
   } catch (error) {
     $("rec-status").className = "bad-text";
