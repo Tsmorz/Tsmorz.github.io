@@ -18,7 +18,7 @@
   var SPEED = 34, STRIDE = 22, DUTY = 0.62;             // walking: units/s, units per gait cycle, fraction of it a foot is down
   var EXC = DUTY * STRIDE;                              // how far a planted foot travels under the body
   var DELAY = 30000;                                    // ms on the page before it walks in
-  var ARM = 6.5, FORE = 6.6, THIGH = 6, SHIN = 6;       // leg bones
+  var ARM = 6.5, FORE = 6.6, THIGH = 5.8, SHIN = 4.8;     // leg bones
   var TAIL_N = 14, TAIL_LEN = 19;
   var LEGS = ['nh', 'fh', 'nf', 'ff'];                  // near/far, hind/front
   var GAIT = [0, 0.5, 0.75, 0.25];                      // lateral sequence: near hind, near front, far hind, far front
@@ -50,7 +50,7 @@
   }
   var STAND = {
     s: [7.2, 12.8], h: [-8.8, 13.0], ts: 5.0, bs: 4.9, th: 4.7, bh: 3.7, hd: [6.4, 5.4], ha: 0,
-    nf: [8.8, 1.05], ff: [6.2, 1.05], nh: [-7.0, 1.05], fh: [-9.6, 1.05], hk: [-1.2, 5.2],
+    nf: [8.8, 1.05], ff: [6.2, 1.05], nh: [-7.0, 1.05], fh: [-9.6, 1.05], hk: [-1.4, 3.4],
     ta: 112, tc: 6, tt: -130, tw: 7, tb: 2.2, pf: 0, eye: 1, mouth: 0, tongue: 0, ear: 0, happy: 0
   };
   var SNIFF = pose(STAND, { hd: [7.4, 0.4], ha: -32, ta: 95, tt: -40 });
@@ -66,7 +66,7 @@
     ta: 212, tc: -24, tt: -55, tw: 3
   });
   // Curled up asleep is drawn by hand, as the old sprites were: letters are pixels (o fur, s stripe, d shaded fur,
-  // w cream, k shaded cream, e eye, p nose, E the eye the engine opens or shuts). Facing left; column 11 sits on the cat's
+  // w cream, k shaded cream, e eye, p nose, E the eye the engine opens or shuts, a dark orange line while shut). Facing left; column 11 sits on the cat's
   // origin and the last row on the ground. The rig hands over to these when it lies down.
   var SPR_O = 11;
   var CURL1 = [
@@ -190,7 +190,7 @@
   var BROW = new Path2D('M-3.6 4.4L-3 2.6M-1.8 5.1L-1.4 3.6');   // forehead stripes, kept back from the eye
   var HEART = ['.#.#.', '#####', '#####', '.###.', '..#..'];   // floats up after a slow blink
   var FAN = [0, 7, -6, 4, -9, 10];                              // where each heart of a run of clicks rises, in px
-  var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'ink', g: 'eye', p: 'pink' };
+  var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'stripe', g: 'eye', p: 'pink' };
 
   function line(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); }
   function len(pts) { var l = 0; for (var i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; }
@@ -235,12 +235,20 @@
       var j = ik(hj, add(foot, hk), THIGH, SHIN, 1), hock = j[1], toe = add(hock, hk, -1);
       var tv = [j[0][0] - hj[0], j[0][1] - hj[1]], pts = [j[0], hock, toe];
       oval(c, fur, add(hj, tv, 0.36), THIGH / 2 + 3.2, 5.3, deg(tv));    // the haunch
+      // thigh and calf as one muscle, from the seat bone behind the hip down to the hock, so the leg hangs from the
+      // hip and the back of the leg carries on from the rump
+      var seat = add(add(hj, u, -4.4), n, 0.4), heel = add(hock, u, -0.5);
+      c.beginPath(); c.moveTo(hj[0] + n[0] * 2, hj[1] + n[1] * 2); c.lineTo(seat[0], seat[1]);
+      var cp = add(mid(seat, heel), u, -1.6);
+      c.quadraticCurveTo(cp[0], cp[1], heel[0], heel[1]);
+      c.lineTo(hock[0], hock[1]); c.lineTo(j[0][0], j[0][1]); c.closePath(); c.fillStyle = fur; c.fill();
       line(c, [j[0], hock]); stroke(c, fur, 3.6);
       line(c, [hock, toe]); stroke(c, fur, 3.0);
       if (near) {
         bands(c, pts, C.stripe, 3.0, [0, 0.3, 0.14, 0.14, 0.14, 2]);
-        var a = add(hj, tv, 0.15), b = add(hj, tv, 0.75), nn = [-tv[1] / THIGH, tv[0] / THIGH];
-        line(c, [add(a, nn, 3.2), add(mid(a, b), nn, 1.2), add(b, nn, 1.8)]); stroke(c, C.stripe, 1.6);
+        // the front of the thigh, shaded from the hip down to the knee, so the leg reads as hanging from the hip
+        var nn = [-tv[1] / THIGH, tv[0] / THIGH];
+        line(c, [add(add(hj, u, 2.6), n, 2.2), add(add(hj, tv, 0.55), nn, -2.6), add(j[0], [0.4, -0.6])]); stroke(c, C.far, 1.5);
       }
       oval(c, cream, add(toe, [0.5 - 1.4 * e, 0.1]), 2.2, 1.3, 18 * e);
     }
@@ -268,7 +276,7 @@
 
     // body: chest, back, rump and belly as one closed curve around the spine. It is a well-fed cat with a straight
     // back and a slim chest; its weight is in the pouch, a belly that swings low just in front of the hind legs
-    var ts = p.ts + 0.3, th = p.th + 0.3, bs = p.bs + 0.2, bh = p.bh + 1.4, pouch = 4.8;
+    var ts = p.ts + 0.3, th = p.th + 0.3, bs = p.bs + 0.2, bh = p.bh + 0.4, pouch = 5.8;
     var F = add(add(sh, u, 5.2), n, 0.2), Ts = add(sh, n, ts), Th = add(hp, n, th);
     var Rr = add(add(hp, u, -5.8), n, 0.6), Bh = add(hp, n, -bh), Bs = add(sh, n, -bs);
     var body = new Path2D('M' + pt(F) + 'C' + pt(add(F, n, 3.2)) + ' ' + pt(add(Ts, u, 2.8)) + ' ' + pt(Ts) +
@@ -306,9 +314,9 @@
     oval(c, C.cream, [5.2, -0.6], 2.1, 1.8);
     c.strokeStyle = C.stripe; c.lineWidth = 1.5; c.lineCap = 'round'; c.stroke(BROW);
     c.restore();
-    if (p.mouth > 0.05) {                              // the yawn: the jaw swings down on its hinge
-      var jawA = -30 * p.mouth, lip = add([0.6, -1.2], rot([5.5, 0.3], jawA));
-      line(c, [[0.6, -1.2], [6.4, -0.8], lip]); c.fillStyle = C.ink; c.fill();
+    if (p.mouth > 0.05) {                              // the yawn: the jaw swings down on its hinge, pink inside (not ink,
+      var jawA = -30 * p.mouth, lip = add([0.6, -1.2], rot([5.5, 0.3], jawA));   // which pixelates to dark lips)
+      line(c, [[0.6, -1.2], [6.4, -0.8], lip]); c.fillStyle = C.pink; c.fill();
     }
     c.save(); c.translate(0.6, -1.2); c.rotate(-30 * p.mouth * Math.PI / 180); c.translate(-0.6, 1.2);
     if (p.mouth > 0.3) oval(c, C.pink, [3.8, -1.1], 2, 0.9);
@@ -505,7 +513,7 @@
         var bb = pixelate(fc, c, ax - SPAN, 2 * SPAN, h, pal);
         box = bb && [bb[0] * PX, (bb[1] + 1) * PX, (h - bb[2]) * PX];
         // the face is placed by hand, pixel by pixel, where the rig's head says it is: an eye (a dark pupil with the
-        // greenish-yellow iris behind it, a line shut, or a ^ when happy) and a pink nose; looking at you, both eyes
+        // greenish-yellow iris behind it, a dark orange line shut, or a ^ when happy) and a pink nose; looking at you, both eyes
         // and the nose come round to the front
         var at = function (q) { var l = headPt(p, q); return [Math.floor(ax + f * K * l[0]), Math.floor(h - K * l[1])]; };
         var ep = at([1.5, 1.6]), no = at([6.2, 0.9]), eyes = [ep];
@@ -516,7 +524,7 @@
           if (p.happy) { c.fillRect(ep[0] - 1, ep[1], 1, 1); c.fillRect(ep[0], ep[1] - 1, 1, 1); c.fillRect(ep[0] + 1, ep[1], 1, 1); }
           else if (eye > 0.6) { c.fillRect(ep[0], ep[1] - 1, 1, 2); c.fillStyle = C.eye; c.fillRect(ep[0] - dir, ep[1] - 1, 1, 2); }
           else if (eye > 0.3) { c.fillRect(ep[0], ep[1], 1, 1); c.fillStyle = C.eye; c.fillRect(ep[0] - dir, ep[1], 1, 1); }
-          else c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1);
+          else { c.fillStyle = C.stripe; c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1); }   // shut: a dark orange line
         });
         if (Math.abs(f) > 0.5) { c.fillStyle = C.pink; c.fillRect(no[0], no[1], 1, 1); }
         hx = ax + f * K * hc[0]; hy = h - K * hc[1];
