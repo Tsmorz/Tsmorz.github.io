@@ -88,7 +88,8 @@ pixel). On its way in, a click stops it to look round at you (`lookAct`) and str
 chain) posed by a timeline of acts; each frame is drawn 4x fine on an offscreen canvas and every art pixel takes the
 majority palette color of its block, so it stays crisp. Eye (a dark pupil with a greenish-yellow `--eye` iris behind it) and nose are stamped as exact pixels, and the forehead stripes stay clear of the eye so they never read as a second one; curling up and sleeping
 are hand-drawn letter-grid sprites (`CURL1`, `CURL2`, `SLEEP_IN`, `SLEEP_OUT`). It draws at 15 fps and its clock only runs
-while the footer is on screen; reduced motion shows it asleep. Coat colors are CSS variables on `.cat-lane` in main.css. A page can give it a hat: `cat_hat: baker` in its front matter puts `data-cat-hat` on `<body>` and cat.js
+while the footer is on screen; reduced motion shows it asleep. It carries on across pages: the clock and the wait so far are
+kept in `localStorage` (`footer-cat`) on `pagehide`, for 30 minutes, and the next page jumps the timeline to that clock. Coat colors are CSS variables on `.cat-lane` in main.css. A page can give it a hat: `cat_hat: baker` in its front matter puts `data-cat-hat` on `<body>` and cat.js
 stamps that glyph from `HATS` on its head, rig and sleeping sprite alike (/recipes/ wears a baker's toque; `--hat`, `--hat-shade`, `--hat-edge`).
 
 ### Recipes (`/recipes/`)

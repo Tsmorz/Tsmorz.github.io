@@ -587,6 +587,21 @@
   var footer = document.querySelector('.site-footer');
   if (!footer || !window.IntersectionObserver || !window.requestAnimationFrame) return;
 
+  // It carries on from page to page. Its acts follow one another on its own clock, so the clock (and how long it has
+  // waited to come in) is all the next page needs to show it where it was: mid-walk, washing, or asleep. Kept for
+  // KEEP ms after the last page, so a visit tomorrow starts over with the walk in.
+  var KEY = 'footer-cat', KEEP = 30 * 60 * 1000, opened = Date.now(), kept = { wait: 0, T: 0 };
+  try {
+    var s = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (s && Date.now() - s.at < KEEP && s.wait >= 0 && s.T >= 0) kept = { wait: s.wait, T: s.T };
+  } catch (e) {}
+  function keep() {
+    var wait = kept.T > 0 ? DELAY : kept.wait + Date.now() - opened;
+    try { localStorage.setItem(KEY, JSON.stringify({ at: Date.now(), wait: wait, T: kept.T })); } catch (e) {}
+  }
+  window.addEventListener('pagehide', keep);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) keep(); });
+
   setTimeout(function () {
     var lane = document.createElement('div');
     lane.className = 'cat-lane';
@@ -633,13 +648,14 @@
     window.addEventListener('resize', fit);
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { cat.settleAsleep(); place(); return; }
 
-    // the clock runs only while the lane is on screen; the walk in waits until all of it is
-    var T = 0, last = null, shown = -1, seen = false, visible = false, raf = 0;
+    // the clock runs only while the lane is on screen; the walk in waits until all of it is (once it has begun, on an
+    // earlier page, any of it will do)
+    var T = kept.T, last = null, shown = -1, seen = T > 0, visible = false, raf = 0;
     function tick(now) {
       raf = 0;
       if (!visible) { last = null; return; }
       var dt = last === null ? 0 : Math.min(0.1, (now - last) / 1000);
-      T += dt; last = now;
+      T += dt; last = now; kept.T = T;
       stroked *= Math.exp(-dt / 0.5);
       flips = flips.filter(function (t) { return now - t < 1500; });
       cat.pet(flips.length >= 2 ? Math.min(1, stroked) : 0);
@@ -653,5 +669,5 @@
       visible = seen && r > 0;
       if (visible && !raf) raf = requestAnimationFrame(tick);
     }, { threshold: [0, 1] }).observe(lane);
-  }, DELAY);
+  }, Math.max(0, DELAY - kept.wait));
 })();
