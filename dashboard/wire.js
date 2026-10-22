@@ -13,6 +13,7 @@ export const TELEMETRY_MOUSE = "6f524c01-0004-4a3c-9d21-1122334455aa";
 export const TELEMETRY_LATENCY = "6f524c01-0005-4a3c-9d21-1122334455aa";
 export const TELEMETRY_BATTERY = "6f524c01-0006-4a3c-9d21-1122334455aa";
 export const TELEMETRY_POWER = "6f524c01-0007-4a3c-9d21-1122334455aa";
+export const TELEMETRY_IMU_RANGES = "6f524c01-0008-4a3c-9d21-1122334455aa";
 export const DATA_SERVICE = "6f524c03-0001-4a3c-9d21-1122334455aa";
 export const DATA_IMU = "6f524c03-0002-4a3c-9d21-1122334455aa";
 export const DATA_ENVELOPE = "6f524c03-0003-4a3c-9d21-1122334455aa";
@@ -47,7 +48,12 @@ const BOARD_INFO_BYTES = 20;
 const Q14 = 16384;
 
 // enum sysid_event_type in sysid_wire.h.
-export const EVENT_TYPES = { 1: "sync", 2: "press", 3: "release" };
+export const EVENT_TYPES = { 1: "sync", 2: "press", 3: "release", 4: "temperature" };
+
+/** A temperature event's value in degrees C: the IMU's raw OUT_TEMP count, signed, 256 per degree from 25. */
+export function temperatureFromEvent(peak) {
+  return 25 + ((peak << 16) >> 16) / 256;
+}
 
 /**
  * Decodes one IMU batch: consecutive samples, raw counts as sent (scale them with the board
@@ -148,6 +154,29 @@ export function encodeLedColor({ red, green, blue }) {
 export function decodeLedColor(view) {
   if (view.byteLength !== 4 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
   return { red: view.getUint8(1), green: view.getUint8(2), blue: view.getUint8(3) };
+}
+
+// The IMU's full-scale ranges (struct dashboard_imu_ranges, imu_format.h): degrees/sec and g.
+export const GYRO_RANGES_DPS = [125, 250, 500, 1000, 2000];
+export const ACCEL_RANGES_G = [2, 4, 8, 16];
+const IMU_RANGES_BYTES = 4;
+
+/** Encodes the ranges the firmware's dashboard_decode_imu_ranges() expects; null for one it lacks. */
+export function encodeImuRanges({ gyroDps, accelG }) {
+  if (!GYRO_RANGES_DPS.includes(gyroDps) || !ACCEL_RANGES_G.includes(accelG)) return null;
+  const bytes = new Uint8Array(IMU_RANGES_BYTES);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, PROTOCOL_VERSION);
+  view.setUint16(1, gyroDps, true);
+  view.setUint8(3, accelG);
+  return bytes;
+}
+
+/** Decodes the ranges the board reads back, or null if they are not that. */
+export function decodeImuRanges(view) {
+  if (view.byteLength !== IMU_RANGES_BYTES || view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  const ranges = { gyroDps: view.getUint16(1, true), accelG: view.getUint8(3) };
+  return GYRO_RANGES_DPS.includes(ranges.gyroDps) && ACCEL_RANGES_G.includes(ranges.accelG) ? ranges : null;
 }
 
 /** Encodes the mouse settings the firmware's dashboard_decode_mouse_settings() expects. */

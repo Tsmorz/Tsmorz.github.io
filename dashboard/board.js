@@ -5,7 +5,8 @@
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
   DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
-  TELEMETRY_BATTERY, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_SERVICE, crc32,
+  TELEMETRY_BATTERY, TELEMETRY_IMU_RANGES, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER,
+  TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
   decodeEvent, decodeImuBatch, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch,
   encodeLatencyReset, encodeLedColor, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
@@ -50,6 +51,8 @@ export class Board extends EventTarget {
     this.download = null;
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
     this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
+    this.imuRanges = null; // { gyroDps, accelG }, if this firmware lets them be chosen
+    this.temperatureC = null; // the IMU's, if this firmware reports it
     this.seen = new Set();
     // Removed again on disconnect: a reconnect makes a new Board for the same device.
     this.handleGattDisconnect = () => this.onDisconnected();
@@ -149,6 +152,7 @@ export class Board extends EventTarget {
     this.chars.latency = await subscribe(control, TELEMETRY_LATENCY, (view) => this.onLatency(view));
     this.onLatency(await this.chars.latency.readValue());
     await this.connectPower(control, subscribe);
+    await this.connectImuRanges(control);
 
     await this.connectLog(server, subscribe);
     await this.connectSmp(server);
@@ -243,6 +247,36 @@ export class Board extends EventTarget {
       return;
     }
     this.onBattery(await this.chars.battery.readValue());
+  }
+
+  // Firmware from before the ranges could be chosen runs at +/-2000 dps and +/-8 g, fixed.
+  async connectImuRanges(control) {
+    try {
+      this.chars.imuRanges = await control.getCharacteristic(TELEMETRY_IMU_RANGES);
+    } catch {
+      return;
+    }
+    this.imuRanges = decodeImuRanges(await this.chars.imuRanges.readValue());
+  }
+
+  /**
+   * Sets the IMU's full-scale ranges (saved on the board), then reads them back with the board
+   * info, whose scales every IMU count is multiplied by from then on. The board refuses while it
+   * records to flash or uploads; the caller keeps them unchanged during a live recording.
+   */
+  async setImuRanges(ranges) {
+    const bytes = encodeImuRanges(ranges);
+    if (!bytes || !this.chars.imuRanges) throw new Error("this board's firmware can't change its ranges");
+    await this.write(this.chars.imuRanges, bytes);
+    // The IMU switches between samples, a moment after the write is acknowledged.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      this.imuRanges = decodeImuRanges(await this.queue(() => this.chars.imuRanges.readValue()));
+      if (this.imuRanges?.gyroDps === ranges.gyroDps && this.imuRanges?.accelG === ranges.accelG) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await this.refreshInfo();
+    this.changed();
+    return this.imuRanges;
   }
 
   onBattery(view) {
@@ -367,7 +401,9 @@ export class Board extends EventTarget {
     const unwrapped = { ...event, tUs: this.unwrap.unwrap(event.tUs) };
     this.recording?.addEvent(unwrapped, hostMs);
 
-    if (event.type === "sync") {
+    if (event.type === "temperature") {
+      this.temperatureC = temperatureFromEvent(event.peak);
+    } else if (event.type === "sync") {
       this.marks.push(unwrapped);
       if (this.marks.length > 50) this.marks.shift();
       this.markCount++;

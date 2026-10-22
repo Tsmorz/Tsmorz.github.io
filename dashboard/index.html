@@ -483,7 +483,7 @@
   </section>
 
   <section class="motion-section">
-    <h2>Motion <span class="muted">gyro bias removed</span></h2>
+    <h2>Motion <span class="muted">gyro bias removed<span class="num" id="imu-temp" title="The IMU's own temperature sensor, read about once a second and recorded to temperature.csv: the gyro's bias drifts with it"></span></span></h2>
     <div class="plot-head"><span>Angular rate <span class="muted">°/s · <span id="gyro-range">±250</span></span></span><span class="live" id="gyro-live"></span></div>
     <div class="plot trace">
       <canvas id="gyro-trace" aria-label="Gyro X, Y and Z over the last 4 seconds"></canvas>
@@ -563,6 +563,14 @@
         <span class="num" id="mouse-speed-value">100%</span></label>
     </div>
     <p class="hint" id="mouse-status">Switch the mouse off on boards you are only recording, so they don't move your cursor.</p>
+  </section>
+  <section>
+    <h2>IMU ranges <span class="muted">saved on the board</span></h2>
+    <div class="row">
+      <label>Gyro <select id="gyro-range" disabled></select></label>
+      <label>Accel <select id="accel-range" disabled></select></label>
+    </div>
+    <p class="hint" id="imu-ranges-status">A narrower range resolves smaller motions but clips faster ones.</p>
   </section>
   <section>
     <h2>Lights</h2>

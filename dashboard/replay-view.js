@@ -32,7 +32,7 @@ const SIGNALS = {
     series: (track) => [track.imuT, track.board.imu.gyro],
   },
   accel: {
-    units: "g", ladder: [2, 4, 8], decimals: 2, names: ["X", "Y", "Z"],
+    units: "g", ladder: [2, 4, 8, 16], decimals: 2, names: ["X", "Y", "Z"],
     series: (track) => [track.imuT, track.board.imu.accel],
   },
   orientation: {

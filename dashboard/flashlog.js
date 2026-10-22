@@ -1,12 +1,13 @@
 // Reading a board's on-board recording (src/log_format.h) back into recordings, and turning one
 // into CSV files. Pure functions only, no DOM or Bluetooth, so tests/dashboard/flashlog.test.mjs
 // can run them in Node. Everything is little-endian.
-import { buttonStatesAt } from "./recording.js";
+import { buttonStatesAt, scaleDecimals } from "./recording.js";
+import { temperatureFromEvent } from "./wire.js";
 
 const REC = { PAD: 0x00, IMU: 0x01, TIME: 0x02, ORIENT: 0x03, EVENT: 0x04, END: 0x05, START: 0xa5, ERASED: 0xff };
 const SIZE = { [REC.IMU]: 15, [REC.TIME]: 13, [REC.ORIENT]: 16, [REC.EVENT]: 16, [REC.END]: 18, [REC.START]: 39 };
 const SESSION_MAGIC = 0x4c535953; // "SYSL"
-const EVENT_NAMES = { 1: "sync", 2: "press", 3: "release" };
+const EVENT_NAMES = { 1: "sync", 2: "press", 3: "release", 4: "temperature" };
 const Q14 = 16384;
 
 const u64 = (view, offset) => Number(view.getBigUint64(offset, true));
@@ -79,7 +80,7 @@ export function decodeFlashLog(bytes) {
     switch (type) {
       case REC.START:
         close();
-        session = { start: decodeStart(view, at), imu: [], orient: [], events: [], end: null };
+        session = { start: decodeStart(view, at), imu: [], orient: [], events: [], temperatures: [], end: null };
         lastImu = null;
         break;
       case REC.TIME:
@@ -106,14 +107,17 @@ export function decodeFlashLog(bytes) {
         }
         break;
       }
-      case REC.EVENT:
-        session.events.push({
+      case REC.EVENT: {
+        const event = {
           type: EVENT_NAMES[view.getUint8(at + 1)] ?? "unknown",
           seq: view.getUint32(at + 2, true),
           tUs: u64(view, at + 6),
           peak: view.getUint16(at + 14, true),
-        });
+        };
+        if (event.type === "temperature") session.temperatures.push({ tUs: event.tUs, celsius: temperatureFromEvent(event.peak) });
+        else session.events.push(event);
         break;
+      }
       case REC.END:
         session.end = { endUs: u64(view, at + 1), imuSamples: view.getUint32(at + 9, true), droppedBytes: view.getUint32(at + 13, true) };
         close();
@@ -143,20 +147,26 @@ export const FLASH_ORIENT_COLUMNS = [
   "board_time_us", "seq", "quat_w", "quat_x", "quat_y", "quat_z", "gyro_bias_x_dps", "gyro_bias_y_dps", "gyro_bias_z_dps", "at_rest",
 ];
 export const FLASH_EVENT_COLUMNS = ["board_time_us", "seq", "type", "peak"];
+export const FLASH_TEMPERATURE_COLUMNS = ["board_time_us", "temperature_c"];
 
-/** imu.csv, orientation.csv and events.csv for one recording, keyed by file name. */
+/** imu.csv, orientation.csv, events.csv and (if recorded) temperature.csv for one recording. */
 export function flashSessionFiles(session) {
   const gyro = cleanScale(session.start.gyroDpsPerLsb);
   const accel = cleanScale(session.start.accelGPerLsb);
+  const gyroDecimals = scaleDecimals(gyro);
+  const accelDecimals = scaleDecimals(accel);
   const buttons = buttonStatesAt(session.imu.map((s) => s.tUs), session.events);
   return {
     "imu.csv": csv(FLASH_IMU_COLUMNS, session.imu.map((s, i) => [
-      s.tUs, s.seq, ...s.gyroRaw.map((raw) => (raw * gyro).toFixed(2)), ...s.accelRaw.map((raw) => (raw * accel).toFixed(6)), buttons[i],
+      s.tUs, s.seq, ...s.gyroRaw.map((raw) => (raw * gyro).toFixed(gyroDecimals)), ...s.accelRaw.map((raw) => (raw * accel).toFixed(accelDecimals)), buttons[i],
     ])),
     "orientation.csv": csv(FLASH_ORIENT_COLUMNS, session.orient.map((o) => [
       o.tUs, o.seq, ...[o.quat.w, o.quat.x, o.quat.y, o.quat.z].map((c) => c.toFixed(5)), ...o.biasDps.map((b) => b.toFixed(2)), o.atRest ? 1 : 0,
     ])),
     "events.csv": csv(FLASH_EVENT_COLUMNS, session.events.map((e) => [e.tUs, e.seq, e.type, e.peak])),
+    ...(session.temperatures?.length && {
+      "temperature.csv": csv(FLASH_TEMPERATURE_COLUMNS, session.temperatures.map((t) => [t.tUs, t.celsius.toFixed(3)])),
+    }),
   };
 }
 

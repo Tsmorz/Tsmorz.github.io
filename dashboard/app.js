@@ -9,7 +9,7 @@ import { initReplay } from "./replay-view.js";
 import {
   ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
 } from "./signal.js";
-import { DATA_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
+import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 
 const $ = (id) => document.getElementById(id);
@@ -456,7 +456,7 @@ function makeTrace(name, ladder, decimals) {
 }
 const traces = {
   gyro: makeTrace("gyro", [250, 500, 1000, 2000], 1),
-  accel: makeTrace("accel", [2, 4, 8], 2),
+  accel: makeTrace("accel", [2, 4, 8, 16], 2),
 };
 
 function drawTrace(trace, samples) {
@@ -517,6 +517,8 @@ function drawTrace(trace, samples) {
 }
 
 function renderLive() {
+  const temperature = selected?.temperatureC;
+  $("imu-temp").textContent = Number.isFinite(temperature) ? ` · IMU ${temperature.toFixed(1)} °C` : "";
   const g = selected?.gyro.at(-1);
   const a = selected?.accel.at(-1);
   setLive($("gyro-live"), g ?? [NaN, NaN, NaN], 1);
@@ -871,6 +873,7 @@ function renderBoards() {
   $("settings-board").textContent = selected ? `· ${selected.displayName}` : "";
   renderRecorder();
   renderFirmware();
+  renderImuRanges();
 }
 setInterval(renderBoards, 250);
 
@@ -1369,6 +1372,58 @@ function renderMouse() {
     ? "Turn the board to move the cursor; USER is the left button. Pair it as a mouse to use it."
     : "This board sends no mouse reports. Its data still streams and records.";
 }
+
+// ---- IMU ranges ---------------------------------------------------------------------------
+// The selected board's full-scale ranges. Fixed while it records (live or to flash) or uploads,
+// since a recording's scale is set when it starts.
+$("gyro-range").replaceChildren(...GYRO_RANGES_DPS.map((dps) => new Option(`±${dps} °/s`, String(dps))));
+$("accel-range").replaceChildren(...ACCEL_RANGES_G.map((g) => new Option(`±${g} g`, String(g))));
+let imuRangesBusy = false;
+
+function imuRangesBlocker(board) {
+  if (!board?.connected) return "Connect a board to choose its ranges.";
+  if (!board.imuRanges) return "This board's firmware runs at ±2000 °/s and ±8 g: update it to choose.";
+  if (["recording", "reading", "erasing"].includes(board.log?.state)) return "Fixed while this board records to flash or uploads.";
+  if (recorder.active && recorder.members.includes(board)) return "Fixed while this board is recording.";
+  return null;
+}
+
+function renderImuRanges() {
+  const board = selected;
+  const blocker = imuRangesBlocker(board);
+  for (const id of ["gyro-range", "accel-range"]) $(id).disabled = Boolean(blocker) || imuRangesBusy;
+  const ranges = board?.imuRanges;
+  if (ranges && !imuRangesBusy && ![$("gyro-range"), $("accel-range")].includes(document.activeElement)) {
+    $("gyro-range").value = String(ranges.gyroDps);
+    $("accel-range").value = String(ranges.accelG);
+  }
+  if (imuRangesBusy) return;
+  const info = board?.info;
+  $("imu-ranges-status").textContent = blocker ?? (info
+    ? `One count is ${+(info.gyroDpsPerLsb).toPrecision(3)} °/s and ${+(info.accelGPerLsb * 1000).toPrecision(3)} mg; faster or harder motion clips.`
+    : "A narrower range resolves smaller motions but clips faster ones.");
+}
+
+async function sendImuRanges() {
+  const board = selected;
+  if (imuRangesBlocker(board)) return;
+  // Read before anything redraws the section, which would put the board's current ranges back.
+  const ranges = { gyroDps: Number($("gyro-range").value), accelG: Number($("accel-range").value) };
+  imuRangesBusy = true;
+  $("imu-ranges-status").textContent = "Setting…";
+  renderImuRanges();
+  try {
+    await board.setImuRanges(ranges);
+    imuRangesBusy = false;
+  } catch (error) {
+    imuRangesBusy = false;
+    renderImuRanges();
+    $("imu-ranges-status").textContent = `Couldn't change the ranges: ${error.message}`;
+    return;
+  }
+  renderImuRanges();
+}
+for (const id of ["gyro-range", "accel-range"]) $(id).addEventListener("change", sendImuRanges);
 
 async function sendMouseSettings({ enabled = selected?.mouse?.enabled } = {}) {
   if (!selected?.connected || enabled === undefined) return;
