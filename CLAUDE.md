@@ -45,6 +45,7 @@ _includes/               project-card, learning-path, lab: take params, not glob
 assets/css/main.css      hand-written, token-based, no build step
 assets/css/journal.css   the Journal: /recipes/'s own look, loaded after main.css on pages with `style: journal`
 assets/js/site.js        theme toggle, tag filter, nav menus, hero symbols
+assets/js/cat.js         the footer cat: a pixel-art orange tabby that lives on the footer line (see below)
 assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab and swingup.js (load first)
 assets/js/swingup.js     /controls/swingup/: double cart-pole + goal-conditioned TQC policy in vanilla JS
 assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax + Bu, design a discrete LQR; FitCore has no DOM
@@ -77,6 +78,21 @@ plant it was trained on, so **`swingup.js` hard-codes no physical constants**: e
 The dynamics are a line-for-line port of `n_cartpole/env/dynamics.py`. The page opens with the network on (button "AI") and Random targets cycling, so the ~2 MB weights download on load; Manual
 is a click away. `script/test-swingup` guards the port (JS vs torch actions, JS vs Python trajectory,
 closed-loop runs of every transition); if it fails after a re-export, the port has drifted.
+
+### The footer cat (`assets/js/cat.js`)
+
+30 s after load an orange tabby walks in along the footer line, washes, yawns and curls up above the copyright
+with its tail wrapped round its front, and stays there asleep for good (the last act is `sleepAct(Infinity)`). Hover gives
+content `^` eyes, a click a slow blink and a heart, and stroking (the pointer back and forth over it) kneading paws (`KNEAD`).
+It purrs only after a click, for `PURR` seconds: the canvas buzzes by one screen pixel (a CSS transform, finer than an art
+pixel). On its way in, a click stops it to look round at you (`lookAct`) and stroking sits it down to knead (`petAct`); both
+`interrupt` the timeline, and a walk then carries on to where it was going. The sprite acts are `busy` and ignore it. The hit box follows the drawn pixels. It is pixel art (2 px per art pixel, a 48 px lane) drawn from a **rig** (body, head, two-bone IK legs, a tail
+chain) posed by a timeline of acts; each frame is drawn 4x fine on an offscreen canvas and every art pixel takes the
+majority palette color of its block, so it stays crisp. Eye (a dark pupil with a greenish-yellow `--eye` iris behind it) and nose are stamped as exact pixels, and the forehead stripes stay clear of the eye so they never read as a second one; curling up and sleeping
+are hand-drawn letter-grid sprites (`CURL1`, `CURL2`, `SLEEP_IN`, `SLEEP_OUT`). It draws at 15 fps and its clock only runs
+while the footer is on screen; reduced motion shows it asleep. It carries on across pages: the clock and the wait so far are
+kept in `localStorage` (`footer-cat`) on `pagehide`, for 30 minutes, and the next page jumps the timeline to that clock. Coat colors are CSS variables on `.cat-lane` in main.css. A page can give it a hat: `cat_hat: baker` in its front matter puts `data-cat-hat` on `<body>` and cat.js
+stamps that glyph from `HATS` on its head, rig and sleeping sprite alike (/recipes/ wears a baker's toque; `--hat`, `--hat-shade`, `--hat-edge`).
 
 ### Recipes (`/recipes/`)
 

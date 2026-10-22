@@ -26,7 +26,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body{% if page.cat_hat %} data-cat-hat="{{ page.cat_hat }}"{% endif %}>
     <a class="skip-link" href="#main">Skip to content</a>
 
     <header class="site-header">
@@ -85,5 +85,6 @@
     </footer>
 
     <script src="{{ '/assets/js/site.js' | relative_url }}?v={{ site.time | date: '%s' }}"></script>
+    <script src="{{ '/assets/js/cat.js' | relative_url }}?v={{ site.time | date: '%s' }}"></script>
   </body>
 </html>
