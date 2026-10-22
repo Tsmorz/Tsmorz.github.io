@@ -188,7 +188,8 @@
     countEls = {};
     view.textContent = '';
 
-    var head = el('header', 'rc-head');
+    var head = el('header', 'rc-head'), no = recipes.indexOf(r) + 1;
+    head.appendChild(el('p', 'rc-kicker j-mark', 'No. ' + (no < 10 ? '0' : '') + no));
     head.appendChild(el('h2', null, r.name));
     head.appendChild(el('p', 'rc-blurb', r.blurb));
     var meta = el('p', 'rc-meta');
@@ -233,7 +234,7 @@
     view.appendChild(met);
 
     if (r.notes && r.notes.length) {
-      var nt = el('section', 'rc-sec');
+      var nt = el('section', 'rc-sec rc-notes-sec');
       nt.appendChild(el('h3', null, 'Notes'));
       var nl = el('ul', 'rc-notes');
       r.notes.forEach(function (s) { var li = el('li'); rich(li, s, r); nl.appendChild(li); });
@@ -241,7 +242,7 @@
       view.appendChild(nt);
     }
 
-    var clear = el('button', 'sim-tab rc-clear', 'Clear ticks');
+    var clear = el('button', 'sim-tab rc-clear j-print-hide', 'Clear ticks');
     clear.type = 'button';
     clear.addEventListener('click', function () { delete state.checks[r.id]; save(); build(); });
     view.appendChild(clear);
