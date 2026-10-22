@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f6f6fb" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="{% if page.style == 'journal' %}#fbfbf8{% else %}#f6f6fb{% endif %}" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="{% if page.style == 'journal' %}#111214{% else %}#1b1c1f{% endif %}" media="(prefers-color-scheme: dark)">
     {% seo %}
     <link rel="icon" type="image/svg+xml" href="{{ '/assets/img/favicon.svg' | relative_url }}?v=14">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ '/assets/img/favicon-32.png' | relative_url }}?v=14">
@@ -13,6 +13,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=STIX+Two+Text:ital,wght@0,500;0,600;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}?v={{ site.time | date: '%s' }}">
+    {%- if page.style == 'journal' %}
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ '/assets/css/journal.css' | relative_url }}?v={{ site.time | date: '%s' }}">
+    {%- endif %}
     <script>
       (function () {
         try {

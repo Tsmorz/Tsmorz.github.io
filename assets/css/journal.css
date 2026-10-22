@@ -1,0 +1,121 @@
+/* ---------------------------------------------------------------
+   The Journal: the look of /recipes/ (any page with `style: journal`), loaded after main.css.
+   Ink on paper. Newsreader for everything you read, Geist Mono for marginalia (section marks, numbers,
+   amounts, controls) and never for a sentence; rules instead of cards, square corners, and one ink colour
+   for what you act on. The body re-points the site's own tokens at these, so the nav and footer turn to
+   paper and ink as well.
+   --------------------------------------------------------------- */
+:root {
+  --paper: #fbfbf8;
+  --plate: #f1f1ec;
+  --ink: #121317;
+  --ink-2: #3a3c44;
+  --ink-muted: #5d5f68;
+  --rule: #d6d6cf;
+  --rule-strong: #b9b9b1;
+  --ink-accent: #2b3bd6;  /* ultramarine */
+  --ink-accent-soft: rgba(43, 59, 214, .07);
+  --j-serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --j-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111214;
+    --plate: #18191c;
+    --ink: #ececea;
+    --ink-2: #c9c9c4;
+    --ink-muted: #9a9ba2;
+    --rule: #2e2f33;
+    --rule-strong: #45464b;
+    --ink-accent: #9aa6ff;
+    --ink-accent-soft: rgba(154, 166, 255, .10);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #111214;
+  --plate: #18191c;
+  --ink: #ececea;
+  --ink-2: #c9c9c4;
+  --ink-muted: #9a9ba2;
+  --rule: #2e2f33;
+  --rule-strong: #45464b;
+  --ink-accent: #9aa6ff;
+  --ink-accent-soft: rgba(154, 166, 255, .10);
+}
+
+body {
+  --bg: var(--paper);
+  --bg-soft: var(--plate);
+  --surface: var(--paper);
+  --border: var(--rule);
+  --border-strong: var(--rule-strong);
+  --text: var(--ink);
+  --text-muted: var(--ink-muted);
+  --accent: var(--ink-accent);
+  --accent-soft: var(--ink-accent-soft);
+  --lime: var(--ink-accent);    /* the theme toggle's marker and other site outlines */
+  --lav: var(--rule-strong);
+  --grid: transparent;          /* plain paper: no plot-paper grid behind the page */
+}
+
+.journal { font-family: var(--j-serif); color: var(--ink); }
+.journal h1, .journal h2, .journal h3 { font-family: var(--j-serif); font-weight: 400; letter-spacing: -0.015em; }
+.journal a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--ink-accent); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+.journal a:hover { color: var(--ink-accent); }
+.journal :focus-visible { outline: 2px solid var(--ink-accent); outline-offset: 2px; border-radius: 0; }
+
+/* Masthead: a big light headline, an italic standfirst, a double rule and a line of marginalia. */
+.j-mast { padding-top: clamp(2.5rem, 6vw, 4.5rem); }
+.j-title { margin: 0 0 1.25rem; font-size: clamp(3rem, 8vw, 5.5rem); line-height: 1; font-weight: 380; letter-spacing: -0.025em; font-variation-settings: "opsz" 72; }
+.j-standfirst { margin: 0 0 2rem; max-width: 34em; font-size: clamp(1.15rem, 2.2vw, 1.4rem); line-height: 1.45; font-style: italic; color: var(--ink-2); text-wrap: pretty; }
+.j-rule { height: 3px; border-top: 3px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.j-meta { display: flex; flex-wrap: wrap; gap: .3rem 1.5rem; margin: 0; padding: .65rem 0; border-bottom: 1px solid var(--rule);
+          font: .72rem var(--j-mono); letter-spacing: .02em; color: var(--ink-muted); }
+
+/* Marginalia: section marks, numbers, small capitals. */
+.j-mark { font: 400 .8rem var(--j-mono); letter-spacing: 0; color: var(--ink-accent); }
+.j-label { font: 400 .72rem var(--j-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-muted); }
+
+/* An index: numbered rows on hairlines. Rows are buttons (or links); the open one is in ink colour with its arrow down. */
+.j-index { list-style: none; margin: 0; padding: 0; }
+.j-index-row {
+  display: grid; grid-template-columns: 3rem minmax(0, 1fr) minmax(0, 1.8fr) 1.25rem; gap: .25rem 1.5rem; align-items: baseline;
+  width: 100%; padding: 1.1rem 0; border: 0; border-bottom: 1px solid var(--rule); background: none; color: var(--ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.j-index-no { font: .75rem var(--j-mono); color: var(--ink-muted); }
+.j-index-name { font-size: 1.6rem; line-height: 1.15; letter-spacing: -0.01em; transition: color .15s; }
+.j-index-blurb { font-size: 1.02rem; line-height: 1.5; color: var(--ink-2); }
+.j-index-arrow { width: 1.1rem; height: 1.1rem; align-self: center; color: var(--ink-muted); transition: transform .15s, color .15s; }
+.j-index-row:hover .j-index-name, .j-index-row[aria-pressed="true"] .j-index-name { color: var(--ink-accent); }
+.j-index-row:hover .j-index-arrow { color: var(--ink-accent); transform: translateX(3px); }
+.j-index-row[aria-pressed="true"] .j-index-no, .j-index-row[aria-pressed="true"] .j-index-arrow { color: var(--ink-accent); }
+.j-index-row[aria-pressed="true"] .j-index-arrow { transform: rotate(90deg); }
+.j-index-row[aria-pressed="true"] .j-index-name { font-style: italic; }
+
+/* Choices are words on the page, not keys: set in the text face, the others greyed, the chosen one in ink and
+   underlined in ink colour, the way a link is. Restyles the site's .sim-tab here. */
+.journal .sim-tab {
+  min-height: 2.75rem; padding: 0 .45rem; border: 0; border-radius: 0; background: none; box-shadow: none; color: var(--ink-muted);
+  font: 400 1.2rem var(--j-serif); letter-spacing: 0; text-transform: none; cursor: pointer;
+  text-decoration: underline; text-decoration-color: transparent; text-decoration-thickness: 1.5px; text-underline-offset: 6px;
+  transition: color .12s ease, text-decoration-color .12s ease;
+}
+.journal .sim-tab:hover { color: var(--ink); text-decoration-color: var(--rule-strong); }
+.journal .sim-tab.active { color: var(--ink); text-decoration-color: var(--ink-accent); }
+
+/* Tick boxes: a square that fills with ink, inside a paper ring. */
+.journal input[type="checkbox"] {
+  -webkit-appearance: none; appearance: none; flex: none; width: 1rem; height: 1rem; margin: 0;
+  border: 1px solid var(--ink); border-radius: 0; background: transparent; cursor: pointer;
+}
+.journal input[type="checkbox"]:checked { background: var(--ink-accent); border-color: var(--ink-accent); box-shadow: inset 0 0 0 2.5px var(--paper); }
+
+/* A cookbook prints: just the open recipe, no nav, keys or tick boxes. */
+@media print {
+  body { --paper: #ffffff; --ink: #000000; --ink-2: #222222; --ink-muted: #444444; --rule: #bbbbbb; --ink-accent: #000000; }
+  .site-header, .site-footer, .skip-link, .j-print-hide { display: none !important; }
+  .journal input[type="checkbox"] { display: none; }
+}
