@@ -22,7 +22,7 @@
       })();
     </script>
   </head>
-  <body>
+  <body{% if page.cat_hat %} data-cat-hat="{{ page.cat_hat }}"{% endif %}>
     <a class="skip-link" href="#main">Skip to content</a>
 
     <header class="site-header">

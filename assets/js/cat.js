@@ -191,6 +191,11 @@
   var HEART = ['.#.#.', '#####', '#####', '.###.', '..#..'];   // floats up after a slow blink
   var FAN = [0, 7, -6, 4, -9, 10];                              // where each heart of a run of clicks rises, in px
   var LETTER = { o: 'fur', d: 'far', s: 'stripe', w: 'cream', k: 'creamFar', e: 'ink', E: 'stripe', g: 'eye', p: 'pink' };
+  // a hat, when the page asks for one (`cat_hat:` in its front matter): stamped like the eye, its bottom row on the top
+  // of the head and its middle column between the ears; h the hat, H its outline
+  var HATS = {
+    baker: ['.HH.HH.', 'HhhHhhH', 'HhhhhhH', '.HhhhH.', '.HhhhH.', '.HHHHH.']   // a toque: two puffs over a band
+  };
 
   function line(c, pts) { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (var i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]); }
   function len(pts) { var l = 0; for (var i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; }
@@ -371,7 +376,7 @@
   // ---- the cat ----------------------------------------------------------------------------------------------------
   // canvas: one pixel per art pixel, ROWS tall; world: { width(), rest() } in px along the lane
   function Cat(canvas, world) {
-    var c = canvas.getContext('2d'), C = {}, pal = [], inkAt = -99, SPAN = 32;
+    var c = canvas.getContext('2d'), C = {}, pal = [], inkAt = -99, SPAN = 32, hat = HATS[world.hat] || null;
     var fine = document.createElement('canvas'), fc = fine.getContext('2d', { willReadFrequently: true });
     fine.width = 2 * SPAN * SS; fine.height = ROWS * SS;
     var W = world.width(), X = W + 34 * S, F = -1;
@@ -381,7 +386,7 @@
 
     function colors() {                               // the coat from main.css
       var cs = getComputedStyle(canvas);
-      ['fur', 'fur-far', 'stripe', 'cream', 'cream-far', 'ink', 'pink', 'eye'].forEach(function (k) {
+      ['fur', 'fur-far', 'stripe', 'cream', 'cream-far', 'ink', 'pink', 'eye', 'hat', 'hat-edge'].forEach(function (k) {
         C[k.replace(/-(\w)/, function (m, a) { return a.toUpperCase(); })] = cs.getPropertyValue('--' + k).trim();
       });
       pal = [C.fur, C.furFar, C.stripe, C.cream, C.creamFar, C.ink, C.pink].map(hex);
@@ -390,6 +395,9 @@
     colors();
 
     // hand-drawn frames, each held for its time; posed as the loaf, so the rig carries on from there
+    function stamp(g, put) {
+      g.forEach(function (row, r) { for (var j = 0; j < row.length; j++) if (row[j] !== '.') put(j, r, row[j] === 'h' ? C.hat : C.hatEdge); });
+    }
     function spriteAct(frames, extra) {
       var dur = frames.reduce(function (t, f) { return t + f[1]; }, 0);
       return act(dur, 0, function () { return pose(LOAF, { eye: 0 }); }, Object.assign({ busy: true, sprite: function (u) {
@@ -503,6 +511,10 @@
         if (p.happy) { px(ex + 1, ey, C.fur); px(ex, ey, C.ink); px(ex + 1, ey - 1, C.ink); px(ex + 2, ey, C.ink); }
         else if (eye > 0.3) { px(ex, ey - 1, C.ink); px(ex + 1, ey - 1, C.ink); px(ex, ey, C.ink); px(ex + 1, ey, C.eye); }
         if (petAt >= 0 && T - petAt > 1) KNEAD[Math.floor(T * 5) % 2].forEach(function (q) { px(q[0], q[1], C[LETTER[q[2]]]); });
+        if (hat) {                                     // on the first row the head (or an ear) reaches
+          for (var top = 0; top < g.length && !/[^.]/.test(g[top].slice(1, 6)); top++);
+          stamp(hat, function (j, r, color) { px(j, top - hat.length + 1 + r, color); });
+        }
         hx = ax + dir * (SPR_O - SPR_HEAD[0]); hy = y0 + SPR_HEAD[1];
         box = [(ax - 14) * PX, (ax + 14) * PX, (g.length + 1) * PX];
       } else {
@@ -527,12 +539,16 @@
           else { c.fillStyle = C.stripe; c.fillRect(ep[0] - (dir < 0 ? 0 : 1), ep[1], 2, 1); }   // shut: a dark orange line
         });
         if (Math.abs(f) > 0.5) { c.fillStyle = C.pink; c.fillRect(no[0], no[1], 1, 1); }
+        if (hat) {
+          var hb = at([-1.2, 5.2]);
+          stamp(hat, function (j, r, color) { c.fillStyle = color; c.fillRect(hb[0] - 3 + j, hb[1] - hat.length + 1 + r, 1, 1); });
+        }
         hx = ax + f * K * hc[0]; hy = h - K * hc[1];
       }
       hearts = hearts.filter(function (q) { return T - q[0] < 2.2; });
       if (sleeping) hearts.forEach(function (q) {     // one per click, fanned out to either side, each on its own wobble
         var hu = (T - q[0] - 0.4) / 1.8;
-        if (hu > 0) glyph(c, HEART, hx + dir * 3 - 2 + FAN[q[1] % FAN.length] + Math.sin(hu * 5 + q[1]), hy - 5 - 9 * hu, C.pink);
+        if (hu > 0) glyph(c, HEART, hx + dir * 3 - 2 + FAN[q[1] % FAN.length] + Math.sin(hu * 5 + q[1]), hy - (hat ? 9 : 5) - 9 * hu, C.pink);
       });
     }
 
@@ -570,6 +586,7 @@
     footer.appendChild(lane);
     var canvas = lane.firstChild, hit = lane.lastChild;
     var cat = Cat(canvas, {
+      hat: document.body.getAttribute('data-cat-hat'),
       width: function () { return lane.clientWidth; },
       rest: function () {                             // nose where the copyright starts
         var e = footer.querySelector('.footer-inner p');

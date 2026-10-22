@@ -1,5 +1,6 @@
 ---
 layout: default
+cat_hat: baker
 title: Recipes
 description: Kombucha, hummingbird cake, crème brûlée and pizza dough, weighed on a kitchen scale, with a tick box for every ingredient and every step and a switch between metric and imperial.
 permalink: /recipes/
