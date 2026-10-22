@@ -314,9 +314,9 @@
     oval(c, C.cream, [5.2, -0.6], 2.1, 1.8);
     c.strokeStyle = C.stripe; c.lineWidth = 1.5; c.lineCap = 'round'; c.stroke(BROW);
     c.restore();
-    if (p.mouth > 0.05) {                              // the yawn: the jaw swings down on its hinge
-      var jawA = -30 * p.mouth, lip = add([0.6, -1.2], rot([5.5, 0.3], jawA));
-      line(c, [[0.6, -1.2], [6.4, -0.8], lip]); c.fillStyle = C.ink; c.fill();
+    if (p.mouth > 0.05) {                              // the yawn: the jaw swings down on its hinge, pink inside (not ink,
+      var jawA = -30 * p.mouth, lip = add([0.6, -1.2], rot([5.5, 0.3], jawA));   // which pixelates to dark lips)
+      line(c, [[0.6, -1.2], [6.4, -0.8], lip]); c.fillStyle = C.pink; c.fill();
     }
     c.save(); c.translate(0.6, -1.2); c.rotate(-30 * p.mouth * Math.PI / 180); c.translate(-0.6, 1.2);
     if (p.mouth > 0.3) oval(c, C.pink, [3.8, -1.1], 2, 0.9);
