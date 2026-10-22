@@ -6,9 +6,8 @@
 
 - name: Double Pendulum
   blurb: >-
-    Two poles hinged end to end on a sliding cart. A neural network that learned
-    by trial and error (reinforcement learning) pushes the cart to swing both poles
-    up and balance them, fold one over the other, or move between any of those poses.
+    A double pendulum is a classic underactuated system when multiple stable points.
+    I trained a reinforcement algorithm to swing up the pendulums and transition between each stable point.
   year: "2026"
   tags: [Python, Reinforcement Learning, Controls]
   featured: true
