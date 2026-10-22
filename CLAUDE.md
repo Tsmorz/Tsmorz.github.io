@@ -28,6 +28,7 @@ To change what the site says, edit YAML, not HTML.
 | Bio prose, education timeline | `about.md` |
 | Hero headline / intro paragraph | `index.html` |
 | Colors, spacing, type | `assets/css/main.css` (tokens at the top) |
+| The Journal look of /recipes/ | `assets/css/journal.css` (its own tokens at the top) |
 | Swing-up network or its physics | re-run `task export-web` in `../n-cartpole` (never hand-edit `assets/models/`) |
 
 **Adding a project:** append to `_data/projects.yml`. Only `name` and `blurb` are required; `featured: true` is what
@@ -42,6 +43,7 @@ _data/*.yml              all page content that repeats
 _layouts/                default (nav, theme toggle, footer) and page (+ title header, .prose)
 _includes/               project-card, learning-path, lab: take params, not globals
 assets/css/main.css      hand-written, token-based, no build step
+assets/css/journal.css   the Journal: /recipes/'s own look, loaded after main.css on pages with `style: journal`
 assets/js/site.js        theme toggle, tag filter, nav menus, hero symbols
 assets/js/cat.js         the footer cat: a pixel-art orange tabby that lives on the footer line (see below)
 assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab and swingup.js (load first)
@@ -88,10 +90,19 @@ pixel). On its way in, a click stops it to look round at you (`lookAct`) and str
 chain) posed by a timeline of acts; each frame is drawn 4x fine on an offscreen canvas and every art pixel takes the
 majority palette color of its block, so it stays crisp. Eye (a dark pupil with a greenish-yellow `--eye` iris behind it) and nose are stamped as exact pixels, and the forehead stripes stay clear of the eye so they never read as a second one; curling up and sleeping
 are hand-drawn letter-grid sprites (`CURL1`, `CURL2`, `SLEEP_IN`, `SLEEP_OUT`). It draws at 15 fps and its clock only runs
-while the footer is on screen; reduced motion shows it asleep. Coat colors are CSS variables on `.cat-lane` in main.css.
+while the footer is on screen; reduced motion shows it asleep. It carries on across pages: the clock and the wait so far are
+kept in `localStorage` (`footer-cat`) on `pagehide`, for 30 minutes, and the next page jumps the timeline to that clock. Coat colors are CSS variables on `.cat-lane` in main.css. A page can give it a hat: `cat_hat: baker` in its front matter puts `data-cat-hat` on `<body>` and cat.js
+stamps that glyph from `HATS` on its head, rig and sleeping sprite alike (/recipes/ wears a baker's toque; `--hat`, `--hat-shade`, `--hat-edge`).
 
 ### Recipes (`/recipes/`)
 
+The page has its own look, **the Journal** (`assets/css/journal.css`, loaded with Newsreader and Geist Mono by the
+default layout when the front matter says `style: journal`): ink on paper, a serif for everything you read and mono only
+for marginalia (§ marks, numbers, amounts, labels), hairline rules instead of cards, and one ink colour (ultramarine)
+for what you act on. Choices are words, not keys: serif, greyed until chosen, the chosen one underlined like a link
+(`.journal .sim-tab`); don't bring back boxed buttons, which read as the nrf-controller dashboard. It re-points the site's tokens on `body`, so the nav and footer turn to paper too; keep
+its colors in journal.css, defined three times like main.css. The recipes index is a numbered list of `[data-recipe]`
+buttons, ingredients and notes sit beside the steps, and the page prints as just the open recipe (`.j-print-hide`).
 `recipes.md` + `assets/js/recipes.js`, all content in `_data/recipes.yml` (the file's header comment documents the fields). **Every amount
 is a weight in grams**, so each recipe runs on a kitchen scale (eggs, cream and water included); `RecipeCore` shows ounces, pounds and
 °F when the visitor picks imperial. Steps are plain strings with `[[...]]` tokens (`[[i:id]]` an ingredient's amount, `[[g:700]]`,
