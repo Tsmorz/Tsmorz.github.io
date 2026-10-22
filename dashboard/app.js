@@ -862,14 +862,6 @@ function renderBoards() {
   const count = connectedSummary();
   $("boards-hint").hidden = count > 1;
   $("sleep-all").hidden = count === 0;
-  if (selected) {
-    const lost = selected.imuGaps ? ` · ${selected.imuGaps} lost` : "";
-    $("rate").textContent = `${selected.displayName} · ${selected.rateHz} Hz${lost}`;
-    $("firmware").textContent = selected.firmwareVersion ? `Firmware v${selected.firmwareVersion}` : "";
-  } else {
-    $("rate").textContent = "";
-    $("firmware").textContent = "";
-  }
   $("settings-board").textContent = selected ? `· ${selected.displayName}` : "";
   renderRecorder();
   renderFirmware();
@@ -1161,10 +1153,12 @@ function renderFlashRecorder() {
   $("upload").disabled = active || busy || !list.some((board) => board.log.usedBytes > 0);
   $("erase").disabled = active || busy || !list.length;
   $("rec-elapsed").textContent = "";
+  const noBoardText = ["Connect a board first.", "These boards' firmware can't record on its own. Flash the current build."];
   if (!list.length && !busy) {
     const old = [...boards.values()].some((board) => board.connected && !board.log);
-    $("rec-status").textContent = old ? "These boards' firmware can't record on its own. Flash the current build." : "Connect a board first.";
-  } else if ($("rec-status").textContent === "Connect a board first.") {
+    $("rec-status").textContent = noBoardText[old ? 1 : 0];
+  } else if (noBoardText.includes($("rec-status").textContent)) {
+    // A board's flash service attaches a moment after it connects, so either message may be stale.
     $("rec-status").textContent = "Ready.";
   }
   $("rec-boards").innerHTML = "";
@@ -1376,8 +1370,8 @@ function renderMouse() {
 // ---- IMU ranges ---------------------------------------------------------------------------
 // The selected board's full-scale ranges. Fixed while it records (live or to flash) or uploads,
 // since a recording's scale is set when it starts.
-$("gyro-range").replaceChildren(...GYRO_RANGES_DPS.map((dps) => new Option(`±${dps} °/s`, String(dps))));
-$("accel-range").replaceChildren(...ACCEL_RANGES_G.map((g) => new Option(`±${g} g`, String(g))));
+$("imu-gyro-range").replaceChildren(...GYRO_RANGES_DPS.map((dps) => new Option(`±${dps} °/s`, String(dps))));
+$("imu-accel-range").replaceChildren(...ACCEL_RANGES_G.map((g) => new Option(`±${g} g`, String(g))));
 let imuRangesBusy = false;
 
 function imuRangesBlocker(board) {
@@ -1391,11 +1385,11 @@ function imuRangesBlocker(board) {
 function renderImuRanges() {
   const board = selected;
   const blocker = imuRangesBlocker(board);
-  for (const id of ["gyro-range", "accel-range"]) $(id).disabled = Boolean(blocker) || imuRangesBusy;
+  for (const id of ["imu-gyro-range", "imu-accel-range"]) $(id).disabled = Boolean(blocker) || imuRangesBusy;
   const ranges = board?.imuRanges;
-  if (ranges && !imuRangesBusy && ![$("gyro-range"), $("accel-range")].includes(document.activeElement)) {
-    $("gyro-range").value = String(ranges.gyroDps);
-    $("accel-range").value = String(ranges.accelG);
+  if (ranges && !imuRangesBusy && ![$("imu-gyro-range"), $("imu-accel-range")].includes(document.activeElement)) {
+    $("imu-gyro-range").value = String(ranges.gyroDps);
+    $("imu-accel-range").value = String(ranges.accelG);
   }
   if (imuRangesBusy) return;
   const info = board?.info;
@@ -1408,7 +1402,7 @@ async function sendImuRanges() {
   const board = selected;
   if (imuRangesBlocker(board)) return;
   // Read before anything redraws the section, which would put the board's current ranges back.
-  const ranges = { gyroDps: Number($("gyro-range").value), accelG: Number($("accel-range").value) };
+  const ranges = { gyroDps: Number($("imu-gyro-range").value), accelG: Number($("imu-accel-range").value) };
   imuRangesBusy = true;
   $("imu-ranges-status").textContent = "Setting…";
   renderImuRanges();
@@ -1423,7 +1417,7 @@ async function sendImuRanges() {
   }
   renderImuRanges();
 }
-for (const id of ["gyro-range", "accel-range"]) $(id).addEventListener("change", sendImuRanges);
+for (const id of ["imu-gyro-range", "imu-accel-range"]) $(id).addEventListener("change", sendImuRanges);
 
 async function sendMouseSettings({ enabled = selected?.mouse?.enabled } = {}) {
   if (!selected?.connected || enabled === undefined) return;
