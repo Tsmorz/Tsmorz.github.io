@@ -81,9 +81,16 @@ export function buttonStatesAt(times, events) {
   return states;
 }
 
+/** The files a live recording writes, with their columns. temperature.csv only if the firmware sent temperatures. */
+export const LIVE_FILES = {
+  "imu.csv": IMU_COLUMNS, "mic_envelope.csv": ENVELOPE_COLUMNS, "events.csv": EVENT_COLUMNS, "temperature.csv": TEMPERATURE_COLUMNS,
+};
+
 /**
- * One board's share of a recording. Everything added is already decoded (wire.js) and its times
- * unwrapped; files() turns it into CSV text. host_ms is when the page received each notification
+ * One board's share of a recording, encoded into CSV rows as it arrives (far smaller than the
+ * decoded samples) and handed over in batches by takePending(), which app.js writes to the
+ * browser's storage every couple of seconds. Everything added is already decoded (wire.js) and
+ * its times unwrapped. host_ms is when the page received each notification
  * (performance.timeOrigin + performance.now(), the same clock for every board on the page): the
  * aligner uses it only to pair up sync marks roughly, then aligns on the board times.
  */
@@ -94,63 +101,82 @@ export class BoardRecording {
     this.gyroDecimals = scaleDecimals(this.gyroScale);
     this.accelDecimals = scaleDecimals(this.accelScale);
     this.windowUs = (1e6 * info.envelopeWindowSamples) / info.micRateHz;
-    this.imu = [];
-    this.envelope = [];
-    this.events = [];
-    this.temperatures = []; // [board_time_us, host_ms, temperature_c]
+    this.pending = Object.fromEntries(Object.keys(LIVE_FILES).map((file) => [file, []]));
+    this.counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0 };
   }
 
-  /** samples: decodeImuBatch() samples with tUs unwrapped; biasDps: the batch's gyro bias. */
+  /**
+   * samples: decodeImuBatch() samples with tUs unwrapped; biasDps: the batch's gyro bias. The
+   * user_button column is added when the file is put together (liveFileParts), as the press and
+   * release events arrive separately.
+   */
   addImu(samples, biasDps, hostMs) {
-    for (const s of samples) this.imu.push({ ...s, biasDps, hostMs });
+    const host = fixed(hostMs, 3);
+    const bias = biasDps.map((value) => fixed(value, 2)).join(",");
+    for (const s of samples) {
+      this.pending["imu.csv"].push([
+        s.tUs, host, s.seq,
+        ...s.gyroRaw.map((raw) => fixed(raw * this.gyroScale, this.gyroDecimals)),
+        ...s.accelRaw.map((raw) => fixed(raw * this.accelScale, this.accelDecimals)),
+        bias,
+        ...[s.quat.w, s.quat.x, s.quat.y, s.quat.z].map((c) => fixed(c, 5)),
+        s.atRest ? 1 : 0,
+      ].join(","));
+    }
+    this.counts.imuSamples += samples.length;
   }
 
   /** tUs: the batch's first window time, unwrapped. */
   addEnvelope(firstWindow, tUs, peaks, hostMs) {
-    peaks.forEach((peak, i) => this.envelope.push([Math.round(tUs + i * this.windowUs), hostMs, firstWindow + i, peak]));
+    const host = fixed(hostMs, 3);
+    peaks.forEach((peak, i) => this.pending["mic_envelope.csv"].push(`${Math.round(tUs + i * this.windowUs)},${host},${firstWindow + i},${peak}`));
+    this.counts.envelopeWindows += peaks.length;
   }
 
   /** event: decodeEvent() output with tUs unwrapped. Temperatures go to their own file. */
   addEvent(event, hostMs) {
-    if (event.type === "temperature") this.temperatures.push([event.tUs, hostMs, temperatureFromEvent(event.peak)]);
-    else this.events.push({ ...event, hostMs });
+    const host = fixed(hostMs, 3);
+    if (event.type === "temperature") {
+      this.pending["temperature.csv"].push(`${event.tUs},${host},${fixed(temperatureFromEvent(event.peak), 3)}`);
+      return;
+    }
+    this.pending["events.csv"].push(`${event.tUs},${host},${event.seq},${event.type},${event.peak}`);
+    if (event.type === "sync") this.counts.syncMarks++;
+    else this.counts.buttonEvents++;
   }
 
-  get counts() {
-    return {
-      imuSamples: this.imu.length,
-      envelopeWindows: this.envelope.length,
-      syncMarks: this.events.filter((e) => e.type === "sync").length,
-      buttonEvents: this.events.filter((e) => e.type !== "sync").length,
-    };
+  /** The rows added since the last call, as CSV text (no header) per file that has any. */
+  takePending() {
+    const taken = {};
+    for (const [file, rows] of Object.entries(this.pending)) {
+      if (!rows.length) continue;
+      taken[file] = rows.join("\n") + "\n";
+      this.pending[file] = [];
+    }
+    return taken;
   }
+}
 
-  /** The USER button state at each IMU sample (see buttonStatesAt()). */
-  buttonStates() {
-    return buttonStatesAt(this.imu.map((s) => s.tUs), this.events);
-  }
+/** The events (board time and type) in rows of a live events.csv, without its header. */
+export function parseEventRows(text) {
+  const column = EVENT_COLUMNS.indexOf("type");
+  return text.split("\n").filter(Boolean).map((line) => {
+    const cells = line.split(",");
+    return { tUs: Number(cells[0]), type: cells[column] };
+  });
+}
 
-  /** The CSV files, as text, keyed by file name: temperature.csv only if the firmware sent it. */
-  files() {
-    const csv = (columns, rows) => [columns.join(","), ...rows.map((row) => row.join(","))].join("\n") + "\n";
-    const buttons = this.buttonStates();
-    const imuRows = this.imu.map((s, i) => [
-      s.tUs, fixed(s.hostMs, 3), s.seq,
-      ...s.gyroRaw.map((raw) => fixed(raw * this.gyroScale, this.gyroDecimals)),
-      ...s.accelRaw.map((raw) => fixed(raw * this.accelScale, this.accelDecimals)),
-      ...s.biasDps.map((bias) => fixed(bias, 2)),
-      ...[s.quat.w, s.quat.x, s.quat.y, s.quat.z].map((c) => fixed(c, 5)),
-      s.atRest ? 1 : 0, buttons[i],
-    ]);
-    const envelopeRows = this.envelope.map(([t, hostMs, window, peak]) => [t, fixed(hostMs, 3), window, peak]);
-    const eventRows = this.events.map((e) => [e.tUs, fixed(e.hostMs, 3), e.seq, e.type, e.peak]);
-    return {
-      "imu.csv": csv(IMU_COLUMNS, imuRows),
-      "mic_envelope.csv": csv(ENVELOPE_COLUMNS, envelopeRows),
-      "events.csv": csv(EVENT_COLUMNS, eventRows),
-      ...(this.temperatures.length && {
-        "temperature.csv": csv(TEMPERATURE_COLUMNS, this.temperatures.map(([t, hostMs, c]) => [t, fixed(hostMs, 3), fixed(c, 3)])),
-      }),
-    };
-  }
+/**
+ * One file of a board's live recording, as the parts to write in order (or to make a Blob of):
+ * its header line, then each chunk of rows from takePending(). imu.csv rows get their user_button
+ * column here, from the board's `events` (parseEventRows()).
+ */
+export function liveFileParts(file, chunks, events) {
+  const header = LIVE_FILES[file].join(",") + "\n";
+  if (file !== "imu.csv") return [header, ...chunks];
+  return [header, ...chunks.map((chunk) => {
+    const lines = chunk.split("\n").filter(Boolean);
+    const states = buttonStatesAt(lines.map((line) => Number(line.slice(0, line.indexOf(",")))), events);
+    return lines.map((line, i) => `${line},${states[i]}\n`).join("");
+  })];
 }

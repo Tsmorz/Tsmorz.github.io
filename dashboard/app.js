@@ -3,9 +3,10 @@ import { fitCanvas, hairline } from "./canvas.js";
 import { describeLatency, resultRow } from "./latency.js";
 import { dragSeam, gridTracks, parseSavedLayout, toFractions } from "./layout.js";
 import { headingChangeDegrees, quatToEulerDegrees, removeYaw, rotateVector } from "./pose.js";
-import { decodeFlashLog, flashSessionFiles, groupSessions, lostSamples } from "./flashlog.js";
-import { safeName } from "./recording.js";
-import { initReplay } from "./replay-view.js";
+import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, lostSamples, startsWithSession } from "./flashlog.js";
+import { BoardRecording, LIVE_FILES, liveFileParts, parseEventRows, safeName } from "./recording.js";
+import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
+import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
   ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
 } from "./signal.js";
@@ -21,7 +22,12 @@ const USER_LAMP_MIN_MS = 400;
 
 const boards = new Map(); // by Web Bluetooth device id
 let selected = null;
-const recorder = { active: false, startedAt: null, members: [], dirHandle: null };
+// A live recording: its boards (members, by device id) and where their rows are spooled. See
+// "recording live" below.
+const recorder = {
+  active: false, startedAt: null, members: new Map(), dirHandle: null,
+  spool: null, spoolId: null, flushTimer: null, flushing: Promise.resolve(), unflushed: [],
+};
 
 // ---- "seen working" checklist, for the selected board ------------------------------------
 const CHECKS = [
@@ -165,7 +171,7 @@ function placeSeams() {
 
 function addSeam(name, split, index) {
   const seam = document.createElement("div");
-  seam.className = `seam ${split.axis === "x" ? "vertical" : "horizontal"}`;
+  seam.className = `seam ${split.axis === "x" ? "vertical" : "horizontal"}${split.within ? " within" : ""}`;
   seam.tabIndex = 0;
   seam.title = "Drag to resize; double-click to reset";
   seam.setAttribute("role", "separator");
@@ -226,6 +232,28 @@ const seamObserver = new ResizeObserver(placeSeams);
 seamObserver.observe(mainEl);
 for (const split of Object.values(SPLITS)) for (const selector of split.panels) seamObserver.observe(document.querySelector(selector));
 WIDE_LAYOUT.addEventListener("change", placeSeams);
+
+// ---- info popovers -----------------------------------------------------------------------
+// The longer explanations wait behind an (i) key beside their heading, in a popover (the browser
+// closes it on a click elsewhere or Escape). It opens under its key, kept inside the window, or
+// above the key if there's no room below; it stays invisible until placed, as the toggle event
+// comes after the browser has shown it.
+const POPOVER_MARGIN_PX = 8;
+for (const popover of document.querySelectorAll(".info-pop")) {
+  const key = document.querySelector(`[popovertarget="${popover.id}"]`);
+  popover.addEventListener("toggle", (event) => {
+    const open = event.newState === "open";
+    key.classList.toggle("open", open);
+    popover.classList.toggle("placed", open);
+    if (!open) return;
+    const anchor = key.getBoundingClientRect();
+    const { offsetWidth: width, offsetHeight: height } = popover;
+    const below = anchor.bottom + 6;
+    const top = below + height <= innerHeight - POPOVER_MARGIN_PX ? below : Math.max(POPOVER_MARGIN_PX, anchor.top - 6 - height);
+    const left = Math.min(Math.max(POPOVER_MARGIN_PX, anchor.left - 12), innerWidth - width - POPOVER_MARGIN_PX);
+    Object.assign(popover.style, { top: `${top}px`, left: `${left}px` });
+  });
+}
 
 // ---- canvas helpers -----------------------------------------------------------------------
 // Tracks the pointer over a plot as a 0..1 fraction of its width (null when outside).
@@ -770,6 +798,7 @@ function buildRow(board) {
   input.addEventListener("change", () => board.setLabel(input.value));
   row.querySelector(".drop").addEventListener("click", (event) => {
     event.stopPropagation();
+    board.leaving = true;
     board.disconnect();
   });
   row.querySelector(".sleep").addEventListener("click", (event) => {
@@ -831,6 +860,7 @@ function batteryDetail(battery) {
 }
 
 async function sleepBoards(list) {
+  for (const board of list) board.leaving = true;
   const results = await Promise.allSettled(list.map((board) => board.sleep()));
   const failed = results.filter((result) => result.status === "rejected").length;
   setStatus(failed ? `${failed} board(s) didn't take the sleep command` : `Sleeping ${list.length} board${list.length === 1 ? "" : "s"}: press USER to wake`, { bad: failed > 0 });
@@ -860,7 +890,6 @@ function flashSummary(board) {
 function renderBoards() {
   for (const board of boards.values()) renderBoardRow(board);
   const count = connectedSummary();
-  $("boards-hint").hidden = count > 1;
   $("sleep-all").hidden = count === 0;
   $("settings-board").textContent = selected ? `· ${selected.displayName}` : "";
   renderRecorder();
@@ -906,6 +935,10 @@ async function addBoard() {
     setStatus(`${device.name} is already connected`);
     return;
   }
+  if (reconnecting.has(device.id)) {
+    setStatus(`Already reconnecting to ${device.name}: wake it or bring it closer`);
+    return;
+  }
   let board;
   try {
     board = await connectDevice(device);
@@ -923,10 +956,15 @@ async function addBoard() {
 }
 $("connect").addEventListener("click", addBoard);
 
-/** Connects to a board the browser already knows (picked once, or back after a firmware update). */
+/**
+ * Connects to a board the browser already knows (picked once, back after a firmware update, or
+ * dropped out). During a live recording, a board already in it carries on in its files where its
+ * last connection left off, and any other board joins it.
+ */
 async function connectDevice(device, onStatus = setStatus) {
   boards.get(device.id)?.row?.remove();
-  const board = new Board(device);
+  const member = recorder.active ? recorder.members.get(device.id) : undefined;
+  const board = new Board(device, member ? { continueFrom: member.lastBoard, recording: member.recording } : {});
   board.addEventListener("seen", () => board === selected && renderChecks());
   board.addEventListener("change", () => {
     if (board !== selected) return;
@@ -941,22 +979,101 @@ async function connectDevice(device, onStatus = setStatus) {
   } catch (error) {
     if (boards.get(device.id) === board) boards.delete(device.id);
     board.row?.remove();
+    board.recording = null;
+    // Whatever arrived before it failed is in the recording: the next attempt goes on from there.
+    // (Data only flows once the board info has been read.)
+    if (member && board.info) member.lastBoard = board;
     // Also abandons a connection attempt still in progress.
     device.gatt.disconnect();
     throw error;
   }
+  if (recorder.active && member && recorder.members.get(device.id) === member) resumeMember(member, board);
+  else if (recorder.active && !recorder.members.has(device.id)) joinRecording(board, { late: true });
+  else board.recording = null; // the recording stopped while it connected
   return board;
+}
+
+/** connectDevice(), given up after `ms`: the attempt is then abandoned. */
+async function connectWithin(device, ms) {
+  let timer;
+  try {
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error("timed out")), ms);
+    });
+    return await Promise.race([connectDevice(device, () => {}), timeout]);
+  } catch (error) {
+    device.gatt.disconnect();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function onDisconnected(board) {
   if (boards.get(board.key) !== board) return;
   boards.delete(board.key);
   board.row?.remove();
+  const member = memberOf(board);
+  if (member?.board === board) detachMember(member);
   const job = firmwareJobs.get(board.key);
-  if (job?.stage === "restarting") setStatus(`${board.displayName} restarting into v${job.version}…`);
-  else setStatus(`${board.displayName} disconnected`, { bad: recorder.active && recorder.members.includes(board) });
+  if (job?.stage === "restarting") {
+    setStatus(`${board.displayName} restarting into v${job.version}…`);
+  } else if (board.leaving || job?.active) {
+    setStatus(`${board.displayName} disconnected`);
+  } else {
+    setStatus(`${board.displayName} dropped out: reconnecting…`, { bad: Boolean(member) });
+    keepConnected(board.device, board.displayName);
+  }
   if (board === selected) select(boards.values().next().value ?? null);
   else renderBoards();
+}
+
+// ---- reconnecting -------------------------------------------------------------------------
+// A board that drops out (out of range, a flat battery, a radio hiccup) is tried again for
+// RECONNECT_WINDOW_MS, or for as long as a live recording it's in runs. Disconnecting or sleeping
+// it from the page doesn't count. Chrome needs no click to reconnect a board it already knows.
+const RECONNECT_WINDOW_MS = 60000;
+const RECONNECT_PAUSE_MS = 2000;
+const reconnecting = new Set(); // device ids
+
+async function keepConnected(device, name, { quiet = false } = {}) {
+  if (reconnecting.has(device.id)) return;
+  reconnecting.add(device.id);
+  const until = Date.now() + RECONNECT_WINDOW_MS;
+  const wanted = () => !boards.get(device.id)?.connected && !firmwareJobs.get(device.id)?.active &&
+    (Date.now() < until || (recorder.active && recorder.members.has(device.id)));
+  try {
+    while (wanted()) {
+      try {
+        const board = await connectWithin(device, CONNECT_ATTEMPT_MS);
+        setStatus(`${board.displayName} ${quiet ? "connected" : "reconnected"}`);
+        if (!selected) select(board);
+        else renderBoards();
+        return;
+      } catch {
+        await sleepMs(RECONNECT_PAUSE_MS);
+      }
+    }
+    if (boards.get(device.id)?.connected) return;
+    if (!quiet) setStatus(`${name} didn't come back: wake it (USER) and Add board`, { bad: true });
+    else if (!connectedSummary() && reconnecting.size <= 1) setStatus("No boards connected");
+  } finally {
+    reconnecting.delete(device.id);
+  }
+}
+
+// Boards this browser has connected before, reconnected on load. Only where Chrome lists them:
+// getDevices() still needs chrome://flags/#enable-web-bluetooth-new-permissions-backend.
+async function reconnectKnownBoards() {
+  let devices = [];
+  try {
+    devices = (await navigator.bluetooth?.getDevices?.()) ?? [];
+  } catch {
+    return;
+  }
+  if (!devices.length) return;
+  setStatus(`Looking for ${devices.length} board${devices.length === 1 ? "" : "s"} from last time…`);
+  for (const device of devices) keepConnected(device, device.name, { quiet: true });
 }
 
 // ---- recording ----------------------------------------------------------------------------
@@ -968,17 +1085,115 @@ function timestamp(date = new Date()) {
 
 $("session").value = timestamp();
 
+function setRecStatus(text, { bad = false } = {}) {
+  $("rec-status").textContent = text;
+  $("rec-status").className = bad ? "bad-text" : "muted";
+}
+
+// ---- where recordings go
+// The chosen folder is remembered in this browser (storage.js) and used again after a reload.
+// Chrome asks once per visit to allow writing to it again, at the next Record, Stop or Upload,
+// so that's when saveFolder() is called. Without a folder, files download.
+const FOLDER_KEY = "save-folder";
+const READ_WRITE = { mode: "readwrite" };
+
+function renderFolder(permission) {
+  const name = recorder.dirHandle?.name;
+  const text = !name ? "No folder: files download instead."
+    : permission === "denied" ? `Not allowed to write to ${name}/: files download instead.`
+    : permission === "granted" ? `Saving into ${name}/` : `Saving into ${name}/ (Chrome asks to allow it at Record)`;
+  $("folder").textContent = text;
+  $("folder").className = permission === "denied" ? "bad-text" : "muted";
+}
+
+async function restoreFolder() {
+  const handle = await kvGet(FOLDER_KEY);
+  if (!handle || recorder.dirHandle) return;
+  recorder.dirHandle = handle;
+  try {
+    renderFolder(await handle.queryPermission(READ_WRITE));
+  } catch {
+    renderFolder("prompt");
+  }
+}
+restoreFolder();
+
+/** The folder to save into, asking Chrome to allow it again if needed; null to download. Call it from a click. */
+async function saveFolder() {
+  const handle = recorder.dirHandle;
+  if (!handle) return null;
+  let permission = "denied";
+  try {
+    permission = await handle.queryPermission(READ_WRITE);
+    if (permission !== "granted") permission = await handle.requestPermission(READ_WRITE);
+  } catch {
+    /* the folder is gone, or the browser refused: download instead */
+  }
+  renderFolder(permission);
+  return permission === "granted" ? handle : null;
+}
+
 $("pick-folder").addEventListener("click", async () => {
   if (!window.showDirectoryPicker) {
     $("folder").textContent = "This browser can't write folders; files will download instead.";
     return;
   }
   try {
-    recorder.dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-    $("folder").textContent = `Saving into ${recorder.dirHandle.name}/<session>/`;
+    recorder.dirHandle = await window.showDirectoryPicker({ id: "recordings", mode: "readwrite" });
   } catch {
-    /* picker dismissed */
+    return; // picker dismissed
   }
+  kvSet(FOLDER_KEY, recorder.dirHandle);
+  renderFolder("granted");
+});
+
+// Chrome keeps only the first 10 of a burst of downloads from a page and drops the rest without a
+// word (a flash upload of three sessions lost the newest one's events and session.json). Spaced
+// 100 ms apart, every one lands (headless Chrome, 2026-10-23), so each waits DOWNLOAD_GAP_MS.
+const DOWNLOAD_GAP_MS = 200;
+let downloadQueue = Promise.resolve();
+function download(file) {
+  downloadQueue = downloadQueue.then(async () => {
+    const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(file), download: file.name });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    await sleepMs(DOWNLOAD_GAP_MS);
+  });
+  return downloadQueue;
+}
+
+const mediaType = (name) => (name.endsWith(".json") ? "application/json" : name.endsWith(".bin") ? "application/octet-stream" : "text/csv");
+
+/**
+ * Saves one file into `folder` (path = subfolders), or downloads it with the path in its name.
+ * `parts` are strings or bytes, written in order. Returns [path, File] as Replay takes them, so a
+ * session just saved can be opened at once.
+ */
+async function saveFile(folder, path, name, parts) {
+  if (!folder) {
+    const file = new File(parts, [...path, name].join("__"), { type: mediaType(name) });
+    await download(file);
+    return [file.name, file];
+  }
+  let directory = folder;
+  for (const part of path) directory = await directory.getDirectoryHandle(part, { create: true });
+  const handle = await directory.getFileHandle(name, { create: true });
+  const writable = await handle.createWritable();
+  for (const part of parts) await writable.write(part);
+  await writable.close();
+  return [[folder.name, ...path, name].join("/"), await handle.getFile()];
+}
+
+// "Open in Replay" opens what was saved last, without picking it again.
+let lastSaved = null; // { entries: [[path, File]], folder, session }
+function offerReplay(saved) {
+  lastSaved = saved;
+  $("rec-replay").hidden = !saved;
+}
+$("rec-replay").addEventListener("click", () => {
+  if (!lastSaved) return;
+  showReplay(true);
+  openReplayFiles(lastSaved.entries, { handles: lastSaved.folder ? [lastSaved.folder] : null, session: lastSaved.session });
 });
 
 // A board's folder in the session: its label (if any) and ID, so it is unique and recognisable.
@@ -1005,6 +1220,7 @@ targetInputs().forEach((input) =>
 
 const flashBoards = () => [...boards.values()].filter((board) => board.connected && board.log);
 const flashBusy = { upload: false, erase: false };
+let recordBusy = false; // between a Record or Stop click and the recording having started or been saved
 
 function renderRecorder() {
   const flash = recordTarget() === "flash";
@@ -1012,133 +1228,301 @@ function renderRecorder() {
   $("session-label").hidden = flash;
   $("flash-hint").hidden = !flash;
   $("upload").hidden = $("erase").hidden = !flash;
+  $("flash-join").hidden ||= !flash;
   if (flash) {
     renderFlashRecorder();
     return;
   }
   const connected = [...boards.values()].filter((board) => board.connected && board.info);
-  $("record").disabled = !recorder.active && connected.length === 0;
+  $("record").disabled = recordBusy || (!recorder.active && connected.length === 0);
   $("record").textContent = recorder.active ? "Stop" : "Record";
   $("record").classList.toggle("recording", recorder.active);
   $("session").disabled = recorder.active;
   if (!recorder.active) {
-    if (!connected.length) $("rec-status").textContent = "Connect a board first.";
+    if (!connected.length && !recordBusy && !lastSaved) setRecStatus("Connect a board first.");
     return;
   }
   const seconds = Math.floor((Date.now() - recorder.startedAt.getTime()) / 1000);
   $("rec-elapsed").textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   $("rec-boards").innerHTML = "";
-  for (const board of recorder.members) {
-    const counts = board.recording?.counts;
+  for (const member of recorder.members.values()) {
+    const { counts } = member.recording;
     const item = document.createElement("li");
-    item.textContent = counts
-      ? `${board.displayName}: ${counts.imuSamples} samples · ${counts.syncMarks} claps · ${counts.buttonEvents} button edges`
-      : `${board.displayName}: disconnected`;
-    if (!board.connected) item.className = "bad-text";
+    item.textContent = `${member.lastBoard.displayName}: ${counts.imuSamples} samples · ${counts.syncMarks} claps · ${counts.buttonEvents} button edges` +
+      (member.board ? "" : " · dropped out, reconnecting…");
+    if (!member.board) item.className = "bad-text";
     $("rec-boards").append(item);
   }
 }
 
-function startRecording() {
+// ---- recording live, to this computer
+// Each board's rows go into the browser's storage (storage.js) every FLUSH_MS and are put
+// together into files at Stop, so a recording survives the page closing or crashing (it's offered
+// for saving at the next visit) and a long one doesn't fill the page's memory. A board that drops
+// out is reconnected and carries on in the same files, the samples it missed counted as lost; a
+// board connected after Record joins in.
+const FLUSH_MS = 2000;
+// The page holds a lock named after its spool while it records, which the browser lets go of when
+// the page closes or crashes: a spool nobody holds is a recording to save. Without locks, one not
+// written to for ABANDONED_MS is taken for that.
+const ABANDONED_MS = 15000;
+const spoolLock = (id) => `recording:${id}`;
+const spoolReady = openSpool();
+
+function holdLock(name) {
+  let release = () => {};
+  navigator.locks?.request(name, () => new Promise((resolve) => (release = resolve)));
+  return () => release();
+}
+
+const memberOf = (board) => (recorder.active ? recorder.members.get(board.key) : undefined);
+const isRecording = (board) => memberOf(board)?.board === board;
+const gapCounts = (board) => ({ imu: board.imuGaps, envelope: board.envelopeGaps, events: board.eventGaps });
+const NO_GAPS = { imu: 0, envelope: 0, events: 0 };
+
+// What session.json says about a board, kept with the spool so a recovered recording has it too.
+function memberMeta(board, late) {
+  return {
+    folder: boardFolder(board),
+    board_id: board.boardId,
+    name: `nrf-controller-${board.boardId}`,
+    label: board.label,
+    firmware: board.firmwareVersion,
+    imu_rate_hz: board.info.imuRateHz,
+    gyro_dps_per_lsb: Math.round(board.info.gyroDpsPerLsb * 1e9) / 1e9,
+    accel_g_per_lsb: Math.round(board.info.accelGPerLsb * 1e9) / 1e9,
+    mic_rate_hz: board.info.micRateHz,
+    envelope_window_samples: board.info.envelopeWindowSamples,
+    ...(late && { joined: new Date().toISOString() }),
+    reconnects: 0,
+  };
+}
+
+function saveMembers() {
+  const members = Object.fromEntries([...recorder.members].map(([key, member]) => [key, member.meta]));
+  return recorder.spool.update(recorder.spoolId, { members }).catch(() => { /* written again at the next change */ });
+}
+
+// Adds `board` to the running recording: at Record, or when it connects during one (`late`).
+function joinRecording(board, { late = false } = {}) {
+  const member = {
+    board, lastBoard: board, recording: new BoardRecording(board.info), meta: memberMeta(board, late),
+    gaps: { ...NO_GAPS }, gapBase: gapCounts(board),
+  };
+  board.recording = member.recording;
+  recorder.members.set(board.key, member);
+  saveMembers();
+}
+
+// A member back after dropping out. connectDevice gave the new connection its recording and last
+// sequence numbers, so its gap counts already include what was missed while it was away.
+function resumeMember(member, board) {
+  member.board = member.lastBoard = board;
+  member.gapBase = { ...NO_GAPS };
+  member.meta.reconnects++;
+  saveMembers();
+}
+
+// Stops adding the member's board's data (it dropped out, or the recording stopped).
+function detachMember(member) {
+  const { board } = member;
+  if (!board) return;
+  for (const [stream, count] of Object.entries(gapCounts(board))) member.gaps[stream] += count - member.gapBase[stream];
+  member.meta.imu_dropped_on_board_since_boot = board.info.imuDropped;
+  board.recording = null;
+  member.board = null;
+}
+
+// Moves the rows added since the last flush into the spool. A failed write is tried again with the
+// next one, the rows kept in memory meanwhile.
+function flushRecording() {
+  recorder.flushing = recorder.flushing.then(async () => {
+    const chunks = recorder.unflushed;
+    for (const [key, member] of recorder.members) {
+      for (const [file, text] of Object.entries(member.recording.takePending())) chunks.push({ member: key, file, text });
+    }
+    if (!chunks.length) return;
+    try {
+      await recorder.spool.append(recorder.spoolId, chunks);
+      recorder.unflushed = [];
+    } catch (error) {
+      recorder.unflushed = chunks;
+      setRecStatus(`Couldn't store the recording in this browser (${error.message}); it's kept in memory meanwhile.`, { bad: true });
+    }
+  });
+  return recorder.flushing;
+}
+
+async function startRecording() {
+  const folder = await saveFolder(); // asked now, not after the experiment
   const members = [...boards.values()].filter((board) => board.connected && board.info);
+  if (!members.length) return;
   const name = safeName($("session").value || timestamp());
   $("session").value = name;
-  recorder.active = true;
-  recorder.startedAt = new Date();
-  recorder.members = members;
-  for (const board of members) board.startRecording();
-  $("rec-status").textContent = `Recording ${members.length} board${members.length === 1 ? "" : "s"}: clap 2–3 times near all of them now.`;
-  renderRecorder();
-}
-
-async function writeFile(directory, name, data) {
-  const writable = await (await directory.getFileHandle(name, { create: true })).createWritable();
-  await writable.write(data);
-  await writable.close();
-}
-
-function download(name, data, type = "text/csv") {
-  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([data], { type })), download: name });
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  const { spool, durable } = await spoolReady;
+  const startedAt = new Date();
+  let record;
+  try {
+    record = await spool.create({ session: name, started: startedAt.toISOString(), members: {} });
+  } catch (error) {
+    setRecStatus(`Couldn't start: ${error.message}`, { bad: true });
+    return;
+  }
+  Object.assign(recorder, { active: true, startedAt, members: new Map(), spool, spoolId: record.id, unflushed: [], releaseLock: holdLock(spoolLock(record.id)) });
+  for (const board of members) joinRecording(board);
+  recorder.flushTimer = setInterval(flushRecording, FLUSH_MS);
+  offerReplay(null);
+  const notes = [folder ? "" : " (files download at Stop)", durable ? "" : " This browser can't keep it if the page closes."];
+  setRecStatus(`Recording ${members.length} board${members.length === 1 ? "" : "s"}${notes[0]}: clap 2–3 times near all of them now.${notes[1]}`);
 }
 
 async function stopRecording() {
-  recorder.active = false;
-  const stoppedAt = new Date();
-  const session = $("session").value;
-  const results = [];
-  for (const board of recorder.members) {
-    const result = board.stopRecording();
-    if (!result) continue;
-    if (board.connected) {
+  const folder = await saveFolder();
+  clearInterval(recorder.flushTimer);
+  const stopped = new Date();
+  for (const member of recorder.members.values()) {
+    if (member.board?.connected) {
       try {
-        await board.refreshInfo();
+        await member.board.refreshInfo(); // for its count of samples dropped on the board
       } catch {
-        /* keep the counts from connect */
+        /* keep the count from connect */
       }
     }
-    results.push({ board, ...result });
+    detachMember(member);
   }
+  recorder.active = false;
   $("rec-elapsed").textContent = "";
-  $("rec-status").textContent = "Saving…";
-
-  const manifest = {
-    session,
-    started: recorder.startedAt.toISOString(),
-    stopped: stoppedAt.toISOString(),
-    format: "docs/data-collection.md",
-    boards: results.map(({ board, recording, gaps }) => ({
-      folder: boardFolder(board),
-      board_id: board.boardId,
-      name: `nrf-controller-${board.boardId}`,
-      label: board.label,
-      firmware: board.firmwareVersion,
-      imu_rate_hz: board.info.imuRateHz,
-      gyro_dps_per_lsb: Math.round(board.info.gyroDpsPerLsb * 1e9) / 1e9,
-      accel_g_per_lsb: Math.round(board.info.accelGPerLsb * 1e9) / 1e9,
-      mic_rate_hz: board.info.micRateHz,
-      envelope_window_samples: board.info.envelopeWindowSamples,
-      counts: recording.counts,
-      lost_in_recording: gaps,
-      imu_dropped_on_board_since_boot: board.info.imuDropped,
-    })),
-  };
-
+  await flushRecording();
+  const members = Object.fromEntries([...recorder.members].map(([key, member]) => [key, { ...member.meta, lost_in_recording: member.gaps }]));
+  const unflushed = recorder.unflushed;
   try {
-    if (recorder.dirHandle) {
-      const sessionDir = await recorder.dirHandle.getDirectoryHandle(session, { create: true });
-      for (const { board, recording } of results) {
-        const boardDir = await sessionDir.getDirectoryHandle(boardFolder(board), { create: true });
-        for (const [name, text] of Object.entries(recording.files())) await writeFile(boardDir, name, text);
-      }
-      await writeFile(sessionDir, "session.json", JSON.stringify(manifest, null, 2) + "\n");
-    } else {
-      for (const { board, recording } of results) {
-        for (const [name, text] of Object.entries(recording.files())) download(`${session}__${boardFolder(board)}__${name}`, text);
-      }
-      download(`${session}__session.json`, JSON.stringify(manifest, null, 2) + "\n", "application/json");
-    }
-  } catch (error) {
-    $("rec-status").textContent = `Save failed: ${error.message}`;
-    $("rec-status").className = "bad-text";
-    return;
+    await recorder.spool.update(recorder.spoolId, { stopped: stopped.toISOString(), members });
+  } catch {
+    /* saved from memory below all the same */
   }
-
-  const fewClaps = results.filter(({ recording }) => recording.counts.syncMarks < 2).map(({ board }) => board.displayName);
-  const where = recorder.dirHandle ? `${recorder.dirHandle.name}/${session}/` : "your downloads";
-  $("rec-status").className = fewClaps.length ? "bad-text" : "muted";
-  $("rec-status").textContent = fewClaps.length
-    ? `Saved to ${where}, but ${fewClaps.join(", ")} heard fewer than 2 claps: too few to line up ${fewClaps.length === 1 ? "its clock" : "their clocks"} with the others.`
-    : `Saved ${results.length} board${results.length === 1 ? "" : "s"} to ${where}. Open it in Replay to check it.`;
+  const record = { id: recorder.spoolId, session: $("session").value, started: recorder.startedAt.toISOString(), stopped: stopped.toISOString(), members };
+  recorder.members = new Map();
+  recorder.unflushed = [];
+  recorder.releaseLock();
+  setRecStatus("Saving…");
+  await saveLiveRecording(record, folder, unflushed);
   $("session").value = timestamp();
-  renderRecorder();
 }
 
-$("record").addEventListener("click", () => {
-  if (recordTarget() === "flash") flashRecordingActive() ? stopFlash() : startFlash();
-  else recorder.active ? stopRecording() : startRecording();
+const rowCount = (chunks) => chunks.reduce((count, chunk) => count + chunk.split("\n").length - 1, 0);
+
+/**
+ * Puts a spooled recording together into its session folder (or downloads), with session.json,
+ * then frees the spool. `extra`: chunks the spool couldn't take. Reports the result in the status.
+ */
+async function saveLiveRecording(record, folder, extra = []) {
+  const { spool } = await spoolReady;
+  const entries = [];
+  const saved = [];
+  try {
+    for (const [key, meta] of Object.entries(record.members)) {
+      const chunksOf = async (file) => [
+        ...(await spool.chunks(record.id, key, file)),
+        ...extra.filter((chunk) => chunk.member === key && chunk.file === file).map((chunk) => chunk.text),
+      ];
+      const eventChunks = await chunksOf("events.csv");
+      const events = parseEventRows(eventChunks.join(""));
+      const counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0 };
+      for (const { type } of events) counts[type === "sync" ? "syncMarks" : "buttonEvents"]++;
+      for (const file of Object.keys(LIVE_FILES)) {
+        const chunks = file === "events.csv" ? eventChunks : await chunksOf(file);
+        if (file === "temperature.csv" && !chunks.length) continue;
+        if (file === "imu.csv") counts.imuSamples = rowCount(chunks);
+        if (file === "mic_envelope.csv") counts.envelopeWindows = rowCount(chunks);
+        entries.push(await saveFile(folder, [record.session, meta.folder], file, liveFileParts(file, chunks, events)));
+      }
+      saved.push({ ...meta, counts });
+    }
+    const manifest = {
+      session: record.session,
+      started: record.started,
+      stopped: record.stopped ?? new Date(record.updated).toISOString(),
+      ...(!record.stopped && { recovered: "the page closed while it recorded; stopped is the last data stored" }),
+      format: "docs/data-collection.md",
+      boards: saved,
+    };
+    entries.push(await saveFile(folder, [record.session], "session.json", [JSON.stringify(manifest, null, 2) + "\n"]));
+  } catch (error) {
+    setRecStatus(`Save failed: ${error.message}. The recording is kept in this browser: save it again below.`, { bad: true });
+    renderRecovery();
+    return;
+  }
+  await spool.remove(record.id).catch(() => {});
+  renderRecovery();
+
+  const where = folder ? `${folder.name}/${record.session}/` : "your downloads";
+  const fewClaps = saved.filter((board) => board.counts.syncMarks < 2).map((board) => board.label || board.name);
+  setRecStatus(fewClaps.length
+    ? `Saved to ${where}, but ${fewClaps.join(", ")} heard fewer than 2 claps: too few to line up ${fewClaps.length === 1 ? "its clock" : "their clocks"} with the others.`
+    : `Saved ${saved.length} board${saved.length === 1 ? "" : "s"} to ${where}.`, { bad: fewClaps.length > 0 });
+  offerReplay({ entries, folder, session: record.session });
+}
+
+// A recording the page didn't get to save (it closed mid-recording, or the save failed), offered
+// for saving. A spool still being written to belongs to a recording running in another tab.
+let recoverable = null;
+async function renderRecovery() {
+  const { spool } = await spoolReady;
+  let waiting = [];
+  try {
+    const held = navigator.locks ? new Set((await navigator.locks.query()).held.map((lock) => lock.name)) : null;
+    const abandoned = (record) => (held ? !held.has(spoolLock(record.id)) : Date.now() - record.updated > ABANDONED_MS);
+    waiting = (await spool.list()).filter((record) => !(recorder.active && record.id === recorder.spoolId) && (record.stopped || abandoned(record)));
+  } catch {
+    /* nothing to offer */
+  }
+  for (const record of waiting.filter((record) => !Object.keys(record.members).length)) spool.remove(record.id).catch(() => {});
+  recoverable = waiting.filter((record) => Object.keys(record.members).length).sort((a, b) => b.updated - a.updated)[0] ?? null;
+  $("rec-recover").hidden = !recoverable;
+  if (!recoverable) return;
+  const count = Object.keys(recoverable.members).length;
+  const last = new Date(recoverable.updated).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  $("rec-recover-text").textContent = `${recoverable.session} (${count} board${count === 1 ? "" : "s"}) not saved` +
+    (recoverable.stopped ? "." : `: the page closed mid-recording, at ${last}.`);
+}
+renderRecovery();
+
+$("rec-recover-save").addEventListener("click", async () => {
+  if (!recoverable) return;
+  const folder = await saveFolder();
+  const record = recoverable;
+  $("rec-recover").hidden = true;
+  setRecStatus("Saving…");
+  await saveLiveRecording(record, folder);
 });
+$("rec-recover-discard").addEventListener("click", async () => {
+  if (!recoverable || !confirm(`Discard ${recoverable.session} for good? It can't be got back.`)) return;
+  await (await spoolReady).spool.remove(recoverable.id).catch(() => {});
+  renderRecovery();
+});
+
+$("record").addEventListener("click", async () => {
+  if (recordTarget() === "flash") {
+    flashRecordingActive() ? stopFlash() : startFlash();
+    return;
+  }
+  if (recordBusy) return;
+  recordBusy = true;
+  renderRecorder();
+  try {
+    await (recorder.active ? stopRecording() : startRecording());
+  } finally {
+    recordBusy = false;
+    renderRecorder();
+  }
+});
+
+// Leaving mid-recording, mid-upload or mid-update stops it, so the browser asks first.
+window.addEventListener("beforeunload", (event) => {
+  if (recorder.active || flashBusy.upload || [...firmwareJobs.values()].some((job) => job.active)) event.preventDefault();
+});
+// The last rows, in case the page is closing.
+window.addEventListener("pagehide", () => recorder.active && flushRecording());
 
 // ---- recording to the boards' flash ------------------------------------------------------
 const flashRecordingActive = () => flashBoards().some((board) => board.log.state === "recording");
@@ -1153,13 +1537,17 @@ function renderFlashRecorder() {
   $("upload").disabled = active || busy || !list.some((board) => board.log.usedBytes > 0);
   $("erase").disabled = active || busy || !list.length;
   $("rec-elapsed").textContent = "";
+  // Boards connected after Record aren't recording: offered to start them in the same session.
+  const idle = active ? list.filter((board) => board.log.state === "idle") : [];
+  $("flash-join").hidden = !idle.length;
+  $("flash-join").textContent = `Record ${idle.map((board) => board.displayName).join(", ")} too`;
   const noBoardText = ["Connect a board first.", "These boards' firmware can't record on its own. Flash the current build."];
   if (!list.length && !busy) {
     const old = [...boards.values()].some((board) => board.connected && !board.log);
-    $("rec-status").textContent = noBoardText[old ? 1 : 0];
+    setRecStatus(noBoardText[old ? 1 : 0]);
   } else if (noBoardText.includes($("rec-status").textContent)) {
     // A board's flash service attaches a moment after it connects, so either message may be stale.
-    $("rec-status").textContent = "Ready.";
+    setRecStatus("Ready.");
   }
   $("rec-boards").innerHTML = "";
   for (const board of list) {
@@ -1173,58 +1561,108 @@ function renderFlashRecorder() {
   }
 }
 
-async function forEachFlashBoard(action, verb) {
-  const list = flashBoards();
+async function forEachFlashBoard(list, action, verb) {
   const results = await Promise.allSettled(list.map((board) => action(board)));
   const failed = results.flatMap((result, i) => (result.status === "rejected" ? [`${list[i].displayName} (${result.reason.message})`] : []));
-  if (failed.length) {
-    $("rec-status").textContent = `Couldn't ${verb}: ${failed.join(", ")}`;
-    $("rec-status").className = "bad-text";
-  }
+  if (failed.length) setRecStatus(`Couldn't ${verb}: ${failed.join(", ")}`, { bad: true });
   return failed.length === 0;
 }
 
 async function startFlash() {
   // One tag for every board started together, so uploads group into one session: the start time.
   const tag = Math.floor(Date.now() / 1000);
-  $("rec-status").className = "muted";
-  if (await forEachFlashBoard((board) => board.logStart(tag, Date.now()), "start")) {
-    $("rec-status").textContent = "Recording on the boards: clap 2–3 times near all of them now. You can disconnect; they carry on.";
+  setRecStatus("Starting…");
+  offerReplay(null);
+  if (await forEachFlashBoard(flashBoards(), (board) => board.logStart(tag, Date.now()), "start")) {
+    setRecStatus("Recording on the boards: clap 2–3 times near all of them now. You can disconnect; they carry on.");
   }
 }
 
+$("flash-join").addEventListener("click", async () => {
+  const list = flashBoards();
+  const tag = list.find((board) => board.log.state === "recording")?.log.sessionTag;
+  const idle = list.filter((board) => board.log.state === "idle");
+  if (!tag || !idle.length) return;
+  if (await forEachFlashBoard(idle, (board) => board.logStart(tag, Date.now()), "start")) {
+    setRecStatus(`${idle.map((board) => board.displayName).join(", ")} joined the recording: clap near ${idle.length === 1 ? "it" : "them"} too.`);
+  }
+});
+
 async function stopFlash() {
-  $("rec-status").className = "muted";
+  setRecStatus("Stopping…");
   const recording = flashBoards().filter((board) => board.log.state === "recording");
   const results = await Promise.allSettled(recording.map((board) => board.logStop()));
   const failed = results.filter((result) => result.status === "rejected").length;
-  $("rec-status").textContent = failed ? `${failed} board(s) didn't stop; try again.` : "Stopped. Upload when you're ready; the recordings stay on the boards until erased.";
+  setRecStatus(failed ? `${failed} board(s) didn't stop; try again.` : "Stopped. Upload when you're ready; the recordings stay on the boards until erased.", { bad: failed > 0 });
 }
 
 $("erase").addEventListener("click", async () => {
   const list = flashBoards();
   if (!confirm(`Erase the recordings on ${list.length} board${list.length === 1 ? "" : "s"}? Upload them first: this can't be undone.`)) return;
   flashBusy.erase = true;
-  $("rec-status").className = "muted";
-  $("rec-status").textContent = "Erasing (up to a minute)…";
-  const ok = await forEachFlashBoard((board) => board.logErase(), "erase");
+  setRecStatus("Erasing (up to a minute)…");
+  const ok = await forEachFlashBoard(list, (board) => board.logErase(), "erase");
   flashBusy.erase = false;
-  if (ok) $("rec-status").textContent = "Erasing on the boards; each shows 0% when done.";
+  for (const board of list) rememberUploaded(board.boardId, null);
+  if (ok) setRecStatus("Erasing on the boards; each shows 0% when done.");
 });
+
+// What the last upload from each board to this browser read: the log's first recording, to know
+// it's still the same log, and how far it got. The next upload reads on from there, so it takes
+// only the new recordings and doesn't save the old ones again.
+const LOG_HEAD_BYTES = 64;
+const uploadedKey = (boardId) => `flash-uploaded:${boardId}`;
+
+function uploadedSoFar(boardId) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(uploadedKey(boardId)));
+    return Number.isInteger(saved?.bytes) && Number.isInteger(saved?.firstTag) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberUploaded(boardId, uploaded) {
+  try {
+    if (uploaded) localStorage.setItem(uploadedKey(boardId), JSON.stringify(uploaded));
+    else localStorage.removeItem(uploadedKey(boardId));
+  } catch {
+    /* storage blocked: the next upload reads the whole log */
+  }
+}
+
+// The part of the board's log not uploaded yet (all of it unless this browser uploaded from this
+// log before): { offset, used, bytes, firstTag }.
+async function readNewLog(board, onProgress) {
+  const used = board.log.usedBytes;
+  const before = uploadedSoFar(board.boardId);
+  let offset = 0;
+  if (before && before.bytes <= used) {
+    const head = await board.logDownload(0, Math.min(used, LOG_HEAD_BYTES));
+    if (firstSessionTag(head) === before.firstTag) offset = before.bytes;
+  }
+  let bytes = await board.logDownload(offset, used - offset, onProgress);
+  if (offset && !startsWithSession(bytes)) {
+    offset = 0;
+    bytes = await board.logDownload(0, used, onProgress);
+  }
+  return { offset, used, bytes, firstTag: offset ? before.firstTag : firstSessionTag(bytes) };
+}
 
 $("upload").addEventListener("click", uploadFlash);
 
 async function uploadFlash() {
+  const folder = await saveFolder();
   const list = flashBoards().filter((board) => board.log.usedBytes > 0);
   flashBusy.upload = true;
-  $("rec-status").className = "muted";
-  $("rec-status").textContent = `Uploading from ${list.length} board${list.length === 1 ? "" : "s"}…`;
+  offerReplay(null);
+  setRecStatus(`Uploading from ${list.length} board${list.length === 1 ? "" : "s"}…`);
   const started = Date.now();
   const results = await Promise.allSettled(list.map(async (board) => {
     board.downloadProgress = 0;
     try {
-      const bytes = await board.logDownload((fraction) => (board.downloadProgress = fraction));
-      return { board, bytes, ...decodeFlashLog(bytes) };
+      const read = await readNewLog(board, (fraction) => (board.downloadProgress = fraction));
+      return { board, ...read, ...decodeFlashLog(read.bytes) };
     } finally {
       board.downloadProgress = null;
     }
@@ -1234,26 +1672,34 @@ async function uploadFlash() {
   const uploaded = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
   const failed = results.flatMap((result, i) => (result.status === "rejected" ? [`${list[i].displayName} (${result.reason.message})`] : []));
   try {
-    const written = await saveFlashUploads(uploaded);
+    const { names, entries, fewClaps } = await saveFlashUploads(uploaded, folder);
+    for (const { board, used, firstTag } of uploaded) if (firstTag !== null) rememberUploaded(board.boardId, { firstTag, bytes: used });
     const seconds = Math.round((Date.now() - started) / 1000);
     const problems = uploaded.flatMap(({ board, problems }) => problems.map((problem) => `${board.displayName}: ${problem}`));
-    $("rec-status").className = failed.length || problems.length ? "bad-text" : "muted";
-    $("rec-status").textContent = [
-      `Saved ${written.length} session${written.length === 1 ? "" : "s"} (${written.join(", ")}) in ${seconds} s.`,
+    const where = folder ? `${folder.name}/` : "your downloads";
+    setRecStatus([
+      names.length ? `Saved ${names.length} session${names.length === 1 ? "" : "s"} (${names.join(", ")}) to ${where} in ${seconds} s.`
+        : uploaded.length ? "Nothing new on the boards since the last upload." : "",
+      fewClaps.length ? `Fewer than 2 claps, too few to line up the clocks: ${fewClaps.join(", ")}.` : "",
       failed.length ? `Failed: ${failed.join(", ")}.` : "",
       problems.length ? `Damaged data skipped: ${problems.join("; ")}.` : "",
-      written.length ? "Open it in Replay to check it." : "",
-    ].filter(Boolean).join(" ");
+    ].filter(Boolean).join(" "), { bad: Boolean(failed.length || problems.length || fewClaps.length) });
+    if (names.length) offerReplay({ entries, folder, session: names.at(-1) });
   } catch (error) {
-    $("rec-status").className = "bad-text";
-    $("rec-status").textContent = `Save failed: ${error.message}`;
+    setRecStatus(`Save failed: ${error.message}`, { bad: true });
   }
 }
 
-/** Writes each recording session (boards grouped by start) as a session folder. Returns names. */
-async function saveFlashUploads(uploaded) {
+/**
+ * Writes each recording session (boards grouped by start) as a session folder, and each board's
+ * raw log as read. Returns the session names, what was saved (for Replay) and the boards that
+ * heard fewer than 2 claps.
+ */
+async function saveFlashUploads(uploaded, folder) {
   const groups = groupSessions(uploaded.map(({ board, sessions }) => ({ board, sessions })));
   const stamp = timestamp();
+  const entries = [];
+  const fewClaps = [];
   for (const group of groups) {
     const manifest = {
       session: group.name,
@@ -1282,30 +1728,17 @@ async function saveFlashUploads(uploaded) {
         complete: Boolean(session.end),
       })),
     };
-    const files = group.boards.map(({ board, session }) => [boardFolder(board), flashSessionFiles(session)]);
-    await saveSession(group.name, files, manifest);
+    for (const { board, session } of group.boards) {
+      for (const [file, text] of Object.entries(flashSessionFiles(session))) entries.push(await saveFile(folder, [group.name, boardFolder(board)], file, [text]));
+    }
+    entries.push(await saveFile(folder, [group.name], "session.json", [JSON.stringify(manifest, null, 2) + "\n"]));
+    for (const board of manifest.boards) if (board.counts.syncMarks < 2) fewClaps.push(`${board.label || board.name} in ${group.name}`);
   }
-  // The raw logs too, so nothing is lost if decoding ever needs redoing.
-  for (const { board, bytes } of uploaded) await saveFile(["flash_raw"], `${board.boardId}_${stamp}.bin`, bytes);
-  return groups.map((group) => group.name);
-}
-
-// Writes into the chosen folder (path = subfolders), or downloads with the path in the file name.
-async function saveFile(path, name, data) {
-  if (!recorder.dirHandle) {
-    download([...path, name].join("__"), data, name.endsWith(".json") ? "application/json" : name.endsWith(".bin") ? "application/octet-stream" : "text/csv");
-    return;
+  // The raw logs too, so nothing is lost if decoding ever needs redoing; named by where they start.
+  for (const { board, bytes, offset } of uploaded) {
+    if (bytes.length) await saveFile(folder, ["flash_raw"], `${board.boardId}_${stamp}${offset ? `_from${offset}` : ""}.bin`, [bytes]);
   }
-  let directory = recorder.dirHandle;
-  for (const part of path) directory = await directory.getDirectoryHandle(part, { create: true });
-  await writeFile(directory, name, data);
-}
-
-async function saveSession(name, boardFiles, manifest) {
-  for (const [folder, files] of boardFiles) {
-    for (const [file, text] of Object.entries(files)) await saveFile([name, folder], file, text);
-  }
-  await saveFile([name], "session.json", JSON.stringify(manifest, null, 2) + "\n");
+  return { names: groups.map((group) => group.name), entries, fewClaps };
 }
 
 // ---- lights -------------------------------------------------------------------------------
@@ -1378,7 +1811,7 @@ function imuRangesBlocker(board) {
   if (!board?.connected) return "Connect a board to choose its ranges.";
   if (!board.imuRanges) return "This board's firmware runs at ±2000 °/s and ±8 g: update it to choose.";
   if (["recording", "reading", "erasing"].includes(board.log?.state)) return "Fixed while this board records to flash or uploads.";
-  if (recorder.active && recorder.members.includes(board)) return "Fixed while this board is recording.";
+  if (isRecording(board)) return "Fixed while this board is recording.";
   return null;
 }
 
@@ -1482,6 +1915,11 @@ window.addEventListener("drop", (event) => {
   if (!draggingFiles(event)) return;
   event.preventDefault();
   $("fw-drop").classList.remove("over");
+  // A recording (a session's folder, or its .csv and .json files) opens in Replay instead.
+  if (!$("fw-dialog").open && openDroppedRecording(event.dataTransfer)) {
+    showReplay(true);
+    return;
+  }
   const file = event.dataTransfer.files[0];
   if (!file) return;
   if (!$("fw-dialog").open) openFirmwareDialog();
@@ -1499,7 +1937,7 @@ function setFirmwareStatus(text, { bad = false } = {}) {
 function updateBlocker(board) {
   if (!board.smp) return "firmware predates Bluetooth updates: flash it over USB once";
   if (["recording", "reading", "erasing"].includes(board.log?.state)) return "stop its flash recording or upload first";
-  if (recorder.active && recorder.members.includes(board)) return "stop the recording first";
+  if (isRecording(board)) return "stop the recording first";
   if (firmwareJobs.get(board.key)?.active) return "updating";
   return null;
 }
@@ -1570,17 +2008,10 @@ async function reconnect(device, key) {
   const deadline = Date.now() + RECONNECT_DEADLINE_MS;
   for (let attempt = 1; Date.now() < deadline; attempt++) {
     setJob(key, { text: attempt === 1 ? "reconnecting…" : `reconnecting (attempt ${attempt})…` });
-    let timer;
     try {
-      const attemptTimeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error("timed out")), CONNECT_ATTEMPT_MS);
-      });
-      return await Promise.race([connectDevice(device, () => {}), attemptTimeout]);
+      return await connectWithin(device, CONNECT_ATTEMPT_MS);
     } catch {
-      device.gatt.disconnect();
-      await sleepMs(2000);
-    } finally {
-      clearTimeout(timer);
+      await sleepMs(RECONNECT_PAUSE_MS);
     }
   }
   throw new Error("the board didn't come back: check it over USB (task monitor)");
@@ -1681,14 +2112,16 @@ $("latency-copy").addEventListener("click", async () => {
 // The Replay key swaps the live panels for a recorded session read back from its folder
 // (replay-view.js). Boards stay connected and recordings carry on underneath.
 initReplay({ getColors: () => colors });
-$("replay-key").addEventListener("click", () => {
-  const show = $("replay").hidden;
+function showReplay(show) {
   $("replay").hidden = !show;
   mainEl.hidden = show;
   $("replay-key").setAttribute("aria-pressed", String(show));
-  if (!show) placeSeams();
-});
+  if (show) replayShown();
+  else placeSeams();
+}
+$("replay-key").addEventListener("click", () => showReplay($("replay").hidden));
 
 renderBoards();
 renderMouse();
 renderLatency();
+reconnectKnownBoards();

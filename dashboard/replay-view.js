@@ -17,6 +17,7 @@ import {
   zoomView,
 } from "./replay.js";
 import { meterFraction, pickRange } from "./signal.js";
+import { kvGet, kvSet } from "./storage.js";
 
 const $ = (id) => document.getElementById(id);
 const MIN_SPAN_S = 0.05;
@@ -47,6 +48,7 @@ const SIGNALS = {
 
 const state = {
   files: new Map(), // picked path -> File
+  handles: null, // the folder or file handles they came from, if any
   sessions: [],
   tracks: [], // the session's boards on its timebase (replay.js placeBoard), in session order
   shown: new Set(), // folders whose lanes are shown
@@ -61,15 +63,42 @@ let colors = {};
 
 export function initReplay(options) {
   getColors = options.getColors;
-  $("replay-open-folder").addEventListener("click", () => $("replay-folder").click());
-  $("replay-open-files").addEventListener("click", () => $("replay-files").click());
+  // Chrome's own pickers give handles the page can keep and open again (see "the last session");
+  // elsewhere the file inputs do.
+  $("replay-open-folder").addEventListener("click", async () => {
+    if (!window.showDirectoryPicker) return $("replay-folder").click();
+    try {
+      openHandles([await window.showDirectoryPicker({ id: "replay", mode: "read" })]);
+    } catch {
+      /* picker dismissed */
+    }
+  });
+  $("replay-open-files").addEventListener("click", async () => {
+    if (!window.showOpenFilePicker) return $("replay-files").click();
+    try {
+      openHandles(await window.showOpenFilePicker({
+        id: "replay", multiple: true, types: [{ description: "Recorded session files", accept: { "text/csv": [".csv"], "application/json": [".json"] } }],
+      }));
+    } catch {
+      /* picker dismissed */
+    }
+  });
   for (const input of [$("replay-folder"), $("replay-files")]) {
     input.addEventListener("change", () => {
-      if (input.files.length) takeFiles([...input.files]);
+      if (input.files.length) takeFiles([...input.files].map((file) => [file.webkitRelativePath || file.name, file]));
       input.value = "";
     });
   }
-  $("replay-pick").addEventListener("change", () => loadSession(state.sessions[Number($("replay-pick").value)]));
+  $("replay-pick").addEventListener("change", () => {
+    const session = state.sessions[Number($("replay-pick").value)];
+    remember(session);
+    loadSession(session);
+  });
+  $("replay-reopen").addEventListener("click", reopen);
+  kvGet(SOURCE_KEY).then((source) => {
+    lastSource = source ?? null;
+    if (!$("replay").hidden) replayShown();
+  });
   for (const input of document.querySelectorAll('input[name="replay-signal"]')) {
     input.addEventListener("change", () => {
       state.signal = input.value;
@@ -95,20 +124,139 @@ function setStatus(text, { bad = false } = {}) {
 }
 
 // ---- opening a session --------------------------------------------------------------------
-// A folder pick gives every file under it with its relative path; a file pick (a session that was
-// downloaded rather than saved to a folder) gives names like session__board__imu.csv.
-function takeFiles(files) {
-  state.files = new Map(files.map((file) => [file.webkitRelativePath || file.name, file]));
-  state.sessions = findSessions([...state.files.keys()]);
+// A folder pick or drop gives every file under it with its relative path; files picked or dropped
+// on their own (a session that was downloaded rather than saved to a folder) have names like
+// session__board__imu.csv. `entries` are [path, File]; oldest first, so that of Chrome's numbered
+// copies of a download the newest is kept (findSessions keeps the last). `handles`: the folder or
+// file handles they came from, if any, kept so the session can be opened again after a reload.
+// `session`: the name of the one to show, else the newest.
+function takeFiles(entries, { handles = null, session = null } = {}) {
+  const sorted = [...entries].sort(([, a], [, b]) => a.lastModified - b.lastModified);
+  state.files = new Map(sorted);
+  state.sessions = findSessions(sorted.map(([path]) => path), (path) => state.files.get(path).lastModified);
+  state.handles = handles;
+  $("replay-reopen").hidden = true;
   const pick = $("replay-pick");
-  pick.replaceChildren(...state.sessions.map((session, i) =>
-    new Option(`${session.name} · ${session.boards.length} board${session.boards.length === 1 ? "" : "s"}`, String(i))));
+  pick.replaceChildren(...state.sessions.map((found, i) =>
+    new Option(`${found.name} · ${found.boards.length} board${found.boards.length === 1 ? "" : "s"}`, String(i))));
   $("replay-pick-label").hidden = state.sessions.length < 2;
   if (!state.sessions.length) {
     setStatus("No recordings there. Pick a session's folder: the one holding session.json and a folder per board.", { bad: true });
+    remember(null);
     return;
   }
-  loadSession(state.sessions[0]);
+  const index = Math.max(0, state.sessions.findIndex((found) => found.name === session));
+  pick.value = String(index);
+  remember(state.sessions[index]);
+  loadSession(state.sessions[index]);
+}
+
+/** Opens files the page has just saved ([path, File]), or anything else read already, in Replay. */
+export function openReplayFiles(entries, options) {
+  takeFiles(entries, options);
+}
+
+// Every file under folder and file handles, as [path, File], the path starting at each handle's name.
+async function entriesOf(handles) {
+  const entries = [];
+  const walk = async (handle, prefix) => {
+    const path = prefix ? `${prefix}/${handle.name}` : handle.name;
+    if (handle.kind === "file") entries.push([path, await handle.getFile()]);
+    else for await (const child of handle.values()) await walk(child, path);
+  };
+  for (const handle of handles) await walk(handle, "");
+  return entries;
+}
+
+async function openHandles(handles, session = null) {
+  setStatus("Reading…");
+  try {
+    takeFiles(await entriesOf(handles), { handles, session });
+  } catch (error) {
+    setStatus(`Couldn't read them: ${error.message}`, { bad: true });
+  }
+}
+
+// ---- the last session -----------------------------------------------------------------------
+// The session opened last is kept in this browser (its folder or file handles and its name) and
+// opened again when Replay next opens: at once if Chrome still allows reading it, else from the
+// Reopen key, as Chrome asks once per visit. Files opened through the plain file inputs or an old
+// style drop have no handles, so they can't be.
+const SOURCE_KEY = "replay-source";
+const READ = { mode: "read" };
+let lastSource = null; // { handles, session }
+
+function remember(session) {
+  lastSource = session && state.handles ? { handles: state.handles, session: session.name } : null;
+  kvSet(SOURCE_KEY, lastSource ?? undefined);
+}
+
+/** Called by app.js when the Replay view opens. */
+export async function replayShown() {
+  if (state.tracks.length || !lastSource) return;
+  let allowed = false;
+  try {
+    allowed = (await Promise.all(lastSource.handles.map((handle) => handle.queryPermission(READ)))).every((permission) => permission === "granted");
+  } catch {
+    /* a handle that no longer works: offered below, and reported if it fails */
+  }
+  if (allowed) {
+    openHandles(lastSource.handles, lastSource.session);
+    return;
+  }
+  $("replay-reopen").textContent = `Reopen ${lastSource.session}`;
+  $("replay-reopen").hidden = false;
+}
+
+async function reopen() {
+  if (!lastSource) return;
+  try {
+    for (const handle of lastSource.handles) {
+      if ((await handle.requestPermission(READ)) !== "granted") {
+        setStatus("Chrome wasn't allowed to read it again: open it from the folder instead.", { bad: true });
+        return;
+      }
+    }
+  } catch (error) {
+    setStatus(`Couldn't reopen it (${error.message}): open it from the folder instead.`, { bad: true });
+    return;
+  }
+  openHandles(lastSource.handles, lastSource.session);
+}
+
+/**
+ * Opens a recording dropped on the page: a session's folder (or a folder of them), or its .csv and
+ * .json files. Returns false, reading nothing, if the drop holds neither.
+ */
+export function openDroppedRecording(dataTransfer) {
+  // Taken now: the drop's items are gone once its event returns.
+  const items = [...dataTransfer.items].filter((item) => item.kind === "file");
+  const entries = items.map((item) => item.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.some((entry) => entry.isDirectory || /\.(csv|json)$/i.test(entry.name))) return false;
+  if (items[0].getAsFileSystemHandle) {
+    // Handles, as the pickers give, so the session can be opened again later.
+    const handles = items.map((item) => item.getAsFileSystemHandle());
+    setStatus("Reading the dropped files…");
+    Promise.all(handles).then(
+      (list) => openHandles(list.filter(Boolean)),
+      (error) => setStatus(`Couldn't read the dropped files: ${error.message}`, { bad: true }),
+    );
+    return true;
+  }
+  const walk = async (entry) => {
+    if (entry.isFile) return [[entry.fullPath.slice(1), await new Promise((resolve, reject) => entry.file(resolve, reject))]];
+    const reader = entry.createReader();
+    const children = [];
+    // A folder's entries come in batches, until an empty one.
+    for (let batch; (batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject))).length;) children.push(...batch);
+    return (await Promise.all(children.map(walk))).flat();
+  };
+  setStatus("Reading the dropped files…");
+  Promise.all(entries.map(walk)).then(
+    (lists) => takeFiles(lists.flat()),
+    (error) => setStatus(`Couldn't read the dropped files: ${error.message}`, { bad: true }),
+  );
+  return true;
 }
 
 async function loadSession(session) {
