@@ -3,11 +3,10 @@ layout: page
 title: Install the firmware
 subtitle: Flash the swing-up controller onto the ESP32-S3 from your browser.
 description: Flash the n-cartpole firmware onto an ESP32-S3 over USB from the browser (Web Serial), keeping the saved Wi-Fi network.
-permalink: /swingup/real/
 ---
 Plug the board into your computer over USB, click install and pick its serial port. This needs Chrome or Edge on a desktop.
 
-<esp-web-install-button manifest="https://tsmorz.github.io/n-cartpole/manifest.json">
+<esp-web-install-button manifest="manifest.json">
   <span slot="unsupported">This browser has no Web Serial. Use Chrome or Edge.</span>
   <span slot="not-allowed">Web Serial needs HTTPS.</span>
 </esp-web-install-button>
