@@ -129,6 +129,28 @@ export function decodeFlashLog(bytes) {
   return { sessions, problems };
 }
 
+/**
+ * The session tag of the log's first recording, if `bytes` (the log from its start) begin with one:
+ * a log erased and recorded again starts with a different tag, so this tells whether a board still
+ * holds the log the page uploaded part of before.
+ */
+export function firstSessionTag(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return isSessionStart(view, 0) ? decodeStart(view, 0).sessionTag : null;
+}
+
+/**
+ * Whether a piece of the log read from where an earlier upload ended starts where a recording
+ * would: padding, then a recording's header or the erased end. Anything else means the log was
+ * erased and recorded over since, and only a read from its start gets every recording whole.
+ */
+export function startsWithSession(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = 0;
+  while (at < view.byteLength && view.getUint8(at) === REC.PAD) at++;
+  return at === view.byteLength || view.getUint8(at) === REC.ERASED || isSessionStart(view, at);
+}
+
 /** Samples lost within a recording: gaps in seq. */
 export function lostSamples(session) {
   let lost = 0;

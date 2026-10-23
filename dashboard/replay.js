@@ -9,19 +9,35 @@ import { peakToDbfs } from "./signal.js";
 
 /**
  * A picked file's path as folder names then file name. A folder pick gives
- * "session/board/imu.csv"; a session saved without a folder downloads as "session__board__imu.csv".
+ * "session/board/imu.csv"; a session saved without a folder downloads as "session__board__imu.csv",
+ * and Chrome names a second download of that file "session__board__imu (1).csv": the same file.
  */
 export function pathParts(path) {
   const parts = path.split("/").filter(Boolean);
-  return [...parts.slice(0, -1), ...(parts.at(-1) ?? "").split("__")];
+  const name = (parts.at(-1) ?? "").replace(/ \(\d+\)(?=\.[^.]*$)/, "");
+  return [...parts.slice(0, -1), ...name.split("__")];
+}
+
+/**
+ * When a session was recorded, from the date and time in its name (local time, as the dashboard
+ * names sessions: "2026-10-20_14-05-09", "flash_2026-10-20_14-05-09"), in epoch ms; null if none.
+ */
+export function sessionDateMs(name) {
+  const match = name.match(/(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [year, month, day, hour, minute, second] = match.slice(1).map(Number);
+  return new Date(year, month - 1, day, hour, minute, second).getTime();
 }
 
 /**
  * The sessions among picked files: each folder whose subfolders hold an imu.csv, with those boards'
- * files and its session.json. Newest (by name) first. Every path returned is one of `paths`:
+ * files and its session.json. Newest first: by the date in the name, or for a session named by
+ * hand, by its files' modification times (`modifiedMs(path)`). Where a file was picked more than
+ * once (Chrome's numbered copies of a download), the last in `paths` wins. Every path returned is
+ * one of `paths`:
  * [{ name, manifest: path | null, boards: [{ folder, files: { "imu.csv": path, ... } }] }]
  */
-export function findSessions(paths) {
+export function findSessions(paths, modifiedMs = () => 0) {
   const dirs = new Map(); // folder path -> { file name: path }
   for (const path of paths) {
     const parts = pathParts(path);
@@ -44,8 +60,10 @@ export function findSessions(paths) {
     }
     sessions.get(root).boards.push({ folder, files });
   }
+  const when = new Map([...sessions.values()].map((session) => [session, sessionDateMs(session.name) ??
+    Math.max(0, ...session.boards.flatMap((board) => Object.values(board.files).map(modifiedMs)))]));
   for (const session of sessions.values()) session.boards.sort((a, b) => a.folder.localeCompare(b.folder));
-  return [...sessions.values()].sort((a, b) => b.name.localeCompare(a.name));
+  return [...sessions.values()].sort((a, b) => when.get(b) - when.get(a) || b.name.localeCompare(a.name));
 }
 
 // ---- parsing ------------------------------------------------------------------------------

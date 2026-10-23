@@ -12,7 +12,7 @@ import {
   encodeLatencyReset, encodeLedColor, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
 } from "./wire.js";
-import { BoardRecording, TimeUnwrapper } from "./recording.js";
+import { TimeUnwrapper } from "./recording.js";
 import { SMP_CHARACTERISTIC, SMP_SERVICE } from "./smp.js";
 
 export const TRACE_POINTS = 200;
@@ -33,7 +33,13 @@ function savedLabel(boardId) {
 }
 
 export class Board extends EventTarget {
-  constructor(device) {
+  /**
+   * `continueFrom`: this device's previous connection, when reconnecting. Its time unwrapping and
+   * last sequence numbers carry over, so times stay continuous and the samples missed while it was
+   * away count as lost. `recording`: a BoardRecording to add this board's data to from the first
+   * notification (app.js owns recordings, so one outlives a dropped connection).
+   */
+  constructor(device, { continueFrom = null, recording = null } = {}) {
     super();
     this.device = device;
     this.key = device.id;
@@ -43,8 +49,8 @@ export class Board extends EventTarget {
     this.firmwareVersion = "";
     this.chars = {};
     this.writeChain = Promise.resolve();
-    this.unwrap = new TimeUnwrapper();
-    this.recording = null;
+    this.unwrap = continueFrom?.unwrap ?? new TimeUnwrapper();
+    this.recording = recording;
     this.log = null; // the on-board recorder's status, if this firmware has one
     this.battery = null;
     this.led = null; // the colour the board's LED shows, if this firmware reports it
@@ -54,9 +60,13 @@ export class Board extends EventTarget {
     this.imuRanges = null; // { gyroDps, accelG }, if this firmware lets them be chosen
     this.temperatureC = null; // the IMU's, if this firmware reports it
     this.seen = new Set();
+    // [characteristic, handler] for every notification this connection listens to, removed on
+    // disconnect: a reconnect makes a new Board, which mustn't share the old one's notifications.
+    this.listeners = [];
     // Removed again on disconnect: a reconnect makes a new Board for the same device.
     this.handleGattDisconnect = () => this.onDisconnected();
     this.resetView();
+    if (continueFrom) ({ lastSeq: this.lastSeq, lastWindow: this.lastWindow, lastEventSeq: this.lastEventSeq } = continueFrom);
   }
 
   resetView() {
@@ -136,7 +146,7 @@ export class Board extends EventTarget {
 
     const subscribe = async (service, uuid, handler) => {
       const characteristic = await service.getCharacteristic(uuid);
-      characteristic.addEventListener("characteristicvaluechanged", (event) => handler(event.target.value));
+      this.listen(characteristic, (event) => handler(event.target.value));
       await characteristic.startNotifications();
       return characteristic;
     };
@@ -199,7 +209,7 @@ export class Board extends EventTarget {
       return;
     }
     this.smp = new SmpClient((bytes) => this.queue(() => characteristic.writeValueWithoutResponse(bytes)));
-    characteristic.addEventListener("characteristicvaluechanged", (event) => {
+    this.listen(characteristic, (event) => {
       const view = event.target.value;
       this.smp.onNotification(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
     });
@@ -294,8 +304,16 @@ export class Board extends EventTarget {
     if (this.connected) this.device.gatt.disconnect();
   }
 
+  listen(characteristic, handler) {
+    characteristic.addEventListener("characteristicvaluechanged", handler);
+    this.listeners.push([characteristic, handler]);
+  }
+
   onDisconnected() {
     this.device.removeEventListener("gattserverdisconnected", this.handleGattDisconnect);
+    for (const [characteristic, handler] of this.listeners) characteristic.removeEventListener("characteristicvaluechanged", handler);
+    this.listeners = [];
+    this.recording = null;
     this.download?.reject(new Error("disconnected"));
     this.smp?.close(new Error("disconnected"));
     this.dispatchEvent(new Event("disconnected"));
@@ -451,8 +469,9 @@ export class Board extends EventTarget {
   onLogData(view) {
     const chunk = decodeLogChunk(view);
     const download = this.download;
-    if (!chunk || !download || chunk.offset + chunk.bytes.length > download.buffer.length) return;
-    download.buffer.set(chunk.bytes, chunk.offset);
+    const at = chunk && download ? chunk.offset - download.offset : -1;
+    if (at < 0 || at + chunk.bytes.length > download.buffer.length) return;
+    download.buffer.set(chunk.bytes, at);
     download.received += chunk.bytes.length;
     download.onProgress?.(download.received / download.buffer.length);
   }
@@ -470,23 +489,23 @@ export class Board extends EventTarget {
   }
 
   /**
-   * Reads the whole log back and checks it against the board's CRC-32. Resolves with the bytes.
-   * About 12 KB/s to a Mac (see docs/data-collection.md), so a full flash takes ~11 minutes.
+   * Reads `length` bytes of the log from `offset` and checks them against the board's CRC-32.
+   * Resolves with the bytes. About 12 KB/s to a Mac (see docs/data-collection.md), so a full flash
+   * takes ~11 minutes.
    */
-  async logDownload(onProgress) {
-    const length = this.log?.usedBytes ?? 0;
+  async logDownload(offset, length, onProgress) {
     if (!length) return new Uint8Array(0);
     const timeoutMs = 60000 + (length / 4000) * 1000;
     const done = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("timed out reading the log")), timeoutMs);
       this.download = {
-        buffer: new Uint8Array(length), received: 0, sawReading: false, onProgress,
+        offset, buffer: new Uint8Array(length), received: 0, sawReading: false, onProgress,
         finish: (status) => (clearTimeout(timer), resolve(status)),
         reject: (error) => (clearTimeout(timer), reject(error)),
       };
     });
     try {
-      await this.write(this.chars.logCommand, encodeLogRead(0, length));
+      await this.write(this.chars.logCommand, encodeLogRead(offset, length));
       const status = await done;
       const { buffer, received } = this.download;
       if (status.error) throw new Error(`the board reported error ${status.error}`);
@@ -527,24 +546,6 @@ export class Board extends EventTarget {
 
   zeroYaw() {
     if (this.quat) this.yawZero = this.quat;
-  }
-
-  // ---- recording ----------------------------------------------------------------------------
-  startRecording() {
-    this.recording = new BoardRecording(this.info);
-    this.recordingGapsAtStart = { imu: this.imuGaps, envelope: this.envelopeGaps, events: this.eventGaps };
-  }
-
-  /** Stops recording and returns it with what went missing meanwhile (null if not recording). */
-  stopRecording() {
-    const recording = this.recording;
-    this.recording = null;
-    if (!recording) return null;
-    const start = this.recordingGapsAtStart;
-    return {
-      recording,
-      gaps: { imu: this.imuGaps - start.imu, envelope: this.envelopeGaps - start.envelope, events: this.eventGaps - start.events },
-    };
   }
 }
 
