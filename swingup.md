@@ -119,6 +119,10 @@ permalink: /controls/swingup/
       so there's room to swing by hand, but past half a meter from center the network is
       outside anything it saw in training.
     </p>
+    <p>
+      Have the hardware? <a href="{{ '/controls/swingup/real/' | relative_url }}">Install the firmware</a> on an
+      ESP32-S3 from your browser and load the model onto a real cart.
+    </p>
     <p class="eqn-note" id="su-params">
       The simulation uses the exact plant the network was trained on, except the rail.
     </p>

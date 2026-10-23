@@ -6,8 +6,8 @@
 
 - name: Double Pendulum
   blurb: >-
-    A double pendulum is a classic underactuated system when multiple stable points.
-    I trained a reinforcement algorithm to swing up the pendulums and transition between each stable point.
+    A double pendulum is a classic underactuated system with multiple equilibrium points.
+    I trained a reinforcement-learning policy to swing up the pendulums and transition between each equilibrium point.
   year: "2026"
   tags: [Python, Reinforcement Learning, Controls]
   featured: true
