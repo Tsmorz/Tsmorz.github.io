@@ -10,6 +10,7 @@ permalink: /controls/swingup/
     An unactuated pendulum on a sliding cart is a classic controls problem and this two link version extends it.
     You can push the cart to swing both links up but the system dynamics and human reaction time make this impossible. However, a <strong>TQC reinforcement-learning policy</strong>
     can do this with a high rate of success. Sometimes learned control policies are the only way to achieve stability!
+    Built the rig? <a href="{{ '/controls/swingup/real/' | relative_url }}">Flash a controller onto an ESP32-S3.</a>
   </p>
 </section>
 

@@ -45,7 +45,8 @@
             <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="controls-menu" aria-label="Controls Lab pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
             <ul class="nav-menu-list" id="controls-menu">
               <li><a href="{{ '/controls/' | relative_url }}" {% if p == '/controls/' %}aria-current="page"{% endif %}>Lessons</a></li>
-              <li><a href="{{ '/controls/swingup/' | relative_url }}" {% if p contains '/controls/swingup' %}aria-current="page"{% endif %}>Double Pendulum</a></li>
+              <li><a href="{{ '/controls/swingup/' | relative_url }}" {% if p == '/controls/swingup/' %}aria-current="page"{% endif %}>Double Pendulum</a></li>
+              <li><a href="{{ '/controls/swingup/real/' | relative_url }}" {% if p contains '/controls/swingup/real' %}aria-current="page"{% endif %}>Real hardware</a></li>
               <li><a href="{{ '/controls/fit/' | relative_url }}" {% if p contains '/controls/fit' %}aria-current="page"{% endif %}>Custom data</a></li>
             </ul>
           </li>
