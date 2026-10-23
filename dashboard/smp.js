@@ -270,6 +270,8 @@ const IMAGE_MAGIC = 0x96f3b83d;
 const TLV_INFO_MAGIC = 0x6907;
 const TLV_PROTECTED_INFO_MAGIC = 0x6908;
 const HASH_TLVS = { 0x10: "SHA-256", 0x11: "SHA-384", 0x12: "SHA-512" };
+// A hash of the public key the image was signed with, as MCUboot finds its key by.
+const TLV_KEYHASH = 0x01;
 
 /** "1.2.3" or "1.2.3+4" (MCUboot's build number), as the dashboard shows versions. */
 export function formatImageVersion({ major, minor, revision, build }) {
@@ -278,7 +280,8 @@ export function formatImageVersion({ major, minor, revision, build }) {
 
 /**
  * Reads a signed MCUboot image (zephyr.signed.bin): its version and the hash MCUboot and MCUmgr
- * identify it by. Throws with a readable reason for anything else, e.g. an unsigned zephyr.bin.
+ * identify it by, and the hash of its signing key. Throws with a readable reason for anything
+ * else, e.g. an unsigned zephyr.bin.
  */
 export function parseMcubootImage(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -302,6 +305,7 @@ export function parseMcubootImage(bytes) {
   };
   let hash = null;
   let hashAlgorithm = null;
+  let keyHash = null;
   const scan = (end) => {
     for (let tlv = at + 4; tlv + 4 <= end; ) {
       const type = view.getUint16(tlv, true);
@@ -311,6 +315,7 @@ export function parseMcubootImage(bytes) {
         hash = bytes.slice(tlv + 4, tlv + 4 + length);
         hashAlgorithm = HASH_TLVS[type];
       }
+      if (type === TLV_KEYHASH) keyHash = bytes.slice(tlv + 4, tlv + 4 + length);
       tlv += 4 + length;
     }
     at = end;
@@ -321,7 +326,7 @@ export function parseMcubootImage(bytes) {
   scan(end);
   if (!hash) throw new Error("image has no hash TLV");
 
-  return { version, versionText: formatImageVersion(version), imageSize, hash, hashAlgorithm };
+  return { version, versionText: formatImageVersion(version), imageSize, hash, hashAlgorithm, keyHash };
 }
 
 /** Lowercase hex, for comparing and showing hashes. */

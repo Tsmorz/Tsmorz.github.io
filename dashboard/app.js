@@ -12,6 +12,8 @@ import {
 } from "./signal.js";
 import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
+import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
+import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
 
 const $ = (id) => document.getElementById(id);
 const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
@@ -102,14 +104,15 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
+const firmwareDialogOpen = () => $("fw-dialog").open || $("usb-dialog").open;
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("settings-drawer").hidden && !$("fw-dialog").open) setSettingsOpen(false);
+  if (event.key === "Escape" && !$("settings-drawer").hidden && !firmwareDialogOpen()) setSettingsOpen(false);
 });
 // A press anywhere else closes it too, except on its own key (which toggles it) and in the
-// firmware dialog it opens. The press still does whatever it was for, e.g. picks a board.
+// firmware dialogs it opens. The press still does whatever it was for, e.g. picks a board.
 document.addEventListener("pointerdown", (event) => {
   const drawer = $("settings-drawer");
-  if (drawer.hidden || $("fw-dialog").open) return;
+  if (drawer.hidden || firmwareDialogOpen()) return;
   if (drawer.contains(event.target) || $("settings").contains(event.target)) return;
   setSettingsOpen(false);
 });
@@ -1915,6 +1918,11 @@ window.addEventListener("drop", (event) => {
   if (!draggingFiles(event)) return;
   event.preventDefault();
   $("fw-drop").classList.remove("over");
+  $("usb-drop").classList.remove("over");
+  if ($("usb-dialog").open) {
+    takeUsbFiles([...event.dataTransfer.files]);
+    return;
+  }
   // A recording (a session's folder, or its .csv and .json files) opens in Replay instead.
   if (!$("fw-dialog").open && openDroppedRecording(event.dataTransfer)) {
     showReplay(true);
@@ -1935,7 +1943,7 @@ function setFirmwareStatus(text, { bad = false } = {}) {
 
 // Why `board` can't be updated right now, or null if it can.
 function updateBlocker(board) {
-  if (!board.smp) return "firmware predates Bluetooth updates: flash it over USB once";
+  if (!board.smp) return "firmware predates Bluetooth updates: use Flash over USB once";
   if (["recording", "reading", "erasing"].includes(board.log?.state)) return "stop its flash recording or upload first";
   if (isRecording(board)) return "stop the recording first";
   if (firmwareJobs.get(board.key)?.active) return "updating";
@@ -2061,6 +2069,103 @@ async function updateBoards(list) {
 $("fw-update").addEventListener("click", () => {
   const list = [...boards.values()].filter((board) => board.connected && fwChosen.has(board.key) && !updateBlocker(board));
   if (firmwareImage && list.length) updateBoards(list);
+});
+
+// ---- flashing over USB --------------------------------------------------------------------
+// For a board with no firmware yet, or firmware too old for Bluetooth updates: the page drives
+// the board's own USB programmer over WebUSB (swd.js) and writes MCUboot and the signed firmware
+// as `task flash` does, on a chip it erases first (usbflash.js). One board at a time.
+const usbImages = { bootloader: null, firmware: null };
+let usbKeyCheck = null; // "match", "mismatch" or "unknown" once both images are in
+let usbFlashing = false;
+const USB_STAGE_TEXT = { connecting: "connecting…", erasing: "erasing the chip…", writing: "writing", verifying: "checking", restarting: "restarting…" };
+
+$("usb-open").addEventListener("click", () => {
+  renderUsbFlash();
+  if (!$("usb-dialog").open) $("usb-dialog").showModal();
+});
+$("usb-close").addEventListener("click", () => $("usb-dialog").close());
+$("usb-file").addEventListener("change", () => {
+  const files = [...$("usb-file").files];
+  $("usb-file").value = "";
+  takeUsbFiles(files);
+});
+$("usb-drop").addEventListener("dragover", (event) => draggingFiles(event) && $("usb-drop").classList.add("over"));
+$("usb-drop").addEventListener("dragleave", () => $("usb-drop").classList.remove("over"));
+
+function setUsbStatus(text, { bad = false } = {}) {
+  $("usb-status").textContent = text;
+  $("usb-status").classList.toggle("bad-text", bad);
+}
+
+// Each file is sorted by what it holds, so the two can come in either order, or together.
+async function takeUsbFiles(files) {
+  try {
+    for (const file of files) {
+      const picked = readImageFile(file.name, new Uint8Array(await file.arrayBuffer()));
+      usbImages[picked.kind] = picked;
+    }
+    setUsbStatus("");
+  } catch (error) {
+    setUsbStatus(error.message, { bad: true });
+  }
+  usbKeyCheck = usbImages.bootloader && usbImages.firmware ? await signingKeyCheck(usbImages.bootloader, usbImages.firmware) : null;
+  renderUsbFlash();
+}
+
+function renderUsbFlash() {
+  const { bootloader, firmware } = usbImages;
+  const kb = (bytes) => `${(bytes.length / 1024).toFixed(0)} KB`;
+  $("usb-bootloader").textContent = `MCUboot: ${bootloader ? `${bootloader.name} · ${kb(bootloader.bytes)}` : "not chosen"}`;
+  $("usb-firmware").textContent = `Firmware: ${firmware ? `${firmware.name} · v${firmware.image.versionText} · ${kb(firmware.bytes)}` : "not chosen"}`;
+  $("usb-key").hidden = !usbKeyCheck;
+  $("usb-key").textContent = {
+    match: "✓ Signed with the key this MCUboot trusts",
+    mismatch: "This MCUboot won't boot this firmware: they're signed with different keys. Take both from the same build or release.",
+    unknown: "Couldn't check the signing key: take both from the same build or release.",
+  }[usbKeyCheck] ?? "";
+  $("usb-key").classList.toggle("bad-text", usbKeyCheck === "mismatch");
+  if (!navigator.usb) setUsbStatus("This browser has no WebUSB: use Chrome or Edge.", { bad: true });
+  $("usb-flash").disabled = !navigator.usb || usbFlashing || !bootloader || !firmware || usbKeyCheck === "mismatch";
+}
+
+function showUsbProgress(stage, fraction) {
+  const percent = Math.round(fraction * 100);
+  const counted = stage === "writing" || stage === "verifying";
+  setUsbStatus(counted ? `${USB_STAGE_TEXT[stage]} ${percent}%` : USB_STAGE_TEXT[stage]);
+  $("usb-bar").hidden = false;
+  $("usb-bar").querySelector("i").style.width = `${counted ? percent : stage === "restarting" ? 100 : 0}%`;
+  $("usb-bar").setAttribute("aria-valuenow", String(counted ? percent : 0));
+}
+
+$("usb-flash").addEventListener("click", async () => {
+  let device;
+  try {
+    device = await navigator.usb.requestDevice({ filters: [PROBE_FILTER] });
+  } catch {
+    return; // the picker was closed
+  }
+  usbFlashing = true;
+  renderUsbFlash();
+  let transport = null;
+  let stage = "connecting";
+  try {
+    transport = await openProbe(device);
+    const { boardId, wasLocked } = await flashOverUsb(new Nrf54lm20a(new Dap(transport)), usbImages, {
+      onStage: (next) => showUsbProgress((stage = next), 0),
+      onProgress: (fraction) => showUsbProgress(stage, fraction),
+    });
+    const name = `nrf-controller-${boardId}`;
+    setUsbStatus(`✓ ${name} runs v${usbImages.firmware.image.versionText}${wasLocked ? " (it was locked: the erase unlocked it)" : ""}. Add it over Bluetooth.`);
+    setStatus(`${name} flashed over USB`);
+  } catch (error) {
+    setUsbStatus(`Failed: ${error.message}`, { bad: true });
+  } finally {
+    await transport?.close().catch(() => {});
+    $("usb-bar").hidden = true;
+    usbFlashing = false;
+    renderUsbFlash();
+  }
 });
 
 // ---- latency ------------------------------------------------------------------------------

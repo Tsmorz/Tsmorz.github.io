@@ -131,13 +131,15 @@
     .seam.horizontal::after { left: 0; right: 0; top: 3px; height: 3px; }
     .seam:hover::after, .seam.dragging::after, .seam:focus-visible::after { background: var(--signal); }
     .seam:focus-visible { outline: none; }
+    /* A grip in the middle of every seam (two short lines across it) says it can be dragged. */
+    .seam::before { content: ""; position: absolute; border: 0 solid var(--line-strong); background: var(--panel); transition: border-color .1s; }
+    .seam.vertical::before { top: 50%; left: 2px; width: 5px; height: 22px; margin-top: -11px; border-inline-width: 1px; }
+    .seam.horizontal::before { left: 50%; top: 2px; width: 22px; height: 5px; margin-left: -11px; border-block-width: 1px; }
+    .seam:hover::before, .seam.dragging::before, .seam:focus-visible::before { border-color: var(--signal); }
     /* A seam inside a module (between Microphone's plots) has no panel edge under it, so it draws
-       its own hairline, with a grip in the middle, until the pointer lights it. */
+       its own hairline until the pointer lights it. */
     .seam.within::after { top: 4px; height: 1px; background: var(--line-strong); }
-    .seam.within::before { content: ""; position: absolute; left: 50%; top: 2px; width: 22px; height: 5px; margin-left: -11px;
-                           border-block: 1px solid var(--line-strong); background: var(--panel); transition: border-color .1s; }
     .seam.within:hover::after, .seam.within.dragging::after, .seam.within:focus-visible::after { top: 3px; height: 3px; background: var(--signal); }
-    .seam.within:hover::before, .seam.within.dragging::before, .seam.within:focus-visible::before { border-color: var(--signal); }
     section { overflow-y: auto; }
     .plot { flex: 1 1 0; height: auto; min-height: 64px; }
   }
@@ -356,6 +358,10 @@
   .fw-targets li.failed .state { color: var(--bad); }
   #fw-empty { margin: 12px 0 0; font-size: 12.5px; }
   #fw-status { font-size: 12.5px; }
+  #usb-bootloader { margin: 10px 0 0; overflow-wrap: anywhere; }
+  #usb-firmware, #usb-key { margin: 4px 0 0; overflow-wrap: anywhere; }
+  #usb-bar { margin-top: 12px; }
+  #usb-status { font-size: 12.5px; }
 
   /* Latency figures as small amber displays. */
   .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
@@ -615,9 +621,9 @@
     <div class="info-pop" id="lights-info" popover><p>Overrides the status LED (blue advertising, green connected) until the next connect, disconnect or clap.</p></div>
   </section>
   <section>
-    <h2>Firmware <span class="muted">over Bluetooth</span><button type="button" class="info" popovertarget="firmware-info" aria-label="About firmware updates"></button></h2>
-    <div class="row"><button id="fw-open">Update firmware…</button></div>
-    <div class="info-pop" id="firmware-info" popover><p>Updates any or all connected boards. Dropping a <code>.bin</code> anywhere on the page opens it too.</p></div>
+    <h2>Firmware<button type="button" class="info" popovertarget="firmware-info" aria-label="About firmware updates"></button></h2>
+    <div class="row"><button id="fw-open">Update over Bluetooth…</button><button id="usb-open">Flash over USB…</button></div>
+    <div class="info-pop" id="firmware-info" popover><p>Bluetooth updates any or all connected boards; dropping a <code>.bin</code> anywhere on the page opens it too. USB flashing is for a board with no firmware yet, or firmware too old for Bluetooth updates: one board at a time, plugged into this computer.</p></div>
   </section>
   <section>
     <h2>Latency <span class="muted">ms · IMU sample → host radio ACK</span><button type="button" class="info" popovertarget="latency-info" aria-label="How to measure latency"></button></h2>
@@ -658,6 +664,28 @@
       <span class="muted" id="fw-status"></span>
     </div>
     <p class="hint">Ticked boards update together, about 30 s each, then restart into the new firmware and reconnect. One that doesn't come up on it rolls back by itself. Closing this keeps them going.</p>
+  </div>
+</dialog>
+
+<dialog id="usb-dialog" aria-labelledby="usb-title">
+  <div class="dialog-head"><h2 id="usb-title">Flash firmware <span class="muted">over USB</span></h2>
+    <button type="button" id="usb-close" aria-label="Close">✕</button></div>
+  <div class="dialog-body">
+    <label class="drop" id="usb-drop">
+      <input type="file" id="usb-file" accept=".bin" multiple aria-label="MCUboot and firmware images">
+      <b>Drop MCUboot's zephyr.bin and zephyr.signed.bin here</b>
+      <span>or click to choose them (both at once, or one after the other)</span>
+      <span class="muted num">build/app/mcuboot/zephyr/ and build/app/nrf-controller/zephyr/, or a release's two .bin files</span>
+    </label>
+    <p class="readout" id="usb-bootloader">MCUboot: not chosen</p>
+    <p class="readout" id="usb-firmware">Firmware: not chosen</p>
+    <p class="readout" id="usb-key" hidden></p>
+    <div class="bar" id="usb-bar" role="progressbar" aria-label="Flashing" aria-valuemin="0" aria-valuemax="100" hidden><i></i></div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="usb-flash" disabled>Flash…</button>
+      <span class="muted" id="usb-status"></span>
+    </div>
+    <p class="hint">Plug the board into this computer by USB, press Flash and pick its programmer (XIAO nRF54LM20A CMSIS-DAP). Takes about 15 s. It erases the whole chip first, so the board's settings and Bluetooth bonds go: if this computer paired with it before, remove it from the Bluetooth settings before adding it again. Recordings on its flash chip stay. Close OpenOCD or pyOCD first; the serial console can stay open.</p>
   </div>
 </dialog>
 

@@ -1,0 +1,106 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Check the firmware installer's files (controls/swingup/real/) hang together — what a publish by
+# `task fw-installer` in ../n-cartpole must leave behind, and what a hand edit could break:
+#   * manifest.json parses, names one ESP32-S3 build, every part file exists
+#   * parts are in offset order, do not overlap, and leave the nvs partition (0x9000-0xF000) alone,
+#     so installing keeps the saved Wi-Fi network
+#   * file names carry the manifest's version, and no image from another version is left behind
+#   * manifest-model.json writes the model to the model partition (0x620000), and that file is the model
+#   * the model the page links exists, is a valid-looking .ncpm (magic) of the size the manifest says
+#   * the page loads a pinned esp-web-tools (an exact version, not a floating range)
+#
+# Pure stdlib, no bundler, no build.
+
+require "json"
+
+root = File.expand_path("..", __dir__)
+dir = File.join(root, "controls", "swingup", "real")
+errors = []
+
+NVS = (0x9000...0xF000)
+
+manifest = begin
+  JSON.parse(File.read(File.join(dir, "manifest.json")))
+rescue Errno::ENOENT, JSON::ParserError => e
+  errors << "manifest.json: #{e.message}"
+  nil
+end
+
+if manifest
+  version = manifest["version"].to_s
+  errors << "manifest.json: needs a version" if version.empty?
+  errors << "manifest.json: new_install_prompt_erase must be false (an erase wipes the model)" unless manifest["new_install_prompt_erase"] == false
+  builds = manifest["builds"] || []
+  errors << "manifest.json: expected exactly one build" unless builds.size == 1
+  parts = (builds.first || {})["parts"] || []
+  errors << "manifest.json: the build must target ESP32-S3" unless (builds.first || {})["chipFamily"] == "ESP32-S3"
+  errors << "manifest.json: needs parts" if parts.empty?
+
+  previous_end = 0
+  parts.each do |part|
+    path = File.join(dir, part["path"].to_s)
+    unless File.file?(path)
+      errors << "#{part['path']}: listed in the manifest but missing"
+      next
+    end
+    offset = part["offset"]
+    size = File.size(path)
+    errors << "#{part['path']}: starts at 0x#{offset.to_s(16)}, before the previous part ends (0x#{previous_end.to_s(16)})" if offset < previous_end
+    errors << "#{part['path']}: overlaps the nvs partition" if offset < NVS.end && offset + size > NVS.begin
+    errors << "#{part['path']}: name does not carry version #{version}" unless part["path"].include?("-fw-#{version}-")
+    previous_end = offset + size
+  end
+  errors << "manifest.json: the first part must start at offset 0 (the bootloader)" unless parts.first && parts.first["offset"] == 0
+
+  listed = parts.map { |p| p["path"] }
+  Dir.glob(File.join(dir, "n-cartpole-fw-*.bin")).map { |f| File.basename(f) }.each do |name|
+    errors << "#{name}: not in the manifest (a leftover from another version)" unless listed.include?(name)
+  end
+
+  model = (manifest["n_cartpole"] || {})["model"]
+  if model
+    path = File.join(dir, model["file"].to_s)
+    if File.file?(path)
+      errors << "#{model['file']}: #{File.size(path)} bytes, manifest says #{model['bytes']}" unless File.size(path) == model["bytes"]
+      errors << "#{model['file']}: not an .ncpm (bad magic)" unless File.binread(path, 4) == "NCPM"
+    else
+      errors << "#{model['file']}: listed in the manifest but missing"
+    end
+  else
+    errors << "manifest.json: n_cartpole.model is missing (the page links a model); run `task fw-installer -- --model <.ncpm>` in n-cartpole"
+  end
+end
+
+# The model installs through its own manifest: one part, the blob at the start of the `model`
+# partition (firmware/partitions.csv in n-cartpole).
+MODEL_OFFSET = 0x620000
+begin
+  mm = JSON.parse(File.read(File.join(dir, "manifest-model.json")))
+  part = (((mm["builds"] || []).first || {})["parts"] || [])
+  errors << "manifest-model.json: expected one part" unless part.size == 1
+  if part.first
+    errors << "manifest-model.json: the model must go to 0x#{MODEL_OFFSET.to_s(16)}, not 0x#{part.first['offset'].to_i.to_s(16)}" unless part.first["offset"] == MODEL_OFFSET
+    errors << "manifest-model.json: #{part.first['path']} is missing" unless File.file?(File.join(dir, part.first["path"].to_s))
+    errors << "manifest-model.json: part is not the model the manifest lists" unless part.first["path"] == ((manifest || {})["n_cartpole"] || {}).dig("model", "file")
+  end
+  errors << "manifest-model.json: new_install_prompt_erase must be false" unless mm["new_install_prompt_erase"] == false
+rescue Errno::ENOENT, JSON::ParserError => e
+  errors << "manifest-model.json: #{e.message}"
+end
+
+page = File.read(File.join(dir, "index.md"))
+errors << "index.md: the page must link the model" unless page.include?("n-cartpole-model.ncpm")
+errors << "index.md: the page must offer the model install (manifest-model.json)" unless page.include?("manifest-model.json")
+unless page =~ %r{esp-web-tools@\d+\.\d+\.\d+/}
+  errors << "index.md: pin esp-web-tools to an exact version (esp-web-tools@X.Y.Z), not a range"
+end
+
+if errors.empty?
+  puts "OK — the firmware installer's files are consistent."
+else
+  warn "Installer check failed:"
+  errors.each { |e| warn "  - #{e}" }
+  exit 1
+end

@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Controls
-description: Interactive control-systems demos - tune PID controllers on a mass-spring, tilt table, and flight sim, and state-feedback (LQR) gains on a cart-pole.
+description: An interactive controls course built on one mass on a spring - stability, system identification, LQR, estimation and digital control - with the ideas carried on to a tilt table, an aircraft and a cart-pole.
 permalink: /controls/
 lab: controls
 ---

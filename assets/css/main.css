@@ -936,3 +936,43 @@ main:not(:has(> .hero))::before {
 .solution-list li { border-left: 2px solid var(--lime); padding-left: 1rem; display: flex; flex-direction: column; gap: .15rem; }
 .solution-list strong { font-size: 1.1rem; }
 .solution-list span { color: var(--text-muted); font-size: .98rem; }
+
+/* /controls/swingup/real/: the installer's steps, and the esp-web-tools dialog (it is appended to <body>, so
+   its custom properties set here reach it and follow the light/dark tokens) */
+.prose .install-steps { list-style: none; counter-reset: step; padding: 0; display: grid; gap: 1.6rem; max-width: 40rem; }
+.prose .install-steps > li { counter-increment: step; position: relative; padding-left: 3rem; }
+.prose .install-steps > li + li { margin-top: 0; }
+.install-steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: 0; width: 2rem; height: 2rem;
+  display: grid; place-items: center; background: var(--surface); color: var(--text);
+  border: 1.5px solid var(--lime); border-radius: 3px; font-family: var(--mono); font-size: .85rem;
+}
+.step-title { display: block; color: var(--text); font-weight: 600; font-size: 1.05rem; line-height: 2rem; }
+.install-steps p { margin: 0 0 .75rem; }
+.install-note { font-size: .88rem; color: var(--text-muted); }
+.install-need { max-width: 40rem; margin-bottom: 1.6rem; }
+.install-need strong { color: var(--text); }
+.install-action { align-items: center; margin-bottom: .75rem; gap: .6rem 1rem; }
+ewt-install-dialog {
+  --roboto-font: var(--font);
+  --md-ref-typeface-brand: var(--font);
+  --md-ref-typeface-plain: var(--font);
+  --md-sys-typescale-headline-font: var(--mono);
+  --md-sys-typescale-headline-small-font: var(--mono);
+  --md-dialog-headline-font: var(--mono);
+  --md-sys-typescale-title-font: var(--mono);
+  --text-color: var(--text-muted);
+  --danger-color: var(--bad);
+  --md-sys-color-primary: var(--accent);
+  --md-sys-color-on-primary: var(--surface);
+  --md-sys-color-surface: var(--surface);
+  --md-sys-color-surface-container: var(--surface);
+  --md-sys-color-surface-container-high: var(--surface);
+  --md-sys-color-surface-container-highest: var(--bg-soft);
+  --md-sys-color-secondary-container: var(--accent-soft);
+  --md-sys-color-on-surface: var(--text);
+  --md-sys-color-on-surface-variant: var(--text-muted);
+  --md-dialog-container-shape: 3px;
+  --md-filled-button-container-shape: 3px;
+  --md-text-button-container-shape: 3px;
+}
