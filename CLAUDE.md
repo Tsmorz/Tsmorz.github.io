@@ -52,7 +52,7 @@ assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax 
 assets/js/recipes.js     /recipes/ (recipes.md): tick lists, metric/imperial; RecipeCore (unit conversion) has no DOM
 assets/js/lab/           the lab template behind /controls/
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
-controls/swingup/real/   /controls/swingup/real/: browser firmware installer (esp-web-tools, pinned to an exact version); manifest, image pieces and the model (`n-cartpole-model.ncpm`) come from `task fw-installer -- fw-vX.Y.Z [--model <.ncpm>]` in `../n-cartpole`, never hand-edit; `script/test-installer` checks them
+controls/swingup/real/   /controls/swingup/real/: browser firmware installer (esp-web-tools, pinned to an exact version); manifest, image pieces, the model (`n-cartpole-model.ncpm`) and its own `manifest-model.json` (an "Install model" button that writes it to the `model` partition) come from `task fw-installer -- fw-vX.Y.Z [--model <.ncpm>]` in `../n-cartpole`, never hand-edit; `script/test-installer` checks them
 script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-fit, test-recipes, train-verify-net
 ```
 

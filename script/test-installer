@@ -7,6 +7,7 @@
 #   * parts are in offset order, do not overlap, and leave the nvs partition (0x9000-0xF000) alone,
 #     so installing keeps the saved Wi-Fi network
 #   * file names carry the manifest's version, and no image from another version is left behind
+#   * manifest-model.json writes the model to the model partition (0x620000), and that file is the model
 #   * the model the page links exists, is a valid-looking .ncpm (magic) of the size the manifest says
 #   * the page loads a pinned esp-web-tools (an exact version, not a floating range)
 #
@@ -72,8 +73,26 @@ if manifest
   end
 end
 
+# The model installs through its own manifest: one part, the blob at the start of the `model`
+# partition (firmware/partitions.csv in n-cartpole).
+MODEL_OFFSET = 0x620000
+begin
+  mm = JSON.parse(File.read(File.join(dir, "manifest-model.json")))
+  part = (((mm["builds"] || []).first || {})["parts"] || [])
+  errors << "manifest-model.json: expected one part" unless part.size == 1
+  if part.first
+    errors << "manifest-model.json: the model must go to 0x#{MODEL_OFFSET.to_s(16)}, not 0x#{part.first['offset'].to_i.to_s(16)}" unless part.first["offset"] == MODEL_OFFSET
+    errors << "manifest-model.json: #{part.first['path']} is missing" unless File.file?(File.join(dir, part.first["path"].to_s))
+    errors << "manifest-model.json: part is not the model the manifest lists" unless part.first["path"] == ((manifest || {})["n_cartpole"] || {}).dig("model", "file")
+  end
+  errors << "manifest-model.json: new_install_prompt_erase must be false" unless mm["new_install_prompt_erase"] == false
+rescue Errno::ENOENT, JSON::ParserError => e
+  errors << "manifest-model.json: #{e.message}"
+end
+
 page = File.read(File.join(dir, "index.md"))
 errors << "index.md: the page must link the model" unless page.include?("n-cartpole-model.ncpm")
+errors << "index.md: the page must offer the model install (manifest-model.json)" unless page.include?("manifest-model.json")
 unless page =~ %r{esp-web-tools@\d+\.\d+\.\d+/}
   errors << "index.md: pin esp-web-tools to an exact version (esp-web-tools@X.Y.Z), not a range"
 end

@@ -12,7 +12,7 @@ description: Flash the n-cartpole firmware onto an ESP32-S3 over USB from the br
     <p>Connect the ESP32-S3 to your computer with the USB cable, to the port marked <strong>UART</strong>.</p>
   </li>
   <li>
-    <span class="step-title">Install</span>
+    <span class="step-title">Install the firmware</span>
     <p>Click the button, pick the board in the list your browser shows, then choose <strong>Install</strong> and confirm. It takes about a minute; keep this tab open and the board plugged in.</p>
     <div class="btn-row install-action">
       <esp-web-install-button manifest="manifest.json">
@@ -25,16 +25,21 @@ description: Flash the n-cartpole firmware onto an ESP32-S3 over USB from the br
     <p class="install-note">Board not in the list? Hold <strong>BOOT</strong>, tap <strong>RESET</strong>, release <strong>BOOT</strong>, and click again. Your saved Wi-Fi network is kept. Skip <em>Erase User Data</em> in the install window: it also wipes the model.</p>
   </li>
   <li>
-    <span class="step-title">Connect it to Wi-Fi</span>
-    <p>A new board opens its own network, <strong>cartpole-XXXX</strong>. Join it, open <code>http://192.168.4.1</code> and enter your 2.4&nbsp;GHz network. Then reconnect your computer to your own network and open <code>http://cartpole.local</code>.</p>
-  </li>
-  <li>
-    <span class="step-title">Load the model</span>
-    <p>The firmware and the model are separate files. Download the model, then drag it onto the board's dashboard.</p>
+    <span class="step-title">Install the model</span>
+    <p>The firmware and the model are separate files, so install the model the same way: click, pick the board again (it restarted after step 2), then choose <strong>Install</strong>.</p>
     <div class="btn-row install-action">
-      <a class="btn" href="n-cartpole-model.ncpm" download>Download model (.ncpm)</a>
+      <esp-web-install-button manifest="manifest-model.json">
+        <button slot="activate" class="btn btn-primary" type="button">Install model</button>
+        <span slot="unsupported"></span>
+        <span slot="not-allowed"></span>
+      </esp-web-install-button>
       <span class="install-note" id="install-model"></span>
     </div>
+    <p class="install-note">Prefer the board's dashboard? <a href="n-cartpole-model.ncpm" download>Download the model (.ncpm)</a> and drag it onto the dashboard instead.</p>
+  </li>
+  <li>
+    <span class="step-title">Connect it to Wi-Fi</span>
+    <p>A new board opens its own network, <strong>cartpole-XXXX</strong>. Join it, open <code>http://192.168.4.1</code> and enter your 2.4&nbsp;GHz network. Then reconnect your computer to your own network and open <code>http://cartpole.local</code>.</p>
   </li>
 </ol>
 

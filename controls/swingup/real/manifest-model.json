@@ -1,0 +1,16 @@
+{
+  "name": "n-cartpole model",
+  "version": "tqc-rail05-goals-ft-weighted-h48b2-v2@2000000-i8",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "n-cartpole-model.ncpm",
+          "offset": 6422528
+        }
+      ]
+    }
+  ]
+}
