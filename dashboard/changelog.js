@@ -8,6 +8,16 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-24-steadier-page",
+    date: "2026-10-24",
+    title: "A steadier page",
+    items: [
+      "Settings show your change at once (voice commands, Listening, Wake on motion, the clock source) instead of flicking back while the board confirms; one that the board refuses is put back.",
+      "Panel headings stay on one line in narrow windows, and the Tap lamp keeps its size (a double tap rings it).",
+      "On a phone, What's new sits beside Add board.",
+    ],
+  },
+  {
     id: "2026-10-24-mouse-off",
     date: "2026-10-24",
     title: "The mouse starts off",

@@ -519,8 +519,9 @@ function renderAngles() {
   $("at-rest").classList.toggle("on", Boolean(selected?.atRest));
   const tap = selected?.lastTap;
   const tapRecent = Boolean(tap) && performance.timeOrigin + performance.now() - tap.hostMs < TAP_LAMP_MS;
+  // The text stays "Tap" whatever was felt, so the heading never changes width under it.
   $("tap-lamp").classList.toggle("on", tapRecent);
-  $("tap-lamp").textContent = tapRecent && tap.type === "double_tap" ? "Double tap" : "Tap";
+  $("tap-lamp").classList.toggle("double", tapRecent && tap.type === "double_tap");
   if (!quat) {
     for (const name of ["roll", "pitch", "yaw"]) $(name).textContent = "–";
     return;
@@ -2011,10 +2012,16 @@ $("clock-source").addEventListener("change", async () => {
   const capable = [...boards.values()].filter((board) => board.connected && board.clock);
   // Listeners first, so there is never a moment with two sources broadcasting.
   const order = [...capable.filter((board) => board.key !== chosen), ...capable.filter((board) => board.key === chosen)];
+  // Each role shows at once (the 250 ms redraw would otherwise put the old source back until the
+  // boards report), and is put back if that board refuses.
   for (const board of order) {
+    const before = board.clock;
+    const role = board.key === chosen ? "source" : "listener";
+    board.clock = { ...before, role };
     try {
-      await board.setClockRole(board.key === chosen ? "source" : "listener");
+      await board.setClockRole(role);
     } catch (error) {
+      board.clock = before;
       setStatus(`${board.displayName}: couldn't set its clock role (${error.message})`, { bad: true });
     }
   }
@@ -2036,12 +2043,17 @@ function renderMotionWake() {
     : "Off: only a USER press wakes a sleeping board.";
 }
 
+// Shown at once and put back if the board refuses, so the redraw doesn't flip it back meanwhile.
 $("motion-wake").addEventListener("click", async () => {
   const board = selected;
   if (!board?.connected || board.motionWake === null) return;
+  const before = board.motionWake;
+  board.motionWake = !before;
+  renderMotionWake();
   try {
-    await board.setMotionWake(!board.motionWake);
+    await board.setMotionWake(!before);
   } catch (error) {
+    board.motionWake = before;
     setStatus(`${board.displayName}: couldn't change wake on motion (${error.message})`, { bad: true });
   }
   renderMotionWake();
