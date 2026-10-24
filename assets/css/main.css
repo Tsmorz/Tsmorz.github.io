@@ -241,6 +241,8 @@ pre code { background: none; border: 0; padding: 0; }
 /* bridge the gap under the link so the menu stays open while the pointer crosses it */
 .nav-menu-list::before { content: ""; position: absolute; left: 0; right: 0; top: -.6rem; height: .6rem; }
 .nav-menu-list li { flex-shrink: 1; }
+/* a page that belongs to the one above it (Real hardware under Double Pendulum) */
+.nav-menu-list .nav-sub > a { padding-left: 1.5rem; }
 .nav-menu:hover .nav-menu-list, .nav-menu:focus-within .nav-menu-list, .nav-menu.open .nav-menu-list { display: block; }
 .nav-menu:hover .nav-menu-btn svg, .nav-menu.open .nav-menu-btn svg { transform: rotate(180deg); }
 .nav-menu.shut .nav-menu-list { display: none; }

@@ -9,9 +9,7 @@ style: journal
 <div class="journal" data-view="index">
 <header class="wrap j-mast j-print-hide">
   <h1 class="j-title">Recipes</h1>
-  <p class="j-standfirst">Everything is weighed, not measured. Scale a recipe up or down, tick the ingredients as they go on the scale, then the steps as you finish them.</p>
-  <div class="j-rule" aria-hidden="true"></div>
-  <p class="j-meta"><span>{{ site.data.recipes | size }} recipes</span><span>Every amount in grams</span><span>Metric or imperial</span><span>Prints without the buttons</span></p>
+  <p class="j-standfirst">A few of my favorites, written up to be easy to cook from. Everything is weighed on a kitchen scale, so you can scale a batch up or down, switch to imperial, and tick off each ingredient and step as you go.</p>
 </header>
 
 <div class="wrap rc-page">

@@ -43,7 +43,7 @@
 
 - id: hummingbird-cake
   name: Hummingbird cake
-  blurb: Carrot, pineapple, coconut and almonds, lightened with whipped egg whites and finished with cream cheese icing.
+  blurb: Carrot, pineapple, coconut and almonds, finished with cream cheese icing.
   makes: One half sheet pan, a two-layer cake, or cupcakes
   time: About 1 hour, plus cooling
   ingredients:
@@ -93,7 +93,7 @@
 
 - id: creme-brulee
   name: Crème brûlée
-  blurb: Vanilla and Grand Marnier custard baked in a water bath, under a glass-thin caramel top.
+  blurb: Vanilla and Grand Marnier custard under a glass-thin caramel top.
   makes: "[[n:8]] ramekins of [[ml:120-175]]"
   time: 1 hour of work, plus a few hours to chill
   ingredients:

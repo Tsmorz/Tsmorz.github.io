@@ -46,7 +46,7 @@
             <ul class="nav-menu-list" id="controls-menu">
               <li><a href="{{ '/controls/' | relative_url }}" {% if p == '/controls/' %}aria-current="page"{% endif %}>Lessons</a></li>
               <li><a href="{{ '/controls/swingup/' | relative_url }}" {% if p == '/controls/swingup/' %}aria-current="page"{% endif %}>Double Pendulum</a></li>
-              <li><a href="{{ '/controls/swingup/real/' | relative_url }}" {% if p contains '/controls/swingup/real' %}aria-current="page"{% endif %}>Real hardware</a></li>
+              <li class="nav-sub"><a href="{{ '/controls/swingup/real/' | relative_url }}" {% if p contains '/controls/swingup/real' %}aria-current="page"{% endif %}>Real hardware</a></li>
               <li><a href="{{ '/controls/fit/' | relative_url }}" {% if p contains '/controls/fit' %}aria-current="page"{% endif %}>Custom data</a></li>
             </ul>
           </li>
