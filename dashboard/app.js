@@ -7,6 +7,7 @@ import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, lost
 import { BoardRecording, LIVE_FILES, liveFileParts, parseEventRows, safeName } from "./recording.js";
 import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
 import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
+import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
   ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
@@ -844,7 +845,9 @@ function renderBoardRow(board) {
   else row.style.removeProperty("--led");
   row.querySelector(".flash").textContent = flashSummary(board);
   const job = firmwareJobs.get(board.key);
-  row.querySelector(".fw").textContent = job?.stage === "uploading" ? `↑ ${Math.round(job.progress * 100)}%` : board.firmwareVersion || "–";
+  const fw = firmwareMark(board);
+  row.querySelector(".fw").textContent = job?.stage === "uploading" ? `↑ ${Math.round(job.progress * 100)}%` : fw.text;
+  row.querySelector(".fw").title = fw.title;
   const battery = row.querySelector(".battery");
   battery.textContent = batterySummary(board.battery);
   battery.title = batteryDetail(board.battery);
@@ -2321,6 +2324,7 @@ $("latency-copy").addEventListener("click", async () => {
 // (replay-view.js). Boards stay connected and recordings carry on underneath.
 initReplay({ getColors: () => colors });
 initVoice({ getBoard: () => selected, isRecording: () => recorder.active, getColors: () => colors });
+initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
   $("replay").hidden = !show;
   mainEl.hidden = show;

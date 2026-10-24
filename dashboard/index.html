@@ -318,7 +318,19 @@
   .h2-key + .h2-key { margin-left: 0; }
 
   /* Settings and Replay keys, lit while their drawer or view is open. */
-  #settings, #mouse-toggle, #motion-wake, #voice-listen, #replay-key { display: inline-flex; align-items: center; gap: 6px; }
+  #settings, #mouse-toggle, #motion-wake, #voice-listen, #replay-key, #whats-new-key { display: inline-flex; align-items: center; gap: 6px; }
+  /* What's new: the key's lamp lights while there's something this browser hasn't seen. */
+  #whats-new-key::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  #whats-new-key.unseen::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  #whats-new { width: min(440px, calc(100vw - 16px)); max-height: min(72vh, 600px); overflow-y: auto; }
+  #whats-new h2 { margin: 0 0 6px; }
+  .whats-new-list { list-style: none; margin: 0; padding: 0; }
+  .whats-new-list > li { padding: 8px 0; border-top: 1px dashed var(--line-strong); }
+  .whats-new-list h3 { display: flex; gap: 10px; align-items: baseline; margin: 0 0 4px; font-size: 13px; }
+  .whats-new-list time { flex: none; white-space: nowrap; font: 11px var(--mono); color: var(--muted); }
+  .whats-new-list > li.fresh h3::after { content: "new"; margin-left: auto; font: 600 10px var(--mono); color: var(--signal-ink); }
+  .whats-new-list ul { margin: 0; padding-left: 18px; }
+  .whats-new-list .fw-note { margin: 4px 0 0; font: 11.5px var(--mono); color: var(--text-2); }
   #settings[aria-expanded="true"], #replay-key[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-ink); box-shadow: inset 0 -1px 0 var(--key-shadow), 0 0 8px var(--pressed-glow); }
   /* Mouse switch: a lamp that lights while the selected board sends mouse reports. */
   #mouse-toggle::before, #motion-wake::before, #voice-listen::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
@@ -459,6 +471,7 @@
     <h1>Data Collection</h1>
   </div>
   <span class="pill"><span class="dot" id="link-dot"></span><span id="status">No boards connected</span></span>
+  <button id="whats-new-key" type="button" popovertarget="whats-new">What's new</button>
   <button id="settings" type="button" aria-expanded="false" aria-controls="settings-drawer" title="Settings: mouse, lights, firmware update, latency and the seen-working checklist">
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
   <button id="replay-key" type="button" aria-pressed="false" aria-controls="replay" title="Replay: open a recorded session and plot it (boards stay connected)">
@@ -469,6 +482,11 @@
   </button>
   <button class="primary" id="connect">Add board</button>
 </header>
+<!-- Outside main: a popover inside a hidden panel (Replay hides the live ones) wouldn't show. -->
+<div class="info-pop" id="whats-new" popover>
+  <h2>What's new</h2>
+  <ol class="whats-new-list" id="whats-new-list"></ol>
+</div>
 
 <main>
   <div class="top-row">
