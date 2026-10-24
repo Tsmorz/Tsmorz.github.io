@@ -270,7 +270,6 @@
     var sc = current ? scaleOf(current) : 1, id = current && current.id;
     Array.prototype.forEach.call(document.querySelectorAll('[data-scale]'), function (b) { var on = Number(b.getAttribute('data-scale')) === sc; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     if (scaleIn && document.activeElement !== scaleIn) scaleIn.value = sc;
-    Array.prototype.forEach.call(document.querySelectorAll('[data-recipe]'), function (b) { b.classList.toggle('active', b.getAttribute('data-recipe') === id); b.setAttribute('aria-pressed', b.getAttribute('data-recipe') === id ? 'true' : 'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-unit]'), function (b) { b.classList.toggle('active', b.getAttribute('data-unit') === state.unit); b.setAttribute('aria-pressed', b.getAttribute('data-unit') === state.unit ? 'true' : 'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('.nav-menu-list a[href*="/recipes/#"]'), function (a) {
       if (a.getAttribute('href').split('#')[1] === id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
@@ -290,6 +289,7 @@
   // The index (no hash) lists the recipes; a hash opens that one recipe on its own.
   function show(r) {
     var was = current;
+    if (r !== was) hideUndo();
     current = r;
     page.setAttribute('data-view', r ? 'recipe' : 'index');
     document.title = r ? r.name + ' · ' + title : title;
@@ -298,9 +298,6 @@
     if (r !== was) window.scrollTo(0, 0);
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll('[data-recipe]'), function (b) {
-    b.addEventListener('click', function () { location.hash = b.getAttribute('data-recipe'); });
-  });
   function toIndex(e) {
     e.preventDefault();
     try { history.pushState(null, '', location.pathname + location.search); } catch (err) {}
@@ -308,8 +305,37 @@
   }
   var back = document.querySelector('.rc-back');
   if (back) back.addEventListener('click', toIndex);
-  var clear = document.querySelector('.rc-clear');
-  if (clear) clear.addEventListener('click', function () { if (current) { delete state.checks[current.id]; save(); build(); } });
+  // Clear ticks wipes a recipe's progress, so for a few seconds the button becomes an Undo that puts the ticks back.
+  var clear = document.querySelector('.rc-clear'), undoBox = document.querySelector('.rc-undo'), undo = null, undoTimer = null;
+  function hideUndo() {
+    var hadFocus = undoBox && undoBox.contains(document.activeElement);
+    clearTimeout(undoTimer); undo = null;
+    if (undoBox) undoBox.textContent = '';
+    if (clear) { clear.hidden = false; if (hadFocus) clear.focus(); }
+  }
+  if (clear) clear.addEventListener('click', function () {
+    var had = current && state.checks[current.id];
+    if (!had || !Object.keys(had).length) return;
+    delete state.checks[current.id]; save(); build();
+    hideUndo();
+    undo = { id: current.id, checks: had };
+    if (undoBox) {
+      undoBox.appendChild(document.createTextNode('Ticks cleared. '));
+      var b = el('button', 'sim-tab', 'Undo');
+      b.type = 'button';
+      b.addEventListener('click', function () {
+        if (!undo) return;
+        state.checks[undo.id] = undo.checks; save();
+        var same = current && current.id === undo.id;
+        hideUndo();
+        if (same) { build(); clear.focus(); }   // build() moves the bar, which drops focus
+      });
+      undoBox.appendChild(b);
+      clear.hidden = true;
+      b.focus();
+    }
+    undoTimer = setTimeout(hideUndo, 10000);
+  });
   Array.prototype.forEach.call(document.querySelectorAll('[data-unit]'), function (b) {
     b.addEventListener('click', function () { state.unit = b.getAttribute('data-unit'); save(); if (current) build(); sync(); });
   });

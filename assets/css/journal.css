@@ -78,22 +78,20 @@ body {
 .j-mark { font: 400 .8rem var(--j-mono); letter-spacing: 0; color: var(--ink-accent); }
 .j-label { font: 400 .72rem var(--j-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-muted); }
 
-/* An index: numbered rows on hairlines. Rows are buttons (or links); the open one is in ink colour with its arrow down. */
+/* An index: numbered rows on hairlines. Each row is a link; hovering one turns its name to ink colour and nudges its arrow. */
 .j-index { list-style: none; margin: 0; padding: 0; }
 .j-index-row {
   display: grid; grid-template-columns: 3rem minmax(0, 1fr) minmax(0, 1.8fr) 1.25rem; gap: .25rem 1.5rem; align-items: baseline;
   width: 100%; padding: 1.1rem 0; border: 0; border-bottom: 1px solid var(--rule); background: none; color: var(--ink);
   font: inherit; text-align: left; cursor: pointer;
 }
+.journal .j-index-row { text-decoration: none; }
 .j-index-no { font: .75rem var(--j-mono); color: var(--ink-muted); }
 .j-index-name { font-size: 1.6rem; line-height: 1.15; letter-spacing: -0.01em; transition: color .15s; }
 .j-index-blurb { font-size: 1.02rem; line-height: 1.5; color: var(--ink-2); }
 .j-index-arrow { width: 1.1rem; height: 1.1rem; align-self: center; color: var(--ink-muted); transition: transform .15s, color .15s; }
-.j-index-row:hover .j-index-name, .j-index-row[aria-pressed="true"] .j-index-name { color: var(--ink-accent); }
+.j-index-row:hover .j-index-name { color: var(--ink-accent); }
 .j-index-row:hover .j-index-arrow { color: var(--ink-accent); transform: translateX(3px); }
-.j-index-row[aria-pressed="true"] .j-index-no, .j-index-row[aria-pressed="true"] .j-index-arrow { color: var(--ink-accent); }
-.j-index-row[aria-pressed="true"] .j-index-arrow { transform: rotate(90deg); }
-.j-index-row[aria-pressed="true"] .j-index-name { font-style: italic; }
 
 /* Choices are words on the page, not keys: set in the text face, the others greyed, the chosen one in ink and
    underlined in ink colour, the way a link is. Restyles the site's .sim-tab here. */

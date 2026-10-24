@@ -15,19 +15,19 @@ style: journal
 <div class="wrap rc-page">
   {%- for r in site.data.recipes %}<span class="rc-anchor" id="{{ r.id }}"></span>{% endfor %}
   <a class="rc-back j-print-hide" href="{{ '/recipes/' | relative_url }}">← All recipes</a>
-  <div class="rc-index j-print-hide" role="group" aria-label="Recipe">
+  <nav class="rc-index j-print-hide" aria-label="Recipes">
   <ol class="j-index">
     {%- for r in site.data.recipes %}
-    <li><button class="j-index-row" type="button" data-recipe="{{ r.id }}" aria-pressed="false">
+    <li><a class="j-index-row" href="#{{ r.id }}" data-recipe="{{ r.id }}">
       <span class="j-index-no">{% if forloop.index < 10 %}0{% endif %}{{ forloop.index }}</span>
       <span class="j-index-name">{{ r.name }}</span>
       <span class="j-index-blurb">{{ r.blurb }}</span>
       <span class="j-index-meta" data-meta="{{ r.id }}"></span>
       <svg class="j-index-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></svg>
-    </button></li>
+    </a></li>
     {%- endfor %}
   </ol>
-  </div>
+  </nav>
 
   <div class="rc-bar j-print-hide">
     <div class="rc-seg" role="group" aria-label="Scale">
@@ -43,6 +43,7 @@ style: journal
       <button class="sim-tab" type="button" data-unit="imperial" aria-pressed="false">Imperial</button>
     </div>
     <button class="sim-tab rc-clear" type="button">Clear ticks</button>
+    <span class="rc-undo" role="status"></span>
   </div>
 
   <div id="rc-view" aria-live="off"><noscript><p>The recipes need JavaScript to switch units and keep your ticks.</p></noscript></div>
@@ -79,7 +80,9 @@ style: journal
 .rc-sec[data-sec="ing"]{grid-area:ing}
 .rc-sec[data-sec="step"]{grid-area:steps}
 .rc-sec.rc-notes-sec{grid-area:notes}
-.journal .rc-clear{font-style:italic;font-size:1.05rem;color:var(--ink-2);text-decoration-color:var(--ink-accent)}
+.journal .rc-clear,.journal .rc-undo .sim-tab{font-style:italic;font-size:1.05rem;color:var(--ink-2);text-decoration-color:var(--ink-accent)}
+.rc-undo{font:italic 1.05rem var(--j-serif);color:var(--ink-muted)}
+.rc-undo:empty,.rc-clear[hidden]{display:none}
 .rc-pager{grid-area:pager;display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:baseline;margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--ink)}
 .rc-pager a{color:var(--ink-2);text-decoration:none;font-size:1.25rem;line-height:1.3}
 .rc-pager a:hover{color:var(--ink-accent)}
