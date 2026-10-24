@@ -4,6 +4,7 @@ title: Controls
 description: An interactive controls course built on one mass on a spring - stability, system identification, LQR, estimation and digital control - with the ideas carried on to a tilt table, an aircraft and a cart-pole.
 permalink: /controls/
 lab: controls
+cat_hat: grad
 ---
 <section class="wrap page-head">
   <h1 class="page-title">Control Systems</h1>
