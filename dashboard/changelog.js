@@ -1,0 +1,100 @@
+// What's new (whats-new.js shows it): what changed for someone using this page or the boards,
+// newest first. The page is published, so the wording is for its users and nothing private goes in.
+//
+// `firmware` is the firmware release an entry needs: "next" until it ships (`task release` turns
+// every "next" here into the new version, in the release commit), or absent for a page-only change.
+// The page compares each board's firmware with the newest release named here. Pure, so
+// tests/dashboard/changelog.test.mjs runs it in Node.
+
+export const CHANGELOG = [
+  {
+    id: "2026-10-24-radio-clock",
+    date: "2026-10-24",
+    title: "Radio clock, taps, wake on motion and voice settings",
+    firmware: "next",
+    items: [
+      "Settings › Clock sync: pick one board as the source and the others record its clock about once a second; task align then lines the boards up to about a microsecond, with no clap needed.",
+      "Taps: the Tap lamp on Orientation lights for each one, and a double tap marks the moment in the recording (the board's LED flashes cyan).",
+      "Settings › Sleep › Wake on motion: picking up a sleeping board wakes it, as a USER press does.",
+      "The battery's charge and hours left come from a fuel gauge rather than the voltage alone (approximate until the cell is profiled).",
+      "Settings › Voice: whether each board listens and which commands it obeys, and what it heard lately. The clips dialog also records long background audio.",
+    ],
+  },
+  {
+    id: "2026-10-24-keyword-clips",
+    date: "2026-10-24",
+    title: "Recording voice-command clips",
+    firmware: "next",
+    items: [
+      "Settings › Voice opens a dialog that records clips of the voice-command phrases through a board's own microphone, saved as WAV files for training.",
+    ],
+  },
+  {
+    id: "2026-10-23-usb-flash",
+    date: "2026-10-23",
+    title: "Flash over USB from the browser",
+    items: [
+      "Settings › Firmware › Flash over USB… flashes a board plugged into this computer, with no tools to install; the last firmware that worked is kept to hand.",
+      "Grips on every seam between panels: drag one to resize, double-click to put it back.",
+    ],
+  },
+  {
+    id: "2026-10-22-spectrum",
+    date: "2026-10-22",
+    title: "Mic spectrum, IMU ranges and temperature",
+    firmware: "next",
+    items: [
+      "The Microphone panel shows the spectrum under the envelope.",
+      "Settings › IMU ranges sets each board's gyro and accelerometer full scale, saved on the board.",
+      "The IMU's temperature is recorded about once a second.",
+    ],
+  },
+  {
+    id: "2026-10-20-replay",
+    date: "2026-10-20",
+    title: "Replay",
+    items: ["Replay in the header opens a recorded session and plots every board on one time axis."],
+  },
+];
+
+/** [major, minor, patch] of a version like "1.0.1" or "1.0.1+0", or null. */
+export function parseVersion(text) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(text ?? "").trim());
+  return match ? match.slice(1, 4).map(Number) : null;
+}
+
+/** Negative, zero or positive as version a is older than, the same as, or newer than b. */
+export function compareVersions(a, b) {
+  const [x, y] = [parseVersion(a), parseVersion(b)];
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
+}
+
+/** The newest firmware release the changelog names, or null if none has shipped yet. */
+export function latestFirmware(entries = CHANGELOG) {
+  const released = entries.map((entry) => entry.firmware).filter((version) => parseVersion(version));
+  return released.reduce((newest, version) => (newest && compareVersions(newest, version) >= 0 ? newest : version), null);
+}
+
+/** Whether a board reporting `version` runs older firmware than `latest`. Unknown versions aren't flagged. */
+export function boardBehind(version, latest = latestFirmware()) {
+  return Boolean(latest && parseVersion(version) && compareVersions(version, latest) < 0);
+}
+
+/**
+ * The entries to mark new: those above the one last seen. Someone who has never opened the list
+ * gets only the newest, and so does someone whose last-seen entry has since been dropped.
+ */
+export function unseen(entries, seenId) {
+  const at = entries.findIndex((entry) => entry.id === seenId);
+  return at < 0 ? entries.slice(0, 1) : entries.slice(0, at);
+}
+
+/** A line on what firmware an entry needs, given the versions of the connected boards; "" if none. */
+export function firmwareNote(entry, boardVersions) {
+  if (!entry.firmware) return "";
+  if (entry.firmware === "next") return "Comes with the next firmware release.";
+  const behind = boardVersions.filter((version) => boardBehind(version, entry.firmware)).length;
+  if (!behind) return `Firmware v${entry.firmware}${boardVersions.length ? ": your boards have it." : "."}`;
+  return `Needs firmware v${entry.firmware}: ${behind} connected board${behind === 1 ? " is" : "s are"} behind (Settings › Firmware).`;
+}

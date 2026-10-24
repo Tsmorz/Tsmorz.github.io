@@ -41,6 +41,9 @@ export const IMU_COLUMNS = [
 export const ENVELOPE_COLUMNS = ["board_time_us", "host_ms", "window", "peak"];
 export const EVENT_COLUMNS = ["board_time_us", "host_ms", "seq", "type", "peak"];
 export const TEMPERATURE_COLUMNS = ["board_time_us", "host_ms", "temperature_c"];
+// One row per radio clock pair (about once a second while synced): the source board's packet
+// `counter` was at source_time_us on the source's clock and board_time_us on this one's.
+export const RADIO_CLOCK_COLUMNS = ["board_time_us", "host_ms", "source_board", "counter", "source_time_us"];
 
 // The board sends its scales as float32, so 0.07 arrives as 0.0700000003; trim that back.
 const cleanScale = (scale) => Math.round(scale * 1e9) / 1e9;
@@ -81,9 +84,13 @@ export function buttonStatesAt(times, events) {
   return states;
 }
 
-/** The files a live recording writes, with their columns. temperature.csv only if the firmware sent temperatures. */
+/**
+ * The files a live recording writes, with their columns. temperature.csv only if the firmware sent
+ * temperatures, radio_clock.csv only if the board heard a clock source.
+ */
 export const LIVE_FILES = {
   "imu.csv": IMU_COLUMNS, "mic_envelope.csv": ENVELOPE_COLUMNS, "events.csv": EVENT_COLUMNS, "temperature.csv": TEMPERATURE_COLUMNS,
+  "radio_clock.csv": RADIO_CLOCK_COLUMNS,
 };
 
 /**
@@ -102,7 +109,7 @@ export class BoardRecording {
     this.accelDecimals = scaleDecimals(this.accelScale);
     this.windowUs = (1e6 * info.envelopeWindowSamples) / info.micRateHz;
     this.pending = Object.fromEntries(Object.keys(LIVE_FILES).map((file) => [file, []]));
-    this.counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0 };
+    this.counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0, taps: 0, voiceCommands: 0, clockPairs: 0 };
   }
 
   /**
@@ -142,7 +149,15 @@ export class BoardRecording {
     }
     this.pending["events.csv"].push(`${event.tUs},${host},${event.seq},${event.type},${event.peak}`);
     if (event.type === "sync") this.counts.syncMarks++;
+    else if (event.type === "tap" || event.type === "double_tap") this.counts.taps++;
+    else if (event.type === "keyword") this.counts.voiceCommands++;
     else this.counts.buttonEvents++;
+  }
+
+  /** pair: decodeClockPair() output with both times unwrapped (each on its own clock). */
+  addClockPair(pair, hostMs) {
+    this.pending["radio_clock.csv"].push(`${pair.tUs},${fixed(hostMs, 3)},${pair.sourceBoard},${pair.counter},${pair.sourceTUs}`);
+    this.counts.clockPairs++;
   }
 
   /** The rows added since the last call, as CSV text (no header) per file that has any. */

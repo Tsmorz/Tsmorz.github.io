@@ -9,26 +9,25 @@ style: journal
 <div class="journal" data-view="index">
 <header class="wrap j-mast j-print-hide">
   <h1 class="j-title">Recipes</h1>
-  <p class="j-standfirst">Everything is weighed, not measured. Scale a recipe up or down, tick the ingredients as they go on the scale, then the steps as you finish them.</p>
-  <div class="j-rule" aria-hidden="true"></div>
-  <p class="j-meta"><span>{{ site.data.recipes | size }} recipes</span><span>Every amount in grams</span><span>Metric or imperial</span><span>Prints without the buttons</span></p>
+  <p class="j-standfirst">A few of my favorites, written up to be easy to cook from. Everything is weighed on a kitchen scale, so you can scale a batch up or down, switch to imperial, and tick off each ingredient and step as you go.</p>
 </header>
 
 <div class="wrap rc-page">
   {%- for r in site.data.recipes %}<span class="rc-anchor" id="{{ r.id }}"></span>{% endfor %}
   <a class="rc-back j-print-hide" href="{{ '/recipes/' | relative_url }}">← All recipes</a>
-  <div class="rc-index j-print-hide" role="group" aria-label="Recipe">
+  <nav class="rc-index j-print-hide" aria-label="Recipes">
   <ol class="j-index">
     {%- for r in site.data.recipes %}
-    <li><button class="j-index-row" type="button" data-recipe="{{ r.id }}" aria-pressed="false">
+    <li><a class="j-index-row" href="#{{ r.id }}" data-recipe="{{ r.id }}">
       <span class="j-index-no">{% if forloop.index < 10 %}0{% endif %}{{ forloop.index }}</span>
       <span class="j-index-name">{{ r.name }}</span>
       <span class="j-index-blurb">{{ r.blurb }}</span>
+      <span class="j-index-meta" data-meta="{{ r.id }}"></span>
       <svg class="j-index-arrow" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></svg>
-    </button></li>
+    </a></li>
     {%- endfor %}
   </ol>
-  </div>
+  </nav>
 
   <div class="rc-bar j-print-hide">
     <div class="rc-seg" role="group" aria-label="Scale">
@@ -43,6 +42,8 @@ style: journal
       <button class="sim-tab" type="button" data-unit="metric" aria-pressed="true">Metric</button>
       <button class="sim-tab" type="button" data-unit="imperial" aria-pressed="false">Imperial</button>
     </div>
+    <button class="sim-tab rc-clear" type="button">Clear ticks</button>
+    <span class="rc-undo" role="status"></span>
   </div>
 
   <div id="rc-view" aria-live="off"><noscript><p>The recipes need JavaScript to switch units and keep your ticks.</p></noscript></div>
@@ -60,7 +61,11 @@ style: journal
 .rc-back:hover{color:var(--ink-accent)}
 .rc-page{padding-bottom:4rem}
 .rc-index{margin-top:2.5rem;border-top:1px solid var(--ink)}
-.rc-bar{display:flex;flex-wrap:wrap;gap:.75rem 2.5rem;align-items:center;justify-content:space-between;margin:1.25rem 0 3rem;padding:.75rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.j-index-meta{grid-column:3;display:flex;flex-wrap:wrap;gap:.1rem 1.25rem;font:.72rem var(--j-mono);color:var(--ink-muted)}
+.j-index-meta:empty{display:none}
+.j-index-arrow{grid-column:4;grid-row:1 / span 2}
+.j-index-meta .rc-val,.rc-meta .rc-val{font-size:inherit}
+.rc-bar{grid-area:bar;display:flex;flex-wrap:wrap;gap:.75rem 2.5rem;align-items:center;justify-content:space-between;margin:0 0 3rem;padding:.75rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
 .rc-seg{display:flex;flex-wrap:wrap;gap:0 .35rem;align-items:baseline}
 .rc-seg .j-label{margin-right:.6rem}
 .rc-x{display:flex;align-items:baseline;gap:.15rem;margin-left:.45rem;font:italic 1.2rem var(--j-serif);color:var(--ink-muted)}
@@ -69,13 +74,23 @@ style: journal
 .rc-x input:focus{outline:none;border-bottom:1.5px solid var(--ink-accent)}
 
 /* The open recipe: its head across the top, ingredients and notes in the narrow column, steps beside them. */
-#rc-view{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-areas:"head head" "ing steps" "notes steps" "clear steps";grid-template-rows:auto auto auto 1fr;gap:0 4rem;align-items:start;counter-reset:rc-sec}
-.rc-head{grid-area:head;margin-bottom:2.75rem}
+#rc-view{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);grid-template-areas:"head head" "bar bar" "ing steps" "notes steps" "pager pager";grid-template-rows:auto auto auto 1fr auto;gap:0 4rem;align-items:start;counter-reset:rc-sec}
+#rc-view{margin-top:1.75rem}
+.rc-head{grid-area:head;margin-bottom:2rem}
 .rc-sec[data-sec="ing"]{grid-area:ing}
 .rc-sec[data-sec="step"]{grid-area:steps}
 .rc-sec.rc-notes-sec{grid-area:notes}
-.rc-clear{grid-area:clear;justify-self:start;margin-left:-.45rem}
-.journal .rc-clear{font-style:italic;font-size:1.05rem;color:var(--ink-2);text-decoration-color:var(--ink-accent)}
+.journal .rc-clear,.journal .rc-undo .sim-tab{font-style:italic;font-size:1.05rem;color:var(--ink-2);text-decoration-color:var(--ink-accent)}
+.rc-undo{font:italic 1.05rem var(--j-serif);color:var(--ink-muted)}
+.rc-undo:empty,.rc-clear[hidden]{display:none}
+.rc-pager{grid-area:pager;display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:baseline;margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--ink)}
+.rc-pager a{color:var(--ink-2);text-decoration:none;font-size:1.25rem;line-height:1.3}
+.rc-pager a:hover{color:var(--ink-accent)}
+.rc-pager .j-label{display:block;margin-bottom:.2rem}
+.rc-pager > *{grid-row:1}
+.rc-pager .rc-prev{grid-column:1}
+.rc-pager .rc-next{grid-column:3;text-align:right}
+.rc-pager .rc-all{grid-column:2;font:.75rem var(--j-mono);letter-spacing:.04em;color:var(--ink-muted)}
 .rc-kicker{margin:0 0 .75rem}
 .rc-head h2{margin:0 0 .75rem;font-size:clamp(2.4rem,5vw,3.6rem);line-height:1.04;font-weight:380;letter-spacing:-.022em;font-variation-settings:"opsz" 72}
 .rc-blurb{margin:0 0 1rem;max-width:34em;font-size:1.25rem;line-height:1.5;font-style:italic;color:var(--ink-2)}
@@ -102,7 +117,11 @@ style: journal
 .rc-notes{list-style:none;margin:0;padding:0;font-size:1rem;line-height:1.55;color:var(--ink-2)}
 .rc-notes li{padding:.6rem 0;border-bottom:1px solid var(--rule)}
 @media (max-width:820px){
-  #rc-view{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "ing" "steps" "notes" "clear";grid-template-rows:none}
+  #rc-view{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "bar" "ing" "steps" "notes" "pager";grid-template-rows:none}
+  .rc-pager{grid-template-columns:1fr 1fr}
+  .rc-pager .rc-all{display:none}
+  .rc-pager .rc-next{grid-column:2}
+  .j-index-meta{grid-column:2 / 3}
   .j-index-row{grid-template-columns:2.25rem minmax(0,1fr) 1.1rem;gap:.2rem .75rem}
   .j-index-blurb{grid-column:2 / 3}
   .j-index-arrow{grid-column:3;grid-row:1}

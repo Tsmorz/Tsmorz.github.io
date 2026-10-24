@@ -246,6 +246,7 @@
   .chip.on { color: var(--text); }
   .chip.on::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
   #at-rest.on::before { background: var(--good); box-shadow: 0 0 6px var(--good); }
+  #tap-lamp ~ #at-rest { margin-left: 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   #mark-lamp.on::before, .user-lamp.on::before { background: var(--pressed-lamp); box-shadow: 0 0 4px var(--pressed-lamp), 0 0 10px var(--pressed-lamp); }
   #mark-lamp.on { color: var(--text); }
@@ -317,11 +318,27 @@
   .h2-key + .h2-key { margin-left: 0; }
 
   /* Settings and Replay keys, lit while their drawer or view is open. */
-  #settings, #mouse-toggle, #replay-key { display: inline-flex; align-items: center; gap: 6px; }
+  #settings, #mouse-toggle, #motion-wake, #voice-listen, #replay-key, #whats-new-key { display: inline-flex; align-items: center; gap: 6px; }
+  /* What's new: the key's lamp lights while there's something this browser hasn't seen. */
+  #whats-new-key::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  #whats-new-key.unseen::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  #whats-new { width: min(440px, calc(100vw - 16px)); max-height: min(72vh, 600px); overflow-y: auto; }
+  #whats-new h2 { margin: 0 0 6px; }
+  .whats-new-list { list-style: none; margin: 0; padding: 0; }
+  .whats-new-list > li { padding: 8px 0; border-top: 1px dashed var(--line-strong); }
+  .whats-new-list h3 { display: flex; gap: 10px; align-items: baseline; margin: 0 0 4px; font-size: 13px; }
+  .whats-new-list time { flex: none; white-space: nowrap; font: 11px var(--mono); color: var(--muted); }
+  .whats-new-list > li.fresh h3::after { content: "new"; margin-left: auto; font: 600 10px var(--mono); color: var(--signal-ink); }
+  .whats-new-list ul { margin: 0; padding-left: 18px; }
+  .whats-new-list .fw-note { margin: 4px 0 0; font: 11.5px var(--mono); color: var(--text-2); }
   #settings[aria-expanded="true"], #replay-key[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-ink); box-shadow: inset 0 -1px 0 var(--key-shadow), 0 0 8px var(--pressed-glow); }
   /* Mouse switch: a lamp that lights while the selected board sends mouse reports. */
-  #mouse-toggle::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
-  #mouse-toggle[aria-checked="true"]::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  #mouse-toggle::before, #motion-wake::before, #voice-listen::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  #mouse-toggle[aria-checked="true"]::before, #motion-wake[aria-checked="true"]::before, #voice-listen[aria-checked="true"]::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  /* Each connected board's radio clock: its name, then what it is doing. */
+  .clock-boards { list-style: none; margin: 8px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
+  .clock-boards li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+  .clock-boards li.bad { color: var(--bad); }
   /* The settings drawer: modules on the same seams as the page, over its right edge, below the
      header (app.js sets top), numbered on from the page's. */
   .drawer { position: fixed; z-index: 3; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); overflow-y: auto;
@@ -357,6 +374,21 @@
   .fw-targets .state { font: 11.5px var(--mono); color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
   .fw-targets li.failed .state { color: var(--bad); }
   #fw-empty { margin: 12px 0 0; font-size: 12.5px; }
+  /* Keyword clips dialog: the phrase to say, large, then the last clip and the counts so far. */
+  .voice-say { margin: 14px 0; font: 600 22px/1.25 var(--sans); }
+  #voice-bar { margin-top: 12px; }
+  .plot.wave.voice-wave { height: 72px; margin-top: 10px; }
+  .voice-counts { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; margin: 12px 0 0; padding: 8px 0 0;
+                  border-top: 1px dashed var(--line-strong); font: 11.5px var(--mono); color: var(--text-2); }
+  .voice-counts li { display: flex; justify-content: space-between; }
+  .voice-counts li.current { color: var(--signal-ink); }
+  .voice-background { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-strong); }
+  #voice-bg-record.recording { background: var(--pressed-bg); color: var(--pressed-ink); }
+  /* Settings › Voice: which commands the selected board obeys, and what it has heard lately. */
+  .voice-obeyed { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin-top: 8px; font-size: 12px; }
+  .voice-obeyed label { display: flex; align-items: center; gap: 6px; }
+  .voice-heard { list-style: none; margin: 6px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
+  .voice-heard li { display: flex; justify-content: space-between; gap: 12px; }
   #fw-status { font-size: 12.5px; }
   #usb-bootloader { margin: 10px 0 0; overflow-wrap: anywhere; }
   #usb-firmware, #usb-key { margin: 4px 0 0; overflow-wrap: anywhere; }
@@ -439,6 +471,7 @@
     <h1>Data Collection</h1>
   </div>
   <span class="pill"><span class="dot" id="link-dot"></span><span id="status">No boards connected</span></span>
+  <button id="whats-new-key" type="button" popovertarget="whats-new">What's new</button>
   <button id="settings" type="button" aria-expanded="false" aria-controls="settings-drawer" title="Settings: mouse, lights, firmware update, latency and the seen-working checklist">
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
   <button id="replay-key" type="button" aria-pressed="false" aria-controls="replay" title="Replay: open a recorded session and plot it (boards stay connected)">
@@ -449,6 +482,11 @@
   </button>
   <button class="primary" id="connect">Add board</button>
 </header>
+<!-- Outside main: a popover inside a hidden panel (Replay hides the live ones) wouldn't show. -->
+<div class="info-pop" id="whats-new" popover>
+  <h2>What's new</h2>
+  <ol class="whats-new-list" id="whats-new-list"></ol>
+</div>
 
 <main>
   <div class="top-row">
@@ -502,6 +540,7 @@
 
   <section class="orientation-section">
     <h2>Orientation <span class="muted">VQF, 6-axis</span>
+      <span class="chip" id="tap-lamp" title="Lights when the board is tapped. A double tap is the user's mark in a recording, and flashes the board's LED cyan">Tap</span>
       <span class="chip" id="at-rest" title="Lit while VQF sees the board as still: only then does it quickly learn the gyro bias that stops yaw drift">At rest</span></h2>
     <div class="plot pose"><canvas id="pose" aria-label="Board orientation: its X, Y and Z axes in the world frame"></canvas></div>
     <div class="angles">
@@ -612,6 +651,21 @@
     <p class="hint" id="imu-ranges-status">A narrower range resolves smaller motions but clips faster ones.</p>
   </section>
   <section>
+    <h2>Clock sync <span class="muted">radio, saved on the boards</span><button type="button" class="info" popovertarget="clock-info" aria-label="About radio clock sync"></button></h2>
+    <div class="row">
+      <label>Source <select id="clock-source" disabled title="The board whose clock the others follow"></select></label>
+    </div>
+    <ul class="clock-boards" id="clock-boards"></ul>
+    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond, with no clap needed and no error from distance. Claps still work as a cross-check.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
+  </section>
+  <section>
+    <h2>Sleep <span class="muted">saved on the board</span></h2>
+    <div class="row">
+      <button id="motion-wake" type="button" role="switch" aria-checked="false" disabled title="Connect a board to choose">Wake on motion</button>
+    </div>
+    <p class="hint" id="motion-wake-status">Off: only a USER press wakes a sleeping board.</p>
+  </section>
+  <section>
     <h2>Lights<button type="button" class="info" popovertarget="lights-info" aria-label="About the lights"></button></h2>
     <div class="row">
       <label>RGB <input type="color" id="led-color" value="#ffb23f"></label>
@@ -619,6 +673,17 @@
       <button id="led-off">Off</button>
     </div>
     <div class="info-pop" id="lights-info" popover><p>Overrides the status LED (blue advertising, green connected) until the next connect, disconnect or clap.</p></div>
+  </section>
+  <section>
+    <h2>Voice <span class="muted">saved on the board</span><button type="button" class="info" popovertarget="voice-info" aria-label="About voice commands"></button></h2>
+    <div class="row">
+      <button id="voice-listen" type="button" role="switch" aria-checked="false" disabled>Listening</button>
+      <button id="voice-open">Clips and background audio…</button>
+    </div>
+    <div class="voice-obeyed" id="voice-obeyed" role="group" aria-label="Commands this board obeys"></div>
+    <p class="hint" id="voice-settings-status">Connect a board to set up its voice commands.</p>
+    <ul class="voice-heard" id="voice-heard"></ul>
+    <div class="info-pop" id="voice-info" popover><p>Every board in earshot hears every command, so each board obeys only the ones ticked here. "Capture complete" and "power down now" act only when said twice within 4 s; the LED blinks amber after the first. Every command heard is recorded as an event, acted on or not, so false triggers show in the data.</p><p>A board needs firmware built with a trained model to listen: until then, record clips and background audio to train one. See <code>docs/voice-commands.md</code>.</p></div>
   </section>
   <section>
     <h2>Firmware<button type="button" class="info" popovertarget="firmware-info" aria-label="About firmware updates"></button></h2>
@@ -686,6 +751,40 @@
       <span class="muted" id="usb-status"></span>
     </div>
     <p class="hint">Plug the board into this computer by USB, press Flash and pick its programmer (XIAO nRF54LM20A CMSIS-DAP). Takes about 15 s. It erases the whole chip first, so the board's settings and Bluetooth bonds go: if this computer paired with it before, remove it from the Bluetooth settings before adding it again. Recordings on its flash chip stay. Close OpenOCD or pyOCD first; the serial console can stay open.</p>
+  </div>
+</dialog>
+
+<dialog id="voice-dialog" aria-labelledby="voice-title">
+  <div class="dialog-head"><h2 id="voice-title">Keyword clips <span class="muted" id="voice-board"></span></h2>
+    <button type="button" id="voice-close" aria-label="Close">✕</button></div>
+  <div class="dialog-body">
+    <div class="row">
+      <button id="voice-pick-folder" title="data/keywords/ in the repo: the training reads it from there">Choose folder…</button>
+      <span class="muted" id="voice-folder"></span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>Speaker <input type="text" id="voice-speaker" size="10" placeholder="your name" title="Goes in each clip's file name, so training can score each voice"></label>
+      <label>Label <select id="voice-label"></select></label>
+      <span class="muted" id="voice-does"></span>
+    </div>
+    <p class="voice-say" id="voice-say"></p>
+    <div class="row">
+      <button class="primary" id="voice-capture" disabled>Capture</button>
+      <span class="muted" id="voice-status"></span>
+    </div>
+    <div class="bar" id="voice-bar" role="progressbar" aria-label="Clip" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+    <div class="plot wave voice-wave"><canvas id="voice-wave" aria-label="The last clip's waveform"></canvas></div>
+    <div class="row" style="margin-top:8px">
+      <button id="voice-play" disabled>Play</button>
+      <button id="voice-discard" disabled>Discard</button>
+      <span class="readout" id="voice-levels"></span>
+    </div>
+    <ul class="voice-counts" id="voice-counts"></ul>
+    <p class="hint">Press Capture or Space, then say the phrase once, in your normal voice, while the board's LED is magenta (2 s). Vary it: near and far, quick and slow, holding and moving the board. The live streams pause for the ~5 s it takes to send.</p>
+    <div class="row voice-background">
+      <button id="voice-bg-record">Record background audio</button>
+      <span class="muted" id="voice-bg-status">Long stretches of talk, music or a lab with no commands in them, to count false triggers against. Saved into background/.</span>
+    </div>
   </div>
 </dialog>
 

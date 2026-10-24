@@ -93,7 +93,11 @@
     draw: function (ctx, W, H, sim, lab, col) {
       var accent = col.accent, muted = col.muted, strong = col.borderStrong, bgSoft = col.bgSoft, massColor = cssVar('--mass'), massEdge = cssVar('--mass-edge'), forceColor = cssVar('--viz-total');
       ctx.fillStyle = bgSoft; ctx.fillRect(0, 0, W, H);
-      var cx = clamp(W * 0.35, 110, 300), anchorY = 26, massH = 42, massW = 54, scale = Math.min(80, (H - 130) / 3);
+      var w = who(lab, lab.shake ? 'Shaken by a sine-wave force' : lab.controller.label + ' tracking');
+      var status = w === null ? 'Manual – drag the mass' : w === 'none' ? 'No control – raise Kp' : w;
+      // On a narrow canvas the ceiling would run into the status line: drop it below the two lines of text.
+      ctx.font = '600 13px ' + col.font;
+      var cx = clamp(W * 0.35, 110, 300), anchorY = cx - 36 < 24 + ctx.measureText(status).width ? 56 : 26, massH = 42, massW = 54, scale = Math.min(80, (H - 130) / 3);
       var t = sim.t, refType = lab.refs[0], rv = function (tt) { return LabCore.refValue(refType, tt); };
       var massY = H / 2 + sim.x[0] * scale, massTop = massY - massH / 2, refNow = rv(t), refY = H / 2 + refNow * scale;
       var springX = cx - 13, damperX = cx + 14;
@@ -137,8 +141,7 @@
         ctx.beginPath(); ctx.moveTo(ax, massY); ctx.lineTo(ax, ay1 - dir * 5); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(ax, ay1); ctx.lineTo(ax - 5, ay1 - dir * 7); ctx.lineTo(ax + 5, ay1 - dir * 7); ctx.closePath(); ctx.fill();
       }
-      var w = who(lab, lab.shake ? 'Shaken by a sine-wave force' : lab.controller.label + ' tracking');
-      statusLine(ctx, w === null ? 'Manual - drag the mass' : w === 'none' ? 'No control - raise Kp' : w, w === 'none' ? muted : accent, 't = ' + t.toFixed(1) + ' s', col);
+      statusLine(ctx, status, w === 'none' ? muted : accent, 't = ' + t.toFixed(1) + ' s', col);
       stateBox(ctx, W, H, [{ label: 'x', value: sim.x[0], unit: 'm' }, { label: 'ẋ', value: sim.x[1], unit: 'm/s' }]
         .concat(lab.replay ? [] : [{ label: lab.shake ? 'ω' : 'ref', value: lab.shake ? lab.w : refNow, unit: lab.shake ? 'rad/s' : 'm' }])
         .concat([{ label: 'F', value: lab.replay ? F / 4 : F, unit: 'N' }]));
@@ -199,7 +202,7 @@
       ctx.beginPath(); ctx.arc(bxPx, ballCy, ballR, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
       ctx.restore();
       var w = who(lab, 'PID tracking');
-      statusLine(ctx, sim.failed ? 'The ball rolled off - new trial…' : w === null ? 'Manual - drag a beam end' : w === 'none' ? 'No control - raise Kp' : w,
+      statusLine(ctx, sim.failed ? 'The ball rolled off – new trial…' : w === null ? 'Manual – drag a beam end' : w === 'none' ? 'No control – raise Kp' : w,
         sim.failed ? col.viz2 : w === 'none' ? col.muted : col.accent, 't = ' + sim.t.toFixed(1) + ' s   falls = ' + (lab.trials || 0), col);
       stateBox(ctx, W, H, [{ label: 'x', value: bx, unit: 'm' }, { label: 'ẋ', value: sim.x[1], unit: 'm/s' },
         { label: 'ref', value: refNow, unit: 'm' }, { label: 'θ', value: deg(tiltX), unit: '°' }]);
@@ -289,10 +292,10 @@
         ctx.beginPath(); ctx.moveTo(cartX + fl + 3 * fs, ay); ctx.lineTo(cartX + fl - 6 * fs, ay - 5); ctx.lineTo(cartX + fl - 6 * fs, ay + 5); ctx.closePath(); ctx.fill();
       }
       var w = who(lab, lab.useNet ? 'Neural network balancing' : 'LQR balancing'), label, colr = muted;
-      if (sim.status === 'fell') { label = 'Pole fell - new trial…'; colr = col.viz2; }
-      else if (sim.status === 'crashed') { label = 'Hit the end of the rail - new trial…'; colr = col.viz2; }
-      else if (w === null) { label = 'Manual - drag the cart'; colr = accent; }
-      else if (w === 'none') label = 'No control - set the gains or load LQR';
+      if (sim.status === 'fell') { label = 'Pole fell – new trial…'; colr = col.viz2; }
+      else if (sim.status === 'crashed') { label = 'Hit the end of the rail – new trial…'; colr = col.viz2; }
+      else if (w === null) { label = 'Manual – drag the cart'; colr = accent; }
+      else if (w === 'none') label = 'No control – set the gains or load LQR';
       else { label = w; colr = accent; }
       statusLine(ctx, label, colr, 't = ' + sim.t.toFixed(1) + ' s   F = ' + uForce.toFixed(1) + ' N', col);
       stateBox(ctx, W, H, [{ label: 'x', value: state[0], unit: 'm' }, { label: 'ẋ', value: state[1], unit: 'm/s' },

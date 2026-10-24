@@ -14,12 +14,15 @@ export const TELEMETRY_LATENCY = "6f524c01-0005-4a3c-9d21-1122334455aa";
 export const TELEMETRY_BATTERY = "6f524c01-0006-4a3c-9d21-1122334455aa";
 export const TELEMETRY_POWER = "6f524c01-0007-4a3c-9d21-1122334455aa";
 export const TELEMETRY_IMU_RANGES = "6f524c01-0008-4a3c-9d21-1122334455aa";
+export const TELEMETRY_MOTION_WAKE = "6f524c01-0009-4a3c-9d21-1122334455aa";
+export const TELEMETRY_CLOCK = "6f524c01-000a-4a3c-9d21-1122334455aa";
 export const DATA_SERVICE = "6f524c03-0001-4a3c-9d21-1122334455aa";
 export const DATA_IMU = "6f524c03-0002-4a3c-9d21-1122334455aa";
 export const DATA_ENVELOPE = "6f524c03-0003-4a3c-9d21-1122334455aa";
 export const DATA_EVENTS = "6f524c03-0004-4a3c-9d21-1122334455aa";
 export const DATA_INFO = "6f524c03-0005-4a3c-9d21-1122334455aa";
 export const DATA_SPECTRUM = "6f524c03-0006-4a3c-9d21-1122334455aa";
+export const DATA_CLOCK = "6f524c03-0007-4a3c-9d21-1122334455aa";
 // On-board recording (src/logger/log_service.c; formats in src/log_format.h, LOG_WIRE_VERSION).
 export const LOG_SERVICE = "6f524c04-0001-4a3c-9d21-1122334455aa";
 export const LOG_COMMAND = "6f524c04-0002-4a3c-9d21-1122334455aa";
@@ -27,6 +30,23 @@ export const LOG_STATUS = "6f524c04-0003-4a3c-9d21-1122334455aa";
 export const LOG_DATA = "6f524c04-0004-4a3c-9d21-1122334455aa";
 export const LOG_VERSION = 1;
 export const LOG_STATES = ["idle", "recording", "erasing", "reading", "full", "error"];
+// Keyword clips for training voice commands (src/keyword/keyword_service.c; formats in
+// src/keyword_wire.h, KEYWORD_WIRE_VERSION).
+export const KEYWORD_SERVICE = "6f524c05-0001-4a3c-9d21-1122334455aa";
+export const KEYWORD_COMMAND = "6f524c05-0002-4a3c-9d21-1122334455aa";
+export const KEYWORD_CLIP = "6f524c05-0003-4a3c-9d21-1122334455aa";
+export const KEYWORD_SETTINGS = "6f524c05-0004-4a3c-9d21-1122334455aa";
+export const KEYWORD_AUDIO = "6f524c05-0005-4a3c-9d21-1122334455aa";
+// The voice model's labels, in its output order (src/voice_commands.h, training/labels.py:
+// tests/test_training_labels.py checks all three agree), and what a keyword event says was done.
+export const VOICE_LABELS = [
+  "_silence", "_unknown", "pointer_online", "freeze_cursor", "begin_recording", "capture_complete", "power_down_now", "mark_this_moment",
+];
+export const VOICE_COMMANDS = VOICE_LABELS.slice(2);
+export const VOICE_OUTCOMES = ["done", "say again", "not this board's", "refused"];
+const KEYWORD_AUDIO_HEADER_BYTES = 10;
+export const KEYWORD_VERSION = 1;
+const KEYWORD_CLIP_HEADER_BYTES = 7;
 const LOG_STATUS_BYTES = 36;
 const LOG_ERASE_CONFIRM = 0xe5a5e5a5;
 
@@ -48,7 +68,8 @@ const BOARD_INFO_BYTES = 20;
 const Q14 = 16384;
 
 // enum sysid_event_type in sysid_wire.h.
-export const EVENT_TYPES = { 1: "sync", 2: "press", 3: "release", 4: "temperature" };
+export const EVENT_TYPES = { 1: "sync", 2: "press", 3: "release", 4: "temperature", 5: "tap", 6: "double_tap", 7: "keyword" };
+const CLOCK_PAIR_BYTES = 15;
 
 /** A temperature event's value in degrees C: the IMU's raw OUT_TEMP count, signed, 256 per degree from 25. */
 export function temperatureFromEvent(peak) {
@@ -124,11 +145,27 @@ export function decodeEvent(view) {
   };
 }
 
+const hexId = (id) => id.toString(16).toUpperCase().padStart(4, "0");
+
+/**
+ * Decodes one radio clock pair (struct sysid_clock_pair): the source board's packet `counter`
+ * happened at sourceTUs on the source's clock and tUs on this board's, both low 32 bits.
+ */
+export function decodeClockPair(view) {
+  if (view.byteLength !== CLOCK_PAIR_BYTES || view.getUint8(0) !== DATA_VERSION) return null;
+  return {
+    sourceBoard: hexId(view.getUint16(1, true)),
+    counter: view.getUint32(3, true),
+    sourceTUs: view.getUint32(7, true),
+    tUs: view.getUint32(11, true),
+  };
+}
+
 /** Decodes the board info: its ID and the scales its data needs. */
 export function decodeBoardInfo(view) {
   if (view.byteLength !== BOARD_INFO_BYTES || view.getUint8(0) !== DATA_VERSION) return null;
   return {
-    boardId: view.getUint16(1, true).toString(16).toUpperCase().padStart(4, "0"),
+    boardId: hexId(view.getUint16(1, true)),
     imuRateHz: view.getUint16(3, true),
     gyroDpsPerLsb: view.getFloat32(5, true),
     accelGPerLsb: view.getFloat32(9, true),
@@ -177,6 +214,36 @@ export function decodeImuRanges(view) {
   if (view.byteLength !== IMU_RANGES_BYTES || view.getUint8(0) !== PROTOCOL_VERSION) return null;
   const ranges = { gyroDps: view.getUint16(1, true), accelG: view.getUint8(3) };
   return GYRO_RANGES_DPS.includes(ranges.gyroDps) && ACCEL_RANGES_G.includes(ranges.accelG) ? ranges : null;
+}
+
+/** Encodes wake on motion as the firmware's dashboard_decode_motion_wake() expects. */
+export const encodeMotionWake = (enabled) => Uint8Array.of(PROTOCOL_VERSION, enabled ? 1 : 0);
+
+/** Decodes whether the board wakes on motion (true/false), or null. */
+export function decodeMotionWake(view) {
+  if (view.byteLength !== 2 || view.getUint8(0) !== PROTOCOL_VERSION || view.getUint8(1) > 1) return null;
+  return view.getUint8(1) === 1;
+}
+
+// The radio clock sync (struct dashboard_clock_status, dashboard_wire.h).
+export const CLOCK_ROLES = ["listener", "source"];
+export const CLOCK_STATES = ["searching", "synced", "broadcasting", "failed"];
+
+/** Encodes a role ("listener" or "source") as dashboard_decode_clock_role() expects; null otherwise. */
+export function encodeClockRole(role) {
+  const index = CLOCK_ROLES.indexOf(role);
+  return index < 0 ? null : Uint8Array.of(PROTOCOL_VERSION, index);
+}
+
+/** Decodes the board's clock role and state, and the source it hears (or is), or null. */
+export function decodeClockStatus(view) {
+  if (view.byteLength !== 5 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  const source = view.getUint16(3, true);
+  return {
+    role: CLOCK_ROLES[view.getUint8(1)] ?? "unknown",
+    state: CLOCK_STATES[view.getUint8(2)] ?? "unknown",
+    sourceBoard: source ? hexId(source) : null,
+  };
 }
 
 /** Encodes the mouse settings the firmware's dashboard_decode_mouse_settings() expects. */
@@ -300,6 +367,59 @@ export function encodeLogRead(offset, length) {
 export function decodeLogChunk(view) {
   if (view.byteLength < 4) return null;
   return { offset: view.getUint32(0, true), bytes: new Uint8Array(view.buffer, view.byteOffset + 4, view.byteLength - 4) };
+}
+
+/** Asks the board to capture its next 2 s of microphone and send it back as clip `clipId`. */
+export function encodeClipCapture(clipId) {
+  const bytes = new Uint8Array(4);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, KEYWORD_VERSION);
+  view.setUint8(1, 1);
+  view.setUint16(2, clipId, true);
+  return bytes;
+}
+
+/** One chunk of a clip: which clip, its length, where this chunk starts, and its samples. */
+export function decodeClipChunk(view) {
+  if (view.byteLength < KEYWORD_CLIP_HEADER_BYTES || view.getUint8(0) !== KEYWORD_VERSION) return null;
+  const count = Math.floor((view.byteLength - KEYWORD_CLIP_HEADER_BYTES) / 2);
+  const samples = new Int16Array(count);
+  for (let i = 0; i < count; i++) samples[i] = view.getInt16(KEYWORD_CLIP_HEADER_BYTES + 2 * i, true);
+  return { clipId: view.getUint16(1, true), totalSamples: view.getUint16(3, true), firstSample: view.getUint16(5, true), samples };
+}
+
+/** Starts the board streaming its mic (ADPCM) as stream `streamId`, until encodeStreamStop(). */
+export const encodeStreamStart = (streamId) => Uint8Array.of(KEYWORD_VERSION, 2, streamId & 0xff, (streamId >> 8) & 0xff);
+export const encodeStreamStop = () => Uint8Array.of(KEYWORD_VERSION, 3);
+
+/** One chunk of the background-audio stream: where it starts, the ADPCM state, and its bytes. */
+export function decodeAudioChunk(view) {
+  if (view.byteLength <= KEYWORD_AUDIO_HEADER_BYTES || view.getUint8(0) !== KEYWORD_VERSION) return null;
+  return {
+    streamId: view.getUint16(1, true),
+    firstSample: view.getUint32(3, true),
+    predictor: view.getInt16(7, true),
+    stepIndex: view.getUint8(9),
+    adpcm: new Uint8Array(view.buffer, view.byteOffset + KEYWORD_AUDIO_HEADER_BYTES, view.byteLength - KEYWORD_AUDIO_HEADER_BYTES),
+  };
+}
+
+/** The board's voice settings: listening, which commands it obeys (by name), and whether it has a model. */
+export function decodeKeywordSettings(view) {
+  if (view.byteLength !== 3 || view.getUint8(0) !== KEYWORD_VERSION) return null;
+  const flags = view.getUint8(1);
+  const bits = view.getUint8(2);
+  return { listening: Boolean(flags & 1), hasModel: Boolean(flags & 2), obeyed: VOICE_COMMANDS.filter((_, i) => bits & (1 << i)) };
+}
+
+export function encodeKeywordSettings({ listening, obeyed }) {
+  const bits = VOICE_COMMANDS.reduce((sum, name, i) => (obeyed.includes(name) ? sum | (1 << i) : sum), 0);
+  return Uint8Array.of(KEYWORD_VERSION, listening ? 1 : 0, bits);
+}
+
+/** A keyword event's value (voice_event_value()): which label was heard and what the board did. */
+export function decodeKeywordEvent(peak) {
+  return { label: VOICE_LABELS[peak & 0xff] ?? "unknown", outcome: VOICE_OUTCOMES[peak >> 8] ?? "unknown" };
 }
 
 const CRC_TABLE = (() => {

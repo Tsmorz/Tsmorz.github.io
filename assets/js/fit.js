@@ -351,10 +351,10 @@
   function say(msg, bad) { var e = $('fit-msg'); e.textContent = msg || ''; e.className = 'fit-msg' + (bad ? ' bad' : ''); }
   function mat(M, d) { return M.map(function (r) { return r.map(function (v) { return (v >= 0 ? ' ' : '') + v.toFixed(d || 3); }).join('  '); }).join('\n'); }
 
-  function load(text) {
+  function load(text, isExample) {
     var data = parseCsv(text);
     if (!data || data.header.length < 3) { say('That does not look like a CSV with a header row t, x1, ..., u1, ...', true); return; }
-    S.data = data; S.roles = guessRoles(data.header);
+    S.data = data; S.roles = guessRoles(data.header); S.example = !!isExample;
     analyze(true);
   }
   function buildWeights() {
@@ -391,7 +391,7 @@
     var r = S.reach, re = $('fit-reach');
     re.textContent = r.rank >= r.n ? 'Reachable: the input can move all ' + r.n + ' states.' : 'Some states may not be reachable: the input can move only ' + r.rank + ' of ' + r.n + ' directions in this model, so no controller can steer the rest.';
     re.className = 'fit-msg' + (r.rank < r.n ? ' bad' : '');
-    var notes = [];
+    var notes = S.example ? ['Showing the built-in cart-pole example. Choose or drop your own CSV to replace it.'] : [];
     if (prep.uneven) notes.push('The times are uneven, so the recording was resampled to its median spacing.');
     say(notes.join(' '));
     design();
@@ -463,7 +463,7 @@
     $('fit-c2').parentNode.style.setProperty('--lanes', P ? P.sNames.length + 1 : 4);
     var c1 = fitCanvas($('fit-c1')), c2 = fitCanvas($('fit-c2'));
     if (!P || !M) {
-      label(c1.ctx, 'Load a CSV or press "Load an example".', 14, 14, col.muted, 'left', 13); info.textContent = ''; fitCanvas($('fit-c3')); return;
+      label(c1.ctx, 'Load a CSV or press "Load the example".', 14, 14, col.muted, 'left', 13); info.textContent = ''; fitCanvas($('fit-c3')); return;
     }
     var pal = [col.v1, col.v2, col.v3, col.v4], t1 = P.t.slice(1);
     // 1. data and the model's one-step predictions
@@ -490,7 +490,7 @@
     ['dragover', 'dragenter'].forEach(function (ev) { dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('over'); }); });
     ['dragleave', 'drop'].forEach(function (ev) { dz.addEventListener(ev, function () { dz.classList.remove('over'); }); });
     dz.addEventListener('drop', function (e) { e.preventDefault(); var f = e.dataTransfer.files[0]; if (f) read(f); });
-    $('fit-example').addEventListener('click', function () { var t = exampleCsv(); if (t) load(t); });
+    $('fit-example').addEventListener('click', function () { var t = exampleCsv(); if (t) load(t, true); });
     $('fit-mean').addEventListener('change', function (e) { S.subtractMean = e.target.checked; if (S.data) analyze(true); });
     $('fit-track').addEventListener('change', function (e) { S.trackIdx = +e.target.value; $('fit-ref').value = 0; if (S.model) design(); });
     $('fit-ctrl').addEventListener('change', function () { drawSim(); });
@@ -499,7 +499,9 @@
     $('fit-csv').addEventListener('click', function () { var t = exampleCsv(); if (!t) return; var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], { type: 'text/csv' })); a.download = 'cartpole-example.csv'; document.body.appendChild(a); a.click(); a.remove(); });
     window.addEventListener('resize', draw);
     new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    draw();
+    // Open on the example, so the plots and the live simulation show what the page does before anything is uploaded.
+    var ex = exampleCsv();
+    if (ex) load(ex, true); else draw();
   }
   init();
 })(typeof window !== 'undefined' ? window : this);

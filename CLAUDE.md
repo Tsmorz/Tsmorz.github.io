@@ -21,7 +21,9 @@ To change what the site says, edit YAML, not HTML.
 | Want to change | Edit |
 | --- | --- |
 | Projects shown anywhere | `_data/projects.yml` |
-| Services, process, contact on /solutions/ | `_data/solutions.yml` |
+| Services (and the work that shows each), process, contact on /solutions/ | `_data/solutions.yml` |
+| The "Have a look around" tiles under the home hero | `_data/home.yml` |
+| The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Name, bio links, CV button | `_config.yml` |
 | Nav logo (cartpole, fade, radial, pendulum, pendulum4 or pendulum3) | `logo:` in `_config.yml`; all are drawn in `_includes/logo.html` (the favicons in `assets/img/` are separate files) |
@@ -65,7 +67,8 @@ script/                  serve, check, test-data, test-installer, test-swingup, 
 - **Sim canvases get their size from CSS, never JS.** Each demo is a `.sim-stack` that stretches to its
   panel's height; canvases are absolutely positioned and JS only sizes the pixel buffer from
   `clientWidth/clientHeight`. Don't set `style.height` from JS: at 2x DPR the buffer feeds back into layout and
-  the canvas grows every frame.
+  the canvas grows every frame. On phones (≤ 720 px) the /controls/ and swing-up stacks
+  turn to `display: contents`, so the panel sits between the sim and its plots; each cell's height is set there.
 - **Includes take explicit params** and never reach into `site.data` themselves.
 - **GitHub Pages runs Liquid 4:** `uniq`, `concat`, `slice`, `where` exist; `push` does not.
 
@@ -105,7 +108,7 @@ for marginalia (§ marks, numbers, amounts, labels), hairline rules instead of c
 for what you act on. Choices are words, not keys: serif, greyed until chosen, the chosen one underlined like a link
 (`.journal .sim-tab`); don't bring back boxed buttons, which read as the nrf-controller dashboard. It re-points the site's tokens on `body`, so the nav and footer turn to paper too; keep
 its colors in journal.css, defined three times like main.css. The recipes index is a numbered list of `[data-recipe]`
-buttons, ingredients and notes sit beside the steps, and the page prints as just the open recipe (`.j-print-hide`).
+links (`href="#id"`), ingredients and notes sit beside the steps, and the page prints as just the open recipe (`.j-print-hide`).
 `recipes.md` + `assets/js/recipes.js`, all content in `_data/recipes.yml` (the file's header comment documents the fields). **Every amount
 is a weight in grams**, so each recipe runs on a kitchen scale (eggs, cream and water included); `RecipeCore` shows ounces, pounds and
 °F when the visitor picks imperial. Steps are plain strings with `[[...]]` tokens (`[[i:id]]` an ingredient's amount, `[[g:700]]`,
@@ -113,7 +116,9 @@ is a weight in grams**, so each recipe runs on a kitchen scale (eggs, cream and 
 (½×, 1×, 2× or any factor): ingredients, `spoon` measures, `[[i:...]]`, counts `[[n:4]]` and `[[gx:340]]`/`[[mlx:4000]]` multiply, while
 `[[g:]]`, `[[ml:]]`, `[[t:]]` and `[[len:]]` are per piece (a dough ball, a ramekin, the oven) and stay put, so pick the token by which it is.
 Ingredients and steps each get a tick box, and the ticks, the unit choice and each recipe's scale live in `localStorage`. A recipe is its `id` in the URL hash: bare `/recipes/` is the index (masthead and list only), and a hash shows that one recipe alone
-with an "All recipes" link back (recipes.js sets `data-view` on `.journal`). The nav dropdown (built from the
+with an "All recipes" link back (recipes.js sets `data-view` on `.journal`). The index rows show each recipe's `makes` and `time`;
+an open recipe has the scale/units/clear-ticks bar (`.rc-bar`, moved by `build()`) under its head (Clear ticks turns into an
+Undo for 10 s) and a previous/next pager at the bottom. The nav dropdown (built from the
 same data, `.nav-menu` in the layout) links to those hashes. **Adding a recipe:** append to the YAML. `script/test-data` checks the shape and
 the tokens; `script/test-recipes` (`task check:recipes`, in `check:fast`) checks the conversions and the scaling, renders every recipe in both systems at three scales
 and checks that the batter and custard weights quoted in the steps match the ingredients.
@@ -130,7 +135,7 @@ but unused by the page). `dlqr` solves the Riccati recursion on the model; `reac
 Once a model is found the bottom plot is a **live simulation** of it: stepped in real time under `u = u_ss r − K(x − x_ss r)` (steady state from
 `steadyState`; one state is tracked, chosen in the panel), with a reference slider, a push button, a reset and a controller on/off switch. Weight
 sliders keep the running sim; changing the tracked state restarts it. The page also plots data against one-step predictions and the z-plane poles.
-It is its own page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
+The page opens on the built-in cart-pole example (`exampleCsv`), so it is never empty, and says so above the results. It is its own page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
 (`task check:fit`, in `check:fast`) guards the parser, the resampling, both fits, the LQR, the tracking and reachability.
 
 ### The lab template (`/controls/`)
@@ -208,7 +213,7 @@ or rely on CI. `Taskfile.yml` is the single entrypoint (`task --list`); `script/
   `jekyll-github-metadata` try to derive it on the runner and fail with `No repo name found`, or inject a
   `/pages/<owner>` prefix that breaks every asset link. Don't make the flag conditional.
 - **Linux is case-sensitive, macOS isn't.** `logo.JPG` referenced as `logo.jpg` works locally and 404s in CI.
-  `script/test-data` compares exact basenames to catch it.
+  `script/test-data` compares exact basenames to catch it (project images and `_data/hardware.yml` photos).
 - **External links aren't checked** (`--disable-external`) on purpose, so a typo'd external URL won't be caught.
 
 ### The nrf-controller dashboard (`/dashboard/`)

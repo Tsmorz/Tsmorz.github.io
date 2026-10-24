@@ -45,6 +45,29 @@ load_yaml("_data/projects.yml", errors).each_with_index do |proj, i|
   end
 end
 
+# --- solutions: every `work` example names a real project or gives its own url ---
+project_names = load_yaml("_data/projects.yml", errors).map { |pr| pr["name"] }
+sol = load_yaml("_data/solutions.yml", errors)
+Array(sol.is_a?(Hash) ? sol["services"] : nil).each do |svc|
+  Array(svc["work"]).each do |w|
+    if w["project"] && !project_names.include?(w["project"])
+      errors << "solutions.yml: #{svc["name"]} names a project that is not in projects.yml: #{w["project"]}"
+    elsif !w["project"] && (w["label"].to_s.empty? || w["url"].to_s.empty?)
+      errors << "solutions.yml: #{svc["name"]} has a `work` entry with neither `project` nor `label` and `url`"
+    end
+  end
+end
+
+# --- hardware (the photo row on /projects/) ---
+hw = load_yaml("_data/hardware.yml", errors)
+hw = {} unless hw.is_a?(Hash)
+errors << "hardware.yml: needs `heading` and `text`" if hw["heading"].to_s.strip.empty? || hw["text"].to_s.strip.empty?
+Array(hw["photos"]).each do |ph|
+  src = ph["src"].to_s
+  errors << "hardware.yml: photo #{src} needs `alt` and a numeric `ratio`" if ph["alt"].to_s.strip.empty? || !ph["ratio"].is_a?(Numeric)
+  errors << "hardware.yml: photo not found (check exact spelling/case): #{src}" unless file_present?(File.join(root, src))
+end
+
 # --- recipes (read by assets/js/recipes.js) ---
 # Each recipe needs an id (its URL hash), a name, a blurb, ingredients that carry a weight in grams or a `qty`, and steps.
 # [[kind:arg]] tokens must be a known kind, and [[i:id]] must name an ingredient of the same recipe.
