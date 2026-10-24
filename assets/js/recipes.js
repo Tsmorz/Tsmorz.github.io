@@ -127,6 +127,7 @@
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 
   var current = null, page = view.closest('.journal'), title = document.title;   // null: the index, no recipe open
+  var bar = document.querySelector('.rc-bar');   // the scale, units and clear-ticks bar: build() moves it under the recipe's head
   function scaleOf(r) { var s = Number(state.scale[r.id]); return s > 0 ? s : 1; }
   function fromHash() {
     var id = decodeURIComponent(location.hash.replace(/^#/, ''));
@@ -198,6 +199,7 @@
     if (sc !== 1) meta.appendChild(el('span', 'rc-scaled', 'scaled ×' + num(sc, 2)));
     head.appendChild(meta);
     view.appendChild(head);
+    if (bar) view.appendChild(bar);
 
     var ing = section('Ingredients', 'ing');
     ing.setAttribute('data-sec', 'ing');
@@ -242,10 +244,22 @@
       view.appendChild(nt);
     }
 
-    var clear = el('button', 'sim-tab rc-clear j-print-hide', 'Clear ticks');
-    clear.type = 'button';
-    clear.addEventListener('click', function () { delete state.checks[r.id]; save(); build(); });
-    view.appendChild(clear);
+    // Previous and next recipe, and the way back to the list.
+    var pager = el('nav', 'rc-pager j-print-hide'), at = recipes.indexOf(r);
+    pager.setAttribute('aria-label', 'More recipes');
+    [[recipes[at - 1], 'rc-prev', '← Previous'], [recipes[at + 1], 'rc-next', 'Next →']].forEach(function (p) {
+      if (!p[0]) return;
+      var a = el('a', p[1]);
+      a.href = '#' + p[0].id;
+      a.appendChild(el('span', 'j-label', p[2]));
+      a.appendChild(document.createTextNode(p[0].name));
+      pager.appendChild(a);
+    });
+    var all = el('a', 'rc-all', 'All recipes');
+    all.href = location.pathname + location.search;
+    all.addEventListener('click', toIndex);
+    pager.appendChild(all);
+    view.appendChild(pager);
 
     counts();
   }
@@ -263,13 +277,23 @@
     });
   }
 
+  // Each index row says how much it makes and how long it takes, in the current units and scale.
+  function fillIndex() {
+    recipes.forEach(function (r) {
+      var m = document.querySelector('[data-meta="' + r.id + '"]');
+      if (!m) return;
+      m.textContent = '';
+      [r.makes, r.time].forEach(function (t) { if (t) { var sp = el('span'); rich(sp, t, r); m.appendChild(sp); } });
+    });
+  }
+
   // The index (no hash) lists the recipes; a hash opens that one recipe on its own.
   function show(r) {
     var was = current;
     current = r;
     page.setAttribute('data-view', r ? 'recipe' : 'index');
     document.title = r ? r.name + ' · ' + title : title;
-    if (r) build(); else view.textContent = '';
+    if (r) build(); else { view.textContent = ''; fillIndex(); }
     sync();
     if (r !== was) window.scrollTo(0, 0);
   }
@@ -277,12 +301,15 @@
   Array.prototype.forEach.call(document.querySelectorAll('[data-recipe]'), function (b) {
     b.addEventListener('click', function () { location.hash = b.getAttribute('data-recipe'); });
   });
-  var back = document.querySelector('.rc-back');
-  if (back) back.addEventListener('click', function (e) {
+  function toIndex(e) {
     e.preventDefault();
     try { history.pushState(null, '', location.pathname + location.search); } catch (err) {}
     show(null);
-  });
+  }
+  var back = document.querySelector('.rc-back');
+  if (back) back.addEventListener('click', toIndex);
+  var clear = document.querySelector('.rc-clear');
+  if (clear) clear.addEventListener('click', function () { if (current) { delete state.checks[current.id]; save(); build(); } });
   Array.prototype.forEach.call(document.querySelectorAll('[data-unit]'), function (b) {
     b.addEventListener('click', function () { state.unit = b.getAttribute('data-unit'); save(); if (current) build(); sync(); });
   });

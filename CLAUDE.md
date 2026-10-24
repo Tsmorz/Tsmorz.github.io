@@ -113,7 +113,8 @@ is a weight in grams**, so each recipe runs on a kitchen scale (eggs, cream and 
 (½×, 1×, 2× or any factor): ingredients, `spoon` measures, `[[i:...]]`, counts `[[n:4]]` and `[[gx:340]]`/`[[mlx:4000]]` multiply, while
 `[[g:]]`, `[[ml:]]`, `[[t:]]` and `[[len:]]` are per piece (a dough ball, a ramekin, the oven) and stay put, so pick the token by which it is.
 Ingredients and steps each get a tick box, and the ticks, the unit choice and each recipe's scale live in `localStorage`. A recipe is its `id` in the URL hash: bare `/recipes/` is the index (masthead and list only), and a hash shows that one recipe alone
-with an "All recipes" link back (recipes.js sets `data-view` on `.journal`). The nav dropdown (built from the
+with an "All recipes" link back (recipes.js sets `data-view` on `.journal`). The index rows show each recipe's `makes` and `time`;
+an open recipe has the scale/units/clear-ticks bar (`.rc-bar`, moved by `build()`) under its head and a previous/next pager at the bottom. The nav dropdown (built from the
 same data, `.nav-menu` in the layout) links to those hashes. **Adding a recipe:** append to the YAML. `script/test-data` checks the shape and
 the tokens; `script/test-recipes` (`task check:recipes`, in `check:fast`) checks the conversions and the scaling, renders every recipe in both systems at three scales
 and checks that the batter and custard weights quoted in the steps match the ingredients.
