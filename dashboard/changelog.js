@@ -8,6 +8,35 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-25-imu-stream",
+    date: "2026-10-25",
+    title: "The IMU stream recovers from a hiccup",
+    firmware: "next",
+    items: [
+      "After a moment the link fell behind, a board could stay stuck sending a fraction of its IMU samples (~15 Hz instead of 208) until it was restarted. It now catches up.",
+    ],
+  },
+  {
+    id: "2026-10-25-pose-drag",
+    date: "2026-10-25",
+    title: "Orientation drag and a wider board list",
+    items: [
+      "Dragging the Orientation view sideways turns it the way you drag.",
+      "The Boards panel starts wider (double-click the seam beside it to go back to this after resizing).",
+      "The IMU rate in the board list is averaged over five seconds, so it holds steady near 208 Hz instead of jumping about with the link; samples actually lost still show beside it.",
+    ],
+  },
+  {
+    id: "2026-10-24-steadier-page",
+    date: "2026-10-24",
+    title: "A steadier page",
+    items: [
+      "Settings show your change at once (voice commands, Listening, Wake on motion, the clock source) instead of flicking back while the board confirms; one that the board refuses is put back.",
+      "Panel headings stay on one line in narrow windows, and the Tap lamp keeps its size (a double tap rings it).",
+      "On a phone, What's new sits beside Add board.",
+    ],
+  },
+  {
     id: "2026-10-24-mouse-off",
     date: "2026-10-24",
     title: "The mouse starts off",

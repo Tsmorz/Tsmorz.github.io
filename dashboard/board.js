@@ -14,6 +14,7 @@ import {
   encodeMouseSettings, encodeSleep, missedSince,
 } from "./wire.js";
 import { ClipAssembler } from "./clips.js";
+import { RateMeter } from "./rate-meter.js";
 import { TimeUnwrapper } from "./recording.js";
 import { SMP_CHARACTERISTIC, SMP_SERVICE } from "./smp.js";
 
@@ -103,7 +104,7 @@ export class Board extends EventTarget {
     this.imuGaps = 0;
     this.envelopeGaps = 0;
     this.eventGaps = 0;
-    this.windowSamples = 0;
+    this.rateMeter = new RateMeter();
     this.rateHz = 0;
     this.goodRateSeconds = 0;
     this.mouse = null;
@@ -332,6 +333,7 @@ export class Board extends EventTarget {
     } finally {
       // The board paused its live streams while it sent audio; don't count the pause as lost data.
       this.lastSeq = this.lastWindow = this.lastEventSeq = null;
+      this.rateMeter.reset();
     }
   }
 
@@ -492,7 +494,7 @@ export class Board extends EventTarget {
     const samples = batch.samples.map((s) => ({ ...s, tUs: this.unwrap.unwrap(s.tUs) }));
     if (!samples.length) return;
     this.lastSeq = samples[samples.length - 1].seq;
-    this.windowSamples += samples.length;
+    this.rateMeter.add(samples.length);
     this.recording?.addImu(samples, batch.gyroBiasDps, hostMs);
 
     const [bx, by, bz] = batch.gyroBiasDps;
@@ -667,6 +669,7 @@ export class Board extends EventTarget {
       this.download = null;
       // The board pauses its live streams during an upload; don't count the pause as lost data.
       this.lastSeq = this.lastWindow = this.lastEventSeq = null;
+      this.rateMeter.reset();
     }
   }
 
@@ -706,13 +709,13 @@ export class Board extends EventTarget {
       this.clip = null;
       // The board pauses its live streams while it sends a clip; don't count the pause as lost data.
       this.lastSeq = this.lastWindow = this.lastEventSeq = null;
+      this.rateMeter.reset();
     }
   }
 
   /** Called once a second: updates the sample rate and the rate/loss checks. */
   tick() {
-    this.rateHz = this.windowSamples;
-    this.windowSamples = 0;
+    this.rateHz = Math.round(this.rateMeter.tick(performance.now()));
     const expected = this.info?.imuRateHz ?? 208;
     this.goodRateSeconds = Math.abs(this.rateHz - expected) <= expected * 0.08 ? this.goodRateSeconds + 1 : 0;
     if (this.goodRateSeconds >= 2) this.markSeen("rate");

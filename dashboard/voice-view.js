@@ -84,10 +84,16 @@ export function initVoice(options) {
   restoreFolder();
 }
 
+// Shown at once, before the board confirms: the page redraws from board.voice every 250 ms, so
+// without this a tick would flip back for the moment the write takes. Put back if the board refuses.
 async function sendVoiceSettings(board, settings) {
+  const before = board.voice;
+  board.voice = { ...before, ...settings };
+  renderVoiceSettings();
   try {
     await board.setVoiceSettings(settings);
   } catch (error) {
+    board.voice = before;
     $("voice-settings-status").textContent = `Couldn't change ${board.displayName}'s voice settings: ${error.message}`;
   }
   renderVoiceSettings();
