@@ -88,7 +88,10 @@ export function parseCsv(text) {
 
 const EMPTY_EVENTS = parseCsv("board_time_us,seq,type,peak\n");
 
-/** Roll, pitch and yaw (degrees) at each row of a table with quat_{w,x,y,z}; yaw relative to the first row. */
+/**
+ * The quaternion (`quat`: [w, x, y, z]) and roll, pitch and yaw (degrees) at each row of a table
+ * with quat_{w,x,y,z}; yaw relative to the first row.
+ */
 function orientationOf(table) {
   const { quat_w: w, quat_x: x, quat_y: y, quat_z: z } = table.columns;
   if (!w || !table.length) return null;
@@ -104,7 +107,7 @@ function orientationOf(table) {
     pitch[i] = euler.pitch;
     yaw[i] = headingChangeDegrees(first, q);
   }
-  return { us: table.columns.board_time_us, roll, pitch, yaw };
+  return { us: table.columns.board_time_us, quat: [w, x, y, z], roll, pitch, yaw };
 }
 
 /**

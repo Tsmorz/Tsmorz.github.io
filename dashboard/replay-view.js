@@ -16,17 +16,19 @@ import {
   tickTimes,
   zoomView,
 } from "./replay.js";
-import { meterFraction, pickRange } from "./signal.js";
+import { pickRange } from "./signal.js";
 import { kvGet, kvSet } from "./storage.js";
 
 const $ = (id) => document.getElementById(id);
 const MIN_SPAN_S = 0.05;
 const PAD_Y = 8;
 const ENVELOPE_FLOOR_DBFS = -80;
+const Y_LABEL_PX = 44; // a lane's left edge, where its value labels are: scrolling there zooms vertically
 const CSV_FILES = { imu: "imu.csv", events: "events.csv", envelope: "mic_envelope.csv", orientation: "orientation.csv" };
 
 // What a lane can show: series(track) gives [times (s), [values per channel]], or null if the
-// recording doesn't have it. Ranges step through `ladder` like the live traces.
+// recording doesn't have it. Ranges step through `ladder` like the live traces. `keys`: each
+// channel's colour token, X/Y/Z's unless given.
 const SIGNALS = {
   gyro: {
     units: "°/s, raw (bias not removed)", ladder: [250, 500, 1000, 2000], decimals: 1, names: ["X", "Y", "Z"],
@@ -39,6 +41,11 @@ const SIGNALS = {
   orientation: {
     units: "°, VQF; yaw from the first sample", ladder: [45, 90, 180], decimals: 1, names: ["Roll", "Pitch", "Yaw"], wraps: true,
     series: ({ board: { orientation: o }, orientationT }) => o && [orientationT, [o.roll, o.pitch, o.yaw]],
+  },
+  quaternion: {
+    units: "VQF, as recorded", ladder: [1], decimals: 3, names: ["W", "X", "Y", "Z"],
+    keys: ["screen-text", "series-x", "series-y", "series-z"],
+    series: ({ board: { orientation: o }, orientationT }) => o && [orientationT, o.quat],
   },
   mic: {
     units: "dBFS, peak per ms", decimals: 1, names: ["Level"],
@@ -55,6 +62,11 @@ const state = {
   signal: "gyro",
   bounds: null, // { t0, t1 }: the whole session
   view: null, // { t0, t1 }: what the lanes show
+  // The lanes' shared vertical range, as { t0: bottom, t1: top } in the signal's units so the time
+  // view's zoom and pan work on it too. null follows the data until zoomed or panned vertically;
+  // `y` is what was last drawn.
+  yView: null,
+  y: null,
   hoverT: null,
   lanes: [], // { track, canvas, values }
 };
@@ -102,10 +114,11 @@ export function initReplay(options) {
   for (const input of document.querySelectorAll('input[name="replay-signal"]')) {
     input.addEventListener("change", () => {
       state.signal = input.value;
+      state.yView = null;
       buildLanes();
     });
   }
-  $("replay-fit").addEventListener("click", () => setView(state.bounds));
+  $("replay-fit").addEventListener("click", showAll);
   wireLanes();
   wireOverview();
 
@@ -293,6 +306,7 @@ async function loadSession(session) {
     $("replay-name").textContent = `${session.name} · ${manifest.source === "flash" || !live ? "boards' flash" : "live"}`;
     renderTimebase(timebase, empty);
     renderBoards();
+    offerSignals();
     buildLanes();
   } catch (error) {
     setStatus(`Couldn't read ${session.name}: ${error.message}`, { bad: true });
@@ -343,8 +357,31 @@ function renderBoards() {
   }
 }
 
+// Greys out the signals no board in the session recorded (a flash recording has no mic level,
+// only its claps), moving off one that was chosen to gyro.
+const MISSING = { mic: "Not in this session: a flash recording keeps only the claps, drawn on every signal", orientation: "Not in this session", quaternion: "Not in this session" };
+
+function offerSignals() {
+  for (const input of document.querySelectorAll('input[name="replay-signal"]')) {
+    const recorded = !state.tracks.length || state.tracks.some((track) => SIGNALS[input.value].series(track));
+    input.disabled = !recorded;
+    input.parentElement.title = recorded ? "" : MISSING[input.value] ?? "";
+    if (!recorded && input.checked) {
+      document.querySelector('input[name="replay-signal"][value="gyro"]').checked = true;
+      state.signal = "gyro";
+      state.yView = null;
+    }
+  }
+}
+
 // ---- lanes --------------------------------------------------------------------------------
 // One lane per shown board for the chosen signal, all on the same time axis and vertical range.
+
+const channelKey = (signal, i) => signal.keys?.[i] ?? `series-${"xyz"[i]}`;
+function channelColor(signal, i) {
+  const key = channelKey(signal, i);
+  return key === "screen-text" ? colors.text : colors.series["xyz".indexOf(key.at(-1))];
+}
 
 function buildLanes() {
   const container = $("replay-lanes");
@@ -364,7 +401,7 @@ function buildLanes() {
     values.className = "live";
     // Keyed values double as the legend, as on the live Motion panel.
     values.innerHTML = signal.names.map((label, i) =>
-      `<span${signal.names.length > 1 ? ` style="--key: var(--series-${"xyz"[i]})"` : ""}>${label} <b>–</b></span>`).join("");
+      `<span${signal.names.length > 1 ? ` style="--key: var(--${channelKey(signal, i)})"` : ""}>${label} <b>–</b></span>`).join("");
     head.append(name, values);
     const plot = document.createElement("div");
     plot.className = "plot trace";
@@ -399,14 +436,52 @@ function setView(view) {
   requestDraw();
 }
 
+function setYView(yView) {
+  state.yView = yView;
+  requestDraw();
+}
+
+// The whole session, at the vertical range that fits it.
+function showAll() {
+  state.yView = null;
+  setView(state.bounds);
+}
+
+// How far the vertical range can go: the signal's largest range (a bit past it, so ±1 has room),
+// or the mic's whole scale. Zoomed in no further than a ten-thousandth of that.
+function yLimits(signal) {
+  const top = signal.ladder?.at(-1);
+  return top ? { t0: -1.25 * top, t1: 1.25 * top } : { t0: ENVELOPE_FLOOR_DBFS, t1: 0 };
+}
+const MIN_Y_FRACTION = 1e-4;
+
+// Values to and from a lane's canvas y; series keep PAD_Y clear above and below, the mic's bars don't.
+function yScale(signal, height, { t0: bottom, t1: top }) {
+  const pad = signal.ladder ? PAD_Y : 0;
+  const plotHeight = height - 2 * pad;
+  return {
+    plotHeight,
+    toY: (value) => pad + ((top - value) / (top - bottom)) * plotHeight,
+    valueAt: (y) => top - ((y - pad) / plotHeight) * (top - bottom),
+  };
+}
+
+// Round values across the range for gridlines and labels, about one per 40 px.
+function valueTicks({ t0, t1 }, plotHeight) {
+  const step = niceStep(t1 - t0, Math.max(2, Math.floor(plotHeight / 40)));
+  return { ticks: tickTimes(t0, t1, step), decimals: Math.max(0, Math.ceil(-Math.log10(step) - 1e-9)) };
+}
+
 function draw() {
   if ($("replay").hidden) return;
   colors = getColors();
   const signal = SIGNALS[state.signal];
   const plans = state.lanes.map((lane) => planLane(lane, signal));
   const range = signal.ladder ? pickRange(Math.max(0, ...plans.map((plan) => plan?.peak ?? 0)), signal.ladder) : null;
-  $("replay-range").textContent = range ? ` · ±${range}` : "";
-  plans.forEach((plan, i) => drawLane(state.lanes[i], plan, range));
+  state.y = state.yView ?? (range ? { t0: -range, t1: range } : yLimits(signal));
+  const { decimals } = valueTicks(state.y, state.lanes[0]?.canvas.clientHeight ?? 100);
+  $("replay-range").textContent = state.yView ? ` · ${state.y.t0.toFixed(decimals)} to ${state.y.t1.toFixed(decimals)}` : range ? ` · ±${range}` : "";
+  plans.forEach((plan, i) => drawLane(state.lanes[i], plan, signal));
   drawAxis();
   drawOverview();
   renderReadouts(signal, plans);
@@ -427,7 +502,10 @@ function planLane({ track, canvas }, signal) {
   const columns = Math.max(1, Math.floor(canvas.clientWidth));
   const i0 = Math.max(0, lowerBound(times, t0) - 1);
   const i1 = Math.min(times.length, lowerBound(times, t1) + 1);
-  const plan = { times, channels, i0, i1, columns, period: typicalPeriod(times), wraps: Boolean(signal.wraps), peak: 0 };
+  const plan = {
+    times, channels, i0, i1, columns, period: typicalPeriod(times), wraps: Boolean(signal.wraps), peak: 0,
+    colors: channels.map((_, i) => channelColor(signal, i)),
+  };
   if (i1 - i0 <= 2 * columns) {
     for (const values of channels) for (let i = i0; i < i1; i++) plan.peak = Math.max(plan.peak, Math.abs(values[i]));
     return plan;
@@ -455,7 +533,7 @@ function message(ctx, width, height, text) {
   ctx.textAlign = "start";
 }
 
-function drawLane({ track, canvas }, plan, range) {
+function drawLane({ track, canvas }, plan, signal) {
   const { ctx, width, height } = fitCanvas(canvas);
   if (!state.view) return;
   const { t0, t1 } = state.view;
@@ -471,11 +549,11 @@ function drawLane({ track, canvas }, plan, range) {
   ctx.globalAlpha = 1;
 
   if (!plan) {
-    message(ctx, width, height, state.signal === "mic" ? "No mic envelope: a flash recording keeps only the claps" : "No orientation in this recording");
+    message(ctx, width, height, state.signal === "mic" ? "No mic level from this board: a flash recording keeps only the claps" : "No orientation from this board");
   } else if (state.signal === "mic") {
-    drawLevel(ctx, plan, width, height, toX);
+    drawLevel(ctx, plan, width, height, yScale(signal, height, state.y), toX);
   } else {
-    drawSeries(ctx, plan, width, height, range, toX);
+    drawSeries(ctx, plan, width, height, yScale(signal, height, state.y), toX);
   }
 
   // Claps: orange lines topped with a marker, as on the live Microphone panel.
@@ -503,16 +581,17 @@ function drawLane({ track, canvas }, plan, range) {
   if (state.hoverT !== null) hairline(ctx, toX(state.hoverT), 0, toX(state.hoverT), height, colors.muted);
 }
 
-function drawSeries(ctx, plan, width, height, range, toX) {
-  const plotHeight = height - 2 * PAD_Y;
-  const toY = (value) => PAD_Y + plotHeight / 2 - (Math.max(-1, Math.min(1, value / range)) * plotHeight) / 2;
+function drawSeries(ctx, plan, width, height, { plotHeight, toY: toPlotY }, toX) {
+  // Far beyond the canvas is as good as just beyond it, and keeps canvas coordinates sane.
+  const toY = (value) => Math.max(-height, Math.min(2 * height, toPlotY(value)));
+  const { ticks, decimals } = valueTicks(state.y, plotHeight);
   ctx.font = `11px ${colors.mono}`;
   ctx.textBaseline = "middle";
-  for (const value of [range / 2, -range / 2]) hairline(ctx, 0, toY(value), width, toY(value), colors.grid);
-  for (const value of [range, 0, -range]) {
-    hairline(ctx, 0, toY(value), width, toY(value), value === 0 ? colors.line : colors.grid);
-    ctx.fillStyle = colors.muted;
-    ctx.fillText(value > 0 ? `+${value}` : `${value}`, 4, toY(value) + (value > 0 ? 8 : -8));
+  ctx.fillStyle = colors.muted;
+  for (const value of ticks) {
+    const y = toY(value);
+    hairline(ctx, 0, y, width, y, value === 0 ? colors.line : colors.grid);
+    ctx.fillText(value > 0 ? `+${value.toFixed(decimals)}` : value.toFixed(decimals), 4, y < 14 ? y + 8 : y - 8);
   }
 
   const { times, i0, i1, extents, columns } = plan;
@@ -520,7 +599,7 @@ function drawSeries(ctx, plan, width, height, range, toX) {
   ctx.lineWidth = 1.5;
   ctx.lineJoin = ctx.lineCap = "round";
   plan.channels.forEach((values, axis) => {
-    ctx.strokeStyle = colors.series[axis];
+    ctx.strokeStyle = plan.colors[axis];
     ctx.beginPath();
     if (extents) {
       // Each column as a stroke from its lowest to its highest value, joined to the next.
@@ -551,9 +630,10 @@ function drawSeries(ctx, plan, width, height, range, toX) {
 }
 
 // The mic envelope as a dBFS bar graph, the loudest window per pixel column, as on the live panel.
-function drawLevel(ctx, plan, width, height, toX) {
-  const toY = (dbfs) => height - meterFraction(dbfs, ENVELOPE_FLOOR_DBFS) * height;
-  for (const dbfs of [-20, -40, -60]) hairline(ctx, 0, toY(dbfs), width, toY(dbfs), colors.grid);
+function drawLevel(ctx, plan, width, height, { plotHeight, toY: toPlotY }, toX) {
+  const toY = (dbfs) => (dbfs > state.y.t0 ? Math.max(0, toPlotY(dbfs)) : height); // silence draws nothing
+  const { ticks, decimals } = valueTicks(state.y, plotHeight);
+  for (const dbfs of ticks) hairline(ctx, 0, toY(dbfs), width, toY(dbfs), colors.grid);
   ctx.fillStyle = colors.readout;
   const { times, i0, i1, extents, columns } = plan;
   if (extents) {
@@ -575,7 +655,7 @@ function drawLevel(ctx, plan, width, height, toX) {
   ctx.font = `11px ${colors.mono}`;
   ctx.textBaseline = "middle";
   ctx.fillStyle = colors.muted;
-  for (const dbfs of [-20, -40, -60]) ctx.fillText(`${dbfs}`, 4, toY(dbfs) - 7);
+  for (const dbfs of ticks) if (toY(dbfs) > 14) ctx.fillText(dbfs.toFixed(decimals), 4, toY(dbfs) - 7);
 }
 
 function drawAxis() {
@@ -655,6 +735,8 @@ function renderReadouts(signal, plans) {
 // ---- navigation ---------------------------------------------------------------------------
 // Scroll (or pinch) zooms about the pointer, a sideways scroll or a drag pans, double-click shows
 // the whole session; with the lanes focused, the arrow keys pan, + and - zoom, 0 shows it all.
+// Vertically: Option-scroll, or a scroll over the value labels at a lane's left edge, zooms about
+// the pointer's value, ↑ and ↓ zoom, and once zoomed a drag pans up and down too.
 
 function wireLanes() {
   const lanes = $("replay-lanes");
@@ -665,18 +747,32 @@ function wireLanes() {
     return state.view.t0 + fraction * (state.view.t1 - state.view.t0);
   };
   const span = () => state.view.t1 - state.view.t0;
+  const signal = () => SIGNALS[state.signal];
+  const zoomY = (factor, anchor) => {
+    if (!state.y) return;
+    const limits = yLimits(signal());
+    setYView(zoomView(state.y, factor, anchor, limits, MIN_Y_FRACTION * (limits.t1 - limits.t0)));
+  };
   let drag = null;
 
   lanes.addEventListener("pointerdown", (event) => {
     if (!state.view || event.target.tagName !== "CANVAS" || event.button !== 0) return;
-    drag = { x: event.clientX, view: state.view, width: box().width };
+    drag = { x: event.clientX, y: event.clientY, view: state.view, yView: state.yView, width: box().width, height: event.target.clientHeight };
     lanes.setPointerCapture(event.pointerId);
     lanes.classList.add("panning");
   });
   lanes.addEventListener("pointermove", (event) => {
     if (!state.view || !state.lanes.length) return;
-    if (drag) state.view = panView(drag.view, (-(event.clientX - drag.x) / drag.width) * (drag.view.t1 - drag.view.t0), state.bounds);
+    if (drag) {
+      state.view = panView(drag.view, (-(event.clientX - drag.x) / drag.width) * (drag.view.t1 - drag.view.t0), state.bounds);
+      if (drag.yView) {
+        const { plotHeight } = yScale(signal(), drag.height, drag.yView);
+        const dy = ((event.clientY - drag.y) / plotHeight) * (drag.yView.t1 - drag.yView.t0);
+        state.yView = panView(drag.yView, dy, yLimits(signal()));
+      }
+    }
     state.hoverT = timeAt(event.clientX);
+    lanes.classList.toggle("y-zone", !drag && event.target.tagName === "CANVAS" && event.clientX - box().left < Y_LABEL_PX);
     requestDraw();
   });
   const endDrag = () => {
@@ -690,13 +786,18 @@ function wireLanes() {
     state.hoverT = null;
     requestDraw();
   });
-  lanes.addEventListener("dblclick", () => setView(state.bounds));
+  lanes.addEventListener("dblclick", showAll);
   lanes.addEventListener("wheel", (event) => {
     if (!state.view || !state.lanes.length) return;
     event.preventDefault();
     const rect = box();
     const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.width : 1;
-    if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+    const overLabels = event.target.tagName === "CANVAS" && event.clientX - rect.left < Y_LABEL_PX;
+    if ((event.altKey || overLabels) && event.target.tagName === "CANVAS" && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) {
+      const laneBox = event.target.getBoundingClientRect();
+      const { valueAt } = yScale(signal(), laneBox.height, state.y);
+      zoomY(Math.exp(event.deltaY * scale * (event.ctrlKey ? 0.01 : 0.002)), valueAt(event.clientY - laneBox.top));
+    } else if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
       setView(panView(state.view, ((event.deltaX * scale) / rect.width) * span(), state.bounds));
     } else {
       // A trackpad pinch arrives as a wheel event with ctrlKey set, in smaller steps.
@@ -706,6 +807,16 @@ function wireLanes() {
   }, { passive: false });
   lanes.addEventListener("keydown", (event) => {
     if (!state.view) return;
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      zoomY(event.key === "ArrowUp" ? 0.5 : 2, (state.y.t0 + state.y.t1) / 2);
+      return;
+    }
+    if (event.key === "0" || event.key === "Home") {
+      event.preventDefault();
+      showAll();
+      return;
+    }
     const middle = (state.view.t0 + state.view.t1) / 2;
     const step = event.shiftKey ? span() : span() / 5;
     const views = {
@@ -714,8 +825,6 @@ function wireLanes() {
       "+": () => zoomView(state.view, 0.5, middle, state.bounds, MIN_SPAN_S),
       "=": () => zoomView(state.view, 0.5, middle, state.bounds, MIN_SPAN_S),
       "-": () => zoomView(state.view, 2, middle, state.bounds, MIN_SPAN_S),
-      0: () => state.bounds,
-      Home: () => state.bounds,
     };
     if (!views[event.key]) return;
     event.preventDefault();

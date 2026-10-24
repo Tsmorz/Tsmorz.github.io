@@ -21,8 +21,9 @@ const $ = (id) => document.getElementById(id);
 const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
 const ENVELOPE_FLOOR_DBFS = -80;
 const MARK_LAMP_MS = 400;
-// A tap is over well within one 250 ms table redraw, so a press keeps the USER lamp lit this long.
-const USER_LAMP_MIN_MS = 400;
+// A tap's press and release can arrive together, so a press keeps the USER lamp lit at least this
+// long; short enough that the gap in a double press still shows (the lamp redraws every frame).
+const USER_LAMP_MIN_MS = 100;
 
 const boards = new Map(); // by Web Bluetooth device id
 let selected = null;
@@ -71,7 +72,7 @@ function readColors() {
   colors = {
     grid: token("screen-grid"), line: token("screen-line"), muted: token("screen-muted"), text: token("screen-text"), screen: token("screen"),
     readout: token("readout"), board: token("board"), mono: token("mono"), signal: token("signal"), bad: token("bad"),
-    ledRed: token("led-red"), ledGreen: token("led-green"),
+    ledRed: token("led-red"),
     series: [token("series-x"), token("series-y"), token("series-z")],
   };
   // The phone browser's bar follows the header, toggle included.
@@ -317,11 +318,22 @@ buildLive($("gyro-live"));
 buildLive($("accel-live"), ["|a|"]);
 
 // ---- orientation --------------------------------------------------------------------------
-// A fixed isometric camera looks at the world frame: x toward the front-left, y toward the
-// front-right, z up, seen from 30 degrees above the horizon. The board's own X/Y/Z axes are drawn
+// A camera looks at the world frame, by default x toward the front-left, y toward the front-right,
+// z up, seen from 30 degrees above the horizon; dragging the view orbits it (double-click goes
+// back), and where it was left is remembered in this browser. The board's own X/Y/Z axes are drawn
 // rotated by the quaternion, over an outline of the board with its USB-C connector and LEDs.
-const CAMERA_AZIMUTH = (-135 * Math.PI) / 180;
-const CAMERA_ELEVATION = (30 * Math.PI) / 180;
+const DEFAULT_CAMERA = { azimuth: (-135 * Math.PI) / 180, elevation: (30 * Math.PI) / 180 };
+const CAMERA_KEY = "pose-camera";
+const RADIANS_PER_PIXEL = 0.01;
+// Short of straight up or down, where the view would flip over.
+const MAX_ELEVATION = (89 * Math.PI) / 180;
+let camera = { ...DEFAULT_CAMERA };
+try {
+  const saved = JSON.parse(localStorage.getItem(CAMERA_KEY));
+  if (Number.isFinite(saved?.azimuth) && Number.isFinite(saved?.elevation)) camera = saved;
+} catch {
+  /* storage blocked or unreadable: the default view */
+}
 const AXIS_NAMES = ["X", "Y", "Z"];
 
 // The board is drawn in mm, scaled so its 21 mm length spans 1.8 axis lengths.
@@ -344,23 +356,57 @@ function roundedRect(a, b, r, place) {
 // The XIAO in the IMU's x/y plane: 17.8 x 21 mm with ~2 mm corners, its long side along y. Its
 // USB-C receptacle sits on top at the +y end, overhanging the edge by ~1 mm: the 8.9 x 7.3 mm
 // shell's top face, 3.2 mm up, and its stadium-shaped opening facing out along +y. Seen from above
-// with the port away from you, the red LED is to its left (-x) and the green to its right.
+// with the port away from you, the red LED is to its left (-x) and the RGB LED to its right.
 const BOARD_OUTLINE = roundedRect(8.9, 10.5, 2, (u, v) => [u, v, 0]);
 const USB_SHELL_TOP = roundedRect(4.45, 3.65, 0.5, (u, v) => [u, 7.85 + v, 3.2]);
 const USB_OPENING = roundedRect(4.45, 1.6, 1.6, (u, v) => [u, 11.5, 1.6 + v]);
 // Corner radius = half-size makes a circle.
 const RED_LED = roundedRect(0.9, 0.9, 0.9, (u, v) => [-6.4 + u, 9 + v, 0.4]);
-const GREEN_LED = roundedRect(0.9, 0.9, 0.9, (u, v) => [6.4 + u, 9 + v, 0.4]);
+const RGB_LED = roundedRect(0.9, 0.9, 0.9, (u, v) => [6.4 + u, 9 + v, 0.4]);
 
 // World point -> screen offset (right, up) plus depth (larger is farther from the camera).
 function project([x, y, z]) {
-  const right = x * Math.cos(CAMERA_AZIMUTH) - y * Math.sin(CAMERA_AZIMUTH);
-  const away = x * Math.sin(CAMERA_AZIMUTH) + y * Math.cos(CAMERA_AZIMUTH);
+  const { azimuth, elevation } = camera;
+  const right = x * Math.cos(azimuth) - y * Math.sin(azimuth);
+  const away = x * Math.sin(azimuth) + y * Math.cos(azimuth);
   return {
     right,
-    up: z * Math.cos(CAMERA_ELEVATION) + away * Math.sin(CAMERA_ELEVATION),
-    depth: away * Math.cos(CAMERA_ELEVATION) - z * Math.sin(CAMERA_ELEVATION),
+    up: z * Math.cos(elevation) + away * Math.sin(elevation),
+    depth: away * Math.cos(elevation) - z * Math.sin(elevation),
   };
+}
+
+function setCamera(next) {
+  camera = { azimuth: next.azimuth % (2 * Math.PI), elevation: Math.max(-MAX_ELEVATION, Math.min(MAX_ELEVATION, next.elevation)) };
+  try {
+    localStorage.setItem(CAMERA_KEY, JSON.stringify(camera));
+  } catch {
+    /* storage blocked: the view lasts for this page load */
+  }
+}
+
+// Drag left/right turns the world about its up axis; drag up/down tips it toward or away.
+{
+  const canvas = $("pose");
+  let last = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    last = [event.clientX, event.clientY];
+    canvas.setPointerCapture(event.pointerId);
+    canvas.classList.add("dragging");
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!last) return;
+    const [dx, dy] = [event.clientX - last[0], event.clientY - last[1]];
+    last = [event.clientX, event.clientY];
+    setCamera({ azimuth: camera.azimuth - dx * RADIANS_PER_PIXEL, elevation: camera.elevation + dy * RADIANS_PER_PIXEL });
+  });
+  const release = () => {
+    last = null;
+    canvas.classList.remove("dragging");
+  };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+  canvas.addEventListener("dblclick", () => setCamera(DEFAULT_CAMERA));
 }
 
 function drawPose() {
@@ -431,7 +477,8 @@ function drawPose() {
   const openingFacesCamera = project(rotateVector(q, [0, 1, 0])).depth < 0;
   shape(BOARD_OUTLINE, colors.board, 0.18, 1.5);
   shape(RED_LED, colors.ledRed, 1, 0.5);
-  shape(GREEN_LED, colors.ledGreen, 1, 0.5);
+  // The RGB LED in the colour the board reports, unlit (the screen showing through) when it's off.
+  shape(RGB_LED, ledDisplayColor(selected.led) ?? colors.screen, 1, 0.5);
   if (!openingFacesCamera) shape(USB_OPENING, colors.screen, 1, 1);
   shape(USB_SHELL_TOP, colors.board, 0.45, 1);
   if (openingFacesCamera) shape(USB_OPENING, colors.screen, 1, 1);
@@ -776,6 +823,7 @@ function drawFrame() {
   renderLive();
   renderAngles();
   renderMic();
+  renderUserLamps();
   requestAnimationFrame(drawFrame);
 }
 requestAnimationFrame(drawFrame);
@@ -783,12 +831,11 @@ requestAnimationFrame(drawFrame);
 // ---- board list ---------------------------------------------------------------------------
 function setStatus(text, { bad = false } = {}) {
   $("status").textContent = text;
-  $("status").classList.toggle("bad", bad);
+  $("status").className = `status-line ${bad ? "bad-text" : "muted"}`;
 }
 
 function connectedSummary() {
   const count = [...boards.values()].filter((board) => board.connected).length;
-  $("link-dot").classList.toggle("on", count > 0);
   $("board-count").textContent = count ? `${count} connected` : "";
   return count;
 }
@@ -838,8 +885,6 @@ function renderBoardRow(board) {
   row.querySelector(".level").textContent = Number.isFinite(dbfs) ? `${dbfs.toFixed(0)}` : "–∞";
   const ago = board.lastMarkHostMs ? ` · ${Math.round((performance.timeOrigin + performance.now() - board.lastMarkHostMs) / 1000)} s ago` : "";
   row.querySelector(".marks").textContent = `${board.markCount}${ago}`;
-  const userLit = board.userPressed || performance.timeOrigin + performance.now() - board.userPressHostMs < USER_LAMP_MIN_MS;
-  row.querySelector(".user-lamp").classList.toggle("on", userLit);
   const led = ledDisplayColor(board.led);
   if (led) row.style.setProperty("--led", led);
   else row.style.removeProperty("--led");
@@ -900,6 +945,15 @@ function flashSummary(board) {
     case "full": return "full";
     case "error": return `${used} · error ${log.error}`;
     default: return used;
+  }
+}
+
+// Every frame rather than with the 250 ms table redraw, which would merge a double press into one.
+function renderUserLamps() {
+  const now = performance.timeOrigin + performance.now();
+  for (const board of boards.values()) {
+    const lit = board.userPressed || now - board.userPressHostMs < USER_LAMP_MIN_MS;
+    board.row?.querySelector(".user-lamp").classList.toggle("on", lit);
   }
 }
 
@@ -1076,7 +1130,7 @@ async function keepConnected(device, name, { quiet = false } = {}) {
     }
     if (boards.get(device.id)?.connected) return;
     if (!quiet) setStatus(`${name} didn't come back: wake it (USER) and Add board`, { bad: true });
-    else if (!connectedSummary() && reconnecting.size <= 1) setStatus("No boards connected");
+    else if (!connectedSummary() && reconnecting.size <= 1) setStatus("No boards connected.");
   } finally {
     reconnecting.delete(device.id);
   }
@@ -1103,11 +1157,26 @@ function timestamp(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
 }
 
+// The suggested name is retaken at Record, so it's when the recording started, not when the page
+// loaded; a name someone typed is kept.
+let sessionNamed = false;
 $("session").value = timestamp();
+$("session").addEventListener("input", () => {
+  sessionNamed = $("session").value.trim() !== "";
+});
 
 function setRecStatus(text, { bad = false } = {}) {
   $("rec-status").textContent = text;
-  $("rec-status").className = bad ? "bad-text" : "muted";
+  $("rec-status").className = `status-line ${bad ? "bad-text" : "muted"}`;
+}
+
+// The recorder's status when nothing has happened since the boards changed. It replaces only
+// another of these, so the outcome of a Record, Stop, Upload or Erase stays until the next one.
+const NO_BOARD_TEXT = "Connect a board first.";
+const OLD_FIRMWARE_TEXT = "These boards' firmware can't record on its own. Flash the current build.";
+const IDLE_TEXTS = ["", "Ready.", NO_BOARD_TEXT, OLD_FIRMWARE_TEXT];
+function setIdleRecStatus(text) {
+  if (IDLE_TEXTS.includes($("rec-status").textContent)) setRecStatus(text);
 }
 
 // ---- where recordings go
@@ -1159,7 +1228,9 @@ $("pick-folder").addEventListener("click", async () => {
     return;
   }
   try {
-    recorder.dirHandle = await window.showDirectoryPicker({ id: "recordings", mode: "readwrite" });
+    // Chrome won't let a page write to Downloads, Desktop or the home folder themselves ("contains
+    // system files"), only to a folder inside one, so the picker opens in Downloads to make one.
+    recorder.dirHandle = await window.showDirectoryPicker({ id: "recordings", mode: "readwrite", startIn: "downloads" });
   } catch {
     return; // picker dismissed
   }
@@ -1235,6 +1306,9 @@ targetInputs().forEach((input) =>
     } catch {
       /* storage blocked: the choice lasts for this page load */
     }
+    // The other mode's news and board list don't apply here.
+    setRecStatus("");
+    $("rec-boards").innerHTML = "";
     renderRecorder();
   }));
 
@@ -1259,7 +1333,7 @@ function renderRecorder() {
   $("record").classList.toggle("recording", recorder.active);
   $("session").disabled = recorder.active;
   if (!recorder.active) {
-    if (!connected.length && !recordBusy && !lastSaved) setRecStatus("Connect a board first.");
+    if (!recordBusy) setIdleRecStatus(connected.length ? "Ready." : NO_BOARD_TEXT);
     return;
   }
   const seconds = Math.floor((Date.now() - recorder.startedAt.getTime()) / 1000);
@@ -1377,7 +1451,7 @@ async function startRecording() {
   const folder = await saveFolder(); // asked now, not after the experiment
   const members = [...boards.values()].filter((board) => board.connected && board.info);
   if (!members.length) return;
-  const name = safeName($("session").value || timestamp());
+  const name = safeName((sessionNamed && $("session").value) || timestamp());
   $("session").value = name;
   const { spool, durable } = await spoolReady;
   const startedAt = new Date();
@@ -1427,6 +1501,7 @@ async function stopRecording() {
   setRecStatus("Saving…");
   await saveLiveRecording(record, folder, unflushed);
   $("session").value = timestamp();
+  sessionNamed = false;
 }
 
 const rowCount = (chunks) => chunks.reduce((count, chunk) => count + chunk.split("\n").length - 1, 0);
@@ -1564,20 +1639,17 @@ function renderFlashRecorder() {
   const idle = active ? list.filter((board) => board.log.state === "idle") : [];
   $("flash-join").hidden = !idle.length;
   $("flash-join").textContent = `Record ${idle.map((board) => board.displayName).join(", ")} too`;
-  const noBoardText = ["Connect a board first.", "These boards' firmware can't record on its own. Flash the current build."];
-  if (!list.length && !busy) {
+  if (!busy) {
+    // A board's flash service attaches a moment after it connects, so an earlier message may be stale.
     const old = [...boards.values()].some((board) => board.connected && !board.log);
-    setRecStatus(noBoardText[old ? 1 : 0]);
-  } else if (noBoardText.includes($("rec-status").textContent)) {
-    // A board's flash service attaches a moment after it connects, so either message may be stale.
-    setRecStatus("Ready.");
+    setIdleRecStatus(list.length ? "Ready." : old ? OLD_FIRMWARE_TEXT : NO_BOARD_TEXT);
   }
   $("rec-boards").innerHTML = "";
   for (const board of list) {
     const log = board.log;
     const item = document.createElement("li");
-    const kb = (bytes) => `${(bytes / 1024).toFixed(0)} KB`;
-    item.textContent = `${board.displayName}: ${flashSummary(board)} · ${kb(log.usedBytes)} of ${(log.capacityBytes / 1048576).toFixed(0)} MB` +
+    const used = (log.usedBytes / 1048576).toFixed(log.usedBytes ? 2 : 0);
+    item.textContent = `${board.displayName}: ${flashSummary(board)} · ${used} of ${(log.capacityBytes / 1048576).toFixed(0)} MB` +
       (log.droppedBytes ? ` · ${log.droppedBytes} bytes dropped` : "");
     if (log.state === "error" || log.droppedBytes) item.className = "bad-text";
     $("rec-boards").append(item);
@@ -2132,7 +2204,7 @@ async function reconnect(device, key) {
 }
 
 async function updateBoard(board) {
-  const { bytes, image } = firmwareImage;
+  const { name: imageName, bytes, image } = firmwareImage;
   const { device, key } = board;
   const name = board.displayName;
   setJob(key, { name, version: image.versionText, active: true, bad: false, stage: "uploading", progress: 0, text: "starting…" });
@@ -2157,6 +2229,7 @@ async function updateBoard(board) {
     if (!verdict.ok) throw new Error(verdict.reason);
     setJob(key, { active: false, stage: "done", name: fresh.displayName, text: `✓ running v${image.versionText}` });
     setStatus(`${fresh.displayName} updated to v${image.versionText}`);
+    keepUpdatedFirmware({ name: imageName, bytes }).catch(() => {}); // the USB rescue images; not the update's business
     if (!selected) select(fresh);
   } catch (error) {
     setJob(key, { active: false, stage: "failed", bad: true, text: `failed: ${error.message}` });
@@ -2186,7 +2259,51 @@ let usbKeyCheck = null; // "match", "mismatch" or "unknown" once both images are
 let usbFlashing = false;
 const USB_STAGE_TEXT = { connecting: "connecting…", erasing: "erasing the chip…", writing: "writing", verifying: "checking", restarting: "restarting…" };
 
-$("usb-open").addEventListener("click", () => {
+// The last pair that flashed a board is kept in this browser (storage.js, never the published
+// page), and the dialog starts with it, so a board that needs rescuing doesn't wait on finding
+// the files. A Bluetooth update that boots and confirms moves the kept firmware on to its
+// version, if the kept MCUboot trusts its key, so the pair stays the current firmware.
+const USB_IMAGES_KEY = "usb-images";
+let keptUsbImages = null; // { bootloader, firmware, saved } or null
+
+async function restoreUsbImages() {
+  const kept = await kvGet(USB_IMAGES_KEY);
+  if (!kept) return;
+  try {
+    keptUsbImages = {
+      bootloader: readImageFile(kept.bootloader.name, kept.bootloader.bytes),
+      firmware: readImageFile(kept.firmware.name, kept.firmware.bytes),
+      saved: kept.saved,
+    };
+  } catch {
+    keptUsbImages = null; // unreadable: as if none were kept
+  }
+}
+const usbImagesRestored = restoreUsbImages();
+
+async function keepUsbImages(bootloader, firmware) {
+  keptUsbImages = { bootloader, firmware, saved: new Date().toISOString() };
+  const stored = (image) => ({ name: image.name, bytes: image.bytes });
+  await kvSet(USB_IMAGES_KEY, { bootloader: stored(bootloader), firmware: stored(firmware), saved: keptUsbImages.saved });
+}
+
+// After a Bluetooth update has confirmed: the kept firmware becomes that image.
+async function keepUpdatedFirmware({ name, bytes }) {
+  await usbImagesRestored;
+  if (!keptUsbImages) return;
+  const firmware = readImageFile(name, bytes);
+  if ((await signingKeyCheck(keptUsbImages.bootloader, firmware)) !== "match") return;
+  if (usbImages.firmware === keptUsbImages.firmware) usbImages.firmware = firmware; // the dialog was showing the kept one
+  await keepUsbImages(keptUsbImages.bootloader, firmware);
+  renderUsbFlash();
+}
+
+$("usb-open").addEventListener("click", async () => {
+  await usbImagesRestored;
+  if (keptUsbImages && !usbImages.bootloader && !usbImages.firmware) {
+    Object.assign(usbImages, { bootloader: keptUsbImages.bootloader, firmware: keptUsbImages.firmware });
+    usbKeyCheck = await signingKeyCheck(usbImages.bootloader, usbImages.firmware);
+  }
   renderUsbFlash();
   if (!$("usb-dialog").open) $("usb-dialog").showModal();
 });
@@ -2222,8 +2339,9 @@ async function takeUsbFiles(files) {
 function renderUsbFlash() {
   const { bootloader, firmware } = usbImages;
   const kb = (bytes) => `${(bytes.length / 1024).toFixed(0)} KB`;
-  $("usb-bootloader").textContent = `MCUboot: ${bootloader ? `${bootloader.name} · ${kb(bootloader.bytes)}` : "not chosen"}`;
-  $("usb-firmware").textContent = `Firmware: ${firmware ? `${firmware.name} · v${firmware.image.versionText} · ${kb(firmware.bytes)}` : "not chosen"}`;
+  const kept = (image) => (image === keptUsbImages?.[image.kind] ? ` · kept in this browser ${keptUsbImages.saved.slice(0, 10)}` : "");
+  $("usb-bootloader").textContent = `MCUboot: ${bootloader ? `${bootloader.name} · ${kb(bootloader.bytes)}${kept(bootloader)}` : "not chosen"}`;
+  $("usb-firmware").textContent = `Firmware: ${firmware ? `${firmware.name} · v${firmware.image.versionText} · ${kb(firmware.bytes)}${kept(firmware)}` : "not chosen"}`;
   $("usb-key").hidden = !usbKeyCheck;
   $("usb-key").textContent = {
     match: "✓ Signed with the key this MCUboot trusts",
@@ -2253,6 +2371,7 @@ $("usb-flash").addEventListener("click", async () => {
   }
   usbFlashing = true;
   renderUsbFlash();
+  $("usb-repair").hidden = true;
   let transport = null;
   let stage = "connecting";
   try {
@@ -2263,7 +2382,10 @@ $("usb-flash").addEventListener("click", async () => {
     });
     const name = `nrf-controller-${boardId}`;
     setUsbStatus(`✓ ${name} runs v${usbImages.firmware.image.versionText}${wasLocked ? " (it was locked: the erase unlocked it)" : ""}. Add it over Bluetooth.`);
-    setStatus(`${name} flashed over USB`);
+    $("usb-repair").hidden = false;
+    setStatus(`${name} flashed over USB: pair it over Bluetooth again`);
+    await keepUsbImages(usbImages.bootloader, usbImages.firmware);
+    renderUsbFlash();
   } catch (error) {
     setUsbStatus(`Failed: ${error.message}`, { bad: true });
   } finally {
