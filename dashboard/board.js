@@ -4,14 +4,16 @@
 // (a checklist item was seen working) and "disconnected" events.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
-  TELEMETRY_BATTERY, TELEMETRY_IMU_RANGES, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER,
+  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_SERVICE, KEYWORD_SETTINGS,
+  LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
+  TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
-  decodeEvent, decodeImuBatch, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch,
-  encodeLatencyReset, encodeLedColor, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
+  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch,
+  encodeClipCapture, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
 } from "./wire.js";
+import { ClipAssembler } from "./clips.js";
 import { TimeUnwrapper } from "./recording.js";
 import { SMP_CHARACTERISTIC, SMP_SERVICE } from "./smp.js";
 
@@ -55,10 +57,20 @@ export class Board extends EventTarget {
     this.battery = null;
     this.led = null; // the colour the board's LED shows, if this firmware reports it
     this.download = null;
+    this.clip = null; // the keyword clip being captured, if any
+    this.canCaptureClips = false; // whether this firmware has the keyword service
+    this.voice = null; // { listening, obeyed, hasModel }, if this firmware has voice settings
+    this.voiceHeard = []; // the latest keyword events: { label, outcome, hostMs }
+    this.audioStream = null; // the background-audio stream running, if any
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
     this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
     this.imuRanges = null; // { gyroDps, accelG }, if this firmware lets them be chosen
     this.temperatureC = null; // the IMU's, if this firmware reports it
+    this.motionWake = null; // whether moving the board wakes it from sleep, if this firmware can
+    this.clock = null; // { role, state, sourceBoard } of the radio clock sync, if this firmware has it
+    this.clockPairs = 0; // radio clock pairs received this connection
+    // Each clock source's times wrap too, on its own clock: one unwrapper per source board.
+    this.sourceUnwraps = continueFrom?.sourceUnwraps ?? new Map();
     this.seen = new Set();
     // [characteristic, handler] for every notification this connection listens to, removed on
     // disconnect: a reconnect makes a new Board, which mustn't share the old one's notifications.
@@ -77,6 +89,7 @@ export class Board extends EventTarget {
     this.atRest = false;
     this.userPressed = false;
     this.userPressHostMs = 0;
+    this.lastTap = null; // { type, hostMs } of the latest tap or double tap
     this.envelope = [];
     this.envelopeEndUs = null;
     this.spectrum = []; // the last ENVELOPE_SECONDS of { tUs, levels } frames, levels in dBFS per bin
@@ -154,6 +167,7 @@ export class Board extends EventTarget {
     this.chars.envelope = await subscribe(data, DATA_ENVELOPE, (view) => this.onEnvelope(view));
     this.chars.events = await subscribe(data, DATA_EVENTS, (view) => this.onEvent(view));
     await this.connectSpectrum(data, subscribe);
+    await this.connectClockPairs(data, subscribe);
 
     const control = await server.getPrimaryService(TELEMETRY_SERVICE);
     await this.connectLed(control, subscribe);
@@ -163,8 +177,11 @@ export class Board extends EventTarget {
     this.onLatency(await this.chars.latency.readValue());
     await this.connectPower(control, subscribe);
     await this.connectImuRanges(control);
+    await this.connectMotionWake(control);
+    await this.connectClock(control, subscribe);
 
     await this.connectLog(server, subscribe);
+    await this.connectKeyword(server, subscribe);
     await this.connectSmp(server);
 
     try {
@@ -186,6 +203,66 @@ export class Board extends EventTarget {
     this.hasSpectrum = true;
   }
 
+  // Firmware from before the radio clock sync has none of the next three; the rest still works.
+  async connectClockPairs(data, subscribe) {
+    try {
+      await subscribe(data, DATA_CLOCK, (view) => this.onClockPair(view));
+    } catch {
+      /* no clock pairs from this firmware */
+    }
+  }
+
+  async connectClock(control, subscribe) {
+    try {
+      this.chars.clock = await subscribe(control, TELEMETRY_CLOCK, (view) => this.onClockStatus(view));
+    } catch {
+      return;
+    }
+    this.onClockStatus(await this.chars.clock.readValue());
+  }
+
+  async connectMotionWake(control) {
+    try {
+      this.chars.motionWake = await control.getCharacteristic(TELEMETRY_MOTION_WAKE);
+    } catch {
+      return;
+    }
+    this.motionWake = decodeMotionWake(await this.chars.motionWake.readValue());
+  }
+
+  onClockStatus(view) {
+    const status = decodeClockStatus(view);
+    if (status) this.clock = status;
+    this.changed();
+  }
+
+  onClockPair(view) {
+    const hostMs = hostNow();
+    const pair = decodeClockPair(view);
+    if (!pair) return;
+    if (!this.sourceUnwraps.has(pair.sourceBoard)) this.sourceUnwraps.set(pair.sourceBoard, new TimeUnwrapper());
+    const unwrapped = { ...pair, tUs: this.unwrap.unwrap(pair.tUs), sourceTUs: this.sourceUnwraps.get(pair.sourceBoard).unwrap(pair.sourceTUs) };
+    this.recording?.addClockPair(unwrapped, hostMs);
+    this.clockPairs++;
+    this.markSeen("clock");
+  }
+
+  /** Makes this board the clock source ("source") or a listener ("listener"); saved on the board. */
+  setClockRole(role) {
+    const bytes = encodeClockRole(role);
+    if (!bytes || !this.chars.clock) throw new Error("this board's firmware has no radio clock sync: update it");
+    return this.write(this.chars.clock, bytes);
+  }
+
+  /** Sets whether moving the board wakes it from sleep (saved on the board), then reads it back. */
+  async setMotionWake(enabled) {
+    if (!this.chars.motionWake) throw new Error("this board's firmware can't wake on motion: update it");
+    await this.write(this.chars.motionWake, encodeMotionWake(enabled));
+    this.motionWake = decodeMotionWake(await this.queue(() => this.chars.motionWake.readValue()));
+    this.changed();
+    return this.motionWake;
+  }
+
   // Firmware from before on-board recording has no log service; the rest still works.
   async connectLog(server, subscribe) {
     let service;
@@ -198,6 +275,71 @@ export class Board extends EventTarget {
     this.chars.logStatus = await subscribe(service, LOG_STATUS, (view) => this.onLogStatus(view));
     await subscribe(service, LOG_DATA, (view) => this.onLogData(view));
     this.onLogStatus(await this.chars.logStatus.readValue());
+  }
+
+  // Firmware from before voice commands has no keyword service; the rest still works.
+  async connectKeyword(server, subscribe) {
+    let service;
+    try {
+      service = await server.getPrimaryService(KEYWORD_SERVICE);
+    } catch {
+      return;
+    }
+    this.chars.keywordCommand = await service.getCharacteristic(KEYWORD_COMMAND);
+    await subscribe(service, KEYWORD_CLIP, (view) => this.onClipChunk(view));
+    this.canCaptureClips = true;
+    try {
+      this.chars.voiceSettings = await service.getCharacteristic(KEYWORD_SETTINGS);
+      this.voice = decodeKeywordSettings(await this.chars.voiceSettings.readValue());
+      await subscribe(service, KEYWORD_AUDIO, (view) => this.onAudioChunk(view));
+    } catch {
+      /* firmware from before voice settings and background audio */
+    }
+  }
+
+  /** Sets whether the board listens and which commands it obeys (saved on it); reads them back. */
+  async setVoiceSettings(settings) {
+    if (!this.chars.voiceSettings) throw new Error("this board's firmware has no voice settings: update it");
+    await this.write(this.chars.voiceSettings, encodeKeywordSettings(settings));
+    this.voice = decodeKeywordSettings(await this.queue(() => this.chars.voiceSettings.readValue()));
+    this.changed();
+    return this.voice;
+  }
+
+  /**
+   * Streams the board's microphone (ADPCM, ~8 KB/s) until stopAudioStream(); the live data
+   * streams pause meanwhile. onChunk({ firstSample, samples }) gets each 20 ms chunk decoded;
+   * firstSample counts from the stream's start, so a gap shows a lost chunk.
+   */
+  async startAudioStream(onChunk, decode) {
+    if (!this.chars.voiceSettings) throw new Error("this board's firmware can't stream audio: update it");
+    if (this.audioStream) throw new Error("already streaming");
+    const streamId = Math.floor(Math.random() * 0x10000);
+    this.audioStream = { streamId, onChunk, decode };
+    try {
+      await this.write(this.chars.keywordCommand, encodeStreamStart(streamId));
+    } catch (error) {
+      this.audioStream = null;
+      throw error;
+    }
+  }
+
+  async stopAudioStream() {
+    if (!this.audioStream) return;
+    this.audioStream = null;
+    try {
+      if (this.connected) await this.write(this.chars.keywordCommand, encodeStreamStop());
+    } finally {
+      // The board paused its live streams while it sent audio; don't count the pause as lost data.
+      this.lastSeq = this.lastWindow = this.lastEventSeq = null;
+    }
+  }
+
+  onAudioChunk(view) {
+    const chunk = decodeAudioChunk(view);
+    const stream = this.audioStream;
+    if (!chunk || chunk.streamId !== stream?.streamId) return;
+    stream.onChunk({ firstSample: chunk.firstSample, samples: stream.decode(chunk.adpcm, chunk) });
   }
 
   // Firmware from before MCUboot can't be updated over Bluetooth; flash it over USB once.
@@ -315,6 +457,9 @@ export class Board extends EventTarget {
     this.listeners = [];
     this.recording = null;
     this.download?.reject(new Error("disconnected"));
+    this.clip?.reject(new Error("disconnected"));
+    this.audioStream?.onChunk(null); // tells the recorder the stream ended
+    this.audioStream = null;
     this.smp?.close(new Error("disconnected"));
     this.dispatchEvent(new Event("disconnected"));
   }
@@ -421,6 +566,12 @@ export class Board extends EventTarget {
 
     if (event.type === "temperature") {
       this.temperatureC = temperatureFromEvent(event.peak);
+    } else if (event.type === "keyword") {
+      this.voiceHeard.unshift({ ...decodeKeywordEvent(event.peak), hostMs });
+      this.voiceHeard.length = Math.min(this.voiceHeard.length, 8);
+    } else if (event.type === "tap" || event.type === "double_tap") {
+      this.lastTap = { type: event.type, hostMs };
+      if (event.type === "double_tap") this.markSeen("tap");
     } else if (event.type === "sync") {
       this.marks.push(unwrapped);
       if (this.marks.length > 50) this.marks.shift();
@@ -515,6 +666,45 @@ export class Board extends EventTarget {
     } finally {
       this.download = null;
       // The board pauses its live streams during an upload; don't count the pause as lost data.
+      this.lastSeq = this.lastWindow = this.lastEventSeq = null;
+    }
+  }
+
+  // ---- keyword clips ------------------------------------------------------------------------
+  onClipChunk(view) {
+    const chunk = decodeClipChunk(view);
+    const clip = this.clip;
+    if (!chunk || chunk.clipId !== clip?.assembler.clipId) return; // none asked for, or an earlier one's
+    if (clip.assembler.add(chunk)) clip.finish();
+    else clip.onProgress?.(clip.assembler.progress);
+  }
+
+  /**
+   * Captures the next 2 s of the board's microphone (its LED shows magenta meanwhile) and resolves
+   * with the samples, at the board info's micRateHz. `onCapturing` is called once the board has
+   * started, `onProgress` with the fraction sent: ~5 s more to a Mac, with the live streams paused.
+   */
+  async captureClip({ onCapturing, onProgress } = {}) {
+    if (!this.canCaptureClips) throw new Error("this board's firmware can't capture clips: update it");
+    if (this.clip) throw new Error("already capturing a clip");
+    this.clipId = ((this.clipId ?? Math.floor(Math.random() * 0x10000)) + 1) & 0xffff;
+    const assembler = new ClipAssembler(this.clipId);
+    const done = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("the clip didn't arrive")), 20000);
+      this.clip = {
+        assembler, onProgress,
+        finish: () => (clearTimeout(timer), resolve(assembler.samples)),
+        reject: (error) => (clearTimeout(timer), reject(error)),
+      };
+    });
+    try {
+      // A refusal (busy, or the board uploading its flash) ends the capture with the write's error.
+      await this.write(this.chars.keywordCommand, encodeClipCapture(this.clipId))
+        .then(() => onCapturing?.(), (error) => this.clip.reject(error));
+      return await done;
+    } finally {
+      this.clip = null;
+      // The board pauses its live streams while it sends a clip; don't count the pause as lost data.
       this.lastSeq = this.lastWindow = this.lastEventSeq = null;
     }
   }

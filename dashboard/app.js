@@ -6,6 +6,7 @@ import { headingChangeDegrees, quatToEulerDegrees, removeYaw, rotateVector } fro
 import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, lostSamples, startsWithSession } from "./flashlog.js";
 import { BoardRecording, LIVE_FILES, liveFileParts, parseEventRows, safeName } from "./recording.js";
 import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
+import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
   ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
@@ -45,6 +46,8 @@ const CHECKS = [
   ["spectrum", "Microphone spectrum arriving"],
   ["sync", "Clap heard (sync mark)"],
   ["button", "USER button press recorded"],
+  ["tap", "Double tap felt (a mark in the recording)"],
+  ["clock", "Radio clock pairs arriving (synced to a source)"],
   ["led", "LED command accepted"],
   ["latency", "Mouse reports acknowledged by the host (latency measured)"],
 ];
@@ -104,15 +107,15 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
-const firmwareDialogOpen = () => $("fw-dialog").open || $("usb-dialog").open;
+const drawerDialogOpen = () => $("fw-dialog").open || $("usb-dialog").open || voiceDialogOpen();
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("settings-drawer").hidden && !firmwareDialogOpen()) setSettingsOpen(false);
+  if (event.key === "Escape" && !$("settings-drawer").hidden && !drawerDialogOpen()) setSettingsOpen(false);
 });
 // A press anywhere else closes it too, except on its own key (which toggles it) and in the
-// firmware dialogs it opens. The press still does whatever it was for, e.g. picks a board.
+// dialogs it opens. The press still does whatever it was for, e.g. picks a board.
 document.addEventListener("pointerdown", (event) => {
   const drawer = $("settings-drawer");
-  if (drawer.hidden || firmwareDialogOpen()) return;
+  if (drawer.hidden || drawerDialogOpen()) return;
   if (drawer.contains(event.target) || $("settings").contains(event.target)) return;
   setSettingsOpen(false);
 });
@@ -460,9 +463,16 @@ function drawPose() {
   ctx.textAlign = "start";
 }
 
+// The tap lamp stays lit this long after a tap, so a quick one is seen.
+const TAP_LAMP_MS = 800;
+
 function renderAngles() {
   const quat = selected?.quat;
   $("at-rest").classList.toggle("on", Boolean(selected?.atRest));
+  const tap = selected?.lastTap;
+  const tapRecent = Boolean(tap) && performance.timeOrigin + performance.now() - tap.hostMs < TAP_LAMP_MS;
+  $("tap-lamp").classList.toggle("on", tapRecent);
+  $("tap-lamp").textContent = tapRecent && tap.type === "double_tap" ? "Double tap" : "Tap";
   if (!quat) {
     for (const name of ["roll", "pitch", "yaw"]) $(name).textContent = "–";
     return;
@@ -898,6 +908,10 @@ function renderBoards() {
   renderRecorder();
   renderFirmware();
   renderImuRanges();
+  renderClock();
+  renderMotionWake();
+  renderVoiceSettings();
+  if (voiceDialogOpen()) renderVoice();
 }
 setInterval(renderBoards, 250);
 
@@ -1430,11 +1444,14 @@ async function saveLiveRecording(record, folder, extra = []) {
       ];
       const eventChunks = await chunksOf("events.csv");
       const events = parseEventRows(eventChunks.join(""));
-      const counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0 };
-      for (const { type } of events) counts[type === "sync" ? "syncMarks" : "buttonEvents"]++;
+      const counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0, taps: 0, voiceCommands: 0, clockPairs: 0 };
+      const countFor = { sync: "syncMarks", tap: "taps", double_tap: "taps", keyword: "voiceCommands", press: "buttonEvents", release: "buttonEvents" };
+      for (const { type } of events) if (countFor[type]) counts[countFor[type]]++;
       for (const file of Object.keys(LIVE_FILES)) {
         const chunks = file === "events.csv" ? eventChunks : await chunksOf(file);
-        if (file === "temperature.csv" && !chunks.length) continue;
+        // Written only when there is something in them: older firmware sends neither.
+        if ((file === "temperature.csv" || file === "radio_clock.csv") && !chunks.length) continue;
+        if (file === "radio_clock.csv") counts.clockPairs = rowCount(chunks);
         if (file === "imu.csv") counts.imuSamples = rowCount(chunks);
         if (file === "mic_envelope.csv") counts.envelopeWindows = rowCount(chunks);
         entries.push(await saveFile(folder, [record.session, meta.folder], file, liveFileParts(file, chunks, events)));
@@ -1869,6 +1886,92 @@ $("mouse-toggle").addEventListener("click", () => sendMouseSettings({ enabled: !
 $("mouse-speed").addEventListener("input", () => ($("mouse-speed-value").textContent = `${$("mouse-speed").value}%`));
 $("mouse-speed").addEventListener("change", () => sendMouseSettings());
 
+// ---- radio clock sync ---------------------------------------------------------------------
+// One connected board is the clock source; choosing it here makes it the source and every other
+// connected board a listener (src/clock_sync/). The choice is saved on each board.
+const CLOCK_STATE_TEXT = { searching: "listening for a source", broadcasting: "broadcasting", failed: "radio refused: see its log" };
+
+function boardNameById(boardId) {
+  const board = [...boards.values()].find((b) => b.info?.boardId === boardId);
+  return board ? board.displayName : `nrf-controller-${boardId}`;
+}
+
+function clockText(board) {
+  if (!board.clock) return { text: "firmware too old for clock sync", bad: false };
+  const { role, state, sourceBoard } = board.clock;
+  if (role === "source") return { text: `source, ${CLOCK_STATE_TEXT[state] ?? state}`, bad: state === "failed" };
+  if (state === "synced") return { text: `synced to ${boardNameById(sourceBoard)} · ${board.clockPairs} pairs`, bad: false };
+  return { text: CLOCK_STATE_TEXT[state] ?? state, bad: state === "failed" };
+}
+
+function renderClock() {
+  const capable = [...boards.values()].filter((board) => board.connected && board.clock);
+  const sources = capable.filter((board) => board.clock.role === "source");
+  const select = $("clock-source");
+  if (document.activeElement !== select) {
+    const options = [new Option(capable.length ? "None (claps only)" : "No board with clock sync", "")];
+    for (const board of capable) options.push(new Option(board.displayName, board.key));
+    if (select.options.length !== options.length || [...select.options].some((o, i) => o.value !== options[i].value || o.text !== options[i].text)) {
+      select.replaceChildren(...options);
+    }
+    select.value = sources.length === 1 ? sources[0].key : "";
+  }
+  select.disabled = capable.length === 0;
+  const items = [...boards.values()].filter((board) => board.connected).map((board) => {
+    const { text, bad } = clockText(board);
+    const item = document.createElement("li");
+    item.classList.toggle("bad", bad);
+    item.append(Object.assign(document.createElement("span"), { textContent: board.displayName }), Object.assign(document.createElement("span"), { textContent: text }));
+    return item;
+  });
+  if (sources.length > 1) {
+    const warning = Object.assign(document.createElement("li"), { className: "bad", textContent: "More than one source: choose one again" });
+    items.unshift(warning);
+  }
+  $("clock-boards").replaceChildren(...items);
+}
+
+$("clock-source").addEventListener("change", async () => {
+  const chosen = $("clock-source").value;
+  const capable = [...boards.values()].filter((board) => board.connected && board.clock);
+  // Listeners first, so there is never a moment with two sources broadcasting.
+  const order = [...capable.filter((board) => board.key !== chosen), ...capable.filter((board) => board.key === chosen)];
+  for (const board of order) {
+    try {
+      await board.setClockRole(board.key === chosen ? "source" : "listener");
+    } catch (error) {
+      setStatus(`${board.displayName}: couldn't set its clock role (${error.message})`, { bad: true });
+    }
+  }
+  $("clock-source").blur();
+});
+
+// ---- wake on motion (the selected board) ----------------------------------------------------
+function renderMotionWake() {
+  const board = selected;
+  const wake = board?.connected ? board.motionWake : null;
+  const toggle = $("motion-wake");
+  toggle.disabled = wake === null;
+  toggle.setAttribute("aria-checked", String(Boolean(wake)));
+  toggle.title = wake === null
+    ? board?.connected ? "This board's firmware can't wake on motion: update it" : "Connect a board to choose"
+    : `Click to switch it ${wake ? "off" : "on"} for ${board.displayName} (saved on the board)`;
+  $("motion-wake-status").textContent = wake
+    ? "On: picking the board up wakes it, as a USER press does. Its IMU stays powered while it sleeps (a few µA)."
+    : "Off: only a USER press wakes a sleeping board.";
+}
+
+$("motion-wake").addEventListener("click", async () => {
+  const board = selected;
+  if (!board?.connected || board.motionWake === null) return;
+  try {
+    await board.setMotionWake(!board.motionWake);
+  } catch (error) {
+    setStatus(`${board.displayName}: couldn't change wake on motion (${error.message})`, { bad: true });
+  }
+  renderMotionWake();
+});
+
 // ---- firmware updates ---------------------------------------------------------------------
 // The board side is MCUboot + MCUmgr (src/dfu/); dfu.js has the sequence. A board restarts into
 // the new image, so the page reconnects to it and checks that it kept the image rather than
@@ -2217,6 +2320,7 @@ $("latency-copy").addEventListener("click", async () => {
 // The Replay key swaps the live panels for a recorded session read back from its folder
 // (replay-view.js). Boards stay connected and recordings carry on underneath.
 initReplay({ getColors: () => colors });
+initVoice({ getBoard: () => selected, isRecording: () => recorder.active, getColors: () => colors });
 function showReplay(show) {
   $("replay").hidden = !show;
   mainEl.hidden = show;

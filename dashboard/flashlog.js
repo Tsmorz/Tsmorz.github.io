@@ -2,12 +2,15 @@
 // into CSV files. Pure functions only, no DOM or Bluetooth, so tests/dashboard/flashlog.test.mjs
 // can run them in Node. Everything is little-endian.
 import { buttonStatesAt, scaleDecimals } from "./recording.js";
-import { temperatureFromEvent } from "./wire.js";
+import { EVENT_TYPES, temperatureFromEvent } from "./wire.js";
 
-const REC = { PAD: 0x00, IMU: 0x01, TIME: 0x02, ORIENT: 0x03, EVENT: 0x04, END: 0x05, START: 0xa5, ERASED: 0xff };
-const SIZE = { [REC.IMU]: 15, [REC.TIME]: 13, [REC.ORIENT]: 16, [REC.EVENT]: 16, [REC.END]: 18, [REC.START]: 39 };
+export const REC = { PAD: 0x00, IMU: 0x01, TIME: 0x02, ORIENT: 0x03, EVENT: 0x04, END: 0x05, CLOCK: 0x06, START: 0xa5, ERASED: 0xff };
+// Record types added from now on (LOG_REC_EXT_FIRST..LAST): a length byte follows the type, so
+// this decoder skips any it doesn't know and reads on.
+export const EXTENSION_TYPES = { first: 0x40, last: 0x9f };
+const isExtension = (type) => type >= EXTENSION_TYPES.first && type <= EXTENSION_TYPES.last;
+const SIZE = { [REC.IMU]: 15, [REC.TIME]: 13, [REC.ORIENT]: 16, [REC.EVENT]: 16, [REC.END]: 18, [REC.CLOCK]: 23, [REC.START]: 39 };
 const SESSION_MAGIC = 0x4c535953; // "SYSL"
-const EVENT_NAMES = { 1: "sync", 2: "press", 3: "release", 4: "temperature" };
 const Q14 = 16384;
 
 const u64 = (view, offset) => Number(view.getBigUint64(offset, true));
@@ -63,7 +66,7 @@ export function decodeFlashLog(bytes) {
       at++;
       continue;
     }
-    const size = SIZE[type];
+    const size = isExtension(type) && at + 1 < view.byteLength ? 2 + view.getUint8(at + 1) : SIZE[type];
     const fits = size !== undefined && at + size <= view.byteLength;
     // A record cut short by a power loss is followed directly by the next recording's padding and
     // header, which would otherwise be read as the rest of it.
@@ -80,7 +83,7 @@ export function decodeFlashLog(bytes) {
     switch (type) {
       case REC.START:
         close();
-        session = { start: decodeStart(view, at), imu: [], orient: [], events: [], temperatures: [], end: null };
+        session = { start: decodeStart(view, at), imu: [], orient: [], events: [], temperatures: [], clock: [], end: null };
         lastImu = null;
         break;
       case REC.TIME:
@@ -109,7 +112,7 @@ export function decodeFlashLog(bytes) {
       }
       case REC.EVENT: {
         const event = {
-          type: EVENT_NAMES[view.getUint8(at + 1)] ?? "unknown",
+          type: EVENT_TYPES[view.getUint8(at + 1)] ?? "unknown",
           seq: view.getUint32(at + 2, true),
           tUs: u64(view, at + 6),
           peak: view.getUint16(at + 14, true),
@@ -118,6 +121,14 @@ export function decodeFlashLog(bytes) {
         else session.events.push(event);
         break;
       }
+      case REC.CLOCK:
+        session.clock.push({
+          sourceBoard: view.getUint16(at + 1, true).toString(16).toUpperCase().padStart(4, "0"),
+          counter: view.getUint32(at + 3, true),
+          sourceTUs: u64(view, at + 7),
+          tUs: u64(view, at + 15),
+        });
+        break;
       case REC.END:
         session.end = { endUs: u64(view, at + 1), imuSamples: view.getUint32(at + 9, true), droppedBytes: view.getUint32(at + 13, true) };
         close();
@@ -170,8 +181,9 @@ export const FLASH_ORIENT_COLUMNS = [
 ];
 export const FLASH_EVENT_COLUMNS = ["board_time_us", "seq", "type", "peak"];
 export const FLASH_TEMPERATURE_COLUMNS = ["board_time_us", "temperature_c"];
+export const FLASH_RADIO_CLOCK_COLUMNS = ["board_time_us", "source_board", "counter", "source_time_us"];
 
-/** imu.csv, orientation.csv, events.csv and (if recorded) temperature.csv for one recording. */
+/** imu.csv, orientation.csv, events.csv and (if recorded) temperature.csv and radio_clock.csv for one recording. */
 export function flashSessionFiles(session) {
   const gyro = cleanScale(session.start.gyroDpsPerLsb);
   const accel = cleanScale(session.start.accelGPerLsb);
@@ -189,6 +201,9 @@ export function flashSessionFiles(session) {
     ...(session.temperatures?.length && {
       "temperature.csv": csv(FLASH_TEMPERATURE_COLUMNS, session.temperatures.map((t) => [t.tUs, t.celsius.toFixed(3)])),
     }),
+    ...(session.clock?.length && {
+      "radio_clock.csv": csv(FLASH_RADIO_CLOCK_COLUMNS, session.clock.map((c) => [c.tUs, c.sourceBoard, c.counter, c.sourceTUs])),
+    }),
   };
 }
 
@@ -203,13 +218,33 @@ export function tagName(epochSeconds) {
  * Groups recordings from several boards into sessions. Boards started together from the
  * dashboard share a session tag (the start time, in epoch seconds); one started with the USER
  * button has tag 0 and becomes a session of its own. Returns [{ name, boards: [{ board, session }] }].
+ *
+ * A recording started on the board itself (a voice command, tag 0) shares no tag, but boards
+ * following one radio clock source still line up: each such recording's start is placed on the
+ * source's clock from its first clock pair, and starts within BOARD_STARTED_WINDOW_US of each
+ * other are one session. Without clock pairs it stays a session of its own.
  */
+export const BOARD_STARTED_WINDOW_US = 2e6;
+
+function startOnSourceClock(session) {
+  const pair = session.clock?.[0];
+  if (!pair) return null;
+  return { source: pair.sourceBoard, us: pair.sourceTUs - (pair.tUs - session.start.startUs) };
+}
+
 export function groupSessions(perBoard) {
   const groups = new Map();
+  const boardStarted = []; // { source, us, name }
   for (const { board, sessions } of perBoard) {
     sessions.forEach((session, index) => {
       const tag = session.start.sessionTag;
-      const name = tag ? `flash_${tagName(tag)}` : `flash_${session.start.boardId}_${index + 1}`;
+      let name = tag ? `flash_${tagName(tag)}` : `flash_${session.start.boardId}_${index + 1}`;
+      const start = tag ? null : startOnSourceClock(session);
+      if (start) {
+        const match = boardStarted.find((g) => g.source === start.source && Math.abs(g.us - start.us) <= BOARD_STARTED_WINDOW_US);
+        name = match?.name ?? `flash_board-started_${start.source}_${Math.round(start.us / 1e6)}s`;
+        if (!match) boardStarted.push({ ...start, name });
+      }
       if (!groups.has(name)) groups.set(name, { name, boards: [] });
       groups.get(name).boards.push({ board, session });
     });
