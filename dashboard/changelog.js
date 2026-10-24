@@ -8,6 +8,24 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-25-imu-stream",
+    date: "2026-10-25",
+    title: "The IMU stream recovers from a hiccup",
+    firmware: "next",
+    items: [
+      "After a moment the link fell behind, a board could stay stuck sending a fraction of its IMU samples (~15 Hz instead of 208) until it was restarted. It now catches up.",
+    ],
+  },
+  {
+    id: "2026-10-25-pose-drag",
+    date: "2026-10-25",
+    title: "Orientation drag and a wider board list",
+    items: [
+      "Dragging the Orientation view sideways turns it the way you drag.",
+      "The Boards panel starts wider (double-click the seam beside it to go back to this after resizing).",
+    ],
+  },
+  {
     id: "2026-10-24-steadier-page",
     date: "2026-10-24",
     title: "A steadier page",

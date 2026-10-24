@@ -385,7 +385,8 @@ function setCamera(next) {
   }
 }
 
-// Drag left/right turns the world about its up axis; drag up/down tips it toward or away.
+// Drag left/right turns the world about its up axis, its near side following the pointer; drag
+// up/down tips it toward or away.
 {
   const canvas = $("pose");
   let last = null;
@@ -398,7 +399,7 @@ function setCamera(next) {
     if (!last) return;
     const [dx, dy] = [event.clientX - last[0], event.clientY - last[1]];
     last = [event.clientX, event.clientY];
-    setCamera({ azimuth: camera.azimuth - dx * RADIANS_PER_PIXEL, elevation: camera.elevation + dy * RADIANS_PER_PIXEL });
+    setCamera({ azimuth: camera.azimuth + dx * RADIANS_PER_PIXEL, elevation: camera.elevation + dy * RADIANS_PER_PIXEL });
   });
   const release = () => {
     last = null;
