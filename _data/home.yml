@@ -1,0 +1,15 @@
+# The row of links under the hero on the home page. Edit here, not in index.html.
+explore_label: Have a look around
+explore:
+  - name: Controls lab
+    blurb: Learn control by dragging it. PID, stability, system identification and LQR, all on a mass on a spring.
+    url: /controls/
+  - name: Double pendulum
+    blurb: Try to swing a double pendulum up by hand, then watch a neural network do it in your browser.
+    url: /controls/swingup/
+  - name: Projects
+    blurb: Firmware, state estimation, drones and a set of bike aerobars.
+    url: /projects/
+  - name: Recipes
+    blurb: A few favorites, weighed on a kitchen scale, with a tick box for every step.
+    url: /recipes/

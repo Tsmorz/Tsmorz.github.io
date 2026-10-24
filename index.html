@@ -1,15 +1,15 @@
 ---
 layout: default
 title: Home
-description: Tony Smoragiewicz - robotics software engineer at Agile Robots working on fleet connectivity, teleoperation, and autonomous aerial vehicles.
+description: Tony Smoragiewicz – robotics software engineer at Agile Robots working on fleet connectivity, teleoperation, and autonomous aerial vehicles.
 ---
 
 <section class="hero">
   <canvas class="hero-field" aria-hidden="true"></canvas>
   <div class="hero-inner wrap">
     <div>
-      <span class="hero-eyebrow">48.1351&deg; N, 11.5820&deg; E - Munich, DE</span>
-      <h1>Hi, I'm Tony -<br>I'm passionate about <span class="accent">building robots and helping others learn.</span></h1>
+      <span class="hero-eyebrow">48.1351&deg; N, 11.5820&deg; E · Munich, DE</span>
+      <h1>Hi, I'm Tony –<br>I'm passionate about <span class="accent">building robots and helping others learn.</span></h1>
       <p class="hero-lede">
         I'm a robotics software engineer at Agile Robots in Munich, building teleoperation software for robots deployed around the world. Before
         that, I started a PhD at TU Munich, earned an MSc in Robotics Engineering at Northeastern University, and a BSc in
@@ -24,6 +24,14 @@ description: Tony Smoragiewicz - robotics software engineer at Agile Robots work
     </div>
     <img class="hero-photo" src="{{ site.author.photo | relative_url }}" alt="Portrait of Tony Smoragiewicz">
   </div>
+  <nav class="wrap home-explore" aria-label="{{ site.data.home.explore_label }}">
+    <span class="hero-eyebrow">{{ site.data.home.explore_label }}</span>
+    <div class="home-grid">
+      {%- for x in site.data.home.explore %}
+      <article class="card"><h3><a href="{{ x.url | relative_url }}">{{ x.name }}</a></h3><p>{{ x.blurb }}</p></article>
+      {%- endfor %}
+    </div>
+  </nav>
 </section>
 
 <script src="{{ '/assets/js/marker.js' | relative_url }}?v={{ site.time | date: '%s' }}"></script>

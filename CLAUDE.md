@@ -21,7 +21,9 @@ To change what the site says, edit YAML, not HTML.
 | Want to change | Edit |
 | --- | --- |
 | Projects shown anywhere | `_data/projects.yml` |
-| Services, process, contact on /solutions/ | `_data/solutions.yml` |
+| Services (and the work that shows each), process, contact on /solutions/ | `_data/solutions.yml` |
+| The "Have a look around" tiles under the home hero | `_data/home.yml` |
+| The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Name, bio links, CV button | `_config.yml` |
 | Nav logo (cartpole, fade, radial, pendulum, pendulum4 or pendulum3) | `logo:` in `_config.yml`; all are drawn in `_includes/logo.html` (the favicons in `assets/img/` are separate files) |
@@ -65,7 +67,8 @@ script/                  serve, check, test-data, test-installer, test-swingup, 
 - **Sim canvases get their size from CSS, never JS.** Each demo is a `.sim-stack` that stretches to its
   panel's height; canvases are absolutely positioned and JS only sizes the pixel buffer from
   `clientWidth/clientHeight`. Don't set `style.height` from JS: at 2x DPR the buffer feeds back into layout and
-  the canvas grows every frame.
+  the canvas grows every frame. On phones (≤ 720 px) the /controls/ and swing-up stacks
+  turn to `display: contents`, so the panel sits between the sim and its plots; each cell's height is set there.
 - **Includes take explicit params** and never reach into `site.data` themselves.
 - **GitHub Pages runs Liquid 4:** `uniq`, `concat`, `slice`, `where` exist; `push` does not.
 
@@ -131,7 +134,7 @@ but unused by the page). `dlqr` solves the Riccati recursion on the model; `reac
 Once a model is found the bottom plot is a **live simulation** of it: stepped in real time under `u = u_ss r − K(x − x_ss r)` (steady state from
 `steadyState`; one state is tracked, chosen in the panel), with a reference slider, a push button, a reset and a controller on/off switch. Weight
 sliders keep the running sim; changing the tracked state restarts it. The page also plots data against one-step predictions and the z-plane poles.
-It is its own page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
+The page opens on the built-in cart-pole example (`exampleCsv`), so it is never empty. It is its own page, not a lab lesson, so it has a goal, an explanation and tasks but no predict or check cards. `script/test-fit`
 (`task check:fit`, in `check:fast`) guards the parser, the resampling, both fits, the LQR, the tracking and reachability.
 
 ### The lab template (`/controls/`)
@@ -209,7 +212,7 @@ or rely on CI. `Taskfile.yml` is the single entrypoint (`task --list`); `script/
   `jekyll-github-metadata` try to derive it on the runner and fail with `No repo name found`, or inject a
   `/pages/<owner>` prefix that breaks every asset link. Don't make the flag conditional.
 - **Linux is case-sensitive, macOS isn't.** `logo.JPG` referenced as `logo.jpg` works locally and 404s in CI.
-  `script/test-data` compares exact basenames to catch it.
+  `script/test-data` compares exact basenames to catch it (project images and `_data/hardware.yml` photos).
 - **External links aren't checked** (`--disable-external`) on purpose, so a typo'd external URL won't be caught.
 
 ### The nrf-controller dashboard (`/dashboard/`)

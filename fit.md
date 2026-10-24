@@ -57,7 +57,7 @@ permalink: /controls/fit/
       <h3>Recording</h3>
       <label class="fit-drop" id="fit-drop">Choose or drop a CSV
         <input type="file" id="fit-file" accept=".csv,.txt,text/csv"></label>
-      <button class="sim-btn" id="fit-example" type="button">Load an example</button>
+      <button class="sim-btn" id="fit-example" type="button">Load the example</button>
       <button class="sim-btn" id="fit-csv" type="button">Download the example CSV</button>
       <p class="fit-msg" id="fit-msg" role="status"></p>
       <p class="fit-msg" id="fit-found"></p>
@@ -83,13 +83,13 @@ permalink: /controls/fit/
     <span class="lab-phase">3 &middot; Process</span>
     <h4 class="lab-card-title">Try it</h4>
     <ol>
-      <li>Press <strong>Load an example</strong>: a cart-pole balanced by an LQR with a little dither, recorded through noisy sensors. How well does the model predict each state, noise and all?</li>
+      <li>The page opens on an example: a cart-pole balanced by an LQR with a little dither, recorded through noisy sensors. How well does the model predict each state, noise and all?</li>
       <li>Look at the poles: is the model unstable on its own? Where do the poles go with the LQR?</li>
       <li>Watch the bottom plot: it is your model running live under the LQR. Drag the <strong>reference</strong> and the tracked state follows it.</li>
       <li>Press <strong>Push the states</strong>: how fast does the controller recover? Raise a Q weight and it recovers faster, at the cost of more input.</li>
       <li>Switch the controller <strong>off</strong>. Does the model sit still or run away? Compare with the poles.</li>
       <li>Change the tracked state. Some states may have no steady state of their own, or may not be reachable at all: read the reachable count above the weights.</li>
-      <li>Download the example CSV, rename a state column (say <code>x3</code> to <code>y3</code>) so it is ignored, and see what the model loses. Then try your own recording.</li>
+      <li>Download the example CSV, rename a state column (say <code>x3</code> to <code>y3</code>) so it is ignored, and see what the model loses. Then try your own recording; <strong>Load the example</strong> brings the cart-pole back.</li>
     </ol>
   </div>
 </div>

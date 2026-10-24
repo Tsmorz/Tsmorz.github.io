@@ -463,7 +463,7 @@
     $('fit-c2').parentNode.style.setProperty('--lanes', P ? P.sNames.length + 1 : 4);
     var c1 = fitCanvas($('fit-c1')), c2 = fitCanvas($('fit-c2'));
     if (!P || !M) {
-      label(c1.ctx, 'Load a CSV or press "Load an example".', 14, 14, col.muted, 'left', 13); info.textContent = ''; fitCanvas($('fit-c3')); return;
+      label(c1.ctx, 'Load a CSV or press "Load the example".', 14, 14, col.muted, 'left', 13); info.textContent = ''; fitCanvas($('fit-c3')); return;
     }
     var pal = [col.v1, col.v2, col.v3, col.v4], t1 = P.t.slice(1);
     // 1. data and the model's one-step predictions
@@ -499,7 +499,9 @@
     $('fit-csv').addEventListener('click', function () { var t = exampleCsv(); if (!t) return; var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([t], { type: 'text/csv' })); a.download = 'cartpole-example.csv'; document.body.appendChild(a); a.click(); a.remove(); });
     window.addEventListener('resize', draw);
     new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    draw();
+    // Open on the example, so the plots and the live simulation show what the page does before anything is uploaded.
+    var ex = exampleCsv();
+    if (ex) load(ex); else draw();
   }
   init();
 })(typeof window !== 'undefined' ? window : this);

@@ -287,6 +287,15 @@ main:has(> .hero) { display: flex; flex-direction: column; }
   .hero-photo { order: -1; width: 130px; }
 }
 
+/* Home: the row of links under the hero, on top of the symbol field. */
+.home-explore { position: relative; z-index: 1; margin-top: clamp(3rem, 8vw, 5rem); }
+.home-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .9rem; }
+.home-grid .card { position: relative; padding: 1.1rem 1.2rem; }
+.home-grid .card h3 { font-size: 1.05rem; margin-bottom: .35rem; }
+.home-grid .card p { margin: 0; font-size: .9rem; }
+@media (max-width: 900px) { .home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .home-grid { grid-template-columns: minmax(0, 1fr); } }
+
 .btn-row { display: flex; flex-wrap: wrap; gap: .6rem; }
 .btn {
   display: inline-flex; align-items: center; gap: .45rem;
@@ -739,6 +748,15 @@ button, input, select, textarea { font-family: var(--mono); }
 .gi-bob-0 { fill: var(--pend-1); }
 .gi-bob-1 { fill: var(--pend-2); }
 @media (max-width: 720px) { .su-layout .sim-panel { flex-basis: 100%; } }
+/* On a phone the panel would land below both plots, far from the sim it drives: put it straight under the sim.
+   The stack's own box goes away (display: contents), so its cells join the flex row and take an order; each gets its height here. */
+@media (max-width: 720px) {
+  .sim-section .sim-stack, .su-layout .sim-stack { display: contents; }
+  .sim-section .sim-stack > .sim-cell, .su-layout .sim-stack > .sim-cell:first-child { flex: 1 1 100%; height: 300px; order: 1; }
+  .sim-section .sim-panel, .su-layout .sim-panel { order: 2; }
+  .sim-section .sim-cell-pair { flex: 1 1 100%; height: calc(380px + .6rem); order: 3; }
+  .su-layout .sim-stack > .sim-cell + .sim-cell { flex: 1 1 100%; height: 300px; order: 3; }
+}
 
 /* ---------------------------------------------------------------
    Touch polish: 44px hit areas, no iOS focus-zoom, no double-tap zoom.
@@ -939,6 +957,16 @@ main:not(:has(> .hero))::before {
 .solution-list li { border-left: 2px solid var(--lime); padding-left: 1rem; display: flex; flex-direction: column; gap: .15rem; }
 .solution-list strong { font-size: 1.1rem; }
 .solution-list span { color: var(--text-muted); font-size: .98rem; }
+.solution-work { display: flex; flex-wrap: wrap; gap: .2rem 1.1rem; margin: .3rem 0 0; padding: 0; list-style: none; font-family: var(--mono); font-size: .78rem; }
+.solution-list .solution-work li { border: 0; padding: 0; display: block; }
+.solution-work a::after { content: " →"; }
+.solutions-process { padding-block: 0 2.5rem; }
+.process-list { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; max-width: 62rem; }
+.process-list li { counter-increment: step; display: flex; flex-direction: column; gap: .2rem; padding-top: .7rem; border-top: 1px solid var(--border-strong); }
+.process-list li::before { content: "0" counter(step); font-family: var(--mono); font-size: .78rem; color: var(--lime-text); }
+.process-list strong { font-size: 1.05rem; }
+.process-list span { color: var(--text-muted); font-size: .95rem; }
+@media (max-width: 760px) { .process-list { grid-template-columns: minmax(0, 1fr); } }
 
 /* /controls/swingup/real/: the installer's steps, and the esp-web-tools dialog (it is appended to <body>, so
    its custom properties set here reach it and follow the light/dark tokens) */

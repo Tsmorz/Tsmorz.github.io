@@ -3,13 +3,38 @@ intro: >-
   I take on project work for companies whose robots or devices need to sense the world, know
   where they are, or move precisely. A clear scope, working code, results you can check.
 
+# `work` lists examples under a service: `project` is a name from projects.yml (it links to that project's first link),
+# or give `label` and `url` for anything else.
 services:
   - name: Embedded firmware
     blurb: Software for small circuit boards like the ESP32 that reads cameras and sensors and shows live data in a browser.
+    work:
+      - project: ESP32 Cam
+      - project: VQF GPS Filter
   - name: Control systems
     blurb: Making machines move where you want and stay steady, from classic methods to AI, all tested in simulation first.
+    work:
+      - project: Double Pendulum
+        label: Double pendulum (live demo)
+        url: /controls/swingup/
+      - label: Controls lab
+        url: /controls/
   - name: Sensor fusion
     blurb: Combining GPS, motion sensors and cameras into one reliable answer to where a device is, even when sensors are noisy.
+    work:
+      - project: VQF GPS Filter
+      - project: EKF-SLAM
+
+# How a project runs, shown as numbered steps between the services and the contact box.
+process:
+  heading: How it works
+  steps:
+    - name: You describe the problem
+      blurb: A few lines on the device, what it should do, and what is in the way.
+    - name: We agree the scope
+      blurb: I reply with questions or a rough plan, and we settle what done looks like and how we'll check it.
+    - name: I build and test it
+      blurb: Working code, tested in simulation or on the bench first, with results you can check yourself.
 
 cta:
   heading: Have a problem in mind?

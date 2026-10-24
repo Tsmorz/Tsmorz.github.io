@@ -717,13 +717,13 @@
 
     // Status
     var label, colr = muted;
-    if (status === 'crashed')            { label = 'Hit the end of the rail - resetting…'; colr = cssVar('--viz-3'); }
+    if (status === 'crashed')            { label = 'Hit the end of the rail – resetting…'; colr = cssVar('--viz-3'); }
     else if (reachTime !== null && settled > 0) {
-      label = 'Reached ' + goal + ' in ' + reachTime.toFixed(2) + ' s - holding'; colr = accent;
+      label = 'Reached ' + goal + ' in ' + reachTime.toFixed(2) + ' s – holding'; colr = accent;
     }
-    else if (reachTime !== null)         { label = 'Knocked out of ' + goal + ' - recovering'; colr = accent; }
+    else if (reachTime !== null)         { label = 'Knocked out of ' + goal + ' – recovering'; colr = accent; }
     else if (mode === 'tqc')             { label = 'AI → ' + goal; colr = accent; }
-    else                                 { label = 'Manual → ' + goal + ' - drag the cart'; }
+    else                                 { label = 'Manual → ' + goal + ' – drag the cart'; }
     if (randomOn && status !== 'crashed') label += '  · random';
     ctx.textAlign = 'left'; ctx.font = '600 13px ' + font; ctx.fillStyle = colr;
     ctx.fillText(label, 14, 24);
