@@ -126,11 +126,11 @@
   } catch (e) {}
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 
-  var current = recipes[0];
+  var current = null, page = view.closest('.journal'), title = document.title;   // null: the index, no recipe open
   function scaleOf(r) { var s = Number(state.scale[r.id]); return s > 0 ? s : 1; }
   function fromHash() {
     var id = decodeURIComponent(location.hash.replace(/^#/, ''));
-    return recipes.filter(function (r) { return r.id === id; })[0] || recipes[0];
+    return recipes.filter(function (r) { return r.id === id; })[0] || null;
   }
 
   function el(tag, cls, text) {
@@ -253,30 +253,41 @@
   // The recipe tabs, the unit switch, the scale and the nav dropdown all show what is current.
   var scaleIn = document.getElementById('rc-scale');
   function sync() {
-    var sc = scaleOf(current);
+    var sc = current ? scaleOf(current) : 1, id = current && current.id;
     Array.prototype.forEach.call(document.querySelectorAll('[data-scale]'), function (b) { var on = Number(b.getAttribute('data-scale')) === sc; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
     if (scaleIn && document.activeElement !== scaleIn) scaleIn.value = sc;
-    Array.prototype.forEach.call(document.querySelectorAll('[data-recipe]'), function (b) { b.classList.toggle('active', b.getAttribute('data-recipe') === current.id); b.setAttribute('aria-pressed', b.getAttribute('data-recipe') === current.id ? 'true' : 'false'); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-recipe]'), function (b) { b.classList.toggle('active', b.getAttribute('data-recipe') === id); b.setAttribute('aria-pressed', b.getAttribute('data-recipe') === id ? 'true' : 'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('[data-unit]'), function (b) { b.classList.toggle('active', b.getAttribute('data-unit') === state.unit); b.setAttribute('aria-pressed', b.getAttribute('data-unit') === state.unit ? 'true' : 'false'); });
     Array.prototype.forEach.call(document.querySelectorAll('.nav-menu-list a[href*="/recipes/#"]'), function (a) {
-      if (a.getAttribute('href').split('#')[1] === current.id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+      if (a.getAttribute('href').split('#')[1] === id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
   }
 
-  function show(r) { current = r; build(); sync(); }
+  // The index (no hash) lists the recipes; a hash opens that one recipe on its own.
+  function show(r) {
+    var was = current;
+    current = r;
+    page.setAttribute('data-view', r ? 'recipe' : 'index');
+    document.title = r ? r.name + ' · ' + title : title;
+    if (r) build(); else view.textContent = '';
+    sync();
+    if (r !== was) window.scrollTo(0, 0);
+  }
 
   Array.prototype.forEach.call(document.querySelectorAll('[data-recipe]'), function (b) {
-    b.addEventListener('click', function () {
-      var r = recipes.filter(function (x) { return x.id === b.getAttribute('data-recipe'); })[0];
-      try { history.replaceState(null, '', '#' + r.id); } catch (e) {}
-      show(r);
-    });
+    b.addEventListener('click', function () { location.hash = b.getAttribute('data-recipe'); });
+  });
+  var back = document.querySelector('.rc-back');
+  if (back) back.addEventListener('click', function (e) {
+    e.preventDefault();
+    try { history.pushState(null, '', location.pathname + location.search); } catch (err) {}
+    show(null);
   });
   Array.prototype.forEach.call(document.querySelectorAll('[data-unit]'), function (b) {
-    b.addEventListener('click', function () { state.unit = b.getAttribute('data-unit'); save(); build(); sync(); });
+    b.addEventListener('click', function () { state.unit = b.getAttribute('data-unit'); save(); if (current) build(); sync(); });
   });
   function setScale(s) {
-    if (!(s > 0 && s <= 100)) return;
+    if (!current || !(s > 0 && s <= 100)) return;
     if (s === 1) delete state.scale[current.id]; else state.scale[current.id] = s;
     save(); build(); sync();
   }
@@ -288,6 +299,8 @@
     scaleIn.addEventListener('blur', sync);
   }
   window.addEventListener('hashchange', function () { show(fromHash()); });
+  window.addEventListener('popstate', function () { if (fromHash() !== current) show(fromHash()); });
 
-  show(fromHash());
+  current = fromHash();
+  show(current);
 })(typeof window !== 'undefined' ? window : this);

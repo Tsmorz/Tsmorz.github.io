@@ -6,7 +6,7 @@ description: Kombucha, hummingbird cake, crème brûlée and pizza dough, weighe
 permalink: /recipes/
 style: journal
 ---
-<div class="journal">
+<div class="journal" data-view="index">
 <header class="wrap j-mast j-print-hide">
   <h1 class="j-title">Recipes</h1>
   <p class="j-standfirst">Everything is weighed, not measured. Scale a recipe up or down, tick the ingredients as they go on the scale, then the steps as you finish them.</p>
@@ -16,6 +16,7 @@ style: journal
 
 <div class="wrap rc-page">
   {%- for r in site.data.recipes %}<span class="rc-anchor" id="{{ r.id }}"></span>{% endfor %}
+  <a class="rc-back j-print-hide" href="{{ '/recipes/' | relative_url }}">← All recipes</a>
   <div class="rc-index j-print-hide" role="group" aria-label="Recipe">
   <ol class="j-index">
     {%- for r in site.data.recipes %}
@@ -51,10 +52,15 @@ style: journal
 <script type="application/json" id="rc-data">{{ site.data.recipes | jsonify }}</script>
 
 <style>
-.rc-anchor{display:block;height:0;scroll-margin-top:5rem}   /* targets of the nav dropdown links: the page scrolls to the index under the sticky header */
+.rc-anchor{display:block;height:0;scroll-margin-top:5rem}   /* targets of the nav dropdown links (html-proofer checks them) */
+/* /recipes/ is the index; /recipes/#id is that recipe alone. recipes.js sets data-view. */
+.journal[data-view="index"] .rc-back,.journal[data-view="index"] .rc-bar,.journal[data-view="index"] #rc-view,
+.journal[data-view="recipe"] .j-mast,.journal[data-view="recipe"] .rc-index{display:none}
+.rc-back{display:inline-block;margin-top:2.5rem;font:.75rem var(--j-mono);letter-spacing:.04em;color:var(--ink-muted);text-decoration:none}
+.rc-back:hover{color:var(--ink-accent)}
 .rc-page{padding-bottom:4rem}
 .rc-index{margin-top:2.5rem;border-top:1px solid var(--ink)}
-.rc-bar{display:flex;flex-wrap:wrap;gap:.75rem 2.5rem;align-items:center;justify-content:space-between;margin:2.5rem 0 3rem;padding:.75rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.rc-bar{display:flex;flex-wrap:wrap;gap:.75rem 2.5rem;align-items:center;justify-content:space-between;margin:1.25rem 0 3rem;padding:.75rem 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
 .rc-seg{display:flex;flex-wrap:wrap;gap:0 .35rem;align-items:baseline}
 .rc-seg .j-label{margin-right:.6rem}
 .rc-x{display:flex;align-items:baseline;gap:.15rem;margin-left:.45rem;font:italic 1.2rem var(--j-serif);color:var(--ink-muted)}
