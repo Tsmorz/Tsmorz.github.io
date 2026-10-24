@@ -8,10 +8,29 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-24-mouse-off",
+    date: "2026-10-24",
+    title: "The mouse starts off",
+    firmware: "next",
+    items: [
+      "A new or freshly flashed board no longer moves the cursor: turn Mouse on in Settings for the board you want to point with. Boards that are only recording stay quiet.",
+    ],
+  },
+  {
+    id: "2026-10-24-replay-zoom",
+    date: "2026-10-24",
+    title: "Replay zoom, USB rescue and clearer status",
+    items: [
+      "Replay: zoom the values as well as the time (Option-scroll, or scroll over a lane's labels), plot the recorded quaternion, and move around from the whole-session strip at the bottom.",
+      "Flash over USB keeps the last firmware that flashed a board here, so a board that needs rescuing can be flashed with no files to hand.",
+      "The connection and recording news has its own line under each panel's controls; a double press of USER lights its lamp for each press.",
+    ],
+  },
+  {
     id: "2026-10-24-radio-clock",
     date: "2026-10-24",
     title: "Radio clock, taps, wake on motion and voice settings",
-    firmware: "next",
+    firmware: "1.1.0",
     items: [
       "Settings › Clock sync: pick one board as the source and the others record its clock about once a second; task align then lines the boards up to about a microsecond, with no clap needed.",
       "Taps: the Tap lamp on Orientation lights for each one, and a double tap marks the moment in the recording (the board's LED flashes cyan).",
@@ -24,7 +43,7 @@ export const CHANGELOG = [
     id: "2026-10-24-keyword-clips",
     date: "2026-10-24",
     title: "Recording voice-command clips",
-    firmware: "next",
+    firmware: "1.1.0",
     items: [
       "Settings › Voice opens a dialog that records clips of the voice-command phrases through a board's own microphone, saved as WAV files for training.",
     ],
@@ -42,7 +61,7 @@ export const CHANGELOG = [
     id: "2026-10-22-spectrum",
     date: "2026-10-22",
     title: "Mic spectrum, IMU ranges and temperature",
-    firmware: "next",
+    firmware: "1.1.0",
     items: [
       "The Microphone panel shows the spectrum under the envelope.",
       "Settings › IMU ranges sets each board's gyro and accelerometer full scale, saved on the board.",

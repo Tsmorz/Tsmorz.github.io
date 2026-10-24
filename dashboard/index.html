@@ -37,7 +37,7 @@
     --screen-text: #2b2a26; --screen-muted: #6a655b;
     --readout: #a35a00; --readout-glow: transparent; --board: #46433c; --slot: #2f2d29;
     --series-x: #8e3329; --series-y: #6f9e2e; --series-z: #0e57aa;
-    --led-red: #ff3b30; --led-green: #2fd158; /* the pose view's board LEDs: lit colours in both themes */
+    --led-red: #ff3b30; /* the pose view's red LED: its lit colour in both themes */
     --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
@@ -237,11 +237,9 @@
   .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 
   /* Lamps: unlit is a dark recess, lit glows, so on/off reads by brightness as well as colour. */
-  .pill, .chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px 3px 8px; border: 1px solid var(--line-strong); border-radius: 2px;
-                 background: var(--inset); font: 500 11.5px var(--mono); color: var(--text-2); }
-  .dot, .chip::before { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
-  .chip::before { content: ""; width: 7px; height: 7px; }
-  .dot.on { background: var(--good); box-shadow: 0 0 6px var(--good); }
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px 3px 8px; border: 1px solid var(--line-strong); border-radius: 2px;
+           background: var(--inset); font: 500 11.5px var(--mono); color: var(--text-2); }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
   .chip { transition: color .08s; }
   .chip.on { color: var(--text); }
   .chip.on::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
@@ -251,8 +249,9 @@
   #mark-lamp.on::before, .user-lamp.on::before { background: var(--pressed-lamp); box-shadow: 0 0 4px var(--pressed-lamp), 0 0 10px var(--pressed-lamp); }
   #mark-lamp.on { color: var(--text); }
   h2 .chip { margin-left: auto; padding: 1px 8px 1px 6px; font-size: 10.5px; letter-spacing: 0; text-transform: none; }
-  #status.bad { color: var(--bad); }
-  #status.bad::before, .bad-text::before { content: "⚠ "; }
+  .bad-text::before { content: "⚠ "; }
+  /* A panel's one line of news, under its controls. */
+  .status-line { margin: 10px 0 0; font-size: 12.5px; }
   .bad-text { color: var(--bad); }
 
   /* Mic level meters as LED bar graphs. */
@@ -286,7 +285,8 @@
   .tooltip .key { display: inline-block; width: 10px; height: 3px; margin-right: 6px; vertical-align: middle; }
 
   .plot.pose { flex: 1 0 170px; height: auto; }
-  .plot.pose canvas { cursor: default; }
+  .plot.pose canvas { cursor: grab; touch-action: none; }
+  .plot.pose canvas.dragging { cursor: grabbing; }
   /* Wraps rather than clipping Zero yaw where the column is narrow: mono figures are wide. */
   .angles { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 8px 0 10px; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
   .angles b { font: 500 12px var(--mono); color: var(--text); display: inline-block; min-width: 7ch; font-variant-numeric: tabular-nums; }
@@ -419,6 +419,7 @@
   .replay-lanes { display: flex; flex-direction: column; gap: 8px; outline: none; border-radius: 2px; }
   .replay-lanes:focus-visible { outline: 2px solid var(--signal); outline-offset: 4px; }
   .replay-lanes.panning, .replay-lanes.panning canvas { cursor: grabbing; }
+  .replay-lanes.y-zone canvas { cursor: ns-resize; }
   .lane .plot-head { margin-bottom: 4px; }
   .plot.axis { height: 18px; }
   .plot.axis canvas, .plot.overview canvas { touch-action: none; }
@@ -434,15 +435,14 @@
   }
 
   /* Phones: the header scrolls away instead of holding a tenth of the screen, laid out as name and
-     theme on top, status and Connect, then Settings and Replay. */
+     theme on top, Connect, then Settings and Replay. */
   @media (max-width: 520px) {
     header { position: static; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
     .title { grid-area: 1 / 1; }
     #theme { grid-area: 1 / 2; justify-self: end; }
     #settings { grid-area: 3 / 1; justify-self: start; }
     #replay-key { grid-area: 3 / 2; justify-self: end; }
-    header > .pill { grid-area: 2 / 1; justify-self: start; }
-    #connect { grid-area: 2 / 2; }
+    #connect { grid-area: 2 / 1 / 3 / 3; justify-self: end; }
     main { margin-top: 10px; }
     main { grid-template-columns: minmax(0, 1fr); }
   }
@@ -470,7 +470,6 @@
     <img class="logo" src="xiao.svg" alt="" width="22" height="27">
     <h1>Data Collection</h1>
   </div>
-  <span class="pill"><span class="dot" id="link-dot"></span><span id="status">No boards connected</span></span>
   <button id="whats-new-key" type="button" popovertarget="whats-new">What's new</button>
   <button id="settings" type="button" aria-expanded="false" aria-controls="settings-drawer" title="Settings: mouse, lights, firmware update, latency and the seen-working checklist">
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</button>
@@ -498,6 +497,7 @@
         <tbody id="boards"></tbody>
       </table>
     </div>
+    <p class="status-line muted" id="status">No boards connected.</p>
     <div class="info-pop" id="boards-info" popover>
       <p>Add each board in turn; pick one to see it below. Labels are remembered per board in this browser and name its folder in recordings.</p>
       <p>⏾ (or holding USER for 5 s) puts a board to sleep; pressing USER wakes it.</p>
@@ -511,18 +511,19 @@
         <label><input type="radio" name="rec-target" value="live" checked> This computer</label>
         <label><input type="radio" name="rec-target" value="flash"> Boards' flash</label>
       </div>
-      <label id="session-label">Session <input type="text" id="session" size="20"></label>
-      <button id="pick-folder">Choose folder…</button>
+      <button id="pick-folder" title="A folder inside Downloads or Documents: Chrome won't write to Downloads itself">Choose folder…</button>
       <span class="muted" id="folder">No folder: files download instead.</span>
     </div>
+    <!-- Record stays put; what follows it depends on where the recording goes. -->
     <div class="row" style="margin-top:10px">
       <button class="primary" id="record" disabled>Record</button>
+      <label id="session-label">Session <input type="text" id="session" size="20"></label>
       <button id="flash-join" hidden></button>
       <button id="upload" disabled hidden>Upload from boards</button>
       <button id="erase" disabled hidden>Erase boards…</button>
       <button id="rec-replay" hidden>Open in Replay</button>
-      <span class="muted" id="rec-status">Connect a board first.</span>
     </div>
+    <p class="status-line muted" id="rec-status">Connect a board first.</p>
     <div class="row" id="rec-recover" style="margin-top:10px" hidden>
       <button id="rec-recover-save">Save it</button>
       <button id="rec-recover-discard">Discard…</button>
@@ -542,7 +543,7 @@
     <h2>Orientation <span class="muted">VQF, 6-axis</span>
       <span class="chip" id="tap-lamp" title="Lights when the board is tapped. A double tap is the user's mark in a recording, and flashes the board's LED cyan">Tap</span>
       <span class="chip" id="at-rest" title="Lit while VQF sees the board as still: only then does it quickly learn the gyro bias that stops yaw drift">At rest</span></h2>
-    <div class="plot pose"><canvas id="pose" aria-label="Board orientation: its X, Y and Z axes in the world frame"></canvas></div>
+    <div class="plot pose"><canvas id="pose" title="Drag to turn the view; double-click to reset it" aria-label="Board orientation: its X, Y and Z axes in the world frame"></canvas></div>
     <div class="angles">
       <span>Roll <b id="roll">–</b></span><span>Pitch <b id="pitch">–</b></span><span>Yaw <b id="yaw">–</b></span>
       <button id="zero-yaw" title="Yaw is relative (no magnetometer): make the current heading 0°">Zero yaw</button>
@@ -617,15 +618,24 @@
         <label><input type="radio" name="replay-signal" value="gyro" checked> Gyro</label>
         <label><input type="radio" name="replay-signal" value="accel"> Accel</label>
         <label><input type="radio" name="replay-signal" value="orientation"> Orientation</label>
+        <label><input type="radio" name="replay-signal" value="quaternion"> Quaternion</label>
         <label><input type="radio" name="replay-signal" value="mic"> Mic</label>
       </div>
       <button id="replay-fit" title="Show the whole session (or double-click a lane)">Whole session</button>
+      <button type="button" class="info" popovertarget="zoom-info" aria-label="Zooming and panning"></button>
+    </div>
+    <div class="info-pop" id="zoom-info" popover>
+      <p><b>Zoom in time:</b> with the pointer over the lanes, slide two fingers up or down on the trackpad (or turn the mouse wheel). It zooms in on the time under the pointer. Pinching works too.</p>
+      <p><b>Zoom up and down:</b> the same while holding Option (⌥), or with the pointer over the numbers at a lane's left edge. It zooms in on the value under the pointer, on every lane at once.</p>
+      <p><b>Pan:</b> slide two fingers sideways, or drag a lane (up and down too, once zoomed vertically). Double-click a lane (or press Whole session) to see it all again.</p>
+      <p><b>Keys</b>, with the lanes clicked first: ← → pan (Shift for a whole screen), + and − zoom in time, ↑ ↓ zoom up and down, 0 shows it all.</p>
     </div>
     <div class="info-pop" id="signals-info" popover>
-      <p>Scroll (or pinch) to zoom, drag to pan, double-click for the whole session. With the lanes focused, the arrow keys pan (Shift for a whole screen), + and − zoom and 0 shows it all.</p>
+      <p>Two fingers up or down zoom about the pointer (with Option, up and down), sideways or a drag pans, double-click shows the whole session (more under the ⓘ by Whole session).</p>
+      <p>Quaternion is VQF's orientation as recorded (W, X, Y, Z, unit length); Orientation is the same as roll, pitch and yaw, with yaw counted from the first sample.</p>
       <p>Orange lines are claps, shading is USER held and red ticks are lost samples. The strip at the bottom is the whole session: click or drag it to move.</p>
     </div>
-    <div class="replay-lanes" id="replay-lanes" tabindex="0" role="group" aria-label="Signal lanes, one per board: scroll to zoom, drag or arrow keys to pan, + and - to zoom, 0 for the whole session"></div>
+    <div class="replay-lanes" id="replay-lanes" tabindex="0" role="group" aria-label="Signal lanes, one per board: scroll to zoom, drag or left and right arrows to pan, + and - to zoom in time, up and down arrows to zoom vertically, 0 for the whole session"></div>
     <div class="plot axis"><canvas id="replay-axis" aria-hidden="true"></canvas></div>
     <div class="plot overview"><canvas id="replay-overview" aria-label="The whole session, with the part shown above outlined: click or drag to move it"></canvas></div>
   </section>
@@ -750,7 +760,9 @@
       <button class="primary" id="usb-flash" disabled>Flash…</button>
       <span class="muted" id="usb-status"></span>
     </div>
+    <p class="readout" id="usb-repair" hidden>The erase removed the board's Bluetooth pairings. If this computer paired with it before, forget it in the Bluetooth settings (macOS: System Settings › Bluetooth, ⓘ next to it, Forget This Device), then add it here and accept the pairing prompt.</p>
     <p class="hint">Plug the board into this computer by USB, press Flash and pick its programmer (XIAO nRF54LM20A CMSIS-DAP). Takes about 15 s. It erases the whole chip first, so the board's settings and Bluetooth bonds go: if this computer paired with it before, remove it from the Bluetooth settings before adding it again. Recordings on its flash chip stay. Close OpenOCD or pyOCD first; the serial console can stay open.</p>
+    <p class="hint">The last pair that flashed a board here is kept in this browser and chosen when this opens, so a broken board can be flashed without the files; drop new ones to replace either. A Bluetooth update that succeeds moves the kept firmware on to that version.</p>
   </div>
 </dialog>
 
