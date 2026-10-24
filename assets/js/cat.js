@@ -1,6 +1,7 @@
 // Footer cat — an orange tabby that lives on the footer's top line.
 // 30 s after the page loads it walks in from the right, stops to sniff the GitHub logo (it looks like a cat), sits, washes (licks a paw, wipes its face), yawns and curls
-// up above the copyright with its tail wrapped round its front, and there it stays, asleep. Hover it
+// up above the copyright with its tail wrapped round its front, and sleeps. Ten minutes later it wakes, yawns and walks
+// off to the left, and 30 s after that it comes back and does it all again. Hover it
 // and it looks content, click it and it slow-blinks at you and purrs for a few seconds (a heart for every click), stroke it (the pointer back
 // and forth) and it kneads. On its way in, a click stops it to look round at you, purring, and a stroke sits it down
 // to knead; then it carries on.
@@ -17,7 +18,8 @@
   var PX = 2, K = 0.6, S = PX * K, ROWS = 24, FPS = 15; // px per art pixel; art pixels per rig unit; px per unit; lane rows
   var SPEED = 34, STRIDE = 22, DUTY = 0.62;             // walking: units/s, units per gait cycle, fraction of it a foot is down
   var EXC = DUTY * STRIDE;                              // how far a planted foot travels under the body
-  var DELAY = 30000;                                    // ms on the page before it walks in
+  var DELAY = 30000;                                    // ms on the page (or away) before it walks in
+  var NAP = 10 * 60 * 1000;                             // ms it sleeps before it gets up and leaves
   var ARM = 6.5, FORE = 6.6, THIGH = 5.8, SHIN = 4.8;     // leg bones
   var TAIL_N = 14, TAIL_LEN = 19;
   var LEGS = ['nh', 'fh', 'nf', 'ff'];                  // near/far, hind/front
@@ -443,6 +445,12 @@
         p.nf[1] += 1.6 * Math.max(0, k); p.ff[1] += 1.6 * Math.max(0, -k);
       }, { busy: true, pet: true });
     }
+    function yawn() {
+      return still(SIT, 1.9, 0.4, function (p, u) {
+        var m = bump(u, 0.55, 0.5, 0.6);
+        p.ha = 4 + 18 * m; p.mouth = m; p.eye = 1 - 1.2 * m; p.ear = 20 * m; p.hd[1] += 0.6 * m; p.tw = 3 + 8 * m;
+      });
+    }
     function sniff() { return still(SNIFF, 1.6, 0.6, function (p, u) { p.hd[1] += 0.35 * Math.sin(u * 22) * bump(u, 0.5, 0.6, 0.3); }); }
     function arrive() {
       return [
@@ -455,14 +463,23 @@
         function () { return still(LICK, 2.3, 0.35, wiping); },
         function () { return still(LICK, 1.3, 0.35, licking); },
         function () { return still(SIT, 0.6, 0.6); },
-        function () { return still(SIT, 1.9, 0.4, function (p, u) {
-          var m = bump(u, 0.55, 0.5, 0.6);
-          p.ha = 4 + 18 * m; p.mouth = m; p.eye = 1 - 1.2 * m; p.ear = 20 * m; p.hd[1] += 0.6 * m; p.tw = 3 + 8 * m;
-        }); },
+        yawn,
         function () { return still(STAND, 0.7, 0.7); },
         function () { return still(LOAF, 1.1, 1.1, null, { busy: true }); },
         function () { return spriteAct([[CURL1, 0.6], [CURL2, 0.7]]); },   // the tail sweeps round, the head goes down
-        function () { return sleepAct(Infinity); }          // and that is where it stays
+        function () { return sleepAct(Infinity); }          // until the page wakes it (wake, below)
+      ];
+    }
+    // woken: it uncurls, sits up, yawns and walks off the left end of the lane, clear of its tail, and is gone
+    function leave() {
+      return [
+        function () { return spriteAct([[CURL2, 0.6], [CURL1, 0.6]]); },
+        function () { return still(LOAF, 0.8, 0, null, { busy: true }); },
+        function () { return still(SIT, 0.9, 0.9); },
+        yawn,
+        function () { return still(STAND, 0.7, 0.7); },
+        function () { return walkAct(X, -SPAN * PX); },
+        function () { return still(STAND, Infinity, 0, null, { busy: true, gone: true }); }
       ];
     }
     queue = [function () { return walkAct(X, world.rest()); }].concat(arrive());
@@ -587,6 +604,10 @@
       },
       pet: function (level) { petting = level; if (level > 0.3) interrupt(petAct); },
       box: function () { return box; },
+      wake: function () {                              // not while it is being stroked or purring
+        if (!cur || !cur.sleep || petting > 0.05 || T < purrUntil) return;
+        queue = leave(); cur.dur = T - cur.t0; next(T);
+      },
       settleAsleep: function () { X = world.rest(); cur = sleepAct(Infinity); cur.t0 = 0; frame(1); },
       act: function () { return cur; }
     };
@@ -598,21 +619,21 @@
   if (!footer || !window.IntersectionObserver || !window.requestAnimationFrame) return;
 
   // It carries on from page to page. Its acts follow one another on its own clock, so the clock (and how long it has
-  // waited to come in) is all the next page needs to show it where it was: mid-walk, washing, or asleep. Kept for
-  // KEEP ms after the last page, so a visit tomorrow starts over with the walk in.
-  var KEY = 'footer-cat', KEEP = 30 * 60 * 1000, opened = Date.now(), kept = { wait: 0, T: 0 };
+  // waited to come in, and when it fell asleep) is all the next page needs to show it where it was: mid-walk, washing,
+  // or asleep. Kept for KEEP ms after the last page, so a visit tomorrow starts over with the walk in.
+  var KEY = 'footer-cat', KEEP = 30 * 60 * 1000, opened = Date.now(), kept = { wait: 0, T: 0, nap: 0 };
   try {
     var s = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (s && Date.now() - s.at < KEEP && s.wait >= 0 && s.T >= 0) kept = { wait: s.wait, T: s.T };
+    if (s && Date.now() - s.at < KEEP && s.wait >= 0 && s.T >= 0) kept = { wait: s.wait, T: s.T, nap: s.nap > 0 ? s.nap : 0 };
   } catch (e) {}
   function keep() {
     var wait = kept.T > 0 ? DELAY : kept.wait + Date.now() - opened;
-    try { localStorage.setItem(KEY, JSON.stringify({ at: Date.now(), wait: wait, T: kept.T })); } catch (e) {}
+    try { localStorage.setItem(KEY, JSON.stringify({ at: Date.now(), wait: wait, T: kept.T, nap: kept.nap })); } catch (e) {}
   }
   window.addEventListener('pagehide', keep);
   document.addEventListener('visibilitychange', function () { if (document.hidden) keep(); });
 
-  setTimeout(function () {
+  function come() {
     var lane = document.createElement('div');
     lane.className = 'cat-lane';
     lane.setAttribute('aria-hidden', 'true');
@@ -671,13 +692,27 @@
       cat.pet(flips.length >= 2 ? Math.min(1, stroked) : 0);
       var fr = Math.floor(T * FPS);
       if (fr !== shown) { shown = fr; cat.frame(fr / FPS); place(); }
+      // the nap is timed on the wall clock, from when it fell asleep, but it only wakes where you can see it
+      var a = cat.act();
+      if (a.gone) { away(); return; }
+      if (a.sleep) { if (!kept.nap) kept.nap = Date.now(); else if (Date.now() - kept.nap >= NAP) cat.wake(); }
       raf = requestAnimationFrame(tick);
     }
-    new IntersectionObserver(function (entries) {
+    var io = new IntersectionObserver(function (entries) {
       var r = entries[0].intersectionRatio;
       if (r > 0.99) seen = true;
       visible = seen && r > 0;
       if (visible && !raf) raf = requestAnimationFrame(tick);
-    }, { threshold: [0, 1] }).observe(lane);
-  }, Math.max(0, DELAY - kept.wait));
+    }, { threshold: [0, 1] });
+    io.observe(lane);
+    // gone off the end of the lane: clear it away and start over, as on a fresh page
+    function away() {
+      io.disconnect();
+      window.removeEventListener('resize', fit);
+      footer.removeChild(lane);
+      kept = { wait: 0, T: 0, nap: 0 }; opened = Date.now();
+      setTimeout(come, DELAY);
+    }
+  }
+  setTimeout(come, Math.max(0, DELAY - kept.wait));
 })();
