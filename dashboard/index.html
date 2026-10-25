@@ -255,7 +255,9 @@
   h2 .chip { margin-left: auto; padding: 1px 8px 1px 6px; font-size: 10.5px; letter-spacing: 0; text-transform: none; }
   .bad-text::before { content: "⚠ "; }
   /* A panel's one line of news, under its controls. */
-  .status-line { margin: 10px 0 0; font-size: 12.5px; }
+  /* Holds its line while empty (Record being enabled says "ready" by itself), so news arriving
+     doesn't push the panel down. */
+  .status-line { margin: 10px 0 0; font-size: 12.5px; min-height: 1lh; }
   .bad-text { color: var(--bad); }
 
   /* Mic level meters as LED bar graphs. */

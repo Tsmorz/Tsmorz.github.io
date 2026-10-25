@@ -1176,7 +1176,7 @@ function setRecStatus(text, { bad = false } = {}) {
 // another of these, so the outcome of a Record, Stop, Upload or Erase stays until the next one.
 const NO_BOARD_TEXT = "Connect a board first.";
 const OLD_FIRMWARE_TEXT = "These boards' firmware can't record on its own. Flash the current build.";
-const IDLE_TEXTS = ["", "Ready.", NO_BOARD_TEXT, OLD_FIRMWARE_TEXT];
+const IDLE_TEXTS = ["", NO_BOARD_TEXT, OLD_FIRMWARE_TEXT];
 function setIdleRecStatus(text) {
   if (IDLE_TEXTS.includes($("rec-status").textContent)) setRecStatus(text);
 }
@@ -1335,7 +1335,7 @@ function renderRecorder() {
   $("record").classList.toggle("recording", recorder.active);
   $("session").disabled = recorder.active;
   if (!recorder.active) {
-    if (!recordBusy) setIdleRecStatus(connected.length ? "Ready." : NO_BOARD_TEXT);
+    if (!recordBusy) setIdleRecStatus(connected.length ? "" : NO_BOARD_TEXT);
     return;
   }
   const seconds = Math.floor((Date.now() - recorder.startedAt.getTime()) / 1000);
@@ -1644,7 +1644,7 @@ function renderFlashRecorder() {
   if (!busy) {
     // A board's flash service attaches a moment after it connects, so an earlier message may be stale.
     const old = [...boards.values()].some((board) => board.connected && !board.log);
-    setIdleRecStatus(list.length ? "Ready." : old ? OLD_FIRMWARE_TEXT : NO_BOARD_TEXT);
+    setIdleRecStatus(list.length ? "" : old ? OLD_FIRMWARE_TEXT : NO_BOARD_TEXT);
   }
   $("rec-boards").innerHTML = "";
   for (const board of list) {

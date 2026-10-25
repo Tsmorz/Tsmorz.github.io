@@ -28,6 +28,7 @@ export const CHANGELOG = [
       "Dragging the Orientation view sideways turns it the way you drag.",
       "The Boards panel starts wider (double-click the seam beside it to go back to this after resizing).",
       "Motion: each live value sits right after its own axis label, rather than nearer the next one.",
+      "Recording: no \"Ready.\" under Record; the button lighting up says it.",
       "The IMU rate in the board list is averaged over five seconds, so it holds steady near 208 Hz instead of jumping about with the link; samples actually lost still show beside it.",
     ],
   },
