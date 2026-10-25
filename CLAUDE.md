@@ -216,12 +216,15 @@ or rely on CI. `Taskfile.yml` is the single entrypoint (`task --list`); `script/
   `script/test-data` compares exact basenames to catch it (project images and `_data/hardware.yml` photos).
 - **External links aren't checked** (`--disable-external`) on purpose, so a typo'd external URL won't be caught.
 
-### The nrf-controller dashboard (`/dashboard/`)
+### The nrf-controller data logger (`/data-logger/`)
 
-`dashboard/` is a copy of `tools/dashboard/` from the private nrf-controller repo, written by `task
+`data-logger/` is a copy of `tools/dashboard/` from the private nrf-controller repo, written by `task
 publish-dashboard` there (it replaces the whole folder). **Never edit it here**: change it in
 nrf-controller and publish again. It is a standalone Web Bluetooth page with its own look, outside the
 site's layouts (no front matter, so Jekyll copies it as-is).
+
+`dashboard/index.html` is this site's own: a redirect from the page's old address (`/dashboard/`, until
+2026-10-25) to `/data-logger/`, keeping any query and hash. The publish task doesn't touch it.
 
 ## When editing, don't
 
