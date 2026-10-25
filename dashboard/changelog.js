@@ -16,6 +16,7 @@ export const CHANGELOG = [
       "Since v1.1.0 a board sent only a fraction of its IMU samples live (15 to 35 Hz instead of 208), because its Bluetooth packets stayed at their smallest size. They're full size again, and the board list reads ~208 Hz with nothing lost.",
       "A board whose link falls behind for a moment catches up instead of staying slow until restarted.",
       "With a board's mouse on, its mouse reports go first: the cursor answers in a connection interval or two instead of ~300 ms, and the live data loses samples while you're pointing (a flash recording keeps everything).",
+      "With a board's mouse on, its mouse reports go out one at a time: the next one carries all the motion since, in the next connection event, rather than queueing behind earlier ones.",
       "Latency: the percentiles now reach 128 ms before they pile up at the maximum.",
     ],
   },
@@ -26,6 +27,7 @@ export const CHANGELOG = [
     items: [
       "Dragging the Orientation view sideways turns it the way you drag.",
       "The Boards panel starts wider (double-click the seam beside it to go back to this after resizing).",
+      "Motion: each live value sits right after its own axis label, rather than nearer the next one.",
       "The IMU rate in the board list is averaged over five seconds, so it holds steady near 208 Hz instead of jumping about with the link; samples actually lost still show beside it.",
     ],
   },

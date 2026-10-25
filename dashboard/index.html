@@ -271,7 +271,9 @@
   .live { display: flex; gap: 12px; color: var(--text-2); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
   .live span[style]::before { content: ""; display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle;
                               border-radius: 1px; background: var(--key); }
-  .live b { font-weight: 500; color: var(--text); display: inline-block; min-width: 46px; text-align: right; }
+  /* Each value right after its own label, padded on its right to a fixed width, so a changing number
+     never shifts the others and never sits nearer the next axis's label than its own. */
+  .live b { font-weight: 500; color: var(--text); display: inline-block; min-width: 7ch; margin-left: 2px; text-align: left; }
 
   /* Screens. */
   .plot { position: relative; }
