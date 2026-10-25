@@ -8,6 +8,25 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-25-voice-service",
+    date: "2026-10-25",
+    title: "Voice clips from up-to-date boards",
+    items: [
+      "Settings › Voice no longer says \"This board's firmware can't capture clips\" for a board that can: the page wasn't asking the browser for the board's voice service. A board the browser reconnects by itself keeps its old permission, so add it once more with Add board.",
+    ],
+  },
+  {
+    id: "2026-10-25-radio-clock-only",
+    date: "2026-10-25",
+    title: "Boards are lined up by the radio clock alone",
+    firmware: "next",
+    items: [
+      "Claps no longer line up the boards' clocks, and the boards no longer detect them: choose a clock source (Settings › Clock sync) before recording several boards. Saving warns about any board that recorded no clock pairs.",
+      "Taps and double taps on a board are no longer detected or recorded. To mark a moment, say \"mark this moment\" on a board with voice commands.",
+      "Gone with them: the Clap and Tap lamps, the Boards panel's Claps column, the clap lines on the Microphone and Replay plots, and Replay's Claps column. Recordings made before still open, with their claps and taps in events.csv.",
+    ],
+  },
+  {
     id: "2026-10-25-imu-stream",
     date: "2026-10-25",
     title: "The full IMU rate over Bluetooth again",

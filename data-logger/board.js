@@ -1,7 +1,8 @@
 // One connected board: its Bluetooth connection, the streams it sends, what the page shows of
 // them, and its share of a recording. app.js keeps one of these per board and renders whichever
-// is selected. Fires "change" (something to redraw), "mark" (a clap sync mark arrived), "seen"
-// (a checklist item was seen working) and "disconnected" events.
+// is selected. Fires "change" (something to redraw), "seen" (a checklist item was seen working)
+// and "disconnected" events. Older firmware also sends clap and tap events, which are recorded as
+// they come but not shown.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
   DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_SERVICE, KEYWORD_SETTINGS,
@@ -90,14 +91,10 @@ export class Board extends EventTarget {
     this.atRest = false;
     this.userPressed = false;
     this.userPressHostMs = 0;
-    this.lastTap = null; // { type, hostMs } of the latest tap or double tap
     this.envelope = [];
     this.envelopeEndUs = null;
     this.spectrum = []; // the last ENVELOPE_SECONDS of { tUs, levels } frames, levels in dBFS per bin
     this.spectrumFrameUs = 0;
-    this.marks = []; // the latest few, for drawing
-    this.markCount = 0;
-    this.lastMarkHostMs = null;
     this.lastSeq = null;
     this.lastWindow = null;
     this.lastEventSeq = null;
@@ -571,17 +568,7 @@ export class Board extends EventTarget {
     } else if (event.type === "keyword") {
       this.voiceHeard.unshift({ ...decodeKeywordEvent(event.peak), hostMs });
       this.voiceHeard.length = Math.min(this.voiceHeard.length, 8);
-    } else if (event.type === "tap" || event.type === "double_tap") {
-      this.lastTap = { type: event.type, hostMs };
-      if (event.type === "double_tap") this.markSeen("tap");
-    } else if (event.type === "sync") {
-      this.marks.push(unwrapped);
-      if (this.marks.length > 50) this.marks.shift();
-      this.markCount++;
-      this.lastMarkHostMs = hostMs;
-      this.markSeen("sync");
-      this.dispatchEvent(new CustomEvent("mark", { detail: unwrapped }));
-    } else {
+    } else if (event.type === "press" || event.type === "release") {
       this.userPressed = event.type === "press";
       if (this.userPressed) {
         this.userPressHostMs = hostMs;

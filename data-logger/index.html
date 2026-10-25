@@ -246,12 +246,9 @@
   .chip.on { color: var(--text); }
   .chip.on::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
   #at-rest.on::before { background: var(--good); box-shadow: 0 0 6px var(--good); }
-  #tap-lamp ~ #at-rest { margin-left: 6px; }
   h2 .chip { flex: none; white-space: nowrap; }
-  #tap-lamp.double::before { box-shadow: 0 0 6px var(--signal), 0 0 0 2px var(--signal); }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  #mark-lamp.on::before, .user-lamp.on::before { background: var(--pressed-lamp); box-shadow: 0 0 4px var(--pressed-lamp), 0 0 10px var(--pressed-lamp); }
-  #mark-lamp.on { color: var(--text); }
+  .user-lamp.on::before { background: var(--pressed-lamp); box-shadow: 0 0 4px var(--pressed-lamp), 0 0 10px var(--pressed-lamp); }
   h2 .chip { margin-left: auto; padding: 1px 8px 1px 6px; font-size: 10.5px; letter-spacing: 0; text-transform: none; }
   .bad-text::before { content: "⚠ "; }
   /* A panel's one line of news, under its controls. */
@@ -502,7 +499,7 @@
     <h2>Boards <span class="muted" id="board-count"></span><button type="button" class="info" popovertarget="boards-info" aria-label="About the board list"></button><button id="sleep-all" class="h2-key" hidden>Sleep all…</button></h2>
     <div class="table-scroll">
       <table class="boards">
-        <thead><tr><th>Board</th><th>Label</th><th title="Estimated from voltage, so it reads high while charging">Battery</th><th>IMU</th><th>Mic</th><th>Claps</th><th>Flash</th><th title="Firmware version">FW</th><th>USER</th><th></th></tr></thead>
+        <thead><tr><th>Board</th><th>Label</th><th title="Estimated from voltage, so it reads high while charging">Battery</th><th>IMU</th><th>Mic</th><th>Flash</th><th title="Firmware version">FW</th><th>USER</th><th></th></tr></thead>
         <tbody id="boards"></tbody>
       </table>
     </div>
@@ -540,7 +537,7 @@
     </div>
     <ul id="rec-boards"></ul>
     <div class="info-pop" id="recording-info" popover>
-      <p>Just after Record, and again just before Stop, clap 2–3 times about a second apart, close to all the boards and the same distance from each: their clocks are lined up on those claps afterwards. Each board's LED flashes when it hears one.</p>
+      <p>With several boards, choose a clock source first (Settings › Clock sync): the others record their time against it about once a second, and <code>task align</code> lines them up on it afterwards.</p>
       <p id="flash-hint" hidden>Boards' flash: each board records on its own (LED dim red) and keeps going if you disconnect or carry it off. Upload runs at ~12 KB/s per board, all boards at once, and reads only what was recorded since this browser's last upload: a full 8 MB takes about 11 minutes.</p>
       <p>This computer: a board that drops out is reconnected and carries on in the same files; one connected after Record joins in. The recording is kept in this browser as it runs, so if the page closes it's offered for saving next time.</p>
       <p>With a folder chosen (remembered in this browser), each session is saved as a folder of its own. Without one, its files download one by one as <code>session__board__imu.csv</code> and so on. Replay opens either.</p>
@@ -550,7 +547,6 @@
 
   <section class="orientation-section">
     <h2>Orientation <span class="muted">VQF, 6-axis</span>
-      <span class="chip" id="tap-lamp" title="Lights when the board is tapped, ringed for a double tap: the user's mark in a recording, which also flashes the board's LED cyan">Tap</span>
       <span class="chip" id="at-rest" title="Lit while VQF sees the board as still: only then does it quickly learn the gyro bias that stops yaw drift">At rest</span></h2>
     <div class="plot pose"><canvas id="pose" title="Drag to turn the view; double-click to reset it" aria-label="Board orientation: its X, Y and Z axes in the world frame"></canvas></div>
     <div class="angles">
@@ -575,11 +571,10 @@
   </section>
 
   <section class="mic-section">
-    <h2>Microphone <span class="muted">peak per ms, dBFS</span><button type="button" class="info" popovertarget="mic-info" aria-label="About the microphone plots"></button>
-      <span class="chip" id="mark-lamp" title="Lights when the board hears a clap and records a sync mark">Clap</span></h2>
-    <div class="plot-head"><span>Level <span class="muted num" id="mic-level">–</span></span><span class="readout" id="mark-count">No claps yet</span></div>
+    <h2>Microphone <span class="muted">peak per ms, dBFS</span><button type="button" class="info" popovertarget="mic-info" aria-label="About the microphone plots"></button></h2>
+    <div class="plot-head"><span>Level <span class="muted num" id="mic-level">–</span></span></div>
     <div class="plot wave" id="envelope-plot">
-      <canvas id="envelope" aria-label="Microphone level over the last 4 seconds, with the claps heard marked"></canvas>
+      <canvas id="envelope" aria-label="Microphone level over the last 4 seconds"></canvas>
       <div class="tooltip" id="envelope-tip" hidden></div>
     </div>
     <div class="plot-head"><span>Spectrum <span class="muted">kHz</span></span><span class="readout" id="spectrum-peak">–</span></div>
@@ -589,8 +584,7 @@
     </div>
     <div class="x-axis"><span>−4 s</span><span>−2 s</span><span>now</span></div>
     <div class="info-pop" id="mic-info" popover>
-      <p>Orange lines are claps the board heard (sync marks). A sound counts if it starts sharply and peaks above −30 dBFS, well clear of the room's noise: a clap within a few metres does.</p>
-      <p>In the spectrum, brighter is louder.</p>
+      <p>The level is the loudest sample in each millisecond, which a recording on this computer keeps (the boards' flash doesn't). The spectrum is for watching only (not recorded): brighter is louder.</p>
     </div>
   </section>
 
@@ -610,7 +604,7 @@
     </div>
     <div class="table-scroll">
       <table class="boards replay-boards">
-        <thead><tr><th>Show</th><th>Board</th><th>Length</th><th>Samples</th><th>Rate</th><th title="IMU samples missing from the recording (gaps in seq)">Lost</th><th title="Sync marks: the claps this board heard">Claps</th><th>Presses</th></tr></thead>
+        <thead><tr><th>Show</th><th>Board</th><th>Length</th><th>Samples</th><th>Rate</th><th title="IMU samples missing from the recording (gaps in seq)">Lost</th><th>Presses</th></tr></thead>
         <tbody id="replay-boards"></tbody>
       </table>
     </div>
@@ -642,7 +636,7 @@
     <div class="info-pop" id="signals-info" popover>
       <p>Two fingers up or down zoom about the pointer (with Option, up and down), sideways or a drag pans, double-click shows the whole session (more under the ⓘ by Whole session).</p>
       <p>Quaternion is VQF's orientation as recorded (W, X, Y, Z, unit length); Orientation is the same as roll, pitch and yaw, with yaw counted from the first sample.</p>
-      <p>Orange lines are claps, shading is USER held and red ticks are lost samples. The strip at the bottom is the whole session: click or drag it to move.</p>
+      <p>Shading is USER held and red ticks are lost samples. The strip at the bottom is the whole session: click or drag it to move.</p>
     </div>
     <div class="replay-lanes" id="replay-lanes" tabindex="0" role="group" aria-label="Signal lanes, one per board: scroll to zoom, drag or left and right arrows to pan, + and - to zoom in time, up and down arrows to zoom vertically, 0 for the whole session"></div>
     <div class="plot axis"><canvas id="replay-axis" aria-hidden="true"></canvas></div>
@@ -675,7 +669,7 @@
       <label>Source <select id="clock-source" disabled title="The board whose clock the others follow"></select></label>
     </div>
     <ul class="clock-boards" id="clock-boards"></ul>
-    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond, with no clap needed and no error from distance. Claps still work as a cross-check.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
+    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
   </section>
   <section>
     <h2>Sleep <span class="muted">saved on the board</span></h2>
@@ -691,7 +685,7 @@
       <label>Brightness <input type="range" id="led-level" min="0" max="255" value="40"></label>
       <button id="led-off">Off</button>
     </div>
-    <div class="info-pop" id="lights-info" popover><p>Overrides the status LED (blue advertising, green connected) until the next connect, disconnect or clap.</p></div>
+    <div class="info-pop" id="lights-info" popover><p>Overrides the status LED (blue advertising, green connected) until the next connect or disconnect.</p></div>
   </section>
   <section>
     <h2>Voice <span class="muted">saved on the board</span><button type="button" class="info" popovertarget="voice-info" aria-label="About voice commands"></button></h2>

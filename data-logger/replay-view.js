@@ -332,12 +332,12 @@ function renderBoards() {
   };
   for (const track of state.tracks) {
     const { folder } = track.board;
-    const { samples, seconds, rateHz, lost, claps, presses } = track.summary;
+    const { samples, seconds, rateHz, lost, presses } = track.summary;
     const row = document.createElement("tr");
     row.innerHTML = `<td><input type="checkbox" aria-label="Show this board"></td><td class="num name"></td>
-      <td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td>`;
+      <td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td>`;
     const cells = row.querySelectorAll("td");
-    [folder, minutes(seconds), samples.toLocaleString(), `${rateHz.toFixed(1)} Hz`, String(lost), String(claps), String(presses)]
+    [folder, minutes(seconds), samples.toLocaleString(), `${rateHz.toFixed(1)} Hz`, String(lost), String(presses)]
       .forEach((text, i) => (cells[i + 1].textContent = text));
     cells[5].classList.toggle("bad-text", lost > 0);
     const box = row.querySelector("input");
@@ -357,9 +357,9 @@ function renderBoards() {
   }
 }
 
-// Greys out the signals no board in the session recorded (a flash recording has no mic level,
-// only its claps), moving off one that was chosen to gyro.
-const MISSING = { mic: "Not in this session: a flash recording keeps only the claps, drawn on every signal", orientation: "Not in this session", quaternion: "Not in this session" };
+// Greys out the signals no board in the session recorded (a flash recording has no mic level),
+// moving off one that was chosen to gyro.
+const MISSING = { mic: "Not in this session: a flash recording keeps no mic level", orientation: "Not in this session", quaternion: "Not in this session" };
 
 function offerSignals() {
   for (const input of document.querySelectorAll('input[name="replay-signal"]')) {
@@ -549,31 +549,13 @@ function drawLane({ track, canvas }, plan, signal) {
   ctx.globalAlpha = 1;
 
   if (!plan) {
-    message(ctx, width, height, state.signal === "mic" ? "No mic level from this board: a flash recording keeps only the claps" : "No orientation from this board");
+    message(ctx, width, height, state.signal === "mic" ? "No mic level from this board: a flash recording keeps none" : "No orientation from this board");
   } else if (state.signal === "mic") {
     drawLevel(ctx, plan, width, height, yScale(signal, height, state.y), toX);
   } else {
     drawSeries(ctx, plan, width, height, yScale(signal, height, state.y), toX);
   }
 
-  // Claps: orange lines topped with a marker, as on the live Microphone panel.
-  ctx.strokeStyle = colors.signal;
-  ctx.fillStyle = colors.signal;
-  ctx.lineWidth = 1.5;
-  for (const event of track.events) {
-    if (event.type !== "sync" || event.t < t0 || event.t > t1) continue;
-    const x = toX(event.t);
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x - 5, 0);
-    ctx.lineTo(x + 5, 0);
-    ctx.lineTo(x, 7);
-    ctx.closePath();
-    ctx.fill();
-  }
   // Lost samples: red ticks along the foot.
   ctx.fillStyle = colors.bad;
   for (const gap of track.lost) if (gap.t >= t0 && gap.t <= t1) ctx.fillRect(Math.round(toX(gap.t)) - 1, height - 9, 3, 9);
@@ -677,7 +659,7 @@ function drawAxis() {
   }
 }
 
-// The whole session, a thin row per shown board (its data's extent, claps, presses and lost
+// The whole session, a thin row per shown board (its data's extent, presses and lost
 // samples), with the lanes' window outlined. Click or drag to move the window.
 function drawOverview() {
   const canvas = $("replay-overview");
@@ -698,7 +680,6 @@ function drawOverview() {
     ctx.globalAlpha = 0.25;
     for (const { from, to } of track.presses) ctx.fillRect(toX(from), top + 2, Math.max(1, toX(to) - toX(from)), rowHeight - 4);
     ctx.globalAlpha = 1;
-    for (const event of track.events) if (event.type === "sync") ctx.fillRect(Math.round(toX(event.t)), top + 2, 1.5, rowHeight - 4);
     ctx.fillStyle = colors.bad;
     for (const gap of track.lost) ctx.fillRect(Math.round(toX(gap.t)), middle, 2, rowHeight / 2 - 1);
   });

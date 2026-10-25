@@ -134,7 +134,7 @@ export function decodeSpectrumBatch(view) {
   };
 }
 
-/** Decodes one event: a clap sync mark or a USER button press/release. */
+/** Decodes one event (EVENT_TYPES; sync, tap and double_tap come only from older firmware). */
 export function decodeEvent(view) {
   if (view.byteLength !== EVENT_BYTES || view.getUint8(0) !== DATA_VERSION) return null;
   return {

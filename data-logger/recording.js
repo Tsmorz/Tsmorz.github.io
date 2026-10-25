@@ -99,7 +99,7 @@ export const LIVE_FILES = {
  * browser's storage every couple of seconds. Everything added is already decoded (wire.js) and
  * its times unwrapped. host_ms is when the page received each notification
  * (performance.timeOrigin + performance.now(), the same clock for every board on the page): the
- * aligner uses it only to pair up sync marks roughly, then aligns on the board times.
+ * aligner falls back on it for a board without radio clock pairs.
  */
 export class BoardRecording {
   constructor(info) {
@@ -109,7 +109,7 @@ export class BoardRecording {
     this.accelDecimals = scaleDecimals(this.accelScale);
     this.windowUs = (1e6 * info.envelopeWindowSamples) / info.micRateHz;
     this.pending = Object.fromEntries(Object.keys(LIVE_FILES).map((file) => [file, []]));
-    this.counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0, taps: 0, voiceCommands: 0, clockPairs: 0 };
+    this.counts = { imuSamples: 0, envelopeWindows: 0, buttonEvents: 0, voiceCommands: 0, clockPairs: 0 };
   }
 
   /**
@@ -148,10 +148,8 @@ export class BoardRecording {
       return;
     }
     this.pending["events.csv"].push(`${event.tUs},${host},${event.seq},${event.type},${event.peak}`);
-    if (event.type === "sync") this.counts.syncMarks++;
-    else if (event.type === "tap" || event.type === "double_tap") this.counts.taps++;
-    else if (event.type === "keyword") this.counts.voiceCommands++;
-    else this.counts.buttonEvents++;
+    if (event.type === "keyword") this.counts.voiceCommands++;
+    else if (event.type === "press" || event.type === "release") this.counts.buttonEvents++;
   }
 
   /** pair: decodeClockPair() output with both times unwrapped (each on its own clock). */
@@ -170,6 +168,23 @@ export class BoardRecording {
     }
     return taken;
   }
+}
+
+/** The source boards' IDs in rows of a radio_clock.csv laid out as `columns`, without its header. */
+export function clockSources(text, columns) {
+  const column = columns.indexOf("source_board");
+  return [...new Set(text.split("\n").filter(Boolean).map((line) => line.split(",")[column]))];
+}
+
+/**
+ * The boards of one session that nothing lines up with the others closely: no radio clock pairs,
+ * and not the source the others' pairs came from. `list`: { name, boardId, clockPairs,
+ * clockSources } per board. A board on its own needs nothing. Returns their names.
+ */
+export function unsyncedBoards(list) {
+  if (list.length < 2) return [];
+  const sources = new Set(list.flatMap((board) => board.clockSources));
+  return list.filter((board) => board.clockPairs === 0 && !sources.has(board.boardId)).map((board) => board.name);
 }
 
 /** The events (board time and type) in rows of a live events.csv, without its header. */

@@ -245,7 +245,6 @@ export function placeBoard(board, { us0, t0, perUs }) {
       seconds: boardSpanS,
       rateHz: boardSpanS > 0 ? (n - 1) / boardSpanS : 0,
       lost: board.lost.reduce((sum, gap) => sum + gap.count, 0),
-      claps: events.filter((event) => event.type === "sync").length,
       presses: events.filter((event) => event.type === "press").length,
       envelopeWindows: board.envelope?.us.length ?? 0,
     },

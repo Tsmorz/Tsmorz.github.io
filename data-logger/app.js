@@ -4,7 +4,7 @@ import { describeLatency, resultRow } from "./latency.js";
 import { dragSeam, gridTracks, parseSavedLayout, toFractions } from "./layout.js";
 import { headingChangeDegrees, quatToEulerDegrees, removeYaw, rotateVector } from "./pose.js";
 import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, lostSamples, startsWithSession } from "./flashlog.js";
-import { BoardRecording, LIVE_FILES, liveFileParts, parseEventRows, safeName } from "./recording.js";
+import { BoardRecording, LIVE_FILES, RADIO_CLOCK_COLUMNS, clockSources, liveFileParts, parseEventRows, safeName, unsyncedBoards } from "./recording.js";
 import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
 import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
@@ -12,7 +12,7 @@ import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
   ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
 } from "./signal.js";
-import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
+import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
@@ -20,7 +20,6 @@ import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
 const $ = (id) => document.getElementById(id);
 const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
 const ENVELOPE_FLOOR_DBFS = -80;
-const MARK_LAMP_MS = 400;
 // A tap's press and release can arrive together, so a press keeps the USER lamp lit at least this
 // long; short enough that the gap in a double press still shows (the lamp redraws every frame).
 const USER_LAMP_MIN_MS = 100;
@@ -46,9 +45,7 @@ const CHECKS = [
   ["gyro-z", "Gyro Z responded to rotation"],
   ["mic", "Microphone envelope arriving"],
   ["spectrum", "Microphone spectrum arriving"],
-  ["sync", "Clap heard (sync mark)"],
   ["button", "USER button press recorded"],
-  ["tap", "Double tap felt (a mark in the recording)"],
   ["clock", "Radio clock pairs arriving (synced to a source)"],
   ["led", "LED command accepted"],
   ["latency", "Mouse reports acknowledged by the host (latency measured)"],
@@ -512,17 +509,9 @@ function drawPose() {
   ctx.textAlign = "start";
 }
 
-// The tap lamp stays lit this long after a tap, so a quick one is seen.
-const TAP_LAMP_MS = 800;
-
 function renderAngles() {
   const quat = selected?.quat;
   $("at-rest").classList.toggle("on", Boolean(selected?.atRest));
-  const tap = selected?.lastTap;
-  const tapRecent = Boolean(tap) && performance.timeOrigin + performance.now() - tap.hostMs < TAP_LAMP_MS;
-  // The text stays "Tap" whatever was felt, so the heading never changes width under it.
-  $("tap-lamp").classList.toggle("on", tapRecent);
-  $("tap-lamp").classList.toggle("double", tapRecent && tap.type === "double_tap");
   if (!quat) {
     for (const name of ["roll", "pitch", "yaw"]) $(name).textContent = "–";
     return;
@@ -618,7 +607,7 @@ function renderLive() {
 
 // ---- microphone ---------------------------------------------------------------------------
 // The board's 1 ms peak envelope over the last 4 s, as a dBFS bar graph (one bar per pixel
-// column, the loudest window in it), with the claps it heard as orange lines.
+// column, the loudest window in it).
 const envelopeHover = trackHover($("envelope"));
 
 function drawEnvelope() {
@@ -668,25 +657,6 @@ function drawEnvelope() {
     if (top < height) ctx.fillRect(x, top, 1, height - top);
   }
 
-  const startUs = board.envelopeEndUs - ENVELOPE_SECONDS * 1e6;
-  ctx.strokeStyle = colors.signal;
-  ctx.fillStyle = colors.signal;
-  ctx.lineWidth = 2;
-  for (const mark of board.marks) {
-    if (mark.tUs < startUs) continue;
-    const x = ((mark.tUs - startUs) / (ENVELOPE_SECONDS * 1e6)) * width;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x - 5, 0);
-    ctx.lineTo(x + 5, 0);
-    ctx.lineTo(x, 7);
-    ctx.closePath();
-    ctx.fill();
-  }
-
   drawScale();
   if (envelopeHover.fraction === null) {
     tip.hidden = true;
@@ -700,7 +670,7 @@ function drawEnvelope() {
     [[Number.isFinite(dbfs) ? `${dbfs.toFixed(1)}` : "–∞", "dBFS peak"]]);
 }
 
-// The board's spectrum frames (64 ms each) on the same 4 s as the level above, so a clap's spike
+// The board's spectrum frames (64 ms each) on the same 4 s as the level above, so a click's spike
 // sits over its stripe: 0 Hz at the bottom to 8 kHz at the top, each bin lit in the readout colour
 // by its level. The newest frames lag the level by a frame or two, the time they take to arrive.
 const SPECTRUM_DIM_DBFS = -110;
@@ -795,9 +765,6 @@ function renderMic() {
   const board = selected;
   const levelDbfs = board ? peakToDbfs(recentPeak(board.envelope, 100)) : -Infinity;
   $("mic-level").textContent = board?.envelope.length ? `${Number.isFinite(levelDbfs) ? levelDbfs.toFixed(1) : "–∞"} dBFS` : "–";
-  const lit = Boolean(board?.lastMarkHostMs && performance.timeOrigin + performance.now() - board.lastMarkHostMs < MARK_LAMP_MS);
-  $("mark-lamp").classList.toggle("on", lit);
-  $("mark-count").textContent = !board?.markCount ? "No claps yet" : `${board.markCount} clap${board.markCount === 1 ? "" : "s"} heard`;
   $("spectrum-peak").textContent = spectrumSummary(board);
 }
 
@@ -850,7 +817,6 @@ function buildRow(board) {
     <td class="num battery"></td>
     <td class="num imu"></td>
     <td class="num"><span class="bar"><i style="left:0;width:0"></i></span><span class="level"></span></td>
-    <td class="num marks"></td>
     <td class="num flash"></td>
     <td class="num fw"></td>
     <td><span class="chip user-lamp" title="Lit while USER is held" aria-label="USER button"></span></td>
@@ -885,8 +851,6 @@ function renderBoardRow(board) {
   const dbfs = peakToDbfs(recentPeak(board.envelope, 100));
   row.querySelector(".bar i").style.width = `${meterFraction(dbfs, ENVELOPE_FLOOR_DBFS) * 100}%`;
   row.querySelector(".level").textContent = Number.isFinite(dbfs) ? `${dbfs.toFixed(0)}` : "–∞";
-  const ago = board.lastMarkHostMs ? ` · ${Math.round((performance.timeOrigin + performance.now() - board.lastMarkHostMs) / 1000)} s ago` : "";
-  row.querySelector(".marks").textContent = `${board.markCount}${ago}`;
   const led = ledDisplayColor(board.led);
   if (led) row.style.setProperty("--led", led);
   else row.style.removeProperty("--led");
@@ -1000,7 +964,8 @@ async function addBoard() {
     setStatus("Choose a board in the browser prompt…");
     device = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: "nrf-controller" }],
-      optionalServices: [DATA_SERVICE, TELEMETRY_SERVICE, LOG_SERVICE, SMP_SERVICE, "device_information"],
+      // Chrome only lets the page reach the services named here (firmware-consistency test).
+      optionalServices: [DATA_SERVICE, TELEMETRY_SERVICE, LOG_SERVICE, KEYWORD_SERVICE, SMP_SERVICE, "device_information"],
     });
   } catch (error) {
     setStatus(connectedSummary() ? `${connectedSummary()} connected` : `No board chosen (${error.message})`);
@@ -1344,7 +1309,7 @@ function renderRecorder() {
   for (const member of recorder.members.values()) {
     const { counts } = member.recording;
     const item = document.createElement("li");
-    item.textContent = `${member.lastBoard.displayName}: ${counts.imuSamples} samples · ${counts.syncMarks} claps · ${counts.buttonEvents} button edges` +
+    item.textContent = `${member.lastBoard.displayName}: ${counts.imuSamples} samples · ${counts.clockPairs} clock pairs · ${counts.buttonEvents} button edges` +
       (member.board ? "" : " · dropped out, reconnecting…");
     if (!member.board) item.className = "bad-text";
     $("rec-boards").append(item);
@@ -1469,7 +1434,14 @@ async function startRecording() {
   recorder.flushTimer = setInterval(flushRecording, FLUSH_MS);
   offerReplay(null);
   const notes = [folder ? "" : " (files download at Stop)", durable ? "" : " This browser can't keep it if the page closes."];
-  setRecStatus(`Recording ${members.length} board${members.length === 1 ? "" : "s"}${notes[0]}: clap 2–3 times near all of them now.${notes[1]}`);
+  setRecStatus(`Recording ${members.length} board${members.length === 1 ? "" : "s"}${notes[0]}.${notes[1]}${clockSourceNote(members)}`);
+}
+
+// Several boards are only lined up closely by the radio clock: says so if nothing is a source.
+function clockSourceNote(list) {
+  if (list.length < 2) return "";
+  const synced = [...boards.values()].some((board) => board.connected && (board.clock?.role === "source" || board.clock?.state === "synced"));
+  return synced ? "" : " No clock source is set (Settings › Clock sync), so these boards can only be lined up to ~20 ms.";
 }
 
 async function stopRecording() {
@@ -1516,6 +1488,8 @@ async function saveLiveRecording(record, folder, extra = []) {
   const { spool } = await spoolReady;
   const entries = [];
   const saved = [];
+  const synced = [];
+  const clockSourcesOf = {};
   try {
     for (const [key, meta] of Object.entries(record.members)) {
       const chunksOf = async (file) => [
@@ -1524,19 +1498,23 @@ async function saveLiveRecording(record, folder, extra = []) {
       ];
       const eventChunks = await chunksOf("events.csv");
       const events = parseEventRows(eventChunks.join(""));
-      const counts = { imuSamples: 0, envelopeWindows: 0, syncMarks: 0, buttonEvents: 0, taps: 0, voiceCommands: 0, clockPairs: 0 };
-      const countFor = { sync: "syncMarks", tap: "taps", double_tap: "taps", keyword: "voiceCommands", press: "buttonEvents", release: "buttonEvents" };
+      const counts = { imuSamples: 0, envelopeWindows: 0, buttonEvents: 0, voiceCommands: 0, clockPairs: 0 };
+      const countFor = { keyword: "voiceCommands", press: "buttonEvents", release: "buttonEvents" };
       for (const { type } of events) if (countFor[type]) counts[countFor[type]]++;
       for (const file of Object.keys(LIVE_FILES)) {
         const chunks = file === "events.csv" ? eventChunks : await chunksOf(file);
         // Written only when there is something in them: older firmware sends neither.
         if ((file === "temperature.csv" || file === "radio_clock.csv") && !chunks.length) continue;
-        if (file === "radio_clock.csv") counts.clockPairs = rowCount(chunks);
+        if (file === "radio_clock.csv") {
+          counts.clockPairs = rowCount(chunks);
+          clockSourcesOf[key] = clockSources(chunks.join(""), RADIO_CLOCK_COLUMNS);
+        }
         if (file === "imu.csv") counts.imuSamples = rowCount(chunks);
         if (file === "mic_envelope.csv") counts.envelopeWindows = rowCount(chunks);
         entries.push(await saveFile(folder, [record.session, meta.folder], file, liveFileParts(file, chunks, events)));
       }
       saved.push({ ...meta, counts });
+      synced.push({ name: meta.label || meta.name, boardId: meta.board_id, clockPairs: counts.clockPairs, clockSources: clockSourcesOf[key] ?? [] });
     }
     const manifest = {
       session: record.session,
@@ -1556,10 +1534,10 @@ async function saveLiveRecording(record, folder, extra = []) {
   renderRecovery();
 
   const where = folder ? `${folder.name}/${record.session}/` : "your downloads";
-  const fewClaps = saved.filter((board) => board.counts.syncMarks < 2).map((board) => board.label || board.name);
-  setRecStatus(fewClaps.length
-    ? `Saved to ${where}, but ${fewClaps.join(", ")} heard fewer than 2 claps: too few to line up ${fewClaps.length === 1 ? "its clock" : "their clocks"} with the others.`
-    : `Saved ${saved.length} board${saved.length === 1 ? "" : "s"} to ${where}.`, { bad: fewClaps.length > 0 });
+  const unsynced = unsyncedBoards(synced);
+  setRecStatus(unsynced.length
+    ? `Saved to ${where}, but ${unsynced.join(", ")} recorded no radio clock pairs: ${unsynced.length === 1 ? "its clock" : "their clocks"} can only be lined up with the others to ~20 ms.`
+    : `Saved ${saved.length} board${saved.length === 1 ? "" : "s"} to ${where}.`, { bad: unsynced.length > 0 });
   offerReplay({ entries, folder, session: record.session });
 }
 
@@ -1671,7 +1649,7 @@ async function startFlash() {
   setRecStatus("Starting…");
   offerReplay(null);
   if (await forEachFlashBoard(flashBoards(), (board) => board.logStart(tag, Date.now()), "start")) {
-    setRecStatus("Recording on the boards: clap 2–3 times near all of them now. You can disconnect; they carry on.");
+    setRecStatus(`Recording on the boards. You can disconnect; they carry on.${clockSourceNote(flashBoards())}`);
   }
 }
 
@@ -1681,7 +1659,7 @@ $("flash-join").addEventListener("click", async () => {
   const idle = list.filter((board) => board.log.state === "idle");
   if (!tag || !idle.length) return;
   if (await forEachFlashBoard(idle, (board) => board.logStart(tag, Date.now()), "start")) {
-    setRecStatus(`${idle.map((board) => board.displayName).join(", ")} joined the recording: clap near ${idle.length === 1 ? "it" : "them"} too.`);
+    setRecStatus(`${idle.map((board) => board.displayName).join(", ")} joined the recording.`);
   }
 });
 
@@ -1769,7 +1747,7 @@ async function uploadFlash() {
   const uploaded = results.filter((result) => result.status === "fulfilled").map((result) => result.value);
   const failed = results.flatMap((result, i) => (result.status === "rejected" ? [`${list[i].displayName} (${result.reason.message})`] : []));
   try {
-    const { names, entries, fewClaps } = await saveFlashUploads(uploaded, folder);
+    const { names, entries, unsynced } = await saveFlashUploads(uploaded, folder);
     for (const { board, used, firstTag } of uploaded) if (firstTag !== null) rememberUploaded(board.boardId, { firstTag, bytes: used });
     const seconds = Math.round((Date.now() - started) / 1000);
     const problems = uploaded.flatMap(({ board, problems }) => problems.map((problem) => `${board.displayName}: ${problem}`));
@@ -1777,10 +1755,10 @@ async function uploadFlash() {
     setRecStatus([
       names.length ? `Saved ${names.length} session${names.length === 1 ? "" : "s"} (${names.join(", ")}) to ${where} in ${seconds} s.`
         : uploaded.length ? "Nothing new on the boards since the last upload." : "",
-      fewClaps.length ? `Fewer than 2 claps, too few to line up the clocks: ${fewClaps.join(", ")}.` : "",
+      unsynced.length ? `No radio clock pairs, so lined up only to ~20 ms: ${unsynced.join(", ")}.` : "",
       failed.length ? `Failed: ${failed.join(", ")}.` : "",
       problems.length ? `Damaged data skipped: ${problems.join("; ")}.` : "",
-    ].filter(Boolean).join(" "), { bad: Boolean(failed.length || problems.length || fewClaps.length) });
+    ].filter(Boolean).join(" "), { bad: Boolean(failed.length || problems.length || unsynced.length) });
     if (names.length) offerReplay({ entries, folder, session: names.at(-1) });
   } catch (error) {
     setRecStatus(`Save failed: ${error.message}`, { bad: true });
@@ -1790,13 +1768,13 @@ async function uploadFlash() {
 /**
  * Writes each recording session (boards grouped by start) as a session folder, and each board's
  * raw log as read. Returns the session names, what was saved (for Replay) and the boards that
- * heard fewer than 2 claps.
+ * nothing lines their clocks up with (unsyncedBoards()).
  */
 async function saveFlashUploads(uploaded, folder) {
   const groups = groupSessions(uploaded.map(({ board, sessions }) => ({ board, sessions })));
   const stamp = timestamp();
   const entries = [];
-  const fewClaps = [];
+  const unsynced = [];
   for (const group of groups) {
     const manifest = {
       session: group.name,
@@ -1817,8 +1795,8 @@ async function saveFlashUploads(uploaded, folder) {
         accel_g_per_lsb: Math.round(session.start.accelGPerLsb * 1e9) / 1e9,
         counts: {
           imuSamples: session.imu.length,
-          syncMarks: session.events.filter((e) => e.type === "sync").length,
-          buttonEvents: session.events.filter((e) => e.type !== "sync").length,
+          buttonEvents: session.events.filter((e) => e.type === "press" || e.type === "release").length,
+          clockPairs: session.clock.length,
         },
         lost_samples: lostSamples(session),
         dropped_bytes: session.end?.droppedBytes ?? null,
@@ -1829,13 +1807,19 @@ async function saveFlashUploads(uploaded, folder) {
       for (const [file, text] of Object.entries(flashSessionFiles(session))) entries.push(await saveFile(folder, [group.name, boardFolder(board)], file, [text]));
     }
     entries.push(await saveFile(folder, [group.name], "session.json", [JSON.stringify(manifest, null, 2) + "\n"]));
-    for (const board of manifest.boards) if (board.counts.syncMarks < 2) fewClaps.push(`${board.label || board.name} in ${group.name}`);
+    const synced = group.boards.map(({ board, session }) => ({
+      name: board.label || `nrf-controller-${session.start.boardId}`,
+      boardId: session.start.boardId,
+      clockPairs: session.clock.length,
+      clockSources: [...new Set(session.clock.map((pair) => pair.sourceBoard))],
+    }));
+    for (const name of unsyncedBoards(synced)) unsynced.push(`${name} in ${group.name}`);
   }
   // The raw logs too, so nothing is lost if decoding ever needs redoing; named by where they start.
   for (const { board, bytes, offset } of uploaded) {
     if (bytes.length) await saveFile(folder, ["flash_raw"], `${board.boardId}_${stamp}${offset ? `_from${offset}` : ""}.bin`, [bytes]);
   }
-  return { names: groups.map((group) => group.name), entries, fewClaps };
+  return { names: groups.map((group) => group.name), entries, unsynced };
 }
 
 // ---- lights -------------------------------------------------------------------------------
@@ -1986,7 +1970,7 @@ function renderClock() {
   const sources = capable.filter((board) => board.clock.role === "source");
   const select = $("clock-source");
   if (document.activeElement !== select) {
-    const options = [new Option(capable.length ? "None (claps only)" : "No board with clock sync", "")];
+    const options = [new Option(capable.length ? "None" : "No board with clock sync", "")];
     for (const board of capable) options.push(new Option(board.displayName, board.key));
     if (select.options.length !== options.length || [...select.options].some((o, i) => o.value !== options[i].value || o.text !== options[i].text)) {
       select.replaceChildren(...options);
