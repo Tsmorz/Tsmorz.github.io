@@ -16,6 +16,7 @@ import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SER
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
+import { SharedAttempts, withTimeout } from "./attempts.js";
 
 const $ = (id) => document.getElementById(id);
 const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
@@ -887,8 +888,9 @@ function batteryDetail(battery) {
 }
 
 async function sleepBoards(list) {
-  for (const board of list) board.leaving = true;
+  for (const board of list) board.sleeping = true;
   const results = await Promise.allSettled(list.map((board) => board.sleep()));
+  results.forEach((result, i) => result.status === "rejected" && (list[i].sleeping = false));
   const failed = results.filter((result) => result.status === "rejected").length;
   setStatus(failed ? `${failed} board(s) didn't take the sleep command` : `Sleeping ${list.length} board${list.length === 1 ? "" : "s"}: press USER to wake`, { bad: failed > 0 });
 }
@@ -976,21 +978,34 @@ async function addBoard() {
     setStatus(`${device.name} is already connected`);
     return;
   }
-  if (reconnecting.has(device.id)) {
-    setStatus(`Already reconnecting to ${device.name}: wake it or bring it closer`);
-    return;
-  }
+  // Tried until ADD_BOARD_MS: a board just woken, or one the page was already reconnecting (whose
+  // attempt this joins), may take more than one go.
+  const deadline = Date.now() + ADD_BOARD_MS;
   let board;
-  try {
-    board = await connectDevice(device);
-  } catch (error) {
-    // On macOS, Chrome's picker first shows the Mac's saved record of a board it has bonded with,
-    // which it can't open over GATT; the board as scanned replaces it a moment later and works.
-    const hint = /unsupported device/i.test(error.message)
-      ? `Couldn't connect to ${device.name}: that was the Mac's saved record of it. Add board again and wait a moment before picking it`
-      : `Couldn't connect: ${error.message}`;
-    setStatus(hint, { bad: true });
-    return;
+  for (;;) {
+    try {
+      setStatus(`Connecting to ${device.name}… (accept the pairing prompt if one appears)`);
+      board = await connectWithin(device, deadline - Date.now(), setStatus);
+      break;
+    } catch (error) {
+      if (boards.get(device.id)?.connected) {
+        board = boards.get(device.id);
+        break;
+      }
+      // On macOS, Chrome's picker first shows the Mac's saved record of a board it has bonded
+      // with, which it can't open over GATT; the board as scanned replaces it a moment later.
+      const saved = /unsupported device/i.test(error.message);
+      // Only a lost or slow link is worth another go, not a board that answered "no".
+      const transient = !saved && (error.name === "NetworkError" || /timed out/.test(error.message));
+      if (!transient || Date.now() + RECONNECT_PAUSE_MS >= deadline) {
+        setStatus(saved
+          ? `Couldn't connect to ${device.name}: that was the Mac's saved record of it. Add board again and wait a moment before picking it`
+          : transient ? `Couldn't connect to ${device.name}: ${error.message}. Wake it (USER) or bring it closer, then Add board`
+            : `Couldn't connect to ${device.name}: ${error.message}`, { bad: true });
+        return;
+      }
+      await sleepMs(RECONNECT_PAUSE_MS);
+    }
   }
   setStatus(`Connected to ${board.displayName}`);
   select(board);
@@ -1034,20 +1049,29 @@ async function connectDevice(device, onStatus = setStatus) {
   return board;
 }
 
-/** connectDevice(), given up after `ms`: the attempt is then abandoned. */
-async function connectWithin(device, ms) {
-  let timer;
-  try {
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error("timed out")), ms);
-    });
-    return await Promise.race([connectDevice(device, () => {}), timeout]);
-  } catch (error) {
-    device.gatt.disconnect();
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+// Add board's time for one board: long enough to accept macOS's pairing prompt (it gives up after
+// 30 s), with a retry or two for a board that was asleep.
+const ADD_BOARD_MS = 45000;
+const connectAttempts = new SharedAttempts();
+
+/**
+ * connectDevice(), given up after `ms`: the attempt is then abandoned. One attempt per board at a
+ * time (attempts.js): asked while one is under way (Add board during a reconnect), this shares
+ * it, with that attempt's time limit.
+ */
+function connectWithin(device, ms, onStatus = () => {}) {
+  return connectAttempts.run(device.id, async () => {
+    const connecting = connectDevice(device, onStatus);
+    try {
+      return await withTimeout(connecting, ms);
+    } catch (error) {
+      device.gatt.disconnect();
+      // Let the abandoned attempt clean up before the next one starts, or its clean-up could
+      // disconnect that one; but not for ever, should Chrome never settle it.
+      await Promise.race([connecting.catch(() => {}), sleepMs(RECONNECT_PAUSE_MS)]);
+      throw error;
+    }
+  });
 }
 
 function onDisconnected(board) {
@@ -1061,6 +1085,9 @@ function onDisconnected(board) {
     setStatus(`${board.displayName} restarting into v${job.version}…`);
   } else if (board.leaving || job?.active) {
     setStatus(`${board.displayName} disconnected`);
+  } else if (board.sleeping || board.sleptOnHold(performance.timeOrigin + performance.now())) {
+    setStatus(`${board.displayName} is asleep: press its USER button and it reconnects`);
+    keepConnected(board.device, board.displayName, { untilAwake: true });
   } else {
     setStatus(`${board.displayName} dropped out: reconnecting…`, { bad: Boolean(member) });
     keepConnected(board.device, board.displayName);
@@ -1071,18 +1098,19 @@ function onDisconnected(board) {
 
 // ---- reconnecting -------------------------------------------------------------------------
 // A board that drops out (out of range, a flat battery, a radio hiccup) is tried again for
-// RECONNECT_WINDOW_MS, or for as long as a live recording it's in runs. Disconnecting or sleeping
-// it from the page doesn't count. Chrome needs no click to reconnect a board it already knows.
+// RECONNECT_WINDOW_MS, or for as long as a live recording it's in runs. One put to sleep (from the
+// page, or by a USER hold) is waited for while the page is open, so it's back once woken; one
+// disconnected with ✕ isn't. Chrome needs no click to reconnect a board it already knows.
 const RECONNECT_WINDOW_MS = 60000;
 const RECONNECT_PAUSE_MS = 2000;
 const reconnecting = new Set(); // device ids
 
-async function keepConnected(device, name, { quiet = false } = {}) {
+async function keepConnected(device, name, { quiet = false, untilAwake = false } = {}) {
   if (reconnecting.has(device.id)) return;
   reconnecting.add(device.id);
   const until = Date.now() + RECONNECT_WINDOW_MS;
   const wanted = () => !boards.get(device.id)?.connected && !firmwareJobs.get(device.id)?.active &&
-    (Date.now() < until || (recorder.active && recorder.members.has(device.id)));
+    (untilAwake || Date.now() < until || (recorder.active && recorder.members.has(device.id)));
   try {
     while (wanted()) {
       try {
@@ -2380,7 +2408,7 @@ $("usb-flash").addEventListener("click", async () => {
     const name = `nrf-controller-${boardId}`;
     setUsbStatus(`✓ ${name} runs v${usbImages.firmware.image.versionText}${wasLocked ? " (it was locked: the erase unlocked it)" : ""}. Add it over Bluetooth.`);
     $("usb-repair").hidden = false;
-    setStatus(`${name} flashed over USB: pair it over Bluetooth again`);
+    setStatus(`${name} flashed over USB: pair it over Bluetooth again. Until it has been unplugged (and any battery disconnected) once, it wakes straight back up from sleep`);
     await keepUsbImages(usbImages.bootloader, usbImages.firmware);
     renderUsbFlash();
   } catch (error) {

@@ -36,6 +36,11 @@ function savedLabel(boardId) {
   }
 }
 
+// A USER hold this long puts the board to sleep when it's let go (POWER_SLEEP_HOLD_MS in
+// src/power/power.h; firmware-consistency test). The disconnect follows within moments.
+export const SLEEP_HOLD_US = 5000 * 1000;
+const HOLD_SLEEP_DISCONNECT_MS = 5000;
+
 export class Board extends EventTarget {
   /**
    * `continueFrom`: this device's previous connection, when reconnecting. Its time unwrapping and
@@ -91,6 +96,8 @@ export class Board extends EventTarget {
     this.atRest = false;
     this.userPressed = false;
     this.userPressHostMs = 0;
+    this.userPressUs = null; // board time of the latest press
+    this.holdReleased = null; // { heldUs, hostMs } of the latest release
     this.envelope = [];
     this.envelopeEndUs = null;
     this.spectrum = []; // the last ENVELOPE_SECONDS of { tUs, levels } frames, levels in dBFS per bin
@@ -436,6 +443,15 @@ export class Board extends EventTarget {
     this.changed();
   }
 
+  /**
+   * Whether a disconnect at `hostMs` is the board going to sleep on a USER hold: released after
+   * SLEEP_HOLD_US (power.h), just before. It sleeps on the release.
+   */
+  sleptOnHold(hostMs) {
+    const release = this.holdReleased;
+    return Boolean(release) && release.heldUs >= SLEEP_HOLD_US && hostMs - release.hostMs < HOLD_SLEEP_DISCONNECT_MS;
+  }
+
   /** Puts the board to sleep; it disconnects at once, and wakes on a USER press. */
   sleep() {
     return this.write(this.chars.power, encodeSleep());
@@ -572,8 +588,11 @@ export class Board extends EventTarget {
       this.userPressed = event.type === "press";
       if (this.userPressed) {
         this.userPressHostMs = hostMs;
+        this.userPressUs = unwrapped.tUs;
         this.markSeen("button");
         this.dispatchEvent(new Event("press"));
+      } else if (this.userPressUs !== null) {
+        this.holdReleased = { heldUs: unwrapped.tUs - this.userPressUs, hostMs };
       }
     }
     this.changed();
