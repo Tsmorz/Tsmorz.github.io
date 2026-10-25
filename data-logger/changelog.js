@@ -8,12 +8,45 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-25-add-board",
+    date: "2026-10-25",
+    title: "Adding and waking boards without reloading the page",
+    items: [
+      "A board put to sleep, from the page or by holding USER, reconnects by itself once you wake it, for as long as the page is open.",
+      "Add board connects a board the page is still reconnecting (just after the page opens, or after the board dropped out) instead of saying it's already reconnecting.",
+      "Add board keeps trying for up to 45 s, enough to accept the pairing prompt, rather than waiting for ever on a connection that hangs; it then says what went wrong.",
+    ],
+  },
+  {
+    id: "2026-10-25-voice-service",
+    date: "2026-10-25",
+    title: "Voice clips from up-to-date boards",
+    items: [
+      "Settings › Voice no longer says \"This board's firmware can't capture clips\" for a board that can: the page wasn't asking the browser for the board's voice service. A board the browser reconnects by itself keeps its old permission, so add it once more with Add board.",
+    ],
+  },
+  {
+    id: "2026-10-25-radio-clock-only",
+    date: "2026-10-25",
+    title: "Boards are lined up by the radio clock alone",
+    firmware: "1.2.0",
+    items: [
+      "Claps no longer line up the boards' clocks, and the boards no longer detect them: choose a clock source (Settings › Clock sync) before recording several boards. Saving warns about any board that recorded no clock pairs.",
+      "Taps and double taps on a board are no longer detected or recorded. To mark a moment, say \"mark this moment\" on a board with voice commands.",
+      "Gone with them: the Clap and Tap lamps, the Boards panel's Claps column, the clap lines on the Microphone and Replay plots, and Replay's Claps column. Recordings made before still open, with their claps and taps in events.csv.",
+    ],
+  },
+  {
     id: "2026-10-25-imu-stream",
     date: "2026-10-25",
-    title: "The IMU stream recovers from a hiccup",
-    firmware: "next",
+    title: "The full IMU rate over Bluetooth again",
+    firmware: "1.2.0",
     items: [
-      "After a moment the link fell behind, a board could stay stuck sending a fraction of its IMU samples (~15 Hz instead of 208) until it was restarted. It now catches up.",
+      "Since v1.1.0 a board sent only a fraction of its IMU samples live (15 to 35 Hz instead of 208), because its Bluetooth packets stayed at their smallest size. They're full size again, and the board list reads ~208 Hz with nothing lost.",
+      "A board whose link falls behind for a moment catches up instead of staying slow until restarted.",
+      "With a board's mouse on, its mouse reports go first: the cursor answers in a connection interval or two instead of ~300 ms, and the live data loses samples while you're pointing (a flash recording keeps everything).",
+      "With a board's mouse on, its mouse reports go out one at a time: the next one carries all the motion since, in the next connection event, rather than queueing behind earlier ones.",
+      "Latency: the percentiles now reach 128 ms before they pile up at the maximum.",
     ],
   },
   {
@@ -23,6 +56,8 @@ export const CHANGELOG = [
     items: [
       "Dragging the Orientation view sideways turns it the way you drag.",
       "The Boards panel starts wider (double-click the seam beside it to go back to this after resizing).",
+      "Motion: each live value sits right after its own axis label, rather than nearer the next one.",
+      "Recording: no \"Ready.\" under Record; the button lighting up says it.",
       "The IMU rate in the board list is averaged over five seconds, so it holds steady near 208 Hz instead of jumping about with the link; samples actually lost still show beside it.",
     ],
   },
@@ -40,7 +75,7 @@ export const CHANGELOG = [
     id: "2026-10-24-mouse-off",
     date: "2026-10-24",
     title: "The mouse starts off",
-    firmware: "next",
+    firmware: "1.2.0",
     items: [
       "A new or freshly flashed board no longer moves the cursor: turn Mouse on in Settings for the board you want to point with. Boards that are only recording stay quiet.",
     ],
