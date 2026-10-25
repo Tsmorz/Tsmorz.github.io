@@ -810,6 +810,10 @@ function connectedSummary() {
   return count;
 }
 
+// Drawn, not typed: Android Chrome showed the ✕ glyph as nothing.
+const SLEEP_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path transform="translate(1.3 -1.3)" d="M5.6 5.6A9 9 0 0 0 18.4 18.4A12 12 0 0 1 5.6 5.6Z"/></svg>`;
+const DISCONNECT_ICON = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+
 function buildRow(board) {
   const row = document.createElement("tr");
   row.innerHTML = `
@@ -821,12 +825,12 @@ function buildRow(board) {
     <td class="num flash"></td>
     <td class="num fw"></td>
     <td><span class="chip user-lamp" title="Lit while USER is held" aria-label="USER button"></span></td>
-    <td class="actions"><button type="button" class="sleep" title="Sleep (press USER on the board to wake it)" aria-label="Sleep">⏾</button><button type="button" class="drop" title="Disconnect" aria-label="Disconnect">✕</button></td>`;
+    <td class="actions"><button type="button" class="sleep" title="Sleep (press USER on the board to wake it)" aria-label="Sleep">${SLEEP_ICON}</button><button type="button" class="disconnect" title="Disconnect" aria-label="Disconnect">${DISCONNECT_ICON}</button></td>`;
   const input = row.querySelector("input");
   input.value = board.label;
   input.addEventListener("click", (event) => event.stopPropagation());
   input.addEventListener("change", () => board.setLabel(input.value));
-  row.querySelector(".drop").addEventListener("click", (event) => {
+  row.querySelector(".disconnect").addEventListener("click", (event) => {
     event.stopPropagation();
     board.leaving = true;
     board.disconnect();

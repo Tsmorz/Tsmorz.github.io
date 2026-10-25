@@ -8,6 +8,14 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-25-row-icons",
+    date: "2026-10-25",
+    title: "Sleep and disconnect buttons on Android",
+    items: [
+      "Each board's disconnect button shows its ✕ in Chrome on Android, where it was blank, and both it and the sleep button are square on a touchscreen instead of tall and narrow.",
+    ],
+  },
+  {
     id: "2026-10-25-add-board",
     date: "2026-10-25",
     title: "Adding and waking boards without reloading the page",
