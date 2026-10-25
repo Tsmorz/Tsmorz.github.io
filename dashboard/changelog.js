@@ -15,6 +15,8 @@ export const CHANGELOG = [
     items: [
       "Since v1.1.0 a board sent only a fraction of its IMU samples live (15 to 35 Hz instead of 208), because its Bluetooth packets stayed at their smallest size. They're full size again, and the board list reads ~208 Hz with nothing lost.",
       "A board whose link falls behind for a moment catches up instead of staying slow until restarted.",
+      "With a board's mouse on, its mouse reports go first: the cursor answers in a connection interval or two instead of ~300 ms, and the live data loses samples while you're pointing (a flash recording keeps everything).",
+      "Latency: the percentiles now reach 128 ms before they pile up at the maximum.",
     ],
   },
   {
