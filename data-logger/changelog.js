@@ -8,6 +8,17 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-26-nfc-url",
+    date: "2026-10-26",
+    title: "Hold a phone to a board to open this page",
+    firmware: "next",
+    items: [
+      "A board with an NFC antenna fitted offers an Android phone held to it this page's address, and its LED flashes white. The page then reads Connect and the board's ID, and the browser prompt lists only that board.",
+      "Holding the phone to a sleeping board wakes it. If nothing connects within a minute, it goes back to sleep.",
+      "The XIAO doesn't come with an antenna: it needs a small 13.56 MHz coil soldered to its two NFC pads.",
+    ],
+  },
+  {
     id: "2026-10-25-row-icons",
     date: "2026-10-25",
     title: "Sleep and disconnect buttons on Android",

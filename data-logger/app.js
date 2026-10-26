@@ -17,6 +17,7 @@ import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
 import { SharedAttempts, withTimeout } from "./attempts.js";
+import { boardName, tappedBoardId, withoutTappedBoard } from "./tapped.js";
 
 const $ = (id) => document.getElementById(id);
 const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
@@ -956,6 +957,22 @@ function select(board) {
   renderLatency();
 }
 
+// The board whose NFC tag opened the page (tapped.js), until it connects or its picker is
+// dismissed: Add board becomes Connect XXXX and the picker shows only that board.
+let tappedBoard = tappedBoardId(location.search);
+
+function showTappedBoard() {
+  $("connect").textContent = tappedBoard ? `Connect ${tappedBoard}` : "Add board";
+  if (tappedBoard) setStatus(`Opened from board ${tappedBoard}'s tag: press Connect ${tappedBoard}`);
+}
+
+function forgetTappedBoard() {
+  if (!tappedBoard) return;
+  tappedBoard = null;
+  history.replaceState(history.state, "", withoutTappedBoard(location.href));
+  showTappedBoard();
+}
+
 async function addBoard() {
   if (!navigator.bluetooth) {
     // Chrome hides Web Bluetooth outside a secure context, so a LAN address (http://192.168...) has none.
@@ -966,10 +983,14 @@ async function addBoard() {
     return;
   }
   let device;
+  // Asked for once: dismissing the picker goes back to Add board, so a board that never shows up
+  // can't leave the button stuck on it.
+  const only = tappedBoard;
+  forgetTappedBoard();
   try {
-    setStatus("Choose a board in the browser prompt…");
+    setStatus(only ? `Choose ${boardName(only)} in the browser prompt…` : "Choose a board in the browser prompt…");
     device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "nrf-controller" }],
+      filters: [only ? { name: boardName(only) } : { namePrefix: "nrf-controller" }],
       // Chrome only lets the page reach the services named here (firmware-consistency test).
       optionalServices: [DATA_SERVICE, TELEMETRY_SERVICE, LOG_SERVICE, KEYWORD_SERVICE, SMP_SERVICE, "device_information"],
     });
@@ -1046,6 +1067,11 @@ async function connectDevice(device, onStatus = setStatus) {
     // Also abandons a connection attempt still in progress.
     device.gatt.disconnect();
     throw error;
+  }
+  // A board the page reconnected by itself may be the one whose tag opened it.
+  if (tappedBoard && board.boardId === tappedBoard) {
+    forgetTappedBoard();
+    select(board);
   }
   if (recorder.active && member && recorder.members.get(device.id) === member) resumeMember(member, board);
   else if (recorder.active && !recorder.members.has(device.id)) joinRecording(board, { late: true });
@@ -2488,4 +2514,5 @@ $("replay-key").addEventListener("click", () => showReplay($("replay").hidden));
 renderBoards();
 renderMouse();
 renderLatency();
+showTappedBoard();
 reconnectKnownBoards();
