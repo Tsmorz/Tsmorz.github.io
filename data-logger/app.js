@@ -3,8 +3,8 @@ import { fitCanvas, hairline } from "./canvas.js";
 import { describeLatency, resultRow } from "./latency.js";
 import { dragSeam, gridTracks, parseSavedLayout, toFractions } from "./layout.js";
 import { headingChangeDegrees, quatToEulerDegrees, removeYaw, rotateVector } from "./pose.js";
-import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, lostSamples, startsWithSession } from "./flashlog.js";
-import { BoardRecording, LIVE_FILES, RADIO_CLOCK_COLUMNS, clockSources, liveFileParts, parseEventRows, safeName, unsyncedBoards } from "./recording.js";
+import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, holdsSameRecording, lostSamples, startsWithSession } from "./flashlog.js";
+import { BoardRecording, LIVE_FILES, RADIO_CLOCK_COLUMNS, clockSources, competingClockSources, liveFileParts, parseEventRows, safeName, unsyncedBoards } from "./recording.js";
 import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
 import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
@@ -30,8 +30,9 @@ const boards = new Map(); // by Web Bluetooth device id
 let selected = null;
 // A live recording: its boards (members, by device id) and where their rows are spooled. See
 // "recording live" below.
+// `retired`: the earlier parts of boards that restarted mid-recording (startPart()), still saved.
 const recorder = {
-  active: false, startedAt: null, members: new Map(), dirHandle: null,
+  active: false, startedAt: null, members: new Map(), retired: [], dirHandle: null,
   spool: null, spoolId: null, flushTimer: null, flushing: Promise.resolve(), unflushed: [],
 };
 
@@ -1062,8 +1063,8 @@ async function connectDevice(device, onStatus = setStatus) {
     board.row?.remove();
     board.recording = null;
     // Whatever arrived before it failed is in the recording: the next attempt goes on from there.
-    // (Data only flows once the board info has been read.)
-    if (member && board.info) member.lastBoard = board;
+    // (Data only flows once the board info has been read; none did if it was held back.)
+    if (member && board.info && board.recording) member.lastBoard = board;
     // Also abandons a connection attempt still in progress.
     device.gatt.disconnect();
     throw error;
@@ -1073,9 +1074,11 @@ async function connectDevice(device, onStatus = setStatus) {
     forgetTappedBoard();
     select(board);
   }
-  if (recorder.active && member && recorder.members.get(device.id) === member) resumeMember(member, board);
-  else if (recorder.active && !recorder.members.has(device.id)) joinRecording(board, { late: true });
-  else board.recording = null; // the recording stopped while it connected
+  if (recorder.active && member && recorder.members.get(device.id) === member) {
+    if (board.restarted) startPart(member, board);
+    else resumeMember(member, board);
+  } else if (recorder.active && !recorder.members.has(device.id)) joinRecording(board, { late: true });
+  else if (memberOf(board)?.board !== board) board.release(null); // the recording stopped while it connected
   return board;
 }
 
@@ -1395,14 +1398,19 @@ function holdLock(name) {
 }
 
 const memberOf = (board) => (recorder.active ? recorder.members.get(board.key) : undefined);
+// Every part of the recording, for spooling and saving: earlier parts first, then each board's
+// current one, so session.json lists a board's parts in order.
+const allMembers = () => [...recorder.retired, ...recorder.members.values()];
 const isRecording = (board) => memberOf(board)?.board === board;
 const gapCounts = (board) => ({ imu: board.imuGaps, envelope: board.envelopeGaps, events: board.eventGaps });
 const NO_GAPS = { imu: 0, envelope: 0, events: 0 };
 
 // What session.json says about a board, kept with the spool so a recovered recording has it too.
-function memberMeta(board, late) {
+// A later `part` of a board that restarted has its own folder: its clock began again.
+function memberMeta(board, late, part) {
   return {
-    folder: boardFolder(board),
+    folder: part ? `${boardFolder(board)}_part${part}` : boardFolder(board),
+    ...(part && { part }),
     board_id: board.boardId,
     name: `nrf-controller-${board.boardId}`,
     label: board.label,
@@ -1418,19 +1426,27 @@ function memberMeta(board, late) {
 }
 
 function saveMembers() {
-  const members = Object.fromEntries([...recorder.members].map(([key, member]) => [key, member.meta]));
+  const members = Object.fromEntries(allMembers().map((member) => [member.spoolKey, member.meta]));
   return recorder.spool.update(recorder.spoolId, { members }).catch(() => { /* written again at the next change */ });
 }
 
-// Adds `board` to the running recording: at Record, or when it connects during one (`late`).
-function joinRecording(board, { late = false } = {}) {
+// Adds `board` to the running recording: at Record, or when it connects during one (`late`), or as
+// a new `part` of it (startPart()). Spooled under the device id, and a later part under its own.
+function joinRecording(board, { late = false, part = null } = {}) {
   const member = {
-    board, lastBoard: board, recording: new BoardRecording(board.info), meta: memberMeta(board, late),
-    gaps: { ...NO_GAPS }, gapBase: gapCounts(board),
+    board, lastBoard: board, recording: new BoardRecording(board.info), meta: memberMeta(board, late, part),
+    gaps: { ...NO_GAPS }, gapBase: gapCounts(board), part, spoolKey: part ? `${board.key}#part${part}` : board.key,
   };
-  board.recording = member.recording;
   recorder.members.set(board.key, member);
+  board.release(member.recording);
   saveMembers();
+}
+
+// A member back after restarting (it slept and woke, or reset) carries on in a new part, in a
+// folder of its own: its clock and counts began again, so its data can't go on in the old files.
+function startPart(member, board) {
+  recorder.retired.push(member);
+  joinRecording(board, { late: true, part: (member.part ?? 1) + 1 });
 }
 
 // A member back after dropping out. connectDevice gave the new connection its recording and last
@@ -1457,8 +1473,8 @@ function detachMember(member) {
 function flushRecording() {
   recorder.flushing = recorder.flushing.then(async () => {
     const chunks = recorder.unflushed;
-    for (const [key, member] of recorder.members) {
-      for (const [file, text] of Object.entries(member.recording.takePending())) chunks.push({ member: key, file, text });
+    for (const member of allMembers()) {
+      for (const [file, text] of Object.entries(member.recording.takePending())) chunks.push({ member: member.spoolKey, file, text });
     }
     if (!chunks.length) return;
     try {
@@ -1487,7 +1503,7 @@ async function startRecording() {
     setRecStatus(`Couldn't start: ${error.message}`, { bad: true });
     return;
   }
-  Object.assign(recorder, { active: true, startedAt, members: new Map(), spool, spoolId: record.id, unflushed: [], releaseLock: holdLock(spoolLock(record.id)) });
+  Object.assign(recorder, { active: true, startedAt, members: new Map(), retired: [], spool, spoolId: record.id, unflushed: [], releaseLock: holdLock(spoolLock(record.id)) });
   for (const board of members) joinRecording(board);
   recorder.flushTimer = setInterval(flushRecording, FLUSH_MS);
   offerReplay(null);
@@ -1495,10 +1511,17 @@ async function startRecording() {
   setRecStatus(`Recording ${members.length} board${members.length === 1 ? "" : "s"}${notes[0]}.${notes[1]}${clockSourceNote(members)}`);
 }
 
-// Several boards are only lined up closely by the radio clock: says so if nothing is a source.
+// Several boards are only lined up closely by the radio clock: says so if nothing is a source, or
+// if more than one is.
 function clockSourceNote(list) {
   if (list.length < 2) return "";
-  const synced = [...boards.values()].some((board) => board.connected && (board.clock?.role === "source" || board.clock?.state === "synced"));
+  const connected = [...boards.values()].filter((board) => board.connected);
+  const sources = competingClockSources(connected.map((board) => ({ name: board.displayName, clock: board.clock })));
+  if (sources.length) {
+    return ` ${sources.slice(0, -1).join(", ")} and ${sources.at(-1)} are all set as the clock source (Settings › Clock sync): ` +
+      "keep one, or the boards split between them and can't all be lined up closely.";
+  }
+  const synced = connected.some((board) => board.clock?.role === "source" || board.clock?.state === "synced");
   return synced ? "" : " No clock source is set (Settings › Clock sync), so these boards can only be lined up to ~20 ms.";
 }
 
@@ -1519,7 +1542,7 @@ async function stopRecording() {
   recorder.active = false;
   $("rec-elapsed").textContent = "";
   await flushRecording();
-  const members = Object.fromEntries([...recorder.members].map(([key, member]) => [key, { ...member.meta, lost_in_recording: member.gaps }]));
+  const members = Object.fromEntries(allMembers().map((member) => [member.spoolKey, { ...member.meta, lost_in_recording: member.gaps }]));
   const unflushed = recorder.unflushed;
   try {
     await recorder.spool.update(recorder.spoolId, { stopped: stopped.toISOString(), members });
@@ -1528,6 +1551,7 @@ async function stopRecording() {
   }
   const record = { id: recorder.spoolId, session: $("session").value, started: recorder.startedAt.toISOString(), stopped: stopped.toISOString(), members };
   recorder.members = new Map();
+  recorder.retired = [];
   recorder.unflushed = [];
   recorder.releaseLock();
   setRecStatus("Saving…");
@@ -1833,9 +1857,12 @@ async function saveFlashUploads(uploaded, folder) {
   const stamp = timestamp();
   const entries = [];
   const unsynced = [];
+  const names = [];
   for (const group of groups) {
+    const name = await sessionFolderName(folder, group);
+    names.push(name);
     const manifest = {
-      session: group.name,
+      session: name,
       source: "flash",
       format: "docs/data-collection.md",
       uploaded: new Date().toISOString(),
@@ -1862,22 +1889,47 @@ async function saveFlashUploads(uploaded, folder) {
       })),
     };
     for (const { board, session } of group.boards) {
-      for (const [file, text] of Object.entries(flashSessionFiles(session))) entries.push(await saveFile(folder, [group.name, boardFolder(board)], file, [text]));
+      for (const [file, text] of Object.entries(flashSessionFiles(session))) entries.push(await saveFile(folder, [name, boardFolder(board)], file, [text]));
     }
-    entries.push(await saveFile(folder, [group.name], "session.json", [JSON.stringify(manifest, null, 2) + "\n"]));
+    entries.push(await saveFile(folder, [name], "session.json", [JSON.stringify(manifest, null, 2) + "\n"]));
     const synced = group.boards.map(({ board, session }) => ({
       name: board.label || `nrf-controller-${session.start.boardId}`,
       boardId: session.start.boardId,
       clockPairs: session.clock.length,
       clockSources: [...new Set(session.clock.map((pair) => pair.sourceBoard))],
     }));
-    for (const name of unsyncedBoards(synced)) unsynced.push(`${name} in ${group.name}`);
+    for (const boardName of unsyncedBoards(synced)) unsynced.push(`${boardName} in ${name}`);
   }
   // The raw logs too, so nothing is lost if decoding ever needs redoing; named by where they start.
   for (const { board, bytes, offset } of uploaded) {
     if (bytes.length) await saveFile(folder, ["flash_raw"], `${board.boardId}_${stamp}${offset ? `_from${offset}` : ""}.bin`, [bytes]);
   }
-  return { names: groups.map((group) => group.name), entries, unsynced };
+  return { names, entries, unsynced };
+}
+
+/**
+ * The folder to save `group` in: its own name, unless the save folder already has one by that name
+ * holding other recordings (holdsSameRecording()), then the name with _2, _3… Uploading the same
+ * recording again writes over its folder, as before. Downloads need nothing: the browser renames.
+ */
+async function sessionFolderName(folder, group) {
+  if (!folder) return group.name;
+  for (let copy = 1; ; copy++) {
+    const name = copy === 1 ? group.name : `${group.name}_${copy}`;
+    let existing;
+    try {
+      existing = await folder.getDirectoryHandle(name);
+    } catch {
+      return name; // not there yet
+    }
+    let manifest = null;
+    try {
+      manifest = JSON.parse(await (await (await existing.getFileHandle("session.json")).getFile()).text());
+    } catch {
+      /* a folder without a readable session.json isn't one of ours to write over */
+    }
+    if (manifest && holdsSameRecording(manifest, group)) return name;
+  }
 }
 
 // ---- lights -------------------------------------------------------------------------------
@@ -2500,7 +2552,7 @@ $("latency-copy").addEventListener("click", async () => {
 // The Replay key swaps the live panels for a recorded session read back from its folder
 // (replay-view.js). Boards stay connected and recordings carry on underneath.
 initReplay({ getColors: () => colors });
-initVoice({ getBoard: () => selected, isRecording: () => recorder.active, getColors: () => colors });
+initVoice({ getBoard: () => selected, getBoards: () => [...boards.values()], isRecording: () => recorder.active, getColors: () => colors });
 initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
   $("replay").hidden = !show;

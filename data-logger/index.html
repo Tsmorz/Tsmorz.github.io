@@ -390,9 +390,17 @@
   .voice-counts li.current { color: var(--signal-ink); }
   .voice-background { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-strong); }
   #voice-bg-record.recording { background: var(--pressed-bg); color: var(--pressed-ink); }
-  /* Settings › Voice: which commands the selected board obeys, and what it has heard lately. */
+  /* Settings › Voice: the board's model, which actions it obeys (by its phrases), what it heard lately. */
+  .voice-model { margin: 8px 0 0; font: 11.5px var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
   .voice-obeyed { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin-top: 8px; font-size: 12px; }
-  .voice-obeyed label { display: flex; align-items: center; gap: 6px; }
+  .voice-obeyed label { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .voice-obeyed label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .voice-obeyed label.unused { color: var(--text-2); }
+  /* The words dialog: one row per phrase, what it does, and the folder its clips go in. */
+  .words-list { list-style: none; margin: 12px 0 8px; padding: 0; display: grid; gap: 6px; }
+  .words-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
+  .words-list li .num { grid-column: 1 / -1; margin-top: -4px; font-size: 11px; color: var(--text-2); }
+  .words-problems { list-style: none; margin: 8px 0; padding: 0; font-size: 12px; }
   .voice-heard { list-style: none; margin: 6px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
   .voice-heard li { display: flex; justify-content: space-between; gap: 12px; }
   #fw-status { font-size: 12.5px; }
@@ -693,12 +701,16 @@
     <h2>Voice <span class="muted">saved on the board</span><button type="button" class="info" popovertarget="voice-info" aria-label="About voice commands"></button></h2>
     <div class="row">
       <button id="voice-listen" type="button" role="switch" aria-checked="false" disabled>Listening</button>
-      <button id="voice-open">Clips and background audio…</button>
+      <button id="voice-model-upload" disabled title="A .voice file from task training:export, to every connected board">Upload model…</button>
+      <button id="voice-model-remove" disabled title="Erase this board's model: it stops listening">Remove</button>
+      <input type="file" id="voice-model-file" accept=".voice" hidden aria-label="Voice model">
     </div>
-    <div class="voice-obeyed" id="voice-obeyed" role="group" aria-label="Commands this board obeys"></div>
+    <p class="voice-model" id="voice-model"></p>
+    <div class="voice-obeyed" id="voice-obeyed" role="group" aria-label="Actions this board obeys"></div>
     <p class="hint" id="voice-settings-status">Connect a board to set up its voice commands.</p>
     <ul class="voice-heard" id="voice-heard"></ul>
-    <div class="info-pop" id="voice-info" popover><p>Every board in earshot hears every command, so each board obeys only the ones ticked here. "Capture complete" and "power down now" act only when said twice within 4 s; the LED blinks amber after the first. Every command heard is recorded as an event, acted on or not, so false triggers show in the data.</p><p>A board needs firmware built with a trained model to listen: until then, record clips and background audio to train one. See <code>docs/voice-commands.md</code>.</p></div>
+    <div class="row"><button id="voice-open">Words, clips and background audio…</button></div>
+    <div class="info-pop" id="voice-info" popover><p>The words a board listens for come with its model, so new words or a better model are an upload, not a firmware update: choose the words and record clips under Words, clips and background audio, train and export (<code>docs/voice-commands.md</code>), then Upload model. It goes to every connected board, which stops listening for the few seconds it takes.</p><p>Every board in earshot hears every command, so each board obeys only the actions ticked here. Stopping a recording and sleeping act only when said twice within 4 s; the LED blinks amber after the first. Every command heard is recorded as an event, acted on or not, so false triggers show in the data.</p></div>
   </section>
   <section>
     <h2>Firmware<button type="button" class="info" popovertarget="firmware-info" aria-label="About firmware updates"></button></h2>
@@ -782,6 +794,7 @@
     <div class="row" style="margin-top:12px">
       <label>Speaker <input type="text" id="voice-speaker" size="10" placeholder="your name" title="Goes in each clip's file name, so training can score each voice"></label>
       <label>Label <select id="voice-label"></select></label>
+      <button id="voice-words" title="The phrases and what each does, saved in the folder for training">Words…</button>
       <span class="muted" id="voice-does"></span>
     </div>
     <p class="voice-say" id="voice-say"></p>
@@ -802,6 +815,25 @@
       <button id="voice-bg-record">Record background audio</button>
       <span class="muted" id="voice-bg-status">Long stretches of talk, music or a lab with no commands in them, to count false triggers against. Saved into background/.</span>
     </div>
+  </div>
+</dialog>
+
+<dialog id="words-dialog" aria-labelledby="words-title">
+  <div class="dialog-head"><h2 id="words-title">Words <span class="muted">what boards listen for</span></h2>
+    <button type="button" id="words-close" aria-label="Close">✕</button></div>
+  <div class="dialog-body">
+    <div class="row"><label>Name <input type="text" id="words-name" size="18" placeholder="lab words" title="Shown on each board once its model is uploaded"></label></div>
+    <ol class="words-list" id="words-list" aria-label="Phrases"></ol>
+    <div class="row">
+      <button id="words-add">Add phrase</button>
+      <button id="words-default">Default words</button>
+    </div>
+    <ul class="words-problems" id="words-problems"></ul>
+    <div class="row">
+      <button class="primary" id="words-save">Save</button>
+      <span class="muted" id="words-status"></span>
+    </div>
+    <p class="hint">Saved as vocabulary.json in the clips folder, where training reads it. Pick phrases of a few syllables that share no word and don't come up in ordinary talk. A phrase whose words change is a new label: record its clips afresh. Then train, export, and upload the model from Settings › Voice: no firmware update.</p>
   </div>
 </dialog>
 

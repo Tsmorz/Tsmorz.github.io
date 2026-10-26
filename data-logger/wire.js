@@ -30,20 +30,31 @@ export const LOG_STATUS = "6f524c04-0003-4a3c-9d21-1122334455aa";
 export const LOG_DATA = "6f524c04-0004-4a3c-9d21-1122334455aa";
 export const LOG_VERSION = 1;
 export const LOG_STATES = ["idle", "recording", "erasing", "reading", "full", "error"];
-// Keyword clips for training voice commands (src/keyword/keyword_service.c; formats in
-// src/keyword_wire.h, KEYWORD_WIRE_VERSION).
+// Voice commands: clips to train on, the board's voice settings and its uploaded voice model
+// (src/keyword/keyword_service.c; formats in src/keyword_wire.h, KEYWORD_WIRE_VERSION).
 export const KEYWORD_SERVICE = "6f524c05-0001-4a3c-9d21-1122334455aa";
 export const KEYWORD_COMMAND = "6f524c05-0002-4a3c-9d21-1122334455aa";
 export const KEYWORD_CLIP = "6f524c05-0003-4a3c-9d21-1122334455aa";
 export const KEYWORD_SETTINGS = "6f524c05-0004-4a3c-9d21-1122334455aa";
 export const KEYWORD_AUDIO = "6f524c05-0005-4a3c-9d21-1122334455aa";
-// The voice model's labels, in its output order (src/voice_commands.h, training/labels.py:
-// tests/test_training_labels.py checks all three agree), and what a keyword event says was done.
-export const VOICE_LABELS = [
-  "_silence", "_unknown", "pointer_online", "freeze_cursor", "begin_recording", "capture_complete", "power_down_now", "mark_this_moment",
-];
-export const VOICE_COMMANDS = VOICE_LABELS.slice(2);
+export const KEYWORD_MODEL = "6f524c05-0006-4a3c-9d21-1122334455aa";
+export const KEYWORD_VOCABULARY = "6f524c05-0007-4a3c-9d21-1122334455aa";
+// Everything a voice command can do, in the order of src/voice_commands.h's enum voice_action,
+// whose codes start at 2 (training/vocabulary.py's ACTIONS: tests check all three agree). Which
+// phrase does which is the uploaded model's business.
+export const VOICE_ACTIONS = ["mouse_on", "mouse_off", "record_start", "record_stop", "sleep", "mark"];
+const FIRST_ACTION_CODE = 2;
+export const voiceActionName = (code) => VOICE_ACTIONS[code - FIRST_ACTION_CODE] ?? null;
 export const VOICE_OUTCOMES = ["done", "say again", "not this board's", "refused"];
+// src/keyword_wire.h's enum keyword_model_state, and src/voice_package.h's enum voice_package_result.
+export const MODEL_STATES = ["none", "loading", "ready", "receiving", "saving", "failed"];
+export const MODEL_RESULTS = [
+  "ok", "truncated", "not a package", "other format", "other features", "bad labels", "bad settings", "corrupt",
+  "too big", "model refused", "not saved", "interrupted",
+];
+// One link-layer packet per write, as for firmware updates (dfu.js): the 6-byte chunk header and the rest.
+export const MODEL_CHUNK_BYTES = 244 - 6;
+const MODEL_STATUS_BYTES = 20;
 const KEYWORD_AUDIO_HEADER_BYTES = 10;
 export const KEYWORD_VERSION = 1;
 const KEYWORD_CLIP_HEADER_BYTES = 7;
@@ -404,22 +415,91 @@ export function decodeAudioChunk(view) {
   };
 }
 
-/** The board's voice settings: listening, which commands it obeys (by name), and whether it has a model. */
+/**
+ * The board's voice settings: listening, which actions it obeys (by name), whether a model is
+ * loaded, and whether its firmware takes uploaded models (older firmware had one built in).
+ */
 export function decodeKeywordSettings(view) {
   if (view.byteLength !== 3 || view.getUint8(0) !== KEYWORD_VERSION) return null;
   const flags = view.getUint8(1);
   const bits = view.getUint8(2);
-  return { listening: Boolean(flags & 1), hasModel: Boolean(flags & 2), obeyed: VOICE_COMMANDS.filter((_, i) => bits & (1 << i)) };
+  return {
+    listening: Boolean(flags & 1), hasModel: Boolean(flags & 2), takesModels: Boolean(flags & 4),
+    obeyed: VOICE_ACTIONS.filter((_, i) => bits & (1 << i)),
+  };
 }
 
 export function encodeKeywordSettings({ listening, obeyed }) {
-  const bits = VOICE_COMMANDS.reduce((sum, name, i) => (obeyed.includes(name) ? sum | (1 << i) : sum), 0);
+  const bits = VOICE_ACTIONS.reduce((sum, name, i) => (obeyed.includes(name) ? sum | (1 << i) : sum), 0);
   return Uint8Array.of(KEYWORD_VERSION, listening ? 1 : 0, bits);
 }
 
-/** A keyword event's value (voice_event_value()): which label was heard and what the board did. */
+/**
+ * A keyword event's value (voice_event_value()): which action was heard and what the board did.
+ * Recordings from before uploadable models stored the label index there, which for their fixed
+ * phrases was the same number.
+ */
 export function decodeKeywordEvent(peak) {
-  return { label: VOICE_LABELS[peak & 0xff] ?? "unknown", outcome: VOICE_OUTCOMES[peak >> 8] ?? "unknown" };
+  return { action: voiceActionName(peak & 0xff) ?? "unknown", outcome: VOICE_OUTCOMES[peak >> 8] ?? "unknown" };
+}
+
+// ---- voice model upload: begin, chunks in order, commit (KEYWORD_CMD_MODEL_*) ----
+function commandWithU32(type, value, extra = 0) {
+  const bytes = new Uint8Array(6 + extra);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, KEYWORD_VERSION);
+  view.setUint8(1, type);
+  view.setUint32(2, value, true);
+  return bytes;
+}
+
+export const encodeModelBegin = (totalBytes) => commandWithU32(4, totalBytes);
+
+export function encodeModelChunk(offset, bytes) {
+  const out = commandWithU32(5, offset, bytes.length);
+  out.set(bytes, 6);
+  return out;
+}
+
+export const encodeModelCommit = () => Uint8Array.of(KEYWORD_VERSION, 6);
+export const encodeModelCancel = () => Uint8Array.of(KEYWORD_VERSION, 7);
+export const encodeModelRemove = () => Uint8Array.of(KEYWORD_VERSION, 8);
+
+/** The board's voice model: its state, the last upload's (or boot load's) result, and sizes. */
+export function decodeModelStatus(view) {
+  if (view.byteLength !== MODEL_STATUS_BYTES || view.getUint8(0) !== KEYWORD_VERSION) return null;
+  return {
+    state: MODEL_STATES[view.getUint8(1)] ?? "unknown",
+    result: MODEL_RESULTS[view.getUint8(2)] ?? `error ${view.getUint8(2)}`,
+    received: view.getUint32(4, true),
+    totalBytes: view.getUint32(8, true),
+    crc: view.getUint32(12, true),
+    maxBytes: view.getUint32(16, true),
+  };
+}
+
+/** The loaded model's name and its commands' phrases and actions; null name with no model. */
+export function decodeVocabulary(view) {
+  if (view.byteLength < 4 || view.getUint8(0) !== KEYWORD_VERSION) return null;
+  const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  const utf8 = new TextDecoder();
+  const labelCount = bytes[1];
+  const backgroundCount = bytes[2];
+  let at = 3;
+  const text = () => {
+    const length = bytes[at];
+    const value = utf8.decode(bytes.subarray(at + 1, at + 1 + length));
+    at += 1 + length;
+    return value;
+  };
+  const name = text();
+  const commands = [];
+  for (let i = 0; i < labelCount && at + 2 <= bytes.length; i++) {
+    const action = voiceActionName(bytes[at++]);
+    const phrase = text();
+    if (i >= backgroundCount) commands.push({ action, phrase });
+  }
+  return { name: labelCount ? name : null, commands };
 }
 
 const CRC_TABLE = (() => {

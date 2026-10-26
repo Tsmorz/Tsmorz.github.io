@@ -1,12 +1,19 @@
-// The keyword clips dialog: records training clips of the voice commands through the selected
-// board's own microphone (Board.captureClip) and saves each as a WAV in a folder the user picks,
-// one subfolder per label, for the training pipeline (docs/voice-commands.md). The clips are the
-// user's voice: they only ever go into that folder, never into tools/dashboard/ (published).
+// Voice commands on the page (docs/voice-commands.md). Settings › Voice: the selected board's
+// model, which actions it obeys, what it heard, and uploading a model to the boards. The keyword
+// clips dialog: the words (vocabulary.json in a folder the user picks), and training clips of
+// them recorded through the selected board's own microphone (Board.captureClip), saved as WAVs one
+// subfolder per label for the training pipeline. The clips are the user's voice: they only ever
+// go into that folder, never into tools/dashboard/ (published).
 import { fitCanvas, hairline } from "./canvas.js";
 import { decodeAdpcm } from "./adpcm.js";
-import { AudioTrack, KEYWORD_LABELS, WAV_HEADER_BYTES, clipFileName, clipLevels, encodeWav, pcmBytes, wavHeader } from "./clips.js";
+import {
+  ACTION_TEXT, AudioTrack, DEFAULT_VOCABULARY, MAX_PHRASES, VOCABULARY_FILE, WAV_HEADER_BYTES, clipFileName, clipLevels, encodeWav, keywordLabels,
+  labelFor, parseVocabulary, pcmBytes, vocabularyProblems, wavHeader,
+} from "./clips.js";
+import { modelResultText } from "./board.js";
 import { kvGet, kvSet } from "./storage.js";
-import { VOICE_COMMANDS } from "./wire.js";
+import { parseVoicePackage } from "./voicepkg.js";
+import { VOICE_ACTIONS } from "./wire.js";
 
 const $ = (id) => document.getElementById(id);
 const FOLDER_KEY = "keyword-folder";
@@ -18,23 +25,30 @@ const CAPTURE_MS = 2000; // CLIP_CAPTURE_SAMPLES in src/keyword/clip_capture.h, 
 const QUIET_PEAK_DBFS = -35;
 
 let getBoard = () => null;
+let getBoards = () => [];
 let isRecording = () => false;
 let getColors = () => ({});
 let folder = null; // the chosen folder's handle; null downloads each clip instead
+let vocabulary = DEFAULT_VOCABULARY; // the folder's vocabulary.json, or the default words
+let labels = keywordLabels(vocabulary);
+let modelBusy = false; // uploading a model to the boards, or removing one
+let modelStatus = null; // { text, bad, until } of an upload or removal: shown while it runs, then a while
+const MODEL_STATUS_MS = 20000;
 let counts = new Map(); // label -> clips in its subfolder
 let last = null; // the last clip: { label, name, samples, rateHz, saved }
 let busy = false;
 let background = null; // the background recording running: { board, writable, track, started, rateHz }
 
-const labelInfo = (label) => KEYWORD_LABELS.find((entry) => entry.label === label);
+const labelInfo = (label) => labels.find((entry) => entry.label === label) ?? labels[0];
 
 /**
- * Wires the dialog up. `getBoard()` is the selected board, `isRecording()` whether a live
- * recording runs (a clip pauses the board's live streams, which would leave a gap in it).
+ * Wires the dialog up. `getBoard()` is the selected board, `getBoards()` every board, and
+ * `isRecording()` whether a live recording runs (a clip pauses the board's live streams, which
+ * would leave a gap in it).
  */
 export function initVoice(options) {
-  ({ getBoard, isRecording, getColors } = options);
-  for (const { label } of KEYWORD_LABELS) $("voice-label").append(new Option(label, label));
+  ({ getBoard, getBoards, isRecording, getColors } = options);
+  fillLabels();
   $("voice-label").addEventListener("change", renderVoice);
   $("voice-open").addEventListener("click", () => {
     if (!$("voice-dialog").open) $("voice-dialog").showModal();
@@ -69,8 +83,8 @@ export function initVoice(options) {
     const board = getBoard();
     if (board?.voice) sendVoiceSettings(board, { ...board.voice, listening: !board.voice.listening });
   });
-  $("voice-obeyed").replaceChildren(...VOICE_COMMANDS.map((name) => {
-    const box = Object.assign(document.createElement("input"), { type: "checkbox", value: name, disabled: true });
+  $("voice-obeyed").replaceChildren(...VOICE_ACTIONS.map((action) => {
+    const box = Object.assign(document.createElement("input"), { type: "checkbox", value: action, disabled: true });
     box.addEventListener("change", () => {
       const board = getBoard();
       if (!board?.voice) return;
@@ -78,10 +92,25 @@ export function initVoice(options) {
       sendVoiceSettings(board, { ...board.voice, obeyed });
     });
     const label = document.createElement("label");
-    label.append(box, labelInfo(name).say);
+    label.append(box, document.createElement("span"));
     return label;
   }));
+  $("voice-model-upload").addEventListener("click", () => $("voice-model-file").click());
+  $("voice-model-file").addEventListener("change", () => {
+    const [file] = $("voice-model-file").files;
+    $("voice-model-file").value = "";
+    if (file) uploadModel(file);
+  });
+  $("voice-model-remove").addEventListener("click", removeModel);
+  initWords();
   restoreFolder();
+}
+
+function fillLabels() {
+  const current = $("voice-label").value;
+  labels = keywordLabels(vocabulary);
+  $("voice-label").replaceChildren(...labels.map(({ label }) => new Option(label, label)));
+  if (labels.some(({ label }) => label === current)) $("voice-label").value = current;
 }
 
 // Shown at once, before the board confirms: the page redraws from board.voice every 250 ms, so
@@ -104,30 +133,111 @@ const ago = (hostMs) => {
   return seconds < 60 ? `${seconds} s ago` : `${Math.round(seconds / 60)} min ago`;
 };
 
-/** Settings › Voice, for the selected board: listening, the commands it obeys, what it heard lately. */
+/** The selected board's phrases for `action`, from its loaded model. */
+const phrasesFor = (board, action) => (board?.vocabulary?.commands ?? []).filter((command) => command.action === action).map(({ phrase }) => `“${phrase}”`);
+
+function voiceStatusText(board, voice) {
+  const model = board.voiceModel;
+  if (!voice) return "This board's firmware has no voice commands: update it.";
+  if (!voice.takesModels && !model) {
+    return voice.hasModel ? (voice.listening ? "Listening with the model built into its firmware." : "Not listening: it ignores every command.")
+      : "This board's firmware can't take an uploaded model: update it.";
+  }
+  if (!model || model.state === "none") return "No voice model on this board: upload one (a .voice file from task training:export).";
+  if (model.state === "failed") return `Its stored model was refused: ${modelResultText(model)}. Upload another.`;
+  if (model.state !== "ready" && model.state !== "saving") return "Loading a voice model…";
+  return voice.listening ? "Listening. It obeys the ticked actions; every board in earshot hears them." : "Not listening: it ignores every command.";
+}
+
+function modelLine(board) {
+  const model = board?.connected ? board.voiceModel : null;
+  if (!model) return "";
+  const name = board.vocabulary?.name;
+  const size = model.totalBytes ? ` · ${(model.totalBytes / 1024).toFixed(1)} KB` : "";
+  return name ? `Model: ${name} · ${board.vocabulary.commands.length} phrases${size}` : "Model: none";
+}
+
+/** Settings › Voice, for the selected board: its model, listening, the actions it obeys, what it heard lately. */
 export function renderVoiceSettings() {
   const board = getBoard();
   const voice = board?.connected ? board.voice : null;
   $("voice-listen").disabled = !voice;
   $("voice-listen").setAttribute("aria-checked", String(Boolean(voice?.listening)));
+  const takers = getBoards().filter((each) => each.connected && each.voiceModel);
+  $("voice-model-upload").disabled = modelBusy || !takers.length;
+  $("voice-model-remove").disabled = modelBusy || !board?.connected || !board.vocabulary?.name;
+  $("voice-model").textContent = modelLine(board);
   for (const box of $("voice-obeyed").querySelectorAll("input")) {
     box.disabled = !voice;
     box.checked = Boolean(voice?.obeyed.includes(box.value));
+    const phrases = phrasesFor(board, box.value);
+    const label = box.parentElement;
+    label.classList.toggle("unused", Boolean(board?.vocabulary?.name) && !phrases.length);
+    label.title = `${ACTION_TEXT[box.value]}${phrases.length ? `: ${phrases.join(", ")}` : ""}`;
+    label.querySelector("span").textContent = phrases.length ? `${phrases.join(" / ")} · ${ACTION_TEXT[box.value]}` : ACTION_TEXT[box.value];
   }
-  $("voice-settings-status").textContent = !board?.connected ? "Connect a board to set up its voice commands."
-    : !voice ? "This board's firmware has no voice commands: update it."
-    : !voice.hasModel ? "No voice model in this board's firmware yet: these settings apply once one is built in."
-    : voice.listening ? `Listening. It obeys the ticked commands; every board in earshot hears them.`
-    : "Not listening: it ignores every command.";
-  $("voice-heard").replaceChildren(...(board?.voiceHeard ?? []).map(({ label, outcome, hostMs }) => {
+  const note = modelStatus && (modelBusy || performance.now() < modelStatus.until) ? modelStatus : null;
+  $("voice-settings-status").textContent = note?.text ?? (!board?.connected ? "Connect a board to set up its voice commands." : voiceStatusText(board, voice));
+  $("voice-settings-status").className = note?.bad ? "hint bad-text" : "hint";
+  $("voice-heard").replaceChildren(...(board?.voiceHeard ?? []).map(({ action, outcome, hostMs }) => {
     const item = document.createElement("li");
-    item.append(Object.assign(document.createElement("span"), { textContent: labelInfo(label)?.say ?? label }),
+    item.append(Object.assign(document.createElement("span"), { textContent: phrasesFor(board, action)[0] ?? ACTION_TEXT[action] ?? action }),
       Object.assign(document.createElement("span"), { textContent: `${outcome} · ${ago(hostMs)}` }));
     return item;
   }));
 }
 
-export const voiceDialogOpen = () => $("voice-dialog").open;
+function setModelStatus(text, bad = false) {
+  modelStatus = text ? { text, bad, until: performance.now() + MODEL_STATUS_MS } : null;
+  renderVoiceSettings();
+}
+
+// ---- voice model -------------------------------------------------------------------------
+/** Uploads a .voice file to every connected board that takes models, one after another. */
+async function uploadModel(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const model = parseVoicePackage(bytes);
+  if (model.problem) return setModelStatus(`${file.name}: ${model.problem}.`, true);
+  const targets = getBoards().filter((board) => board.connected && board.voiceModel);
+  if (!targets.length) return setModelStatus("No connected board takes voice models: update their firmware.", true);
+
+  modelBusy = true;
+  const done = [];
+  const failed = [];
+  for (const board of targets) {
+    try {
+      await board.uploadVoiceModel(bytes, (fraction) =>
+        setModelStatus(`Uploading “${model.name}” to ${board.displayName}… ${Math.round(fraction * 100)}%`));
+      done.push(board.displayName);
+    } catch (error) {
+      failed.push(`${board.displayName}: ${error.message}`);
+    }
+  }
+  modelBusy = false;
+  const phrases = model.commands.map(({ phrase }) => `“${phrase}”`).join(", ");
+  setModelStatus([
+    done.length ? `${done.join(", ")} now listen${done.length === 1 ? "s" : ""} for ${phrases}.` : "",
+    failed.length ? `Not uploaded to ${failed.join("; ")}.` : "",
+  ].filter(Boolean).join(" "), failed.length > 0);
+}
+
+async function removeModel() {
+  const board = getBoard();
+  if (!board?.connected || modelBusy) return;
+  if (!confirm(`Remove the voice model from ${board.displayName}? It stops listening until another is uploaded.`)) return;
+  modelBusy = true;
+  setModelStatus(`Removing ${board.displayName}'s model…`);
+  try {
+    await board.removeVoiceModel();
+    setModelStatus(`${board.displayName} has no voice model now.`);
+  } catch (error) {
+    setModelStatus(`Couldn't remove ${board.displayName}'s model: ${error.message}`, true);
+  }
+  modelBusy = false;
+  renderVoiceSettings();
+}
+
+export const voiceDialogOpen = () => $("voice-dialog").open || $("words-dialog").open;
 
 /** Updates the dialog for the selected board and label; cheap enough to call on every redraw. */
 export function renderVoice() {
@@ -144,7 +254,7 @@ export function renderVoice() {
       : !board.canCaptureClips ? "This board's firmware can't capture clips: update it." : "";
     if (reason || $("voice-status").dataset.reason) setStatus(reason, { reason: Boolean(reason) });
   }
-  $("voice-counts").replaceChildren(...KEYWORD_LABELS.map(({ label }) => {
+  $("voice-counts").replaceChildren(...labels.map(({ label }) => {
     const item = document.createElement("li");
     item.classList.toggle("current", label === info.label);
     item.append(label, Object.assign(document.createElement("span"), { className: "num", textContent: String(counts.get(label) ?? 0) }));
@@ -179,10 +289,23 @@ async function restoreFolder() {
   try {
     const permission = await handle.queryPermission(READ_WRITE);
     renderFolder(permission);
-    if (permission === "granted") await recount();
+    if (permission === "granted") await loadFolder();
   } catch {
     renderFolder("prompt");
   }
+}
+
+/** The folder's words (the default ones without a vocabulary.json), then its clip counts. */
+async function loadFolder() {
+  vocabulary = DEFAULT_VOCABULARY;
+  try {
+    const file = await (await folder.getFileHandle(VOCABULARY_FILE)).getFile();
+    vocabulary = parseVocabulary(await file.text());
+  } catch (error) {
+    if (error.name !== "NotFoundError") setStatus(`${VOCABULARY_FILE} in ${folder.name}/ isn't usable (${error.message}): the default words for now.`, { bad: true });
+  }
+  fillLabels();
+  await recount();
 }
 
 async function pickFolder() {
@@ -197,7 +320,7 @@ async function pickFolder() {
   }
   kvSet(FOLDER_KEY, folder);
   renderFolder("granted");
-  await recount();
+  await loadFolder();
 }
 
 /** The folder, asking Chrome to allow it again if needed; null to download. Call it from a key press or click. */
@@ -216,7 +339,7 @@ async function writableFolder() {
 
 async function recount() {
   counts = new Map();
-  for (const { label } of KEYWORD_LABELS) {
+  for (const { label } of labels) {
     let directory;
     try {
       directory = await folder.getDirectoryHandle(label);
@@ -409,4 +532,101 @@ function renderBackground() {
 function setBackgroundStatus(text, bad = false) {
   $("voice-bg-status").textContent = text;
   $("voice-bg-status").className = bad ? "bad-text" : "muted";
+}
+
+// ---- words --------------------------------------------------------------------------------
+// The words dialog edits a copy of the vocabulary; Save writes it into the folder as
+// vocabulary.json, where training reads it. Each row keeps the label it came with until its
+// phrase is changed: the label is its clips' folder, so new words make a new one.
+let draft = null; // { name, rows: [{ say, action, original: { label, say } | null }] }
+
+const rowLabel = (row) => (row.original && row.say === row.original.say ? row.original.label : labelFor(row.say));
+const draftVocabulary = () => ({ version: 1, name: draft.name.trim(), phrases: draft.rows.map((row) => ({ label: rowLabel(row), say: row.say.trim(), action: row.action })) });
+
+function initWords() {
+  $("voice-words").addEventListener("click", () => {
+    draft = { name: vocabulary.name ?? "", rows: vocabulary.phrases.map(({ label, say, action }) => ({ say, action, original: { label, say } })) };
+    $("words-name").value = draft.name;
+    $("words-status").textContent = folder ? `Saving into ${folder.name}/${VOCABULARY_FILE}` : "Choose the clips folder first: the words are saved in it.";
+    renderWords();
+    $("words-dialog").showModal();
+  });
+  $("words-close").addEventListener("click", () => $("words-dialog").close());
+  $("words-name").addEventListener("input", () => {
+    draft.name = $("words-name").value;
+    renderWordProblems();
+  });
+  $("words-add").addEventListener("click", () => {
+    const used = new Set(draft.rows.map((row) => row.action));
+    draft.rows.push({ say: "", action: VOICE_ACTIONS.find((action) => !used.has(action)) ?? "mark", original: null });
+    renderWords();
+    $("words-list").querySelector("li:last-child input")?.focus();
+  });
+  $("words-default").addEventListener("click", () => {
+    draft = { name: DEFAULT_VOCABULARY.name, rows: DEFAULT_VOCABULARY.phrases.map(({ label, say, action }) => ({ say, action, original: { label, say } })) };
+    $("words-name").value = draft.name;
+    renderWords();
+  });
+  $("words-save").addEventListener("click", saveWords);
+}
+
+function renderWords() {
+  $("words-list").replaceChildren(...draft.rows.map((row, index) => {
+    const item = document.createElement("li");
+    const say = Object.assign(document.createElement("input"), { type: "text", value: row.say, placeholder: "a phrase of a few syllables", ariaLabel: `Phrase ${index + 1}` });
+    const action = Object.assign(document.createElement("select"), { ariaLabel: `What “${row.say}” does` });
+    action.append(...VOICE_ACTIONS.map((name) => new Option(ACTION_TEXT[name], name, false, name === row.action)));
+    const remove = Object.assign(document.createElement("button"), { type: "button", textContent: "✕", ariaLabel: `Remove phrase ${index + 1}` });
+    const folderName = Object.assign(document.createElement("span"), { className: "num" });
+    const showFolder = () => (folderName.textContent = row.say.trim() ? `clips in ${rowLabel(row) || "?"}/` : "");
+    say.addEventListener("input", () => {
+      row.say = say.value;
+      showFolder();
+      renderWordProblems();
+    });
+    action.addEventListener("change", () => {
+      row.action = action.value;
+      renderWordProblems();
+    });
+    remove.addEventListener("click", () => {
+      draft.rows.splice(index, 1);
+      renderWords();
+    });
+    showFolder();
+    item.append(say, action, remove, folderName);
+    return item;
+  }));
+  $("words-add").disabled = draft.rows.length >= MAX_PHRASES;
+  renderWordProblems();
+}
+
+function renderWordProblems() {
+  const { errors, warnings } = vocabularyProblems(draftVocabulary());
+  $("words-problems").replaceChildren(...[...errors.map((text) => [text, "bad-text"]), ...warnings.map((text) => [text, "muted"])]
+    .map(([text, className]) => Object.assign(document.createElement("li"), { textContent: text, className })));
+  $("words-save").disabled = errors.length > 0;
+}
+
+async function saveWords() {
+  const edited = draftVocabulary();
+  if (vocabularyProblems(edited).errors.length) return;
+  const target = await writableFolder();
+  if (!target) {
+    $("words-status").textContent = "Choose the clips folder first (Choose folder… in the clips dialog): the words are saved in it.";
+    return;
+  }
+  try {
+    const writable = await (await target.getFileHandle(VOCABULARY_FILE, { create: true })).createWritable();
+    await writable.write(`${JSON.stringify(edited, null, 2)}\n`);
+    await writable.close();
+  } catch (error) {
+    $("words-status").textContent = `Not saved: ${error.message}`;
+    return;
+  }
+  vocabulary = edited;
+  fillLabels();
+  await recount();
+  $("words-status").textContent = `Saved ${target.name}/${VOCABULARY_FILE}. Record clips of any new phrases, then train and export.`;
+  draft.rows.forEach((row) => (row.original = { label: rowLabel(row), say: row.say.trim() }));
+  renderWords();
 }

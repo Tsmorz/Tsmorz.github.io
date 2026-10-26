@@ -32,6 +32,22 @@ export class TimeUnwrapper {
   }
 }
 
+/**
+ * Whether a board reconnecting during a recording restarted while it was away (it slept and woke,
+ * the watchdog reset it, it lost power): then its clock and its counts began again, and nothing it
+ * sends can carry on in the files it was writing. `now`: the first IMU batch of the new connection
+ * ({ seq, hostMs }: its first sample's seq, when the page received it); `before`: the last batch
+ * of the old one. The IMU counts on at its rate whether a computer is listening or not, so a board
+ * that ran on is about rateHz x the time away further on (less the batches' delays on the way,
+ * well under a second); one that restarted counts from about 0, so it is behind, or (if it was only
+ * a moment into its last run) well short of that.
+ */
+export function restartedSince(now, before, rateHz) {
+  const advanced = now.seq - before.seq;
+  const expected = ((now.hostMs - before.hostMs) / 1000) * rateHz;
+  return advanced <= 0 || advanced < expected / 2 - rateHz;
+}
+
 export const IMU_COLUMNS = [
   "board_time_us", "host_ms", "seq",
   "gyro_x_dps", "gyro_y_dps", "gyro_z_dps", "accel_x_g", "accel_y_g", "accel_z_g",
@@ -185,6 +201,17 @@ export function unsyncedBoards(list) {
   if (list.length < 2) return [];
   const sources = new Set(list.flatMap((board) => board.clockSources));
   return list.filter((board) => board.clockPairs === 0 && !sources.has(board.boardId)).map((board) => board.name);
+}
+
+/**
+ * The boards set as the radio clock source, by name, when more than one is: each listener follows
+ * whichever it hears first, so the boards split into groups that can't be lined up closely with
+ * each other. A role saved on a board from an earlier session does it. `list`: { name, clock } per
+ * connected board (clock as decodeClockStatus() gives it, or null).
+ */
+export function competingClockSources(list) {
+  const sources = list.filter((board) => board.clock?.role === "source").map((board) => board.name);
+  return sources.length > 1 ? sources : [];
 }
 
 /** The events (board time and type) in rows of a live events.csv, without its header. */

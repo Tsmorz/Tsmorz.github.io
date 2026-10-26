@@ -232,6 +232,17 @@ function startOnSourceClock(session) {
   return { source: pair.sourceBoard, us: pair.sourceTUs - (pair.tUs - session.start.startUs) };
 }
 
+/**
+ * Whether a session folder's session.json (`manifest`, parsed) holds the same recordings as
+ * `group` (from groupSessions()): one of its boards started at the same moment on the same board.
+ * A folder that doesn't is another recording that happens to share the name (each upload numbers
+ * its recordings without a tag from 1 again), and mustn't be written over.
+ */
+export function holdsSameRecording(manifest, group) {
+  const saved = new Set((manifest?.boards ?? []).map((entry) => `${entry.board_id}/${entry.session_tag}/${entry.start_us}`));
+  return group.boards.some(({ session: { start } }) => saved.has(`${start.boardId}/${start.sessionTag}/${start.startUs}`));
+}
+
 export function groupSessions(perBoard) {
   const groups = new Map();
   const boardStarted = []; // { source, us, name }
