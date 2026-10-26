@@ -97,7 +97,8 @@ tasks:
   check:links:
     desc: Check internal links with html-proofer
     cmds:
-      - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt
+      # The board serves plain HTTP on the LAN, so the hardware page links to it over http://.
+      - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt --ignore-urls "http://192.168.4.1,http://cartpole.local"
 
   check:fast:
     desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, CSV fit, recipe units"

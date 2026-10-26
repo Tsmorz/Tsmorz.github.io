@@ -5,18 +5,19 @@
 // they come but not shown.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_SERVICE, KEYWORD_SETTINGS,
-  LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
+  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
+  KEYWORD_VOCABULARY, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
   decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch,
   encodeClipCapture, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
+  MODEL_CHUNK_BYTES, decodeModelStatus, decodeVocabulary, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
 import { ClipAssembler } from "./clips.js";
 import { RateMeter } from "./rate-meter.js";
-import { TimeUnwrapper } from "./recording.js";
+import { TimeUnwrapper, restartedSince } from "./recording.js";
 import { SMP_CHARACTERISTIC, SMP_SERVICE } from "./smp.js";
 
 export const TRACE_POINTS = 200;
@@ -26,6 +27,10 @@ export const ENVELOPE_SECONDS = 4;
 const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
 
 const hostNow = () => performance.timeOrigin + performance.now();
+// A notification's DataView, kept to be handled later.
+const copyView = (view) => new DataView(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+// How long connect() waits for an IMU batch to tell whether the board restarted (see `continuing`).
+const CONTINUITY_WAIT_MS = 2000;
 
 // Board labels are remembered per board ID in this browser, so "left wrist" stays "left wrist".
 function savedLabel(boardId) {
@@ -47,6 +52,11 @@ export class Board extends EventTarget {
    * last sequence numbers carry over, so times stay continuous and the samples missed while it was
    * away count as lost. `recording`: a BoardRecording to add this board's data to from the first
    * notification (app.js owns recordings, so one outlives a dropped connection).
+   *
+   * Unless the board restarted while it was away: then its clock and counts began again. So when
+   * continuing, every notification is held back until the first IMU batch shows which (the hold
+   * ends within connect()); if it restarted, `restarted` is set, nothing carries on, and the held
+   * data waits for app.js to give the connection a recording of its own with release().
    */
   constructor(device, { continueFrom = null, recording = null } = {}) {
     super();
@@ -59,15 +69,26 @@ export class Board extends EventTarget {
     this.chars = {};
     this.writeChain = Promise.resolve();
     this.unwrap = continueFrom?.unwrap ?? new TimeUnwrapper();
-    this.recording = recording;
+    // The last IMU batch seen, { seq, hostMs }: unlike lastSeq, not forgotten over a pause.
+    this.lastImu = continueFrom?.lastImu ?? null;
+    this.restarted = false;
+    // { recording } while it isn't yet known whether the board restarted; `held` meanwhile holds
+    // [handler, view] for every notification, in the order they came.
+    this.continuing = continueFrom && this.lastImu ? { recording } : null;
+    this.held = this.continuing ? [] : null;
+    this.decided = new Promise((resolve) => (this.onDecided = resolve));
+    this.recording = this.continuing ? null : recording;
     this.log = null; // the on-board recorder's status, if this firmware has one
     this.battery = null;
     this.led = null; // the colour the board's LED shows, if this firmware reports it
     this.download = null;
     this.clip = null; // the keyword clip being captured, if any
     this.canCaptureClips = false; // whether this firmware has the keyword service
-    this.voice = null; // { listening, obeyed, hasModel }, if this firmware has voice settings
-    this.voiceHeard = []; // the latest keyword events: { label, outcome, hostMs }
+    this.voice = null; // { listening, obeyed, hasModel, takesModels }, if this firmware has voice settings
+    this.voiceHeard = []; // the latest keyword events: { action, outcome, hostMs }
+    this.voiceModel = null; // the model's status (decodeModelStatus), if this firmware takes uploaded models
+    this.vocabulary = null; // { name, commands: [{ action, phrase }] } of the loaded model
+    this.modelWaiter = null; // resolves with the status once an upload or removal has finished
     this.audioStream = null; // the background-audio stream running, if any
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
     this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
@@ -162,13 +183,13 @@ export class Board extends EventTarget {
     this.name = `nrf-controller-${this.info.boardId}`;
     this.label = savedLabel(this.info.boardId);
 
-    const subscribe = async (service, uuid, handler) => {
+    const subscribe = async (service, uuid, handler, { decides = false } = {}) => {
       const characteristic = await service.getCharacteristic(uuid);
-      this.listen(characteristic, (event) => handler(event.target.value));
+      this.listen(characteristic, (event) => this.deliver(handler, event.target.value, decides));
       await characteristic.startNotifications();
       return characteristic;
     };
-    this.chars.imu = await subscribe(data, DATA_IMU, (view) => this.onImu(view));
+    this.chars.imu = await subscribe(data, DATA_IMU, (view) => this.onImu(view), { decides: true });
     this.chars.envelope = await subscribe(data, DATA_ENVELOPE, (view) => this.onEnvelope(view));
     this.chars.events = await subscribe(data, DATA_EVENTS, (view) => this.onEvent(view));
     await this.connectSpectrum(data, subscribe);
@@ -195,7 +216,41 @@ export class Board extends EventTarget {
     } catch {
       this.firmwareVersion = "";
     }
+    if (this.continuing) {
+      await Promise.race([this.decided, new Promise((resolve) => setTimeout(resolve, CONTINUITY_WAIT_MS))]);
+      // No IMU data to tell by: carry on, as a board that kept running would.
+      if (this.continuing) this.release(this.continuing.recording);
+    }
     this.changed();
+  }
+
+  // ---- carrying on a recording ----------------------------------------------------------------
+  // While held, a notification waits its turn; only the first IMU batch, which decides, goes on.
+  deliver(handler, view, decides) {
+    if (this.held && !(decides && this.continuing)) {
+      this.held.push([handler, copyView(view)]);
+      return;
+    }
+    handler(view);
+  }
+
+  /** Ends the hold: `recording` (or none) gets this connection's data, the held data first. */
+  release(recording) {
+    const held = this.held ?? [];
+    this.held = null;
+    this.continuing = null;
+    this.recording = recording;
+    this.onDecided();
+    for (const [handler, view] of held) handler(view);
+  }
+
+  // The board restarted while away: its times and counts start again, as a new board's would.
+  startOver() {
+    this.restarted = true;
+    this.continuing = null;
+    this.unwrap = new TimeUnwrapper();
+    this.lastSeq = this.lastWindow = this.lastEventSeq = null;
+    this.onDecided();
   }
 
   // Firmware from before the spectrum view doesn't send it; the rest still works.
@@ -300,6 +355,80 @@ export class Board extends EventTarget {
     } catch {
       /* firmware from before voice settings and background audio */
     }
+    try {
+      this.chars.voiceModel = await subscribe(service, KEYWORD_MODEL, (view) => this.onModelStatus(view));
+      this.chars.vocabulary = await service.getCharacteristic(KEYWORD_VOCABULARY);
+    } catch {
+      return; /* firmware from before uploadable models (or built without them) */
+    }
+    this.onModelStatus(await this.chars.voiceModel.readValue());
+    await this.readVocabulary();
+  }
+
+  onModelStatus(view) {
+    const status = decodeModelStatus(view);
+    if (!status) return;
+    this.voiceModel = status;
+    if (["ready", "none", "failed"].includes(status.state)) this.modelWaiter?.resolve(status);
+    this.changed();
+  }
+
+  async readVocabulary() {
+    this.vocabulary = decodeVocabulary(await this.queue(() => this.chars.vocabulary.readValue()));
+    if (this.voice) this.voice = decodeKeywordSettings(await this.queue(() => this.chars.voiceSettings.readValue()));
+    this.changed();
+  }
+
+  /** The model's status once it settles (ready, none or failed), or a rejection after `ms`. */
+  waitForModel(ms) {
+    this.modelWaiter?.reject(new Error("superseded"));
+    const waiter = {};
+    const promise = new Promise((resolve, reject) => Object.assign(waiter, { resolve, reject }));
+    const timer = setTimeout(() => waiter.reject(new Error("the board didn't say how it went")), ms);
+    this.modelWaiter = waiter;
+    return promise.finally(() => {
+      clearTimeout(timer);
+      if (this.modelWaiter === waiter) this.modelWaiter = null;
+    });
+  }
+
+  /**
+   * Uploads a voice model package (voicepkg.js checked it) to the board, which stops listening
+   * meanwhile, checks it, runs it and saves it. Resolves with the board's status once it is
+   * listening with it; rejects with why not, the board having gone back to its previous model.
+   * onProgress(fraction) follows the transfer. One link-layer packet per write: ~5 s for 48 KB.
+   */
+  async uploadVoiceModel(bytes, onProgress) {
+    if (!this.chars.voiceModel) throw new Error("this board's firmware can't take voice models: update it");
+    if (this.voiceModel && bytes.length > this.voiceModel.maxBytes) {
+      throw new Error(`too big for this board's firmware (${bytes.length} of ${this.voiceModel.maxBytes} bytes)`);
+    }
+    await this.write(this.chars.keywordCommand, encodeModelBegin(bytes.length));
+    try {
+      for (let offset = 0; offset < bytes.length; offset += MODEL_CHUNK_BYTES) {
+        await this.write(this.chars.keywordCommand, encodeModelChunk(offset, bytes.subarray(offset, offset + MODEL_CHUNK_BYTES)));
+        onProgress?.(Math.min(1, (offset + MODEL_CHUNK_BYTES) / bytes.length));
+      }
+    } catch (error) {
+      if (this.connected) await this.write(this.chars.keywordCommand, encodeModelCancel()).catch(() => {});
+      throw error;
+    }
+    // Waiting before the commit: the board's answer can come before the write's.
+    const settled = this.waitForModel(30000);
+    await this.write(this.chars.keywordCommand, encodeModelCommit());
+    const status = await settled;
+    await this.readVocabulary();
+    if (status.result !== "ok" || status.state !== "ready") throw new Error(modelResultText(status));
+    return status;
+  }
+
+  /** Erases the board's voice model: it stops listening. */
+  async removeVoiceModel() {
+    if (!this.chars.voiceModel) throw new Error("this board's firmware has no voice model to remove");
+    const settled = this.waitForModel(15000);
+    await this.write(this.chars.keywordCommand, encodeModelRemove());
+    await settled;
+    await this.readVocabulary();
   }
 
   /** Sets whether the board listens and which commands it obeys (saved on it); reads them back. */
@@ -472,6 +601,7 @@ export class Board extends EventTarget {
     this.listeners = [];
     this.recording = null;
     this.download?.reject(new Error("disconnected"));
+    this.modelWaiter?.reject(new Error("disconnected"));
     this.clip?.reject(new Error("disconnected"));
     this.audioStream?.onChunk(null); // tells the recorder the stream ended
     this.audioStream = null;
@@ -502,11 +632,20 @@ export class Board extends EventTarget {
     const hostMs = hostNow();
     const batch = decodeImuBatch(view);
     if (!batch || !this.info) return;
+    if (this.continuing) {
+      if (restartedSince({ seq: batch.firstSeq, hostMs }, this.lastImu, this.info.imuRateHz)) {
+        this.startOver();
+        this.held.push([(held) => this.onImu(held), copyView(view)]);
+        return;
+      }
+      this.release(this.continuing.recording);
+    }
 
     if (this.lastSeq !== null) this.imuGaps += missedSince(this.lastSeq, batch.firstSeq);
     const samples = batch.samples.map((s) => ({ ...s, tUs: this.unwrap.unwrap(s.tUs) }));
     if (!samples.length) return;
     this.lastSeq = samples[samples.length - 1].seq;
+    this.lastImu = { seq: this.lastSeq, hostMs };
     this.rateMeter.add(samples.length);
     this.recording?.addImu(samples, batch.gyroBiasDps, hostMs);
 
@@ -751,4 +890,22 @@ export class Board extends EventTarget {
 function push(trace, point) {
   trace.push(point);
   if (trace.length > TRACE_POINTS) trace.shift();
+}
+
+/** Why the board refused a model, or what went wrong with one, in words. */
+export function modelResultText({ state, result }) {
+  const reasons = {
+    "other features": "it was trained on other features than this firmware computes: retrain it",
+    "other format": "its format is newer than this firmware reads: update the firmware",
+    "bad labels": "its phrases or actions don't make sense to this firmware",
+    "bad settings": "its decision-rule settings are out of range",
+    corrupt: "it arrived damaged",
+    truncated: "it arrived incomplete",
+    "too big": "it's too big for this firmware",
+    "model refused": "this firmware can't run it (an operator it lacks, or too little memory): the board's log names which",
+    "not saved": "the board runs it, but couldn't save it to flash: it lasts until the board restarts",
+    interrupted: "the upload stopped part way",
+  };
+  if (result === "ok") return state === "ready" ? "listening" : `the board's model is ${state}`;
+  return reasons[result] ?? result;
 }

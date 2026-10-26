@@ -39,7 +39,7 @@ description: Flash the n-cartpole firmware onto an ESP32-S3 over USB from the br
   </li>
   <li>
     <span class="step-title">Connect it to Wi-Fi</span>
-    <p>A new board opens its own network, <strong>cartpole-XXXX</strong>. Join it, open <code>http://192.168.4.1</code> and enter your 2.4&nbsp;GHz network. Then reconnect your computer to your own network and open <code>http://cartpole.local</code>.</p>
+    <p>A new board opens its own network, <strong>cartpole-XXXX</strong>. Join it, open <a href="http://192.168.4.1" target="_blank" rel="noopener"><code>http://192.168.4.1</code></a> and enter your 2.4&nbsp;GHz network. Then reconnect your computer to your own network and open <a href="http://cartpole.local" target="_blank" rel="noopener"><code>http://cartpole.local</code></a>.</p>
   </li>
 </ol>
 

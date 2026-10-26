@@ -8,6 +8,60 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-26-voice-models",
+    date: "2026-10-26",
+    title: "Choose your own voice commands, and upload them to the boards",
+    firmware: "next",
+    items: [
+      "Settings › Voice › Upload model… sends a voice model (a .voice file from the training) to every connected board. The board checks it, stops listening for the few seconds it takes, and keeps it through restarts. New words or a better model no longer need new firmware; Remove takes a board's model off again.",
+      "Words… in the clips dialog sets the phrases and what each one does: mouse on or off, start or stop recording, sleep, or a mark. They're saved next to the clips for training. Two phrases can do the same thing.",
+      "Each board's settings show the phrases its model listens for. The ticks choose which actions the board carries out, so they stay the same when the words change.",
+      "Erasing a board's recordings leaves its voice model alone, and now erases only the part of the flash that holds recordings.",
+    ],
+  },
+  {
+    id: "2026-10-26-restarted-boards",
+    date: "2026-10-26",
+    title: "Boards that restart mid-recording keep their data apart",
+    items: [
+      "A board that is put to sleep and woken, or resets, during a recording on this computer comes back with its clock started again. It now carries on in a folder of its own (…_part2) instead of mixing the two runs' times in one file.",
+      "Uploading from the boards never writes over an earlier session folder that holds other recordings: the new one goes in a folder ending _2.",
+      "Record says so when more than one board is set as the clock source: each listener follows whichever it hears first, so the boards would split between them.",
+    ],
+  },
+  {
+    id: "2026-10-26-board-fixes",
+    date: "2026-10-26",
+    title: "Steadier recording and clock sync on the boards",
+    firmware: "next",
+    items: [
+      "Starting and stopping a flash recording in quick succession, from the page and by voice, no longer starts one recording inside another or loses the stop.",
+      "A board set as the clock source tries again by itself if its broadcast fails to start or stops.",
+      "The mouse keeps its priority on the link when a second computer or phone that was connected disconnects.",
+      "IMU samples lost after a long stall are counted again, rather than every later loss going uncounted.",
+      "A listener records a clock pair every second even when it misses the packet that second's pair was waiting for.",
+    ],
+  },
+  {
+    id: "2026-10-26-nfc-url",
+    date: "2026-10-26",
+    title: "Hold a phone to a board to open this page",
+    firmware: "next",
+    items: [
+      "A board with an NFC antenna fitted offers an Android phone held to it this page's address, and its LED flashes white. The page then reads Connect and the board's ID, and the browser prompt lists only that board.",
+      "Holding the phone to a sleeping board wakes it. If the board is left unused for a minute after the phone is taken away (nothing connects, USER isn't pressed, it isn't recording), it goes back to sleep.",
+      "The XIAO doesn't come with an antenna: it needs a small 13.56 MHz coil soldered to its two NFC pads.",
+    ],
+  },
+  {
+    id: "2026-10-25-row-icons",
+    date: "2026-10-25",
+    title: "Sleep and disconnect buttons on Android",
+    items: [
+      "Each board's disconnect button shows its ✕ in Chrome on Android, where it was blank, and both it and the sleep button are square on a touchscreen instead of tall and narrow.",
+    ],
+  },
+  {
     id: "2026-10-25-add-board",
     date: "2026-10-25",
     title: "Adding and waking boards without reloading the page",
