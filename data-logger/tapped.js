@@ -10,6 +10,9 @@
 
 export const BOARD_PARAM = "board";
 export const VERSION_PARAM = "v";
+// The board's current pairing code rides in the fragment (#pair=123456), which the browser never
+// sends to the server.
+export const PAIR_PARAM = "pair";
 
 /** Tag URL versions this page reads. */
 const READABLE_VERSIONS = new Set(["1"]);
@@ -23,12 +26,19 @@ export function tappedBoardId(search) {
   return id && /^([0-9A-Fa-f]{4}|[0-9A-Fa-f]{8})$/.test(id) ? id.toUpperCase() : null;
 }
 
+/** The pairing code a tag carried ("012345"), or null. */
+export function tappedPairingCode(hash) {
+  const code = new URLSearchParams(String(hash).replace(/^#/, "")).get(PAIR_PARAM);
+  return code && /^\d{6}$/.test(code) ? code : null;
+}
+
 /** The page's own address without the tag's parameters, so a reload doesn't ask for the board
- * again. */
+ * again, and a used pairing code doesn't linger in the address bar. */
 export function withoutTappedBoard(href) {
   const url = new URL(href);
   url.searchParams.delete(BOARD_PARAM);
   url.searchParams.delete(VERSION_PARAM);
+  if (tappedPairingCode(url.hash)) url.hash = "";
   return url.href;
 }
 

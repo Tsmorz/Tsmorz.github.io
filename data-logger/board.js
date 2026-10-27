@@ -172,7 +172,7 @@ export class Board extends EventTarget {
   // ---- connection -------------------------------------------------------------------------
   async connect(onStatus) {
     this.device.addEventListener("gattserverdisconnected", this.handleGattDisconnect);
-    onStatus?.(`Connecting to ${this.name}… (accept the pairing prompt if one appears)`);
+    onStatus?.(`Connecting to ${this.name}…`);
     const server = await this.device.gatt.connect();
 
     const data = await server.getPrimaryService(DATA_SERVICE);

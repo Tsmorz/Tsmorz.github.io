@@ -8,6 +8,62 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-27-solid-board-model",
+    date: "2026-10-27",
+    title: "A solid board in the orientation view",
+    items: [
+      "The orientation view draws the board as a solid: its thickness, the pads down each side, the LEDs, and a complete USB-C port with its opening, so you can tell at a glance which way up and round it is.",
+    ],
+  },
+  {
+    id: "2026-10-27-secure-pairing",
+    date: "2026-10-27",
+    title: "Pairing with a code",
+    firmware: "next",
+    items: [
+      "Boards now pair only with a 6-digit code, so nobody nearby can pair with one without it. Your computer asks for the code: it's shown in the board's USB console, and a phone held to a board's NFC tag opens this page with the code on it. Every pairing gets a new code.",
+      "A board takes new pairings only for 2 minutes after a double press of its USER button (the LED flashes cyan), after a phone is held to it, or while it isn't paired with anything. Computers it's already paired with reconnect as before.",
+      "After this update, each computer needs to pair with each board again: forget the board in your Bluetooth settings, double-press USER, then Add board.",
+    ],
+  },
+  {
+    id: "2026-10-27-clock-sync-holds",
+    date: "2026-10-27",
+    title: "Clock sync stays locked",
+    firmware: "next",
+    items: [
+      "A board following the clock source no longer loses it every few seconds, so it records clock pairs all the way through a recording.",
+    ],
+  },
+  {
+    id: "2026-10-27-board-list",
+    date: "2026-10-27",
+    title: "Arrange the board list",
+    items: [
+      "Drag a board by its ID to move it in the Boards list. The order is remembered in this browser, and a board that reconnects goes back to its place.",
+      "The lines between boards are even again, and the line under the list no longer says when a board reconnects (its row shows it).",
+    ],
+  },
+  {
+    id: "2026-10-27-battery-in-bluetooth-settings",
+    date: "2026-10-27",
+    title: "A board's battery shows in your Bluetooth settings",
+    firmware: "next",
+    items: [
+      "Boards report their charge the standard way, so a computer or phone they're paired with can show it next to the board's name with no page open. It updates in steps of 2%.",
+    ],
+  },
+  {
+    id: "2026-10-27-notifications-and-sharing",
+    date: "2026-10-27",
+    title: "Notifications, sharing a recording, and boards that come back by themselves",
+    items: [
+      "Settings › Notifications › Notify me: while this page isn't the window in front, it tells you when a board's battery reaches 20%, its flash fills or its recording stops on the board, a board drops out and doesn't come back, or a firmware update or upload finishes.",
+      "A board that went to sleep by itself (a voice command, a low battery) or dropped out for more than a minute reconnects once it's woken or back in range, without reloading the page.",
+      "Share… next to Open in Replay sends the session you just saved (its CSV files and session.json) to mail or another app, where the browser can share files.",
+    ],
+  },
+  {
     id: "2026-10-26-voice-models",
     date: "2026-10-26",
     title: "Choose your own voice commands, and upload them to the boards",
