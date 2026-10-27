@@ -25,6 +25,7 @@ To change what the site says, edit YAML, not HTML.
 | The "Have a look around" tiles under the home hero | `_data/home.yml` |
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
+| Lessons on /controls/ or /vision/ | `_data/labs/controls.yml`, `_data/labs/vision.yml` |
 | Name, bio links, CV button | `_config.yml` |
 | Nav logo (cartpole, fade, radial, pendulum, pendulum4 or pendulum3) | `logo:` in `_config.yml`; all are drawn in `_includes/logo.html` (the favicons in `assets/img/` are separate files) |
 | Bio prose, education timeline | `about.md` |
@@ -52,10 +53,12 @@ assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab
 assets/js/swingup.js     /controls/swingup/: double cart-pole + goal-conditioned TQC policy in vanilla JS
 assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax + Bu, design a discrete LQR; FitCore has no DOM
 assets/js/recipes.js     /recipes/ (recipes.md): tick lists, metric/imperial; RecipeCore (unit conversion) has no DOM
-assets/js/lab/           the lab template behind /controls/
+assets/js/lab/           the lab template behind /controls/; lab-shell.js (cards, lesson map, hash) is shared with /vision/
+assets/js/vision/        /vision/ (vision.md): vision-core.js (no DOM) and vision.js (views, controls, loop)
+assets/img/vision/       the /vision/ photos: three CC0 Commons photos at 640 × 480, credited on vision.md; add new ones only once approved
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
 controls/swingup/real/   /controls/swingup/real/: browser firmware installer (esp-web-tools, pinned to an exact version); manifest, image pieces, the model (`n-cartpole-model.ncpm`) and its own `manifest-model.json` (an "Install model" button that writes it to the `model` partition) come from `task fw-installer -- fw-vX.Y.Z [--model <.ncpm>]` in `../n-cartpole`, never hand-edit; `script/test-installer` checks them
-script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-fit, test-recipes, train-verify-net
+script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-fit, test-recipes, train-verify-net
 ```
 
 ### Conventions
@@ -190,6 +193,27 @@ Other notes:
   eigenvalues, pole placement, the filter, network bounds, identification, and that every `_data/labs` page
   names only plants, views and controls that exist. `assets/models/verify-net.json` is written by
   `script/train-verify-net`; never hand-edit it.
+
+### The vision lab (`/vision/`)
+
+Same template as /controls/: `vision.md` includes `lab.html`, which renders `_data/labs/vision.yml`; `engine: vision` there
+makes it load `vision-core.js` and `vision.js` instead of the controls scripts, and `finale` is where the last "Next" goes.
+Both pages run their cards, lesson map and ticks through `lab-shell.js`. The running problem: a camera watches a ball roll
+on a table; where is it, in centimetres, every frame? The first row goes pixels, blur, edges (Sobel), corners (Harris),
+find the ball (redness threshold, blobs, roundness), homography (drag four corners), match features (descriptors, ratio
+test, RANSAC against a second view made by a known H), two cameras (block matching, triangulation), learn a filter (one
+3×3 kernel by Adam), a small network (a two-layer CNN that trains live in the page) and track (Kalman with a gate and a card
+that hides the ball). The `extend: true` row runs the filters and a colour tracker on the visitor's webcam (never sent
+anywhere; it stops when another lesson opens).
+
+- A lab's `source` is `photo` (one of the `assets/img/vision/` photos, worked on at 320 × 240, switchable to the table),
+  `table` (the ball scene, rendered pixel by pixel in `renderScene` from the homography `CAM`, so every lesson knows the
+  truth), `stereo` (ray-cast pair in `renderStereo`) or `camera`.
+- Image views get a **magnifier**: the pointer shows the patch under it, enlarged, through the lesson's filter (`loupe` in
+  vision.js). On Edges and the camera lesson the photo stays underneath unless the panel asks for the whole filtered picture.
+- `script/test-vision` (`task check:vision`, in `check:fast`) guards the filters, the detector (and that it fails in dim
+  light, which the network lesson relies on), the geometry, matching at the rotations the Match lesson quotes, stereo,
+  both learners, the tracker, and that `vision.yml` names only views, controls, sources and photos that exist.
 
 ## Running and checking
 

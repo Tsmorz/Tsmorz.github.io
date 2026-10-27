@@ -138,15 +138,13 @@ Dir.glob("_data/labs/*.yml").sort.each do |path|
         end
       end
     end
-    # ARIVA: every lesson has a goal, a recall, a prediction, a note, tasks, a closing check and a recap.
-    if path.end_with?("controls.yml")
-      errors << "#{path}: needs a top-level problem statement" if doc["problem"].to_s.strip.empty? && tab == doc["tabs"].first
-      %w[goal predict note tasks check recap].each { |k| errors << "#{where}: needs #{k} (ARIVA)" if tab[k].to_s.strip.empty? }
-      errors << "#{where}: needs a demo" unless (doc["demos"] || []).any? { |d| d["id"] == tab["demo"] }
-      ids = (doc["tabs"] || []).map { |t| t["id"] }
-      errors << "#{where}: needs lists unknown lesson(s)" unless Array(tab["needs"]).all? { |n| ids.include?(n) && n != tab["id"] }
-      errors << "#{where}: needs a recall line" if tab["recall"].to_s.strip.empty?
-    end
+    # ARIVA: every lesson on every lab page has a goal, a recall, a prediction, a note, tasks, a closing check and a recap.
+    errors << "#{path}: needs a top-level problem statement" if doc["problem"].to_s.strip.empty? && tab == doc["tabs"].first
+    %w[goal predict note tasks check recap].each { |k| errors << "#{where}: needs #{k} (ARIVA)" if tab[k].to_s.strip.empty? }
+    errors << "#{where}: needs a demo" unless (doc["demos"] || []).any? { |d| d["id"] == tab["demo"] }
+    ids = (doc["tabs"] || []).map { |t| t["id"] }
+    errors << "#{where}: needs lists unknown lesson(s)" unless Array(tab["needs"]).all? { |n| ids.include?(n) && n != tab["id"] }
+    errors << "#{where}: needs a recall line" if tab["recall"].to_s.strip.empty?
   end
 end
 
