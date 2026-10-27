@@ -25,8 +25,9 @@ To change what the site says, edit YAML, not HTML.
 | The "Have a look around" tiles under the home hero | `_data/home.yml` |
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
-| Lessons on /controls/ or /vision/ | `_data/labs/controls.yml`, `_data/labs/vision.yml` |
+| Lessons on /controls/, /vision/ or /embedded/ | `_data/labs/controls.yml`, `vision.yml`, `embedded.yml` |
 | Name, bio links, CV button | `_config.yml` |
+| The Labs nav menu (Controls, Double Pendulum, Custom data, Vision, Embedded) | `_layouts/default.html` |
 | Nav logo (cartpole, fade, radial, pendulum, pendulum4 or pendulum3) | `logo:` in `_config.yml`; all are drawn in `_includes/logo.html` (the favicons in `assets/img/` are separate files) |
 | Bio prose, education timeline | `about.md` |
 | Hero headline / intro paragraph | `index.html` |
@@ -53,12 +54,14 @@ assets/js/statebox.js    `drawStateBox`: the state/units panel shared by the lab
 assets/js/swingup.js     /controls/swingup/: double cart-pole + goal-conditioned TQC policy in vanilla JS
 assets/js/fit.js         /controls/fit/ (fit.md): upload a CSV, fit x[k+1] = Ax + Bu, design a discrete LQR; FitCore has no DOM
 assets/js/recipes.js     /recipes/ (recipes.md): tick lists, metric/imperial; RecipeCore (unit conversion) has no DOM
-assets/js/lab/           the lab template behind /controls/; lab-shell.js (cards, lesson map, hash) is shared with /vision/
+assets/js/lab/           the lab template behind /controls/; lab-shell.js (cards, lesson map, hash) is shared by every lab page,
+                         lab-ui.js (plots, panel controls, pointer) by the newer engines (vision.js, embedded.js)
 assets/js/vision/        /vision/ (vision.md): vision-core.js (no DOM) and vision.js (views, controls, loop)
+assets/js/embedded/      /embedded/ (embedded.md): embedded-core.js (no DOM) and embedded.js
 assets/img/vision/       the /vision/ photos: three CC0 Commons photos at 640 × 480, credited on vision.md; add new ones only once approved
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
 controls/swingup/real/   /controls/swingup/real/: browser firmware installer (esp-web-tools, pinned to an exact version); manifest, image pieces, the model (`n-cartpole-model.ncpm`) and its own `manifest-model.json` (an "Install model" button that writes it to the `model` partition) come from `task fw-installer -- fw-vX.Y.Z [--model <.ncpm>]` in `../n-cartpole`, never hand-edit; `script/test-installer` checks them
-script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-fit, test-recipes, train-verify-net
+script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-embedded, test-fit, test-recipes, train-verify-net
 ```
 
 ### Conventions
@@ -196,8 +199,9 @@ Other notes:
 
 ### The vision lab (`/vision/`)
 
-Same template as /controls/: `vision.md` includes `lab.html`, which renders `_data/labs/vision.yml`; `engine: vision` there
-makes it load `vision-core.js` and `vision.js` instead of the controls scripts, and `finale` is where the last "Next" goes.
+Same template as /controls/: `vision.md` includes `lab.html`, which renders `_data/labs/vision.yml`. A page's `engine: <name>`
+makes `lab.html` load `lab-ui.js`, `assets/js/<name>/<name>-core.js` and `<name>.js` instead of the controls scripts, and
+`finale` is where the last "Next" goes.
 Both pages run their cards, lesson map and ticks through `lab-shell.js`. The running problem: a camera watches a ball roll
 on a table; where is it, in centimetres, every frame? The first row goes pixels, blur, edges (Sobel), corners (Harris),
 find the ball (redness threshold, blobs, roundness), homography (drag four corners), match features (descriptors, ratio
@@ -214,6 +218,19 @@ anywhere; it stops when another lesson opens).
 - `script/test-vision` (`task check:vision`, in `check:fast`) guards the filters, the detector (and that it fails in dim
   light, which the network lesson relies on), the geometry, matching at the rotations the Match lesson quotes, stereo,
   both learners, the tracker, and that `vision.yml` names only views, controls, sources and photos that exist.
+
+### The embedded lab (`/embedded/`)
+
+`embedded.md` + `_data/labs/embedded.yml` (`engine: embedded`). The running problem: a board on a CR2032 coin cell reads a
+button and a thermistor, blinks an LED, logs to flash, talks to a radio chip, and must last a year. Lessons: digital input
+(pull-up, bounce, RC filter, Schmitt, software debounce), analog input (bits, reference, averaging), thermistor (divider,
+ratiometric reading, straight line / Beta / table), LED and PWM (current, duty, flicker, gamma), memory (flash, .data, .bss,
+heap, the stack through one cycle with the ADC interrupt at its deepest call), flash (erase-before-write, wear, ring log),
+buses (UART clock mismatch, I²C pull-ups and rise time, SPI), and battery (charge per wake, internal resistance, brown-out).
+The `extend: true` row is a bike light: a mode button as a state machine (act on press vs on release), and a Li-ion cell read
+through a divider for step-down. A lab's `kind` picks the model. Every number comes from `embedded-core.js`; the battery
+lesson starts deliberately badly (about 47 days) and the visitor fixes it. `script/test-embedded` (`task check:embedded`, in
+`check:fast`) checks each claim the lessons make, and that `embedded.yml` names only views, controls and kinds that exist.
 
 ## Running and checking
 

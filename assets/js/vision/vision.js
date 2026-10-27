@@ -12,54 +12,17 @@
 (function () {
   'use strict';
   if (typeof document === 'undefined') return;
-  var C = window.VisionCore, Shell = window.LabShell;
+  var C = window.VisionCore, Shell = window.LabShell, U = window.LabUI;
   var cfgEl = document.getElementById('lab-config');
-  if (!cfgEl || !C || !Shell) return;
+  if (!cfgEl || !C || !Shell || !U) return;
   var CFG = JSON.parse(cfgEl.textContent);
   var clamp = C.clamp, el = Shell.el;
   var seed = 1234;
   function rand() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
 
-  /* ================= helpers ================= */
-  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
-  function withAlpha(c, a) { var m = /^#([0-9a-f]{6})$/i.exec(c); if (!m) return c; var n = parseInt(m[1], 16); return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
-  function fmt(v, d) { var s = v.toFixed(d); return /^-0(\.0+)?$/.test(s) ? s.slice(1) : s; }
-  var col = {};
-  function readColors() {
-    var m = { text: '--text', muted: '--text-muted', border: '--border', accent: '--accent', bgSoft: '--bg-soft', bg: '--bg',
-      viz1: '--viz-1', viz2: '--viz-2', viz3: '--viz-3', viz4: '--viz-4', bad: '--bad', mono: '--mono', font: '--font' };
-    Object.keys(m).forEach(function (k) { col[k] = cssVar(m[k]); });
-  }
-  function fit(canvas) {
-    var dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
-    var bw = Math.max(1, Math.round(W * dpr)), bh = Math.max(1, Math.round(H * dpr));
-    if (canvas.width !== bw || canvas.height !== bh) { canvas.width = bw; canvas.height = bh; }
-    var ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-    return { ctx: ctx, W: W, H: H };
-  }
-  function text(ctx, s, x, y, color, o) {
-    o = o || {};
-    ctx.font = (o.w || '600') + ' ' + (o.size || 12) + 'px ' + (o.mono ? col.mono : col.font);
-    ctx.fillStyle = color || col.text; ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'top';
-    ctx.fillText(s, x, y);
-  }
-  function line(ctx, pts, c, lw, dash) {
-    ctx.strokeStyle = c; ctx.lineWidth = lw || 1.5; ctx.setLineDash(dash || []); ctx.beginPath();
-    var on = false; pts.forEach(function (p) { if (!p || !isFinite(p[0]) || !isFinite(p[1])) { on = false; return; } if (on) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); on = true; });
-    ctx.stroke(); ctx.setLineDash([]);
-  }
-  function ring(ctx, x, y, r, c, lw) { ctx.strokeStyle = c; ctx.lineWidth = lw || 2; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke(); }
-  function cross(ctx, x, y, r, c, lw) { ctx.strokeStyle = c; ctx.lineWidth = lw || 2; ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke(); }
-  // White text on a dark tab, readable over any picture.
-  function label(ctx, s, x, y, align) {
-    ctx.font = '600 11px ' + col.font; var w = ctx.measureText(s).width, bx = align === 'right' ? x - w - 4 : x - 4;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx, y - 3, w + 8, 17);
-    text(ctx, s, x, y, '#fff', { size: 11, align: align || 'left' });
-  }
-  function caption(c, s, sub) {
-    text(c.ctx, s, 10, 8, col.text, { size: 12 });
-    if (sub) text(c.ctx, sub, 10, 24, col.muted, { w: '400', size: 11 });
-  }
+  /* ================= helpers (lab-ui.js) ================= */
+  var withAlpha = U.withAlpha, fmt = U.fmt, col = U.col, readColors = U.readColors, fit = U.fit, text = U.text, line = U.line,
+    ring = U.ring, cross = U.cross, label = U.label, caption = U.caption, series = U.series, range = U.range;
 
   /* ---- images on a canvas ---- */
   // Each image is drawn into an offscreen canvas of its own size, then scaled up without smoothing, so pixels stay square.
@@ -99,38 +62,6 @@
   }
   function imgArea(c, top) { return { x: 8, y: top || 8, w: c.W - 16, h: c.H - (top || 8) - 8 }; }
   function dim(ctx, box, a) { ctx.fillStyle = 'rgba(0,0,0,' + a + ')'; ctx.fillRect(box.x, box.y, box.w, box.h); }
-
-  /* ---- plots ---- */
-  function axes(c, x0, y0, x1, y1, yr, title, xlab) {
-    var ctx = c.ctx;
-    ctx.strokeStyle = col.border; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-    if (yr[0] < 0 && yr[1] > 0) { var z = y1 - (0 - yr[0]) / (yr[1] - yr[0]) * (y1 - y0); line(ctx, [[x0, z], [x1, z]], col.border, 1, [3, 3]); }
-    text(ctx, fmt(yr[1], Math.abs(yr[1]) < 10 ? 1 : 0), x0 - 4, y0, col.muted, { w: '400', size: 10, mono: true, align: 'right' });
-    text(ctx, fmt(yr[0], Math.abs(yr[0]) < 10 ? 1 : 0), x0 - 4, y1 - 10, col.muted, { w: '400', size: 10, mono: true, align: 'right' });
-    if (title) text(ctx, title, x0, y0 - 18, col.text, { size: 12 });
-    if (xlab) text(ctx, xlab, x1, y1 + 4, col.muted, { w: '400', size: 10, align: 'right' });
-    return function (i, n, v) { return [x0 + i / Math.max(1, n - 1) * (x1 - x0), y1 - (v - yr[0]) / (yr[1] - yr[0]) * (y1 - y0)]; };
-  }
-  function legend(ctx, items, x, y) {
-    ctx.font = '500 11px ' + col.font;
-    items.forEach(function (it) {
-      ctx.fillStyle = it[1]; ctx.fillRect(x, y + 4, 12, 3); text(ctx, it[0], x + 16, y, col.muted, { w: '500', size: 11 });
-      x += 24 + ctx.measureText(it[0]).width;
-    });
-  }
-  function series(c, lanes, yr, title, xlab) {
-    var x0 = 44, y0 = 30, x1 = c.W - 12, y1 = c.H - 22, map = axes(c, x0, y0, x1, y1, yr, title, xlab);
-    lanes.forEach(function (ln) { line(c.ctx, ln.v.map(function (v, i) { return isFinite(v) ? map(i, ln.v.length, clamp(v, yr[0], yr[1])) : null; }), ln.c, ln.lw || 1.6, ln.dash); });
-    legend(c.ctx, lanes.filter(function (l) { return l.name; }).map(function (l) { return [l.name, l.c]; }), x0 + 4, y1 + 5);
-    return { map: map, x0: x0, y0: y0, x1: x1, y1: y1 };
-  }
-  function range(arrs, minSpan) {
-    var lo = Infinity, hi = -Infinity;
-    arrs.forEach(function (a) { a.forEach(function (v) { if (isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }); });
-    if (!isFinite(lo)) return [-1, 1];
-    var mid = (lo + hi) / 2, span = Math.max(minSpan || 0.1, (hi - lo) * 1.15);
-    return [mid - span / 2, mid + span / 2];
-  }
 
   /* ================= sources ================= */
   // Photos ship at 640 × 480 and are worked on at half that.
@@ -239,28 +170,8 @@
   }
   function truthPx(S) { return C.ballPixel(S.scene.x, S.scene.y); }
 
-  /* ================= pointer ================= */
-  // Views record where they drew the image (S.hit[slot] = box); a drag on that canvas then moves whatever the view says.
-  function bindPointer(canvas, tab, slot) {
-    function at(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
-    function imgPt(h, p) { return { x: (p.x - h.box.x) / h.box.s, y: (p.y - h.box.y) / h.box.s }; }
-    var drag = null;
-    canvas.addEventListener('pointerdown', function (e) {
-      var h = tab.hit[slot]; if (!h) return;
-      var p = at(e), q = h.box ? imgPt(h, p) : p;
-      drag = h.down ? h.down(q, p) : null;
-      if (drag) { canvas.setPointerCapture(e.pointerId); e.preventDefault(); drag(q, p); }
-    });
-    canvas.addEventListener('pointermove', function (e) {
-      var h = tab.hit[slot]; if (!h) return;
-      var p = at(e), q = h.box ? imgPt(h, p) : p;
-      tab.hover[slot] = h.box && (e.pointerType === 'mouse' || drag) ? q : null;     // where the magnifier looks
-      if (drag) drag(q, p); else canvas.style.cursor = h.cursor ? h.cursor(q, p) || '' : '';
-    });
-    function up(e) { drag = null; if (e.pointerType !== 'mouse') tab.hover[slot] = null; }
-    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
-    canvas.addEventListener('pointerleave', function () { tab.hover[slot] = null; });
-  }
+  /* ================= pointer (LabUI.bindPointer) ================= */
+  var bindPointer = U.bindPointer;
   function probeHit(S, box) {
     return { box: box, down: function () { return function (q) { if (q.x < 0 || q.y < 0 || q.x > box.iw || q.y > box.ih) return; S.probe = { x: Math.floor(q.x), y: Math.floor(q.y) }; S.probeMoved = true; }; }, cursor: function () { return 'crosshair'; } };
   }
@@ -872,33 +783,7 @@
   };
 
   /* ================= controls ================= */
-  function h3(panel, t) { panel.appendChild(el('h3', '', t)); }
-  function hint(panel, t) { var p = el('p', 'panel-hint', t); panel.appendChild(p); return p; }
-  var uid = 0;
-  function slider(panel, label, min, max, step, value, fmtV, onInput) {
-    var id = 'vs' + (uid++), g = el('div', 'pid-group'), lb = el('label'), val = el('span'); lb.setAttribute('for', id); lb.innerHTML = label + ' '; lb.appendChild(val);
-    var inp = el('input'); inp.type = 'range'; inp.id = id; inp.min = min; inp.max = max; inp.step = step; inp.value = value;
-    g.appendChild(lb); g.appendChild(inp); panel.appendChild(g);
-    function show() { val.textContent = fmtV(parseFloat(inp.value)); }
-    inp.addEventListener('input', function () { onInput(parseFloat(inp.value)); show(); }); show();
-    return { input: inp, set: function (v) { inp.value = v; show(); } };
-  }
-  function toggle(panel, label, opts, current, onPick) {
-    var box = el('div', 'mode-toggle'); box.setAttribute('role', 'group'); box.setAttribute('aria-label', label);
-    var btns = opts.map(function (o) {
-      var b = el('button', 'mode-btn' + (o[0] === current ? ' active' : ''), o[1]); b.type = 'button'; b.setAttribute('aria-pressed', o[0] === current ? 'true' : 'false');
-      b.addEventListener('click', function () { btns.forEach(function (x) { var on = x === b; x.classList.toggle('active', on); x.setAttribute('aria-pressed', on ? 'true' : 'false'); }); onPick(o[0]); });
-      box.appendChild(b); return b;
-    });
-    panel.appendChild(box);
-  }
-  function button(panel, label, onClick) { var b = el('button', 'sim-btn', label); b.type = 'button'; b.addEventListener('click', function () { onClick(b); }); panel.appendChild(b); return b; }
-  function telemetry(panel, rows) {
-    var t = el('div', 'telemetry'), vals = {};
-    rows.forEach(function (r) { t.appendChild(el('span', 't-key', r[1])); vals[r[0]] = el('span', 't-val', '-'); t.appendChild(vals[r[0]]); });
-    panel.appendChild(t); return vals;
-  }
-  function setV(span, v, bad) { if (!span) return; if (span.textContent !== v) span.textContent = v; span.classList.toggle('lab-bad', !!bad); }
+  var h3 = U.h3, hint = U.hint, slider = U.slider, toggle = U.toggle, button = U.button, telemetry = U.telemetry, setV = U.setV;
   function syncer(tab, f) { tab.sync.push(f); }
 
   var CTRL = {};

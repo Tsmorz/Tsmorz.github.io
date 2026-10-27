@@ -7,8 +7,8 @@
 # camera (the visitor's webcam).
 engine: vision
 finale:
-  href: /controls/
-  label: Control Systems Lab
+  href: /embedded/
+  label: Embedded Systems Lab
 problem: >-
   A camera looks down at a ball rolling on a table. Where is the ball, in centimetres on the table, in every frame? Each
   lesson in the first row adds one step: pixels, blur, edges, corners, finding the ball, straightening the view, matching

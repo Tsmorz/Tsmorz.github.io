@@ -41,15 +41,16 @@
           <li><a href="{{ '/about/' | relative_url }}" {% if p contains '/about' %}aria-current="page"{% endif %}>About</a></li>
           <li><a href="{{ '/projects/' | relative_url }}" {% if p contains '/projects' %}aria-current="page"{% endif %}>Projects</a></li>
           <li class="nav-menu">
-            <a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' %}aria-current="page"{% endif %}>Controls Lab</a>
-            <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="controls-menu" aria-label="Controls Lab pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
-            <ul class="nav-menu-list" id="controls-menu">
-              <li><a href="{{ '/controls/' | relative_url }}" {% if p == '/controls/' %}aria-current="page"{% endif %}>Lessons</a></li>
+            <a href="{{ '/controls/' | relative_url }}" {% if p contains '/controls' or p contains '/vision' or p contains '/embedded' %}aria-current="page"{% endif %}>Labs</a>
+            <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="labs-menu" aria-label="Lab pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+            <ul class="nav-menu-list" id="labs-menu">
+              <li><a href="{{ '/controls/' | relative_url }}" {% if p == '/controls/' %}aria-current="page"{% endif %}>Controls</a></li>
               <li><a href="{{ '/controls/swingup/' | relative_url }}" {% if p contains '/controls/swingup/' %}aria-current="page"{% endif %}>Double Pendulum</a></li>
               <li><a href="{{ '/controls/fit/' | relative_url }}" {% if p contains '/controls/fit' %}aria-current="page"{% endif %}>Custom data</a></li>
+              <li><a href="{{ '/vision/' | relative_url }}" {% if p contains '/vision' %}aria-current="page"{% endif %}>Computer Vision</a></li>
+              <li><a href="{{ '/embedded/' | relative_url }}" {% if p contains '/embedded' %}aria-current="page"{% endif %}>Embedded Systems</a></li>
             </ul>
           </li>
-          <li><a href="{{ '/vision/' | relative_url }}" {% if p contains '/vision' %}aria-current="page"{% endif %}>Vision Lab</a></li>
           <li class="nav-menu">
             <a href="{{ '/recipes/' | relative_url }}" {% if p contains '/recipes' %}aria-current="page"{% endif %}>Recipes</a>
             <button class="nav-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="recipes-menu" aria-label="Recipes pages"><svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>

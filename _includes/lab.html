@@ -3,7 +3,7 @@
   everything comes from _data/labs/<name>.yml: the labs (plant + controller + settings) and the
   tabs (which lab, which view in each of the three canvas slots, which panel controls, and the
   note underneath). lab-shell.js runs the lesson frame (cards, map, hash); the page's engine (`engine:` in
-  the YAML: lab.js by default, vision.js for /vision/) builds the panels and draws the views. `finale` is
+  the YAML: lab.js by default, else assets/js/<engine>/<engine>-core.js and <engine>.js, drawing with lab-ui.js) builds the panels and draws the views. `finale` is
   where the last lesson's "Next" goes. Links in notes are written root-relative ("/controls/") and get the
   baseurl here.
 {%- endcomment -%}
@@ -86,9 +86,11 @@
 </div>
 <script type="application/json" id="lab-config">{"page": {{ page.lab | jsonify }}, "assets": {"net": {{ '/assets/models/verify-net.json' | relative_url | jsonify }}, "img": {{ '/assets/img/vision/' | relative_url | jsonify }}}, "labs": {{ L.labs | jsonify }}, "tabs": {{ L.tabs | jsonify }}}</script>
 <script src="{{ '/assets/js/lab/lab-shell.js' | relative_url }}"></script>
-{%- if L.engine == 'vision' %}
-<script src="{{ '/assets/js/vision/vision-core.js' | relative_url }}"></script>
-<script src="{{ '/assets/js/vision/vision.js' | relative_url }}"></script>
+{%- if L.engine %}
+{%- assign eng = '/assets/js/' | append: L.engine | append: '/' | append: L.engine %}
+<script src="{{ '/assets/js/lab/lab-ui.js' | relative_url }}"></script>
+<script src="{{ eng | append: '-core.js' | relative_url }}"></script>
+<script src="{{ eng | append: '.js' | relative_url }}"></script>
 {%- else %}
 <script src="{{ '/assets/js/lab/lab-core.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/lab/lab-plants.js' | relative_url }}"></script>
