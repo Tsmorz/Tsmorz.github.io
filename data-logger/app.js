@@ -17,7 +17,11 @@ import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
 import { SharedAttempts, withTimeout } from "./attempts.js";
-import { boardName, tappedBoardId, withoutTappedBoard } from "./tapped.js";
+import { AlertWatch } from "./alerts.js";
+import { sessionShareFiles, shareSize } from "./share.js";
+import { boardName, tappedBoardId, tappedPairingCode, withoutTappedBoard } from "./tapped.js";
+import { moveBoard, parseSavedOrder, sortByOrder } from "./board-order.js";
+import { drawList, mixColors } from "./board-model.js";
 
 const $ = (id) => document.getElementById(id);
 const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
@@ -72,7 +76,9 @@ function readColors() {
   colors = {
     grid: token("screen-grid"), line: token("screen-line"), muted: token("screen-muted"), text: token("screen-text"), screen: token("screen"),
     readout: token("readout"), board: token("board"), mono: token("mono"), signal: token("signal"), bad: token("bad"),
-    ledRed: token("led-red"),
+    ledRed: token("led-red"), slot: token("slot"),
+    // The board token is the light one on the dark theme's screens, the dark one on the light theme's.
+    boardIsLight: effectiveTheme() === "dark",
     series: [token("series-x"), token("series-y"), token("series-z")],
   };
   // The phone browser's bar follows the header, toggle included.
@@ -321,7 +327,7 @@ buildLive($("accel-live"), ["|a|"]);
 // A camera looks at the world frame, by default x toward the front-left, y toward the front-right,
 // z up, seen from 30 degrees above the horizon; dragging the view orbits it (double-click goes
 // back), and where it was left is remembered in this browser. The board's own X/Y/Z axes are drawn
-// rotated by the quaternion, over an outline of the board with its USB-C connector and LEDs.
+// rotated by the quaternion, over a solid model of the board (board-model.js).
 const DEFAULT_CAMERA = { azimuth: (-135 * Math.PI) / 180, elevation: (30 * Math.PI) / 180 };
 const CAMERA_KEY = "pose-camera";
 const RADIANS_PER_PIXEL = 0.01;
@@ -339,30 +345,32 @@ const AXIS_NAMES = ["X", "Y", "Z"];
 // The board is drawn in mm, scaled so its 21 mm length spans 1.8 axis lengths.
 const AXIS_LENGTHS_PER_MM = 0.9 / 10.5;
 
-// A rounded rectangle centred on the origin: half-sizes a x b and corner radius r in mm, each
-// corner a quarter arc of a few points, placed in the IMU frame by place(u, v) -> [x, y, z] mm.
-function roundedRect(a, b, r, place) {
-  const points = [];
-  for (const [su, sv, start] of [[1, 1, 0], [-1, 1, 90], [-1, -1, 180], [1, -1, 270]]) {
-    for (let step = 0; step <= 6; step++) {
-      const angle = ((start + step * 15) * Math.PI) / 180;
-      const point = place(su * (a - r) + r * Math.cos(angle), sv * (b - r) + r * Math.sin(angle));
-      points.push(point.map((mm) => mm * AXIS_LENGTHS_PER_MM));
+// A board-model.js face's colour. The board's materials are the board token mixed onto the screen
+// by a tone, a lit face (shade 1) shifted toward whichever of the two is lighter; pads and LEDs
+// darken toward the slot colour in shadow.
+function boardPaint(material, shade) {
+  const tone = (base, span) => mixColors(colors.screen, colors.board, base + (colors.boardIsLight ? 1 : -1) * span * (shade - 0.5));
+  const shaded = (color) => mixColors(color, colors.slot, 0.6 * (1 - shade));
+  switch (material) {
+    case "pcb":
+      return tone(0.22, 0.16);
+    case "metal":
+      return tone(0.55, 0.4);
+    case "tongue":
+      return tone(0.3, 0.1);
+    case "pad":
+      return shaded(colors.readout);
+    case "led-red":
+      return shaded(colors.ledRed);
+    case "led-rgb": {
+      // The colour the board reports, unlit (barely off the screen) when it's off.
+      const lit = ledDisplayColor(selected.led);
+      return lit ? shaded(lit) : tone(0.08, 0.1);
     }
+    default:
+      return colors.slot;
   }
-  return points;
 }
-
-// The XIAO in the IMU's x/y plane: 17.8 x 21 mm with ~2 mm corners, its long side along y. Its
-// USB-C receptacle sits on top at the +y end, overhanging the edge by ~1 mm: the 8.9 x 7.3 mm
-// shell's top face, 3.2 mm up, and its stadium-shaped opening facing out along +y. Seen from above
-// with the port away from you, the red LED is to its left (-x) and the RGB LED to its right.
-const BOARD_OUTLINE = roundedRect(8.9, 10.5, 2, (u, v) => [u, v, 0]);
-const USB_SHELL_TOP = roundedRect(4.45, 3.65, 0.5, (u, v) => [u, 7.85 + v, 3.2]);
-const USB_OPENING = roundedRect(4.45, 1.6, 1.6, (u, v) => [u, 11.5, 1.6 + v]);
-// Corner radius = half-size makes a circle.
-const RED_LED = roundedRect(0.9, 0.9, 0.9, (u, v) => [-6.4 + u, 9 + v, 0.4]);
-const RGB_LED = roundedRect(0.9, 0.9, 0.9, (u, v) => [6.4 + u, 9 + v, 0.4]);
 
 // World point -> screen offset (right, up) plus depth (larger is farther from the camera).
 function project([x, y, z]) {
@@ -462,27 +470,26 @@ function drawPose() {
   }
   const q = removeYaw(selected.quat, headingChangeDegrees(IDENTITY_QUAT, selected.yawZero));
 
-  const shape = (points, fill, fillAlpha, lineWidth) => {
+  const toPixels = ([right, up]) => [width / 2 + right * AXIS_LENGTHS_PER_MM * scale, height / 2 - up * AXIS_LENGTHS_PER_MM * scale];
+  ctx.lineJoin = "round";
+  for (const item of drawList((point) => project(rotateVector(q, point)))) {
     ctx.beginPath();
-    points.map((point) => toScreen(rotateVector(q, point))).forEach(([sx, sy], i) => (i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy)));
+    if (item.line) {
+      ctx.moveTo(...toPixels(item.line[0]));
+      ctx.lineTo(...toPixels(item.line[1]));
+      ctx.strokeStyle = colors.board;
+      ctx.lineWidth = item.part === "board" ? 1.25 : 0.75;
+      ctx.stroke();
+      continue;
+    }
+    item.points.map(toPixels).forEach(([sx, sy], i) => (i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy)));
     ctx.closePath();
-    ctx.globalAlpha = fillAlpha;
-    ctx.fillStyle = fill;
+    // Stroked in its own colour too, so neighbouring faces leave no seam between them.
+    ctx.fillStyle = ctx.strokeStyle = boardPaint(item.material, item.shade);
+    ctx.lineWidth = 0.6;
     ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = colors.board;
-    ctx.lineWidth = lineWidth;
     ctx.stroke();
-  };
-  // The opening faces +y: when that points away from the camera, the shell hides it.
-  const openingFacesCamera = project(rotateVector(q, [0, 1, 0])).depth < 0;
-  shape(BOARD_OUTLINE, colors.board, 0.18, 1.5);
-  shape(RED_LED, colors.ledRed, 1, 0.5);
-  // The RGB LED in the colour the board reports, unlit (the screen showing through) when it's off.
-  shape(RGB_LED, ledDisplayColor(selected.led) ?? colors.screen, 1, 0.5);
-  if (!openingFacesCamera) shape(USB_OPENING, colors.screen, 1, 1);
-  shape(USB_SHELL_TOP, colors.board, 0.45, 1);
-  if (openingFacesCamera) shape(USB_OPENING, colors.screen, 1, 1);
+  }
 
   // Farthest axis first, so nearer ones draw over it.
   const tips = AXIS_NAMES.map((name, i) => {
@@ -827,7 +834,7 @@ function buildRow(board) {
     <td class="num flash"></td>
     <td class="num fw"></td>
     <td><span class="chip user-lamp" title="Lit while USER is held" aria-label="USER button"></span></td>
-    <td class="actions"><button type="button" class="sleep" title="Sleep (press USER on the board to wake it)" aria-label="Sleep">${SLEEP_ICON}</button><button type="button" class="disconnect" title="Disconnect" aria-label="Disconnect">${DISCONNECT_ICON}</button></td>`;
+    <td class="actions"><div><button type="button" class="sleep" title="Sleep (press USER on the board to wake it)" aria-label="Sleep">${SLEEP_ICON}</button><button type="button" class="disconnect" title="Disconnect" aria-label="Disconnect">${DISCONNECT_ICON}</button></div></td>`;
   const input = row.querySelector("input");
   input.value = board.label;
   input.addEventListener("click", (event) => event.stopPropagation());
@@ -842,8 +849,82 @@ function buildRow(board) {
     if (confirm(`Put ${board.displayName} to sleep? Press its USER button to wake it.`)) sleepBoards([board]);
   });
   row.addEventListener("click", () => select(board));
+  dragByHandle(row, row.querySelector(".name"), board);
+  row.dataset.key = board.key;
   board.row = row;
   $("boards").append(row);
+  placeRows();
+}
+
+// ---- the board list's order --------------------------------------------------------------
+// Rows are dragged by their ID cell (board-order.js); the order is remembered by board ID in this
+// browser, so a board that reconnects, or the page reloaded, keeps its place.
+const BOARD_ORDER_KEY = "board-order";
+let boardOrder = [];
+try {
+  boardOrder = parseSavedOrder(localStorage.getItem(BOARD_ORDER_KEY));
+} catch {
+  /* storage blocked: rows stay in the order they connected */
+}
+let draggedBoard = null;
+
+const shownBoards = () => [...$("boards").children].map((row) => boards.get(row.dataset.key)).filter(Boolean);
+
+// Puts the rows in the remembered order; only touches the table when they're out of it.
+function placeRows() {
+  const shown = shownBoards();
+  const sorted = sortByOrder(shown, boardOrder, (board) => board.boardId);
+  if (sorted.every((board, i) => board === shown[i])) return;
+  $("boards").append(...sorted.map((board) => board.row));
+}
+
+function moveBoardRow(board, before) {
+  boardOrder = moveBoard(boardOrder, shownBoards().map((each) => each.boardId), board.boardId, before?.boardId ?? null);
+  try {
+    localStorage.setItem(BOARD_ORDER_KEY, JSON.stringify(boardOrder));
+  } catch {
+    /* storage blocked: the order lasts for this page load */
+  }
+  placeRows();
+}
+
+function clearDropMarks() {
+  for (const row of $("boards").children) row.classList.remove("drop-before", "drop-after");
+}
+
+// The row is draggable only while the pointer is down on its handle, so the label's text field
+// still selects text as usual.
+function dragByHandle(row, handle, board) {
+  handle.title = "Drag to move this board in the list";
+  handle.addEventListener("pointerdown", () => (row.draggable = true));
+  handle.addEventListener("pointerup", () => (row.draggable = false));
+  row.addEventListener("dragstart", (event) => {
+    draggedBoard = board;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", board.boardId);
+    row.classList.add("dragging");
+  });
+  row.addEventListener("dragend", () => {
+    row.draggable = false;
+    row.classList.remove("dragging");
+    draggedBoard = null;
+    clearDropMarks();
+  });
+  const lowerHalf = (event) => event.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+  row.addEventListener("dragover", (event) => {
+    if (!draggedBoard || draggedBoard === board) return;
+    event.preventDefault();
+    clearDropMarks();
+    row.classList.add(lowerHalf(event) ? "drop-after" : "drop-before");
+  });
+  row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
+  row.addEventListener("drop", (event) => {
+    if (!draggedBoard || draggedBoard === board) return;
+    event.preventDefault();
+    const next = row.nextElementSibling ? boards.get(row.nextElementSibling.dataset.key) : null;
+    moveBoardRow(draggedBoard, lowerHalf(event) ? (next === draggedBoard ? null : next) : board);
+    clearDropMarks();
+  });
 }
 
 function renderBoardRow(board) {
@@ -933,6 +1014,7 @@ function renderUserLamps() {
 
 function renderBoards() {
   for (const board of boards.values()) renderBoardRow(board);
+  placeRows(); // a board's ID is known only once it has connected
   const count = connectedSummary();
   $("sleep-all").hidden = count === 0;
   $("settings-board").textContent = selected ? `· ${selected.displayName}` : "";
@@ -961,6 +1043,16 @@ function select(board) {
 // The board whose NFC tag opened the page (tapped.js), until it connects or its picker is
 // dismissed: Add board becomes Connect XXXX and the picker shows only that board.
 let tappedBoard = tappedBoardId(location.search);
+// The pairing code its tag carried (ble/pairing.c), shown while connecting to it.
+const tappedCode = tappedBoard ? tappedPairingCode(location.hash) : null;
+const tappedName = tappedBoard ? boardName(tappedBoard) : null;
+
+/** Where the code is, for a computer or phone that asks for one while pairing. */
+function pairingHint(device) {
+  return tappedCode && device.name === tappedName
+    ? `If asked for a pairing code, enter ${tappedCode}`
+    : "If asked for a pairing code: it's in the board's USB console (task monitor). A board that has paired before needs a double press of USER first";
+}
 
 function showTappedBoard() {
   $("connect").textContent = tappedBoard ? `Connect ${tappedBoard}` : "Add board";
@@ -1010,8 +1102,8 @@ async function addBoard() {
   let board;
   for (;;) {
     try {
-      setStatus(`Connecting to ${device.name}… (accept the pairing prompt if one appears)`);
-      board = await connectWithin(device, deadline - Date.now(), setStatus);
+      setStatus(`Connecting to ${device.name}… ${pairingHint(device)}`);
+      board = await connectWithin(device, deadline - Date.now());
       break;
     } catch (error) {
       if (boards.get(device.id)?.connected) {
@@ -1023,9 +1115,14 @@ async function addBoard() {
       const saved = /unsupported device/i.test(error.message);
       // Only a lost or slow link is worth another go, not a board that answered "no".
       const transient = !saved && (error.name === "NetworkError" || /timed out/.test(error.message));
+      // A board refuses new pairings outside its pairing window (src/ble/pairing.c).
+      // Chrome on macOS reports a refused or failed pairing only as "GATT operation failed for
+      // unknown reason".
+      const unpaired = error.name === "SecurityError" || /authenticat|pair|insufficient|unknown reason/i.test(error.message);
       if (!transient || Date.now() + RECONNECT_PAUSE_MS >= deadline) {
         setStatus(saved
           ? `Couldn't connect to ${device.name}: that was the Mac's saved record of it. Add board again and wait a moment before picking it`
+          : unpaired ? `Couldn't pair with ${device.name}. If this computer paired with it before its current firmware, forget it in the Bluetooth settings first. Then double-press its USER button (it flashes cyan), Add board, and enter the code from its USB console`
           : transient ? `Couldn't connect to ${device.name}: ${error.message}. Wake it (USER) or bring it closer, then Add board`
             : `Couldn't connect to ${device.name}: ${error.message}`, { bad: true });
         return;
@@ -1033,7 +1130,7 @@ async function addBoard() {
       await sleepMs(RECONNECT_PAUSE_MS);
     }
   }
-  setStatus(`Connected to ${board.displayName}`);
+  setStatus("");
   select(board);
 }
 $("connect").addEventListener("click", addBoard);
@@ -1053,6 +1150,7 @@ async function connectDevice(device, onStatus = setStatus) {
     renderMouse();
     renderLatency();
   });
+  board.addEventListener("change", () => watchAlerts(board));
   board.addEventListener("press", renderBoards);
   board.addEventListener("disconnected", () => onDisconnected(board));
   boards.set(device.id, board);
@@ -1082,8 +1180,8 @@ async function connectDevice(device, onStatus = setStatus) {
   return board;
 }
 
-// Add board's time for one board: long enough to accept macOS's pairing prompt (it gives up after
-// 30 s), with a retry or two for a board that was asleep.
+// Add board's time for one board: long enough to enter the code in macOS's pairing prompt (it gives
+// up after 30 s), with a retry or two for a board that was asleep.
 const ADD_BOARD_MS = 45000;
 const connectAttempts = new SharedAttempts();
 
@@ -1120,7 +1218,7 @@ function onDisconnected(board) {
     setStatus(`${board.displayName} disconnected`);
   } else if (board.sleeping || board.sleptOnHold(performance.timeOrigin + performance.now())) {
     setStatus(`${board.displayName} is asleep: press its USER button and it reconnects`);
-    keepConnected(board.device, board.displayName, { untilAwake: true });
+    keepConnected(board.device, board.displayName, { asleep: true });
   } else {
     setStatus(`${board.displayName} dropped out: reconnecting…`, { bad: Boolean(member) });
     keepConnected(board.device, board.displayName);
@@ -1129,36 +1227,98 @@ function onDisconnected(board) {
   else renderBoards();
 }
 
+// ---- notifications -------------------------------------------------------------------------
+// Desktop notifications while the page isn't the window in front: what alerts.js finds in a
+// board's state, a board that drops out and doesn't come back, a firmware update or upload
+// finishing. Off until turned on in Settings (and allowed by the browser); kept in this browser.
+const NOTIFY_KEY = "notify";
+const alertWatches = new Map(); // by device id, kept across reconnects
+const canNotify = () => "Notification" in window;
+let notifyOn = false;
+try {
+  notifyOn = localStorage.getItem(NOTIFY_KEY) === "on";
+} catch {
+  /* storage blocked: off until turned on */
+}
+
+function notify(title, body, tag = title) {
+  if (!notifyOn || !canNotify() || Notification.permission !== "granted" || document.hasFocus()) return;
+  try {
+    const note = new Notification(title, { body, tag, icon: "xiao.svg" });
+    note.onclick = () => {
+      window.focus();
+      note.close();
+    };
+  } catch {
+    /* Chrome on Android shows them only from a service worker, which this page doesn't have */
+  }
+}
+
+function watchAlerts(board) {
+  let watch = alertWatches.get(board.key);
+  if (!watch) alertWatches.set(board.key, (watch = new AlertWatch(board.displayName)));
+  watch.name = board.displayName;
+  for (const alert of watch.update(board)) notify(alert.title, alert.body, `${board.key}:${alert.kind}`);
+}
+
+function renderNotify() {
+  const blocked = canNotify() && Notification.permission === "denied";
+  $("notify").disabled = !canNotify();
+  $("notify").setAttribute("aria-checked", String(notifyOn && !blocked));
+  $("notify-status").textContent = !canNotify() ? "This browser can't show notifications."
+    : blocked ? "Blocked for this page: allow them in its site settings (left of the address)."
+    : notifyOn ? "On: shown while this page isn't the window in front." : "Off.";
+}
+$("notify").addEventListener("click", async () => {
+  if (!notifyOn && Notification.permission === "default") await Notification.requestPermission();
+  notifyOn = !notifyOn && Notification.permission === "granted";
+  try {
+    localStorage.setItem(NOTIFY_KEY, notifyOn ? "on" : "off");
+  } catch {
+    /* storage blocked: the choice lasts for this page load */
+  }
+  renderNotify();
+});
+renderNotify();
+
 // ---- reconnecting -------------------------------------------------------------------------
-// A board that drops out (out of range, a flat battery, a radio hiccup) is tried again for
-// RECONNECT_WINDOW_MS, or for as long as a live recording it's in runs. One put to sleep (from the
-// page, or by a USER hold) is waited for while the page is open, so it's back once woken; one
-// disconnected with ✕ isn't. Chrome needs no click to reconnect a board it already knows.
+// A board that drops out (out of range, a radio hiccup, or asleep: the page can't always tell, as
+// a board also sleeps by itself on a voice command, a low battery or NFC idling) is tried again
+// for as long as the page is open, so it's back once it's woken or in range; one disconnected with
+// ✕ isn't. After RECONNECT_WINDOW_MS the attempts slow down. Chrome needs no click to reconnect a
+// board it already knows.
 const RECONNECT_WINDOW_MS = 60000;
 const RECONNECT_PAUSE_MS = 2000;
+const RECONNECT_SLOW_PAUSE_MS = 10000;
 const reconnecting = new Set(); // device ids
 
-async function keepConnected(device, name, { quiet = false, untilAwake = false } = {}) {
+async function keepConnected(device, name, { quiet = false, asleep = false } = {}) {
   if (reconnecting.has(device.id)) return;
   reconnecting.add(device.id);
-  const until = Date.now() + RECONNECT_WINDOW_MS;
-  const wanted = () => !boards.get(device.id)?.connected && !firmwareJobs.get(device.id)?.active &&
-    (untilAwake || Date.now() < until || (recorder.active && recorder.members.has(device.id)));
+  const slowFrom = Date.now() + RECONNECT_WINDOW_MS;
+  const wanted = () => !boards.get(device.id)?.connected && !firmwareJobs.get(device.id)?.active;
+  let warned = asleep || quiet; // a sleeping board is meant to be away
   try {
     while (wanted()) {
+      const slow = Date.now() >= slowFrom;
+      if (slow && !warned) {
+        warned = true;
+        const recording = recorder.active && recorder.members.has(device.id);
+        setStatus(`${name} hasn't come back: it reconnects once it's awake (USER) and in range`, { bad: recording });
+        notify(`${name} hasn't come back`, recording ? "It dropped out of the recording a minute ago; the page keeps trying." : "The page reconnects it once it's awake (USER) and in range.", `${device.id}:gone`);
+      }
       try {
         const board = await connectWithin(device, CONNECT_ATTEMPT_MS);
-        setStatus(`${board.displayName} ${quiet ? "connected" : "reconnected"}`);
+        // Its row says it's back; the line only clears the news of it going.
+        if ($("status").textContent.startsWith(board.displayName) || $("status").textContent.startsWith(name)) setStatus("");
         if (!selected) select(board);
         else renderBoards();
         return;
       } catch {
-        await sleepMs(RECONNECT_PAUSE_MS);
+        await sleepMs(slow ? RECONNECT_SLOW_PAUSE_MS : RECONNECT_PAUSE_MS);
       }
+      if (quiet && slow && !connectedSummary() && reconnecting.size <= 1) setStatus("No boards connected.");
     }
-    if (boards.get(device.id)?.connected) return;
-    if (!quiet) setStatus(`${name} didn't come back: wake it (USER) and Add board`, { bad: true });
-    else if (!connectedSummary() && reconnecting.size <= 1) setStatus("No boards connected.");
   } finally {
     reconnecting.delete(device.id);
   }
@@ -1308,7 +1468,28 @@ let lastSaved = null; // { entries: [[path, File]], folder, session }
 function offerReplay(saved) {
   lastSaved = saved;
   $("rec-replay").hidden = !saved;
+  $("rec-share").hidden = !saved || !shareFiles(saved).length;
 }
+
+// "Share…" hands the last saved session to the system's share sheet: mail on a phone, or another
+// app. Only where the browser can share files (navigator.canShare).
+function shareFiles(saved) {
+  const prefix = saved.folder ? `${saved.folder.name}/` : "";
+  const entries = saved.entries.map(([path, file]) => [path.startsWith(prefix) ? path.slice(prefix.length) : path, file]);
+  const files = sessionShareFiles(entries, saved.session, (parts, name, options) => new File(parts, name, options));
+  return files.length && navigator.canShare?.({ files }) ? files : [];
+}
+$("rec-share").addEventListener("click", async () => {
+  const files = lastSaved ? shareFiles(lastSaved) : [];
+  if (!files.length) return;
+  const { bytes, tooBigToMail } = shareSize(files);
+  if (tooBigToMail) setRecStatus(`${lastSaved.session} is ${Math.round(bytes / 1e6)} MB, too big for most mail: share it to a drive instead.`, { bad: true });
+  try {
+    await navigator.share({ files, title: lastSaved.session, text: `Recording ${lastSaved.session} (${files.length} files).` });
+  } catch (error) {
+    if (error.name !== "AbortError") setRecStatus(`Share failed: ${error.message}`, { bad: true });
+  }
+});
 $("rec-replay").addEventListener("click", () => {
   if (!lastSaved) return;
   showReplay(true);
@@ -1842,8 +2023,10 @@ async function uploadFlash() {
       problems.length ? `Damaged data skipped: ${problems.join("; ")}.` : "",
     ].filter(Boolean).join(" "), { bad: Boolean(failed.length || problems.length || unsynced.length) });
     if (names.length) offerReplay({ entries, folder, session: names.at(-1) });
+    notify("Upload finished", failed.length ? `Failed: ${failed.join(", ")}.` : names.length ? `Saved ${names.join(", ")}.` : "Nothing new on the boards.", "upload");
   } catch (error) {
     setRecStatus(`Save failed: ${error.message}`, { bad: true });
+    notify("Upload failed", `Saving failed: ${error.message}`, "upload");
   }
 }
 
@@ -2336,11 +2519,13 @@ async function updateBoard(board) {
     if (!verdict.ok) throw new Error(verdict.reason);
     setJob(key, { active: false, stage: "done", name: fresh.displayName, text: `✓ running v${image.versionText}` });
     setStatus(`${fresh.displayName} updated to v${image.versionText}`);
+    notify(`${fresh.displayName} updated`, `Running v${image.versionText}.`, `${key}:firmware`);
     keepUpdatedFirmware({ name: imageName, bytes }).catch(() => {}); // the USB rescue images; not the update's business
     if (!selected) select(fresh);
   } catch (error) {
     setJob(key, { active: false, stage: "failed", bad: true, text: `failed: ${error.message}` });
     setStatus(`${name}: firmware update failed`, { bad: true });
+    notify(`${name}: firmware update failed`, error.message, `${key}:firmware`);
     throw error;
   }
 }
