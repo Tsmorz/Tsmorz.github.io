@@ -844,17 +844,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--lime); }
 .hero-photo { border-radius: 3px; aspect-ratio: 1; box-shadow: none; outline: 1px solid var(--lav); outline-offset: 8px; border: 0; }
 .hero-eyebrow::before { content: "// "; opacity: .6; }
 
-/* cards: figure frames with corner brackets, no pills */
+/* cards: figure frames, no pills */
 .card { position: relative; border-radius: 3px; box-shadow: none; background-color: var(--surface); border-color: var(--border); }
-.card::before, .card::after { content: ""; position: absolute; width: 12px; height: 12px; border: 0 solid var(--lime); pointer-events: none; opacity: 0; transition: opacity .15s ease; }   /* corner marks show on hover only */
-.card::before { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; }
-.card::after { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
 .card-media, .card-media img { border-radius: 0; }
 .card { transition: border-color .15s ease; }
 @media (hover: hover) {
   .card:hover { border-color: var(--lav); background-image: linear-gradient(var(--accent-soft), var(--accent-soft)); }
 }
-.card:hover::before, .card:hover::after, .card:focus-within::before, .card:focus-within::after { opacity: 1; }
 .card-year { letter-spacing: .04em; }
 .card-links a { font-family: var(--mono); font-size: .82rem; }
 

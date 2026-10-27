@@ -72,10 +72,10 @@
 
 - name: ESP32 Cam
   blurb: >-
-    Software for a small wrist-worn camera (an ESP32-S3). It streams live video,
-    spots printed markers (AprilTags) and measures how far away and how tilted they
-    are, focuses itself, and can track which way it's facing. You control it from a
-    web page on the camera's own Wi-Fi.
+    A private Wi-Fi camera (an ESP32-S3 with an autofocus lens) that you set up from
+    your phone, with no app and no cloud. It streams live video to any browser at home,
+    saves photos, clips and timelapses to a memory card, spots animals on the board
+    itself, and updates its own software over Wi-Fi.
   year: "2026"
   tags: [C++, ESP32, Computer Vision]
   featured: true
