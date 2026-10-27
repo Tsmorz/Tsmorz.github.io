@@ -1,0 +1,676 @@
+# /embedded/ — one running problem (a coin-cell sensor node that must last a year) taken through every idea, then some
+# of the same ideas on a bike light. Same template and ARIVA fields as controls.yml and vision.yml:
+# goal (Arrive), needs + recall + predict (Reactivate), note (Inform), tasks (Process), check + recap (Evaluate).
+# Rendered by _includes/lab.html with `engine: embedded`; views and controls are listed at the top of
+# assets/js/embedded/embedded.js, the models in embedded-core.js. A lab's `kind` picks the model a lesson drives.
+engine: embedded
+finale:
+  href: /vision/
+  label: Computer Vision Lab
+problem: >-
+  A small board runs from one CR2032 coin cell. It has a button, a thermistor read by the ADC, an LED, a log in flash,
+  and a bus to a radio chip, and it has to last a year. Each lesson in the first row builds one part: the button, the
+  ADC, the sensor, the LED, memory, flash, the bus, and finally the battery budget that ties them together. Then some
+  of these ideas on a bike light.
+labs:
+  button:
+    kind: button
+  adc:
+    kind: adc
+  ntc:
+    kind: ntc
+  led:
+    kind: led
+  memory:
+    kind: memory
+  flash:
+    kind: flash
+  bus:
+    kind: bus
+  power:
+    kind: power
+  modes:
+    kind: modes
+  runtime:
+    kind: runtime
+demos:
+- id: node
+  label: The sensor node
+- id: bike
+  label: A bike light
+  extend: true
+tabs:
+- id: button
+  label: Digital input
+  demo: node
+  lab: button
+  minutes: 7
+  top: button
+  row1: pin-scope
+  row2: pin-logic
+  controls: [hint, button]
+  hint: Click the round button in the picture. Each click is one press and release.
+  aria:
+  - The button circuit, with a button to press and the press counts
+  - The pin's voltage through one press and release
+  - The pin read as logic, before and after debouncing
+  goal: Read a button reliably, though its contact bounces and an unconnected pin reads nonsense.
+  needs: []
+  recall: A digital pin only asks one question, is the voltage high or low? Everything here is about making that answer mean what you pressed.
+  predict:
+    question: You press the button once and the firmware counts falling edges, with no debounce. What does it count?
+    options:
+    - Several presses, because the contact bounces
+    - Exactly one
+    - None, the press is too short
+    answer: 0
+    try: Click <strong>Press</strong> a few times and compare the two counts.
+    explain: >-
+      A metal contact bounces for a few milliseconds when it closes and when it opens. The pin follows every bounce,
+      and code that counts edges counts each one.
+  note_title: High, low and in between
+  note: >-
+    <p>A pin reads <strong>1</strong> above a threshold and <strong>0</strong> below it. A button only connects the pin
+    to ground, so a <strong>pull-up</strong> resistor has to bring it back up when released; without one the pin
+    <strong>floats</strong> and reads whatever couples into it. When the contact closes it <strong>bounces</strong> for
+    a few ms. Three fixes: a <strong>Schmitt trigger</strong> input (two thresholds, so a noisy slow edge can't cross
+    back and forth), an <strong>RC filter</strong> that smooths the bounces, and <strong>software debounce</strong>,
+    which only accepts a level once it has held for a few ms.</p>
+  tasks:
+  - Press the button with nothing turned on. How many presses does the MCU count?
+  - Pick <strong>Floating</strong> and press again. Why does it count presses you didn't make?
+  - Back on <strong>Pull-up</strong>, add the <strong>RC filter</strong>. Is the count right yet? Look at the slow rising edge.
+  - Add the <strong>Schmitt</strong> input, or instead turn the filter off and set <strong>Debounce</strong> to 5 ms.
+  check:
+  - question: Why does a floating input read random values?
+    options:
+    - Nothing holds it at a voltage, so stray charge and nearby signals move it
+    - The MCU is broken
+    - The button is pressed
+    answer: 0
+    explain: An input draws almost no current, so it holds whatever charge is on it. A pull-up gives it a defined level.
+    why:
+    - ''
+    - It is doing exactly what an input does.
+    - Floating is the released state, with no path to either rail.
+  - question: An RC filter slows the edge down. Why does a slow edge still give extra presses on a plain input?
+    options:
+    - Noise on the slow edge crosses the single threshold several times
+    - The capacitor stores presses
+    - The filter adds bounce
+    answer: 0
+    explain: A slow edge lingers near the threshold, and a few mV of noise pushes it back and forth across it. A Schmitt trigger's two thresholds stop that.
+    why:
+    - ''
+    - It stores charge, not events.
+    - It removes the bounce; the trouble is the threshold.
+  recap: read a button with a pull-up, and stop bounce with a filter and a Schmitt input, or with software debounce.
+
+- id: adc
+  label: Analog input
+  demo: node
+  lab: adc
+  minutes: 8
+  top: adc-scope
+  row1: adc-steps
+  row2: adc-error
+  controls: [hint, adc]
+  hint: The input wobbles slowly by ±12 mV, about the change from a fraction of a degree.
+  aria:
+  - The input voltage and the ADC's reading over the last 10 seconds
+  - The ADC's staircase of codes around the input
+  - The error of each reading
+  goal: Turn a voltage into a number with an ADC, and see what its bits, reference and averaging do to the reading.
+  needs: [button]
+  recall: A digital input gives one bit. An ADC gives many, by comparing the voltage with a reference.
+  predict:
+    question: A 10-bit ADC with a 3.0 V reference. How big is one step?
+    options:
+    - About 3 mV
+    - About 30 mV
+    - About 0.3 mV
+    answer: 0
+    try: Set <strong>Bits</strong> to 10 and read the step size above the staircase.
+    explain: 3.0 V ÷ 2¹⁰ = 3.0 V ÷ 1024 ≈ 2.9 mV. Each extra bit halves it.
+  note_title: Steps of one LSB
+  note: >-
+    <p>An N-bit ADC splits 0 to the <strong>reference</strong> voltage into 2<sup>N</sup> steps. One step is one
+    <strong>LSB</strong>; the reading can be off by up to half of one. Anything above the reference reads as the top
+    code, so a bigger signal needs a divider. <strong>Noise</strong> bigger than an LSB makes readings jump between
+    codes; <strong>averaging</strong> n readings shrinks the noise by √n, and with a little noise the average can
+    even resolve steps smaller than one LSB.</p>
+  maths: >-
+    <p>code = ⌊V / V<sub>ref</sub> · 2<sup>N</sup>⌋, LSB = V<sub>ref</sub> / 2<sup>N</sup>. The quantisation error is
+    uniform over ±½ LSB, an RMS of LSB / √12. Averaging n readings with independent noise σ leaves σ / √n.</p>
+  tasks:
+  - At 8 bits, watch the reading step while the input wobbles smoothly. How big is a step?
+  - Raise the bits to 12. What happens to the steps, and to the error?
+  - Lower the <strong>Reference</strong> to 1.2 V. What happens at an input of 1.5 V?
+  - Set noise to 5 mV, then raise <strong>Average</strong>. How much does 16 readings help?
+  check:
+  - question: Averaging 16 noisy readings shrinks the noise by about
+    options:
+    - 4 times
+    - 16 times
+    - nothing
+    answer: 0
+    explain: Independent noise falls as √n, and √16 = 4.
+    why:
+    - ''
+    - That would need the errors to cancel exactly; they only partly do.
+    - Random errors do partly cancel in a sum.
+  - question: The input is 2.0 V and the reference is 1.2 V. What does a 10-bit ADC report?
+    options:
+    - 1023, the top code, whatever the input
+    - About 1700
+    - 0
+    answer: 0
+    explain: An ADC can't report more than its reference. Scale the signal down with a divider first.
+    why:
+    - ''
+    - There is no code above 1023.
+    - Above the reference is the top, not the bottom.
+  recap: choose the bits and reference for a signal, and average away noise.
+
+- id: sensor
+  label: Thermistor
+  demo: node
+  lab: ntc
+  minutes: 8
+  top: ntc-circuit
+  row1: ntc-curve
+  row2: ntc-error
+  controls: [hint, ntc]
+  hint: Drag the thermometer to change the temperature.
+  aria:
+  - The thermistor divider, its values and a thermometer to drag
+  - The divider's voltage against temperature
+  - The error of the conversion back to °C
+  goal: Measure temperature with a thermistor in a divider, and turn the ADC's code back into °C.
+  needs: [adc]
+  recall: The ADC turns a voltage into a code. A thermistor turns temperature into a resistance; a divider turns that into a voltage.
+  predict:
+    question: The fixed resistor is 10 kΩ. Where is the divider most sensitive (most mV per °C)?
+    options:
+    - Around room temperature, near where the thermistor is also 10 kΩ
+    - At −20 °C, where the thermistor is largest
+    - The same everywhere
+    answer: 0
+    try: Drag the thermometer and read the mV per °C on the curve.
+    explain: >-
+      A divider changes fastest near where its two resistors are equal (here about 20 °C, a little below 25 °C because
+      the thermistor's curve bends). Pick the fixed resistor near the thermistor's value in the middle of your range.
+  note_title: A divider and a curve
+  note: >-
+    <p>An <strong>NTC thermistor</strong>'s resistance falls steeply as it warms (10 kΩ at 25 °C, about 33 kΩ at 0 °C).
+    In a divider with a fixed resistor it makes a voltage; with the supply as the ADC's reference the code depends only
+    on the two resistances (<strong>ratiometric</strong>), not on the battery. The curve isn't straight, so a
+    <strong>straight line</strong> through two points is only right near them; the <strong>Beta formula</strong>
+    follows it closely, and a small <strong>table</strong> of measured points does better still. The divider draws
+    current whenever it's powered.</p>
+  maths: >-
+    <p>R(T) = R₀ · exp(B (1/T − 1/T₀)), T in kelvin, R₀ = 10 kΩ, T₀ = 298.15 K, B ≈ 3950 K. V = V<sub>cc</sub> · R /
+    (R + R<sub>f</sub>). Inverting: R = R<sub>f</sub> · code / (2<sup>N</sup> − code), then 1/T = 1/T₀ + ln(R/R₀)/B.</p>
+  tasks:
+  - With <strong>Straight line</strong>, drag the temperature to −20 °C and to 80 °C. How far off is it?
+  - Switch to <strong>Beta formula</strong>, then <strong>Table</strong>. Which is best, and where?
+  - Set the fixed resistor to 100 kΩ. Where is it most sensitive now, and what happens to the error near 60 °C?
+  - Read the divider current. What would it cost a coin cell to leave it on all year? (You'll find out in Battery.)
+  check:
+  - question: The battery sags from 3.0 V to 2.7 V. What happens to the temperature reading?
+    options:
+    - Nothing, because the ADC's reference is the same supply
+    - It reads 10% hotter
+    - It reads 10% colder
+    answer: 0
+    explain: Both the divider's voltage and the reference scale with the supply, so the code stays put. That is what ratiometric means.
+    why:
+    - ''
+    - It would, with a fixed reference.
+    - It would, with a fixed reference, in the other direction.
+  - question: Why does the straight line go wrong far from 0 and 50 °C?
+    options:
+    - The thermistor's curve bends, and a line only matches it at its two points
+    - The ADC loses bits there
+    - The fixed resistor changes with temperature
+    answer: 0
+    explain: R(T) is exponential; through the divider it is an S-shape. A line fits two points of it and drifts off elsewhere.
+    why:
+    - ''
+    - The ADC's step is the same everywhere; the °C per step changes.
+    - The fixed resistor is taken as constant here.
+  recap: read a thermistor through a divider, pick its resistor, and convert codes to °C with a formula or a table.
+
+- id: led
+  label: LED and PWM
+  demo: node
+  lab: led
+  minutes: 7
+  top: led
+  row1: pwm-wave
+  row2: pwm-curve
+  controls: [hint, led]
+  hint: The small LED is the same one slowed down 100 times.
+  aria:
+  - The LED circuit, how bright it looks, and nine brightness steps
+  - The PWM current and what the eye blends it into
+  - How bright it looks against the level, with and without gamma
+  goal: Dim an LED by switching it fast (PWM), and make its brightness steps look even.
+  needs: [button]
+  recall: A pin can only be on or off. Switch it fast enough and the eye sees the average.
+  predict:
+    question: Set level 128 of 255, with duty = level. How bright does it look, compared with full?
+    options:
+    - Much more than half
+    - Exactly half
+    - Much less than half
+    answer: 0
+    try: Set <strong>Level</strong> to 128 and read the brightness curve.
+    explain: >-
+      Half the light looks about three quarters as bright: the eye is far more sensitive to changes in dim light. So
+      the bottom of the slider does all the work and the top barely changes. Gamma (duty = level^2.2) spreads the steps
+      evenly.
+  note_title: Duty, current and the eye
+  note: >-
+    <p>The resistor sets the LED's current: I = (V<sub>cc</sub> − V<sub>f</sub>) / R, with V<sub>f</sub> ≈ 1.9 V for
+    red. <strong>PWM</strong> switches it on for a fraction of each period, the <strong>duty</strong>; the average
+    current, and what it costs the battery, is I × duty. Below about 100 Hz the eye sees it
+    <strong>flicker</strong>. Perceived brightness is far from linear in light, so a slider mapped straight to duty
+    bunches its steps at the dim end; <strong>gamma</strong> correction undoes that.</p>
+  tasks:
+  - Look at the nine steps with duty = level. Where are they hard to tell apart? Switch to <strong>Gamma</strong>.
+  - Lower the <strong>Frequency</strong> until the eye's curve ripples and it says it flickers.
+  - Halve the <strong>Resistor</strong>. What happens to the current?
+  - Read the average current at a dim level with gamma. The battery lesson uses it.
+  check:
+  - question: At 30 Hz PWM, what do you see?
+    options:
+    - Flicker, because the eye can follow 30 changes a second
+    - A steady dimmer light
+    - Nothing
+    answer: 0
+    explain: The eye blends changes faster than about 60 to 100 Hz; 30 Hz is slow enough to see.
+    why:
+    - ''
+    - That needs a faster PWM.
+    - It is on 30 times a second.
+  - question: Halving the resistor does what to the LED's current?
+    options:
+    - About doubles it
+    - Halves it
+    - Nothing; the LED sets the current
+    answer: 0
+    explain: The voltage across the resistor stays about V<sub>cc</sub> − V<sub>f</sub>, so the current goes as 1/R.
+    why:
+    - ''
+    - Less resistance lets more through.
+    - The LED sets the voltage, the resistor sets the current.
+  recap: dim an LED with PWM, keep it from flickering, and space its steps with gamma.
+
+- id: memory
+  label: Memory
+  demo: node
+  lab: memory
+  minutes: 10
+  top: mem-map
+  row1: mem-stack
+  row2: mem-table
+  controls: [hint, memory]
+  hint: The stack bar moves as the program steps through one measurement.
+  aria:
+  - The flash and RAM maps, with the stack growing down from the top of RAM
+  - The stack's depth through one measurement cycle
+  - Where each piece of data lives
+  goal: Know what goes in flash, in RAM and on the stack, and keep the stack from running into everything else.
+  needs: [sensor]
+  recall: The node now samples, converts and logs. Each of those needs memory, and this chip has 8 KB of RAM.
+  predict:
+    question: You mark the 512-byte calibration table <code>const</code>. Where does it end up?
+    options:
+    - Only in flash, freeing 512 bytes of RAM
+    - On the stack
+    - Nowhere; const data is optimised away
+    answer: 0
+    try: Switch <strong>Table</strong> between Plain and const and watch .data.
+    explain: >-
+      A plain initialised global lives in RAM, so its starting values are kept in flash and copied over at start-up:
+      it costs both. const data can stay in flash and be read from there.
+  note_title: Flash, RAM and the stack
+  note: >-
+    <p><strong>Flash</strong> holds the program and anything const. <strong>RAM</strong> holds
+    <strong>.data</strong> (initialised globals), <strong>.bss</strong> (zeroed globals, like a log buffer), the
+    <strong>heap</strong> (malloc) growing up, and the <strong>stack</strong> growing down from the top. Each function
+    call pushes a frame with its locals, so big local arrays and deep calls use stack, and an interrupt can push its
+    frame at the deepest moment. Nothing stops the stack meeting the globals; it just corrupts them.</p>
+  tasks:
+  - Change the sample type from float to int16. How much RAM does the buffer give back?
+  - Switch <strong>Format</strong> to printf, then hand-written. What does printf cost in flash and in stack?
+  - Grow the filter() window until the stack overflows. What is running at the peak?
+  - Make the table const and find how big a buffer now fits.
+  check:
+  - question: filter() declares a 256-sample float array as a local variable. Where does it live?
+    options:
+    - On the stack, while filter() runs
+    - In .bss, all the time
+    - In flash
+    answer: 0
+    explain: Locals live in the function's stack frame. It costs nothing between calls, but 1 KB of stack while it runs.
+    why:
+    - ''
+    - Only static or global variables go there.
+    - Flash can't be written like a variable.
+  - question: The firmware ran fine for days, then crashed with a corrupted buffer. What fits?
+    options:
+    - An interrupt arrived during the deepest call and the stack overflowed into the buffer
+    - The flash wore out
+    - The ADC returned too large a value
+    answer: 0
+    explain: The peak only happens when the worst call and an interrupt line up, which may be rare. Leave a margin, and measure the stack's high-water mark.
+    why:
+    - ''
+    - Flash wear shows as failed writes, not RAM corruption.
+    - A code is just a number; it can't corrupt memory by itself.
+  recap: place data in flash or RAM on purpose, and size the stack for the worst case.
+
+- id: flash
+  label: Flash storage
+  demo: node
+  lab: flash
+  minutes: 8
+  top: flash-pages
+  row1: flash-wear
+  row2: flash-bits
+  controls: [hint, flash]
+  hint: Time runs fast here. Click the bits in the bottom row to write them.
+  aria:
+  - The flash pages, coloured by how worn they are
+  - The most-worn page over time for two ways of logging
+  - Eight bytes of a page, with bits you can write
+  goal: Keep a log in flash without wearing it out.
+  needs: [memory]
+  recall: RAM is lost when the battery is changed. Flash keeps the log, but it can't be written like RAM.
+  predict:
+    question: The node rewrites its latest reading in one place, once a minute. Flash pages survive about 10,000 erases. How long does that page last?
+    options:
+    - About a week
+    - About a year
+    - Decades
+    answer: 0
+    try: Pick <strong>Rewrite in place</strong> and watch page 0.
+    explain: >-
+      Every rewrite means an erase: 10,000 minutes is just under 7 days. Appending to a ring of pages erases each page
+      once per lap instead, and lasts far longer.
+  note_title: Erase, then write
+  note: >-
+    <p><strong>Erasing</strong> a page sets every bit to 1; <strong>writing</strong> can only clear bits to 0. So
+    changing a byte twice needs the whole page erased, and pages only take about 10,000 erases. A <strong>ring
+    log</strong> appends records through several pages and erases each one only when it comes round again, so the
+    wear is shared and each page is erased once per lap.</p>
+  tasks:
+  - Click some bits to 0, then try to set one back to 1. Then erase the page.
+  - With <strong>Rewrite in place</strong> every minute, how long until the page is worn out?
+  - Switch to <strong>Ring log</strong>. How long now? What do more pages, or smaller records, do?
+  - Log every second instead of every minute. Is the ring log still safe for 10 years?
+  check:
+  - question: Why can't flash just overwrite a byte?
+    options:
+    - Writing can only turn 1s into 0s; getting 1s back needs a whole page erased
+    - Flash is read-only
+    - Bytes have to be written in order
+    answer: 0
+    explain: That's why changing data in place costs an erase, and erases are what wear flash out.
+    why:
+    - ''
+    - It can be written, once per erase.
+    - Order doesn't matter; only clearing bits does.
+  - question: A ring log over 16 pages lasts longer than rewriting in place because
+    options:
+    - each page is erased once per lap, not once per record
+    - it uses a different kind of flash
+    - it writes fewer bytes
+    answer: 0
+    explain: A 1 KB page holds 128 eight-byte records, and with 16 pages a page is erased once every 2048 records instead of every record.
+    why:
+    - ''
+    - The flash is the same.
+    - It writes the same data.
+  recap: log to flash with erase-before-write in mind, and spread the wear with a ring log.
+
+- id: bus
+  label: Buses
+  demo: node
+  lab: bus
+  minutes: 10
+  top: bus-wave
+  row1: bus-zoom
+  row2: bus-compare
+  controls: [hint, bus]
+  hint: The node sends its reading, 2346 (23.46 °C), as two bytes 0x09 0x2A.
+  aria:
+  - The signal on the wires for the chosen bus, with where the receiver samples
+  - A close-up of the timing that makes it fail
+  - Time to send the two bytes on each bus
+  goal: Send the reading to the radio chip over UART, I²C or SPI, and see what makes each one fail.
+  needs: [adc]
+  recall: Inside the chip a byte is eight wires at once. Between chips it goes one bit at a time, and both ends must agree when each bit is.
+  predict:
+    question: On UART, the receiver's clock runs 6% fast. What happens?
+    options:
+    - The later bits of each byte are read wrong
+    - Nothing, UART resynchronises on every bit
+    - It just reads faster
+    answer: 0
+    try: Drag <strong>Receiver clock off by</strong> to +6% and watch the dots.
+    explain: >-
+      UART only resynchronises on the start bit. After that the receiver times bits by its own clock, so the error
+      adds up across the byte: 9.5 bits × 6% is over half a bit by the stop bit.
+  note_title: Three ways to agree on a bit
+  note: >-
+    <p><strong>UART</strong> has no clock wire: both ends agree on a speed (the baud rate), and the receiver times each
+    bit from the start bit's edge, so the clocks must match within a few percent. <strong>I²C</strong> has a clock and
+    a data wire shared by many chips; they only pull the lines low, and <strong>pull-up</strong> resistors bring them
+    back up by charging the wires' capacitance, so a weak pull-up gives slow edges. <strong>SPI</strong> sends a clock
+    with the data and drives both ways, so it is fast and simple, at the cost of more wires.</p>
+  tasks:
+  - On UART, find how far off the receiver's clock can be before a bit goes wrong.
+  - On I²C at 100 kHz, raise the pull-up until it goes out of spec, then until bits fail. Then switch to 400 kHz.
+  - Add bus capacitance (longer wires, more chips). What pull-up do you need now?
+  - Compare the time to send on all three in the bottom chart.
+  check:
+  - question: Raising the I²C pull-ups from 4.7 kΩ to 47 kΩ
+    options:
+    - saves current while a line is low, but slows the edges and can break the bus
+    - makes the bus faster
+    - changes nothing
+    answer: 0
+    explain: The rise time is about 0.85 RC. Ten times the R is ten times slower, but a tenth of the current when a line is held low.
+    why:
+    - ''
+    - A bigger R charges the capacitance more slowly.
+    - It changes both the edge and the current.
+  - question: Why can SPI run at many MHz on the same wires?
+    options:
+    - The clock travels with the data and every line is driven both ways
+    - It sends fewer bits
+    - It needs no ground
+    answer: 0
+    explain: No agreed baud rate and no slow pull-ups; the receiver samples on the clock edge it is given.
+    why:
+    - ''
+    - It sends the same bits.
+    - Every bus needs a common ground.
+  recap: pick a bus, and say what limits UART's clocks, I²C's pull-ups and SPI's wire count.
+
+- id: power
+  label: Battery
+  demo: node
+  lab: power
+  minutes: 12
+  top: power-profile
+  row1: power-life
+  row2: power-budget
+  controls: [hint, power]
+  hint: The node starts badly designed. Get it past a year.
+  aria:
+  - The current through one wake, by phase, on a log scale
+  - The coin cell's voltage over its life, at rest and during the biggest pulse
+  - The average current by where it goes, and the lifetime
+  goal: Make the node last a year on a coin cell by budgeting every microamp.
+  needs: [sensor, led, flash, bus]
+  recall: Every part so far draws current. The ADC, the LED, a flash write and the radio take milliamps for milliseconds; sleeping takes microamps all the time.
+  predict:
+    question: The node wakes every 10 s, sleeps at 5 µA and leaves the thermistor divider powered. What uses most of the battery?
+    options:
+    - The divider, about 150 µA all the time
+    - The radio
+    - The ADC
+    answer: 0
+    try: Read the bars in the bottom chart, then switch the <strong>Divider</strong> to Switched by a pin.
+    explain: >-
+      3 V across 20 kΩ is 150 µA, around the clock, which empties 225 mAh in about two months. Powered from a GPIO only
+      during the 3 ms reading, it averages under 0.1 µA.
+  note_title: Charge per wake, current all the time
+  note: >-
+    <p>A coin cell holds 225 mAh. The node's <strong>average current</strong> is its sleep current plus each phase's
+    charge (current × time) divided by the time between wakes. A year is 8760 hours, so the average has to stay under
+    about 25 µA. The cell also has <strong>internal resistance</strong> that grows as it empties: a pulse of a few mA
+    makes the voltage sag, and late in its life the sag crosses the <strong>brown-out</strong> level and the chip resets,
+    with charge still left. A <strong>capacitor</strong> across the cell supplies short pulses itself.</p>
+  maths: >-
+    <p>I<sub>avg</sub> = I<sub>sleep</sub> + Σ I<sub>k</sub> t<sub>k</sub> / T. Life = capacity / I<sub>avg</sub>. Sag
+    during a pulse of length t<sub>p</sub> with a capacitor C: I · R · (1 − e<sup>−t<sub>p</sub>/RC</sup>).</p>
+  tasks:
+  - Switch the divider to a pin. How many days now?
+  - Shorten or turn off the <strong>LED blink</strong>, and wake every 60 s instead of 10.
+  - Send the reading every 10 wakes instead of every wake. What does it buy?
+  - Look at the voltage plot. Does it die empty, or reset under load first? Add a capacitor.
+  check:
+  - question: At what average current does a 225 mAh cell last a year?
+    options:
+    - About 25 µA
+    - About 250 µA
+    - About 2.5 µA
+    answer: 0
+    explain: 225 mAh / 8760 h ≈ 26 µA. Sleep current alone has to be a small part of that.
+    why:
+    - ''
+    - That lasts about five weeks.
+    - That would last about ten years.
+  - question: A capacitor across the cell makes it last longer because
+    options:
+    - it supplies the short current pulses, so the cell's voltage sags less and brown-out comes later
+    - it stores extra charge for a year
+    - it lowers the sleep current
+    answer: 0
+    explain: A 100 µF capacitor holds far too little to run the node, but enough to cover a few-ms radio pulse.
+    why:
+    - ''
+    - It holds microcoulombs; the cell holds hundreds of coulombs.
+    - Sleep current is the chip's own.
+  recap: budget a battery from sleep current and charge per wake, and keep pulses from browning out an old cell.
+
+- id: modes
+  label: Mode button
+  demo: bike
+  lab: modes
+  minutes: 6
+  top: bike
+  row1: fsm
+  row2: fsm-time
+  controls: [hint, modes]
+  hint: Press and hold the round button on the light. A short press steps the mode; a long one turns it off.
+  aria:
+  - The bike light, with a button to press and hold
+  - The light's state machine
+  - The button and the mode over the last 10 seconds
+  goal: Run a bike light's modes from one button with a state machine, and tell a short press from a long one.
+  needs: [button]
+  recall: On the node a button only needed counting. Here one button does two jobs, depending on how long it's held.
+  predict:
+    question: The firmware acts the moment the button goes down. The light is on LOW and you hold the button for 1.5 s. What does it do?
+    options:
+    - Steps to MID, then turns off
+    - Turns off straight away
+    - Stays on LOW
+    answer: 0
+    try: Choose <strong>On press</strong>, get to LOW, then hold the button.
+    explain: >-
+      On press, the firmware can't yet know the press will be long, so it treats it as short and steps the mode; a
+      second later it sees the long press and turns off. Acting on release waits until the length is known.
+  note_title: A state machine
+  note: >-
+    <p>The light is always in one <strong>state</strong> (OFF, LOW, MID, HIGH, FLASH), and events move it between
+    them: a <strong>short press</strong> steps to the next mode, a <strong>long press</strong> turns it off. The button
+    is debounced as on the node; what's new is timing the press. Writing it as a table of states and events keeps every
+    case visible.</p>
+  tasks:
+  - Step through the modes with short presses.
+  - Hold the button past the long-press time. What happens first, with <strong>On press</strong>?
+  - Switch to <strong>On release</strong> and do the same.
+  - Make the long press 0.4 s. Do your short presses still count as short?
+  check:
+  - question: Acting on release fixes the stray mode change because
+    options:
+    - only at release is it known whether the press was short or long
+    - releases bounce less
+    - it is faster
+    answer: 0
+    explain: The decision needs the press's length, which is only known at release (or when the long time passes).
+    why:
+    - ''
+    - Both edges bounce; debounce handles both.
+    - It is slightly slower, by the length of the press.
+  recap: write a button's behaviour as a state machine, and time presses to tell them apart.
+
+- id: runtime
+  label: Battery check
+  demo: bike
+  lab: runtime
+  minutes: 6
+  top: bike-run
+  row1: bike-adc
+  row2: bike-modes
+  controls: [hint, runtime]
+  hint: The MCU runs at 3.3 V; its ADC can't see more than that.
+  aria:
+  - The battery voltage and the MCU's reading of it as the light runs
+  - The voltage at the ADC pin against the battery voltage
+  - Hours on a full charge in each mode
+  goal: Read a Li-ion battery's voltage through a divider to warn and step down before it runs flat.
+  needs: [adc, power, modes]
+  recall: The ADC can't read above its reference, and a battery can sag under load. Both matter here.
+  predict:
+    question: With no divider, the ADC pin sees the 4.2 V battery directly, with a 3.3 V reference. The light should step down below 3.4 V. When does it?
+    options:
+    - Straight away, because the reading never goes above 3.3 V
+    - Near the end, as intended
+    - Never
+    answer: 0
+    try: Set <strong>Divider</strong> to none on High and watch where it steps down.
+    explain: >-
+      Any battery voltage above 3.3 V reads as 3.3 V, which is already below 3.4 V. A 2 : 1 divider brings 4.2 V down to
+      2.1 V, inside the ADC's range.
+  note_title: A divider for the battery
+  note: >-
+    <p>An 18650 Li-ion cell runs from 4.2 V full to 3.0 V empty, mostly near 3.7 V. The MCU's ADC tops out at its 3.3 V
+    reference, so the battery goes through a <strong>divider</strong>, and the firmware multiplies back. At high current
+    the cell sags, so the light <strong>steps down</strong> to LOW at 3.4 V for a last stretch of runtime, and cuts off
+    at 3.0 V to protect the cell.</p>
+  tasks:
+  - On High with no divider, where does it step down?
+  - Set the divider to 2 : 1. Where does it step down now?
+  - Turn <strong>Step-down</strong> off. How much runtime does stepping down add?
+  - Compare the modes' runtimes.
+  check:
+  - question: 'A 2 : 1 divider lets a 3.3 V ADC read the battery because'
+    options:
+    - it halves the voltage, so 4.2 V reads as 2.1 V, inside the range
+    - it raises the reference
+    - it lowers the battery voltage
+    answer: 0
+    explain: The ADC sees half; the firmware doubles it back. Pick the ratio so the highest voltage stays under the reference.
+    why:
+    - ''
+    - The reference is set by the chip.
+    - The battery is untouched; the divider only scales what the pin sees.
+  recap: scale a battery voltage into the ADC's range, and use it to step down before the cell is empty.

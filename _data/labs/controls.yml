@@ -2,6 +2,9 @@
 # `demos` are the buttons on top (`extend: true` ones are the other plants); `tabs` are the lessons in each. Each lesson follows ARIVA:
 # goal (Arrive), needs + recall + predict (Reactivate), note (Inform), tasks (Process), check + recap (Evaluate).
 # Rendered by _includes/lab.html; views and controls are listed at the top of assets/js/lab/lab.js.
+finale:
+  href: /controls/swingup/
+  label: Double Pendulum Control
 labs:
   msd:
     plant: msd

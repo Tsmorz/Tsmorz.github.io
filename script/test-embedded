@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+// Check the models behind /embedded/ (assets/js/embedded/embedded-core.js) and its lesson data. Each check is a claim
+// a lesson makes:
+//   1. button: bounce makes an edge counter overcount; debounce, or an RC filter with a Schmitt input, fixes it;
+//      an RC filter on a plain input does not; a floating input counts presses that never happened
+//   2. ADC: the step size, clipping at the reference, averaging 16 readings cuts noise about 4×
+//   3. thermistor: most sensitive where R(T) equals the fixed resistor; table < Beta < straight line in error;
+//      ratiometric codes don't move with the supply
+//   4. LED: half duty looks about three quarters as bright; flicker shows below ~100 Hz and not at 200 Hz
+//   5. memory: const keeps the table out of RAM; a big filter window overflows the stack when the interrupt lands
+//   6. flash: write only clears bits; in-place logging every minute wears out in about a week, a ring log in decades
+//   7. buses: UART survives ±4% clock error and fails at 6%; the I²C rise time is 0.847 RC
+//   8. power: the lesson's starting design falls short of a year, the fixes reach it, and the 25 µA rule holds
+//   9. bike light: acting on press steps a mode before a long press turns it off; acting on release does not
+//  10. embedded.yml names only views and controls that embedded.js implements
+// Pure Node, no dependencies, no build.
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const root = path.resolve(__dirname, '..');
+const E = require(path.join(root, 'assets/js/embedded/embedded-core.js'));
+
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+const rand = E.rng(2024);
+function presses(o, n) { let raw = 0, deb = 0; for (let k = 0; k < n; k++) { const p = E.pinTrace(E.contactTrace(rand, {}), Object.assign({ noise: 0.03 }, o), rand); raw += p.rawPress; deb += p.debPress; } return { raw, deb }; }
+
+console.log('1. button');
+{
+  const n = 30, plain = presses({}, n), soft = presses({ debounce: 5 }, n), rcPlain = presses({ cap: 100 }, n), rcSchmitt = presses({ cap: 100, schmitt: true }, n), floating = presses({ pull: false }, n);
+  check(plain.raw > 2 * n, `no debounce: ${plain.raw} presses counted for ${n} real ones`);
+  check(soft.deb === n, `5 ms software debounce: ${soft.deb} of ${n}`);
+  check(rcPlain.raw > n, `RC filter on a plain input still overcounts (${rcPlain.raw}): noise on the slow edge`);
+  check(rcSchmitt.raw === n, `RC filter with a Schmitt input: ${rcSchmitt.raw} of ${n}`);
+  check(floating.raw > 2 * n, `floating input: ${floating.raw} presses counted for ${n}`);
+}
+
+console.log('2. ADC');
+{
+  check(Math.abs(E.lsb(10, 3.0) - 0.00293) < 1e-5, `10 bits of 3.0 V: one LSB is ${(E.lsb(10, 3.0) * 1000).toFixed(2)} mV`);
+  check(E.adcCode(2.0, 10, 1.2) === 1023, 'above the reference reads the top code');
+  const sd = (avg) => { const xs = []; for (let i = 0; i < 400; i++) xs.push(E.adcRead(1.5, { bits: 12, vref: 3, avg, noise: 0.005 }, rand)); const m = xs.reduce((a, b) => a + b) / xs.length; return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length); };
+  const r = sd(1) / sd(16);
+  check(r > 3.2 && r < 4.8, `averaging 16 readings cuts the noise ${r.toFixed(2)}× (√16 = 4)`);
+}
+
+console.log('3. thermistor');
+{
+  check(Math.abs(E.ntcR(25) - 10000) < 1e-6, 'the NTC is 10 kΩ at 25 °C');
+  let best = -99, bs = 0; for (let T = -20; T <= 80; T++) { const s = E.ntcSensitivity(T, 10000); if (s > bs) { bs = s; best = T; } }
+  check(best >= 15 && best <= 25, `with a 10 kΩ fixed resistor it is most sensitive at ${best} °C, near room temperature (${bs.toFixed(1)} mV/°C)`);
+  const worst = (m) => { let e = 0; for (let T = -20; T <= 80; T += 0.5) e = Math.max(e, Math.abs(E.codeToTemp(E.ntcCode(T, 10000, 12), m, 10000, 12) - T)); return e; };
+  const wl = worst('linear'), wb = worst('beta'), wt = worst('table');
+  check(wt < 0.6 && wt < wb && wb < wl && wl > 5, `worst error over −20…80 °C: table ${wt.toFixed(2)}, Beta ${wb.toFixed(2)}, straight line ${wl.toFixed(1)} °C`);
+  const R = E.ntcR(10), code = (vcc) => Math.floor(vcc * R / (R + 10000) / vcc * 4096);
+  check(code(3.0) === code(2.7), 'ratiometric: the code is the same at 3.0 V and 2.7 V supply');
+}
+
+console.log('4. LED');
+{
+  const L = E.lightness(0.5);
+  check(L > 70 && L < 80, `half the light looks ${L.toFixed(0)}% as bright`);
+  check(E.eyeRipple(0.3, 50).ripple > 0.1 && E.eyeRipple(0.3, 200).ripple < 0.1, 'flicker visible at 50 Hz, not at 200 Hz');
+  check(Math.abs(E.ledCurrent(110) / E.ledCurrent(220) - 2) < 1e-9, 'half the resistor, twice the current');
+}
+
+console.log('5. memory');
+{
+  const base = { samples: 1500, type: 'float', constTable: false, printf: true, window: 32, heap: 0 };
+  const a = E.memoryMap(base), b = E.memoryMap(Object.assign({}, base, { constTable: true }));
+  check(a.data - b.data === 512 && b.flashUsed === a.flashUsed - 512, 'const keeps the 512-byte table in flash only');
+  const big = E.memoryMap(Object.assign({}, base, { window: 320 }));
+  check(!a.overflow && big.overflow && big.path.some((p) => p.depth > big.free && p.names.includes('ADC interrupt')), 'the starting design fits; a 320-sample filter window overflows, at the moment the interrupt lands');
+  const np = E.memoryMap(Object.assign({}, base, { printf: false }));
+  check(np.peak < a.peak / 2 && a.flashUsed - np.flashUsed === 6144, `dropping printf: stack peak ${a.peak} → ${np.peak} B, 6 KB less flash`);
+}
+
+console.log('6. flash');
+{
+  check(E.canWrite(0xFF, 0x3C) && !E.canWrite(0x3C, 0x3D), 'writing can clear bits but not set them');
+  const day = 86400, inplace = E.wearLife({ strategy: 'inplace', interval: 60, record: 8, pages: 16 }) / day, ring = E.wearLife({ strategy: 'log', interval: 60, record: 8, pages: 16 }) / day / 365;
+  check(inplace > 6 && inplace < 8, `rewriting in place every minute wears out in ${inplace.toFixed(1)} days`);
+  check(ring > 30, `a ring log over 16 pages lasts ${ring.toFixed(0)} years`);
+  const w = E.wear({ strategy: 'log', interval: 1, record: 8, pages: 4 }, 128 * 4 * 3 + 128 * 2);
+  check(w.join(',') === '4,4,3,3', `ring log wear is spread: ${w.join(', ')}`);
+}
+
+console.log('7. buses');
+{
+  const ok = (m) => { const r = E.uartReceive([0x09, 0x2A], m); return !r.framing && r.bytes[0] === 0x09 && r.bytes[1] === 0x2A; };
+  check(ok(0) && ok(0.04) && ok(-0.04) && !ok(0.06) && !ok(-0.06), 'UART decodes at ±4% clock error and fails at ±6%');
+  check(Math.abs(E.i2cRise(4700, 200) - 0.8473 * 4700 * 200e-12) < 1e-15 && E.i2cRise(4700, 200) < 1e-6 && E.i2cRise(47000, 200) > 1e-6, 'I²C rise 0.847 RC: 4.7 kΩ meets 100 kHz, 47 kΩ does not');
+  check(E.busTime('spi', 2, 1e6) < E.busTime('i2c', 2, 400e3) && E.busTime('i2c', 2, 400e3) < E.busTime('uart', 2, 115200), 'SPI at 1 MHz beats I²C at 400 kHz beats UART at 115200');
+}
+
+console.log('8. power');
+{
+  const start = { interval: 10, sleep: 5e-6, dividerOn: true, led: 50, ledI: 0.005, radioEvery: 1, cap: 0, recordsPerPage: 128 };
+  const s = E.lifetime(start), fixed = E.lifetime(Object.assign({}, start, { dividerOn: false, led: 0, interval: 60, radioEvery: 10 }));
+  check(s.days < 100, `the lesson starts at ${s.days.toFixed(0)} days`);
+  check(fixed.days > 365, `switching the divider, dropping the blink, waking every minute and sending every 10th: ${fixed.days.toFixed(0)} days`);
+  check(Math.abs(E.CELL.mAh / (365 * 24) * 1000 - 25.7) < 0.2, '225 mAh over a year is about 25 µA');
+  const aged = 0.95, sag0 = E.sag(9e-3, 4e-3, E.cellR(aged), 0), sag1 = E.sag(9e-3, 4e-3, E.cellR(aged), 470);
+  check(sag1 < 0.5 * sag0, `a 470 µF capacitor halves the sag of an old cell under a 4 ms pulse (${sag0.toFixed(2)} → ${sag1.toFixed(2)} V)`);
+}
+
+console.log('9. bike light');
+{
+  const ev = [{ t: 0, down: true }, { t: 0.2, down: false }, { t: 1, down: true }, { t: 2.5, down: false }];
+  const press = E.lightFsm(ev, { onPress: true, long: 1 }), release = E.lightFsm(ev, { onPress: false, long: 1 });
+  check(press.log.map((l) => l.state).join(' ') === 'LOW MID OFF', 'acting on press: LOW, then MID, then OFF on the long press');
+  check(release.log.map((l) => l.state).join(' ') === 'LOW OFF', 'acting on release: LOW, then straight to OFF');
+}
+
+console.log('10. page data');
+{
+  const src = fs.readFileSync(path.join(root, 'assets/js/embedded/embedded.js'), 'utf8'), txt = fs.readFileSync(path.join(root, '_data/labs/embedded.yml'), 'utf8');
+  const problems = [];
+  (txt.match(/(top|row1|row2): ([\w-]+)/g) || []).forEach((m) => { const v = m.split(': ')[1]; if (!src.includes("V['" + v + "'] =") && !src.includes('V.' + v + ' =')) problems.push('view ' + v); });
+  (txt.match(/controls: \[([^\]]*)\]/g) || []).forEach((m) => m.slice(11, -1).split(',').map((s) => s.trim()).forEach((c) => { if (!src.includes('CTRL.' + c + ' =')) problems.push('control ' + c); }));
+  (txt.match(/^    kind: (\w+)/gm) || []).forEach((m) => { const k = m.split(': ')[1]; if (!src.includes("S.kind === '" + k + "'")) problems.push('kind ' + k); });
+  check(problems.length === 0, 'embedded.yml uses only views, controls and kinds that exist' + (problems.length ? ': ' + problems.join('; ') : ''));
+  const head = src.slice(0, src.indexOf('(function'));
+  const names = [...src.matchAll(/^  (?:V\['([\w-]+)'\]|V\.([\w]+)) = /gm)].map((m) => m[1] || m[2]);
+  const missing = names.filter((n) => !head.includes(n));
+  check(missing.length === 0, 'every view is listed at the top of embedded.js' + (missing.length ? ': ' + missing.join(', ') : ''));
+}
+
+if (failed) { console.log('\ntest-embedded: FAILED'); process.exit(1); }
+console.log('\ntest-embedded: all checks passed');

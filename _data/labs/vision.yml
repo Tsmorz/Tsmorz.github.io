@@ -1,0 +1,877 @@
+# /vision/ — one running problem (where is the ball on the table, in centimetres, in every frame?) taken through every idea,
+# then some of the same ideas on the visitor's own camera. Same template and ARIVA fields as controls.yml:
+# goal (Arrive), needs + recall + predict (Reactivate), note (Inform), tasks (Process), check + recap (Evaluate).
+# Rendered by _includes/lab.html with `engine: vision`; views and controls are listed at the top of assets/js/vision/vision.js.
+# `labs` say where a lesson's picture comes from: photo (assets/img/vision/<photo>.jpg: pencils, bicycle, facade; CC0 photos
+# from Wikimedia Commons, credited on vision.md), table (the rendered ball scene), stereo (two cameras over the table) or
+# camera (the visitor's webcam).
+engine: vision
+finale:
+  href: /embedded/
+  label: Embedded Systems Lab
+problem: >-
+  A camera looks down at a ball rolling on a table. Where is the ball, in centimetres on the table, in every frame? Each
+  lesson in the first row adds one step: pixels, blur, edges, corners, finding the ball, straightening the view, matching
+  features, two cameras, learned filters, a small network, and tracking. Then some of these ideas on your own camera.
+labs:
+  pencils:
+    source: photo
+    photo: pencils
+  bicycle:
+    source: photo
+    photo: bicycle
+  facade:
+    source: photo
+    photo: facade
+  noisy:
+    source: photo
+    photo: pencils
+    noise: 0.05
+  table:
+    source: table
+  dim:
+    source: table
+    light: 0.55
+    pencil: true
+  track:
+    source: table
+    card: true
+  stereo:
+    source: stereo
+  camera:
+    source: camera
+demos:
+- id: table
+  label: The ball on the table
+- id: camera
+  label: Your camera
+  extend: true
+tabs:
+- id: pixels
+  label: Pixels
+  demo: table
+  lab: pencils
+  minutes: 5
+  top: image
+  row1: zoom
+  row2: profile
+  profile: rgb
+  controls: [hint, source, pixels, noise]
+  hint: Point at the picture to magnify it; drag to move the probe square.
+  aria:
+  - The picture, with a probe square you can drag
+  - The pixels inside the probe square, with their numbers
+  - Red, green and blue along the probe's row
+  goal: See that a picture is a grid of numbers, and what fewer pixels or fewer levels throw away.
+  needs: []
+  recall: A camera turns light into numbers, the way a sensor turns a position into a voltage. Every later step works on these numbers.
+  predict:
+    question: This photo is 320 × 240 pixels, each with a red, a green and a blue byte. How many numbers is that?
+    options:
+    - About 75 thousand
+    - About 230 thousand
+    - About 2.3 million
+    answer: 1
+    try: Drag the probe square over the photo and read the numbers under it.
+    explain: >-
+      320 × 240 = 76,800 pixels, three bytes each: 230,400 numbers. A phone photo has a hundred times more, which is
+      why vision code counts the work it does per pixel.
+  note_title: A picture is numbers
+  note: >-
+    <p>Each pixel stores how much <strong>red, green and blue</strong> light reached one spot on the sensor, as a byte
+    from 0 to 255. <strong>Pixel size</strong> averages blocks of pixels together (fewer samples); <strong>bits</strong>
+    rounds each value to fewer levels. Both lose detail that no later step can get back. <strong>Sensor noise</strong> is
+    the random error every real camera adds.</p>
+  tasks:
+  - Probe a red pencil, a blue one and the pink background, and read R, G and B.
+  - Raise <strong>Pixel size</strong> until you can no longer count the pencils.
+  - Drop <strong>Bits per colour</strong> to 3. Where do flat bands appear on the pencils' shading?
+  - Switch to <strong>Table</strong> and probe the ball. What makes it red, in numbers?
+  check:
+  - question: At 2 bits per colour, how many values can each channel take?
+    options:
+    - '2'
+    - '4'
+    - '8'
+    answer: 1
+    explain: 2 bits give 2² = 4 levels (0, 85, 170, 255), so smooth shading turns into steps.
+    why:
+    - Two levels is 1 bit.
+    - ''
+    - Eight levels needs 3 bits.
+  - question: Pixel size 4 turns the photo into 80 × 60 blocks. What is lost?
+    options:
+    - Detail smaller than 4 pixels
+    - The colours
+    - The overall brightness
+    answer: 0
+    explain: Each block keeps the mean of its 16 pixels, so its colour and brightness survive, but anything smaller than a block is averaged away.
+    why:
+    - ''
+    - Each block keeps its average colour.
+    - Averaging keeps the brightness.
+  recap: read a picture as numbers, and say what fewer pixels or fewer levels throw away.
+
+- id: blur
+  label: Blur
+  demo: table
+  lab: noisy
+  minutes: 7
+  top: split
+  row1: profile
+  row2: kernel
+  profile: blur
+  controls: [hint, source, blur, noise]
+  hint: Point at the picture to see it blurred up close. Drag the divider sideways, or drag elsewhere to move the dashed row.
+  aria:
+  - The photo before and after the blur, split by a divider you can drag
+  - Brightness along the dashed row, before and after the blur
+  - The kernel's weights
+  goal: Average away noise with a convolution, and see what it costs at the edges.
+  needs: [pixels]
+  recall: You saw sensor noise speckle every pixel. Neighbouring pixels usually belong to the same surface, so they should agree.
+  predict:
+    question: You blur with a 5 × 5 box. What happens to the size of the noise (its σ)?
+    options:
+    - It drops to about a fifth
+    - It drops to about a half
+    - It stays the same; only the look changes
+    answer: 0
+    try: Pick <strong>Box</strong> at size 5 and compare the before and after lines on the profile.
+    explain: >-
+      Averaging n independent errors divides their spread by √n. A 5 × 5 box averages 25 pixels, so σ falls to a fifth.
+      The edges are averaged too, which is the cost.
+  note_title: Slide a kernel over the picture
+  note: >-
+    <p>A <strong>convolution</strong> slides a small grid of weights, the <strong>kernel</strong>, over the picture;
+    each output pixel is the weighted sum of the pixels under it. A <strong>box</strong> weights its square evenly; a
+    <strong>Gaussian</strong> weights the middle most, so it blurs without the box's blocky marks. Weights that add up
+    to 1 keep the brightness. A wider kernel removes more noise and blurs edges by as much.</p>
+  maths: >-
+    <p>out(x, y) = Σ<sub>i,j</sub> k(i, j) · in(x + i, y + j). The Gaussian is k(i, j) ∝ exp(−(i² + j²) / 2σ²). It is a row
+    times a column, so it runs as two 1-D passes: 2n multiplications per pixel instead of n². Averaging n pixels divides
+    the noise's σ by √n.</p>
+  tasks:
+  - Drag the divider across the photo and compare the halves.
+  - Raise <strong>σ</strong> until the noise is gone from the profile. What happened to the pencil tips?
+  - Pick <strong>Box</strong> at size 15 and look at the pencils' points. What shape are they smeared into?
+  - Set the noise to zero. Does the blur still cost detail?
+  check:
+  - question: Why do the kernel's weights add up to 1?
+    options:
+    - So a flat area keeps its brightness
+    - So the noise cancels
+    - So edges get sharper
+    answer: 0
+    explain: On a flat patch every pixel under the kernel has the same value v, so the output is v × (sum of weights). A sum of 1 gives v back.
+    why:
+    - ''
+    - Noise falls because many errors are averaged, whatever the sum.
+    - A blur always softens edges.
+  - question: A Gaussian of σ = 2 and a 5 × 5 box remove about as much noise. Why prefer the Gaussian?
+    options:
+    - It fades out smoothly, so it adds no blocky marks
+    - It is faster
+    - It keeps edges sharp
+    answer: 0
+    explain: A box's hard edge copies bright spots into squares; the Gaussian's smooth falloff doesn't.
+    why:
+    - ''
+    - Both run as two 1-D passes here.
+    - Both blur edges; that is the cost of averaging.
+  recap: blur with a kernel, and trade noise against detail.
+
+- id: edges
+  label: Edges
+  demo: table
+  lab: bicycle
+  minutes: 8
+  top: edges
+  row1: profile
+  row2: kernel
+  profile: edge
+  kernel: sobel
+  controls: [hint, source, edges, noise]
+  hint: Point at the photo and the magnifier shows its edges there. Drag to move the probe and its row.
+  aria:
+  - The edge picture from the Sobel filter, with a probe you can drag
+  - Brightness and its slope along the probe's row
+  - The two Sobel kernels and their values at the probe
+  goal: Find edges as the places where brightness changes fast, with the Sobel filter.
+  needs: [blur]
+  recall: A blur is a kernel whose weights add up to 1. A kernel whose weights add up to 0 ignores flat areas and measures change instead.
+  predict:
+    question: Add sensor noise and look at the edge size. What happens?
+    options:
+    - Speckle everywhere, because a slope amplifies noise
+    - The edges get stronger
+    - Nothing, Sobel ignores noise
+    answer: 0
+    try: Show <strong>Size</strong>, set the noise to about 20 / 255, then raise <strong>Blur first</strong>.
+    explain: >-
+      A slope is a difference between neighbours, and noise makes neighbours differ at random. Blurring first trades the
+      speckle for wider edges, the same trade as a derivative term in control, which also amplifies noise.
+  note_title: A kernel that measures change
+  note: >-
+    <p>The <strong>Sobel</strong> kernels take the difference across a pixel (−1, 0, +1), smoothed along the other
+    direction (1, 2, 1). <strong>Gx</strong> responds to edges that run up and down, <strong>Gy</strong> to edges that
+    run across. Together they give the slope's <strong>size</strong>, √(Gx² + Gy²), and its <strong>direction</strong>.
+    A threshold on the size turns it into an edge map.</p>
+  maths: >-
+    <p>Gx = [−1 0 1; −2 0 2; −1 0 1] and Gy is the same turned on its side. Each is a smoothing [1 2 1] times a difference
+    [−1 0 1]. Direction θ = atan2(Gy, Gx) points from dark to bright, across the edge.</p>
+  tasks:
+  - Show <strong>Gx</strong>, then <strong>Gy</strong>, and point at the pillars behind the bike and at the kerb. Which picks up which?
+  - Show <strong>Angle</strong> and follow a wheel rim round. Why does its colour run through every hue?
+  - Drag the probe across the bike's frame and watch the slope peak on the profile.
+  - Add noise, then raise <strong>Blur first</strong> until the edge map is clean again.
+  check:
+  - question: What do Sobel's weights add up to?
+    options:
+    - '0'
+    - '1'
+    - '9'
+    answer: 0
+    explain: Zero, so a flat patch gives 0 and only change shows up.
+    why:
+    - ''
+    - That would be a blur, which keeps brightness.
+    - No kernel here adds up to that.
+  - question: Gx is large and Gy is near zero. Which way does the edge run?
+    options:
+    - Up and down
+    - Left to right
+    - Diagonally
+    answer: 0
+    explain: Gx is the slope across. It is large when brightness changes from left to right, which happens at an edge that runs up and down.
+    why:
+    - ''
+    - A left-to-right edge changes brightness going down, so Gy would be large.
+    - A diagonal edge gives Gx and Gy of similar size.
+  recap: find edges with Sobel, and keep noise out of them with a blur.
+
+- id: corners
+  label: Corners
+  demo: table
+  lab: facade
+  minutes: 8
+  top: corners
+  row1: tensor
+  row2: lambda
+  controls: [hint, source, corners]
+  hint: Point at the photo to see Harris's response up close. Drag the probe onto a flat patch, an edge and a corner.
+  aria:
+  - The photo with the corners Harris finds
+  - The slopes inside the probe window as a cloud of points
+  - The probe on the plane of the two eigenvalues, with the corner region shaded
+  goal: Find corners, points you can find again in another picture, with the Harris detector.
+  needs: [edges]
+  recall: Sobel gives the slope at each pixel. An edge has a strong slope in one direction; a corner has strong slopes in two.
+  predict:
+    question: You slide a small window along a straight edge. Can you tell where along the edge it is?
+    options:
+    - No, it looks the same all along
+    - Yes, from the brightness
+    - Yes, from the slope's size
+    answer: 0
+    try: Drag the probe along the edge of an awning, then onto a window corner, and watch the cloud of slopes.
+    explain: >-
+      Along an edge the window sees the same thing everywhere, so a match can slide along it (the aperture problem).
+      At a corner the view changes in every direction, which is what makes a corner a good landmark.
+  note_title: Slopes in two directions
+  note: >-
+    <p>Harris gathers the slopes (I<sub>x</sub>, I<sub>y</sub>) in a small window and measures their
+    <strong>spread</strong> with a 2 × 2 matrix. Its eigenvalues λ₁ and λ₂ are the spread along its two main directions:
+    both small on a flat patch, one large on an edge, both large at a corner. Instead of computing them, Harris scores
+    R = λ₁λ₂ − k(λ₁ + λ₂)² and keeps the local peaks of R above a threshold.</p>
+  maths: >-
+    <p>M = Σ w · [I<sub>x</sub>² I<sub>x</sub>I<sub>y</sub>; I<sub>x</sub>I<sub>y</sub> I<sub>y</sub>²], summed with a
+    Gaussian weight w of width σ. det M = λ₁λ₂ and trace M = λ₁ + λ₂, so R needs no eigenvalues. k is usually 0.04 to 0.06.</p>
+  tasks:
+  - Drag the probe onto the plain wall, an awning's edge and a window corner. Watch the cloud and the dot on the λ plane.
+  - Show <strong>Response R</strong>. Where is it largest?
+  - Raise <strong>k</strong>. Which corners disappear first?
+  - Switch to <strong>Pencils</strong>. Where are the corners there, and why so few on the pink background?
+  check:
+  - question: λ₁ is large and λ₂ is near zero. The window is on
+    options:
+    - an edge
+    - a corner
+    - a flat patch
+    answer: 0
+    explain: One direction of strong slope and none across it is an edge.
+    why:
+    - ''
+    - A corner needs both λ large.
+    - A flat patch has both λ small.
+  - question: Why does raising k remove corners that sit on strong edges?
+    options:
+    - k(λ₁ + λ₂)² punishes one large λ, so edge-like points score lower
+    - k blurs the picture more
+    - k raises the threshold for every pixel equally
+    answer: 0
+    explain: A point with one huge λ and one modest λ has a big trace; the larger k is, the more that trace counts against it.
+    why:
+    - ''
+    - The window width is σ, not k.
+    - The threshold is its own slider.
+  recap: find corners with Harris, and read flat, edge or corner off λ₁ and λ₂.
+
+- id: find
+  label: Find the ball
+  demo: table
+  lab: table
+  minutes: 8
+  top: mask
+  row1: hist
+  row2: blob-list
+  controls: [hint, find, pencil, light, play]
+  hint: Drag the threshold line on the histogram.
+  aria:
+  - The table camera with the red pixels and their blobs marked
+  - Histogram of redness with the threshold
+  - The blobs found, with area and roundness
+  goal: Find the ball in the table camera by thresholding its colour, joining pixels into blobs and picking the round one.
+  needs: [pixels]
+  recall: Each pixel has red, green and blue numbers. The ball is the only thing on the table whose red is well above its green and blue.
+  predict:
+    question: Put a red pencil on the table. The detector keeps the largest red blob. What does it find when the ball is on the far side?
+    options:
+    - The pencil
+    - The ball
+    - Nothing
+    answer: 0
+    try: Pick <strong>Red pencil</strong> and watch while the ball rolls to the far side.
+    explain: >-
+      Far away, the ball covers fewer pixels than the pencil, so the largest blob is the pencil. Asking for a round blob
+      fixes it: the pencil's roundness is about 0.1, the ball's about 0.9.
+  note_title: Colour, threshold, blobs
+  note: >-
+    <p><strong>Redness</strong> is red minus the mean of green and blue: near 0 for grey, below 0 for the green felt,
+    high for the ball. A <strong>threshold</strong> keeps the pixels above a value, and the histogram shows where to put
+    it. Touching pixels join into <strong>blobs</strong>; each has an area, a centre and a <strong>roundness</strong>
+    (1 for a disc, near 0 for a line). The ball's centre, in pixels, is the first answer to the running problem.</p>
+  tasks:
+  - Drag the threshold on the histogram until only the ball is yellow.
+  - Turn on the pencil, then raise <strong>Least roundness</strong> until the ball wins again.
+  - Dim the <strong>Lamp</strong>. At what brightness does the threshold lose the ball?
+  - Lower the threshold to find it again. What else comes in?
+  check:
+  - question: Why does dimming the lamp lose the ball?
+    options:
+    - Redness falls with the light, so the ball drops below a fixed threshold
+    - The ball changes colour
+    - The camera stops working
+    answer: 0
+    explain: Every number scales with the light, redness too. A threshold set in bright light is too high in dim light.
+    why:
+    - ''
+    - Its colour is the same; there's just less light on it.
+    - The camera still sees it, only darker.
+  - question: Blob A has area 40 and roundness 0.95. Blob B has area 70 and roundness 0.12. Which is the ball?
+    options:
+    - A
+    - B
+    answer: 0
+    explain: A ball is round from every side; 0.12 is a long thin shape, like the pencil.
+    why:
+    - ''
+    - Bigger is not rounder; B is a line.
+  recap: find a coloured object with a threshold and blobs, and say why a fixed threshold is fragile.
+
+- id: warp
+  label: Homography
+  demo: table
+  lab: table
+  minutes: 10
+  top: warp-src
+  row1: warp-dst
+  row2: warp-mat
+  controls: [hint, warp, play]
+  hint: Drag the four dots onto the table's corners.
+  aria:
+  - The table camera with four draggable corners
+  - The table seen from above, made by the homography
+  - The matrix, with the ball's position in centimetres
+  goal: Turn the camera's slanted view into a flat, to-scale map of the table, and read the ball's position in centimetres.
+  needs: [find]
+  recall: You found the ball in pixels. A pixel near the far edge covers more table than one near the camera, so pixels are not centimetres.
+  predict:
+    question: Can turning, scaling, shearing and shifting the picture (an affine map) make the slanted table a rectangle again?
+    options:
+    - No, because the far side looks shorter than the near side
+    - Yes, with enough shear
+    - Yes, if it is turned the right way
+    answer: 0
+    try: Pick <strong>Affine</strong> and drag three corners; the fourth has to follow.
+    explain: >-
+      Affine maps keep parallel lines parallel. In the picture the table's sides lean towards each other, so only a
+      projective map, the homography, can straighten them.
+  note_title: Four points fix a flat surface
+  note: >-
+    <p>A flat surface seen by a camera maps onto the picture by a <strong>homography</strong>: a 3 × 3 matrix H with 8
+    free numbers (its scale doesn't matter). Each corner you place gives two equations, so <strong>four corners</strong>
+    fix H. Its bottom row divides by distance, which is what perspective does. Apply H⁻¹ to the ball's pixel and you get
+    centimetres on the table.</p>
+  maths: >-
+    <p>[u, v, w]ᵀ = H [x, y, 1]ᵀ, and the pixel is (u/w, v/w). With h₃₃ = 1, each pair (x, y) → (u, v) gives
+    u(h₃₁x + h₃₂y + 1) = h₁₁x + h₁₂y + h₁₃ and the same for v: two linear equations. Four pairs give eight, and one
+    solve gives H.</p>
+  tasks:
+  - Drag the four corners onto the table's corners until the flat view lines up with the white grid.
+  - Read the ball's position in centimetres, and how far it is from the truth.
+  - Move one far corner by a few pixels. How far does the reading move?
+  - Pick <strong>Affine</strong> and try to fit the table.
+  check:
+  - question: How many point pairs fix a homography?
+    options:
+    - '4'
+    - '3'
+    - '2'
+    answer: 0
+    explain: H has 8 free numbers and each pair gives two equations.
+    why:
+    - ''
+    - Three pairs fix an affine map (6 numbers); a homography has 8.
+    - Two pairs fix only a shift, a turn and a scale.
+  - question: A pixel of error at a far corner moves the reading more than one at a near corner. Why?
+    options:
+    - Each far pixel covers more of the table
+    - The far corner is darker
+    - H is more accurate near the camera
+    answer: 0
+    explain: Far away, one pixel spans more centimetres, so the same pixel error is a bigger error on the table.
+    why:
+    - ''
+    - Brightness doesn't enter the map.
+    - H is one matrix; the scale varies across the picture.
+  recap: straighten a flat surface with a homography from four points, and read positions in real units.
+
+- id: match
+  label: Match features
+  demo: table
+  lab: facade
+  minutes: 10
+  top: match-pair
+  row1: match-desc
+  row2: match-stats
+  controls: [hint, source, match]
+  hint: Click the left end of a match line to inspect it.
+  aria:
+  - The photo and a turned, tilted second view, with lines joining matched corners
+  - One match's descriptors, its distance and ratio
+  - Counts of corners, matches, right matches and RANSAC inliers
+  goal: Find the same points in two views automatically, and fit the homography between them without placing any corners by hand.
+  needs: [corners, warp]
+  recall: You placed four corners to get a homography. Harris finds a hundred corners; if the computer can tell which corner in one view is which in the other, it can fit H itself.
+  predict:
+    question: Turn the second view by 40°. Each descriptor is a small upright picture of a corner's surroundings. What happens to the matches?
+    options:
+    - Most of them go wrong
+    - They stay right
+    - There are more of them
+    answer: 0
+    try: Set <strong>Turn</strong> to 40° with the <strong>Upright</strong> descriptor, then switch to <strong>Oriented</strong>.
+    explain: >-
+      An upright patch of a turned corner looks like a different corner. Turning each patch to its own main direction
+      first, as ORB does, makes the descriptor turn with the picture.
+  note_title: Describe, match, then vote
+  note: >-
+    <p>Each corner gets a <strong>descriptor</strong>: its surroundings sampled on an 8 × 8 grid, minus their mean and
+    scaled to length 1, so lighting changes don't matter. A match is the nearest descriptor in the other view, kept only
+    if the second nearest is clearly worse (the <strong>ratio test</strong>). Some matches are still wrong, so
+    <strong>RANSAC</strong> fits H to four random matches many times and keeps the fit most matches agree with. The
+    second view is made from the photo with a known H, so the page can tell right matches from wrong ones.</p>
+  tasks:
+  - With RANSAC off, compare <strong>matches kept</strong> with <strong>really right</strong>.
+  - Turn <strong>RANSAC</strong> on. Wrong lines go red, and the map comes out within a few pixels.
+  - Set the ratio test to off (1.00). The windows repeat: what happens to the wrong matches, and to RANSAC?
+  - Turn to 40°, then switch to <strong>Oriented</strong>.
+  check:
+  - question: Why fit H to four random matches, many times, rather than to all the matches at once?
+    options:
+    - One wrong match pulls a fit to all of them off; a fit to four right ones ignores it
+    - It is faster
+    - Four is the only number that works
+    answer: 0
+    explain: Least squares on everything lets every wrong match pull. RANSAC finds the fit the right matches agree on, then refits on those alone.
+    why:
+    - ''
+    - Hundreds of four-point fits are slower than one big one.
+    - Any four or more pairs can be fitted; four is the least.
+  - question: The ratio test rejects a match when
+    options:
+    - the second-best candidate is almost as close as the best
+    - the best candidate is far away
+    - the corner is weak
+    answer: 0
+    explain: If two candidates look almost equally alike, the patch is not distinctive (a repeated pattern, say), and picking either is a guess.
+    why:
+    - ''
+    - A far best match can still be clearly the best.
+    - Weak corners were already dropped by the Harris threshold.
+  recap: match features between two views, and fit a model through wrong matches with RANSAC.
+
+- id: stereo
+  label: Two cameras
+  demo: table
+  lab: stereo
+  minutes: 10
+  top: stereo-pair
+  row1: stereo-cost
+  row2: stereo-top
+  controls: [hint, stereo]
+  hint: Drag the ball in the bottom view; click the left image to probe any pixel.
+  aria:
+  - The left and right camera images with the window being matched
+  - The matching cost for each disparity
+  - The table from above, with the two cameras, the rays and the depth uncertainty
+  goal: Measure depth with two cameras by finding how far a point shifts between them, then triangulating.
+  needs: [match]
+  recall: Matching found the same point in two views. With two cameras side by side, how far that point shifts tells you how far away it is.
+  predict:
+    question: The ball rolls from 60 cm to 180 cm away. What happens to its disparity?
+    options:
+    - It falls to a third
+    - It falls by 120 px
+    - It stays the same
+    answer: 0
+    try: Drag the ball away from the cameras in the bottom view and read the disparity.
+    explain: >-
+      Disparity is d = f·B / Z, so it shrinks as 1 / Z: three times as far, a third of the shift. That's also why far
+      depth is coarse: half a pixel of disparity covers more and more depth.
+  note_title: Depth from a shift
+  note: >-
+    <p>Two identical cameras a <strong>baseline</strong> B apart, facing the same way, see each point on the same row,
+    shifted sideways by its <strong>disparity</strong> d. Similar triangles give the depth, Z = f·B / d, where f is the
+    focal length in pixels. To find d, slide a small window along the row of the right image and keep the shift where the
+    two windows differ least (<strong>block matching</strong>). The error grows as Z², and a wider baseline shrinks it.</p>
+  maths: >-
+    <p>Z = f·B / d, so δZ ≈ Z² · δd / (f·B). Here f = 150 px. With B = 10 cm, half a pixel of error at 90 cm is about
+    ±3 cm, and at 180 cm about ±11 cm.</p>
+  tasks:
+  - Read the ball's disparity and depth, and compare them with the truth.
+  - Drag the ball far away and watch the ±½ px wedge grow.
+  - Widen the <strong>Baseline</strong>. What happens to the wedge?
+  - Click a plain patch of felt, then the tiled wall. Which gives a clear minimum?
+  - Show the <strong>Depth map</strong>. Where does it fail?
+  check:
+  - question: Doubling the baseline does what to the depth error at a fixed distance?
+    options:
+    - Halves it
+    - Doubles it
+    - Nothing
+    answer: 0
+    explain: d = f·B / Z doubles, so the same half-pixel error is half as much depth.
+    why:
+    - ''
+    - A wider baseline makes the shift bigger, so it is easier to measure, not harder.
+    - The error depends on f·B.
+  - question: Why does block matching fail on plain, even surfaces?
+    options:
+    - Every shift looks alike, so the cost has no clear minimum
+    - They are too far away
+    - They are too bright
+    answer: 0
+    explain: Matching needs texture; a blank window matches a blank window anywhere along the row. It's the same reason corners make better features than flat patches.
+    why:
+    - ''
+    - Distance makes the shift small, not ambiguous.
+    - Brightness is the same in both images.
+  recap: find disparity by block matching, turn it into depth, and say why depth gets worse with distance.
+
+- id: learn
+  label: Learn a filter
+  demo: table
+  lab: facade
+  minutes: 7
+  top: learn-out
+  row1: kernel
+  row2: loss
+  kernel: learn
+  controls: [hint, source, learn]
+  hint: Press Train. The input has a little noise added so every direction has texture.
+  aria:
+  - The input, the target output and the learned filter's output
+  - The learned weights next to the answer
+  - The training error over time
+  goal: Watch gradient descent find a filter's nine weights from examples alone. Every neural network is built on this idea.
+  needs: [edges]
+  recall: Sobel's nine weights were designed by hand. Here you only give examples of what the output should be, and the weights are learned.
+  predict:
+    question: Start from random weights and train on Sobel x's output. What will the learned weights be?
+    options:
+    - Sobel x's own −1 0 1 / −2 0 2 / −1 0 1
+    - Something different that works as well
+    - A blur
+    answer: 0
+    try: Press <strong>Train</strong> and watch the left grid.
+    explain: >-
+      The error is zero only for those weights (the input has texture in every direction, so no other set gives the same
+      output), and gradient descent walks downhill to them. One layer of a convolutional network is exactly this: kernels
+      learned from examples.
+  note_title: Walk downhill
+  note: >-
+    <p>The filter starts with random weights. Each <strong>training step</strong> measures the mean squared difference
+    between its output and the target, works out how that error changes with each weight (the <strong>gradient</strong>),
+    and moves every weight a little downhill. After a few hundred steps the weights settle. The <strong>step size</strong>
+    sets how far each move goes: too small is slow, too large overshoots.</p>
+  maths: >-
+    <p>E = mean over pixels of (Σ w<sub>k</sub> x<sub>k</sub> + b − t)². ∂E/∂w<sub>k</sub> = 2 · mean of (error ·
+    x<sub>k</sub>), where x<sub>k</sub> is the pixel under weight k. The page uses Adam, which scales each step by a
+    running estimate of the gradient's size.</p>
+  tasks:
+  - Press <strong>Train</strong> and watch the error fall and the weights settle.
+  - Press <strong>Scramble the weights</strong> and train again. Same answer?
+  - Switch the target to <strong>Blur</strong>, then <strong>Sharpen</strong>.
+  - Set the step size to its largest. What does the error curve do?
+  check:
+  - question: What does the gradient tell each weight?
+    options:
+    - Which way, and how strongly, to move to lower the error
+    - Its final value
+    - How big the picture is
+    answer: 0
+    explain: The gradient is the slope of the error with respect to each weight; a step against it lowers the error.
+    why:
+    - ''
+    - It only says which way is downhill from here.
+    - It doesn't depend on the picture's size, only on its pixels.
+  recap: train a filter by gradient descent, and say what a learned convolution layer is.
+
+- id: net
+  label: A small network
+  demo: table
+  lab: dim
+  minutes: 10
+  top: net-heat
+  row1: net-maps
+  row2: loss
+  controls: [hint, net, light, pencil]
+  hint: Training runs in this page; it takes about half a minute.
+  aria:
+  - The table camera with the network's ball map, its pick and the threshold's pick
+  - The network's first-layer filters and their outputs
+  - The training loss
+  goal: Train a two-layer convolutional network to find the ball where the colour threshold fails, in dim light and next to a red pencil.
+  needs: [learn, find]
+  recall: One learned filter can only copy one kernel. Stack filters with a bend (ReLU) between them and they can learn what a ball looks like.
+  predict:
+    question: Before any training, where does the network say the ball is?
+    options:
+    - Nowhere, its map is flat and weak
+    - On the ball, because it is red
+    - On the pencil
+    answer: 0
+    try: Look at the map before pressing <strong>Train</strong>, then press it.
+    explain: >-
+      Untrained weights are random, so the output is weak noise. The network finds the ball only after seeing labelled
+      examples, a few hundred frames with the ball's true position.
+  note_title: Filters on filters
+  note: >-
+    <p>Layer 1 has six 5 × 5 colour filters like the one you trained, each followed by a <strong>ReLU</strong> (negative
+    values become 0). Layer 2 combines those six maps with more 5 × 5 filters into one map, squashed to between 0 and 1:
+    "ball here". It trains on random frames (the ball anywhere, any lamp, often the pencil) against a target that is 1 on
+    the ball and 0 elsewhere. The blue square is the threshold from <a href="#find">Find the ball</a>, for comparison.</p>
+  tasks:
+  - Press <strong>Train</strong> and watch <strong>Found (last 50)</strong> climb.
+  - Dim the <strong>Lamp</strong> to 35%. Which still finds the ball, the network or the threshold?
+  - Turn on the pencil. Does the network mistake it for the ball?
+  - Look at layer 1's filters. Do any look like a red detector, or an edge detector?
+  check:
+  - question: Why does the network cope with the dim lamp when the fixed threshold doesn't?
+    options:
+    - It was trained on frames under every lamp setting
+    - It uses a brighter camera
+    - It ignores colour
+    answer: 0
+    explain: It learned from dim and bright examples alike, so it uses what stays the same, like the ball's shape and how red it is next to the felt.
+    why:
+    - ''
+    - It sees the same frames as the threshold.
+    - Its first-layer filters are coloured; it uses colour.
+  - question: The ReLU between the layers matters because
+    options:
+    - without it, two convolutions collapse into one, and the network is just a single filter
+    - it speeds up training
+    - it removes noise
+    answer: 0
+    explain: A convolution of a convolution is another convolution. The bend in between is what lets stacked layers learn more than one filter could.
+    why:
+    - ''
+    - Speed is a side effect at most.
+    - It zeroes negative values; it does not filter noise.
+  recap: train a small CNN to find an object, and say why it copes where a threshold doesn't.
+
+- id: track
+  label: Track
+  demo: table
+  lab: track
+  minutes: 10
+  top: track
+  row1: track-x
+  row2: track-err
+  controls: [hint, kalman]
+  hint: Drag the card sideways to hide the ball somewhere else.
+  aria:
+  - The table camera with the detector's fixes, the filter's estimate and its uncertainty ring, and a card that hides the ball
+  - The ball's position across the table over time; true, detected and filtered
+  - How far the detector and the filter are from the truth
+  goal: Follow the ball through noisy and missing measurements with a Kalman filter.
+  needs: [warp]
+  recall: The detector gives a position in centimetres each frame, with some error, and nothing at all when the ball is hidden. The ball can't jump, so past frames help.
+  predict:
+    question: The ball rolls under the card. What does the Kalman filter's estimate do?
+    options:
+    - Keeps going at its last speed while its uncertainty grows
+    - Stops where the ball disappeared
+    - Jumps to the middle of the card
+    answer: 0
+    try: Watch the filter's ring as the ball passes under the card.
+    explain: >-
+      With no measurement the filter only predicts: the position moves on at the estimated speed and the uncertainty
+      grows with the process noise q. When the ball comes out, the first fix pulls the estimate back.
+  note_title: Predict, then correct
+  note: >-
+    <p>The filter keeps an estimate of position and <strong>velocity</strong>, and how unsure it is (the ring is 2σ).
+    Each frame it <strong>predicts</strong> (move on by velocity × time, grow the uncertainty by q), then
+    <strong>updates</strong> with the detector's fix, weighted by the <strong>Kalman gain</strong>: trust the fix more
+    when the prediction is unsure, less when the detector is noisy (r). The <strong>gate</strong> ignores fixes that are
+    too surprising. It is the same filter as in <a href="/controls/#estimate">Estimate the speed</a> on the controls lab,
+    run in two dimensions.</p>
+  maths: >-
+    <p>State [x, y, v<sub>x</sub>, v<sub>y</sub>]. Predict x⁻ = F x, P⁻ = F P Fᵀ + Q. Update K = P⁻Hᵀ(H P⁻Hᵀ + R)⁻¹,
+    x = x⁻ + K(z − H x⁻), P = (I − K H) P⁻. The gate drops z when the surprise (z − Hx⁻)ᵀ S⁻¹ (z − Hx⁻) is above 9.2,
+    which a right fix exceeds only 1% of the time.</p>
+  tasks:
+  - Compare the RMS error of the detector and of the filter.
+  - Raise the <strong>Detector noise</strong>. How much does the filter's error grow by comparison?
+  - Set <strong>q</strong> very low and watch it lag at each bounce. Set it high and it follows the noise.
+  - Turn the filter <strong>Off</strong> and let the ball roll under the card.
+  check:
+  - question: A small q tells the filter that
+    options:
+    - the ball moves smoothly, so trust the prediction
+    - the detector is accurate
+    - the ball is hidden
+    answer: 0
+    explain: q is how much the motion may change between frames. Small q means a steady ball, so the filter averages over many frames.
+    why:
+    - ''
+    - The detector's accuracy is r.
+    - Hiding is when no fix arrives at all.
+  - question: Right after a cushion bounce the estimate overshoots. Why?
+    options:
+    - Its model says constant velocity, and a bounce is a sudden change
+    - The detector fails at the cushion
+    - The gate is off
+    answer: 0
+    explain: The filter expects the ball to carry on. It takes a few fixes to believe the turn, more if q is small.
+    why:
+    - ''
+    - The detector sees the ball at the cushion as well as anywhere.
+    - The overshoot happens with the gate on too.
+  recap: track an object through noise and gaps with a Kalman filter, and trade q against r.
+
+- id: camfilters
+  label: Filters
+  demo: camera
+  lab: camera
+  minutes: 5
+  top: cam-filter
+  row1: profile
+  row2: kernel
+  profile: edge
+  kernel: sobel
+  controls: [camera, camfilter, hint]
+  hint: Point at the picture and the magnifier shows the filter there.
+  aria:
+  - Your camera, filtered live
+  - Brightness and its slope along the probe's row
+  - The Sobel kernels and their values at the probe
+  goal: Run the blur, edge and corner filters on your own camera, live.
+  needs: [blur, edges, corners]
+  recall: Every filter so far was one formula run on every pixel. It works the same on any picture, yours included.
+  predict:
+    question: Hold up a plain sheet of paper, then a page of text. Where does the corner detector fire?
+    options:
+    - On the text, not on the plain paper
+    - On both equally
+    - In the middle of the plain paper
+    answer: 0
+    try: Start the camera, pick <strong>Corners</strong>, and hold up each.
+    explain: >-
+      Plain paper has no slope inside it, so no corners; letters are full of strokes that turn. It's the same reason
+      plain surfaces defeat stereo matching.
+  note_title: Your own pictures
+  note: >-
+    <p>Your camera's frames are shrunk to 192 × 144 and run through the same code as the lessons above. Nothing leaves
+    this page, and the camera stops when you open another lesson. Blur trades noise for detail as before, edges follow
+    your outline, and corners cluster where there is texture.</p>
+  tasks:
+  - Start the camera and show <strong>Edges</strong>. Wave a hand.
+  - Show <strong>Angle</strong> and turn a pen. Watch its colour follow its direction.
+  - Show <strong>Corners</strong> and hold up a page of text.
+  - Dim the room. What happens to the edges' noise? Raise the blur.
+  check:
+  - question: In a dim room the edge picture fills with speckle. Why?
+    options:
+    - The camera turns up its gain, so the noise grows, and slopes amplify noise
+    - The edges disappear
+    - The camera blurs the picture
+    answer: 0
+    explain: Less light means the camera multiplies a weaker signal, and its noise with it; a derivative makes that noise worse.
+    why:
+    - ''
+    - The edges are still there, buried under noise.
+    - It is the opposite; a blur would hide the noise.
+  recap: run the filters on real video, and spot where each one struggles.
+
+- id: camtrack
+  label: Track a colour
+  demo: camera
+  lab: camera
+  minutes: 7
+  top: cam-track
+  row1: cam-mask
+  row2: track-x
+  controls: [camera, picker, kalman]
+  aria:
+  - Your camera with the tracked object, its blob and the filter's estimate
+  - The pixels that match the picked colour
+  - The object's position across the picture over time
+  goal: Track a coloured object you hold, with a colour mask, a blob and a Kalman filter.
+  needs: [find, track]
+  recall: On the table the ball was red, and the filter followed it under the card. Here you pick the colour.
+  predict:
+    question: You pass the object behind your other hand for a moment. What does the filter do?
+    options:
+    - Carries on at its last speed, then catches up
+    - Stops dead
+    - Jumps to the nearest thing of that colour
+    answer: 0
+    try: Click your object, then hide it for a moment.
+    explain: Same as the card on the table. With no fix it predicts and its ring grows; the next fix pulls it back.
+  note_title: Pick a colour
+  note: >-
+    <p>Click your object to take its colour. Pixels whose <strong>colour</strong> is within the tolerance form a mask
+    (brightness is divided out first, so shadows matter less). The biggest blob's centre is the fix, and the Kalman
+    filter smooths it, in pixels.</p>
+  tasks:
+  - Start the camera and click a brightly coloured object.
+  - Tune <strong>Tolerance</strong> until the mask shows only the object.
+  - Move it fast with the filter <strong>Off</strong>, then on.
+  - Hide it behind your hand.
+  check:
+  - question: Why divide out the brightness before comparing colours?
+    options:
+    - So the object still matches in shadow
+    - To make it faster
+    - Because cameras can't measure brightness
+    answer: 0
+    explain: A shadow makes red, green and blue all smaller by the same factor, so their ratios, the colour, stay the same.
+    why:
+    - ''
+    - It is one extra division per pixel.
+    - Brightness is exactly what they measure.
+  recap: track a real object by its colour, and tune the tolerance and the filter.

@@ -94,6 +94,16 @@ tasks:
     cmds:
       - script/test-lab
 
+  check:vision:
+    desc: Check the filters, geometry, stereo, learning and tracking behind /vision/, and its lesson data (Node, no build)
+    cmds:
+      - script/test-vision
+
+  check:embedded:
+    desc: Check the button, ADC, sensor, LED, memory, flash, bus, battery and bike-light models behind /embedded/, and its lesson data (Node, no build)
+    cmds:
+      - script/test-embedded
+
   check:links:
     desc: Check internal links with html-proofer
     cmds:
@@ -101,12 +111,14 @@ tasks:
       - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt --ignore-urls "http://192.168.4.1,http://cartpole.local"
 
   check:fast:
-    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, CSV fit, recipe units"
+    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, vision and embedded models, CSV fit, recipe units"
     cmds:
       - task: check:data
       - task: check:installer
       - task: check:swingup
       - task: check:lab
+      - task: check:vision
+      - task: check:embedded
       - task: check:fit
       - task: check:recipes
 

@@ -8,7 +8,8 @@
 //   3. pole placement round-trips; Padé poles agree with Nyquist away from the edge
 //   4. network bounds are sound
 //   5. system identification recovers the mass-spring-damper from noisy data
-//   6. every _data/labs/*.yml names plants, controllers, views and controls that exist
+//   6. every _data/labs/*.yml names plants, controllers, views and controls that exist (pages with
+//      their own `engine:` are checked by their own script)
 // Pure Node, no dependencies, no build.
 'use strict';
 const fs = require('fs');
@@ -225,6 +226,7 @@ console.log('9. page data');
   let problems = [];
   fs.readdirSync(dir).filter((f) => f.endsWith('.yml')).forEach((f) => {
     const txt = fs.readFileSync(path.join(dir, f), 'utf8');
+    if (/^engine: /m.test(txt)) return;                // another engine's page (vision.yml: script/test-vision)
     (txt.match(/(?:^\s*|[{,]\s*)plant: (\w+)/gm) || []).forEach((m) => { const k = m.trim().split(' ').pop(); if (!P[k]) problems.push(f + ': plant ' + k); });
     (txt.match(/(top|row1|row2): ([\w-]+)/g) || []).forEach((m) => { const v = m.split(': ')[1]; if (!views.includes(v)) problems.push(f + ': view ' + v); });
     (txt.match(/controls: \[([^\]]*)\]/g) || []).forEach((m) => m.slice(11, -1).split(',').map((s) => s.trim()).forEach((c) => { if (!controls.includes(c)) problems.push(f + ': control ' + c); }));

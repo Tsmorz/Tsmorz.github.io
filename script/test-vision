@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+// Check the maths behind /vision/ (assets/js/vision/vision-core.js) and its lesson data:
+//   1. filters: kernels keep brightness, a Gaussian divides noise by about the right amount, separable = full 2-D,
+//      Sobel sees a vertical step in Gx only
+//   2. the scene and the detector: the ball is found within 1.5 cm in good light, a fixed threshold loses it in dim
+//      light, and the roundness test stops the pencil from being called the ball
+//   3. geometry: the homography maps its four points exactly, the camera's map round-trips, warping straightens the table
+//   4. features: Harris finds an L's corner, RANSAC recovers a known homography from matched features (upright at 10°,
+//      oriented at 90°, upright fails at 40°: what the Match lesson claims)
+//   5. stereo: rendered disparity is f·B/Z, block matching finds it, triangulation gives the ball back
+//   6. learning: one 3×3 filter learns Sobel x; the small CNN finds the ball in dim light next to the pencil
+//   7. tracking: the Kalman filter beats the raw detector and coasts through a gap
+//   8. vision.yml names only views and controls that vision.js implements
+// Pure Node, no dependencies, no build.
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const root = path.resolve(__dirname, '..');
+const V = require(path.join(root, 'assets/js/vision/vision-core.js'));
+
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+let seed = 2024;
+function rand() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+function maxDiff(a, b) { let m = 0; for (let i = 0; i < a.d.length; i++) m = Math.max(m, Math.abs(a.d[i] - b.d[i])); return m; }
+// A test card: grey blocks of random brightness with random noise, so every direction has texture.
+function blocks(w, h) {
+  const im = V.image(w, h, 1), cell = [];
+  for (let j = 0; j < 20; j++) for (let i = 0; i < 20; i++) cell.push(rand());
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) im.d[y * w + x] = 0.2 + 0.6 * cell[Math.floor(y / 13) * 20 + Math.floor(x / 17)] + 0.03 * V.gaussian(rand);
+  return im;
+}
+
+console.log('1. filters');
+{
+  [V.boxKernel(5), V.gaussianKernel(1.5)].forEach((K, i) => check(Math.abs(K.k.reduce((a, b) => a + b, 0) - 1) < 1e-9, `${i ? 'Gaussian' : 'box'} kernel weights add to 1`));
+  const flat = V.image(64, 48, 1); flat.d.fill(0.5);
+  const noisy = V.addNoise(flat, 0.1, rand), bl = V.convolveSep(noisy, V.boxKernel(5).k1), ratio = V.std(noisy) / V.std(bl);
+  check(ratio > 4 && ratio < 6, `a 5×5 box divides noise σ by ${ratio.toFixed(2)} (√25 = 5 expected)`);
+  const G = V.gaussianKernel(2);
+  check(maxDiff(V.convolve(noisy, G.k, G.n), V.convolveSep(noisy, G.k1)) < 1e-5, 'two 1-D passes equal the full 2-D Gaussian');
+  const step = V.image(32, 32, 1); for (let y = 0; y < 32; y++) for (let x = 16; x < 32; x++) step.d[y * 32 + x] = 1;
+  const s = V.sobel(step), at = 10 * 32 + 16;
+  check(Math.abs(s.gx.d[at] - 4) < 1e-6 && Math.abs(s.gy.d[at]) < 1e-6, `Sobel on a vertical step: Gx = ${s.gx.d[at]}, Gy = ${s.gy.d[at]}`);
+  check(Math.abs(V.KERNELS.sobelx.reduce((a, b) => a + b, 0)) < 1e-12, "Sobel's weights add to 0");
+}
+
+console.log('2. the scene and the detector');
+{
+  const sc = V.createScene();
+  let err = 0, miss = 0;
+  for (let k = 0; k < 120; k++) { sc.step(1 / 15); const d = V.detectBall(V.renderScene(sc, { noise: 0.01 }, rand), 0.3, 0.5); if (!d) miss++; else err = Math.max(err, Math.hypot(d.x - sc.x, d.y - sc.y)); }
+  check(miss === 0 && err < 1.5, `bright lamp: found in 120/120 frames, worst ${err.toFixed(2)} cm off`);
+  let dimMiss = 0; for (let k = 0; k < 40; k++) { sc.step(1 / 15); if (!V.detectBall(V.renderScene(sc, { light: 0.35 }, rand), 0.3, 0.5)) dimMiss++; }
+  check(dimMiss > 30, `lamp at 35%: the fixed threshold misses ${dimMiss}/40 frames (the network lesson's motivation)`);
+  const far = V.createScene({ x: 30, y: 44 }), im = V.renderScene(far, { pencil: [62, 9, 78, 21] }, rand);
+  const largest = V.detectBall(im, 0.3, 0), round = V.detectBall(im, 0.3, 0.5), bp = V.ballPixel(far.x, far.y);
+  check(largest && Math.hypot(largest.u - bp.u, largest.v - bp.v) > 10, 'ball on the far side: the largest red blob is the pencil');
+  check(round && Math.hypot(round.u - bp.u, round.v - bp.v) < 2 && round.blob.round > 0.8, `asking for roundness ≥ 0.5 picks the ball (roundness ${round && round.blob.round.toFixed(2)})`);
+}
+
+console.log('3. geometry');
+{
+  const err = Math.max(...V.TABLE_CORNERS.map((p, i) => { const q = V.applyH(V.CAM, p[0], p[1]); return Math.hypot(q[0] - V.CAM_CORNERS[i][0], q[1] - V.CAM_CORNERS[i][1]); }));
+  check(err < 1e-9, `the camera homography maps the four table corners exactly (${err.toExponential(1)} px)`);
+  let rt = 0; for (let k = 0; k < 50; k++) { const x = rand() * 100, y = rand() * 50, p = V.toPixel(x, y), q = V.toTable(p[0], p[1]); rt = Math.max(rt, Math.hypot(q[0] - x, q[1] - y)); }
+  check(rt < 1e-9, 'table → pixel → table round-trips');
+  const A = V.affine({ rot: 30, scale: 1.2, shear: 0.1, cx: 10, cy: 5, tx: 3, ty: -2 });
+  check(A[2][0] === 0 && A[2][1] === 0 && A[2][2] === 1, 'an affine map has bottom row 0 0 1');
+  // Straighten the table into 2 px per cm with a 10 px margin: the green felt ends at the rails, at 0 and 100 cm, 0 and 50 cm.
+  const top = V.warp(V.renderScene(V.createScene({ x: 80, y: 40 }), {}, rand), V.mul3(V.CAM, V.inv3([[2, 0, 10], [0, -2, 110], [0, 0, 1]])), 220, 120);
+  const green = (x, y) => { const k = (y * 220 + x) * 3; return top.d[k + 1] - top.d[k]; };
+  const edges = [[12, 60, 7, 60], [207, 60, 212, 60], [110, 12, 110, 7], [110, 107, 110, 112]];
+  check(edges.every(([a, b, c, d]) => green(a, b) > 0.1 && green(c, d) < 0.05), 'warping the camera image by H⁻¹ puts the felt\'s edges at the table\'s edges');
+}
+
+console.log('4. features');
+{
+  const L = V.image(40, 40, 1); for (let y = 10; y < 40; y++) for (let x = 10; x < 40; x++) L.d[y * 40 + x] = 1;
+  const hz = V.harris(L, { rel: 0.1 }), c0 = hz.corners[0];
+  check(hz.corners.length >= 1 && Math.hypot(c0.x - 10, c0.y - 10) < 2.5, `Harris puts the strongest corner of an L at (${c0.x}, ${c0.y})`);
+  const g = blocks(256, 192), Gk = V.gaussianKernel(1);
+  function run(rot, oriented) {
+    const Ht = V.affine({ rot, scale: 0.92, cx: 128, cy: 96, tx: 4, ty: -3 }); Ht[2][0] = 0.00036; Ht[2][1] = 0.00012;
+    const g2 = V.warp(g, V.inv3(Ht), 256, 192); for (let i = 0; i < g2.d.length; i++) if (isNaN(g2.d[i])) g2.d[i] = 0.5;
+    const A = V.describe(V.convolveSep(g, Gk.k1), V.harris(g, { rel: 0.01, max: 150 }).corners, oriented);
+    const B = V.describe(V.convolveSep(g2, Gk.k1), V.harris(g2, { rel: 0.01, max: 150 }).corners, oriented);
+    const m = V.matchFeatures(A, B, 0.8), pa = m.map((x) => [A[x.a].x, A[x.a].y]), pb = m.map((x) => [B[x.b].x, B[x.b].y]);
+    const r = V.ransac(pa, pb, 300, 2.5, rand);
+    let e = Infinity; if (r.H) e = Math.max(...[[20, 20], [236, 20], [128, 96], [20, 172], [236, 172]].map(([x, y]) => { const p = V.applyH(r.H, x, y), q = V.applyH(Ht, x, y); return Math.hypot(p[0] - q[0], p[1] - q[1]); }));
+    return { e, n: m.length, inl: r.count };
+  }
+  const a = run(10, false), b = run(90, true), c = run(40, false);
+  check(a.e < 3, `upright descriptors at 10°: ${a.inl}/${a.n} inliers, map within ${a.e.toFixed(2)} px`);
+  check(b.e < 3, `oriented descriptors at 90°: ${b.inl}/${b.n} inliers, map within ${b.e.toFixed(2)} px`);
+  check(!(c.e < 10), `upright descriptors at 40°: the map is lost (${isFinite(c.e) ? c.e.toFixed(0) + ' px off' : 'no fit'})`);
+}
+
+console.log('5. stereo');
+{
+  const o = { B: 10, ballX: 8, ballZ: 90 }, Lc = V.renderStereo(o, -1), Rc = V.renderStereo(o, 1), Lg = V.gray(Lc), Rg = V.gray(Rc);
+  const p = V.stereoProject(o.B, -1, o.ballX, V.ST.R, o.ballZ), q = V.stereoProject(o.B, 1, o.ballX, V.ST.R, o.ballZ);
+  check(Math.abs(p[1] - q[1]) < 1e-9 && Math.abs((p[0] - q[0]) - V.ST.f * o.B / p[2]) < 1e-9, `rectified pair: same row, disparity = f·B/Z = ${(p[0] - q[0]).toFixed(2)} px`);
+  const d = V.subpixel(V.stereoCost(Lg, Rg, Math.round(p[0]), Math.round(p[1]), 7, 64));
+  check(Math.abs(d - (p[0] - q[0])) < 1.2, `block matching on the ball finds d = ${d.toFixed(2)} px`);
+  const t = V.triangulate(o.B, p[0], p[1], p[0] - q[0]);
+  check(Math.hypot(t.x - o.ballX, t.y - V.ST.R, t.z - o.ballZ) < 1e-6, 'triangulating the true disparity gives the ball centre back');
+}
+
+console.log('6. learning');
+{
+  const L = V.filterLearner(rand), g = V.addNoise(blocks(160, 120), 0.08, rand), tgt = V.convolve(g, V.KERNELS.sobelx, 3);
+  for (let i = 0; i < 600; i++) L.step(g, tgt, 0.03);
+  const e = Math.max(...L.w.map((v, k) => Math.abs(v - V.KERNELS.sobelx[k])));
+  check(e < 0.05, `one 3×3 filter learns Sobel x in 600 steps (largest weight error ${e.toFixed(3)})`);
+  const net = V.netCreate(rand, 6, 5), opt = V.adamState(net);
+  for (let s = 0; s < 500; s++) { const f = V.randomFrame(rand), inp = V.netInput(f.im); V.netTrainStep(net, opt, inp, V.netTarget(inp.w, inp.h, f.ball.u / 2, f.ball.v / 2), 0.01); }
+  let hit = 0, thr = 0; const n = 40;
+  for (let k = 0; k < n; k++) {
+    const f = V.randomFrame(rand, { light: 0.35, pencil: true }), inp = V.netInput(f.im), pk = V.netPeak(V.netForward(net, inp.x, inp.h, inp.w).p, inp.w, inp.h);
+    if (pk.p > 0.3 && Math.hypot(pk.u - f.ball.u, pk.v - f.ball.v) < 5) hit++;
+    const d = V.detectBall(f.im, 0.3, 0); if (d && Math.hypot(d.u - f.ball.u, d.v - f.ball.v) < 5) thr++;
+  }
+  check(hit >= 0.9 * n && thr <= 0.5 * n, `after 500 frames the CNN finds the ball in dim light by the pencil ${hit}/${n} times; the threshold ${thr}/${n}`);
+}
+
+console.log('7. tracking');
+{
+  const sc = V.createScene(), kf = V.kalman({ q: 30, r: 2, gate: 0 }), dt = 1 / 30;
+  let em = 0, ee = 0, n = 0, gapErr = 0;
+  for (let k = 0; k < 600; k++) {
+    sc.step(dt); kf.predict(dt);
+    const hidden = k >= 400 && k < 415;
+    if (!hidden) kf.update([sc.x + 2 * V.gaussian(rand), sc.y + 2 * V.gaussian(rand)]);
+    if (k > 60 && !hidden) { em += 8; ee += (kf.x[0] - sc.x) ** 2 + (kf.x[1] - sc.y) ** 2; n++; }
+    if (k === 414) gapErr = Math.hypot(kf.x[0] - sc.x, kf.x[1] - sc.y);
+  }
+  const rm = Math.sqrt(em / n), re = Math.sqrt(ee / n);
+  check(re < 0.75 * rm, `Kalman RMS ${re.toFixed(2)} cm vs ${rm.toFixed(2)} cm for the raw fixes`);
+  check(gapErr < 6, `after half a second with no fixes it is still within ${gapErr.toFixed(1)} cm (coasting, unless a bounce fell in the gap)`);
+  const g = V.kalman({ q: 30, r: 1, gate: 9.2 }); g.reset([50, 25]); for (let k = 0; k < 30; k++) { g.predict(dt); g.update([50, 25]); }
+  g.predict(dt); const u = g.update([80, 25]);
+  check(!u.used && Math.abs(g.x[0] - 50) < 1, 'the gate ignores a fix 30 cm from the prediction');
+}
+
+console.log('8. page data');
+{
+  const src = fs.readFileSync(path.join(root, 'assets/js/vision/vision.js'), 'utf8'), txt = fs.readFileSync(path.join(root, '_data/labs/vision.yml'), 'utf8');
+  const head = src.slice(0, src.indexOf('(function'));
+  const listed = (k) => head.split('\n').filter((l) => l.startsWith('// ' + k) || (l.startsWith('//   ') && l.trim().length > 3)).join(' ');
+  const problems = [];
+  (txt.match(/(top|row1|row2): ([\w-]+)/g) || []).forEach((m) => { const v = m.split(': ')[1]; if (!src.includes("V['" + v + "'] =") && !src.includes('V.' + v + ' =')) problems.push('view ' + v); });
+  (txt.match(/controls: \[([^\]]*)\]/g) || []).forEach((m) => m.slice(11, -1).split(',').map((s) => s.trim()).forEach((c) => { if (!src.includes('CTRL.' + c + ' =')) problems.push('control ' + c); }));
+  (txt.match(/^    source: (\w+)/gm) || []).forEach((m) => { const s = m.split(': ')[1]; if (['photo', 'table', 'stereo', 'camera'].indexOf(s) < 0) problems.push('source ' + s); });
+  (txt.match(/^    photo: (\w+)/gm) || []).forEach((m) => { const p = m.split(': ')[1]; if (!fs.existsSync(path.join(root, 'assets/img/vision', p + '.jpg'))) problems.push('photo ' + p); });
+  check(problems.length === 0, 'vision.yml uses only views, controls, sources and photos that exist' + (problems.length ? ': ' + problems.join('; ') : ''));
+  const names = [...src.matchAll(/^  (?:V\['([\w-]+)'\]|V\.([\w]+)) = /gm)].map((m) => m[1] || m[2]);
+  const missing = names.filter((n) => !listed('Views').includes(n));
+  check(missing.length === 0, 'every view is listed at the top of vision.js' + (missing.length ? ': ' + missing.join(', ') : ''));
+}
+
+if (failed) { console.log('\ntest-vision: FAILED'); process.exit(1); }
+console.log('\ntest-vision: all checks passed');

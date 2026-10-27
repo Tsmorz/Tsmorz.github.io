@@ -2,8 +2,10 @@
   The lab template. A page sets `lab: <name>` in its front matter and includes this file;
   everything comes from _data/labs/<name>.yml: the labs (plant + controller + settings) and the
   tabs (which lab, which view in each of the three canvas slots, which panel controls, and the
-  note underneath). assets/js/lab/lab.js builds the panels and draws the views. Links in notes
-  are written root-relative ("/controls/") and get the baseurl here.
+  note underneath). lab-shell.js runs the lesson frame (cards, map, hash); the page's engine (`engine:` in
+  the YAML: lab.js by default, else assets/js/<engine>/<engine>-core.js and <engine>.js, drawing with lab-ui.js) builds the panels and draws the views. `finale` is
+  where the last lesson's "Next" goes. Links in notes are written root-relative ("/controls/") and get the
+  baseurl here.
 {%- endcomment -%}
 {%- assign L = site.data.labs[page.lab] -%}
 {%- assign base_href = 'href="' | append: site.baseurl | append: '/' -%}
@@ -73,7 +75,7 @@
     {%- if t.recap %}<p class="lab-recap"><strong>You can now:</strong> {{ t.recap }}</p>{% endif %}
     <div class="lab-next">
       {%- if forloop.last %}
-      <a class="lab-next-link" href="{{ '/controls/swingup/' | relative_url }}">Next: Double Pendulum Control &#8594;</a>
+      <a class="lab-next-link" href="{{ L.finale.href | relative_url }}">Next: {{ L.finale.label }} &#8594;</a>
       {%- else %}
       {%- assign nx = L.tabs[idx] -%}
       <a class="lab-next-link" href="#{{ nx.id }}">Next: {% if nx.demo != t.demo %}{% for d in L.demos %}{% if d.id == nx.demo %}{{ d.label }}{% endif %}{% endfor %}{% else %}{{ nx.label }}{% endif %} &#8594;</a>
@@ -82,12 +84,20 @@
   </section>
   {%- endfor %}
 </div>
-<script type="application/json" id="lab-config">{"page": {{ page.lab | jsonify }}, "assets": {"net": {{ '/assets/models/verify-net.json' | relative_url | jsonify }}}, "labs": {{ L.labs | jsonify }}, "tabs": {{ L.tabs | jsonify }}}</script>
+<script type="application/json" id="lab-config">{"page": {{ page.lab | jsonify }}, "assets": {"net": {{ '/assets/models/verify-net.json' | relative_url | jsonify }}, "img": {{ '/assets/img/vision/' | relative_url | jsonify }}}, "labs": {{ L.labs | jsonify }}, "tabs": {{ L.tabs | jsonify }}}</script>
+<script src="{{ '/assets/js/lab/lab-shell.js' | relative_url }}"></script>
+{%- if L.engine %}
+{%- assign eng = '/assets/js/' | append: L.engine | append: '/' | append: L.engine %}
+<script src="{{ '/assets/js/lab/lab-ui.js' | relative_url }}"></script>
+<script src="{{ eng | append: '-core.js' | relative_url }}"></script>
+<script src="{{ eng | append: '.js' | relative_url }}"></script>
+{%- else %}
 <script src="{{ '/assets/js/lab/lab-core.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/lab/lab-plants.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/lab/lab-flight-render.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/statebox.js' | relative_url }}"></script>
 <script src="{{ '/assets/js/lab/lab.js' | relative_url }}"></script>
+{%- endif %}
 <style>
 .telemetry .t-key,.telemetry .t-val{white-space:nowrap}
 .telemetry .t-val.lab-bad{color:var(--bad);font-weight:600}
