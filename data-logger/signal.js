@@ -57,3 +57,15 @@ export function loudestIndex(levels, fromIndex = 0) {
   for (let i = fromIndex; i < levels.length; i++) if (loudest < 0 || levels[i] > levels[loudest]) loudest = i;
   return loudest;
 }
+
+/**
+ * A live reading to `decimals` places, always with a sign ("+" or "-", or for zero a no-break
+ * space: one character wide in the monospaced readouts, and kept where a plain space would
+ * collapse), so its decimal point stays put as the value crosses zero. "–" if it isn't a number.
+ */
+export function formatReading(value, decimals) {
+  if (!Number.isFinite(value)) return "–";
+  const magnitude = Math.abs(value).toFixed(decimals);
+  if (Number(magnitude) === 0) return `\u00a0${magnitude}`;
+  return `${value < 0 ? "-" : "+"}${magnitude}`;
+}

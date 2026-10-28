@@ -10,7 +10,7 @@ import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
-  ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
+  formatReading, ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
 } from "./signal.js";
 import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
@@ -312,15 +312,15 @@ function showTooltip(tip, canvas, fraction, heading, rows) {
 }
 
 // Live X/Y/Z values beside each plot's heading; their colour keys double as the plot legend.
-// `extra` adds unkeyed values after them (the accelerometer's magnitude).
+// `extra` adds unkeyed values after them (each sensor's magnitude).
 function buildLive(container, extra = []) {
   const keyed = ["x", "y", "z"].map((axis) => `<span style="--key: var(--series-${axis})">${axis.toUpperCase()} <b>–</b></span>`);
   container.innerHTML = [...keyed, ...extra.map((name) => `<span>${name} <b>–</b></span>`)].join("");
 }
 function setLive(container, values, decimals) {
-  values.forEach((value, i) => (container.children[i].lastElementChild.textContent = Number.isFinite(value) ? value.toFixed(decimals) : "–"));
+  values.forEach((value, i) => (container.children[i].lastElementChild.textContent = formatReading(value, decimals)));
 }
-buildLive($("gyro-live"));
+buildLive($("gyro-live"), ["|ω|"]);
 buildLive($("accel-live"), ["|a|"]);
 
 // ---- orientation --------------------------------------------------------------------------
@@ -603,7 +603,7 @@ function drawTrace(trace, samples) {
   const displayRateHz = (selected?.info?.imuRateHz ?? 208) / DISPLAY_DECIMATION;
   const secondsAgo = (samples.length - 1 - index) / displayRateHz;
   showTooltip(tip, canvas, x / width, secondsAgo ? `${secondsAgo.toFixed(2)} s ago` : "now",
-    AXIS_NAMES.map((name, axis) => [point[axis].toFixed(trace.decimals), name, colors.series[axis]]));
+    AXIS_NAMES.map((name, axis) => [formatReading(point[axis], trace.decimals), name, colors.series[axis]]));
 }
 
 function renderLive() {
@@ -611,7 +611,7 @@ function renderLive() {
   $("imu-temp").textContent = Number.isFinite(temperature) ? ` · IMU ${temperature.toFixed(1)} °C` : "";
   const g = selected?.gyro.at(-1);
   const a = selected?.accel.at(-1);
-  setLive($("gyro-live"), g ?? [NaN, NaN, NaN], 1);
+  setLive($("gyro-live"), g ? [...g, Math.hypot(...g)] : [NaN, NaN, NaN, NaN], 1);
   setLive($("accel-live"), a ? [...a, Math.hypot(...a)] : [NaN, NaN, NaN, NaN], 2);
 }
 

@@ -272,6 +272,8 @@
                               border-radius: 1px; background: var(--key); }
   /* Each value right after its own label, padded on its right to a fixed width, so a changing number
      never shifts the others and never sits nearer the next axis's label than its own. */
+  /* Room for the widest reading (+2000.0 °/s), so the next one doesn't move; every reading has a
+     sign (formatReading()), so the decimal point doesn't either. */
   .live b { font-weight: 500; color: var(--text); display: inline-block; min-width: 7ch; margin-left: 2px; text-align: left; }
 
   /* Screens. */
