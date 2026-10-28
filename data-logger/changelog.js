@@ -27,12 +27,23 @@ export const CHANGELOG = [
     ],
   },
   {
+    id: "2026-10-27-wake-and-connect",
+    date: "2026-10-27",
+    title: "Gentler wake on motion, and a steadier start to each connection",
+    firmware: "next",
+    items: [
+      "With Wake on motion on, lifting or tilting a sleeping board wakes it; it no longer takes a shake. Going to sleep takes 2 s longer while the motion sensor settles.",
+      "A board asks for its fast connection a second after connecting rather than five, so the live data loses less while a board connects or reconnects.",
+    ],
+  },
+  {
     id: "2026-10-27-clock-sync-holds",
     date: "2026-10-27",
     title: "Clock sync stays locked",
     firmware: "next",
     items: [
-      "A board following the clock source no longer loses it every few seconds, so it records clock pairs all the way through a recording.",
+      "A board following the clock source no longer loses it every few seconds.",
+      "Boards following the clock source now record clock pairs (about one a second). Before, they showed as synced with 0 pairs, so recordings couldn't be lined up by radio.",
     ],
   },
   {
@@ -42,6 +53,8 @@ export const CHANGELOG = [
     items: [
       "Drag a board by its ID to move it in the Boards list. The order is remembered in this browser, and a board that reconnects goes back to its place.",
       "The lines between boards are even again, and the line under the list no longer says when a board reconnects (its row shows it).",
+      "The angular rate and acceleration readouts hold still: every value has a sign, so its decimal point no longer jumps when it turns negative, and a value at zero no longer flickers between -0.0 and 0.0.",
+      "The angular rate readout shows the rotation's overall speed (|ω|) beside X, Y and Z, as acceleration shows |a|.",
     ],
   },
   {
