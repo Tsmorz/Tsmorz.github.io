@@ -2361,6 +2361,24 @@ function openFirmwareDialog() {
 }
 $("fw-open").addEventListener("click", openFirmwareDialog);
 $("fw-close").addEventListener("click", () => $("fw-dialog").close());
+closeOnBackdropClick($("fw-dialog"));
+
+// A click outside a dialog closes it, as one outside the settings drawer closes that; the drawer
+// stays open under it (its own handler leaves it alone while a dialog is open). Both ends of the
+// click must be outside, so a text selection dragged out of the dialog doesn't close it.
+function closeOnBackdropClick(dialog) {
+  const outside = (event) => {
+    if (event.target !== dialog) return false;
+    const box = dialog.getBoundingClientRect();
+    return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+  };
+  let pressedOutside = false;
+  dialog.addEventListener("pointerdown", (event) => (pressedOutside = outside(event)));
+  dialog.addEventListener("click", (event) => {
+    if (pressedOutside && outside(event)) dialog.close();
+    pressedOutside = false;
+  });
+}
 
 async function takeImageFile(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -2468,8 +2486,14 @@ function renderFirmware() {
     }
   }
   $("fw-empty").hidden = targets.size > 0;
+  $("fw-cancel").hidden = cancellableJobs().length === 0;
   $("fw-update").disabled = !image || ready === 0;
   $("fw-update").textContent = ready > 1 ? `Update ${ready} boards` : "Update";
+}
+
+// Jobs still uploading: once a board is told to start the new image, it's past cancelling.
+function cancellableJobs() {
+  return [...firmwareJobs.values()].filter((job) => job.active && job.stage === "uploading" && !job.cancel.signal.aborted);
 }
 
 function setJob(key, fields) {
@@ -2482,24 +2506,30 @@ function setJob(key, fields) {
 // Tries to reconnect until the deadline: the board is gone for the reset, MCUboot's swap and boot.
 async function reconnect(device, key) {
   const deadline = Date.now() + RECONNECT_DEADLINE_MS;
+  let lastError = null;
   for (let attempt = 1; Date.now() < deadline; attempt++) {
     setJob(key, { text: attempt === 1 ? "reconnecting…" : `reconnecting (attempt ${attempt})…` });
     try {
       return await connectWithin(device, CONNECT_ATTEMPT_MS);
-    } catch {
+    } catch (error) {
+      lastError = error;
+      console.warn(`Reconnect attempt ${attempt} after the update failed:`, error);
       await sleepMs(RECONNECT_PAUSE_MS);
     }
   }
-  throw new Error("the board didn't come back: check it over USB (task monitor)");
+  const why = lastError ? ` (last try: ${lastError.name}: ${lastError.message})` : "";
+  throw new Error(`the board didn't come back${why}: check it over USB (task monitor)`);
 }
 
 async function updateBoard(board) {
   const { name: imageName, bytes, image } = firmwareImage;
   const { device, key } = board;
   const name = board.displayName;
-  setJob(key, { name, version: image.versionText, active: true, bad: false, stage: "uploading", progress: 0, text: "starting…" });
+  const cancel = new AbortController();
+  setJob(key, { name, version: image.versionText, active: true, bad: false, stage: "uploading", progress: 0, text: "starting…", cancel });
   try {
     const result = await board.updateFirmware(bytes, {
+      signal: cancel.signal,
       onStage: (stage) => setJob(key, { stage, text: stage === "restarting" ? "restarting…" : "uploading 0%" }),
       onProgress: (progress) => setJob(key, { progress, text: `uploading ${Math.round(progress * 100)}%` }),
     });
@@ -2523,6 +2553,10 @@ async function updateBoard(board) {
     keepUpdatedFirmware({ name: imageName, bytes }).catch(() => {}); // the USB rescue images; not the update's business
     if (!selected) select(fresh);
   } catch (error) {
+    if (cancel.signal.aborted && error.name === "AbortError") {
+      setJob(key, { active: false, stage: "cancelled", text: `cancelled: still runs v${board.firmwareVersion || "?"}` });
+      return "cancelled";
+    }
     setJob(key, { active: false, stage: "failed", bad: true, text: `failed: ${error.message}` });
     setStatus(`${name}: firmware update failed`, { bad: true });
     notify(`${name}: firmware update failed`, error.message, `${key}:firmware`);
@@ -2534,8 +2568,19 @@ async function updateBoards(list) {
   setFirmwareStatus(`Keep ${list.length === 1 ? "the board" : "the boards"} close and this page open.`);
   const results = await Promise.allSettled(list.map(updateBoard));
   const failed = results.filter((result) => result.status === "rejected").length;
-  setFirmwareStatus(failed ? `${failed} of ${list.length} update${list.length === 1 ? "" : "s"} failed: see above.` : "Done.", { bad: failed > 0 });
+  const cancelled = results.filter((result) => result.value === "cancelled").length;
+  const text = failed ? `${failed} of ${list.length} update${list.length === 1 ? "" : "s"} failed: see above.`
+    : cancelled === list.length ? "Cancelled." : cancelled ? `Done, ${cancelled} cancelled.` : "Done.";
+  setFirmwareStatus(text, { bad: failed > 0 });
 }
+
+$("fw-cancel").addEventListener("click", () => {
+  for (const job of cancellableJobs()) {
+    job.cancel.abort();
+    job.text = "cancelling…";
+  }
+  renderFirmware();
+});
 
 $("fw-update").addEventListener("click", () => {
   const list = [...boards.values()].filter((board) => board.connected && fwChosen.has(board.key) && !updateBlocker(board));

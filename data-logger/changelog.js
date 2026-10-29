@@ -8,6 +8,33 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-29-cancel-update",
+    date: "2026-10-29",
+    title: "Cancel a firmware update",
+    items: [
+      "Update firmware has a Cancel button while the new firmware uploads: the boards stop and keep the firmware they run. Once a board restarts into the new one, it carries on.",
+      "A click outside the Update firmware dialog closes it, and leaves Settings open.",
+    ],
+  },
+  {
+    id: "2026-10-29-clips-over-usb",
+    date: "2026-10-29",
+    title: "Keyword clips over the USB cable",
+    firmware: "next",
+    items: [
+      "With the board plugged into this computer, Use USB cable… in the keyword clips dialog reads each clip through the cable in under a second, instead of ~5 s over Bluetooth, and the live data keeps flowing meanwhile.",
+    ],
+  },
+  {
+    id: "2026-10-29-faster-updates",
+    date: "2026-10-29",
+    title: "Faster firmware updates",
+    firmware: "next",
+    items: [
+      "A board pauses its live data while new firmware arrives over Bluetooth, so the whole link goes to the update. The plots stand still until the board restarts.",
+    ],
+  },
+  {
     id: "2026-10-27-solid-board-model",
     date: "2026-10-27",
     title: "A solid board in the orientation view",
@@ -19,7 +46,7 @@ export const CHANGELOG = [
     id: "2026-10-27-secure-pairing",
     date: "2026-10-27",
     title: "Pairing with a code",
-    firmware: "next",
+    firmware: "1.3.0",
     items: [
       "Boards now pair only with a 6-digit code, so nobody nearby can pair with one without it. Your computer asks for the code: it's shown in the board's USB console, and a phone held to a board's NFC tag opens this page with the code on it. Every pairing gets a new code.",
       "A board takes new pairings only for 2 minutes after a double press of its USER button (the LED flashes cyan), after a phone is held to it, or while it isn't paired with anything. Computers it's already paired with reconnect as before.",
@@ -30,7 +57,7 @@ export const CHANGELOG = [
     id: "2026-10-27-wake-and-connect",
     date: "2026-10-27",
     title: "Gentler wake on motion, and a steadier start to each connection",
-    firmware: "next",
+    firmware: "1.3.0",
     items: [
       "With Wake on motion on, lifting or tilting a sleeping board wakes it; it no longer takes a shake. Going to sleep takes 2 s longer while the motion sensor settles.",
       "A board asks for its fast connection a second after connecting rather than five, so the live data loses less while a board connects or reconnects.",
@@ -40,7 +67,7 @@ export const CHANGELOG = [
     id: "2026-10-27-clock-sync-holds",
     date: "2026-10-27",
     title: "Clock sync stays locked",
-    firmware: "next",
+    firmware: "1.3.0",
     items: [
       "A board following the clock source no longer loses it every few seconds.",
       "Boards following the clock source now record clock pairs (about one a second). Before, they showed as synced with 0 pairs, so recordings couldn't be lined up by radio.",
@@ -61,7 +88,7 @@ export const CHANGELOG = [
     id: "2026-10-27-battery-in-bluetooth-settings",
     date: "2026-10-27",
     title: "A board's battery shows in your Bluetooth settings",
-    firmware: "next",
+    firmware: "1.3.0",
     items: [
       "Boards report their charge the standard way, so a computer or phone they're paired with can show it next to the board's name with no page open. It updates in steps of 2%.",
     ],
@@ -80,7 +107,7 @@ export const CHANGELOG = [
     id: "2026-10-26-voice-models",
     date: "2026-10-26",
     title: "Choose your own voice commands, and upload them to the boards",
-    firmware: "next",
+    firmware: "1.3.0",
     items: [
       "Settings › Voice › Upload model… sends a voice model (a .voice file from the training) to every connected board. The board checks it, stops listening for the few seconds it takes, and keeps it through restarts. New words or a better model no longer need new firmware; Remove takes a board's model off again.",
       "Words… in the clips dialog sets the phrases and what each one does: mouse on or off, start or stop recording, sleep, or a mark. They're saved next to the clips for training. Two phrases can do the same thing.",
@@ -102,7 +129,7 @@ export const CHANGELOG = [
     id: "2026-10-26-board-fixes",
     date: "2026-10-26",
     title: "Steadier recording and clock sync on the boards",
-    firmware: "next",
+    firmware: "1.3.0",
     items: [
       "Starting and stopping a flash recording in quick succession, from the page and by voice, no longer starts one recording inside another or loses the stop.",
       "A board set as the clock source tries again by itself if its broadcast fails to start or stops.",
@@ -115,7 +142,7 @@ export const CHANGELOG = [
     id: "2026-10-26-nfc-url",
     date: "2026-10-26",
     title: "Hold a phone to a board to open this page",
-    firmware: "next",
+    firmware: "1.3.0",
     items: [
       "A board with an NFC antenna fitted offers an Android phone held to it this page's address, and its LED flashes white. The page then reads Connect and the board's ID, and the browser prompt lists only that board.",
       "Holding the phone to a sleeping board wakes it. If the board is left unused for a minute after the phone is taken away (nothing connects, USER isn't pressed, it isn't recording), it goes back to sleep.",
