@@ -2,8 +2,9 @@
 // model, which actions it obeys, what it heard, and uploading a model to the boards. The keyword
 // clips dialog: the words (vocabulary.json in a folder the user picks), and training clips of
 // them recorded through the selected board's own microphone (Board.captureClip), saved as WAVs one
-// subfolder per label for the training pipeline. The clips are the user's voice: they only ever
-// go into that folder, never into tools/dashboard/ (published).
+// subfolder per label for the training pipeline, each sent over Bluetooth or, with the board
+// plugged in, read through its USB programmer (mailbox.js). The clips are the user's voice: they
+// only ever go into that folder, never into tools/dashboard/ (published).
 import { fitCanvas, hairline } from "./canvas.js";
 import { decodeAdpcm } from "./adpcm.js";
 import {
@@ -11,7 +12,9 @@ import {
   labelFor, parseVocabulary, pcmBytes, vocabularyProblems, wavHeader,
 } from "./clips.js";
 import { modelResultText } from "./board.js";
+import { readMailbox } from "./mailbox.js";
 import { kvGet, kvSet } from "./storage.js";
+import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { parseVoicePackage } from "./voicepkg.js";
 import { VOICE_ACTIONS } from "./wire.js";
 
@@ -38,6 +41,13 @@ let counts = new Map(); // label -> clips in its subfolder
 let last = null; // the last clip: { label, name, samples, rateHz, saved }
 let busy = false;
 let background = null; // the background recording running: { board, writable, track, started, rateHz }
+// The USB programmer clips are read through: { device, transport, chip, boardId }, while the dialog is open.
+let usb = null;
+let usbPending = Promise.resolve(); // connecting or letting go of it
+let usbNote = null; // { text, bad } from the last attempt, shown until the next
+// Probe serial number -> board ID, kept for the probes chosen here, so reopening the dialog finds
+// the selected board's again without asking.
+const USB_PROBES_KEY = "voice-usb-probes";
 
 const labelInfo = (label) => labels.find((entry) => entry.label === label) ?? labels[0];
 
@@ -54,8 +64,21 @@ export function initVoice(options) {
     if (!$("voice-dialog").open) $("voice-dialog").showModal();
     renderVoice();
     drawClip();
+    reconnectUsb();
   });
   $("voice-close").addEventListener("click", () => $("voice-dialog").close());
+  // Let go of the programmer with the dialog, so Flash over USB, OpenOCD or another tab can have it.
+  $("voice-dialog").addEventListener("close", () => queueUsb(async () => {
+    await letGoOfUsb();
+    usbNote = null;
+  }));
+  $("voice-usb").addEventListener("click", () => (usbFor(getBoard()) ? queueUsb(useBluetooth) : chooseUsb()));
+  navigator.usb?.addEventListener("disconnect", (event) => {
+    if (usb?.device !== event.device) return;
+    usb = null;
+    usbNote = { text: "The USB cable was unplugged: clips go over Bluetooth.", bad: false };
+    renderVoice();
+  });
   $("voice-pick-folder").addEventListener("click", pickFolder);
   $("voice-capture").addEventListener("click", capture);
   $("voice-play").addEventListener("click", play);
@@ -249,6 +272,7 @@ export function renderVoice() {
   $("voice-capture").disabled = busy || !board?.connected || !board.canCaptureClips;
   $("voice-play").disabled = !last;
   $("voice-discard").disabled = busy || !last?.saved;
+  renderUsb(board);
   if (!busy) {
     const reason = !board?.connected ? "Connect a board first."
       : !board.canCaptureClips ? "This board's firmware can't capture clips: update it." : "";
@@ -373,18 +397,29 @@ async function save(target, label, name, bytes) {
 async function capture() {
   const board = getBoard();
   if (busy || $("voice-capture").disabled || !board) return;
-  if (isRecording()) {
-    setStatus("Stop the live recording first: a clip pauses the board's live streams.", { bad: true });
-    return;
-  }
+  // Over USB the live streams carry on, so only a clip over Bluetooth would leave a gap in a recording.
+  const refuseDuringRecording = () => {
+    if (!isRecording()) return false;
+    setStatus("Stop the live recording first, or use the USB cable: a clip over Bluetooth pauses the board's live streams.", { bad: true });
+    return true;
+  };
+  if (!usbFor(board) && refuseDuringRecording()) return;
   const label = $("voice-label").value;
   const target = await writableFolder();
   busy = true;
   renderVoice();
   setBar(0);
   let speakTimer = null;
+  await usbPending;
+  const probe = usbFor(board);
+  if (!probe && refuseDuringRecording()) {
+    busy = false;
+    renderVoice();
+    return;
+  }
   try {
     const samples = await board.captureClip({
+      usb: probe?.chip,
       onCapturing: () => {
         const started = performance.now();
         setStatus("Speak now (LED magenta)");
@@ -393,24 +428,142 @@ async function capture() {
       onProgress: (fraction) => {
         clearInterval(speakTimer);
         setBar(fraction);
-        setStatus(`Sending… ${Math.round(fraction * 100)}%`);
+        setStatus(`${probe ? "Reading over USB" : "Sending"}… ${Math.round(fraction * 100)}%`);
       },
     });
     const rateHz = board.info?.micRateHz ?? 16000;
     const name = clipFileName(board.boardId, new Date(), $("voice-speaker").value);
     const saved = await save(target, label, name, encodeWav(samples, rateHz));
     last = { label, name, samples, rateHz, saved };
-    if (saved) counts.set(label, (counts.get(label) ?? 0) + 1);
+    counts.set(label, (counts.get(label) ?? 0) + 1); // downloaded clips count too, for this page load
     setStatus(`${saved ? "Saved" : "Downloaded"} ${label}/${name}. ${verdict(label, clipLevels(samples))}`);
     setBar(1);
   } catch (error) {
     setStatus(`No clip: ${error.message}`, { bad: true });
     setBar(0);
+    if (probe) await queueUsb(() => dropUsbIfGone(probe));
   } finally {
     clearInterval(speakTimer);
     busy = false;
     renderVoice();
     drawClip();
+  }
+}
+
+// ---- clips over the USB cable -------------------------------------------------------------
+// The board's own USB programmer (swd.js) reads each clip straight from its RAM (mailbox.js). The
+// capture is still asked for over Bluetooth. Attaching the debugger leaves the chip in debug mode,
+// so the board can't sleep afterwards until it loses all power (CLAUDE.md, sleep and debug mode).
+
+const usbFor = (board) => (usb && board && usb.boardId === board.boardId ? usb : null);
+
+/** Runs `step` after any connecting or letting go already under way; never rejects. */
+function queueUsb(step) {
+  usbPending = usbPending.then(step).catch((error) => {
+    usbNote = { text: `USB: ${error.message}`, bad: true };
+  }).finally(renderVoice);
+  return usbPending;
+}
+
+function renderUsb(board) {
+  const mine = usbFor(board);
+  $("voice-usb").textContent = mine ? "Use Bluetooth" : "Use USB cable…";
+  $("voice-usb").disabled = busy || !navigator.usb || !board?.connected;
+  const note = usbNote ?? (!navigator.usb ? { text: "This browser has no WebUSB: clips go over Bluetooth." }
+    : mine ? { text: `Over ${mine.boardId}'s USB cable: under 1 s a clip.` }
+    : usb ? { text: `The cable is ${usb.boardId}'s: ${board?.displayName ?? "this board"}'s clips go over Bluetooth.` }
+    : { text: "Over Bluetooth: ~5 s a clip." });
+  $("voice-usb-status").textContent = note.text;
+  $("voice-usb-status").className = note.bad ? "bad-text" : "muted";
+}
+
+function rememberedProbes() {
+  try {
+    return JSON.parse(localStorage.getItem(USB_PROBES_KEY) ?? "{}");
+  } catch {
+    return {}; // storage blocked or unreadable: ask for the probe again
+  }
+}
+
+function rememberProbe(serial, boardId) {
+  const probes = Object.fromEntries(Object.entries(rememberedProbes()).filter(([, id]) => id !== boardId));
+  if (serial) probes[serial] = boardId;
+  try {
+    localStorage.setItem(USB_PROBES_KEY, JSON.stringify(probes));
+  } catch {
+    /* as above */
+  }
+}
+
+/** The button: asks for the programmer (a click, as WebUSB requires), then attaches it. */
+async function chooseUsb() {
+  const board = getBoard();
+  let device;
+  try {
+    device = await navigator.usb.requestDevice({ filters: [PROBE_FILTER] });
+  } catch {
+    return; // chooser dismissed
+  }
+  usbNote = { text: "Connecting to the USB programmer…" };
+  await queueUsb(() => attachUsb(device, board));
+}
+
+/** On opening the dialog: the selected board's programmer again, if it was chosen here before and is plugged in. */
+async function reconnectUsb() {
+  const board = getBoard();
+  if (!navigator.usb || !board || usbFor(board)) return;
+  const serial = Object.entries(rememberedProbes()).find(([, id]) => id === board.boardId)?.[0];
+  if (!serial) return;
+  await queueUsb(async () => {
+    const device = (await navigator.usb.getDevices()).find((each) => each.serialNumber === serial);
+    if (device) await attachUsb(device, board);
+  });
+}
+
+async function attachUsb(device, board) {
+  await letGoOfUsb();
+  const transport = await openProbe(device);
+  const chip = new Nrf54lm20a(new Dap(transport));
+  try {
+    const { locked } = await chip.attach();
+    if (locked) throw new Error("the board's chip is locked: flash it over USB first");
+    const { boardId } = await chip.identify();
+    if (board && boardId !== board.boardId) throw new Error(`that's ${boardId}'s cable, not ${board.displayName}'s`);
+    if (!(await readMailbox(chip))) throw new Error(`${boardId}'s firmware can't hand clips over USB: update it`);
+    // Only one that worked, so reopening the dialog never attaches to a board nobody chose here.
+    rememberProbe(device.serialNumber, boardId);
+    usb = { device, transport, chip, boardId };
+    usbNote = null;
+  } catch (error) {
+    await chip.detach();
+    await transport.close().catch(() => {});
+    throw error;
+  }
+}
+
+async function letGoOfUsb() {
+  const held = usb;
+  usb = null;
+  if (!held) return;
+  await held.chip.detach();
+  await held.transport.close().catch(() => {});
+}
+
+/** "Use Bluetooth": lets go, and forgets the probe so reopening the dialog doesn't take it again. */
+async function useBluetooth() {
+  if (usb) rememberProbe(null, usb.boardId);
+  await letGoOfUsb();
+  usbNote = null;
+}
+
+/** After a failed clip: lets go of a programmer that no longer answers (unplugged, or taken by another program). */
+async function dropUsbIfGone(probe) {
+  if (usb !== probe) return;
+  try {
+    await readMailbox(probe.chip);
+  } catch {
+    await letGoOfUsb();
+    usbNote = { text: "The USB cable stopped answering: clips go over Bluetooth.", bad: true };
   }
 }
 
@@ -446,7 +599,10 @@ function play() {
   source.start();
 }
 
-/** The last clip's waveform: each pixel column's lowest and highest sample, full scale at the edges. */
+// The plot never zooms in past this peak (-50 dBFS), so a silent clip still looks silent.
+const WAVE_MIN_PEAK = 100;
+
+/** The last clip's waveform: each pixel column's lowest and highest sample, the clip's peak at the edges. */
 function drawClip() {
   const { ctx, width, height } = fitCanvas($("voice-wave"));
   const colors = getColors();
@@ -456,7 +612,13 @@ function drawClip() {
   if (!last) return;
 
   const levels = clipLevels(last.samples);
-  $("voice-levels").textContent = `peak ${levels.peakDbfs.toFixed(0)} dBFS · rms ${levels.rmsDbfs.toFixed(0)} dBFS`;
+  // The mic is quiet (peaks of -40 dBFS are ordinary), so the plot fills its height with the
+  // clip's own peak instead of full scale; a floor keeps silence from being blown up to noise.
+  const peak = last.samples.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
+  const fullHeight = Math.max(peak, WAVE_MIN_PEAK);
+  const zoom = 32768 / fullHeight;
+  $("voice-levels").textContent =
+    `peak ${levels.peakDbfs.toFixed(0)} dBFS · rms ${levels.rmsDbfs.toFixed(0)} dBFS · plot ×${zoom.toFixed(zoom < 10 ? 1 : 0)}`;
   const perColumn = last.samples.length / width;
   ctx.strokeStyle = levels.clipped ? colors.bad : colors.readout;
   ctx.beginPath();
@@ -468,8 +630,8 @@ function drawClip() {
       low = Math.min(low, last.samples[i]);
       high = Math.max(high, last.samples[i]);
     }
-    ctx.moveTo(x + 0.5, mid - (high / 32768) * mid);
-    ctx.lineTo(x + 0.5, mid - (low / 32768) * mid + 1);
+    ctx.moveTo(x + 0.5, mid - (high / fullHeight) * mid);
+    ctx.lineTo(x + 0.5, mid - (low / fullHeight) * mid + 1);
   }
   ctx.stroke();
 }

@@ -99,9 +99,11 @@ export class SmpClient {
 
 /**
  * Uploads `bytes` into the board's second slot, as large a piece per request as the board takes and
- * PIPELINE_DEPTH requests at a time, each starting where the one before should end.
+ * PIPELINE_DEPTH requests at a time, each starting where the one before should end. Aborting
+ * `signal` stops it after the replies already on their way; the board drops the partial image when
+ * the next upload starts from the beginning.
  */
-export async function uploadImage(client, bytes, onProgress) {
+export async function uploadImage(client, bytes, onProgress, signal) {
   let frameLimit = FALLBACK_FRAME_BYTES;
   try {
     const params = await client.request(OP_READ, GROUP_OS, OS_MCUMGR_PARAMS);
@@ -130,6 +132,7 @@ export async function uploadImage(client, bytes, onProgress) {
   const inFlight = [];
   onProgress?.(0);
   while (acked < bytes.length) {
+    signal?.throwIfAborted();
     // The first request goes alone: it opens the slot.
     while (inFlight.length < (acked === 0 ? 1 : PIPELINE_DEPTH) && next < bytes.length) {
       const request = send(next);
@@ -138,6 +141,7 @@ export async function uploadImage(client, bytes, onProgress) {
     }
     const { reply, end } = inFlight.shift();
     let off = checked(await reply);
+    signal?.throwIfAborted();
     if (off !== end) {
       // The board didn't take this piece whole (or rewound), so it refuses those sent after it.
       // Let them settle, then carry on from where its latest reply says.
@@ -157,24 +161,28 @@ export async function uploadImage(client, bytes, onProgress) {
  * Puts the image in `bytes` (zephyr.signed.bin) on the board and resets it into the new firmware.
  * `onStage` hears "uploading", "restarting". Resolves with the parsed image once the board has
  * taken the reset command; it then drops the connection. Resolves with `alreadyRunning` instead,
- * without resetting, if the board runs this image already.
+ * without resetting, if the board runs this image already. Aborting `signal` stops it, with an
+ * AbortError, until the image is marked to start: after that the board would start it at its next
+ * reset anyway, so the sequence goes on.
  */
-export async function updateFirmware(client, bytes, { onStage, onProgress } = {}) {
+export async function updateFirmware(client, bytes, { onStage, onProgress, signal } = {}) {
   const image = parseMcubootImage(bytes);
   const hash = toHex(image.hash);
+  signal?.throwIfAborted();
   const slots = await client.imageState();
   if (slots.some((slot) => slot.active && toHex(slot.hash) === hash)) return { ...image, alreadyRunning: true };
 
   // An earlier attempt may have got the image across already.
   if (!slots.some((slot) => slot.slot === 1 && toHex(slot.hash) === hash)) {
     onStage?.("uploading");
-    await uploadImage(client, bytes, onProgress);
+    await uploadImage(client, bytes, onProgress, signal);
     const uploaded = (await client.imageState()).find((slot) => slot.slot === 1);
     if (toHex(uploaded?.hash) !== hash) throw new Error("the board doesn't hold the uploaded image (hash mismatch)");
   }
 
-  await client.request(OP_WRITE, GROUP_IMAGE, IMAGE_STATE, { hash: image.hash, confirm: false });
+  signal?.throwIfAborted();
   onStage?.("restarting");
+  await client.request(OP_WRITE, GROUP_IMAGE, IMAGE_STATE, { hash: image.hash, confirm: false });
   // The board resets ~250 ms after replying, so the link can drop before the reply arrives.
   await client.request(OP_WRITE, GROUP_OS, OS_RESET).catch(() => {});
   return { ...image, alreadyRunning: false };
@@ -191,10 +199,16 @@ export async function verifyUpdate(client, image) {
   const running = slots.find((slot) => slot.active);
   if (!running) return { ok: false, reason: "the board didn't report its running firmware" };
   if (toHex(running.hash) !== toHex(image.hash)) {
-    const rolledBack = slots.some((slot) => slot.slot === 1 && toHex(slot.hash) === toHex(image.hash));
+    const waiting = slots.find((slot) => slot.slot === 1 && toHex(slot.hash) === toHex(image.hash));
+    if (waiting?.pending) {
+      return {
+        ok: false,
+        reason: `the board never restarted: it still runs v${running.version}, with the new firmware waiting. Press its RESET button to start it`,
+      };
+    }
     return {
       ok: false,
-      reason: rolledBack
+      reason: waiting
         ? `the board rolled back to v${running.version}: the new firmware didn't start properly`
         : `the board refused the image and kept v${running.version}: it isn't signed with the key this board's bootloader trusts (or it was damaged)`,
     };

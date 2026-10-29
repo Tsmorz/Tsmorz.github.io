@@ -16,6 +16,7 @@ import {
   MODEL_CHUNK_BYTES, decodeModelStatus, decodeVocabulary, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
 import { ClipAssembler } from "./clips.js";
+import { samplesFromBytes, takeFromMailbox } from "./mailbox.js";
 import { RateMeter } from "./rate-meter.js";
 import { TimeUnwrapper, restartedSince } from "./recording.js";
 import { SMP_CHARACTERISTIC, SMP_SERVICE } from "./smp.js";
@@ -496,10 +497,17 @@ export class Board extends EventTarget {
   /**
    * Uploads a signed image and resets the board into it (dfu.js); the board disconnects once this
    * resolves, unless it already runs the image (`alreadyRunning`). Resolves with the parsed image.
+   * Aborting `signal` cancels it until the board is told to start the image.
    */
-  updateFirmware(bytes, { onStage, onProgress } = {}) {
+  async updateFirmware(bytes, { onStage, onProgress, signal } = {}) {
     if (!this.smp) throw new Error("this board's firmware can't be updated over Bluetooth: flash it over USB once (task flash)");
-    return updateFirmware(this.smp, bytes, { onStage, onProgress });
+    try {
+      return await updateFirmware(this.smp, bytes, { onStage, onProgress, signal });
+    } finally {
+      // The board pauses its live streams while an image arrives; don't count the pause as lost data.
+      this.lastSeq = this.lastWindow = this.lastEventSeq = null;
+      this.rateMeter.reset();
+    }
   }
 
   /** After an update and reconnect: whether the board runs `image` and has confirmed it. */
@@ -822,7 +830,7 @@ export class Board extends EventTarget {
   onClipChunk(view) {
     const chunk = decodeClipChunk(view);
     const clip = this.clip;
-    if (!chunk || chunk.clipId !== clip?.assembler.clipId) return; // none asked for, or an earlier one's
+    if (!chunk || chunk.clipId !== clip?.assembler?.clipId) return; // none asked for, or an earlier one's
     if (clip.assembler.add(chunk)) clip.finish();
     else clip.onProgress?.(clip.assembler.progress);
   }
@@ -831,11 +839,14 @@ export class Board extends EventTarget {
    * Captures the next 2 s of the board's microphone (its LED shows magenta meanwhile) and resolves
    * with the samples, at the board info's micRateHz. `onCapturing` is called once the board has
    * started, `onProgress` with the fraction sent: ~5 s more to a Mac, with the live streams paused.
+   * With `usb` (this board's attached Nrf54lm20a, swd.js), the page reads the clip through the
+   * board's USB probe instead (mailbox.js): under a second, and the live streams carry on.
    */
-  async captureClip({ onCapturing, onProgress } = {}) {
+  async captureClip({ onCapturing, onProgress, usb = null } = {}) {
     if (!this.canCaptureClips) throw new Error("this board's firmware can't capture clips: update it");
     if (this.clip) throw new Error("already capturing a clip");
     this.clipId = ((this.clipId ?? Math.floor(Math.random() * 0x10000)) + 1) & 0xffff;
+    if (usb) return this.captureClipOverUsb(this.clipId, usb, { onCapturing, onProgress });
     const assembler = new ClipAssembler(this.clipId);
     const done = new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("the clip didn't arrive")), 20000);
@@ -855,6 +866,18 @@ export class Board extends EventTarget {
       // The board pauses its live streams while it sends a clip; don't count the pause as lost data.
       this.lastSeq = this.lastWindow = this.lastEventSeq = null;
       this.rateMeter.reset();
+    }
+  }
+
+  async captureClipOverUsb(clipId, chip, { onCapturing, onProgress }) {
+    // One at a time, as over Bluetooth. A disconnect doesn't end it: the clip comes by USB.
+    this.clip = { assembler: null, reject: () => {} };
+    try {
+      await this.write(this.chars.keywordCommand, encodeClipCapture(clipId, { overUsb: true }));
+      onCapturing?.();
+      return samplesFromBytes(await takeFromMailbox(chip, clipId, { onProgress }));
+    } finally {
+      this.clip = null;
     }
   }
 

@@ -774,9 +774,10 @@
     <p class="muted" id="fw-empty">No boards connected: add them first.</p>
     <div class="row" style="margin-top:14px">
       <button class="primary" id="fw-update" disabled>Update</button>
+      <button type="button" id="fw-cancel" title="Stop the uploads still in progress; the boards keep the firmware they run" hidden>Cancel</button>
       <span class="muted" id="fw-status"></span>
     </div>
-    <p class="hint">Ticked boards update together, about 30 s each, then restart into the new firmware and reconnect. One that doesn't come up on it rolls back by itself. Closing this keeps them going.</p>
+    <p class="hint">Ticked boards update together, about 30 s each, then restart into the new firmware and reconnect. One that doesn't come up on it rolls back by itself. Cancel stops them while they upload, before any board restarts; closing this keeps them going.</p>
   </div>
 </dialog>
 
@@ -812,6 +813,10 @@
       <button id="voice-pick-folder" title="data/keywords/ in the repo: the training reads it from there">Choose folder…</button>
       <span class="muted" id="voice-folder"></span>
     </div>
+    <div class="row" style="margin-top:8px">
+      <button id="voice-usb" title="With the board plugged into this computer, clips come through its USB programmer (XIAO nRF54LM20A CMSIS-DAP) in under a second. Close OpenOCD or pyOCD first. Afterwards the board can't sleep until it loses all power.">Use USB cable…</button>
+      <span class="muted" id="voice-usb-status"></span>
+    </div>
     <div class="row" style="margin-top:12px">
       <label>Speaker <input type="text" id="voice-speaker" size="10" placeholder="your name" title="Goes in each clip's file name, so training can score each voice"></label>
       <label>Label <select id="voice-label"></select></label>
@@ -831,7 +836,7 @@
       <span class="readout" id="voice-levels"></span>
     </div>
     <ul class="voice-counts" id="voice-counts"></ul>
-    <p class="hint">Press Capture or Space, then say the phrase once, in your normal voice, while the board's LED is magenta (2 s). Vary it: near and far, quick and slow, holding and moving the board. The live streams pause for the ~5 s it takes to send.</p>
+    <p class="hint">Press Capture or Space, then say the phrase once, in your normal voice, while the board's LED is magenta (2 s). Vary it: near and far, quick and slow, holding and moving the board. Over Bluetooth the live streams pause for the ~5 s it takes to send; over the USB cable it takes under a second and they carry on.</p>
     <div class="row voice-background">
       <button id="voice-bg-record">Record background audio</button>
       <span class="muted" id="voice-bg-status">Long stretches of talk, music or a lab with no commands in them, to count false triggers against. Saved into background/.</span>

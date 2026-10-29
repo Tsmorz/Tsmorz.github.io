@@ -380,12 +380,15 @@ export function decodeLogChunk(view) {
   return { offset: view.getUint32(0, true), bytes: new Uint8Array(view.buffer, view.byteOffset + 4, view.byteLength - 4) };
 }
 
-/** Asks the board to capture its next 2 s of microphone and send it back as clip `clipId`. */
-export function encodeClipCapture(clipId) {
+/**
+ * Asks the board to capture its next 2 s of microphone and send it back as clip `clipId`, or with
+ * `overUsb`, to offer it in its USB mailbox (mailbox.js) instead, which older firmware refuses.
+ */
+export function encodeClipCapture(clipId, { overUsb = false } = {}) {
   const bytes = new Uint8Array(4);
   const view = new DataView(bytes.buffer);
   view.setUint8(0, KEYWORD_VERSION);
-  view.setUint8(1, 1);
+  view.setUint8(1, overUsb ? 9 : 1);
   view.setUint16(2, clipId, true);
   return bytes;
 }
