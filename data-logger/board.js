@@ -7,11 +7,11 @@ import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
   DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
   KEYWORD_VOCABULARY, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
-  TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER,
+  TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
-  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch,
-  encodeClipCapture, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
+  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset,
+  encodeClipCapture, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
   MODEL_CHUNK_BYTES, decodeModelStatus, decodeVocabulary, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
@@ -94,7 +94,8 @@ export class Board extends EventTarget {
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
     this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
     this.imuRanges = null; // { gyroDps, accelG }, if this firmware lets them be chosen
-    this.temperatureC = null; // the IMU's, if this firmware reports it
+    this.temperatureC = null; // the IMU's own reading, if this firmware reports it
+    this.temperatureOffsetC = null; // what to add to it on this board, if this firmware keeps one
     this.motionWake = null; // whether moving the board wakes it from sleep, if this firmware can
     this.clock = null; // { role, state, sourceBoard } of the radio clock sync, if this firmware has it
     this.clockPairs = 0; // radio clock pairs received this connection
@@ -205,6 +206,7 @@ export class Board extends EventTarget {
     await this.connectPower(control, subscribe);
     await this.connectImuRanges(control);
     await this.connectMotionWake(control);
+    await this.connectTemperatureOffset(control);
     await this.connectClock(control, subscribe);
 
     await this.connectLog(server, subscribe);
@@ -291,6 +293,20 @@ export class Board extends EventTarget {
     this.motionWake = decodeMotionWake(await this.chars.motionWake.readValue());
   }
 
+  async connectTemperatureOffset(control) {
+    try {
+      this.chars.temperatureOffset = await control.getCharacteristic(TELEMETRY_TEMPERATURE_OFFSET);
+    } catch {
+      return;
+    }
+    this.temperatureOffsetC = decodeTemperatureOffset(await this.chars.temperatureOffset.readValue());
+  }
+
+  /** The IMU's temperature with this board's calibration, for showing; recordings keep the sensor's own. */
+  get calibratedTemperatureC() {
+    return this.temperatureC === null ? null : this.temperatureC + (this.temperatureOffsetC ?? 0);
+  }
+
   onClockStatus(view) {
     const status = decodeClockStatus(view);
     if (status) this.clock = status;
@@ -316,6 +332,14 @@ export class Board extends EventTarget {
   }
 
   /** Sets whether moving the board wakes it from sleep (saved on the board), then reads it back. */
+  async setTemperatureOffset(offsetC) {
+    const bytes = encodeTemperatureOffset(offsetC);
+    if (!bytes || !this.chars.temperatureOffset) throw new Error("this board can't take that offset");
+    await this.write(this.chars.temperatureOffset, bytes);
+    this.temperatureOffsetC = decodeTemperatureOffset(await this.queue(() => this.chars.temperatureOffset.readValue()));
+    return this.temperatureOffsetC;
+  }
+
   async setMotionWake(enabled) {
     if (!this.chars.motionWake) throw new Error("this board's firmware can't wake on motion: update it");
     await this.write(this.chars.motionWake, encodeMotionWake(enabled));

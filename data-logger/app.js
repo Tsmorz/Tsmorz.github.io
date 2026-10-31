@@ -14,7 +14,7 @@ import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
   formatReading, ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
 } from "./signal.js";
-import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE } from "./wire.js";
+import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE, encodeTemperatureOffset } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
@@ -609,7 +609,7 @@ function drawTrace(trace, samples) {
 }
 
 function renderLive() {
-  const temperature = selected?.temperatureC;
+  const temperature = selected?.calibratedTemperatureC;
   $("imu-temp").textContent = Number.isFinite(temperature) ? ` · IMU ${temperature.toFixed(1)} °C` : "";
   const g = selected?.gyro.at(-1);
   const a = selected?.accel.at(-1);
@@ -1028,6 +1028,7 @@ function renderBoards() {
   renderClock();
   settleClockRoles();
   renderMotionWake();
+  renderThermometer();
   renderVoiceSettings();
   if (voiceDialogOpen()) renderVoice();
 }
@@ -2443,6 +2444,51 @@ $("motion-wake").addEventListener("click", async () => {
     setStatus(`${board.displayName}: couldn't change wake on motion (${error.message})`, { bad: true });
   }
   renderMotionWake();
+});
+
+// ---- thermometer calibration (the selected board) ---------------------------------------------
+const formatDegrees = (celsius) => `${celsius.toFixed(1)} °C`;
+
+function renderThermometer() {
+  const board = selected;
+  const offset = board?.connected ? board.temperatureOffsetC : null;
+  const reading = board?.connected ? board.temperatureC : null;
+  $("thermometer-reference").disabled = offset === null;
+  $("thermometer-set").disabled = offset === null || reading === null;
+  $("thermometer-clear").disabled = !offset;
+  if (!board?.connected) $("thermometer-status").textContent = "Connect a board to calibrate it.";
+  else if (offset === null) $("thermometer-status").textContent = "This board's firmware can't: update it.";
+  else if (reading === null) $("thermometer-status").textContent = "Waiting for the board's temperature…";
+  else if (!offset) $("thermometer-status").textContent = `Not calibrated: the sensor reads ${formatDegrees(reading)}.`;
+  else {
+    const sign = offset > 0 ? "+" : "−";
+    $("thermometer-status").textContent = `Sensor ${formatDegrees(reading)} ${sign} ${Math.abs(offset).toFixed(2)}, shown as ${formatDegrees(reading + offset)}.`;
+  }
+}
+
+async function setTemperatureOffset(board, offsetC) {
+  try {
+    await board.setTemperatureOffset(offsetC);
+    setStatus(`${board.displayName}: temperature offset now ${board.temperatureOffsetC.toFixed(2)} °C`);
+  } catch (error) {
+    setStatus(`${board.displayName}: couldn't change the temperature offset (${error.message})`, { bad: true });
+  }
+  renderThermometer();
+}
+
+$("thermometer-set").addEventListener("click", () => {
+  const board = selected;
+  const entered = $("thermometer-reference").value.trim().replace(",", ".");
+  const thermometerC = entered ? Number(entered) : NaN;
+  if (!board?.connected || board.temperatureC === null) return;
+  if (encodeTemperatureOffset(thermometerC - board.temperatureC) === null) {
+    setStatus(`${board.displayName}: enter what the thermometer reads, within 30 °C of the sensor`, { bad: true });
+    return;
+  }
+  setTemperatureOffset(board, thermometerC - board.temperatureC);
+});
+$("thermometer-clear").addEventListener("click", () => {
+  if (selected?.connected) setTemperatureOffset(selected, 0);
 });
 
 // ---- firmware updates ---------------------------------------------------------------------
