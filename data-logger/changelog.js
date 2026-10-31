@@ -8,6 +8,25 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-31-thermometer",
+    date: "2026-10-31",
+    firmware: "next",
+    title: "Calibrate a board's thermometer",
+    items: [
+      "Settings › Thermometer corrects a board's temperature against a real thermometer. The board remembers it, and the page and gateway readings use it. Recordings keep the sensor's own reading.",
+    ],
+  },
+  {
+    id: "2026-10-31-gateway",
+    date: "2026-10-31",
+    firmware: "next",
+    title: "Readings on your phone through a gateway",
+    items: [
+      "A board can now pair with an ESP32 gateway on your WiFi, which sends its temperature and battery to your phone as notifications, and tells you when the board goes to sleep or goes quiet.",
+      "Boards now remember three paired devices rather than two, so a gateway doesn't push out your computer.",
+    ],
+  },
+  {
     id: "2026-10-30-one-word-one-pointer",
     date: "2026-10-30",
     firmware: "1.4.0",

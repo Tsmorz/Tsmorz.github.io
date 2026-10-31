@@ -16,6 +16,7 @@ export const TELEMETRY_POWER = "6f524c01-0007-4a3c-9d21-1122334455aa";
 export const TELEMETRY_IMU_RANGES = "6f524c01-0008-4a3c-9d21-1122334455aa";
 export const TELEMETRY_MOTION_WAKE = "6f524c01-0009-4a3c-9d21-1122334455aa";
 export const TELEMETRY_CLOCK = "6f524c01-000a-4a3c-9d21-1122334455aa";
+export const TELEMETRY_TEMPERATURE_OFFSET = "6f524c01-000b-4a3c-9d21-1122334455aa";
 export const DATA_SERVICE = "6f524c03-0001-4a3c-9d21-1122334455aa";
 export const DATA_IMU = "6f524c03-0002-4a3c-9d21-1122334455aa";
 export const DATA_ENVELOPE = "6f524c03-0003-4a3c-9d21-1122334455aa";
@@ -234,6 +235,27 @@ export const encodeMotionWake = (enabled) => Uint8Array.of(PROTOCOL_VERSION, ena
 export function decodeMotionWake(view) {
   if (view.byteLength !== 2 || view.getUint8(0) !== PROTOCOL_VERSION || view.getUint8(1) > 1) return null;
   return view.getUint8(1) === 1;
+}
+
+// The thermometer's calibration (struct dashboard_temperature_offset, dashboard_wire.h): what to add
+// to the IMU's temperature on this board. 0.01 °C on the wire, degrees here.
+const TEMPERATURE_OFFSET_MAX_CENTI_C = 3000; // IMU_TEMPERATURE_OFFSET_MAX_CENTI_C
+
+/** Encodes an offset as dashboard_decode_temperature_offset() expects; null for one it refuses. */
+export function encodeTemperatureOffset(offsetC) {
+  const centiC = Math.round(offsetC * 100);
+  if (!Number.isFinite(centiC) || Math.abs(centiC) > TEMPERATURE_OFFSET_MAX_CENTI_C) return null;
+  const bytes = new Uint8Array(3);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, PROTOCOL_VERSION);
+  view.setInt16(1, centiC, true);
+  return bytes;
+}
+
+/** Decodes the board's offset in degrees, or null if it is not one. */
+export function decodeTemperatureOffset(view) {
+  if (view.byteLength !== 3 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  return view.getInt16(1, true) / 100;
 }
 
 // The radio clock sync (struct dashboard_clock_status, dashboard_wire.h).

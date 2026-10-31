@@ -1,6 +1,6 @@
 // Settings › Sync all boards: copies the selected board's saved settings to another board. Each
-// board's own choices stay out of it: whether its mouse is on, and its clock role (only one board
-// is the source). Pure, so tests/dashboard/settings-sync.test.mjs runs it in Node.
+// board's own choices stay out of it: whether its mouse is on, its clock role (only one board is
+// the source) and its thermometer offset (each sensor's is its own). Pure, so tests/dashboard/settings-sync.test.mjs runs it in Node.
 
 const SYNCED = [
   {
