@@ -8,6 +8,38 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-30-one-word-one-pointer",
+    date: "2026-10-30",
+    firmware: "1.4.0",
+    title: "One voice command, one pointer",
+    items: [
+      "Boards now listen for one phrase, “toggle cursor”, which switches the pointer on and off. Train and upload a new model to use it.",
+      "The clock source is now the only board that can be the pointer or hear voice commands. Choose it in Settings › Clock sync; a board connected on its own becomes the source by itself, and turning a board's mouse on makes it the source.",
+      "Capture and Record background audio now record on every connected board at once, so training data builds up faster.",
+      "A board you disconnect in your computer's Bluetooth settings now stays disconnected until you press its USER button. Its LED shows dim amber meanwhile. Press USER within about 2 minutes and the page reconnects it; after that, Chrome has forgotten it, and the page says to use Add board.",
+    ],
+  },
+  {
+    id: "2026-10-30-dashboard-tidying",
+    date: "2026-10-30",
+    title: "Easier pairing, firmware and settings",
+    items: [
+      "The page reminds you to double-press USER when adding a board.",
+      "Update firmware is now one dialog with a Bluetooth / USB cable toggle.",
+      "Sync all boards in Settings copies the selected board's settings to every connected board.",
+      "A click outside the clips dialog closes it, as it does for Update firmware.",
+    ],
+  },
+  {
+    id: "2026-10-29-background-refused",
+    date: "2026-10-29",
+    title: "Background audio trains the voice model",
+    items: [
+      "Background audio is now training data as well as a test: most of each recording teaches the model what to ignore, and the rest counts false triggers. An hour of it does more than hundreds of _silence and _unknown clips.",
+      "If a board refuses to record background audio, the page no longer leaves an empty WAV in the folder's background/ folder.",
+    ],
+  },
+  {
     id: "2026-10-29-cancel-update",
     date: "2026-10-29",
     title: "Cancel a firmware update",
@@ -20,7 +52,7 @@ export const CHANGELOG = [
     id: "2026-10-29-clips-over-usb",
     date: "2026-10-29",
     title: "Keyword clips over the USB cable",
-    firmware: "next",
+    firmware: "1.3.2",
     items: [
       "With the board plugged into this computer, Use USB cable… in the keyword clips dialog reads each clip through the cable in under a second, instead of ~5 s over Bluetooth, and the live data keeps flowing meanwhile.",
     ],
@@ -29,7 +61,7 @@ export const CHANGELOG = [
     id: "2026-10-29-faster-updates",
     date: "2026-10-29",
     title: "Faster firmware updates",
-    firmware: "next",
+    firmware: "1.3.2",
     items: [
       "A board pauses its live data while new firmware arrives over Bluetooth, so the whole link goes to the update. The plots stand still until the board restarts.",
     ],
