@@ -6,6 +6,8 @@ import { headingChangeDegrees, quatToEulerDegrees, removeYaw, rotateVector } fro
 import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, holdsSameRecording, lostSamples, startsWithSession } from "./flashlog.js";
 import { BoardRecording, LIVE_FILES, RADIO_CLOCK_COLUMNS, clockSources, competingClockSources, liveFileParts, parseEventRows, safeName, unsyncedBoards } from "./recording.js";
 import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
+import { clockRoleChanges } from "./clock-roles.js";
+import { syncBoard } from "./settings-sync.js";
 import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
@@ -115,7 +117,7 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
-const drawerDialogOpen = () => $("fw-dialog").open || $("usb-dialog").open || voiceDialogOpen();
+const drawerDialogOpen = () => $("fw-dialog").open || voiceDialogOpen();
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !drawerDialogOpen()) setSettingsOpen(false);
 });
@@ -1016,12 +1018,15 @@ function renderBoards() {
   for (const board of boards.values()) renderBoardRow(board);
   placeRows(); // a board's ID is known only once it has connected
   const count = connectedSummary();
+  renderPairPrompt();
   $("sleep-all").hidden = count === 0;
+  $("settings-sync").disabled = settingsSyncing || count < 2 || !selected?.connected;
   $("settings-board").textContent = selected ? `· ${selected.displayName}` : "";
   renderRecorder();
   renderFirmware();
   renderImuRanges();
   renderClock();
+  settleClockRoles();
   renderMotionWake();
   renderVoiceSettings();
   if (voiceDialogOpen()) renderVoice();
@@ -1054,6 +1059,17 @@ function pairingHint(device) {
     : "If asked for a pairing code: it's in the board's USB console (task monitor). A board that has paired before needs a double press of USER first";
 }
 
+// Easy to forget, and a refused pairing says little: shown with no boards connected, while adding
+// one, and after a failed attempt. The picker opens over the page, so it stays readable there.
+let pairPromptWanted = false;
+function renderPairPrompt() {
+  $("pair-prompt").hidden = !pairPromptWanted && connectedSummary() > 0;
+}
+function askForPairing(wanted) {
+  pairPromptWanted = wanted;
+  renderPairPrompt();
+}
+
 function showTappedBoard() {
   $("connect").textContent = tappedBoard ? `Connect ${tappedBoard}` : "Add board";
   if (tappedBoard) setStatus(`Opened from board ${tappedBoard}'s tag: press Connect ${tappedBoard}`);
@@ -1075,6 +1091,7 @@ async function addBoard() {
     setStatus(reason, { bad: true });
     return;
   }
+  askForPairing(true);
   let device;
   // Asked for once: dismissing the picker goes back to Add board, so a board that never shows up
   // can't leave the button stuck on it.
@@ -1088,10 +1105,12 @@ async function addBoard() {
       optionalServices: [DATA_SERVICE, TELEMETRY_SERVICE, LOG_SERVICE, KEYWORD_SERVICE, SMP_SERVICE, "device_information"],
     });
   } catch (error) {
+    askForPairing(false);
     setStatus(connectedSummary() ? `${connectedSummary()} connected` : `No board chosen (${error.message})`);
     return;
   }
   if (boards.get(device.id)?.connected) {
+    askForPairing(false);
     select(boards.get(device.id));
     setStatus(`${device.name} is already connected`);
     return;
@@ -1130,6 +1149,7 @@ async function addBoard() {
       await sleepMs(RECONNECT_PAUSE_MS);
     }
   }
+  askForPairing(false);
   setStatus("");
   select(board);
 }
@@ -1286,10 +1306,14 @@ renderNotify();
 // a board also sleeps by itself on a voice command, a low battery or NFC idling) is tried again
 // for as long as the page is open, so it's back once it's woken or in range; one disconnected with
 // ✕ isn't. After RECONNECT_WINDOW_MS the attempts slow down. Chrome needs no click to reconnect a
-// board it already knows.
+// board it still remembers, but about 3 minutes after last seeing one Chrome forgets it. From then
+// on gatt.connect() and getDevices() never settle, whatever the board does, until a picker scans
+// again (Add board). A connect left pending, watchAdvertisements() and getDevices() didn't help
+// (D892, Chrome 156, 2026-10-30).
 const RECONNECT_WINDOW_MS = 60000;
 const RECONNECT_PAUSE_MS = 2000;
 const RECONNECT_SLOW_PAUSE_MS = 10000;
+const CHROME_FORGETS_MS = 150000;
 const reconnecting = new Set(); // device ids
 
 async function keepConnected(device, name, { quiet = false, asleep = false } = {}) {
@@ -1298,13 +1322,19 @@ async function keepConnected(device, name, { quiet = false, asleep = false } = {
   const slowFrom = Date.now() + RECONNECT_WINDOW_MS;
   const wanted = () => !boards.get(device.id)?.connected && !firmwareJobs.get(device.id)?.active;
   let warned = asleep || quiet; // a sleeping board is meant to be away
+  const forgottenAt = Date.now() + CHROME_FORGETS_MS;
+  let toldToAdd = false;
   try {
     while (wanted()) {
       const slow = Date.now() >= slowFrom;
+      if (!toldToAdd && Date.now() >= forgottenAt) {
+        toldToAdd = true;
+        setStatus(`${name} has been away too long for Chrome to find it by itself: press USER, then Add board`, { bad: true });
+      }
       if (slow && !warned) {
         warned = true;
         const recording = recorder.active && recorder.members.has(device.id);
-        setStatus(`${name} hasn't come back: it reconnects once it's awake (USER) and in range`, { bad: recording });
+        setStatus(`${name} hasn't come back: press its USER button. It stays away after being disconnected in the Bluetooth settings, or asleep`, { bad: recording });
         notify(`${name} hasn't come back`, recording ? "It dropped out of the recording a minute ago; the page keeps trying." : "The page reconnects it once it's awake (USER) and in range.", `${device.id}:gone`);
       }
       try {
@@ -2152,12 +2182,16 @@ $("led-off").addEventListener("click", async () => {
 // ---- mouse --------------------------------------------------------------------------------
 // The board owns these settings (they persist in its flash); the page shows what it notifies back
 // rather than what was last asked for, for the selected board.
+// Only the clock source can be the pointer; firmware from before the clock sync has no roles.
+const canPoint = (board) => !board.clock || board.clock.role === "source";
+
 function renderMouse() {
   const settings = selected?.mouse;
   const toggle = $("mouse-toggle");
+  const pointer = Boolean(settings) && canPoint(selected);
   toggle.disabled = !settings;
-  toggle.setAttribute("aria-checked", String(Boolean(settings?.enabled)));
-  toggle.title = settings
+  toggle.setAttribute("aria-checked", String(pointer && settings.enabled));
+  toggle.title = !pointer && settings ? `Click to make ${selected.displayName} the pointer: it becomes the clock source` : settings
     ? `${selected.displayName}'s mouse is ${settings.enabled ? "on" : "off"}: click to switch it ${settings.enabled ? "off" : "on"} (saved on the board)`
     : "Connect a board to switch its mouse on or off";
   $("mouse-speed").disabled = !settings;
@@ -2169,7 +2203,9 @@ function renderMouse() {
     $("mouse-speed").value = settings.speedPercent;
     $("mouse-speed-value").textContent = `${settings.speedPercent}%`;
   }
-  $("mouse-status").textContent = settings.enabled
+  $("mouse-status").textContent = !pointer
+    ? "Turn the mouse on to make this board the pointer: it becomes the clock source, the only board that can be."
+    : settings.enabled
     ? "Turn the board to move the cursor; USER is the left button. Pair it as a mouse to use it."
     : "This board sends no mouse reports. Its data still streams and records.";
 }
@@ -2234,11 +2270,48 @@ async function sendMouseSettings({ enabled = selected?.mouse?.enabled } = {}) {
     $("mouse-status").textContent = `Couldn't change the mouse: ${error.message}`;
   }
 }
-$("mouse-toggle").addEventListener("click", () => sendMouseSettings({ enabled: !selected?.mouse?.enabled }));
+// Turning the mouse on makes the board the pointer, which means the clock source. The old source's
+// mouse goes off, so it doesn't start pointing again if it's made the source later.
+async function takePointer(board) {
+  const connected = [...boards.values()].filter((each) => each.connected);
+  if (connected.some(isRecordingBoard)) {
+    $("mouse-status").textContent = "Stop the recording first: the pointer is the clock source, which can't move during one.";
+    return;
+  }
+  const previous = connected.filter((each) => each !== board && each.clock?.role === "source" && each.mouse?.enabled);
+  await chooseClockSource(board.key);
+  await Promise.all(previous.map((each) => each.setMouse({ ...each.mouse, enabled: false }).catch(() => {})));
+  await sendMouseSettings({ enabled: true });
+}
+$("mouse-toggle").addEventListener("click", () => {
+  if (selected && !canPoint(selected)) takePointer(selected);
+  else sendMouseSettings({ enabled: !selected?.mouse?.enabled });
+});
 // The label follows the slider as it moves; the board gets the value once it is released, since
 // each write is also saved to its flash.
 $("mouse-speed").addEventListener("input", () => ($("mouse-speed-value").textContent = `${$("mouse-speed").value}%`));
 $("mouse-speed").addEventListener("change", () => sendMouseSettings());
+
+// ---- syncing settings -----------------------------------------------------------------------
+// Copies the selected board's settings to every other connected board (settings-sync.js).
+let settingsSyncing = false;
+
+$("settings-sync").addEventListener("click", async () => {
+  const from = selected;
+  const others = [...boards.values()].filter((board) => board.connected && board !== from);
+  if (!from?.connected || !others.length) return;
+  settingsSyncing = true;
+  $("settings-sync").disabled = true;
+  $("settings-sync-status").textContent = "Syncing…";
+  const results = await Promise.all(others.map(async (board) => ({ board, ...(await syncBoard(from, board, { blocker: imuRangesBlocker })) })));
+  settingsSyncing = false;
+  const problems = results.flatMap(({ board, skipped, failed }) => [...failed, ...skipped].map((text) => `${board.displayName}: ${text}`));
+  const changed = results.reduce((sum, { changed }) => sum + changed.length, 0);
+  const summary = changed ? `${from.displayName}'s settings copied to ${others.length} board${others.length === 1 ? "" : "s"}.` : "Already in sync.";
+  $("settings-sync-status").textContent = problems.length ? `${summary} Not copied: ${problems.join("; ")}.` : summary;
+  $("settings-sync-status").className = problems.length ? "bad-text" : "muted";
+  renderBoards();
+});
 
 // ---- radio clock sync ---------------------------------------------------------------------
 // One connected board is the clock source; choosing it here makes it the source and every other
@@ -2285,24 +2358,59 @@ function renderClock() {
   $("clock-boards").replaceChildren(...items);
 }
 
-$("clock-source").addEventListener("change", async () => {
-  const chosen = $("clock-source").value;
+// Shown at once (the 250 ms redraw would otherwise put the old role back until the board reports),
+// and put back if the board refuses.
+async function setClockRole(board, role) {
+  const before = board.clock;
+  board.clock = { ...before, role };
+  try {
+    await board.setClockRole(role);
+  } catch (error) {
+    board.clock = before;
+    setStatus(`${board.displayName}: couldn't set its clock role (${error.message})`, { bad: true });
+  }
+}
+
+const isRecordingBoard = (board) => isRecording(board) || ["recording", "reading", "erasing"].includes(board.log?.state);
+
+// One board on its own is the source and pointer (clock-roles.js), once the boards have stopped
+// arriving: a page reconnecting several would otherwise promote whichever came back first.
+const CLOCK_SETTLE_MS = 3000;
+const CLOCK_SETTLE_RECONNECTING_MS = 20000; // others are on their way back, or asleep
+let clockNoneChosen = false;
+let clockBoardKeys = "";
+let clockBoardsChanged = 0;
+let clockRolesBusy = false;
+
+async function settleClockRoles() {
+  const capable = [...boards.values()].filter((board) => board.connected && board.clock);
+  const keys = capable.map((board) => board.key).join();
+  const now = performance.now();
+  if (keys !== clockBoardKeys) {
+    clockBoardKeys = keys;
+    clockBoardsChanged = now;
+  }
+  if (clockRolesBusy || now - clockBoardsChanged < (reconnecting.size ? CLOCK_SETTLE_RECONNECTING_MS : CLOCK_SETTLE_MS)) return;
+  const changes = clockRoleChanges(capable, { isBusy: isRecordingBoard, noneChosen: clockNoneChosen });
+  if (!changes.length) return;
+  clockRolesBusy = true;
+  // Listeners first, so there is never a moment with two sources broadcasting.
+  for (const { board, role } of changes) await setClockRole(board, role);
+  clockRolesBusy = false;
+  const promoted = changes.find(({ role }) => role === "source")?.board;
+  setStatus(promoted ? `${promoted.displayName} is on its own, so it's now the clock source and pointer` : `${changes[0].board.displayName} is now a listener: only one board can be the source`);
+}
+
+async function chooseClockSource(chosen) {
+  clockNoneChosen = chosen === "";
   const capable = [...boards.values()].filter((board) => board.connected && board.clock);
   // Listeners first, so there is never a moment with two sources broadcasting.
   const order = [...capable.filter((board) => board.key !== chosen), ...capable.filter((board) => board.key === chosen)];
-  // Each role shows at once (the 250 ms redraw would otherwise put the old source back until the
-  // boards report), and is put back if that board refuses.
-  for (const board of order) {
-    const before = board.clock;
-    const role = board.key === chosen ? "source" : "listener";
-    board.clock = { ...before, role };
-    try {
-      await board.setClockRole(role);
-    } catch (error) {
-      board.clock = before;
-      setStatus(`${board.displayName}: couldn't set its clock role (${error.message})`, { bad: true });
-    }
-  }
+  for (const board of order) await setClockRole(board, board.key === chosen ? "source" : "listener");
+}
+
+$("clock-source").addEventListener("change", async () => {
+  await chooseClockSource($("clock-source").value);
   $("clock-source").blur();
 });
 
@@ -2357,11 +2465,23 @@ function openFirmwareDialog() {
   fwChosen.clear();
   for (const board of boards.values()) if (board.connected && !updateBlocker(board)) fwChosen.add(board.key);
   renderFirmware();
+  showFirmwareRoute(firmwareRoute());
   if (!$("fw-dialog").open) $("fw-dialog").showModal();
 }
 $("fw-open").addEventListener("click", openFirmwareDialog);
 $("fw-close").addEventListener("click", () => $("fw-dialog").close());
 closeOnBackdropClick($("fw-dialog"));
+closeOnBackdropClick($("voice-dialog"));
+
+// The dialog's Bluetooth / USB cable toggle.
+const firmwareRoute = () => $("fw-route").querySelector("input:checked").value;
+
+function showFirmwareRoute(route) {
+  $("fw-bluetooth").hidden = route !== "bluetooth";
+  $("fw-usb").hidden = route !== "usb";
+  if (route === "usb") prepareUsbFlash();
+}
+$("fw-route").addEventListener("change", () => showFirmwareRoute(firmwareRoute()));
 
 // A click outside a dialog closes it, as one outside the settings drawer closes that; the drawer
 // stays open under it (its own handler leaves it alone while a dialog is open). Both ends of the
@@ -2405,7 +2525,7 @@ window.addEventListener("drop", (event) => {
   event.preventDefault();
   $("fw-drop").classList.remove("over");
   $("usb-drop").classList.remove("over");
-  if ($("usb-dialog").open) {
+  if ($("fw-dialog").open && firmwareRoute() === "usb") {
     takeUsbFiles([...event.dataTransfer.files]);
     return;
   }
@@ -2429,7 +2549,7 @@ function setFirmwareStatus(text, { bad = false } = {}) {
 
 // Why `board` can't be updated right now, or null if it can.
 function updateBlocker(board) {
-  if (!board.smp) return "firmware predates Bluetooth updates: use Flash over USB once";
+  if (!board.smp) return "firmware predates Bluetooth updates: use the USB cable once";
   if (["recording", "reading", "erasing"].includes(board.log?.state)) return "stop its flash recording or upload first";
   if (isRecording(board)) return "stop the recording first";
   if (firmwareJobs.get(board.key)?.active) return "updating";
@@ -2635,16 +2755,14 @@ async function keepUpdatedFirmware({ name, bytes }) {
   renderUsbFlash();
 }
 
-$("usb-open").addEventListener("click", async () => {
+async function prepareUsbFlash() {
   await usbImagesRestored;
   if (keptUsbImages && !usbImages.bootloader && !usbImages.firmware) {
     Object.assign(usbImages, { bootloader: keptUsbImages.bootloader, firmware: keptUsbImages.firmware });
     usbKeyCheck = await signingKeyCheck(usbImages.bootloader, usbImages.firmware);
   }
   renderUsbFlash();
-  if (!$("usb-dialog").open) $("usb-dialog").showModal();
-});
-$("usb-close").addEventListener("click", () => $("usb-dialog").close());
+}
 $("usb-file").addEventListener("change", () => {
   const files = [...$("usb-file").files];
   $("usb-file").value = "";

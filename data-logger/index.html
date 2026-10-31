@@ -255,6 +255,8 @@
   /* Holds its line while empty (Record being enabled says "ready" by itself), so news arriving
      doesn't push the panel down. */
   .status-line { margin: 10px 0 0; font-size: 12.5px; min-height: 1lh; }
+  .pair-prompt { margin: 10px 0 0; padding: 6px 8px; border-left: 2px solid var(--signal); background: var(--inset); font-size: 12.5px; }
+  .fw-route { margin-bottom: 12px; }
   .bad-text { color: var(--bad); }
 
   /* Mic level meters as LED bar graphs. */
@@ -403,15 +405,7 @@
   #voice-bg-record.recording { background: var(--pressed-bg); color: var(--pressed-ink); }
   /* Settings › Voice: the board's model, which actions it obeys (by its phrases), what it heard lately. */
   .voice-model { margin: 8px 0 0; font: 11.5px var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
-  .voice-obeyed { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin-top: 8px; font-size: 12px; }
-  .voice-obeyed label { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-  .voice-obeyed label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .voice-obeyed label.unused { color: var(--text-2); }
   /* The words dialog: one row per phrase, what it does, and the folder its clips go in. */
-  .words-list { list-style: none; margin: 12px 0 8px; padding: 0; display: grid; gap: 6px; }
-  .words-list li { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; }
-  .words-list li .num { grid-column: 1 / -1; margin-top: -4px; font-size: 11px; color: var(--text-2); }
-  .words-problems { list-style: none; margin: 8px 0; padding: 0; font-size: 12px; }
   .voice-heard { list-style: none; margin: 6px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
   .voice-heard li { display: flex; justify-content: space-between; gap: 12px; }
   #fw-status { font-size: 12.5px; }
@@ -524,6 +518,7 @@
         <tbody id="boards"></tbody>
       </table>
     </div>
+    <p class="pair-prompt" id="pair-prompt" hidden><b>New board?</b> Double-press its USER button (it flashes cyan), then pick it within 2 minutes. Not in the list? Press USER once to wake it or bring it back.</p>
     <p class="status-line muted" id="status">No boards connected.</p>
     <div class="info-pop" id="boards-info" popover>
       <p>Add each board in turn; pick one to see it below. Drag a board by its ID to move it in the list. Labels and the order are remembered per board in this browser, and the label names its folder in recordings.</p>
@@ -670,6 +665,12 @@
 <aside class="drawer" id="settings-drawer" aria-label="Settings" hidden>
   <div class="drawer-head"><span>Settings<span id="settings-board" title="The board selected in the Boards panel: Mouse, Lights, Latency and Seen working apply to it"></span></span><button type="button" id="settings-close" aria-label="Close settings">✕</button></div>
   <section>
+    <div class="row">
+      <button id="settings-sync" disabled title="Copies this board's mouse speed, IMU ranges, wake on motion and voice listening to every connected board. Each keeps its own mouse on or off and its clock role.">Sync all boards</button>
+      <span class="muted" id="settings-sync-status"></span>
+    </div>
+  </section>
+  <section>
     <h2>Mouse <span class="muted">saved on the board</span></h2>
     <div class="row">
       <button id="mouse-toggle" type="button" role="switch" aria-checked="false" disabled title="Connect a board to switch its mouse on or off">Enabled</button>
@@ -689,10 +690,10 @@
   <section>
     <h2>Clock sync <span class="muted">radio, saved on the boards</span><button type="button" class="info" popovertarget="clock-info" aria-label="About radio clock sync"></button></h2>
     <div class="row">
-      <label>Source <select id="clock-source" disabled title="The board whose clock the others follow"></select></label>
+      <label>Source and pointer <select id="clock-source" disabled title="The board whose clock the others follow. It alone can be the pointer and hear voice commands"></select></label>
     </div>
     <ul class="clock-boards" id="clock-boards"></ul>
-    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
+    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond.</p><p>The source is also the pointer: only it can move the cursor and hear “toggle cursor”. A board connected on its own becomes the source by itself, with its mouse still off until you turn it on.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
   </section>
   <section>
     <h2>Sleep <span class="muted">saved on the board</span></h2>
@@ -727,16 +728,15 @@
       <input type="file" id="voice-model-file" accept=".voice" hidden aria-label="Voice model">
     </div>
     <p class="voice-model" id="voice-model"></p>
-    <div class="voice-obeyed" id="voice-obeyed" role="group" aria-label="Actions this board obeys"></div>
     <p class="hint" id="voice-settings-status">Connect a board to set up its voice commands.</p>
     <ul class="voice-heard" id="voice-heard"></ul>
-    <div class="row"><button id="voice-open">Words, clips and background audio…</button></div>
-    <div class="info-pop" id="voice-info" popover><p>The words a board listens for come with its model, so new words or a better model are an upload, not a firmware update: choose the words and record clips under Words, clips and background audio, train and export (<code>docs/voice-commands.md</code>), then Upload model. It goes to every connected board, which stops listening for the few seconds it takes.</p><p>Every board in earshot hears every command, so each board obeys only the actions ticked here. Stopping a recording and sleeping act only when said twice within 4 s; the LED blinks amber after the first. Every command heard is recorded as an event, acted on or not, so false triggers show in the data.</p></div>
+    <div class="row"><button id="voice-open">Clips and background audio…</button></div>
+    <div class="info-pop" id="voice-info" popover><p>“toggle cursor” switches the pointer on and off. Only the clock source listens for it, so the others can record undisturbed. Record clips and background audio under Clips and background audio, train and export (<code>docs/voice-commands.md</code>), then Upload model: an upload, not a firmware update. It goes to every connected board, so any of them can become the source.</p><p>Every command heard is recorded as an event, so false triggers show in the data.</p></div>
   </section>
   <section>
     <h2>Firmware<button type="button" class="info" popovertarget="firmware-info" aria-label="About firmware updates"></button></h2>
-    <div class="row"><button id="fw-open">Update over Bluetooth…</button><button id="usb-open">Flash over USB…</button></div>
-    <div class="info-pop" id="firmware-info" popover><p>Bluetooth updates any or all connected boards; dropping a <code>.bin</code> anywhere on the page opens it too. USB flashing is for a board with no firmware yet, or firmware too old for Bluetooth updates: one board at a time, plugged into this computer.</p></div>
+    <div class="row"><button id="fw-open">Update firmware…</button></div>
+    <div class="info-pop" id="firmware-info" popover><p>Bluetooth updates any or all connected boards; dropping a <code>.bin</code> anywhere on the page opens it too. USB cable is for a board with no firmware yet, or firmware too old for Bluetooth updates: one board at a time, plugged into this computer.</p></div>
   </section>
   <section>
     <h2>Latency <span class="muted">ms · IMU sample → host radio ACK</span><button type="button" class="info" popovertarget="latency-info" aria-label="How to measure latency"></button></h2>
@@ -760,9 +760,14 @@
 </aside>
 
 <dialog id="fw-dialog" aria-labelledby="fw-title">
-  <div class="dialog-head"><h2 id="fw-title">Update firmware <span class="muted">over Bluetooth</span></h2>
+  <div class="dialog-head"><h2 id="fw-title">Update firmware</h2>
     <button type="button" id="fw-close" aria-label="Close">✕</button></div>
   <div class="dialog-body">
+    <div class="segmented fw-route" id="fw-route" role="radiogroup" aria-label="How to update">
+      <label><input type="radio" name="fw-route" value="bluetooth" checked>Bluetooth</label>
+      <label><input type="radio" name="fw-route" value="usb">USB cable</label>
+    </div>
+    <div id="fw-bluetooth">
     <label class="drop" id="fw-drop">
       <input type="file" id="fw-file" accept=".bin" aria-label="Firmware image">
       <b>Drop zephyr.signed.bin here</b>
@@ -778,13 +783,8 @@
       <span class="muted" id="fw-status"></span>
     </div>
     <p class="hint">Ticked boards update together, about 30 s each, then restart into the new firmware and reconnect. One that doesn't come up on it rolls back by itself. Cancel stops them while they upload, before any board restarts; closing this keeps them going.</p>
-  </div>
-</dialog>
-
-<dialog id="usb-dialog" aria-labelledby="usb-title">
-  <div class="dialog-head"><h2 id="usb-title">Flash firmware <span class="muted">over USB</span></h2>
-    <button type="button" id="usb-close" aria-label="Close">✕</button></div>
-  <div class="dialog-body">
+    </div>
+    <div id="fw-usb" hidden>
     <label class="drop" id="usb-drop">
       <input type="file" id="usb-file" accept=".bin" multiple aria-label="MCUboot and firmware images">
       <b>Drop MCUboot's zephyr.bin and zephyr.signed.bin here</b>
@@ -802,6 +802,7 @@
     <p class="readout" id="usb-repair" hidden>The erase removed the board's Bluetooth pairings. If this computer paired with it before, forget it in the Bluetooth settings (macOS: System Settings › Bluetooth, ⓘ next to it, Forget This Device), then add it here and accept the pairing prompt.</p>
     <p class="hint">Plug the board into this computer by USB, press Flash and pick its programmer (XIAO nRF54LM20A CMSIS-DAP). Takes about 15 s. It erases the whole chip first, so the board's settings and Bluetooth bonds go: if this computer paired with it before, remove it from the Bluetooth settings before adding it again. Recordings on its flash chip stay. Close OpenOCD or pyOCD first; the serial console can stay open.</p>
     <p class="hint">The last pair that flashed a board here is kept in this browser and chosen when this opens, so a broken board can be flashed without the files; drop new ones to replace either. A Bluetooth update that succeeds moves the kept firmware on to that version.</p>
+    </div>
   </div>
 </dialog>
 
@@ -814,13 +815,12 @@
       <span class="muted" id="voice-folder"></span>
     </div>
     <div class="row" style="margin-top:8px">
-      <button id="voice-usb" title="With the board plugged into this computer, clips come through its USB programmer (XIAO nRF54LM20A CMSIS-DAP) in under a second. Close OpenOCD or pyOCD first. Afterwards the board can't sleep until it loses all power.">Use USB cable…</button>
+      <button id="voice-usb" title="With a board plugged into this computer, its clips come through its USB programmer (XIAO nRF54LM20A CMSIS-DAP) in under a second. Add one cable per board. Close OpenOCD or pyOCD first. Afterwards the board can't sleep until it loses all power.">Add USB cable…</button>
+      <button id="voice-usb-off" hidden>Use Bluetooth</button>
       <span class="muted" id="voice-usb-status"></span>
     </div>
     <div class="row" style="margin-top:12px">
       <label>Speaker <input type="text" id="voice-speaker" size="10" placeholder="your name" title="Goes in each clip's file name, so training can score each voice"></label>
-      <label>Label <select id="voice-label"></select></label>
-      <button id="voice-words" title="The phrases and what each does, saved in the folder for training">Words…</button>
       <span class="muted" id="voice-does"></span>
     </div>
     <p class="voice-say" id="voice-say"></p>
@@ -836,30 +836,11 @@
       <span class="readout" id="voice-levels"></span>
     </div>
     <ul class="voice-counts" id="voice-counts"></ul>
-    <p class="hint">Press Capture or Space, then say the phrase once, in your normal voice, while the board's LED is magenta (2 s). Vary it: near and far, quick and slow, holding and moving the board. Over Bluetooth the live streams pause for the ~5 s it takes to send; over the USB cable it takes under a second and they carry on.</p>
+    <p class="hint">Press Capture or Space, then say the phrase once, in your normal voice, while the LEDs are magenta (2 s). Every connected board records it and saves its own clip. Vary it: near and far, quick and slow, holding and moving the boards. Over Bluetooth a board's live streams pause for the ~5 s it takes to send; with a USB cable it takes under a second and they carry on.</p>
     <div class="row voice-background">
       <button id="voice-bg-record">Record background audio</button>
-      <span class="muted" id="voice-bg-status">Long stretches of talk, music or a lab with no commands in them, to count false triggers against. Saved into background/.</span>
+      <span class="muted" id="voice-bg-status">Every connected board records at once. Long stretches of talk, music or room noise, never “toggle cursor”; say “toggle” and “cursor” on their own now and then. Training learns from most of each recording as things to ignore, and counts false triggers on the rest. Saved into background/.</span>
     </div>
-  </div>
-</dialog>
-
-<dialog id="words-dialog" aria-labelledby="words-title">
-  <div class="dialog-head"><h2 id="words-title">Words <span class="muted">what boards listen for</span></h2>
-    <button type="button" id="words-close" aria-label="Close">✕</button></div>
-  <div class="dialog-body">
-    <div class="row"><label>Name <input type="text" id="words-name" size="18" placeholder="lab words" title="Shown on each board once its model is uploaded"></label></div>
-    <ol class="words-list" id="words-list" aria-label="Phrases"></ol>
-    <div class="row">
-      <button id="words-add">Add phrase</button>
-      <button id="words-default">Default words</button>
-    </div>
-    <ul class="words-problems" id="words-problems"></ul>
-    <div class="row">
-      <button class="primary" id="words-save">Save</button>
-      <span class="muted" id="words-status"></span>
-    </div>
-    <p class="hint">Saved as vocabulary.json in the clips folder, where training reads it. Pick phrases of a few syllables that share no word and don't come up in ordinary talk. A phrase whose words change is a new label: record its clips afresh. Then train, export, and upload the model from Settings › Voice: no firmware update.</p>
   </div>
 </dialog>
 

@@ -2,7 +2,6 @@
 // put back together from the board's chunks, and the WAV files the training reads. Pure functions
 // only, so tests/dashboard/clips.test.mjs runs them in Node.
 import { tagName } from "./flashlog.js";
-import { VOICE_ACTIONS } from "./wire.js";
 
 /** What each action does, for the speaker and the settings (the codes are in wire.js). */
 export const ACTION_TEXT = {
@@ -12,99 +11,18 @@ export const ACTION_TEXT = {
   record_stop: "stop recording (said twice)",
   sleep: "sleep (said twice)",
   mark: "timed mark in the recording",
+  mouse_toggle: "switches the pointer on or off",
 };
 
 /**
- * The words, as the clips folder's vocabulary.json holds them (training/vocabulary.py reads the
- * same file and refuses the same mistakes). Each phrase's label is its clips' folder name, so
- * changing a phrase's words starts a new class. Without a file, the original six: each a phrase of
- * its own, sharing no word with another, so no one syllable has to tell two commands apart.
+ * The one phrase boards listen for. training/vocabulary.py's DEFAULT spells the same (a test
+ * checks), and an older model's other phrases still work on a board that has one.
  */
-export const VOCABULARY_FILE = "vocabulary.json";
 export const DEFAULT_VOCABULARY = {
   version: 1,
-  name: "default words",
-  phrases: [
-    { label: "pointer_online", say: "pointer online", action: "mouse_on" },
-    { label: "freeze_cursor", say: "freeze the cursor", action: "mouse_off" },
-    { label: "begin_recording", say: "begin recording", action: "record_start" },
-    { label: "capture_complete", say: "capture complete", action: "record_stop" },
-    { label: "power_down_now", say: "power down now", action: "sleep" },
-    { label: "mark_this_moment", say: "mark this moment", action: "mark" },
-  ],
+  name: "toggle cursor",
+  phrases: [{ label: "toggle_cursor", say: "toggle cursor", action: "mouse_toggle" }],
 };
-
-/** The two labels every model also learns, as what the board must ignore. */
-export const BACKGROUND_LABELS = [
-  { label: "_unknown", say: "anything else: other words, and near-misses", does: "ignored" },
-  { label: "_silence", say: "say nothing: room noise, handling, a clap now and then", does: "ignored" },
-];
-
-// src/voice_package.h's limits: 24-byte phrases and names, 16 labels less the two background ones.
-const PHRASE_MAX_BYTES = 24;
-const NAME_MAX_BYTES = 24;
-export const MAX_PHRASES = 14;
-const LABEL = /^[a-z0-9]+(_[a-z0-9]+)*$/;
-const RESERVED_LABELS = new Set(["background"]); // where background audio goes
-const utf8Bytes = (text) => new TextEncoder().encode(text).length;
-
-/** A folder-safe label for a phrase: "Señal ahora" -> "senal_ahora"; "" if it has no Latin letters. */
-export function labelFor(say) {
-  return say.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
-
-/**
- * What to record under each label, phrases first: `say` is shown to the speaker. The near-misses
- * suggested for _unknown are the phrases' own words, which a model most needs to hear alone.
- */
-export function keywordLabels(vocabulary) {
-  const words = [...new Set(vocabulary.phrases.flatMap(({ say }) => say.toLowerCase().split(/\s+/)))].filter((word) => word.length > 3);
-  const nearMisses = words.slice(0, 3).map((word) => `“${word}”`).join(", ");
-  return [
-    ...vocabulary.phrases.map(({ label, say, action }) => ({ label, say, does: ACTION_TEXT[action] ?? action })),
-    ...BACKGROUND_LABELS.map((entry) => (entry.label === "_unknown" && nearMisses ? { ...entry, say: `${entry.say} like ${nearMisses}` } : entry)),
-  ];
-}
-
-/**
- * { errors, warnings } for a vocabulary: an error stops it being saved (training would refuse it),
- * a warning is advice (two phrases sharing a word are easier to confuse).
- */
-export function vocabularyProblems(vocabulary) {
-  const errors = [];
-  const { phrases } = vocabulary;
-  if (phrases.length < 1 || phrases.length > MAX_PHRASES) errors.push(`Between 1 and ${MAX_PHRASES} phrases, please.`);
-  if (utf8Bytes(vocabulary.name ?? "") > NAME_MAX_BYTES) errors.push(`The name is too long (${NAME_MAX_BYTES} bytes at most).`);
-  const seen = new Set();
-  for (const { label, say, action } of phrases) {
-    const shown = say.trim() || "(empty)";
-    if (!say.trim() || utf8Bytes(say) > PHRASE_MAX_BYTES) errors.push(`“${shown}”: a phrase is 1 to ${PHRASE_MAX_BYTES} bytes.`);
-    else if (!LABEL.test(label) || RESERVED_LABELS.has(label)) errors.push(`“${shown}”: needs some Latin letters or digits to name its folder.`);
-    else if (seen.has(label)) errors.push(`“${shown}” is there twice.`);
-    seen.add(label);
-    if (!VOICE_ACTIONS.includes(action)) errors.push(`“${shown}”: choose what it does.`);
-  }
-  const warnings = [];
-  phrases.forEach((a, i) => phrases.slice(i + 1).forEach((b) => {
-    const shared = a.say.toLowerCase().split(/\s+/).filter((word) => word && b.say.toLowerCase().split(/\s+/).includes(word));
-    for (const word of new Set(shared)) warnings.push(`“${a.say}” and “${b.say}” share “${word}”: easier to confuse.`);
-  }));
-  return { errors, warnings };
-}
-
-/** A vocabulary.json's text as a vocabulary; throws on one this page can't use. */
-export function parseVocabulary(text) {
-  const data = JSON.parse(text);
-  if (data?.version !== 1 || !Array.isArray(data.phrases)) throw new Error("not a vocabulary.json this page knows");
-  const vocabulary = {
-    version: 1,
-    name: String(data.name ?? ""),
-    phrases: data.phrases.map(({ label, say, action }) => ({ label: String(label), say: String(say), action: String(action) })),
-  };
-  const { errors } = vocabularyProblems(vocabulary);
-  if (errors.length) throw new Error(errors[0]);
-  return vocabulary;
-}
 
 /** Collects one clip's chunks; `add` returns true once every sample has arrived. */
 export class ClipAssembler {

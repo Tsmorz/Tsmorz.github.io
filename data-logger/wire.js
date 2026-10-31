@@ -42,7 +42,7 @@ export const KEYWORD_VOCABULARY = "6f524c05-0007-4a3c-9d21-1122334455aa";
 // Everything a voice command can do, in the order of src/voice_commands.h's enum voice_action,
 // whose codes start at 2 (training/vocabulary.py's ACTIONS: tests check all three agree). Which
 // phrase does which is the uploaded model's business.
-export const VOICE_ACTIONS = ["mouse_on", "mouse_off", "record_start", "record_stop", "sleep", "mark"];
+export const VOICE_ACTIONS = ["mouse_on", "mouse_off", "record_start", "record_stop", "sleep", "mark", "mouse_toggle"];
 const FIRST_ACTION_CODE = 2;
 export const voiceActionName = (code) => VOICE_ACTIONS[code - FIRST_ACTION_CODE] ?? null;
 export const VOICE_OUTCOMES = ["done", "say again", "not this board's", "refused"];
