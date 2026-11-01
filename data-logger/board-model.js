@@ -20,7 +20,7 @@ const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const mean = (points) => [0, 1, 2].map((i) => points.reduce((sum, p) => sum + p[i], 0) / points.length);
 
 /**
- * A rounded rectangle centred on the origin, counter-clockwise: half-sizes a x b and corner radius
+ * A rounded rectangle centered on the origin, counter-clockwise: half-sizes a x b and corner radius
  * r. r equal to the smaller half-size makes a stadium, and to both a circle.
  */
 export function roundedRect(a, b, r) {
@@ -38,10 +38,10 @@ export function roundedRect(a, b, r) {
   return points;
 }
 
-// Faces as vertex index lists, each turned so its Newell normal points away from the solid's centre
+// Faces as vertex index lists, each turned so its Newell normal points away from the solid's center
 // (fine for convex solids, which are all this draws), and every edge with the two faces it joins.
 function solid(vertices, faceIndices) {
-  const centre = mean(vertices);
+  const center = mean(vertices);
   const faces = faceIndices.map((indices) => {
     const points = indices.map((i) => vertices[i]);
     let normal = [0, 0, 0];
@@ -50,9 +50,9 @@ function solid(vertices, faceIndices) {
       normal = [normal[0] + (p[1] - q[1]) * (p[2] + q[2]), normal[1] + (p[2] - q[2]) * (p[0] + q[0]), normal[2] + (p[0] - q[0]) * (p[1] + q[1])];
     });
     normal = normalize(normal);
-    const faceCentre = mean(points);
-    if (dot(normal, sub(faceCentre, centre)) < 0) return { indices: [...indices].reverse(), normal: normal.map((c) => -c), centre: faceCentre };
-    return { indices, normal, centre: faceCentre };
+    const faceCenter = mean(points);
+    if (dot(normal, sub(faceCenter, center)) < 0) return { indices: [...indices].reverse(), normal: normal.map((c) => -c), center: faceCenter };
+    return { indices, normal, center: faceCenter };
   });
   const edges = new Map();
   faces.forEach(({ indices }, face) =>
@@ -63,7 +63,7 @@ function solid(vertices, faceIndices) {
       edges.get(key).faces.push(face);
     }),
   );
-  return { vertices, faces, edges: [...edges.values()], centre };
+  return { vertices, faces, edges: [...edges.values()], center };
 }
 
 // An outline (u, v) extruded from w0 to w1, placed in the IMU frame by place(u, v, w) -> [x, y, z].
@@ -92,7 +92,7 @@ function faceToward({ faces }, direction) {
 // ~1 mm: an 8.9 x 3.2 mm stadium-section shell 7.3 mm deep, its opening (with the contact tongue)
 // facing out along +y. Seen from above with the port away from you, the red LED is to its left
 // (-x) and the RGB LED to its right. Seven castellated pads run down each long side at 2.54 mm,
-// drawn centred.
+// drawn centered.
 const BOARD_HALF_WIDTH = 8.9;
 const BOARD_HALF_LENGTH = 10.5;
 const BOARD_THICKNESS = 1;
@@ -123,10 +123,10 @@ function boardPart() {
 }
 
 function usbPart() {
-  const centreZ = USB_HALF_HEIGHT;
-  const shell = prism(roundedRect(USB_HALF_WIDTH, USB_HALF_HEIGHT, USB_HALF_HEIGHT), USB_FRONT - USB_DEPTH, USB_FRONT, (u, v, w) => [u, w, centreZ + v]);
+  const centerZ = USB_HALF_HEIGHT;
+  const shell = prism(roundedRect(USB_HALF_WIDTH, USB_HALF_HEIGHT, USB_HALF_HEIGHT), USB_FRONT - USB_DEPTH, USB_FRONT, (u, v, w) => [u, w, centerZ + v]);
   const front = faceToward(shell, [0, 1, 0]);
-  const onFront = ([u, v]) => [u, USB_FRONT, centreZ + v];
+  const onFront = ([u, v]) => [u, USB_FRONT, centerZ + v];
   return {
     name: "usb",
     solid: shell,
@@ -153,7 +153,7 @@ export const BOARD_PARTS = [boardPart(), usbPart(), ledPart("led-red", -6.4, 9),
  */
 export function drawList(view, parts = BOARD_PARTS) {
   const base = parts.find((part) => part.base);
-  const onTop = parts.filter((part) => part !== base).sort((a, b) => view(b.solid.centre).depth - view(a.solid.centre).depth);
+  const onTop = parts.filter((part) => part !== base).sort((a, b) => view(b.solid.center).depth - view(a.solid.center).depth);
   const topFacesCamera = view([0, 0, 1]).depth < 0;
   const order = topFacesCamera ? [base, ...onTop] : [...onTop, base];
   const items = [];
@@ -183,7 +183,7 @@ export function drawList(view, parts = BOARD_PARTS) {
   return items;
 }
 
-/** CSS colour a mixed toward b by t (0-1), from #rgb, #rrggbb or rgb() colours; null if unreadable. */
+/** CSS color a mixed toward b by t (0-1), from #rgb, #rrggbb or rgb() colors; null if unreadable. */
 export function mixColors(a, b, t) {
   const [ca, cb] = [parseColor(a), parseColor(b)];
   if (!ca || !cb) return null;

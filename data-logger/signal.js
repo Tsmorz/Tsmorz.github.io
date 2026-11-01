@@ -27,8 +27,8 @@ export function meterFraction(dbfs, floorDbfs = -80) {
 }
 
 /**
- * The CSS colour for an LED reading ({ red, green, blue }, 0-255): its hue at full brightness, since
- * the board runs it dim (status colours are 40 of 255) and a screen swatch that dim reads as black.
+ * The CSS color for an LED reading ({ red, green, blue }, 0-255): its hue at full brightness, since
+ * the board runs it dim (status colors are 40 of 255) and a screen swatch that dim reads as black.
  * null when it is off or unknown.
  */
 export function ledDisplayColor(led) {

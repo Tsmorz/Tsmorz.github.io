@@ -8,6 +8,41 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-10-31-spelling-clips",
+    date: "2026-10-31",
+    title: "Record the words for spelling a name",
+    items: [
+      "Settings › Voice › Keyword clips › Spelling words takes you through the NATO alphabet, one clip of each word, then round again.",
+    ],
+  },
+  {
+    id: "2026-10-31-teach-a-phrase",
+    date: "2026-10-31",
+    firmware: "next",
+    title: "Teach a board your own phrase",
+    items: [
+      "Settings › Voice › Teach a phrase: say a phrase three to five times and the board learns it, with no training on a computer. Your voice stays on the board.",
+    ],
+  },
+  {
+    id: "2026-10-31-gateway-pose",
+    date: "2026-10-31",
+    firmware: "next",
+    title: "A gateway can see how a board is lying, and hears when it moves",
+    items: [
+      "Boards now send a gateway their orientation, and an alert when they're moved after 10 minutes or more of sitting still.",
+    ],
+  },
+  {
+    id: "2026-10-31-refused-model",
+    date: "2026-10-31",
+    firmware: "next",
+    title: "Refused voice models no longer restart a board",
+    items: [
+      "Uploading a voice model the board can't run, more than once, could crash and restart it. Now it just says no.",
+    ],
+  },
+  {
     id: "2026-10-31-thermometer",
     date: "2026-10-31",
     firmware: "next",

@@ -40,12 +40,14 @@ export const KEYWORD_SETTINGS = "6f524c05-0004-4a3c-9d21-1122334455aa";
 export const KEYWORD_AUDIO = "6f524c05-0005-4a3c-9d21-1122334455aa";
 export const KEYWORD_MODEL = "6f524c05-0006-4a3c-9d21-1122334455aa";
 export const KEYWORD_VOCABULARY = "6f524c05-0007-4a3c-9d21-1122334455aa";
+export const KEYWORD_ENROLL = "6f524c05-0008-4a3c-9d21-1122334455aa";
 // Everything a voice command can do, in the order of src/voice_commands.h's enum voice_action,
 // whose codes start at 2 (training/vocabulary.py's ACTIONS: tests check all three agree). Which
 // phrase does which is the uploaded model's business.
 export const VOICE_ACTIONS = ["mouse_on", "mouse_off", "record_start", "record_stop", "sleep", "mark", "mouse_toggle"];
 const FIRST_ACTION_CODE = 2;
 export const voiceActionName = (code) => VOICE_ACTIONS[code - FIRST_ACTION_CODE] ?? null;
+export const voiceActionCode = (name) => VOICE_ACTIONS.indexOf(name) + FIRST_ACTION_CODE;
 export const VOICE_OUTCOMES = ["done", "say again", "not this board's", "refused"];
 // src/keyword_wire.h's enum keyword_model_state, and src/voice_package.h's enum voice_package_result.
 export const MODEL_STATES = ["none", "loading", "ready", "receiving", "saving", "failed"];
@@ -124,7 +126,7 @@ export function decodeEnvelopeBatch(view) {
 
 /**
  * Decodes one mic spectrum batch: consecutive frames, each the level of every frequency bin in
- * dBFS (SPECTRUM_FLOOR_DBFS or below reads as the floor). Bin b is centred on
+ * dBFS (SPECTRUM_FLOOR_DBFS or below reads as the floor). Bin b is centered on
  * b * micRateHz / (2 * bins); frames start frameSamples mic samples apart.
  */
 export function decodeSpectrumBatch(view) {
@@ -194,12 +196,12 @@ export function missedSince(previousSeq, seq) {
 
 const clampByte = (value) => Math.max(0, Math.min(255, Math.round(value)));
 
-/** Encodes the LED colour the firmware's dashboard_decode_led_color() expects. */
+/** Encodes the LED color the firmware's dashboard_decode_led_color() expects. */
 export function encodeLedColor({ red, green, blue }) {
   return Uint8Array.of(PROTOCOL_VERSION, clampByte(red), clampByte(green), clampByte(blue));
 }
 
-/** Decodes the colour the board's LED shows (read and notified), or null if it is not that. */
+/** Decodes the color the board's LED shows (read and notified), or null if it is not that. */
 export function decodeLedColor(view) {
   if (view.byteLength !== 4 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
   return { red: view.getUint8(1), green: view.getUint8(2), blue: view.getUint8(3) };
@@ -500,6 +502,38 @@ export function decodeModelStatus(view) {
     totalBytes: view.getUint32(8, true),
     crc: view.getUint32(12, true),
     maxBytes: view.getUint32(16, true),
+  };
+}
+
+// ---- teaching the board a phrase: begin, takes, finish (KEYWORD_CMD_ENROLL_*) ----
+export const ENROLL_STATES = ["idle", "ready", "capturing", "thinking"]; // enum keyword_enroll_state
+export const ENROLL_PHRASE_MAX_BYTES = 24; // VOICE_PACKAGE_PHRASE_MAX
+const ENROLL_STATUS_BYTES = 12;
+export const ENROLL_NOTHING_HEARD = 0xff; // KEYWORD_ENROLL_NOTHING_HEARD
+
+export function encodeEnrollBegin(slot, action, phrase) {
+  const text = new TextEncoder().encode(phrase);
+  return Uint8Array.of(KEYWORD_VERSION, 10, slot, voiceActionCode(action), ...text);
+}
+export const encodeEnrollTake = () => Uint8Array.of(KEYWORD_VERSION, 11);
+export const encodeEnrollFinish = () => Uint8Array.of(KEYWORD_VERSION, 12);
+export const encodeEnrollCancel = () => Uint8Array.of(KEYWORD_VERSION, 13);
+export const encodeEnrollForget = (slot) => Uint8Array.of(KEYWORD_VERSION, 14, slot);
+
+/** How teaching is going, and whether the loaded model learns and which slots hold phrases. */
+export function decodeEnrollStatus(view) {
+  if (view.byteLength !== ENROLL_STATUS_BYTES || view.getUint8(0) !== KEYWORD_VERSION) return null;
+  return {
+    state: ENROLL_STATES[view.getUint8(1)] ?? "unknown",
+    result: view.getUint8(2),
+    heardNothing: view.getUint8(2) === ENROLL_NOTHING_HEARD,
+    slot: view.getUint8(3),
+    takes: view.getUint8(4),
+    outlier: view.getUint8(5),
+    agreement: view.getInt16(6, true) / 1000,
+    distinction: view.getInt16(8, true) / 100,
+    learns: view.getUint8(10) !== 0,
+    usedSlots: view.getUint8(11),
   };
 }
 

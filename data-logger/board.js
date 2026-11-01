@@ -5,7 +5,7 @@
 // they come but not shown.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
+  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_ENROLL, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
   KEYWORD_VOCABULARY, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
@@ -13,7 +13,7 @@ import {
   decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset,
   encodeClipCapture, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
-  MODEL_CHUNK_BYTES, decodeModelStatus, decodeVocabulary, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
+  MODEL_CHUNK_BYTES, decodeEnrollStatus, decodeModelStatus, decodeVocabulary, encodeEnrollBegin, encodeEnrollCancel, encodeEnrollFinish, encodeEnrollForget, encodeEnrollTake, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
 import { ClipAssembler } from "./clips.js";
 import { samplesFromBytes, takeFromMailbox } from "./mailbox.js";
@@ -46,6 +46,8 @@ function savedLabel(boardId) {
 // src/power/power.h; firmware-consistency test). The disconnect follows within moments.
 export const SLEEP_HOLD_US = 5000 * 1000;
 const HOLD_SLEEP_DISCONNECT_MS = 5000;
+const ENROLL_STEP_MS = 5000;
+const ENROLL_TAKE_MS = 8000; // 2 s to record, then the network
 
 export class Board extends EventTarget {
   /**
@@ -81,12 +83,13 @@ export class Board extends EventTarget {
     this.recording = this.continuing ? null : recording;
     this.log = null; // the on-board recorder's status, if this firmware has one
     this.battery = null;
-    this.led = null; // the colour the board's LED shows, if this firmware reports it
+    this.led = null; // the color the board's LED shows, if this firmware reports it
     this.download = null;
     this.clip = null; // the keyword clip being captured, if any
     this.canCaptureClips = false; // whether this firmware has the keyword service
     this.voice = null; // { listening, obeyed, hasModel, takesModels }, if this firmware has voice settings
     this.voiceHeard = []; // the latest keyword events: { action, outcome, hostMs }
+    this.enrollment = null; // how teaching a phrase goes (decodeEnrollStatus), if this firmware learns
     this.voiceModel = null; // the model's status (decodeModelStatus), if this firmware takes uploaded models
     this.vocabulary = null; // { name, commands: [{ action, phrase }] } of the loaded model
     this.modelWaiter = null; // resolves with the status once an upload or removal has finished
@@ -386,8 +389,21 @@ export class Board extends EventTarget {
     } catch {
       return; /* firmware from before uploadable models (or built without them) */
     }
+    try {
+      this.chars.enrollment = await subscribe(service, KEYWORD_ENROLL, (view) => this.onEnrollStatus(view));
+    } catch {
+      /* firmware from before phrases learned on the board */
+    }
     this.onModelStatus(await this.chars.voiceModel.readValue());
     await this.readVocabulary();
+  }
+
+  onEnrollStatus(view) {
+    const status = decodeEnrollStatus(view);
+    if (!status) return;
+    this.enrollment = status;
+    if (["idle", "ready"].includes(status.state)) this.enrollWaiter?.resolve(status);
+    this.changed();
   }
 
   onModelStatus(view) {
@@ -401,6 +417,7 @@ export class Board extends EventTarget {
   async readVocabulary() {
     this.vocabulary = decodeVocabulary(await this.queue(() => this.chars.vocabulary.readValue()));
     if (this.voice) this.voice = decodeKeywordSettings(await this.queue(() => this.chars.voiceSettings.readValue()));
+    if (this.chars.enrollment) this.onEnrollStatus(await this.queue(() => this.chars.enrollment.readValue()));
     this.changed();
   }
 
@@ -445,6 +462,46 @@ export class Board extends EventTarget {
     await this.readVocabulary();
     if (status.result !== "ok" || status.state !== "ready") throw new Error(modelResultText(status));
     return status;
+  }
+
+  // One step of teaching: the board's answer can come before the write's, so wait first.
+  async enrollStep(bytes, ms) {
+    if (!this.enrollment?.learns) throw new Error("this board's model can't learn phrases: upload one that does");
+    const waiter = {};
+    const settled = new Promise((resolve, reject) => Object.assign(waiter, { resolve, reject }));
+    const timer = setTimeout(() => waiter.reject(new Error("the board didn't say how it went")), ms);
+    this.enrollWaiter = waiter;
+    try {
+      await this.write(this.chars.keywordCommand, bytes);
+      return await settled;
+    } finally {
+      clearTimeout(timer);
+      this.enrollWaiter = null;
+    }
+  }
+
+  enrollBegin(slot, action, phrase) {
+    return this.enrollStep(encodeEnrollBegin(slot, action, phrase), ENROLL_STEP_MS);
+  }
+
+  /** Records and embeds one take (2 s, LED magenta), whose result the returned status holds. */
+  enrollTake() {
+    return this.enrollStep(encodeEnrollTake(), ENROLL_TAKE_MS);
+  }
+
+  async enrollFinish() {
+    const status = await this.enrollStep(encodeEnrollFinish(), ENROLL_STEP_MS);
+    await this.readVocabulary();
+    return status;
+  }
+
+  enrollCancel() {
+    return this.enrollStep(encodeEnrollCancel(), ENROLL_STEP_MS);
+  }
+
+  async enrollForget(slot) {
+    await this.enrollStep(encodeEnrollForget(slot), ENROLL_STEP_MS);
+    await this.readVocabulary();
   }
 
   /** Erases the board's voice model: it stops listening. */
@@ -540,7 +597,7 @@ export class Board extends EventTarget {
     return verifyUpdate(this.smp, image);
   }
 
-  // Firmware from before the LED reported its colour can only be written to.
+  // Firmware from before the LED reported its color can only be written to.
   async connectLed(control, subscribe) {
     try {
       this.chars.led = await subscribe(control, TELEMETRY_LED, (view) => this.onLed(view));

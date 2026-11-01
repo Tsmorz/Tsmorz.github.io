@@ -12,6 +12,7 @@ export const ACTION_TEXT = {
   sleep: "sleep (said twice)",
   mark: "timed mark in the recording",
   mouse_toggle: "switches the pointer on or off",
+  spell: "for spelling a name",
 };
 
 /**
@@ -23,6 +24,50 @@ export const DEFAULT_VOCABULARY = {
   name: "toggle cursor",
   phrases: [{ label: "toggle_cursor", say: "toggle cursor", action: "mouse_toggle" }],
 };
+
+/** The words for spelling a name: training/vocabulary.py's SPELLER spells the same (a test checks). */
+export const SPELLER_VOCABULARY = {
+  version: 1,
+  name: "spelling",
+  phrases: [
+    { label: "alpha", say: "alpha", action: "spell" },
+    { label: "bravo", say: "bravo", action: "spell" },
+    { label: "charlie", say: "charlie", action: "spell" },
+    { label: "delta", say: "delta", action: "spell" },
+    { label: "echo", say: "echo", action: "spell" },
+    { label: "foxtrot", say: "foxtrot", action: "spell" },
+    { label: "golf", say: "golf", action: "spell" },
+    { label: "hotel", say: "hotel", action: "spell" },
+    { label: "india", say: "india", action: "spell" },
+    { label: "juliet", say: "juliet", action: "spell" },
+    { label: "kilo", say: "kilo", action: "spell" },
+    { label: "lima", say: "lima", action: "spell" },
+    { label: "mike", say: "mike", action: "spell" },
+    { label: "november", say: "november", action: "spell" },
+    { label: "oscar", say: "oscar", action: "spell" },
+    { label: "papa", say: "papa", action: "spell" },
+    { label: "quebec", say: "quebec", action: "spell" },
+    { label: "romeo", say: "romeo", action: "spell" },
+    { label: "sierra", say: "sierra", action: "spell" },
+    { label: "tango", say: "tango", action: "spell" },
+    { label: "uniform", say: "uniform", action: "spell" },
+    { label: "victor", say: "victor", action: "spell" },
+    { label: "whiskey", say: "whiskey", action: "spell" },
+    { label: "xray", say: "x-ray", action: "spell" },
+    { label: "yankee", say: "yankee", action: "spell" },
+    { label: "zulu", say: "zulu", action: "spell" },
+    { label: "space", say: "space", action: "spell" },
+    { label: "delete", say: "delete", action: "spell" },
+    { label: "done", say: "done", action: "spell" },
+  ],
+};
+
+/** The word to record after `after`: the one with fewest clips, going round from it on a tie. */
+export function nextWord(phrases, counts, after) {
+  const start = phrases.findIndex(({ label }) => label === after.label) + 1;
+  const turn = phrases.map((_, i) => phrases[(start + i) % phrases.length]);
+  return turn.reduce((best, phrase) => ((counts.get(phrase.label) ?? 0) < (counts.get(best.label) ?? 0) ? phrase : best));
+}
 
 /** Collects one clip's chunks; `add` returns true once every sample has arrived. */
 export class ClipAssembler {

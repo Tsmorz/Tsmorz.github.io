@@ -1,6 +1,6 @@
 // The Replay view: a recorded session read back from its folder and plotted with every board on
 // one timebase, to check a session soon after recording it. replay.js does the parsing and the
-// maths; this file is the DOM and the drawing. See docs/dashboard.md.
+// math; this file is the DOM and the drawing. See docs/dashboard.md.
 import { fitCanvas, hairline } from "./canvas.js";
 import {
   columnExtents,
@@ -28,7 +28,7 @@ const CSV_FILES = { imu: "imu.csv", events: "events.csv", envelope: "mic_envelop
 
 // What a lane can show: series(track) gives [times (s), [values per channel]], or null if the
 // recording doesn't have it. Ranges step through `ladder` like the live traces. `keys`: each
-// channel's colour token, X/Y/Z's unless given.
+// channel's color token, X/Y/Z's unless given.
 const SIGNALS = {
   gyro: {
     units: "°/s, raw (bias not removed)", ladder: [250, 500, 1000, 2000], decimals: 1, names: ["X", "Y", "Z"],
@@ -125,7 +125,7 @@ export function initReplay(options) {
   const resize = new ResizeObserver(requestDraw);
   resize.observe($("replay-lanes"));
   resize.observe($("replay-overview"));
-  // app.js re-reads the theme's colours first; the next draw picks them up.
+  // app.js re-reads the theme's colors first; the next draw picks them up.
   new MutationObserver(requestDraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", requestDraw);
   buildLanes();
@@ -357,7 +357,7 @@ function renderBoards() {
   }
 }
 
-// Greys out the signals no board in the session recorded (a flash recording has no mic level),
+// Grays out the signals no board in the session recorded (a flash recording has no mic level),
 // moving off one that was chosen to gyro.
 const MISSING = { mic: "Not in this session: a flash recording keeps no mic level", orientation: "Not in this session", quaternion: "Not in this session" };
 
@@ -815,7 +815,7 @@ function wireLanes() {
 
 function wireOverview() {
   const canvas = $("replay-overview");
-  const centreAt = (event) => {
+  const centerAt = (event) => {
     if (!state.view) return;
     const rect = canvas.getBoundingClientRect();
     const t = state.bounds.t0 + ((event.clientX - rect.left) / rect.width) * (state.bounds.t1 - state.bounds.t0);
@@ -823,7 +823,7 @@ function wireOverview() {
   };
   canvas.addEventListener("pointerdown", (event) => {
     canvas.setPointerCapture(event.pointerId);
-    centreAt(event);
+    centerAt(event);
   });
-  canvas.addEventListener("pointermove", (event) => canvas.hasPointerCapture(event.pointerId) && centreAt(event));
+  canvas.addEventListener("pointermove", (event) => canvas.hasPointerCapture(event.pointerId) && centerAt(event));
 }
