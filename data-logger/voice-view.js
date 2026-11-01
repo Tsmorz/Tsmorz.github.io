@@ -8,7 +8,7 @@
 import { fitCanvas, hairline } from "./canvas.js";
 import { decodeAdpcm } from "./adpcm.js";
 import {
-  ACTION_TEXT, AudioTrack, DEFAULT_VOCABULARY, WAV_HEADER_BYTES, clipFileName, clipLevels, encodeWav, pcmBytes, wavHeader,
+  ACTION_TEXT, AudioTrack, DEFAULT_VOCABULARY, SPELLER_VOCABULARY, WAV_HEADER_BYTES, clipFileName, clipLevels, encodeWav, nextWord, pcmBytes, wavHeader,
 } from "./clips.js";
 import { modelResultText } from "./board.js";
 import { readMailbox } from "./mailbox.js";
@@ -21,6 +21,7 @@ const FOLDER_KEY = "keyword-folder";
 const SPEAKER_KEY = "voice-speaker";
 const BACKGROUND_FOLDER = "background"; // not a label: training cuts it into _silence and _unknown pieces
 const [PHRASE] = DEFAULT_VOCABULARY.phrases;
+const SPELLING = SPELLER_VOCABULARY.phrases;
 const READ_WRITE = { mode: "readwrite" };
 const CAPTURE_MS = 2000; // CLIP_CAPTURE_SAMPLES in src/keyword/clip_capture.h, at 16 kHz
 // Below this a phrase is hard to hear over the room (a laptop click 1 m away peaked near -40).
@@ -34,7 +35,8 @@ let folder = null; // the chosen folder's handle; null downloads each clip inste
 let modelBusy = false; // uploading a model to the boards, or removing one
 let modelStatus = null; // { text, bad, until } of an upload or removal: shown while it runs, then a while
 const MODEL_STATUS_MS = 20000;
-let phraseClips = 0; // clips in the phrase's subfolder
+let word = PHRASE; // what the next clip records
+const wordClips = new Map(); // label -> clips in its subfolder
 let backgroundFiles = 0; // recordings in the background subfolder
 // The last saying: a clip per board, { label, name, boardId, samples, rateHz, saved }, and the one shown.
 let last = null; // { clips, shown }
@@ -84,6 +86,11 @@ export function initVoice(options) {
   });
   $("voice-pick-folder").addEventListener("click", pickFolder);
   $("voice-capture").addEventListener("click", capture);
+  $("voice-spelling").addEventListener("change", (event) => {
+    word = event.target.checked ? nextWord(SPELLING, wordClips, SPELLING.at(-1)) : PHRASE;
+    event.target.blur(); // so Space captures, not unticks
+    renderVoice();
+  });
   $("voice-play").addEventListener("click", play);
   $("voice-discard").addEventListener("click", discard);
   // Space captures, so a run of clips needs no mouse; not while typing the speaker's name.
@@ -153,6 +160,7 @@ function voiceStatusText(board, voice) {
   if (!model || model.state === "none") return "No voice model on this board: upload one (a .voice file from task training:export).";
   if (model.state === "failed") return `Its stored model was refused: ${modelResultText(model)}. Upload another.`;
   if (model.state !== "ready" && model.state !== "saving") return "Loading a voice model…";
+  if (board.enrollment?.learns && !board.enrollment.usedSlots) return "Its model learns your own phrases: press Teach a phrase.";
   return voice.listening ? "Listening for its commands." : "Not listening: it ignores every command.";
 }
 
@@ -213,8 +221,9 @@ async function uploadModel(file) {
   }
   modelBusy = false;
   const phrases = model.commands.map(({ phrase }) => `“${phrase}”`).join(", ");
+  const verb = done.length === 1 ? "s" : "";
   setModelStatus([
-    done.length ? `${done.join(", ")} now listen${done.length === 1 ? "s" : ""} for ${phrases}.` : "",
+    done.length ? (model.learns ? `${done.join(", ")} can learn phrases now: Teach a phrase.` : `${done.join(", ")} now listen${verb} for ${phrases}.`) : "",
     failed.length ? `Not uploaded to ${failed.join("; ")}.` : "",
   ].filter(Boolean).join(" "), failed.length > 0);
 }
@@ -242,8 +251,8 @@ export function renderVoice() {
   const boards = captureBoards();
   const connected = getBoards().filter((board) => board.connected);
   $("voice-board").textContent = boards.length ? `· ${boards.length === 1 ? boards[0].displayName : `${boards.length} boards`}` : "";
-  $("voice-say").textContent = `“${PHRASE.say}”`;
-  $("voice-does").textContent = `${ACTION_TEXT[PHRASE.action]} · ${phraseClips} clips`;
+  $("voice-say").textContent = `“${word.say}”`;
+  $("voice-does").textContent = `${ACTION_TEXT[word.action]} · ${wordClips.get(word.label) ?? 0} clips`;
   $("voice-capture").disabled = busy || !boards.length;
   $("voice-capture").textContent = boards.length > 1 ? `Capture on ${boards.length} boards` : "Capture";
   $("voice-play").disabled = !last;
@@ -254,7 +263,10 @@ export function renderVoice() {
       : !boards.length ? "These boards' firmware can't capture clips: update it." : "";
     if (reason || $("voice-status").dataset.reason) setStatus(reason, { reason: Boolean(reason) });
   }
-  $("voice-counts").replaceChildren(...[[PHRASE.say, phraseClips], ["background recordings", backgroundFiles]].map(([name, count]) => {
+  const spellingClips = SPELLING.map(({ label }) => wordClips.get(label) ?? 0);
+  const counts = word === PHRASE ? [[PHRASE.say, wordClips.get(PHRASE.label) ?? 0]]
+    : [["spelling clips", spellingClips.reduce((sum, count) => sum + count, 0)], ["fewest of a word", Math.min(...spellingClips)]];
+  $("voice-counts").replaceChildren(...[...counts, ["background recordings", backgroundFiles]].map(([name, count]) => {
     const item = document.createElement("li");
     item.append(name, Object.assign(document.createElement("span"), { className: "num", textContent: String(count) }));
     return item;
@@ -277,7 +289,7 @@ function setBar(fraction) {
 function renderFolder(permission) {
   $("voice-folder").textContent = !folder ? "No folder: each clip downloads instead. Choose data/keywords/."
     : permission === "denied" ? `Not allowed to write to ${folder.name}/: clips download instead.`
-    : `Saving into ${folder.name}/${PHRASE.label}/`;
+    : `Saving into ${folder.name}/`;
   $("voice-folder").className = permission === "denied" ? "bad-text" : "muted";
 }
 
@@ -336,7 +348,7 @@ async function countWavs(name) {
 }
 
 async function recount() {
-  phraseClips = await countWavs(PHRASE.label);
+  for (const { label } of [PHRASE, ...SPELLING]) wordClips.set(label, await countWavs(label));
   backgroundFiles = await countWavs(BACKGROUND_FOLDER);
   renderVoice();
 }
@@ -359,13 +371,13 @@ async function save(target, label, name, bytes) {
 
 // ---- capturing ----------------------------------------------------------------------------
 /** One board's clip, over its USB cable if it has one attached. */
-async function captureOne(board, date, target, { onCapturing, onProgress }) {
+async function captureOne(board, date, target, spoken, { onCapturing, onProgress }) {
   const samples = await board.captureClip({ usb: usbFor(board)?.chip, onCapturing, onProgress: (fraction) => onProgress(board, fraction) });
   const rateHz = board.info?.micRateHz ?? 16000;
   // The same date on every board: dataset.py keeps one saying's clips in one split by it.
   const name = clipFileName(board.boardId, date, $("voice-speaker").value);
-  const saved = await save(target, PHRASE.label, name, encodeWav(samples, rateHz));
-  return { label: PHRASE.label, name, boardId: board.boardId, samples, rateHz, saved };
+  const saved = await save(target, spoken.label, name, encodeWav(samples, rateHz));
+  return { label: spoken.label, name, boardId: board.boardId, samples, rateHz, saved };
 }
 
 async function capture() {
@@ -390,6 +402,7 @@ async function capture() {
     return;
   }
   const date = new Date();
+  const spoken = word;
   const sent = new Map(boards.map((board) => [board, 0]));
   const onCapturing = () => {
     if (speakTimer) return;
@@ -404,7 +417,7 @@ async function capture() {
     setBar(all);
     setStatus(`Fetching clips… ${Math.round(all * 100)}%`);
   };
-  capturing = Promise.allSettled(boards.map((board) => captureOne(board, date, target, { onCapturing, onProgress })));
+  capturing = Promise.allSettled(boards.map((board) => captureOne(board, date, target, spoken, { onCapturing, onProgress })));
   const results = await capturing;
   clearInterval(speakTimer);
 
@@ -412,7 +425,8 @@ async function capture() {
   const failed = results.flatMap((result, i) => (result.status === "rejected" ? [`${boards[i].displayName}: ${result.reason.message}`] : []));
   if (clips.length) {
     last = { clips, shown: clips.find((clip) => clip.boardId === getBoard()?.boardId) ?? clips[0] };
-    phraseClips += clips.length; // downloaded clips count too, for this page load
+    wordClips.set(spoken.label, (wordClips.get(spoken.label) ?? 0) + clips.length); // downloaded clips count too, for this page load
+    if (spoken !== PHRASE) word = nextWord(SPELLING, wordClips, spoken);
   }
   const notes = clips.flatMap(({ boardId, samples }) => verdict(clipLevels(samples)).map((text) => `${boardId}: ${text}`));
   const saved = clips.every((clip) => clip.saved);
@@ -562,10 +576,12 @@ function verdict(levels) {
 async function discard() {
   if (!last || busy) return;
   try {
-    const directory = await folder.getDirectoryHandle(PHRASE.label);
+    const { label } = last.clips[0];
+    const directory = await folder.getDirectoryHandle(label);
     const saved = last.clips.filter((clip) => clip.saved);
     for (const clip of saved) await directory.removeEntry(clip.name);
-    phraseClips = Math.max(0, phraseClips - saved.length);
+    wordClips.set(label, Math.max(0, (wordClips.get(label) ?? 0) - saved.length));
+    if (word !== PHRASE) word = SPELLING.find((phrase) => phrase.label === label) ?? word; // so it's said again
     setStatus(`Discarded ${saved.length} clip${saved.length === 1 ? "" : "s"}.`);
     last = null;
   } catch (error) {
@@ -699,7 +715,7 @@ function renderBackground() {
   const seconds = Math.max(...recordings.map(({ track, rateHz }) => track.samples / rateHz));
   const lost = recordings.reduce((sum, { track, rateHz }) => sum + track.lostSamples / rateHz, 0);
   const who = recordings.length === 1 ? recordings[0].board.displayName : `${recordings.length} boards`;
-  setBackgroundStatus(`Recording from ${who}: ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}${lost ? `, ${lost.toFixed(1)} s lost` : ""}. Talk, play music, work as usual: just don't say “${PHRASE.say}”.`);
+  setBackgroundStatus(`Recording from ${who}: ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}${lost ? `, ${lost.toFixed(1)} s lost` : ""}. Talk, play music, work as usual: just don't say ${word === PHRASE ? `“${PHRASE.say}”` : "the spelling words"}.`);
 }
 
 function setBackgroundStatus(text, bad = false) {

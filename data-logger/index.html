@@ -37,7 +37,7 @@
     --screen-text: #2b2a26; --screen-muted: #6a655b;
     --readout: #a35a00; --readout-glow: transparent; --board: #46433c; --slot: #2f2d29;
     --series-x: #8e3329; --series-y: #6f9e2e; --series-z: #0e57aa;
-    --led-red: #ff3b30; /* the pose view's red LED: its lit colour in both themes */
+    --led-red: #ff3b30; /* the pose view's red LED: its lit color in both themes */
     --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   }
@@ -212,7 +212,7 @@
 
   input[type=text], select { font: 12px var(--mono); padding: 5px 8px; border-radius: 2px; border: 1px solid var(--line-strong); background: var(--inset); color: var(--text); }
   input[type=checkbox] { accent-color: var(--signal); }
-  /* The LED colour as a round lamp lens: a recessed rim, the colour, and a soft highlight on top. */
+  /* The LED color as a round lamp lens: a recessed rim, the color, and a soft highlight on top. */
   input[type=color] { -webkit-appearance: none; appearance: none; position: relative; width: 26px; height: 26px; padding: 3px; border: 1px solid var(--line-strong);
                       border-radius: 50%; background: var(--inset); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25); vertical-align: middle; cursor: pointer; }
   input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
@@ -238,7 +238,7 @@
   .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 
-  /* Lamps: unlit is a dark recess, lit glows, so on/off reads by brightness as well as colour. */
+  /* Lamps: unlit is a dark recess, lit glows, so on/off reads by brightness as well as color. */
   .chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 9px 3px 8px; border: 1px solid var(--line-strong); border-radius: 2px;
            background: var(--inset); font: 500 11.5px var(--mono); color: var(--text-2); }
   .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
@@ -320,7 +320,7 @@
   .boards tbody tr.drop-before td:first-child { box-shadow: inset 3px 0 0 var(--led, var(--lamp-off)), inset 0 2px 0 var(--signal); }
   .boards tbody tr.drop-after td:first-child { box-shadow: inset 3px 0 0 var(--led, var(--lamp-off)), inset 0 -2px 0 var(--signal); }
   .boards tr.selected .name { color: var(--text); font-weight: 600; }
-  /* Each row's left edge is lit in the colour its board's LED shows (app.js sets --led), so a row
+  /* Each row's left edge is lit in the color its board's LED shows (app.js sets --led), so a row
      matches the board on the bench; unlit while it's off or the firmware doesn't report it. */
   .boards tbody td:first-child { box-shadow: inset 3px 0 0 var(--led, var(--lamp-off)); }
   .boards input[type=text] { width: 10ch; padding: 3px 6px; }
@@ -408,6 +408,7 @@
   /* The words dialog: one row per phrase, what it does, and the folder its clips go in. */
   .voice-heard { list-style: none; margin: 6px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
   .voice-heard li { display: flex; justify-content: space-between; gap: 12px; }
+  .teach-phrases li { align-items: center; padding: 2px 0; }
   #fw-status { font-size: 12.5px; }
   #usb-bootloader { margin: 10px 0 0; overflow-wrap: anywhere; }
   #usb-firmware, #usb-key { margin: 4px 0 0; overflow-wrap: anywhere; }
@@ -740,7 +741,7 @@
     <p class="voice-model" id="voice-model"></p>
     <p class="hint" id="voice-settings-status">Connect a board to set up its voice commands.</p>
     <ul class="voice-heard" id="voice-heard"></ul>
-    <div class="row"><button id="voice-open">Clips and background audio…</button></div>
+    <div class="row"><button id="teach-open" title="Teach the selected board a phrase of your own, from a few takes">Teach a phrase…</button><button id="voice-open">Clips and background audio…</button></div>
     <div class="info-pop" id="voice-info" popover><p>“toggle cursor” switches the pointer on and off. Only the clock source listens for it, so the others can record undisturbed. Record clips and background audio under Clips and background audio, train and export (<code>docs/voice-commands.md</code>), then Upload model: an upload, not a firmware update. It goes to every connected board, so any of them can become the source.</p><p>Every command heard is recorded as an event, so false triggers show in the data.</p></div>
   </section>
   <section>
@@ -816,6 +817,25 @@
   </div>
 </dialog>
 
+<dialog id="teach-dialog" aria-labelledby="teach-title">
+  <div class="dialog-head"><h2 id="teach-title">Teach a phrase <span class="muted" id="teach-board"></span></h2>
+    <button type="button" id="teach-close" aria-label="Close">✕</button></div>
+  <div class="dialog-body">
+  <div class="row">
+    <label>Phrase <input type="text" id="teach-phrase" size="20" maxlength="24" placeholder="toggle cursor" title="Two or three words work best: a short word is easy to hear by accident"></label>
+    <label>Does <select id="teach-action"></select></label>
+  </div>
+  <div class="row">
+    <button class="primary" id="teach-take" disabled>Say it</button>
+    <button id="teach-finish" disabled>Save</button>
+    <button id="teach-cancel" disabled>Start over</button>
+  </div>
+  <p class="hint" id="teach-status"></p>
+  <ul class="voice-heard teach-phrases" id="teach-phrases"></ul>
+  <p class="hint">Press Say it, then say the phrase once while the LED is magenta (2 s). Three to five takes, in your normal voice. Your voice stays on the board: nothing is sent to this page.</p>
+  </div>
+</dialog>
+
 <dialog id="voice-dialog" aria-labelledby="voice-title">
   <div class="dialog-head"><h2 id="voice-title">Keyword clips <span class="muted" id="voice-board"></span></h2>
     <button type="button" id="voice-close" aria-label="Close">✕</button></div>
@@ -831,6 +851,7 @@
     </div>
     <div class="row" style="margin-top:12px">
       <label>Speaker <input type="text" id="voice-speaker" size="10" placeholder="your name" title="Goes in each clip's file name, so training can score each voice"></label>
+      <label title="Takes you through the NATO alphabet and the words that edit a name, one clip of each, then round again"><input type="checkbox" id="voice-spelling"> Spelling words</label>
       <span class="muted" id="voice-does"></span>
     </div>
     <p class="voice-say" id="voice-say"></p>

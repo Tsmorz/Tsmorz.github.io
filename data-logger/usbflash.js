@@ -52,7 +52,7 @@ function* embeddedKeys(bytes) {
 /**
  * Whether the bootloader will accept the firmware's signature: MCUboot only boots an image whose
  * key hash (TLV 0x01) is the hash of a key compiled into it. "match", "mismatch", or "unknown"
- * when the bootloader holds no key this recognises (or the image carries no key hash).
+ * when the bootloader holds no key this recognizes (or the image carries no key hash).
  */
 export async function signingKeyCheck(bootloader, firmware) {
   const keyHash = firmware.image.keyHash;

@@ -8,6 +8,7 @@ import { BoardRecording, LIVE_FILES, RADIO_CLOCK_COLUMNS, clockSources, competin
 import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
 import { clockRoleChanges } from "./clock-roles.js";
 import { syncBoard } from "./settings-sync.js";
+import { initTeach, renderTeach, teachDialogOpen } from "./teach-view.js";
 import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
@@ -117,7 +118,7 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
-const drawerDialogOpen = () => $("fw-dialog").open || voiceDialogOpen();
+const drawerDialogOpen = () => $("fw-dialog").open || voiceDialogOpen() || teachDialogOpen();
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !drawerDialogOpen()) setSettingsOpen(false);
 });
@@ -287,7 +288,7 @@ function trackHover(canvas) {
   return hover;
 }
 
-// Fills a tooltip with a heading and rows of [value, label, key colour]. Uses text nodes only.
+// Fills a tooltip with a heading and rows of [value, label, key color]. Uses text nodes only.
 function showTooltip(tip, canvas, fraction, heading, rows) {
   tip.replaceChildren();
   const head = document.createElement("div");
@@ -313,7 +314,7 @@ function showTooltip(tip, canvas, fraction, heading, rows) {
   tip.style.left = `${flip ? x - tip.offsetWidth - 10 : x + 10}px`;
 }
 
-// Live X/Y/Z values beside each plot's heading; their colour keys double as the plot legend.
+// Live X/Y/Z values beside each plot's heading; their color keys double as the plot legend.
 // `extra` adds unkeyed values after them (each sensor's magnitude).
 function buildLive(container, extra = []) {
   const keyed = ["x", "y", "z"].map((axis) => `<span style="--key: var(--series-${axis})">${axis.toUpperCase()} <b>–</b></span>`);
@@ -347,9 +348,9 @@ const AXIS_NAMES = ["X", "Y", "Z"];
 // The board is drawn in mm, scaled so its 21 mm length spans 1.8 axis lengths.
 const AXIS_LENGTHS_PER_MM = 0.9 / 10.5;
 
-// A board-model.js face's colour. The board's materials are the board token mixed onto the screen
+// A board-model.js face's color. The board's materials are the board token mixed onto the screen
 // by a tone, a lit face (shade 1) shifted toward whichever of the two is lighter; pads and LEDs
-// darken toward the slot colour in shadow.
+// darken toward the slot color in shadow.
 function boardPaint(material, shade) {
   const tone = (base, span) => mixColors(colors.screen, colors.board, base + (colors.boardIsLight ? 1 : -1) * span * (shade - 0.5));
   const shaded = (color) => mixColors(color, colors.slot, 0.6 * (1 - shade));
@@ -365,7 +366,7 @@ function boardPaint(material, shade) {
     case "led-red":
       return shaded(colors.ledRed);
     case "led-rgb": {
-      // The colour the board reports, unlit (barely off the screen) when it's off.
+      // The color the board reports, unlit (barely off the screen) when it's off.
       const lit = ledDisplayColor(selected.led);
       return lit ? shaded(lit) : tone(0.08, 0.1);
     }
@@ -439,7 +440,7 @@ function drawPose() {
     ctx.stroke();
   };
 
-  // World frame: ENU axes (x East, y North, z Up) as labelled arrows, so tilt reads against
+  // World frame: ENU axes (x East, y North, z Up) as labeled arrows, so tilt reads against
   // something fixed. Without a magnetometer "East" and "North" are nominal: Zero yaw sets them.
   const WORLD_AXES = [["E", [1.15, 0, 0]], ["N", [0, 1.15, 0]], ["U", [0, 0, 1.15]]];
   ctx.font = `500 11px ${colors.mono}`;
@@ -486,7 +487,7 @@ function drawPose() {
     }
     item.points.map(toPixels).forEach(([sx, sy], i) => (i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy)));
     ctx.closePath();
-    // Stroked in its own colour too, so neighbouring faces leave no seam between them.
+    // Stroked in its own color too, so neighboring faces leave no seam between them.
     ctx.fillStyle = ctx.strokeStyle = boardPaint(item.material, item.shade);
     ctx.lineWidth = 0.6;
     ctx.fill();
@@ -683,7 +684,7 @@ function drawEnvelope() {
 }
 
 // The board's spectrum frames (64 ms each) on the same 4 s as the level above, so a click's spike
-// sits over its stripe: 0 Hz at the bottom to 8 kHz at the top, each bin lit in the readout colour
+// sits over its stripe: 0 Hz at the bottom to 8 kHz at the top, each bin lit in the readout color
 // by its level. The newest frames lag the level by a frame or two, the time they take to arrive.
 const SPECTRUM_DIM_DBFS = -110;
 const SPECTRUM_BRIGHT_DBFS = -50;
@@ -706,7 +707,7 @@ function paintSpectrumImage(frames) {
       pixels.data[at + 3] = Math.round(levelFraction(levels[b], SPECTRUM_DIM_DBFS, SPECTRUM_BRIGHT_DBFS) * 255);
     }
   });
-  // Lightness as alpha, then tinted: no need to parse the theme's colour.
+  // Lightness as alpha, then tinted: no need to parse the theme's color.
   image.putImageData(pixels, 0, 0);
   image.globalCompositeOperation = "source-in";
   image.fillStyle = colors.readout;
@@ -1031,6 +1032,7 @@ function renderBoards() {
   renderThermometer();
   renderVoiceSettings();
   if (voiceDialogOpen()) renderVoice();
+  if (teachDialogOpen()) renderTeach();
 }
 setInterval(renderBoards, 250);
 
@@ -1527,7 +1529,7 @@ $("rec-replay").addEventListener("click", () => {
   openReplayFiles(lastSaved.entries, { handles: lastSaved.folder ? [lastSaved.folder] : null, session: lastSaved.session });
 });
 
-// A board's folder in the session: its label (if any) and ID, so it is unique and recognisable.
+// A board's folder in the session: its label (if any) and ID, so it is unique and recognizable.
 const boardFolder = (board) => safeName(board.label ? `${board.label}_${board.boardId}` : board.boardId);
 
 // Where Record goes: this computer (live, over Bluetooth) or each board's flash. Remembered here.
@@ -2518,6 +2520,7 @@ $("fw-open").addEventListener("click", openFirmwareDialog);
 $("fw-close").addEventListener("click", () => $("fw-dialog").close());
 closeOnBackdropClick($("fw-dialog"));
 closeOnBackdropClick($("voice-dialog"));
+closeOnBackdropClick($("teach-dialog"));
 
 // The dialog's Bluetooth / USB cable toggle.
 const firmwareRoute = () => $("fw-route").querySelector("input:checked").value;
@@ -2652,13 +2655,13 @@ function renderFirmware() {
     }
   }
   $("fw-empty").hidden = targets.size > 0;
-  $("fw-cancel").hidden = cancellableJobs().length === 0;
+  $("fw-cancel").hidden = cancelableJobs().length === 0;
   $("fw-update").disabled = !image || ready === 0;
   $("fw-update").textContent = ready > 1 ? `Update ${ready} boards` : "Update";
 }
 
-// Jobs still uploading: once a board is told to start the new image, it's past cancelling.
-function cancellableJobs() {
+// Jobs still uploading: once a board is told to start the new image, it's past canceling.
+function cancelableJobs() {
   return [...firmwareJobs.values()].filter((job) => job.active && job.stage === "uploading" && !job.cancel.signal.aborted);
 }
 
@@ -2720,8 +2723,8 @@ async function updateBoard(board) {
     if (!selected) select(fresh);
   } catch (error) {
     if (cancel.signal.aborted && error.name === "AbortError") {
-      setJob(key, { active: false, stage: "cancelled", text: `cancelled: still runs v${board.firmwareVersion || "?"}` });
-      return "cancelled";
+      setJob(key, { active: false, stage: "canceled", text: `canceled: still runs v${board.firmwareVersion || "?"}` });
+      return "canceled";
     }
     setJob(key, { active: false, stage: "failed", bad: true, text: `failed: ${error.message}` });
     setStatus(`${name}: firmware update failed`, { bad: true });
@@ -2734,16 +2737,16 @@ async function updateBoards(list) {
   setFirmwareStatus(`Keep ${list.length === 1 ? "the board" : "the boards"} close and this page open.`);
   const results = await Promise.allSettled(list.map(updateBoard));
   const failed = results.filter((result) => result.status === "rejected").length;
-  const cancelled = results.filter((result) => result.value === "cancelled").length;
+  const canceled = results.filter((result) => result.value === "canceled").length;
   const text = failed ? `${failed} of ${list.length} update${list.length === 1 ? "" : "s"} failed: see above.`
-    : cancelled === list.length ? "Cancelled." : cancelled ? `Done, ${cancelled} cancelled.` : "Done.";
+    : canceled === list.length ? "Canceled." : canceled ? `Done, ${canceled} canceled.` : "Done.";
   setFirmwareStatus(text, { bad: failed > 0 });
 }
 
 $("fw-cancel").addEventListener("click", () => {
-  for (const job of cancellableJobs()) {
+  for (const job of cancelableJobs()) {
     job.cancel.abort();
-    job.text = "cancelling…";
+    job.text = "canceling…";
   }
   renderFirmware();
 });
@@ -2946,6 +2949,7 @@ $("latency-copy").addEventListener("click", async () => {
 // The Replay key swaps the live panels for a recorded session read back from its folder
 // (replay-view.js). Boards stay connected and recordings carry on underneath.
 initReplay({ getColors: () => colors });
+initTeach({ getBoard: () => selected });
 initVoice({ getBoard: () => selected, getBoards: () => [...boards.values()], isRecording: () => recorder.active, getColors: () => colors });
 initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
