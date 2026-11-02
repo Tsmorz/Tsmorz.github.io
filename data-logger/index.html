@@ -30,6 +30,7 @@
     --page: #e3e0d8; --panel: #f4f2ec; --inset: #ebe8e0; --line-strong: #b4aea1;
     --text: #1d1c19; --text-2: #46433c; --muted: #6a655b;
     --signal: #ff5f1f; --signal-edge: #c7440c; --signal-hover: #ff7337; --signal-ink: #b13f06;
+    --panel-outline: #005fcc; /* dialogs' borders and the draggable seams, nothing else */
     --pressed-bg: rgba(255, 95, 31, .16); --pressed-ink: #1d1c19; --pressed-glow: transparent; --pressed-lamp: var(--signal);
     --good: #1f8a3e; --bad: #b8322a; --lamp-off: #cbc6ba; --key-shadow: #c9c3b5;
     --screen: #fbfaf6; --screen-raised: #ffffff; --screen-edge: #b4aea1; --screen-rim: #c9c3b5; --screen-shade: rgba(60, 50, 30, .08);
@@ -47,6 +48,7 @@
       --page: #0f0f0e; --panel: #1a1a18; --inset: #222220; --line-strong: #3d3b36;
       --text: #ebe9e3; --text-2: #c3c0b7; --muted: #959187;
       --signal: #ff6a2b; --signal-edge: #b8470f; --signal-hover: #ff8048; --signal-ink: #ff8a52;
+      --panel-outline: #6ea8ff;
       --pressed-bg: #ff6a2b; --pressed-ink: #1a0c04; --pressed-glow: rgba(255, 106, 43, .5); --pressed-lamp: #fff4d6;
       --good: #4ade80; --bad: #ff6b5e; --lamp-off: #3a3935; --key-shadow: #0b0b0a;
       --screen: #0f100f; --screen-raised: #1d1e1d; --screen-edge: #3d3b36; --screen-rim: #3d3b36; --screen-shade: rgba(0, 0, 0, .5);
@@ -61,6 +63,7 @@
     --page: #0f0f0e; --panel: #1a1a18; --inset: #222220; --line-strong: #3d3b36;
     --text: #ebe9e3; --text-2: #c3c0b7; --muted: #959187;
     --signal: #ff6a2b; --signal-edge: #b8470f; --signal-hover: #ff8048; --signal-ink: #ff8a52;
+    --panel-outline: #6ea8ff;
     --pressed-bg: #ff6a2b; --pressed-ink: #1a0c04; --pressed-glow: rgba(255, 106, 43, .5); --pressed-lamp: #fff4d6;
     --good: #4ade80; --bad: #ff6b5e; --lamp-off: #3a3935; --key-shadow: #0b0b0a;
     --screen: #0f100f; --screen-raised: #1d1e1d; --screen-edge: #3d3b36; --screen-rim: #3d3b36; --screen-shade: rgba(0, 0, 0, .5);
@@ -129,17 +132,17 @@
     .seam::after { content: ""; position: absolute; background: transparent; transition: background-color .1s; }
     .seam.vertical::after { top: 0; bottom: 0; left: 3px; width: 3px; }
     .seam.horizontal::after { left: 0; right: 0; top: 3px; height: 3px; }
-    .seam:hover::after, .seam.dragging::after, .seam:focus-visible::after { background: var(--signal); }
+    .seam:hover::after, .seam.dragging::after, .seam:focus-visible::after { background: var(--panel-outline); }
     .seam:focus-visible { outline: none; }
     /* A grip in the middle of every seam (two short lines across it) says it can be dragged. */
     .seam::before { content: ""; position: absolute; border: 0 solid var(--line-strong); background: var(--panel); transition: border-color .1s; }
     .seam.vertical::before { top: 50%; left: 2px; width: 5px; height: 22px; margin-top: -11px; border-inline-width: 1px; }
     .seam.horizontal::before { left: 50%; top: 2px; width: 22px; height: 5px; margin-left: -11px; border-block-width: 1px; }
-    .seam:hover::before, .seam.dragging::before, .seam:focus-visible::before { border-color: var(--signal); }
+    .seam:hover::before, .seam.dragging::before, .seam:focus-visible::before { border-color: var(--panel-outline); }
     /* A seam inside a module (between Microphone's plots) has no panel edge under it, so it draws
        its own hairline until the pointer lights it. */
     .seam.within::after { top: 4px; height: 1px; background: var(--line-strong); }
-    .seam.within:hover::after, .seam.within.dragging::after, .seam.within:focus-visible::after { top: 3px; height: 3px; background: var(--signal); }
+    .seam.within:hover::after, .seam.within.dragging::after, .seam.within:focus-visible::after { top: 3px; height: 3px; background: var(--panel-outline); }
     section { overflow-y: auto; }
     .plot { flex: 1 1 0; height: auto; min-height: 64px; }
   }
@@ -163,7 +166,7 @@
   button.info:hover:not(:disabled), button.info.open { background: none; color: var(--signal-ink); }
   button.info:active:not(:disabled) { transform: none; box-shadow: none; }
   .info-pop { position: fixed; inset: auto; margin: 0; width: min(340px, calc(100vw - 16px)); padding: 10px 12px; border: 1px solid var(--line-strong);
-              border-radius: 3px; background: var(--panel); color: var(--text-2); font-size: 12.5px; line-height: 1.5; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
+              border-radius: 3px; background: var(--panel); color: var(--text-2); font-size: 12.5px; line-height: 1.5; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); cursor: auto; }
   .info-pop:not(.placed) { visibility: hidden; }
   .info-pop p { margin: 0; }
   .info-pop p + p { margin-top: 8px; }
@@ -374,6 +377,7 @@
   /* Firmware update dialog. */
   dialog { width: min(560px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line-strong); border-radius: 3px;
            background: var(--panel); color: var(--text); box-shadow: 0 24px 64px rgba(0, 0, 0, .35); }
+  dialog, dialog:focus-visible { outline: 2px solid var(--panel-outline); outline-offset: -1px; }
   dialog::backdrop { background: rgba(15, 14, 12, .45); }
   .dialog-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line-strong); }
   .dialog-head h2 { margin: 0; }
@@ -393,16 +397,58 @@
   .fw-targets .state { font: 11.5px var(--mono); color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
   .fw-targets li.failed .state { color: var(--bad); }
   #fw-empty { margin: 12px 0 0; font-size: 12.5px; }
-  /* Keyword clips dialog: the phrase to say, large, then the last clip and the counts so far. */
-  .voice-say { margin: 14px 0; font: 600 22px/1.25 var(--sans); }
-  #voice-bar { margin-top: 12px; }
-  .plot.wave.voice-wave { height: 72px; margin-top: 10px; }
-  .voice-counts { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; margin: 12px 0 0; padding: 8px 0 0;
-                  border-top: 1px dashed var(--line-strong); font: 11.5px var(--mono); color: var(--text-2); }
-  .voice-counts li { display: flex; justify-content: space-between; }
-  .voice-counts li.current { color: var(--signal-ink); }
-  .voice-background { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-strong); }
-  #voice-bg-record.recording { background: var(--pressed-bg); color: var(--pressed-ink); }
+  /* Keyword clips dialog: the setup in one strip, the word and its key, how far you've got, and the
+     last take under them. It fits a laptop window without scrolling. */
+  #voice-dialog { width: min(880px, calc(100vw - 32px)); }
+  .voice-setup { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed var(--line-strong); }
+  .voice-step { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.5px; }
+  .voice-step .lamp { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 1px var(--line-strong); }
+  .voice-step.done .lamp { background: var(--good); }
+  .voice-step-name { font: 650 10.5px var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); }
+  .voice-step-value { font: 11.5px var(--mono); color: var(--text-2); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .voice-step button { padding: 2px 8px 3px; }
+  .voice-step.bad .voice-step-value { color: var(--bad); }
+  .voice-modes { margin-bottom: 10px; }
+  .voice-deck { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; }
+  .voice-prompt { min-width: 0; }
+  .voice-say-label, .voice-progress-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0; min-height: 22px;
+                                           font: 650 10.5px var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); }
+  .voice-say-label .num, .voice-progress-head #voice-progress-text { font: 11.5px var(--mono); letter-spacing: 0; text-transform: none; }
+  .voice-progress-head label { display: inline-flex; align-items: center; gap: 6px; }
+  .voice-progress-head input { width: 56px; padding: 1px 4px; font: 11.5px var(--mono); }
+  .voice-say { margin: 2px 0 0; font: 700 44px/1.1 var(--sans); font-stretch: 105%; overflow-wrap: anywhere; }
+  .voice-way { margin: 2px 0 10px; font-size: 13.5px; color: var(--text-2); min-height: 19px; }
+  button.voice-key { display: block; width: 100%; padding: 15px 12px 16px; font-size: 15px; touch-action: none; user-select: none; }
+  button.voice-key:disabled { color: var(--text-2); }
+  button.voice-key.recording { background: var(--bad); border-color: var(--bad); color: #fff; box-shadow: inset 0 1px 0 rgba(0, 0, 0, .3); transform: translateY(1px); }
+  .voice-gauges { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 9px; font: 650 9.5px var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+  .voice-gauges .bar { height: 8px; }
+  .voice-level > i { background: repeating-linear-gradient(90deg, var(--good) 0 5px, transparent 5px 7px); }
+  .voice-status { margin: 8px 0 0; min-height: 36px; font-size: 13px; line-height: 18px; color: var(--text-2); }
+  .voice-status.bad-text { color: var(--bad); }
+  .voice-status.next-step { color: var(--signal-ink); font-weight: 600; }
+  .voice-progress { min-width: 0; }
+  .voice-words { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; margin-top: 4px; }
+  .voice-words button { position: relative; display: flex; justify-content: space-between; gap: 4px; padding: 3px 6px 4px; overflow: hidden; font: 11px/1.3 var(--mono); letter-spacing: 0;
+                        box-shadow: none; background: linear-gradient(90deg, var(--pressed-bg) var(--filled, 0%), transparent var(--filled, 0%)); }
+  .voice-words button:only-child { grid-column: 1 / -1; }
+  .voice-words button:hover:not(:disabled) { background: linear-gradient(90deg, var(--pressed-bg) var(--filled, 0%), var(--inset) var(--filled, 0%)); }
+  .voice-words button:active:not(:disabled) { transform: none; box-shadow: none; }
+  .voice-words button[aria-current="true"] { outline: 2px solid var(--signal); outline-offset: -2px; font-weight: 500; }
+  .voice-words button.finished { color: var(--good); }
+  .voice-words .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .voice-words button.finished .count { color: inherit; }
+  .voice-last-take { margin: 10px 0 0; display: flex; justify-content: space-between; gap: 12px; }
+  .plot.wave.voice-wave { position: relative; height: 84px; margin-top: 4px; }
+  .voice-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-size: 12.5px; color: var(--screen-muted); pointer-events: none; }
+  .voice-empty span { padding: 0 8px; background: var(--screen); }
+  #voice-wave { touch-action: none; }
+  .voice-actions { margin-top: 8px; }
+  .voice-actions-gap { flex: 1; }
+  kbd { display: inline-block; min-width: 16px; margin-left: 4px; padding: 0 3px; border: 1px solid var(--line-strong); border-radius: 2px; font: 10px/14px var(--mono); text-align: center; color: var(--text-2); }
+  .voice-background-lead { margin: 4px 0 12px; font-size: 13.5px; line-height: 1.5; color: var(--text-2); max-width: 62ch; }
+  #voice-bg-record.recording { background: var(--bad); border-color: var(--bad); color: #fff; }
+  @media (max-width: 720px) { .voice-deck { grid-template-columns: minmax(0, 1fr); } .voice-say { font-size: 34px; } }
   /* Settings › Voice: the board's model, which actions it obeys (by its phrases), what it heard lately. */
   .voice-model { margin: 8px 0 0; font: 11.5px var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
   /* The words dialog: one row per phrase, what it does, and the folder its clips go in. */
@@ -414,6 +460,19 @@
   #usb-firmware, #usb-key { margin: 4px 0 0; overflow-wrap: anywhere; }
   #usb-bar { margin-top: 12px; }
   #usb-status { font-size: 12.5px; }
+
+  /* An enlarged data panel: a click lifts it out of the grid into this dialog and back (app.js).
+     Whatever the window's size, its plots share the height, as in the laptop layout. */
+  main :is(.orientation-section, .motion-section, .mic-section) { cursor: zoom-in; }
+  main :is(.motion-section, .mic-section) canvas { cursor: zoom-in; }
+  #panel-dialog { width: calc(100vw - 6vmin); height: calc(100dvh - 6vmin); max-width: none; max-height: none; overflow: hidden; }
+  #panel-dialog[open] { display: flex; }
+  #panel-dialog section { flex: 1; overflow-y: auto; box-shadow: none; }
+  #panel-dialog h2 { padding-right: 40px; }
+  #panel-dialog .plot { flex: 1 1 0; height: auto; min-height: 64px; }
+  #panel-close { position: absolute; top: 8px; right: 10px; padding: 2px 8px 3px; }
+  /* Microphone's plots aren't in the grid to be measured, and they're back before it can be dragged. */
+  body:has(#panel-dialog[open]) .seam.within { display: none; }
 
   /* Latency figures as small amber displays. */
   .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
@@ -564,17 +623,17 @@
   </section>
   </div>
 
-  <section class="orientation-section">
+  <section class="orientation-section" tabindex="0">
     <h2>Orientation <span class="muted">VQF, 6-axis</span>
       <span class="chip" id="at-rest" title="Lit while VQF sees the board as still: only then does it quickly learn the gyro bias that stops yaw drift">At rest</span></h2>
-    <div class="plot pose"><canvas id="pose" title="Drag to turn the view; double-click to reset it" aria-label="Board orientation: its X, Y and Z axes in the world frame"></canvas></div>
+    <div class="plot pose"><canvas id="pose" title="Click to enlarge; drag to turn the view; double-click to reset it" aria-label="Board orientation: its X, Y and Z axes in the world frame"></canvas></div>
     <div class="angles">
       <span>Roll <b id="roll">–</b></span><span>Pitch <b id="pitch">–</b></span><span>Yaw <b id="yaw">–</b></span>
       <button id="zero-yaw" title="Yaw is relative (no magnetometer): make the current heading 0°">Zero yaw</button>
     </div>
   </section>
 
-  <section class="motion-section">
+  <section class="motion-section" tabindex="0">
     <h2>Motion <span class="muted">gyro bias removed<span class="num" id="imu-temp" title="The IMU's own temperature sensor, read about once a second, with this board's calibration from Settings › Thermometer. temperature.csv keeps the uncorrected reading: the gyro's bias drifts with it"></span></span></h2>
     <div class="plot-head"><span>Angular rate <span class="muted">°/s · <span id="gyro-range">±250</span></span></span><span class="live" id="gyro-live"></span></div>
     <div class="plot trace">
@@ -589,7 +648,7 @@
     <div class="x-axis"><span>−4 s</span><span>now</span></div>
   </section>
 
-  <section class="mic-section">
+  <section class="mic-section" tabindex="0">
     <h2>Microphone <span class="muted">peak per ms, dBFS</span><button type="button" class="info" popovertarget="mic-info" aria-label="About the microphone plots"></button></h2>
     <div class="plot-head"><span>Level <span class="muted num" id="mic-level">–</span></span></div>
     <div class="plot wave" id="envelope-plot">
@@ -837,42 +896,70 @@
 </dialog>
 
 <dialog id="voice-dialog" aria-labelledby="voice-title">
-  <div class="dialog-head"><h2 id="voice-title">Keyword clips <span class="muted" id="voice-board"></span></h2>
-    <button type="button" id="voice-close" aria-label="Close">✕</button></div>
+  <div class="dialog-head"><h2 id="voice-title">Keyword clips <span class="muted" id="voice-board"></span><button type="button" class="info" popovertarget="voice-help" aria-label="How recording clips works"></button></h2>
+    <button type="button" id="voice-close" aria-label="Close" title="Close (Q)">✕</button></div>
   <div class="dialog-body">
-    <div class="row">
-      <button id="voice-pick-folder" title="data/keywords/ in the repo: the training reads it from there">Choose folder…</button>
-      <span class="muted" id="voice-folder"></span>
+    <div class="info-pop" id="voice-help" popover>
+      <p>Hold Space, say the word once, and let go. Every connected board saves its own clip of just that, with room noise around it so the file stays 2 s for training.</p>
+      <p>Follow the line under the word: clips that differ in speed, loudness and distance are what make a model work. Record in at least two sittings, since a word's latest takes are held back to test it.</p>
+      <p>The waveform shows the whole take, what you held highlighted and a moment either side dimmed. If a word got cut off or a bump got in, drag the highlight's edges, then Keep section.</p>
+      <p>Keys: arrows move between the buttons and choose a word, Enter presses the button you're on, P plays, Backspace redoes, Q closes this window. Space always records, whichever button you're on.</p>
+      <p>Over Bluetooth a board's live streams pause while it sends. With a USB cable a clip takes under a second and they carry on. Afterwards a cabled board can't sleep until it loses all power.</p>
     </div>
-    <div class="row" style="margin-top:8px">
-      <button id="voice-usb" title="With a board plugged into this computer, its clips come through its USB programmer (XIAO nRF54LM20A CMSIS-DAP) in under a second. Add one cable per board. Close OpenOCD or pyOCD first. Afterwards the board can't sleep until it loses all power.">Add USB cable…</button>
-      <button id="voice-usb-off" hidden>Use Bluetooth</button>
-      <span class="muted" id="voice-usb-status"></span>
+    <div class="voice-setup">
+      <div class="voice-step" id="voice-step-folder"><span class="lamp"></span><span class="voice-step-name">Folder</span>
+        <span class="voice-step-value" id="voice-folder"></span><button id="voice-pick-folder" title="data/keywords/ in the repo: training reads it from there">Choose…</button></div>
+      <div class="voice-step" id="voice-step-speaker"><span class="lamp"></span><label for="voice-speaker" class="voice-step-name">Your name</label>
+        <input type="text" id="voice-speaker" size="9" placeholder="required" autocomplete="off" title="Goes in each clip's file name, so training can score each voice"></div>
+      <div class="voice-step" id="voice-step-link"><span class="lamp"></span><span class="voice-step-name">Link</span>
+        <span class="voice-step-value" id="voice-usb-status"></span>
+        <button id="voice-usb" title="With a board plugged into this computer, its clips come through its USB programmer (XIAO nRF54LM20A CMSIS-DAP) in under a second. Add one cable per board. Close OpenOCD or pyOCD first. Afterwards the board can't sleep until it loses all power.">Add USB…</button>
+        <button id="voice-usb-off" hidden>Use Bluetooth</button></div>
     </div>
-    <div class="row" style="margin-top:12px">
-      <label>Speaker <input type="text" id="voice-speaker" size="10" placeholder="your name" title="Goes in each clip's file name, so training can score each voice"></label>
-      <label title="Takes you through the NATO alphabet and the words that edit a name, one clip of each, then round again"><input type="checkbox" id="voice-spelling"> Spelling words</label>
-      <span class="muted" id="voice-does"></span>
+    <div class="segmented voice-modes" id="voice-modes" role="radiogroup" aria-label="What to record">
+      <label><input type="radio" name="voice-mode" value="spelling" checked>Spelling words</label>
+      <label><input type="radio" name="voice-mode" value="phrase">Toggle cursor</label>
+      <label><input type="radio" name="voice-mode" value="background">Background audio</label>
     </div>
-    <p class="voice-say" id="voice-say"></p>
-    <div class="row">
-      <button class="primary" id="voice-capture" disabled>Capture</button>
-      <span class="muted" id="voice-status"></span>
+    <div id="voice-takes">
+      <div class="voice-deck">
+        <div class="voice-prompt">
+          <p class="voice-say-label"><span>Say</span><span class="num" id="voice-does"></span></p>
+          <p class="voice-say" id="voice-say"></p>
+          <p class="voice-way" id="voice-way"></p>
+          <button class="primary voice-key" id="voice-capture" disabled><span id="voice-capture-text">Hold Space to record</span></button>
+          <div class="voice-gauges">
+            <span>Time</span><div class="bar" id="voice-bar" role="progressbar" aria-label="Time left in this take" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+            <span>Level</span><div class="bar voice-level" id="voice-level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+          </div>
+          <p class="voice-status" id="voice-status" role="status" aria-live="polite"></p>
+        </div>
+        <div class="voice-progress">
+          <p class="voice-progress-head"><span id="voice-progress-text"></span><label>Target <input type="number" id="voice-target" min="1" max="500" title="Clips of each word to aim for"></label></p>
+          <div class="voice-words" id="voice-words"></div>
+        </div>
+      </div>
+      <div class="plot-head voice-last-take"><span id="voice-last-take"></span><span class="readout" id="voice-levels"></span></div>
+      <div class="plot wave voice-wave"><canvas id="voice-wave" aria-label="The last take's waveform, with what's saved highlighted" title="The highlight is what's saved. Drag its edges or across the waveform to change it, then Keep section. Scroll to zoom, even mid-drag; scroll sideways to move along."></canvas><p class="voice-empty" id="voice-empty"><span>Hold Space, say the word, let go. Your take shows up here.</span></p></div>
+      <div class="row voice-actions">
+        <button id="voice-play" disabled>Play <kbd>P</kbd></button>
+        <button id="voice-discard" disabled title="Removes every board's clip of this saying, and asks for the word again">Redo <kbd>⌫</kbd></button>
+        <span class="voice-actions-gap"></span>
+        <button id="voice-keep" disabled title="Saves the highlighted section of every board's take of this saying. Room noise fills the rest, so each file stays 2 s for training.">Keep section</button>
+        <button id="voice-restore" hidden title="Goes back to what you held">Undo keep</button>
+      </div>
     </div>
-    <div class="bar" id="voice-bar" role="progressbar" aria-label="Clip" aria-valuemin="0" aria-valuemax="100"><i></i></div>
-    <div class="plot wave voice-wave"><canvas id="voice-wave" aria-label="The last clip's waveform"></canvas></div>
-    <div class="row" style="margin-top:8px">
-      <button id="voice-play" disabled>Play</button>
-      <button id="voice-discard" disabled>Discard</button>
-      <span class="readout" id="voice-levels"></span>
-    </div>
-    <ul class="voice-counts" id="voice-counts"></ul>
-    <p class="hint">Press Capture or Space, then say the phrase once, in your normal voice, while the LEDs are magenta (2 s). Every connected board records it and saves its own clip. Vary it: near and far, quick and slow, holding and moving the boards. Over Bluetooth a board's live streams pause for the ~5 s it takes to send; with a USB cable it takes under a second and they carry on.</p>
-    <div class="row voice-background">
-      <button id="voice-bg-record">Record background audio</button>
-      <span class="muted" id="voice-bg-status">Every connected board records at once. Long stretches of talk, music or room noise, never “toggle cursor”; say “toggle” and “cursor” on their own now and then. Training learns from most of each recording as things to ignore, and counts false triggers on the rest. Saved into background/.</span>
+    <div id="voice-background" hidden>
+      <p class="voice-background-lead">Leave this running while you talk, play music or work as usual, for as long as you like. Training learns what to ignore from it, and counts false triggers on what it hasn't heard. Just don't say the words themselves.</p>
+      <div class="row"><button class="primary" id="voice-bg-record">Record background audio</button><span class="readout" id="voice-bg-count"></span></div>
+      <p class="voice-status" id="voice-bg-status" role="status" aria-live="polite"></p>
     </div>
   </div>
+</dialog>
+
+<!-- Holds whichever data panel is enlarged, for as long as it is (app.js). -->
+<dialog id="panel-dialog" aria-label="Enlarged panel">
+  <button type="button" id="panel-close" aria-label="Close" title="Close (Esc)">✕</button>
 </dialog>
 
 <script type="module" src="app.js"></script>

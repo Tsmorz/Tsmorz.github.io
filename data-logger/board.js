@@ -11,7 +11,7 @@ import {
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
   decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset,
-  encodeClipCapture, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
+  encodeClipHold, encodeClipRelease, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
   MODEL_CHUNK_BYTES, decodeEnrollStatus, decodeModelStatus, decodeVocabulary, encodeEnrollBegin, encodeEnrollCancel, encodeEnrollFinish, encodeEnrollForget, encodeEnrollTake, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
@@ -30,6 +30,9 @@ const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
 const hostNow = () => performance.timeOrigin + performance.now();
 // A notification's DataView, kept to be handled later.
 const copyView = (view) => new DataView(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+
+// The refusal doesn't say why: a board busy with something else and one too old both fail the write.
+const clipRefused = (cause) => new Error("it couldn't start recording. It may be busy: try again. If it keeps refusing, restart it, or update its firmware", { cause });
 // How long connect() waits for an IMU batch to tell whether the board restarted (see `continuing`).
 const CONTINUITY_WAIT_MS = 2000;
 
@@ -917,11 +920,12 @@ export class Board extends EventTarget {
   }
 
   /**
-   * Captures the next 2 s of the board's microphone (its LED shows magenta meanwhile) and resolves
-   * with the samples, at the board info's micRateHz. `onCapturing` is called once the board has
-   * started, `onProgress` with the fraction sent: ~5 s more to a Mac, with the live streams paused.
-   * With `usb` (this board's attached Nrf54lm20a, swd.js), the page reads the clip through the
-   * board's USB probe instead (mailbox.js): under a second, and the live streams carry on.
+   * Records the board's microphone until releaseClip() (its LED shows magenta meanwhile) and
+   * resolves with the samples, at the board info's micRateHz: a moment either side of the hold
+   * (clip-view.js's heldSection()), 2 s at most. `onCapturing` is called once the board has started,
+   * `onProgress` with the fraction sent: ~2.5 s more a second of clip to a Mac, with the live streams
+   * paused. With `usb` (this board's attached Nrf54lm20a, swd.js), the page reads the clip through
+   * the board's USB probe instead (mailbox.js): under a second, and the live streams carry on.
    */
   async captureClip({ onCapturing, onProgress, usb = null } = {}) {
     if (!this.canCaptureClips) throw new Error("this board's firmware can't capture clips: update it");
@@ -939,8 +943,9 @@ export class Board extends EventTarget {
     });
     try {
       // A refusal (busy, or the board uploading its flash) ends the capture with the write's error.
-      await this.write(this.chars.keywordCommand, encodeClipCapture(this.clipId))
-        .then(() => onCapturing?.(), (error) => this.clip.reject(error));
+      const asked = performance.now();
+      await this.write(this.chars.keywordCommand, encodeClipHold(this.clipId))
+        .then(() => onCapturing?.((performance.now() - asked) / 2), (error) => this.clip.reject(clipRefused(error)));
       return await done;
     } finally {
       this.clip = null;
@@ -950,12 +955,20 @@ export class Board extends EventTarget {
     }
   }
 
+  /** Ends the clip captureClip() is recording. Writes go in order, so this may follow it at once. */
+  async releaseClip() {
+    await this.write(this.chars.keywordCommand, encodeClipRelease()).catch(() => {}); // it stops at 2 s anyway
+  }
+
   async captureClipOverUsb(clipId, chip, { onCapturing, onProgress }) {
     // One at a time, as over Bluetooth. A disconnect doesn't end it: the clip comes by USB.
     this.clip = { assembler: null, reject: () => {} };
     try {
-      await this.write(this.chars.keywordCommand, encodeClipCapture(clipId, { overUsb: true }));
-      onCapturing?.();
+      const asked = performance.now();
+      await this.write(this.chars.keywordCommand, encodeClipHold(clipId, { overUsb: true })).catch((error) => {
+        throw clipRefused(error);
+      });
+      onCapturing?.((performance.now() - asked) / 2);
       return samplesFromBytes(await takeFromMailbox(chip, clipId, { onProgress }));
     } finally {
       this.clip = null;

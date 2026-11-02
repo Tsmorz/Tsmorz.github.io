@@ -405,17 +405,21 @@ export function decodeLogChunk(view) {
 }
 
 /**
- * Asks the board to capture its next 2 s of microphone and send it back as clip `clipId`, or with
- * `overUsb`, to offer it in its USB mailbox (mailbox.js) instead, which older firmware refuses.
+ * Asks the board to record its microphone until encodeClipRelease() and send it back as clip
+ * `clipId`, or with `overUsb`, to offer it in its USB mailbox (mailbox.js) instead. Older firmware
+ * refuses both.
  */
-export function encodeClipCapture(clipId, { overUsb = false } = {}) {
+export function encodeClipHold(clipId, { overUsb = false } = {}) {
   const bytes = new Uint8Array(4);
   const view = new DataView(bytes.buffer);
   view.setUint8(0, KEYWORD_VERSION);
-  view.setUint8(1, overUsb ? 9 : 1);
+  view.setUint8(1, overUsb ? 16 : 15);
   view.setUint16(2, clipId, true);
   return bytes;
 }
+
+/** Ends the clip encodeClipHold() started. */
+export const encodeClipRelease = () => Uint8Array.of(KEYWORD_VERSION, 17);
 
 /** One chunk of a clip: which clip, its length, where this chunk starts, and its samples. */
 export function decodeClipChunk(view) {

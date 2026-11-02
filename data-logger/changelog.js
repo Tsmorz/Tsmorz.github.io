@@ -8,6 +8,68 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-01-enlarge-panels",
+    date: "2026-11-01",
+    title: "Enlarge a data panel",
+    items: ["Click Orientation, Motion or Microphone to fill most of the window with it, still live. The ✕, a click outside it or Escape puts it back."],
+  },
+  {
+    id: "2026-11-01-short-voice-clips",
+    date: "2026-11-01",
+    firmware: "next",
+    title: "Keep short voice clips free of previous audio",
+    items: ["On-board phrase learning now pads short clips with silence instead of including leftover audio from a previous clip."],
+  },
+  {
+    id: "2026-11-01-hold-to-record",
+    date: "2026-11-01",
+    firmware: "next",
+    title: "Hold Space to record a clip",
+    items: [
+      "Settings › Voice › Keyword clips records while you hold Space or the record button, and saves just that, up to 1.5 s. Boards need the new firmware.",
+      "The waveform highlights what was saved, with a moment either side. Drag the highlight wider or narrower, then Keep section. Undo keep goes back to what you held.",
+      "Space works straight after trimming, and a take sends faster over Bluetooth because it's shorter.",
+    ],
+  },
+  {
+    id: "2026-11-01-collect-clips",
+    date: "2026-11-01",
+    title: "Collecting clips is one clear flow",
+    items: [
+      "The clips dialog fits the window: setup in one strip, the word, one key, and a key for every word showing how far it's got. Click a word to record that one.",
+      "It says what's missing before your first take, and each take suggests a way to say the word, so clips differ the way training needs.",
+      "A live level meter shows the board can hear you. A take with nothing said isn't saved unless you press Save anyway, and the old quiet warning, which fired on normal speech, is gone.",
+      "P plays the last take and Backspace redoes it. Spelling, Toggle cursor and Background audio are separate tabs.",
+      "The arrow keys move between the buttons and choose a word, Enter presses the button you're on, and Q closes the window.",
+      "Spelling words now include the numbers zero to ten, and “done” is gone.",
+    ],
+  },
+  {
+    id: "2026-11-01-third-connection",
+    date: "2026-11-01",
+    firmware: "next",
+    title: "Find a board that's already on a gateway",
+    items: ["A board now takes three Bluetooth connections, not two, so one connected to your computer and a gateway stays visible to Add board."],
+  },
+  {
+    id: "2026-10-31-mouse-interval",
+    date: "2026-10-31",
+    firmware: "next",
+    title: "Request faster mouse updates",
+    items: ["The board requests a 7.5 ms Bluetooth interval with no skipped events. Your computer decides the interval it grants."],
+  },
+  {
+    id: "2026-10-31-clip-editing",
+    date: "2026-10-31",
+    title: "Follow a clip as it plays, and keep just the part you want",
+    items: [
+      "Settings › Voice › Keyword clips: a line follows the sound across the waveform as a clip plays.",
+      "Drag across the waveform to highlight a section, scroll to zoom in, then Keep section. Play plays just that section first, and Undo keep puts the clip back.",
+      "Speak now ends when the 2 s take does, rather than when the clip starts arriving.",
+      "The waveform says which word it holds, and the word to say marks itself Next, so spelling doesn't mix up the take you're trimming with the one coming up.",
+    ],
+  },
+  {
     id: "2026-10-31-spelling-clips",
     date: "2026-10-31",
     title: "Record the words for spelling a name",

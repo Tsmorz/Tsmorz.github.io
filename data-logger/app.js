@@ -118,7 +118,7 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
-const drawerDialogOpen = () => $("fw-dialog").open || voiceDialogOpen() || teachDialogOpen();
+const drawerDialogOpen = () => $("fw-dialog").open || $("panel-dialog").open || voiceDialogOpen() || teachDialogOpen();
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !drawerDialogOpen()) setSettingsOpen(false);
 });
@@ -249,6 +249,51 @@ const seamObserver = new ResizeObserver(placeSeams);
 seamObserver.observe(mainEl);
 for (const split of Object.values(SPLITS)) for (const selector of split.panels) seamObserver.observe(document.querySelector(selector));
 WIDE_LAYOUT.addEventListener("change", placeSeams);
+
+// ---- enlarged panels ----------------------------------------------------------------------
+// A click on a data panel moves it into a dialog most of the window's size, still live (the draw
+// loop finds its canvases wherever they are); ✕, a click outside or Escape puts it back. An empty
+// copy holds its grid cell meanwhile, and as it comes first in the page, the seams measure that.
+const ENLARGEABLE = ".orientation-section, .motion-section, .mic-section";
+const CLICK_SLOP_PX = 4; // further than this from the press is a drag (turning the pose view, selecting text)
+let panelSlot = null;
+let panelPress = null;
+
+function enlargePanel(panel) {
+  const dialog = $("panel-dialog");
+  panelSlot = panel.cloneNode(false);
+  panelSlot.style.minHeight = `${panel.offsetHeight}px`;
+  panel.replaceWith(panelSlot);
+  // Keeps its module number: the panels before the slot, then its own increment.
+  dialog.style.counterReset = `module ${[...mainEl.querySelectorAll("section")].indexOf(panelSlot)}`;
+  dialog.append(panel);
+  dialog.showModal();
+}
+
+$("panel-dialog").addEventListener("close", () => {
+  const panel = $("panel-dialog").querySelector("section");
+  panelSlot.replaceWith(panel);
+  panelSlot = null;
+  panel.focus({ preventScroll: true }); // the dialog's own focus return found it still inside
+});
+$("panel-close").addEventListener("click", () => $("panel-dialog").close());
+closeOnBackdropClick($("panel-dialog"));
+
+mainEl.addEventListener("pointerdown", (event) => {
+  // A press that dismisses the drawer or a popover does only that. They close after this runs.
+  const dismissing = !$("settings-drawer").hidden || document.querySelector(":popover-open");
+  panelPress = dismissing ? null : { x: event.clientX, y: event.clientY };
+});
+mainEl.addEventListener("click", (event) => {
+  const panel = event.target.closest(ENLARGEABLE);
+  if (!panel || !panelPress || event.target.closest("button, .info-pop")) return;
+  if (Math.hypot(event.clientX - panelPress.x, event.clientY - panelPress.y) <= CLICK_SLOP_PX) enlargePanel(panel);
+});
+mainEl.addEventListener("keydown", (event) => {
+  if ((event.key !== "Enter" && event.key !== " ") || !event.target.matches(ENLARGEABLE)) return;
+  event.preventDefault();
+  enlargePanel(event.target);
+});
 
 // ---- info popovers -----------------------------------------------------------------------
 // The longer explanations wait behind an (i) key beside their heading, in a popover (the browser
@@ -2953,6 +2998,7 @@ initTeach({ getBoard: () => selected });
 initVoice({ getBoard: () => selected, getBoards: () => [...boards.values()], isRecording: () => recorder.active, getColors: () => colors });
 initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
+  if (show) $("panel-dialog").close(); // a session dropped on the page opens Replay from over it
   $("replay").hidden = !show;
   mainEl.hidden = show;
   $("replay-key").setAttribute("aria-pressed", String(show));

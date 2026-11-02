@@ -25,7 +25,7 @@ export const DEFAULT_VOCABULARY = {
   phrases: [{ label: "toggle_cursor", say: "toggle cursor", action: "mouse_toggle" }],
 };
 
-/** The words for spelling a name: training/vocabulary.py's SPELLER spells the same (a test checks). */
+/** The words for spelling a name, and numbers: training/vocabulary.py's SPELLER spells the same (a test checks). */
 export const SPELLER_VOCABULARY = {
   version: 1,
   name: "spelling",
@@ -56,9 +56,19 @@ export const SPELLER_VOCABULARY = {
     { label: "xray", say: "x-ray", action: "spell" },
     { label: "yankee", say: "yankee", action: "spell" },
     { label: "zulu", say: "zulu", action: "spell" },
+    { label: "zero", say: "zero", action: "spell" },
+    { label: "one", say: "one", action: "spell" },
+    { label: "two", say: "two", action: "spell" },
+    { label: "three", say: "three", action: "spell" },
+    { label: "four", say: "four", action: "spell" },
+    { label: "five", say: "five", action: "spell" },
+    { label: "six", say: "six", action: "spell" },
+    { label: "seven", say: "seven", action: "spell" },
+    { label: "eight", say: "eight", action: "spell" },
+    { label: "nine", say: "nine", action: "spell" },
+    { label: "ten", say: "ten", action: "spell" },
     { label: "space", say: "space", action: "spell" },
     { label: "delete", say: "delete", action: "spell" },
-    { label: "done", say: "done", action: "spell" },
   ],
 };
 
