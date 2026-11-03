@@ -57,3 +57,31 @@ export function removeYaw(q, yawDeg) {
   const half = (-yawDeg / DEG) / 2;
   return quatMultiply({ w: Math.cos(half), x: 0, y: 0, z: Math.sin(half) }, q);
 }
+
+/**
+ * The shortest rotation taking unit vector `from` onto unit vector `to`. Composed onto a pose,
+ * quatMultiply(quatFromTo(from, to), q), it tips the board without turning its heading: the pose
+ * the calibration's guide asks for.
+ */
+export function quatFromTo(from, to) {
+  const [ax, ay, az] = from;
+  const [bx, by, bz] = to;
+  const cos = ax * bx + ay * by + az * bz;
+  if (cos < -1 + 1e-9) {
+    // Opposite: a half turn about any axis square to `from`.
+    const [px, py, pz] = Math.abs(ax) < 0.9 ? [0, -az, ay] : [az, 0, -ax];
+    const length = Math.hypot(px, py, pz);
+    return { w: 0, x: px / length, y: py / length, z: pz / length };
+  }
+  const q = { w: 1 + cos, x: ay * bz - az * by, y: az * bx - ax * bz, z: ax * by - ay * bx };
+  const length = Math.hypot(q.w, q.x, q.y, q.z);
+  return { w: q.w / length, x: q.x / length, y: q.y / length, z: q.z / length };
+}
+
+/** Pose q tipped the shortest way until its own `bodyVector` (IMU frame) points straight up. */
+export function uprightPose(q, bodyVector) {
+  return quatMultiply(quatFromTo(rotateVector(q, bodyVector), [0, 0, 1]), q);
+}
+
+/** The pose as the pose view shows it: its heading counted from `yawZero` (Zero yaw). */
+export const zeroedPose = (quat, yawZero) => removeYaw(quat, headingChangeDegrees({ w: 1, x: 0, y: 0, z: 0 }, yawZero));

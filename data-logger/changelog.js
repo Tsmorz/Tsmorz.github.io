@@ -8,6 +8,35 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-02-no-teaching",
+    date: "2026-11-02",
+    title: "Teaching a phrase is gone",
+    items: [
+      "Keyword clips is one page: the spelling words, with Record background audio beside them. The Toggle cursor tab is gone. Enter records like Space. Settings › Voice › Teach a phrase is removed, and so is the model format that learned phrases on the board: a voice model now carries its own phrases. The spelling words no longer include “ten” or “delete”.",
+    ],
+  },
+  {
+    id: "2026-11-02-gyro-spectrum",
+    date: "2026-11-02",
+    firmware: "1.5.0",
+    title: "Gyro spectrum",
+    items: [
+      "Motion shows acceleration first, then angular rate with the gyro's spectrum under it: the power at each frequency up to about 104 Hz for X, Y, Z and the rotation's speed |ω|, updated every 0.6 s, with each curve's loudest frequency above it. One color key in Motion's heading now covers all three plots. avg sets how many updates each curve averages.",
+      "The board works it out from every sample, so it doesn't miss any while the board is a mouse or the link is busy. It's live only, not recorded.",
+    ],
+  },
+  {
+    id: "2026-11-02-imu-calibration",
+    date: "2026-11-02",
+    firmware: "1.5.0",
+    title: "Calibrate a board's IMU",
+    items: [
+      "Settings › IMU calibration › Calibrate… measures the accelerometer from six still faces and the gyroscope from ten turns about each axis, with the orientation view showing where to put the board next. The board keeps the result and corrects every reading with it.",
+      "Orientation follows turns more closely: the board now uses its IMU's measured sample rate, which made every turn about half a percent too large.",
+      "Recordings keep the sensor's own readings; a live session's session.json lists each board's calibration.",
+    ],
+  },
+  {
     id: "2026-11-01-enlarge-panels",
     date: "2026-11-01",
     title: "Enlarge a data panel",
@@ -16,14 +45,14 @@ export const CHANGELOG = [
   {
     id: "2026-11-01-short-voice-clips",
     date: "2026-11-01",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Keep short voice clips free of previous audio",
     items: ["On-board phrase learning now pads short clips with silence instead of including leftover audio from a previous clip."],
   },
   {
     id: "2026-11-01-hold-to-record",
     date: "2026-11-01",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Hold Space to record a clip",
     items: [
       "Settings › Voice › Keyword clips records while you hold Space or the record button, and saves just that, up to 1.5 s. Boards need the new firmware.",
@@ -47,14 +76,14 @@ export const CHANGELOG = [
   {
     id: "2026-11-01-third-connection",
     date: "2026-11-01",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Find a board that's already on a gateway",
     items: ["A board now takes three Bluetooth connections, not two, so one connected to your computer and a gateway stays visible to Add board."],
   },
   {
     id: "2026-10-31-mouse-interval",
     date: "2026-10-31",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Request faster mouse updates",
     items: ["The board requests a 7.5 ms Bluetooth interval with no skipped events. Your computer decides the interval it grants."],
   },
@@ -80,7 +109,7 @@ export const CHANGELOG = [
   {
     id: "2026-10-31-teach-a-phrase",
     date: "2026-10-31",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Teach a board your own phrase",
     items: [
       "Settings › Voice › Teach a phrase: say a phrase three to five times and the board learns it, with no training on a computer. Your voice stays on the board.",
@@ -89,7 +118,7 @@ export const CHANGELOG = [
   {
     id: "2026-10-31-gateway-pose",
     date: "2026-10-31",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "A gateway can see how a board is lying, and hears when it moves",
     items: [
       "Boards now send a gateway their orientation, and an alert when they're moved after 10 minutes or more of sitting still.",
@@ -98,7 +127,7 @@ export const CHANGELOG = [
   {
     id: "2026-10-31-refused-model",
     date: "2026-10-31",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Refused voice models no longer restart a board",
     items: [
       "Uploading a voice model the board can't run, more than once, could crash and restart it. Now it just says no.",
@@ -107,7 +136,7 @@ export const CHANGELOG = [
   {
     id: "2026-10-31-thermometer",
     date: "2026-10-31",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Calibrate a board's thermometer",
     items: [
       "Settings › Thermometer corrects a board's temperature against a real thermometer. The board remembers it, and the page and gateway readings use it. Recordings keep the sensor's own reading.",
@@ -116,7 +145,7 @@ export const CHANGELOG = [
   {
     id: "2026-10-31-gateway",
     date: "2026-10-31",
-    firmware: "next",
+    firmware: "1.5.0",
     title: "Readings on your phone through a gateway",
     items: [
       "A board can now pair with an ESP32 gateway on your WiFi, which sends its temperature and battery to your phone as notifications, and tells you when the board goes to sleep or goes quiet.",

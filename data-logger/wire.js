@@ -17,6 +17,7 @@ export const TELEMETRY_IMU_RANGES = "6f524c01-0008-4a3c-9d21-1122334455aa";
 export const TELEMETRY_MOTION_WAKE = "6f524c01-0009-4a3c-9d21-1122334455aa";
 export const TELEMETRY_CLOCK = "6f524c01-000a-4a3c-9d21-1122334455aa";
 export const TELEMETRY_TEMPERATURE_OFFSET = "6f524c01-000b-4a3c-9d21-1122334455aa";
+export const TELEMETRY_IMU_CALIBRATION = "6f524c01-000c-4a3c-9d21-1122334455aa";
 export const DATA_SERVICE = "6f524c03-0001-4a3c-9d21-1122334455aa";
 export const DATA_IMU = "6f524c03-0002-4a3c-9d21-1122334455aa";
 export const DATA_ENVELOPE = "6f524c03-0003-4a3c-9d21-1122334455aa";
@@ -24,6 +25,7 @@ export const DATA_EVENTS = "6f524c03-0004-4a3c-9d21-1122334455aa";
 export const DATA_INFO = "6f524c03-0005-4a3c-9d21-1122334455aa";
 export const DATA_SPECTRUM = "6f524c03-0006-4a3c-9d21-1122334455aa";
 export const DATA_CLOCK = "6f524c03-0007-4a3c-9d21-1122334455aa";
+export const DATA_GYRO_SPECTRUM = "6f524c03-0008-4a3c-9d21-1122334455aa";
 // On-board recording (src/logger/log_service.c; formats in src/log_format.h, LOG_WIRE_VERSION).
 export const LOG_SERVICE = "6f524c04-0001-4a3c-9d21-1122334455aa";
 export const LOG_COMMAND = "6f524c04-0002-4a3c-9d21-1122334455aa";
@@ -40,14 +42,12 @@ export const KEYWORD_SETTINGS = "6f524c05-0004-4a3c-9d21-1122334455aa";
 export const KEYWORD_AUDIO = "6f524c05-0005-4a3c-9d21-1122334455aa";
 export const KEYWORD_MODEL = "6f524c05-0006-4a3c-9d21-1122334455aa";
 export const KEYWORD_VOCABULARY = "6f524c05-0007-4a3c-9d21-1122334455aa";
-export const KEYWORD_ENROLL = "6f524c05-0008-4a3c-9d21-1122334455aa";
 // Everything a voice command can do, in the order of src/voice_commands.h's enum voice_action,
 // whose codes start at 2 (training/vocabulary.py's ACTIONS: tests check all three agree). Which
 // phrase does which is the uploaded model's business.
 export const VOICE_ACTIONS = ["mouse_on", "mouse_off", "record_start", "record_stop", "sleep", "mark", "mouse_toggle"];
 const FIRST_ACTION_CODE = 2;
 export const voiceActionName = (code) => VOICE_ACTIONS[code - FIRST_ACTION_CODE] ?? null;
-export const voiceActionCode = (name) => VOICE_ACTIONS.indexOf(name) + FIRST_ACTION_CODE;
 export const VOICE_OUTCOMES = ["done", "say again", "not this board's", "refused"];
 // src/keyword_wire.h's enum keyword_model_state, and src/voice_package.h's enum voice_package_result.
 export const MODEL_STATES = ["none", "loading", "ready", "receiving", "saving", "failed"];
@@ -77,6 +77,9 @@ const ENVELOPE_HEADER_BYTES = 10;
 const SPECTRUM_HEADER_BYTES = 13;
 // A spectrum level byte is half-dB steps above this (MIC_SPECTRUM_FLOOR_DBFS in mic_spectrum.h).
 export const SPECTRUM_FLOOR_DBFS = -127.5;
+const GYRO_SPECTRUM_HEADER_BYTES = 18;
+// enum gyro_spectrum_channel in gyro_spectrum.h: the order of a gyro spectrum frame's channels.
+export const GYRO_SPECTRUM_CHANNELS = ["x", "y", "z", "magnitude"];
 const EVENT_BYTES = 12;
 const BOARD_INFO_BYTES = 20;
 const Q14 = 16384;
@@ -145,6 +148,31 @@ export function decodeSpectrumBatch(view) {
     tUs: view.getUint32(9, true),
     bins,
     frames,
+  };
+}
+
+/**
+ * Decodes one channel of a gyro spectrum frame (GYRO_SPECTRUM_CHANNELS): the power spectral density
+ * of every frequency bin in dB re 1 (°/s)²/Hz (floorDb or below reads as the floor). Bin b is
+ * centered on b * rateHz / (2 * bins); frames start hopSamples IMU samples apart.
+ */
+export function decodeGyroSpectrum(view) {
+  if (view.byteLength < GYRO_SPECTRUM_HEADER_BYTES || view.getUint8(0) !== DATA_VERSION) return null;
+  const channel = view.getUint8(1);
+  const bins = view.getUint8(2);
+  if (!bins || channel >= GYRO_SPECTRUM_CHANNELS.length || view.byteLength !== GYRO_SPECTRUM_HEADER_BYTES + bins) return null;
+  const floorDb = view.getInt8(3);
+  const levels = new Float32Array(bins);
+  for (let b = 0; b < bins; b++) levels[b] = view.getUint8(GYRO_SPECTRUM_HEADER_BYTES + b) / 2 + floorDb;
+  return {
+    channel,
+    bins,
+    floorDb,
+    hopSamples: view.getUint16(4, true),
+    frame: view.getUint32(6, true),
+    tUs: view.getUint32(10, true),
+    rateHz: view.getUint32(14, true) / 1000,
+    levels,
   };
 }
 
@@ -258,6 +286,32 @@ export function encodeTemperatureOffset(offsetC) {
 export function decodeTemperatureOffset(view) {
   if (view.byteLength !== 3 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
   return view.getInt16(1, true) / 100;
+}
+
+// The IMU's calibration (struct dashboard_imu_calibration, dashboard_wire.h; imu_format.h): the
+// accelerometer's offset (g) and gain, then the gyro's gain, per axis. A gain is the fraction the
+// value is multiplied up by (0.011 is ×1.011). µg and ppm on the wire.
+export const IMU_CALIBRATION_BYTES = 37;
+export const IMU_CAL_LIMITS = { accelOffsetG: 0.2, gain: 0.05 }; // IMU_CAL_ACCEL_OFFSET_MAX_UG, IMU_CAL_GAIN_MAX_PPM
+export const UNCALIBRATED = Object.freeze({ accelOffsetG: [0, 0, 0], accelGain: [0, 0, 0], gyroGain: [0, 0, 0] });
+
+/** Encodes a calibration as dashboard_decode_imu_calibration() expects; null for one it refuses. */
+export function encodeImuCalibration({ accelOffsetG, accelGain, gyroGain }) {
+  const words = [...accelOffsetG.map((g) => Math.round(g * 1e6)), ...[...accelGain, ...gyroGain].map((gain) => Math.round(gain * 1e6))];
+  const limits = [...Array(3).fill(IMU_CAL_LIMITS.accelOffsetG * 1e6), ...Array(6).fill(IMU_CAL_LIMITS.gain * 1e6)];
+  if (words.length !== 9 || words.some((word, i) => !Number.isFinite(word) || Math.abs(word) > Math.round(limits[i]))) return null;
+  const bytes = new Uint8Array(IMU_CALIBRATION_BYTES);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, PROTOCOL_VERSION);
+  words.forEach((word, i) => view.setInt32(1 + 4 * i, word, true));
+  return bytes;
+}
+
+/** Decodes the board's calibration, or null if it is not one. */
+export function decodeImuCalibration(view) {
+  if (view.byteLength !== IMU_CALIBRATION_BYTES || view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  const word = (i) => view.getInt32(1 + 4 * i, true) / 1e6;
+  return { accelOffsetG: [0, 1, 2].map(word), accelGain: [3, 4, 5].map(word), gyroGain: [6, 7, 8].map(word) };
 }
 
 // The radio clock sync (struct dashboard_clock_status, dashboard_wire.h).
@@ -506,38 +560,6 @@ export function decodeModelStatus(view) {
     totalBytes: view.getUint32(8, true),
     crc: view.getUint32(12, true),
     maxBytes: view.getUint32(16, true),
-  };
-}
-
-// ---- teaching the board a phrase: begin, takes, finish (KEYWORD_CMD_ENROLL_*) ----
-export const ENROLL_STATES = ["idle", "ready", "capturing", "thinking"]; // enum keyword_enroll_state
-export const ENROLL_PHRASE_MAX_BYTES = 24; // VOICE_PACKAGE_PHRASE_MAX
-const ENROLL_STATUS_BYTES = 12;
-export const ENROLL_NOTHING_HEARD = 0xff; // KEYWORD_ENROLL_NOTHING_HEARD
-
-export function encodeEnrollBegin(slot, action, phrase) {
-  const text = new TextEncoder().encode(phrase);
-  return Uint8Array.of(KEYWORD_VERSION, 10, slot, voiceActionCode(action), ...text);
-}
-export const encodeEnrollTake = () => Uint8Array.of(KEYWORD_VERSION, 11);
-export const encodeEnrollFinish = () => Uint8Array.of(KEYWORD_VERSION, 12);
-export const encodeEnrollCancel = () => Uint8Array.of(KEYWORD_VERSION, 13);
-export const encodeEnrollForget = (slot) => Uint8Array.of(KEYWORD_VERSION, 14, slot);
-
-/** How teaching is going, and whether the loaded model learns and which slots hold phrases. */
-export function decodeEnrollStatus(view) {
-  if (view.byteLength !== ENROLL_STATUS_BYTES || view.getUint8(0) !== KEYWORD_VERSION) return null;
-  return {
-    state: ENROLL_STATES[view.getUint8(1)] ?? "unknown",
-    result: view.getUint8(2),
-    heardNothing: view.getUint8(2) === ENROLL_NOTHING_HEARD,
-    slot: view.getUint8(3),
-    takes: view.getUint8(4),
-    outlier: view.getUint8(5),
-    agreement: view.getInt16(6, true) / 1000,
-    distinction: view.getInt16(8, true) / 100,
-    learns: view.getUint8(10) !== 0,
-    usedSlots: view.getUint8(11),
   };
 }
 

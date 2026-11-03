@@ -5,17 +5,19 @@
 // they come but not shown.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_ENROLL, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
+  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_GYRO_SPECTRUM, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
   KEYWORD_VOCABULARY, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
-  TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET,
+  TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET, TELEMETRY_IMU_CALIBRATION,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
-  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset,
+  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeGyroSpectrum, decodeTemperatureOffset, decodeImuCalibration, encodeImuCalibration,
   encodeClipHold, encodeClipRelease, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
-  MODEL_CHUNK_BYTES, decodeEnrollStatus, decodeModelStatus, decodeVocabulary, encodeEnrollBegin, encodeEnrollCancel, encodeEnrollFinish, encodeEnrollForget, encodeEnrollTake, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
+  MODEL_CHUNK_BYTES, decodeModelStatus, decodeVocabulary, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
 import { ClipAssembler } from "./clips.js";
+import { applyCalibration } from "./imu-calibration.js";
+import { addGyroChannel, newGyroSpectrum } from "./gyro-spectrum.js";
 import { samplesFromBytes, takeFromMailbox } from "./mailbox.js";
 import { RateMeter } from "./rate-meter.js";
 import { TimeUnwrapper, restartedSince } from "./recording.js";
@@ -49,8 +51,6 @@ function savedLabel(boardId) {
 // src/power/power.h; firmware-consistency test). The disconnect follows within moments.
 export const SLEEP_HOLD_US = 5000 * 1000;
 const HOLD_SLEEP_DISCONNECT_MS = 5000;
-const ENROLL_STEP_MS = 5000;
-const ENROLL_TAKE_MS = 8000; // 2 s to record, then the network
 
 export class Board extends EventTarget {
   /**
@@ -92,16 +92,19 @@ export class Board extends EventTarget {
     this.canCaptureClips = false; // whether this firmware has the keyword service
     this.voice = null; // { listening, obeyed, hasModel, takesModels }, if this firmware has voice settings
     this.voiceHeard = []; // the latest keyword events: { action, outcome, hostMs }
-    this.enrollment = null; // how teaching a phrase goes (decodeEnrollStatus), if this firmware learns
     this.voiceModel = null; // the model's status (decodeModelStatus), if this firmware takes uploaded models
     this.vocabulary = null; // { name, commands: [{ action, phrase }] } of the loaded model
     this.modelWaiter = null; // resolves with the status once an upload or removal has finished
     this.audioStream = null; // the background-audio stream running, if any
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
     this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
+    this.hasGyroSpectrum = false; // whether this firmware sends the gyro's
     this.imuRanges = null; // { gyroDps, accelG }, if this firmware lets them be chosen
     this.temperatureC = null; // the IMU's own reading, if this firmware reports it
     this.temperatureOffsetC = null; // what to add to it on this board, if this firmware keeps one
+    this.imuCalibration = null; // { accelOffsetG, accelGain, gyroGain } (wire.js), if this firmware keeps one
+    // Called with every IMU sample, uncalibrated, while the Calibrate dialog measures this board.
+    this.imuTap = null;
     this.motionWake = null; // whether moving the board wakes it from sleep, if this firmware can
     this.clock = null; // { role, state, sourceBoard } of the radio clock sync, if this firmware has it
     this.clockPairs = 0; // radio clock pairs received this connection
@@ -131,6 +134,7 @@ export class Board extends EventTarget {
     this.envelopeEndUs = null;
     this.spectrum = []; // the last ENVELOPE_SECONDS of { tUs, levels } frames, levels in dBFS per bin
     this.spectrumFrameUs = 0;
+    this.gyroSpectrum = newGyroSpectrum(); // the last few gyro spectrum frames (gyro-spectrum.js)
     this.lastSeq = null;
     this.lastWindow = null;
     this.lastEventSeq = null;
@@ -201,6 +205,7 @@ export class Board extends EventTarget {
     this.chars.envelope = await subscribe(data, DATA_ENVELOPE, (view) => this.onEnvelope(view));
     this.chars.events = await subscribe(data, DATA_EVENTS, (view) => this.onEvent(view));
     await this.connectSpectrum(data, subscribe);
+    await this.connectGyroSpectrum(data, subscribe);
     await this.connectClockPairs(data, subscribe);
 
     const control = await server.getPrimaryService(TELEMETRY_SERVICE);
@@ -213,6 +218,7 @@ export class Board extends EventTarget {
     await this.connectImuRanges(control);
     await this.connectMotionWake(control);
     await this.connectTemperatureOffset(control);
+    await this.connectImuCalibration(control);
     await this.connectClock(control, subscribe);
 
     await this.connectLog(server, subscribe);
@@ -272,6 +278,16 @@ export class Board extends EventTarget {
     this.hasSpectrum = true;
   }
 
+  // Nor does firmware from before the gyro's.
+  async connectGyroSpectrum(data, subscribe) {
+    try {
+      await subscribe(data, DATA_GYRO_SPECTRUM, (view) => this.onGyroSpectrum(view));
+    } catch {
+      return;
+    }
+    this.hasGyroSpectrum = true;
+  }
+
   // Firmware from before the radio clock sync has none of the next three; the rest still works.
   async connectClockPairs(data, subscribe) {
     try {
@@ -306,6 +322,26 @@ export class Board extends EventTarget {
       return;
     }
     this.temperatureOffsetC = decodeTemperatureOffset(await this.chars.temperatureOffset.readValue());
+  }
+
+  async connectImuCalibration(control) {
+    try {
+      this.chars.imuCalibration = await control.getCharacteristic(TELEMETRY_IMU_CALIBRATION);
+    } catch {
+      return;
+    }
+    this.imuCalibration = decodeImuCalibration(await this.chars.imuCalibration.readValue());
+  }
+
+  /** Saves a calibration on the board (applied from its next sample on), then reads it back. */
+  async setImuCalibration(calibration) {
+    const bytes = encodeImuCalibration(calibration);
+    if (!this.chars.imuCalibration) throw new Error("this board's firmware can't keep a calibration: update it");
+    if (!bytes) throw new Error("that calibration is beyond what the board accepts");
+    await this.write(this.chars.imuCalibration, bytes);
+    this.imuCalibration = decodeImuCalibration(await this.queue(() => this.chars.imuCalibration.readValue()));
+    this.changed();
+    return this.imuCalibration;
   }
 
   /** The IMU's temperature with this board's calibration, for showing; recordings keep the sensor's own. */
@@ -392,21 +428,8 @@ export class Board extends EventTarget {
     } catch {
       return; /* firmware from before uploadable models (or built without them) */
     }
-    try {
-      this.chars.enrollment = await subscribe(service, KEYWORD_ENROLL, (view) => this.onEnrollStatus(view));
-    } catch {
-      /* firmware from before phrases learned on the board */
-    }
     this.onModelStatus(await this.chars.voiceModel.readValue());
     await this.readVocabulary();
-  }
-
-  onEnrollStatus(view) {
-    const status = decodeEnrollStatus(view);
-    if (!status) return;
-    this.enrollment = status;
-    if (["idle", "ready"].includes(status.state)) this.enrollWaiter?.resolve(status);
-    this.changed();
   }
 
   onModelStatus(view) {
@@ -420,7 +443,6 @@ export class Board extends EventTarget {
   async readVocabulary() {
     this.vocabulary = decodeVocabulary(await this.queue(() => this.chars.vocabulary.readValue()));
     if (this.voice) this.voice = decodeKeywordSettings(await this.queue(() => this.chars.voiceSettings.readValue()));
-    if (this.chars.enrollment) this.onEnrollStatus(await this.queue(() => this.chars.enrollment.readValue()));
     this.changed();
   }
 
@@ -465,46 +487,6 @@ export class Board extends EventTarget {
     await this.readVocabulary();
     if (status.result !== "ok" || status.state !== "ready") throw new Error(modelResultText(status));
     return status;
-  }
-
-  // One step of teaching: the board's answer can come before the write's, so wait first.
-  async enrollStep(bytes, ms) {
-    if (!this.enrollment?.learns) throw new Error("this board's model can't learn phrases: upload one that does");
-    const waiter = {};
-    const settled = new Promise((resolve, reject) => Object.assign(waiter, { resolve, reject }));
-    const timer = setTimeout(() => waiter.reject(new Error("the board didn't say how it went")), ms);
-    this.enrollWaiter = waiter;
-    try {
-      await this.write(this.chars.keywordCommand, bytes);
-      return await settled;
-    } finally {
-      clearTimeout(timer);
-      this.enrollWaiter = null;
-    }
-  }
-
-  enrollBegin(slot, action, phrase) {
-    return this.enrollStep(encodeEnrollBegin(slot, action, phrase), ENROLL_STEP_MS);
-  }
-
-  /** Records and embeds one take (2 s, LED magenta), whose result the returned status holds. */
-  enrollTake() {
-    return this.enrollStep(encodeEnrollTake(), ENROLL_TAKE_MS);
-  }
-
-  async enrollFinish() {
-    const status = await this.enrollStep(encodeEnrollFinish(), ENROLL_STEP_MS);
-    await this.readVocabulary();
-    return status;
-  }
-
-  enrollCancel() {
-    return this.enrollStep(encodeEnrollCancel(), ENROLL_STEP_MS);
-  }
-
-  async enrollForget(slot) {
-    await this.enrollStep(encodeEnrollForget(slot), ENROLL_STEP_MS);
-    await this.readVocabulary();
   }
 
   /** Erases the board's voice model: it stops listening. */
@@ -742,13 +724,28 @@ export class Board extends EventTarget {
     this.recording?.addImu(samples, batch.gyroBiasDps, hostMs);
 
     const [bx, by, bz] = batch.gyroBiasDps;
+    const g = this.info.gyroDpsPerLsb;
+    const a = this.info.accelGPerLsb;
+    if (this.imuTap) {
+      // A count at either end of its range means the reading clipped.
+      const clipped = (raw) => raw >= 32767 || raw <= -32768;
+      this.imuTap(samples.map((s) => ({
+        seq: s.seq,
+        tUs: s.tUs,
+        gyroDps: s.gyroRaw.map((raw) => raw * g),
+        accelG: s.accelRaw.map((raw) => raw * a),
+        saturated: s.gyroRaw.some(clipped) || s.accelRaw.some(clipped),
+      })));
+    }
     for (const s of samples) {
       if (s.seq % DISPLAY_DECIMATION !== 0) continue;
-      const g = this.info.gyroDpsPerLsb;
-      const a = this.info.accelGPerLsb;
-      // Shown with the bias removed, as the old telemetry stream was; recorded raw.
-      push(this.gyro, [s.gyroRaw[0] * g - bx, s.gyroRaw[1] * g - by, s.gyroRaw[2] * g - bz]);
-      push(this.accel, s.accelRaw.map((raw) => raw * a));
+      // Shown calibrated, as VQF sees them, with the bias removed (VQF's estimate is of the
+      // calibrated gyro), as the old telemetry stream was; recorded raw.
+      const shown = this.imuCalibration
+        ? applyCalibration(this.imuCalibration, s.accelRaw.map((raw) => raw * a), s.gyroRaw.map((raw) => raw * g))
+        : { accelG: s.accelRaw.map((raw) => raw * a), gyroDps: s.gyroRaw.map((raw) => raw * g) };
+      push(this.gyro, [shown.gyroDps[0] - bx, shown.gyroDps[1] - by, shown.gyroDps[2] - bz]);
+      push(this.accel, shown.accelG);
     }
 
     const last = samples[samples.length - 1];
@@ -798,6 +795,13 @@ export class Board extends EventTarget {
     const oldest = this.spectrum.at(-1).tUs - ENVELOPE_SECONDS * 1e6;
     while (this.spectrum[0].tUs < oldest) this.spectrum.shift();
     this.markSeen("spectrum");
+  }
+
+  onGyroSpectrum(view) {
+    const decoded = decodeGyroSpectrum(view);
+    if (!decoded) return;
+    addGyroChannel(this.gyroSpectrum, decoded);
+    this.markSeen("gyro-spectrum");
   }
 
   onEvent(view) {

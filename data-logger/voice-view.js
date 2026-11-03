@@ -9,7 +9,7 @@ import { isArrow, nearestWay } from "./arrow-keys.js";
 import { fitCanvas, hairline } from "./canvas.js";
 import { decodeAdpcm } from "./adpcm.js";
 import {
-  ACTION_TEXT, AudioTrack, DEFAULT_VOCABULARY, SPELLER_VOCABULARY, WAV_HEADER_BYTES, clipFileName, clipLevels, encodeWav, nextWord, pcmBytes, wavHeader,
+  ACTION_TEXT, AudioTrack, SPELLER_VOCABULARY, WAV_HEADER_BYTES, clipFileName, clipLevels, encodeWav, nextWord, pcmBytes, wavHeader,
 } from "./clips.js";
 import {
   CLIP_SAMPLES, HOLD_LEAD_SAMPLES, HOLD_TAIL_SAMPLES, MIN_SECTION_SAMPLES, clipAround, following, grabbedEdge, heldSection, panned, sameSection, sampleAt, sectionBetween, wholeClip, xOf, zoomed,
@@ -25,15 +25,13 @@ import { parseVoicePackage } from "./voicepkg.js";
 const $ = (id) => document.getElementById(id);
 const FOLDER_KEY = "keyword-folder";
 const SPEAKER_KEY = "voice-speaker";
-const MODE_KEY = "voice-mode";
 const TARGET_KEY = "voice-target";
 const BACKGROUND_FOLDER = "background"; // not a label: training cuts it into _silence and _unknown pieces
-const [PHRASE] = DEFAULT_VOCABULARY.phrases;
 const SPELLING = SPELLER_VOCABULARY.phrases;
 const READ_WRITE = { mode: "readwrite" };
 const MAX_HOLD_MS = (CLIP_SAMPLES - HOLD_LEAD_SAMPLES - HOLD_TAIL_SAMPLES) / 16; // at 16 kHz
 const MIN_HOLD_MS = 200; // anything less was a tap, not a word
-const ARROW_STOPS = 'button:not(:disabled), input[name="voice-mode"]:checked';
+const ARROW_STOPS = "button:not(:disabled)";
 const LEVEL_FLOOR_DBFS = -80; // the room, on the level meter (the mic's words peak near -35)
 const LEVEL_PEAKS = 80; // about the last 80 ms
 
@@ -46,9 +44,8 @@ let modelBusy = false; // uploading a model to the boards, or removing one
 let modelStatus = null; // { text, bad, until } of an upload or removal: shown while it runs, then a while
 const MODEL_STATUS_MS = 20000;
 let folderState = "none"; // collect.js's nextStep() says what each means
-let mode = "spelling"; // spelling, phrase or background
 let target = DEFAULT_TARGET; // clips to aim for of each word
-let word = PHRASE; // what the next clip records
+let word = SPELLING[0]; // what the next clip records
 const wordClips = new Map(); // label -> clips in its subfolder
 let backgroundFiles = 0; // recordings in the background subfolder
 // The last saying: a clip per board, { label, say, name, boardId, samples, rateHz, saved, held, kept }
@@ -123,13 +120,6 @@ export function initVoice(options) {
   window.addEventListener("pointerup", releaseRecord);
   window.addEventListener("pointercancel", releaseRecord);
   window.addEventListener("blur", releaseRecord);
-  for (const input of document.querySelectorAll('input[name="voice-mode"]')) {
-    input.addEventListener("change", () => {
-      setMode(input.value);
-      remember(MODE_KEY, mode);
-      if (!input.matches(":focus-visible")) input.blur(); // clicked: the arrows go to the buttons
-    });
-  }
   $("voice-play").addEventListener("click", play);
   $("voice-discard").addEventListener("click", discard);
   $("voice-keep").addEventListener("click", keepSection);
@@ -140,8 +130,8 @@ export function initVoice(options) {
   // stays record on any button, or a word could be lost to a focus ring nobody was looking at. Not
   // while typing, and on the window: clicking the waveform to trim leaves the focus outside the dialog.
   window.addEventListener("keydown", (event) => {
-    if (!$("voice-dialog").open || mode === "background" || isTyping(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.key === " " || (event.key === "Enter" && event.target === $("voice-capture"))) {
+    if (!$("voice-dialog").open || background.size || isTyping(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.key === " " || (event.key === "Enter" && recordsOnEnter(event.target))) {
       event.preventDefault();
       if (!event.repeat) pressRecord();
     } else if (event.repeat) {
@@ -159,7 +149,7 @@ export function initVoice(options) {
     event.preventDefault();
     releaseRecord();
   });
-  // Apart from the listener above, which stands down on the Background audio tab.
+  // Apart from the listener above, which stands down while background audio records.
   window.addEventListener("keydown", (event) => {
     if (!$("voice-dialog").open || isTyping(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
     if (isArrow(event.key)) moveFocus(event);
@@ -181,9 +171,8 @@ export function initVoice(options) {
       if (event.key === "Enter") event.target.blur();
     });
   }
-  const choice = document.querySelector(`input[name="voice-mode"][value="${remembered(MODE_KEY)}"]`);
-  if (choice) choice.checked = true;
-  setMode(choice?.value ?? mode);
+  buildWords();
+  renderVoice();
   $("voice-bg-record").addEventListener("click", () => (background.size ? stopBackground() : startBackground()));
   $("voice-listen").addEventListener("click", () => {
     const board = getBoard();
@@ -224,34 +213,24 @@ function chooseWord(phrase) {
   renderVoice();
 }
 
+/** Enter records like Space, except on a button that does something else with it (Play, Redo, ⓘ…). */
+const recordsOnEnter = (target) => !target.matches?.("button") || target === $("voice-capture") || $("voice-words").contains(target);
+
 /**
  * Moves to the button that way, from the focused one or else the current word. A word key chooses
  * its word on arrival: otherwise the ring could sit on one word while Space recorded another.
  */
 function moveFocus(event) {
-  const onTab = event.target.matches?.('input[name="voice-mode"]');
-  if (onTab && (event.key === "ArrowLeft" || event.key === "ArrowRight")) return; // the browser changes tab
   event.preventDefault();
   if (recordDown) return;
   const stops = [...$("voice-dialog").querySelectorAll(ARROW_STOPS)].filter((stop) => stop.getClientRects().length);
   const from = [document.activeElement, currentWordKey(), stops[0]].find((stop) => stops.includes(stop));
   if (!from) return;
-  const box = (stop) => (stop.closest("label") ?? stop).getBoundingClientRect(); // a tab's input is hidden in its label
+  const box = (stop) => stop.getBoundingClientRect();
   const to = stops[nearestWay(event.key, box(from), stops.map(box))] ?? from;
   to.focus();
-  if (to.dataset.label) chooseWord(phrases().find(({ label }) => label === to.dataset.label));
+  if (to.dataset.label) chooseWord(SPELLING.find(({ label }) => label === to.dataset.label));
 }
-
-function setMode(value) {
-  mode = value;
-  if (mode === "phrase") word = PHRASE;
-  else if (mode === "spelling") word = nextWord(SPELLING, wordClips, word === PHRASE ? SPELLING.at(-1) : word);
-  buildWords();
-  renderVoice();
-}
-
-/** The words of the mode being recorded. */
-const phrases = () => (mode === "phrase" ? [PHRASE] : SPELLING);
 
 // Shown at once, before the board confirms: the page redraws from board.voice every 250 ms, so
 // without this a switch would flip back for the moment the write takes. Put back if the board refuses.
@@ -287,7 +266,6 @@ function voiceStatusText(board, voice) {
   if (!model || model.state === "none") return "No voice model on this board: upload one (a .voice file from task training:export).";
   if (model.state === "failed") return `Its stored model was refused: ${modelResultText(model)}. Upload another.`;
   if (model.state !== "ready" && model.state !== "saving") return "Loading a voice model…";
-  if (board.enrollment?.learns && !board.enrollment.usedSlots) return "Its model learns your own phrases: press Teach a phrase.";
   return voice.listening ? "Listening for its commands." : "Not listening: it ignores every command.";
 }
 
@@ -350,7 +328,7 @@ async function uploadModel(file) {
   const phrases = model.commands.map(({ phrase }) => `“${phrase}”`).join(", ");
   const verb = done.length === 1 ? "s" : "";
   setModelStatus([
-    done.length ? (model.learns ? `${done.join(", ")} can learn phrases now: Teach a phrase.` : `${done.join(", ")} now listen${verb} for ${phrases}.`) : "",
+    done.length ? `${done.join(", ")} now listen${verb} for ${phrases}.` : "",
     failed.length ? `Not uploaded to ${failed.join("; ")}.` : "",
   ].filter(Boolean).join(" "), failed.length > 0);
 }
@@ -375,7 +353,7 @@ export const voiceDialogOpen = () => $("voice-dialog").open;
 
 /** The words, one key each, for choosing what to record and seeing how far each has got. */
 function buildWords() {
-  $("voice-words").replaceChildren(...phrases().map((phrase) => {
+  $("voice-words").replaceChildren(...SPELLING.map((phrase) => {
     const key = Object.assign(document.createElement("button"), { type: "button" });
     key.dataset.label = phrase.label;
     key.append(Object.assign(document.createElement("span"), { textContent: phrase.say }), Object.assign(document.createElement("span"), { className: "count" }));
@@ -386,7 +364,7 @@ function buildWords() {
 
 function renderWords() {
   for (const key of $("voice-words").children) {
-    const { say } = phrases().find(({ label }) => label === key.dataset.label);
+    const { say } = SPELLING.find(({ label }) => label === key.dataset.label);
     const clips = wordClips.get(key.dataset.label) ?? 0;
     key.lastChild.textContent = String(clips);
     key.classList.toggle("finished", clips >= target);
@@ -397,8 +375,8 @@ function renderWords() {
     key.tabIndex = current ? 0 : -1; // Tab passes the grid in one step; the arrows go through it
     if (current && $("voice-words").contains(document.activeElement)) key.focus(); // the word moved on after a take
   }
-  const { clips, wanted, finished } = progress(phrases(), wordClips, target);
-  $("voice-progress-text").textContent = finished ? `All ${phrases().length === 1 ? "done" : `${phrases().length} words done`}: keep going if you like` : `${clips} of ${wanted} clips`;
+  const { clips, wanted, finished } = progress(SPELLING, wordClips, target);
+  $("voice-progress-text").textContent = finished ? `All ${SPELLING.length} words done: keep going if you like` : `${clips} of ${wanted} clips`;
 }
 
 function renderLevel(board) {
@@ -434,9 +412,6 @@ export function renderVoice() {
   const boards = captureBoards();
   const connected = getBoards().filter((board) => board.connected);
   const step = renderSetup(boards, connected);
-  const background = mode === "background";
-  $("voice-takes").hidden = background;
-  $("voice-background").hidden = !background;
   $("voice-board").textContent = boards.length ? `· ${boards.length === 1 ? boards[0].displayName : `${boards.length} boards`}` : "";
   $("voice-say").textContent = word.say;
   const clipsOfWord = wordClips.get(word.label) ?? 0;
@@ -448,9 +423,10 @@ export function renderVoice() {
   $("voice-last-take").textContent = lastSaid ? `Last take: ${lastSaid.say}${lastSaid.unheard ? " (not saved)" : ""}` : "Last take";
   $("voice-empty").hidden = Boolean(last);
   // Left enabled while held: a disabled button can swallow the release.
-  $("voice-capture").disabled = (busy && !recordDown) || Boolean(step);
+  $("voice-capture").disabled = (busy && !recordDown) || Boolean(step) || background.size > 0;
+  $("voice-bg-record").disabled = (busy || recordDown) && !background.size;
   $("voice-capture-text").textContent = recordDown ? "Recording: let go when you've finished"
-    : busy ? "Saving…" : `Hold Space to record${boards.length > 1 ? ` on ${boards.length} boards` : ""}`;
+    : busy ? "Saving…" : `Hold Space or Enter to record${boards.length > 1 ? ` on ${boards.length} boards` : ""}`;
   $("voice-capture").classList.toggle("recording", recordDown);
   $("voice-capture").setAttribute("aria-pressed", String(recordDown));
   $("voice-play").disabled = !last;
@@ -537,9 +513,9 @@ async function countWavs(name) {
 }
 
 async function recount() {
-  for (const { label } of [PHRASE, ...SPELLING]) wordClips.set(label, await countWavs(label));
+  for (const { label } of SPELLING) wordClips.set(label, await countWavs(label));
   backgroundFiles = await countWavs(BACKGROUND_FOLDER);
-  if (mode === "spelling" && !last) word = nextWord(SPELLING, wordClips, SPELLING.at(-1));
+  if (!last) word = nextWord(SPELLING, wordClips, SPELLING.at(-1));
   renderVoice();
 }
 
@@ -677,7 +653,7 @@ async function capture() {
 /** Counts `count` new clips of `spoken` (downloaded ones too, for this page load) and moves on. */
 function counted(spoken, count) {
   wordClips.set(spoken.label, (wordClips.get(spoken.label) ?? 0) + count);
-  if (spoken !== PHRASE && word === spoken) word = nextWord(SPELLING, wordClips, spoken); // unless one was chosen meanwhile
+  if (word === spoken) word = nextWord(SPELLING, wordClips, spoken); // unless one was chosen meanwhile
 }
 
 // ---- clips over the USB cable -------------------------------------------------------------
@@ -816,7 +792,7 @@ async function discard() {
     const saved = last.clips.filter((clip) => clip.saved);
     for (const clip of saved) await directory.removeEntry(clip.name);
     wordClips.set(label, Math.max(0, (wordClips.get(label) ?? 0) - saved.length));
-    word = phrases().find((phrase) => phrase.label === label) ?? word; // so it's said again
+    word = SPELLING.find((phrase) => phrase.label === label) ?? word; // so it's said again
     setStatus(`Discarded. Say “${word.say}” again.`);
     last = null;
     section = null;
@@ -869,7 +845,6 @@ function keepSection() {
       unheard.forEach((clip) => (clip.unheard = false));
       const [{ label, say }] = unheard;
       counted({ label, say }, unheard.length);
-      if (label === PHRASE.label) word = PHRASE;
       setStatus(`Saved “${say}”.`);
     } else {
       setStatus(`Kept ${seconds(start)}–${seconds(end)} s of ${last.clips.length} clip${last.clips.length === 1 ? "" : "s"}; room noise fills the rest of the file.`);
@@ -1123,7 +1098,7 @@ function renderBackground() {
   const seconds = Math.max(...recordings.map(({ track, rateHz }) => track.samples / rateHz));
   const lost = recordings.reduce((sum, { track, rateHz }) => sum + track.lostSamples / rateHz, 0);
   const who = recordings.length === 1 ? recordings[0].board.displayName : `${recordings.length} boards`;
-  setBackgroundStatus(`Recording from ${who}: ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}${lost ? `, ${lost.toFixed(1)} s lost` : ""}. Talk, play music, work as usual: just don't say ${word === PHRASE ? `“${PHRASE.say}”` : "the spelling words"}.`);
+  setBackgroundStatus(`Recording from ${who}: ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}${lost ? `, ${lost.toFixed(1)} s lost` : ""}. Talk, play music, work as usual: just don't say the spelling words.`);
 }
 
 function setBackgroundStatus(text, bad = false) {
