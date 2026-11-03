@@ -8,6 +8,51 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-02-moved-alert",
+    date: "2026-11-02",
+    firmware: "next",
+    title: "A gateway hears every move",
+    items: [
+      "A board with a gateway now sends “Moved after … still” each time it goes from at rest (the At rest lamp) to moving, however short the rest was. Before, it waited for 10 minutes still.",
+    ],
+  },
+  {
+    id: "2026-11-02-enter-records",
+    date: "2026-11-02",
+    title: "Enter records clips",
+    items: [
+      "In Keyword clips, hold Enter to record; Space no longer does. On Play, Redo and the other buttons with their own action, Enter presses them, and P, Backspace and Q still play, redo and close.",
+    ],
+  },
+  {
+    id: "2026-11-02-mouse-latency",
+    date: "2026-11-02",
+    firmware: "next",
+    title: "A quicker cursor",
+    items: [
+      "The board now sends each mouse report just before the computer's next radio slot, with all the motion since the last, and one in every slot instead of every other. The cursor should follow your hand sooner and more smoothly.",
+      "Latency's ack times are now when the computer acknowledged the report, as the panel says; before, they stopped when the board's radio took it. Held now counts slots a report had to skip, so expect it near 0%.",
+    ],
+  },
+  {
+    id: "2026-11-02-lighter-spectra",
+    date: "2026-11-02",
+    title: "No gyro spectrum; the mic spectrum only for the board on screen",
+    items: [
+      "Motion no longer shows the gyro spectrum, and new firmware no longer works it out.",
+      "Only the board on screen sends its mic spectrum. Select another board and its spectrum starts within a moment.",
+    ],
+  },
+  {
+    id: "2026-11-02-live-lag",
+    date: "2026-11-02",
+    firmware: "next",
+    title: "Live view keeps up again",
+    items: [
+      "Since the gyro spectrum arrived, a board on a Mac could send more than the link carries: the live plots ran about a second behind and IMU samples were lost. The gyro spectrum is gone, and when the link is short the board now skips mic spectrum updates instead, so motion data stays whole and on time. The mic spectrum also goes out in fewer, fuller packets.",
+    ],
+  },
+  {
     id: "2026-11-02-no-teaching",
     date: "2026-11-02",
     title: "Teaching a phrase is gone",

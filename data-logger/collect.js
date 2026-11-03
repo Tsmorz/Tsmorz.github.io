@@ -30,7 +30,7 @@ export const wayToSay = (clips) => WAYS[clips % WAYS.length];
 /**
  * What has to happen before a take can start, as the words to show, or null when it can. `folder`
  * is "none", "prompt" (chosen, but Chrome wants asking again), "denied", "granted" or "download"
- * (this browser can't write folders). `typing`: Space would go into a text box.
+ * (this browser can't write folders). `typing`: Enter would only leave the text box.
  */
 export function nextStep({ connected, capturing, folder, speaker, typing }) {
   if (!connected) return "Add a board to start.";

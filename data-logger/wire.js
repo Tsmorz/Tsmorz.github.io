@@ -25,7 +25,7 @@ export const DATA_EVENTS = "6f524c03-0004-4a3c-9d21-1122334455aa";
 export const DATA_INFO = "6f524c03-0005-4a3c-9d21-1122334455aa";
 export const DATA_SPECTRUM = "6f524c03-0006-4a3c-9d21-1122334455aa";
 export const DATA_CLOCK = "6f524c03-0007-4a3c-9d21-1122334455aa";
-export const DATA_GYRO_SPECTRUM = "6f524c03-0008-4a3c-9d21-1122334455aa";
+// -0008- was the gyro spectrum (firmware 1.5.0 only): retired, never reused.
 // On-board recording (src/logger/log_service.c; formats in src/log_format.h, LOG_WIRE_VERSION).
 export const LOG_SERVICE = "6f524c04-0001-4a3c-9d21-1122334455aa";
 export const LOG_COMMAND = "6f524c04-0002-4a3c-9d21-1122334455aa";
@@ -77,9 +77,6 @@ const ENVELOPE_HEADER_BYTES = 10;
 const SPECTRUM_HEADER_BYTES = 13;
 // A spectrum level byte is half-dB steps above this (MIC_SPECTRUM_FLOOR_DBFS in mic_spectrum.h).
 export const SPECTRUM_FLOOR_DBFS = -127.5;
-const GYRO_SPECTRUM_HEADER_BYTES = 18;
-// enum gyro_spectrum_channel in gyro_spectrum.h: the order of a gyro spectrum frame's channels.
-export const GYRO_SPECTRUM_CHANNELS = ["x", "y", "z", "magnitude"];
 const EVENT_BYTES = 12;
 const BOARD_INFO_BYTES = 20;
 const Q14 = 16384;
@@ -148,31 +145,6 @@ export function decodeSpectrumBatch(view) {
     tUs: view.getUint32(9, true),
     bins,
     frames,
-  };
-}
-
-/**
- * Decodes one channel of a gyro spectrum frame (GYRO_SPECTRUM_CHANNELS): the power spectral density
- * of every frequency bin in dB re 1 (°/s)²/Hz (floorDb or below reads as the floor). Bin b is
- * centered on b * rateHz / (2 * bins); frames start hopSamples IMU samples apart.
- */
-export function decodeGyroSpectrum(view) {
-  if (view.byteLength < GYRO_SPECTRUM_HEADER_BYTES || view.getUint8(0) !== DATA_VERSION) return null;
-  const channel = view.getUint8(1);
-  const bins = view.getUint8(2);
-  if (!bins || channel >= GYRO_SPECTRUM_CHANNELS.length || view.byteLength !== GYRO_SPECTRUM_HEADER_BYTES + bins) return null;
-  const floorDb = view.getInt8(3);
-  const levels = new Float32Array(bins);
-  for (let b = 0; b < bins; b++) levels[b] = view.getUint8(GYRO_SPECTRUM_HEADER_BYTES + b) / 2 + floorDb;
-  return {
-    channel,
-    bins,
-    floorDb,
-    hopSamples: view.getUint16(4, true),
-    frame: view.getUint32(6, true),
-    tUs: view.getUint32(10, true),
-    rateHz: view.getUint32(14, true) / 1000,
-    levels,
   };
 }
 
