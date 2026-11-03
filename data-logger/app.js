@@ -10,7 +10,6 @@ import { clockRoleChanges } from "./clock-roles.js";
 import { syncBoard } from "./settings-sync.js";
 import { calibrateDialogOpen, describeCalibration, initCalibrate, renderCalibrate } from "./calibrate-view.js";
 import { FACE_TOLERANCE_DEG } from "./imu-calibration.js";
-import { GYRO_SPECTRUM_AVERAGES, averageGyroSpectrum, binHz, spectrumPeak } from "./gyro-spectrum.js";
 import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
@@ -56,7 +55,6 @@ const CHECKS = [
   ["gyro-z", "Gyro Z responded to rotation"],
   ["mic", "Microphone envelope arriving"],
   ["spectrum", "Microphone spectrum arriving"],
-  ["gyro-spectrum", "Gyro spectrum arriving"],
   ["button", "USER button press recorded"],
   ["clock", "Radio clock pairs arriving (synced to a source)"],
   ["led", "LED command accepted"],
@@ -146,7 +144,7 @@ const SPLITS = {
   bottom: { axis: "x", minPx: 240, panels: [".orientation-section", ".motion-section", ".mic-section"] },
   rows: { axis: "y", minPx: 150, panels: [".top-row", ".motion-section"] },
   mic: { axis: "y", minPx: 64, panels: ["#envelope-plot", "#spectrum-plot"], within: ".mic-section" },
-  motion: { axis: "y", minPx: 64, panels: ["#accel-plot", "#gyro-plot", "#gyro-spectrum-plot"], within: ".motion-section" },
+  motion: { axis: "y", minPx: 64, panels: ["#accel-plot", "#gyro-plot"], within: ".motion-section" },
 };
 let savedLayout = {};
 try {
@@ -1015,101 +1013,6 @@ function drawSpectrum() {
   ]);
 }
 
-// ---- gyro spectrum ------------------------------------------------------------------------
-// The board's gyro spectrum (gyro-spectrum.js), averaged over the last few frames: frequency from 0
-// at the left to half the sample rate at the right, power up, X/Y/Z in their colors and |ω| as the
-// heavier screen-text line. The dB range steps so the loudest curve fits, as the traces' ranges do.
-const GYRO_SPECTRUM_TOPS_DB = [-20, 0, 20, 40, 50];
-const GYRO_SPECTRUM_SPAN_DB = 80;
-const GYRO_SPECTRUM_PAD_Y = 6;
-const GYRO_SPECTRUM_LABEL_ROOM = 14; // under the curves, for the frequency labels
-const gyroSpectrumHover = trackHover($("gyro-spectrum"));
-let gyroSpectrumAverage = 4;
-$("gyro-spectrum-average").addEventListener("click", () => {
-  const at = GYRO_SPECTRUM_AVERAGES.indexOf(gyroSpectrumAverage);
-  gyroSpectrumAverage = GYRO_SPECTRUM_AVERAGES[(at + 1) % GYRO_SPECTRUM_AVERAGES.length];
-  $("gyro-spectrum-average").textContent = `avg ${gyroSpectrumAverage}`;
-});
-
-function drawGyroSpectrum() {
-  const canvas = $("gyro-spectrum");
-  const tip = $("gyro-spectrum-tip");
-  const { ctx, width, height } = fitCanvas(canvas);
-  const spectrum = selected ? averageGyroSpectrum(selected.gyroSpectrum, gyroSpectrumAverage) : null;
-  const nyquistHz = (spectrum?.rateHz ?? selected?.info?.imuRateHz ?? 208) / 2;
-  const curves = spectrum?.channels ?? [];
-  let loudest = -Infinity;
-  for (const levels of curves) if (levels) for (const level of levels) loudest = Math.max(loudest, level);
-  const top = GYRO_SPECTRUM_TOPS_DB.find((db) => loudest <= db) ?? GYRO_SPECTRUM_TOPS_DB.at(-1);
-  const bottom = top - GYRO_SPECTRUM_SPAN_DB;
-  const plotHeight = height - GYRO_SPECTRUM_PAD_Y - GYRO_SPECTRUM_LABEL_ROOM;
-  const toX = (hz) => (hz / nyquistHz) * width;
-  const toY = (db) => GYRO_SPECTRUM_PAD_Y + ((top - Math.max(bottom, Math.min(top, db))) / GYRO_SPECTRUM_SPAN_DB) * plotHeight;
-
-  ctx.font = `11px ${colors.mono}`;
-  ctx.textBaseline = "middle";
-  for (let hz = 10; hz < nyquistHz; hz += 10) {
-    hairline(ctx, toX(hz), 0, toX(hz), height - GYRO_SPECTRUM_LABEL_ROOM, colors.grid);
-    if (hz % 20) continue;
-    ctx.fillStyle = colors.muted;
-    ctx.fillText(`${hz}`, toX(hz) - ctx.measureText(`${hz}`).width / 2, height - GYRO_SPECTRUM_LABEL_ROOM / 2);
-  }
-  ctx.fillStyle = colors.muted;
-  ctx.fillText("Hz", width - ctx.measureText("Hz").width - 4, height - GYRO_SPECTRUM_LABEL_ROOM / 2);
-  for (let db = top - 20; db > bottom; db -= 20) hairline(ctx, 0, toY(db), width, toY(db), colors.grid);
-  hairline(ctx, 0, height - GYRO_SPECTRUM_LABEL_ROOM, width, height - GYRO_SPECTRUM_LABEL_ROOM, colors.line);
-
-  const curveColors = [...colors.series, colors.text];
-  curves.forEach((levels, channel) => {
-    if (!levels) return;
-    ctx.strokeStyle = curveColors[channel];
-    ctx.lineWidth = channel === 3 ? 2.25 : 1.5;
-    ctx.lineJoin = ctx.lineCap = "round";
-    ctx.beginPath();
-    levels.forEach((level, b) => {
-      const x = toX(binHz(b, spectrum.rateHz, spectrum.bins));
-      if (b) ctx.lineTo(x, toY(level));
-      else ctx.moveTo(x, toY(level));
-    });
-    ctx.stroke();
-  });
-  // At the right, away from the low frequencies where most motion is, and over the curves.
-  for (let db = top - 20; db > bottom; db -= 20) {
-    ctx.fillStyle = colors.muted;
-    ctx.fillText(`${db}`, width - ctx.measureText(`${db}`).width - 4, toY(db) - 7);
-  }
-
-  if (!spectrum || gyroSpectrumHover.fraction === null) {
-    tip.hidden = true;
-    return;
-  }
-  const binWidthHz = binHz(1, spectrum.rateHz, spectrum.bins);
-  const bin = Math.min(spectrum.bins - 1, Math.round((gyroSpectrumHover.fraction * nyquistHz) / binWidthHz));
-  const x = toX(bin * binWidthHz);
-  hairline(ctx, x, 0, x, height - GYRO_SPECTRUM_LABEL_ROOM, colors.muted);
-  const names = [...AXIS_NAMES, "|ω|"];
-  const rows = curves.flatMap((levels, channel) => {
-    if (!levels) return [];
-    const level = levels[bin];
-    return [[level > bottom ? level.toFixed(1) : `<${bottom}`, names[channel], curveColors[channel]]];
-  });
-  showTooltip(tip, canvas, x / width, `${(bin * binWidthHz).toFixed(1)} Hz · dB`, rows);
-}
-
-// Each curve's loudest frequency, as the traces show their values (Motion's heading keys the colors).
-buildLive($("gyro-spectrum-live"), ["|ω|"]);
-
-function renderGyroSpectrumLegend(board) {
-  const outdated = Boolean(board?.connected && !board.hasGyroSpectrum);
-  $("gyro-spectrum-note").textContent = outdated ? "Update this board's firmware to see it" : "";
-  $("gyro-spectrum-live").hidden = outdated;
-  const spectrum = board ? averageGyroSpectrum(board.gyroSpectrum, gyroSpectrumAverage) : null;
-  [...$("gyro-spectrum-live").children].forEach((item, channel) => {
-    const peak = spectrum && spectrumPeak(spectrum.channels[channel], spectrum.rateHz);
-    item.lastElementChild.textContent = peak ? peak.hz.toFixed(1) : "–";
-  });
-}
-
 function renderMic() {
   const board = selected;
   const levelDbfs = board ? peakToDbfs(recentPeak(board.envelope, 100)) : -Infinity;
@@ -1138,8 +1041,6 @@ function drawFrame() {
   drawPose();
   drawEnvelope();
   drawSpectrum();
-  drawGyroSpectrum();
-  renderGyroSpectrumLegend(selected);
   renderLive();
   renderAngles();
   renderMic();
@@ -1381,6 +1282,8 @@ setInterval(() => {
 
 function select(board) {
   selected = board;
+  // The mic spectrum only for the board on screen: it is a quarter of a board's packets.
+  for (const each of boards.values()) each.wantSpectrum(each === selected);
   renderBoards();
   renderChecks();
   renderMouse();

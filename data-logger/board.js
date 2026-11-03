@@ -5,19 +5,18 @@
 // they come but not shown.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_GYRO_SPECTRUM, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
+  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
   KEYWORD_VOCABULARY, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET, TELEMETRY_IMU_CALIBRATION,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
-  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeGyroSpectrum, decodeTemperatureOffset, decodeImuCalibration, encodeImuCalibration,
+  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset, decodeImuCalibration, encodeImuCalibration,
   encodeClipHold, encodeClipRelease, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
   MODEL_CHUNK_BYTES, decodeModelStatus, decodeVocabulary, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
 import { ClipAssembler } from "./clips.js";
 import { applyCalibration } from "./imu-calibration.js";
-import { addGyroChannel, newGyroSpectrum } from "./gyro-spectrum.js";
 import { samplesFromBytes, takeFromMailbox } from "./mailbox.js";
 import { RateMeter } from "./rate-meter.js";
 import { TimeUnwrapper, restartedSince } from "./recording.js";
@@ -98,7 +97,9 @@ export class Board extends EventTarget {
     this.audioStream = null; // the background-audio stream running, if any
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
     this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
-    this.hasGyroSpectrum = false; // whether this firmware sends the gyro's
+    this.spectrumWanted = false; // whether the page shows it (wantSpectrum())
+    this.spectrumOn = false; // whether it is subscribed
+    this.streamsReady = false; // connect() has finished its GATT operations
     this.imuRanges = null; // { gyroDps, accelG }, if this firmware lets them be chosen
     this.temperatureC = null; // the IMU's own reading, if this firmware reports it
     this.temperatureOffsetC = null; // what to add to it on this board, if this firmware keeps one
@@ -134,7 +135,6 @@ export class Board extends EventTarget {
     this.envelopeEndUs = null;
     this.spectrum = []; // the last ENVELOPE_SECONDS of { tUs, levels } frames, levels in dBFS per bin
     this.spectrumFrameUs = 0;
-    this.gyroSpectrum = newGyroSpectrum(); // the last few gyro spectrum frames (gyro-spectrum.js)
     this.lastSeq = null;
     this.lastWindow = null;
     this.lastEventSeq = null;
@@ -204,8 +204,7 @@ export class Board extends EventTarget {
     this.chars.imu = await subscribe(data, DATA_IMU, (view) => this.onImu(view), { decides: true });
     this.chars.envelope = await subscribe(data, DATA_ENVELOPE, (view) => this.onEnvelope(view));
     this.chars.events = await subscribe(data, DATA_EVENTS, (view) => this.onEvent(view));
-    await this.connectSpectrum(data, subscribe);
-    await this.connectGyroSpectrum(data, subscribe);
+    await this.connectSpectrum(data);
     await this.connectClockPairs(data, subscribe);
 
     const control = await server.getPrimaryService(TELEMETRY_SERVICE);
@@ -236,6 +235,8 @@ export class Board extends EventTarget {
       // No IMU data to tell by: carry on, as a board that kept running would.
       if (this.continuing) this.release(this.continuing.recording);
     }
+    this.streamsReady = true;
+    await this.syncSpectrum();
     this.changed();
   }
 
@@ -268,24 +269,42 @@ export class Board extends EventTarget {
     this.onDecided();
   }
 
-  // Firmware from before the spectrum view doesn't send it; the rest still works.
-  async connectSpectrum(data, subscribe) {
+  // Firmware from before the spectrum view doesn't send it; the rest still works. Only subscribed
+  // while the page shows it (wantSpectrum()).
+  async connectSpectrum(data) {
+    let characteristic;
     try {
-      await subscribe(data, DATA_SPECTRUM, (view) => this.onSpectrum(view));
+      characteristic = await data.getCharacteristic(DATA_SPECTRUM);
     } catch {
       return;
     }
+    this.listen(characteristic, (event) => this.deliver((view) => this.onSpectrum(view), event.target.value, false));
+    this.chars.spectrum = characteristic;
     this.hasSpectrum = true;
   }
 
-  // Nor does firmware from before the gyro's.
-  async connectGyroSpectrum(data, subscribe) {
-    try {
-      await subscribe(data, DATA_GYRO_SPECTRUM, (view) => this.onGyroSpectrum(view));
-    } catch {
-      return;
-    }
-    this.hasGyroSpectrum = true;
+  /**
+   * Starts or stops the mic spectrum. Only the board on screen needs it, and it is about a quarter
+   * of the packets a board sends: with every board sending it, the live streams outgrew a Mac's link.
+   */
+  wantSpectrum(wanted) {
+    if (this.spectrumWanted === wanted) return;
+    this.spectrumWanted = wanted;
+    if (!wanted) this.spectrum = [];
+    if (this.streamsReady) this.syncSpectrum();
+  }
+
+  // Queued, as GATT operations can't overlap, and only once connect() is done with its own.
+  syncSpectrum() {
+    return this.queue(async () => {
+      const characteristic = this.chars.spectrum;
+      if (!characteristic || !this.connected || this.spectrumOn === this.spectrumWanted) return;
+      if (this.spectrumWanted) await characteristic.startNotifications();
+      else await characteristic.stopNotifications();
+      this.spectrumOn = this.spectrumWanted;
+    }).catch(() => {
+      /* the link went meanwhile: a reconnect is a new Board */
+    });
   }
 
   // Firmware from before the radio clock sync has none of the next three; the rest still works.
@@ -795,13 +814,6 @@ export class Board extends EventTarget {
     const oldest = this.spectrum.at(-1).tUs - ENVELOPE_SECONDS * 1e6;
     while (this.spectrum[0].tUs < oldest) this.spectrum.shift();
     this.markSeen("spectrum");
-  }
-
-  onGyroSpectrum(view) {
-    const decoded = decodeGyroSpectrum(view);
-    if (!decoded) return;
-    addGyroChannel(this.gyroSpectrum, decoded);
-    this.markSeen("gyro-spectrum");
   }
 
   onEvent(view) {

@@ -1,7 +1,7 @@
 // Voice commands on the page (docs/voice-commands.md). Settings › Voice: the selected board's
 // model, whether it listens, what it heard, and uploading a model to the boards. Only the clock
 // source listens. The clips dialog records training data of the one phrase through every connected
-// board's microphone at once for as long as Space is held (Board.captureClip), so each saying gives
+// board's microphone at once for as long as Enter is held (Board.captureClip), so each saying gives
 // a clip per board, saved as WAVs for the training pipeline, each sent over Bluetooth or, with a
 // board plugged in, read through its USB programmer (mailbox.js). The clips are the user's voice:
 // they only ever go into the folder the user picks, never into tools/dashboard/ (published).
@@ -59,7 +59,7 @@ let dragAnchor = null; // the sample a drag across the plot holds still; null wh
 let dragX = 0;
 let playback = null; // { audio, at, start, end, rateHz, frame } while a clip plays
 let busy = false;
-let recordDown = false; // Space or the record button is held
+let recordDown = false; // Enter or the record button is held
 let pressedAt = 0;
 let heldMs = Infinity; // how long the last release followed its press
 let holdingBoards = []; // the boards recording for that hold
@@ -125,13 +125,13 @@ export function initVoice(options) {
   $("voice-keep").addEventListener("click", keepSection);
   $("voice-restore").addEventListener("click", restoreClips);
   initPlotEditing();
-  // A run of clips needs no mouse: Space records while held, P plays, Backspace redoes, the arrows
-  // move between buttons, Enter presses one (holding the record key records) and Q closes. Space
-  // stays record on any button, or a word could be lost to a focus ring nobody was looking at. Not
-  // while typing, and on the window: clicking the waveform to trim leaves the focus outside the dialog.
+  // A run of clips needs no mouse: Enter records while held (the one record key, the user's call,
+  // 2026-11-02), P plays, Backspace redoes, the arrows move between buttons and Q closes. On a button
+  // with its own action (Play, Redo, ⓘ…) Enter presses it instead. Not while typing, and on the
+  // window: clicking the waveform to trim leaves the focus outside the dialog.
   window.addEventListener("keydown", (event) => {
     if (!$("voice-dialog").open || background.size || isTyping(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
-    if (event.key === " " || (event.key === "Enter" && recordsOnEnter(event.target))) {
+    if (event.key === "Enter" && recordsOnEnter(event.target)) {
       event.preventDefault();
       if (!event.repeat) pressRecord();
     } else if (event.repeat) {
@@ -145,7 +145,7 @@ export function initVoice(options) {
     }
   });
   window.addEventListener("keyup", (event) => {
-    if ((event.key !== " " && event.key !== "Enter") || !recordDown) return;
+    if (event.key !== "Enter" || !recordDown) return;
     event.preventDefault();
     releaseRecord();
   });
@@ -165,7 +165,7 @@ export function initVoice(options) {
     remember(TARGET_KEY, target);
     renderVoice();
   });
-  // Enter leaves a box, so Space records again without reaching for the mouse.
+  // Enter leaves a box, so the next Enter records without reaching for the mouse.
   for (const id of ["voice-speaker", "voice-target"]) {
     $(id).addEventListener("keydown", (event) => {
       if (event.key === "Enter") event.target.blur();
@@ -213,12 +213,12 @@ function chooseWord(phrase) {
   renderVoice();
 }
 
-/** Enter records like Space, except on a button that does something else with it (Play, Redo, ⓘ…). */
+/** Enter records, except on a button that does something else with it (Play, Redo, ⓘ…). */
 const recordsOnEnter = (target) => !target.matches?.("button") || target === $("voice-capture") || $("voice-words").contains(target);
 
 /**
  * Moves to the button that way, from the focused one or else the current word. A word key chooses
- * its word on arrival: otherwise the ring could sit on one word while Space recorded another.
+ * its word on arrival: otherwise the ring could sit on one word while Enter recorded another.
  */
 function moveFocus(event) {
   event.preventDefault();
@@ -426,7 +426,7 @@ export function renderVoice() {
   $("voice-capture").disabled = (busy && !recordDown) || Boolean(step) || background.size > 0;
   $("voice-bg-record").disabled = (busy || recordDown) && !background.size;
   $("voice-capture-text").textContent = recordDown ? "Recording: let go when you've finished"
-    : busy ? "Saving…" : `Hold Space or Enter to record${boards.length > 1 ? ` on ${boards.length} boards` : ""}`;
+    : busy ? "Saving…" : `Hold Enter to record${boards.length > 1 ? ` on ${boards.length} boards` : ""}`;
   $("voice-capture").classList.toggle("recording", recordDown);
   $("voice-capture").setAttribute("aria-pressed", String(recordDown));
   $("voice-play").disabled = !last;
@@ -636,7 +636,7 @@ async function capture() {
   setStatus([
     clips.length ? `${saved ? "Saved" : "Downloaded"} “${spoken.say}”${clips.length > 1 ? ` from ${clips.length} boards` : ""}.` : "",
     loud.length ? `${loud.length === clips.length ? "It" : loud.map((clip) => clip.boardId).join(", ")} clipped: speak softer or further away, and press ⌫ to redo it.` : "",
-    !clips.length && tapped ? "That was a tap: hold Space for as long as you speak." : "",
+    !clips.length && tapped ? "That was a tap: hold Enter for as long as you speak." : "",
     unheard.length ? (clips.length ? `${unheard.map((clip) => clip.boardId).join(", ")} didn't hear it.` : "Nothing heard, so it wasn't saved: say it again, a little closer.") : "",
     failed.length ? `No clip from ${failed.join("; ")}.` : "",
   ].filter(Boolean).join(" "), { bad: failed.length > 0 || unheard.length > 0 && !clips.length });

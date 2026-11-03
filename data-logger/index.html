@@ -272,13 +272,8 @@
   .plot-head > span:first-child { font-weight: 600; }
   .plot-head .muted { font: 400 11px var(--mono); }
   .plot-head + .plot + .plot-head, .x-axis + .plot-head { margin-top: 12px; }
-  .spectrum-tools { display: flex; align-items: baseline; gap: 8px; }
-  .spectrum-tools .h2-key { margin-left: 0; }
-  /* Motion's one legend for its three plots, at the right of its heading. |ω|'s curve is the
-     spectrum's heavier one, so its key is too. */
+  /* Motion's one legend for its plots, at the right of its heading. */
   h2 .legend { margin-left: auto; flex: none; font-weight: 400; letter-spacing: 0; text-transform: none; }
-  .live span.magnitude::before { height: 4px; }
-  #gyro-spectrum-live b { min-width: 5ch; }
   .live { display: flex; gap: 12px; color: var(--text-2); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
   .live span[style]::before { content: ""; display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle;
                               border-radius: 1px; background: var(--key); }
@@ -664,7 +659,7 @@
 
   <section class="motion-section" tabindex="0">
     <h2>Motion <span class="muted">gyro bias removed<span class="num" id="imu-temp" title="The IMU's own temperature sensor, read about once a second, with this board's calibration from Settings › Thermometer. temperature.csv keeps the uncorrected reading: the gyro's bias drifts with it"></span></span><button type="button" class="info" popovertarget="motion-info" aria-label="About the motion plots"></button><span class="live legend" aria-label="Line colors in the plots below">
-      <span style="--key: var(--series-x)">X</span><span style="--key: var(--series-y)">Y</span><span style="--key: var(--series-z)">Z</span><span class="magnitude" style="--key: var(--screen-text)" title="Only the spectrum draws it">|ω|</span></span></h2>
+      <span style="--key: var(--series-x)">X</span><span style="--key: var(--series-y)">Y</span><span style="--key: var(--series-z)">Z</span></span></h2>
     <div class="plot-head"><span>Acceleration <span class="muted">g · <span id="accel-range">±2</span></span></span><span class="live" id="accel-live"></span></div>
     <div class="plot trace" id="accel-plot">
       <canvas id="accel-trace" aria-label="Accelerometer X, Y and Z over the last 4 seconds"></canvas>
@@ -676,14 +671,8 @@
       <div class="tooltip" id="gyro-tip" hidden></div>
     </div>
     <div class="x-axis"><span>−4 s</span><span>now</span></div>
-    <div class="plot-head"><span>Gyro spectrum <span class="muted">dB re (°/s)²/Hz · peaks in Hz</span></span><span class="spectrum-tools"><span class="readout" id="gyro-spectrum-note"></span><span class="live" id="gyro-spectrum-live" title="Each curve's loudest frequency, in Hz"></span><button type="button" class="h2-key" id="gyro-spectrum-average" title="How many of the board's frames (~0.6 s apart) each curve averages">avg 4</button></span></div>
-    <div class="plot wave" id="gyro-spectrum-plot">
-      <canvas id="gyro-spectrum" aria-label="Gyro spectrum: power at each frequency from 0 to about 104 Hz for X, Y, Z and the rate's magnitude"></canvas>
-      <div class="tooltip" id="gyro-spectrum-tip" hidden></div>
-    </div>
     <div class="info-pop" id="motion-info" popover>
-      <p>The traces are the last 4 s of every 4th sample. The gyro spectrum is worked out on the board from every sample: each frame covers 1.2 s in 0.8 Hz steps up to half the sample rate (~104 Hz), and a new one comes every 0.6 s. <b>avg</b> sets how many frames each curve averages. It is live only, not recorded.</p>
-      <p>X, Y and Z are the colored lines. The heavier line is the spectrum of |ω|, the rotation's speed whatever its axis. A back-and-forth wobble about one axis shows there at twice its frequency, because the speed peaks on both halves of the swing. The mean of each 1.2 s is taken out, so a steady turn shows as nothing. The gyro's own filter rolls off above about 67 Hz.</p>
+      <p>The traces are the last 4 s of every 4th sample, X, Y and Z in the colors keyed above. Recordings keep every sample, uncalibrated and with the gyro's bias left in.</p>
     </div>
   </section>
 
@@ -930,10 +919,10 @@
     <button type="button" id="voice-close" aria-label="Close" title="Close (Q)">✕</button></div>
   <div class="dialog-body">
     <div class="info-pop" id="voice-help" popover>
-      <p>Hold Space or Enter, say the word once, and let go. Every connected board saves its own clip of just that, with room noise around it so the file stays 2 s for training.</p>
+      <p>Hold Enter, say the word once, and let go. Every connected board saves its own clip of just that, with room noise around it so the file stays 2 s for training.</p>
       <p>Follow the line under the word: clips that differ in speed, loudness and distance are what make a model work. Record in at least two sittings, since a word's latest takes are held back to test it.</p>
       <p>The waveform shows the whole take, what you held highlighted and a moment either side dimmed. If a word got cut off or a bump got in, drag the highlight's edges, then Keep section.</p>
-      <p>Keys: arrows move between the buttons and choose a word, Enter presses the button you're on (on a word or the record key it records, like Space), P plays, Backspace redoes, Q closes this window. Space always records, whichever button you're on.</p>
+      <p>Keys: arrows move between the buttons and choose a word, Enter records on a word, the record key or anywhere else, but presses Play, Redo and the other buttons when you're on them, P plays, Backspace redoes, Q closes this window.</p>
       <p>Over Bluetooth a board's live streams pause while it sends. With a USB cable a clip takes under a second and they carry on. Afterwards a cabled board can't sleep until it loses all power.</p>
     </div>
     <div class="voice-setup">
@@ -952,7 +941,7 @@
           <p class="voice-say-label"><span>Say</span><span class="num" id="voice-does"></span></p>
           <p class="voice-say" id="voice-say"></p>
           <p class="voice-way" id="voice-way"></p>
-          <button class="primary voice-key" id="voice-capture" disabled><span id="voice-capture-text">Hold Space or Enter to record</span></button>
+          <button class="primary voice-key" id="voice-capture" disabled><span id="voice-capture-text">Hold Enter to record</span></button>
           <div class="voice-gauges">
             <span>Time</span><div class="bar" id="voice-bar" role="progressbar" aria-label="Time left in this take" aria-valuemin="0" aria-valuemax="100"><i></i></div>
             <span>Level</span><div class="bar voice-level" id="voice-level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100"><i></i></div>
