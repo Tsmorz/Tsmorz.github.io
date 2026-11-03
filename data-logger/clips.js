@@ -15,16 +15,6 @@ export const ACTION_TEXT = {
   spell: "for spelling a name",
 };
 
-/**
- * The one phrase boards listen for. training/vocabulary.py's DEFAULT spells the same (a test
- * checks), and an older model's other phrases still work on a board that has one.
- */
-export const DEFAULT_VOCABULARY = {
-  version: 1,
-  name: "toggle cursor",
-  phrases: [{ label: "toggle_cursor", say: "toggle cursor", action: "mouse_toggle" }],
-};
-
 /** The words for spelling a name, and numbers: training/vocabulary.py's SPELLER spells the same (a test checks). */
 export const SPELLER_VOCABULARY = {
   version: 1,
@@ -66,9 +56,7 @@ export const SPELLER_VOCABULARY = {
     { label: "seven", say: "seven", action: "spell" },
     { label: "eight", say: "eight", action: "spell" },
     { label: "nine", say: "nine", action: "spell" },
-    { label: "ten", say: "ten", action: "spell" },
     { label: "space", say: "space", action: "spell" },
-    { label: "delete", say: "delete", action: "spell" },
   ],
 };
 

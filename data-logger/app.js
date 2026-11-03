@@ -2,20 +2,22 @@ import { Board, DISPLAY_DECIMATION, ENVELOPE_SECONDS, TRACE_POINTS } from "./boa
 import { fitCanvas, hairline } from "./canvas.js";
 import { describeLatency, resultRow } from "./latency.js";
 import { dragSeam, gridTracks, parseSavedLayout, toFractions } from "./layout.js";
-import { headingChangeDegrees, quatToEulerDegrees, removeYaw, rotateVector } from "./pose.js";
+import { headingChangeDegrees, quatFromTo, quatToEulerDegrees, rotateVector, zeroedPose } from "./pose.js";
 import { decodeFlashLog, firstSessionTag, flashSessionFiles, groupSessions, holdsSameRecording, lostSamples, startsWithSession } from "./flashlog.js";
 import { BoardRecording, LIVE_FILES, RADIO_CLOCK_COLUMNS, clockSources, competingClockSources, liveFileParts, parseEventRows, safeName, unsyncedBoards } from "./recording.js";
 import { initReplay, openDroppedRecording, openReplayFiles, replayShown } from "./replay-view.js";
 import { clockRoleChanges } from "./clock-roles.js";
 import { syncBoard } from "./settings-sync.js";
-import { initTeach, renderTeach, teachDialogOpen } from "./teach-view.js";
+import { calibrateDialogOpen, describeCalibration, initCalibrate, renderCalibrate } from "./calibrate-view.js";
+import { FACE_TOLERANCE_DEG } from "./imu-calibration.js";
+import { GYRO_SPECTRUM_AVERAGES, averageGyroSpectrum, binHz, spectrumPeak } from "./gyro-spectrum.js";
 import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
   formatReading, ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
 } from "./signal.js";
-import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE, encodeTemperatureOffset } from "./wire.js";
+import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE, UNCALIBRATED, encodeTemperatureOffset } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
@@ -27,7 +29,6 @@ import { moveBoard, parseSavedOrder, sortByOrder } from "./board-order.js";
 import { drawList, mixColors } from "./board-model.js";
 
 const $ = (id) => document.getElementById(id);
-const IDENTITY_QUAT = { w: 1, x: 0, y: 0, z: 0 };
 const ENVELOPE_FLOOR_DBFS = -80;
 // A tap's press and release can arrive together, so a press keeps the USER lamp lit at least this
 // long; short enough that the gap in a double press still shows (the lamp redraws every frame).
@@ -55,6 +56,7 @@ const CHECKS = [
   ["gyro-z", "Gyro Z responded to rotation"],
   ["mic", "Microphone envelope arriving"],
   ["spectrum", "Microphone spectrum arriving"],
+  ["gyro-spectrum", "Gyro spectrum arriving"],
   ["button", "USER button press recorded"],
   ["clock", "Radio clock pairs arriving (synced to a source)"],
   ["led", "LED command accepted"],
@@ -118,7 +120,7 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
-const drawerDialogOpen = () => $("fw-dialog").open || $("panel-dialog").open || voiceDialogOpen() || teachDialogOpen();
+const drawerDialogOpen = () => $("fw-dialog").open || $("panel-dialog").open || voiceDialogOpen();
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !drawerDialogOpen()) setSettingsOpen(false);
 });
@@ -144,6 +146,7 @@ const SPLITS = {
   bottom: { axis: "x", minPx: 240, panels: [".orientation-section", ".motion-section", ".mic-section"] },
   rows: { axis: "y", minPx: 150, panels: [".top-row", ".motion-section"] },
   mic: { axis: "y", minPx: 64, panels: ["#envelope-plot", "#spectrum-plot"], within: ".mic-section" },
+  motion: { axis: "y", minPx: 64, panels: ["#accel-plot", "#gyro-plot", "#gyro-spectrum-plot"], within: ".motion-section" },
 };
 let savedLayout = {};
 try {
@@ -177,9 +180,10 @@ function placeSeams() {
     if (split.axis === "x") {
       Object.assign(seam.style, { left: `${panel.right - box.left}px`, top: `${panel.top - box.top}px`, height: `${panel.height}px` });
     } else if (split.within) {
-      // Just under the upper plot, in the gap above the lower one's heading.
+      // In the gap above the lower plot's heading (under the upper plot, or under its time axis).
       const area = document.querySelector(split.within).getBoundingClientRect();
-      Object.assign(seam.style, { left: `${area.left - box.left}px`, top: `${panel.bottom - box.top + 6}px`, width: `${area.width}px` });
+      const heading = document.querySelector(split.panels[index + 1]).previousElementSibling.getBoundingClientRect();
+      Object.assign(seam.style, { left: `${area.left - box.left}px`, top: `${heading.top - box.top - 6}px`, width: `${area.width}px` });
     } else {
       Object.assign(seam.style, { left: "0px", top: `${panel.bottom - box.top}px`, width: `${box.width}px` });
     }
@@ -359,11 +363,11 @@ function showTooltip(tip, canvas, fraction, heading, rows) {
   tip.style.left = `${flip ? x - tip.offsetWidth - 10 : x + 10}px`;
 }
 
-// Live X/Y/Z values beside each plot's heading; their color keys double as the plot legend.
-// `extra` adds unkeyed values after them (each sensor's magnitude).
+// Live X/Y/Z values beside each plot's heading, then `extra` (each sensor's magnitude). The colors
+// are keyed once, in Motion's heading.
 function buildLive(container, extra = []) {
-  const keyed = ["x", "y", "z"].map((axis) => `<span style="--key: var(--series-${axis})">${axis.toUpperCase()} <b>–</b></span>`);
-  container.innerHTML = [...keyed, ...extra.map((name) => `<span>${name} <b>–</b></span>`)].join("");
+  const names = [..."XYZ", ...extra];
+  container.innerHTML = names.map((name) => `<span>${name} <b>–</b></span>`).join("");
 }
 function setLive(container, values, decimals) {
   values.forEach((value, i) => (container.children[i].lastElementChild.textContent = formatReading(value, decimals)));
@@ -396,7 +400,7 @@ const AXIS_LENGTHS_PER_MM = 0.9 / 10.5;
 // A board-model.js face's color. The board's materials are the board token mixed onto the screen
 // by a tone, a lit face (shade 1) shifted toward whichever of the two is lighter; pads and LEDs
 // darken toward the slot color in shadow.
-function boardPaint(material, shade) {
+function boardPaint(material, shade, led) {
   const tone = (base, span) => mixColors(colors.screen, colors.board, base + (colors.boardIsLight ? 1 : -1) * span * (shade - 0.5));
   const shaded = (color) => mixColors(color, colors.slot, 0.6 * (1 - shade));
   switch (material) {
@@ -411,8 +415,8 @@ function boardPaint(material, shade) {
     case "led-red":
       return shaded(colors.ledRed);
     case "led-rgb": {
-      // The color the board reports, unlit (barely off the screen) when it's off.
-      const lit = ledDisplayColor(selected.led);
+      // The color the board reports, unlit (barely off the screen) when it's off or there's none.
+      const lit = led ? ledDisplayColor(led) : null;
       return lit ? shaded(lit) : tone(0.08, 0.1);
     }
     default:
@@ -421,8 +425,7 @@ function boardPaint(material, shade) {
 }
 
 // World point -> screen offset (right, up) plus depth (larger is farther from the camera).
-function project([x, y, z]) {
-  const { azimuth, elevation } = camera;
+function project([x, y, z], { azimuth, elevation } = camera) {
   const right = x * Math.cos(azimuth) - y * Math.sin(azimuth);
   const away = x * Math.sin(azimuth) + y * Math.cos(azimuth);
   return {
@@ -466,8 +469,60 @@ function setCamera(next) {
   canvas.addEventListener("dblclick", () => setCamera(DEFAULT_CAMERA));
 }
 
-function drawPose() {
-  const canvas = $("pose");
+// The solid board in pose q, back to front (board-model.js), through `cam`, its RGB LED showing `led`
+// (the color a board reports; none draws it unlit).
+function paintBoard(ctx, q, toPixels, cam = camera, led = null) {
+  ctx.lineJoin = "round";
+  for (const item of drawList((point) => project(rotateVector(q, point), cam))) {
+    ctx.beginPath();
+    if (item.line) {
+      ctx.moveTo(...toPixels(item.line[0]));
+      ctx.lineTo(...toPixels(item.line[1]));
+      ctx.strokeStyle = colors.board;
+      ctx.lineWidth = item.part === "board" ? 1.25 : 0.75;
+      ctx.stroke();
+      continue;
+    }
+    item.points.map(toPixels).forEach(([sx, sy], i) => (i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy)));
+    ctx.closePath();
+    // Stroked in its own color too, so neighboring faces leave no seam between them.
+    ctx.fillStyle = ctx.strokeStyle = boardPaint(item.material, item.shade, led);
+    ctx.lineWidth = 0.6;
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+// An arrow from screen point `from` to `to`, its head `head` px long.
+function screenArrow(ctx, from, to, color, lineWidth, head) {
+  const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
+  const shaftEnd = [to[0] - head * 0.8 * Math.cos(angle), to[1] - head * 0.8 * Math.sin(angle)];
+  ctx.strokeStyle = ctx.fillStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(...from);
+  ctx.lineTo(...shaftEnd);
+  ctx.stroke();
+  arrowHead(ctx, to, angle, head);
+}
+
+function arrowHead(ctx, [x, y], angle, head) {
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x - head * Math.cos(angle - 0.42), y - head * Math.sin(angle - 0.42));
+  ctx.lineTo(x - head * Math.cos(angle + 0.42), y - head * Math.sin(angle + 0.42));
+  ctx.closePath();
+  ctx.fill();
+}
+
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
+// `guide` (the Calibrate dialog's, calibrate-view.js) adds what to do next: { target: { axis, sign,
+// name }, the board axis to stand up, drawn as an arrow out of the board with a curved arrow from
+// its tip to an UP mark; ghost, the pose to reach, drawn dashed (the dialog holds it steady); ring:
+// { fraction, turnedDeg }, a ring about world up filling as the turns go; caption }.
+function drawPose(canvas = $("pose"), guide = null) {
   const { ctx, width, height } = fitCanvas(canvas);
   // An axis and its label reach ~1.3 lengths from the origin in any direction.
   const scale = Math.min(width, height) / 2.7;
@@ -492,17 +547,12 @@ function drawPose() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const [name, tip] of WORLD_AXES) {
+    if (guide?.target && name === "U") continue; // the UP mark stands there instead
     line([0, 0, 0], tip, colors.muted, 1);
     const [sx, sy] = toScreen(tip);
     const [fx, fy] = toScreen([0, 0, 0]);
-    const angle = Math.atan2(sy - fy, sx - fx);
     ctx.fillStyle = colors.muted;
-    ctx.beginPath();
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(sx - 8 * Math.cos(angle - 0.4), sy - 8 * Math.sin(angle - 0.4));
-    ctx.lineTo(sx - 8 * Math.cos(angle + 0.4), sy - 8 * Math.sin(angle + 0.4));
-    ctx.closePath();
-    ctx.fill();
+    arrowHead(ctx, [sx, sy], Math.atan2(sy - fy, sx - fx), 8);
     const [lx, ly] = toScreen(tip.map((v) => v * 1.14));
     ctx.fillText(name, lx, ly);
   }
@@ -516,37 +566,25 @@ function drawPose() {
     ctx.textAlign = "start";
     return;
   }
-  const q = removeYaw(selected.quat, headingChangeDegrees(IDENTITY_QUAT, selected.yawZero));
+  const q = zeroedPose(selected.quat, selected.yawZero);
+  if (guide?.ring) drawGuideRing(ctx, toScreen, guide.ring);
 
   const toPixels = ([right, up]) => [width / 2 + right * AXIS_LENGTHS_PER_MM * scale, height / 2 - up * AXIS_LENGTHS_PER_MM * scale];
-  ctx.lineJoin = "round";
-  for (const item of drawList((point) => project(rotateVector(q, point)))) {
-    ctx.beginPath();
-    if (item.line) {
-      ctx.moveTo(...toPixels(item.line[0]));
-      ctx.lineTo(...toPixels(item.line[1]));
-      ctx.strokeStyle = colors.board;
-      ctx.lineWidth = item.part === "board" ? 1.25 : 0.75;
-      ctx.stroke();
-      continue;
-    }
-    item.points.map(toPixels).forEach(([sx, sy], i) => (i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy)));
-    ctx.closePath();
-    // Stroked in its own color too, so neighboring faces leave no seam between them.
-    ctx.fillStyle = ctx.strokeStyle = boardPaint(item.material, item.shade);
-    ctx.lineWidth = 0.6;
-    ctx.fill();
-    ctx.stroke();
-  }
+  if (guide?.ghost) drawGhost(ctx, toPixels, guide.ghost);
+  paintBoard(ctx, q, toPixels, camera, selected.led);
 
-  // Farthest axis first, so nearer ones draw over it.
-  const tips = AXIS_NAMES.map((name, i) => {
+  // Farthest axis first, so nearer ones draw over it. Faded behind a guide's arrow, which takes
+  // the place of its own axis.
+  const tips = AXIS_NAMES.flatMap((name, i) => {
+    if (guide?.target?.axis === i) return [];
     const unit = [0, 0, 0];
     unit[i] = 1;
     const tip = rotateVector(q, unit);
-    return { name, color: colors.series[i], tip, depth: project(tip).depth };
+    return [{ name, color: colors.series[i], tip, depth: project(tip).depth }];
   }).sort((a, b) => b.depth - a.depth);
 
+  ctx.save();
+  if (guide?.target) ctx.globalAlpha = 0.45;
   ctx.font = `500 12px ${colors.mono}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -564,7 +602,165 @@ function drawPose() {
     ctx.fillStyle = colors.text;
     ctx.fillText(name, lx, ly);
   }
+  ctx.restore();
   ctx.textAlign = "start";
+  if (guide?.target) drawGuideTarget(ctx, toScreen, q, guide.target);
+  if (guide?.caption) drawGuideCaption(ctx, width, height, guide.caption);
+}
+
+// The pose to reach, as the board's outline, dashed, under the board itself.
+function drawGhost(ctx, toPixels, ghost) {
+  ctx.save();
+  ctx.strokeStyle = colors.signal;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  for (const item of drawList((point) => project(rotateVector(ghost, point)))) {
+    if (!item.line || item.part !== "board") continue;
+    ctx.moveTo(...toPixels(item.line[0]));
+    ctx.lineTo(...toPixels(item.line[1]));
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// What to tip: an arrow out of the side that must face up, an UP mark straight above the board, and
+// a wide curved arrow, its dashes running toward the mark, from the one to the other.
+function drawGuideTarget(ctx, toScreen, q, { axis, sign, name }) {
+  const unit = [0, 0, 0];
+  unit[axis] = sign;
+  const now = rotateVector(q, unit);
+  const offDeg = (Math.acos(Math.max(-1, Math.min(1, now[2]))) * 180) / Math.PI;
+  const aligned = offDeg <= FACE_TOLERANCE_DEG;
+  const mark = toScreen([0, 0, 1.12]);
+  const MARK_RADIUS = 13;
+
+  // Filled once the side is up near enough to count.
+  ctx.save();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = ctx.fillStyle = colors.signal;
+  ctx.beginPath();
+  ctx.arc(...mark, MARK_RADIUS, 0, 2 * Math.PI);
+  ctx.globalAlpha = aligned ? 0.35 : 0;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.stroke();
+  ctx.font = `650 11px ${colors.mono}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("UP", mark[0], mark[1] - MARK_RADIUS - 10);
+
+  const origin = toScreen([0, 0, 0]);
+  const tip = toScreen(now);
+  screenArrow(ctx, origin, tip, colors.signal, 5, 15);
+  if (!aligned) {
+    // Haloed in the screen's color, as it often lands over the board.
+    ctx.font = `700 13px ${colors.mono}`;
+    ctx.lineWidth = 4;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = colors.screen;
+    const label = toScreen(now.map((v) => v * 1.22));
+    ctx.strokeText(name, ...label);
+    ctx.fillText(name, ...label);
+  }
+
+  if (offDeg > 8) {
+    // Along the great circle from the arrow's tip to straight up, stopping at the mark's edge.
+    const toUp = quatFromTo(now, [0, 0, 1]);
+    const half = Math.acos(Math.max(-1, Math.min(1, toUp.w)));
+    const points = [];
+    for (let i = 0; i <= 40; i++) {
+      const t = i / 40;
+      const s = Math.sin(half * t) / (Math.sin(half) || 1);
+      const step = { w: Math.cos(half * t), x: toUp.x * s, y: toUp.y * s, z: toUp.z * s };
+      const point = toScreen(rotateVector(step, now).map((v) => v * (1.12 + 0.06 * Math.sin(Math.PI * t))));
+      if (Math.hypot(point[0] - mark[0], point[1] - mark[1]) < MARK_RADIUS + 4) break;
+      points.push(point);
+    }
+    if (points.length > 3) {
+      ctx.strokeStyle = ctx.fillStyle = colors.signal;
+      ctx.lineWidth = 4;
+      ctx.lineCap = "butt";
+      ctx.setLineDash([10, 7]);
+      ctx.lineDashOffset = reducedMotion.matches ? 0 : -(performance.now() / 25) % 17;
+      ctx.beginPath();
+      points.slice(0, -1).forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p)));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const [px, py] = points.at(-3);
+      const end = points.at(-1);
+      arrowHead(ctx, end, Math.atan2(end[1] - py, end[0] - px), 18);
+    }
+  }
+  ctx.restore();
+}
+
+// A ring about world up, level with the board: a hairline, filled clockwise from in front by
+// `fraction`; a dot where the turns have reached when turning.
+function drawGuideRing(ctx, toScreen, { fraction, turnedDeg = null }) {
+  const RADIUS = 1.32;
+  const at = (deg) => toScreen([RADIUS * Math.cos((deg * Math.PI) / 180), RADIUS * Math.sin((deg * Math.PI) / 180), 0]);
+  const start = (-camera.azimuth * 180) / Math.PI - 90; // the point nearest the viewer
+  const stroke = (from, to, color, lineWidth) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    for (let deg = from, i = 0; ; deg += Math.sign(to - from) * 3, i++) {
+      const clamped = to > from ? Math.min(deg, to) : Math.max(deg, to);
+      i ? ctx.lineTo(...at(clamped)) : ctx.moveTo(...at(clamped));
+      if (clamped === to) break;
+    }
+    ctx.stroke();
+  };
+  ctx.lineCap = "round";
+  stroke(0, 360, colors.line, 1);
+  if (fraction > 0) stroke(start, start - 360 * Math.min(1, fraction), colors.signal, 4);
+  if (turnedDeg !== null) {
+    const [x, y] = at(start + turnedDeg);
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, 2 * Math.PI);
+    ctx.fillStyle = colors.readout;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = colors.screen;
+    ctx.stroke();
+  }
+}
+
+function drawGuideCaption(ctx, width, height, caption) {
+  ctx.font = `500 13px ${colors.mono}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = colors.readout;
+  ctx.fillText(caption, width / 2, height - 14);
+  ctx.textAlign = "start";
+}
+
+// A small still picture of the board in pose q, seen from the default view, with an arrow straight
+// up out of it and, with `turn`, a curved arrow round it: the Calibrate dialog's tiles.
+function drawBoardPicture(canvas, q, { turn = false } = {}) {
+  const { ctx, width, height } = fitCanvas(canvas);
+  const scale = Math.min(width, height) / 30; // px per mm: the board's 21 mm and the arrow fit
+  const center = [width / 2, height / 2 + 4];
+  const toPixels = ([right, up]) => [center[0] + right * scale, center[1] - up * scale];
+  const seen = (point) => {
+    const { right, up } = project(point, DEFAULT_CAMERA);
+    return toPixels([right, up]);
+  };
+  paintBoard(ctx, q, toPixels, DEFAULT_CAMERA);
+  screenArrow(ctx, seen([0, 0, 4]), seen([0, 0, 13]), colors.signal, 2.5, 8);
+  if (!turn) return;
+  const RADIUS_MM = 13;
+  const points = [];
+  for (let deg = 150; deg <= 430; deg += 10) points.push(seen([RADIUS_MM * Math.cos((deg * Math.PI) / 180), RADIUS_MM * Math.sin((deg * Math.PI) / 180), -2]));
+  ctx.strokeStyle = ctx.fillStyle = colors.signal;
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  points.slice(0, -1).forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p)));
+  ctx.stroke();
+  const [end, before] = [points.at(-1), points.at(-2)];
+  arrowHead(ctx, end, Math.atan2(end[1] - before[1], end[0] - before[0]), 7);
 }
 
 function renderAngles() {
@@ -819,6 +1015,101 @@ function drawSpectrum() {
   ]);
 }
 
+// ---- gyro spectrum ------------------------------------------------------------------------
+// The board's gyro spectrum (gyro-spectrum.js), averaged over the last few frames: frequency from 0
+// at the left to half the sample rate at the right, power up, X/Y/Z in their colors and |ω| as the
+// heavier screen-text line. The dB range steps so the loudest curve fits, as the traces' ranges do.
+const GYRO_SPECTRUM_TOPS_DB = [-20, 0, 20, 40, 50];
+const GYRO_SPECTRUM_SPAN_DB = 80;
+const GYRO_SPECTRUM_PAD_Y = 6;
+const GYRO_SPECTRUM_LABEL_ROOM = 14; // under the curves, for the frequency labels
+const gyroSpectrumHover = trackHover($("gyro-spectrum"));
+let gyroSpectrumAverage = 4;
+$("gyro-spectrum-average").addEventListener("click", () => {
+  const at = GYRO_SPECTRUM_AVERAGES.indexOf(gyroSpectrumAverage);
+  gyroSpectrumAverage = GYRO_SPECTRUM_AVERAGES[(at + 1) % GYRO_SPECTRUM_AVERAGES.length];
+  $("gyro-spectrum-average").textContent = `avg ${gyroSpectrumAverage}`;
+});
+
+function drawGyroSpectrum() {
+  const canvas = $("gyro-spectrum");
+  const tip = $("gyro-spectrum-tip");
+  const { ctx, width, height } = fitCanvas(canvas);
+  const spectrum = selected ? averageGyroSpectrum(selected.gyroSpectrum, gyroSpectrumAverage) : null;
+  const nyquistHz = (spectrum?.rateHz ?? selected?.info?.imuRateHz ?? 208) / 2;
+  const curves = spectrum?.channels ?? [];
+  let loudest = -Infinity;
+  for (const levels of curves) if (levels) for (const level of levels) loudest = Math.max(loudest, level);
+  const top = GYRO_SPECTRUM_TOPS_DB.find((db) => loudest <= db) ?? GYRO_SPECTRUM_TOPS_DB.at(-1);
+  const bottom = top - GYRO_SPECTRUM_SPAN_DB;
+  const plotHeight = height - GYRO_SPECTRUM_PAD_Y - GYRO_SPECTRUM_LABEL_ROOM;
+  const toX = (hz) => (hz / nyquistHz) * width;
+  const toY = (db) => GYRO_SPECTRUM_PAD_Y + ((top - Math.max(bottom, Math.min(top, db))) / GYRO_SPECTRUM_SPAN_DB) * plotHeight;
+
+  ctx.font = `11px ${colors.mono}`;
+  ctx.textBaseline = "middle";
+  for (let hz = 10; hz < nyquistHz; hz += 10) {
+    hairline(ctx, toX(hz), 0, toX(hz), height - GYRO_SPECTRUM_LABEL_ROOM, colors.grid);
+    if (hz % 20) continue;
+    ctx.fillStyle = colors.muted;
+    ctx.fillText(`${hz}`, toX(hz) - ctx.measureText(`${hz}`).width / 2, height - GYRO_SPECTRUM_LABEL_ROOM / 2);
+  }
+  ctx.fillStyle = colors.muted;
+  ctx.fillText("Hz", width - ctx.measureText("Hz").width - 4, height - GYRO_SPECTRUM_LABEL_ROOM / 2);
+  for (let db = top - 20; db > bottom; db -= 20) hairline(ctx, 0, toY(db), width, toY(db), colors.grid);
+  hairline(ctx, 0, height - GYRO_SPECTRUM_LABEL_ROOM, width, height - GYRO_SPECTRUM_LABEL_ROOM, colors.line);
+
+  const curveColors = [...colors.series, colors.text];
+  curves.forEach((levels, channel) => {
+    if (!levels) return;
+    ctx.strokeStyle = curveColors[channel];
+    ctx.lineWidth = channel === 3 ? 2.25 : 1.5;
+    ctx.lineJoin = ctx.lineCap = "round";
+    ctx.beginPath();
+    levels.forEach((level, b) => {
+      const x = toX(binHz(b, spectrum.rateHz, spectrum.bins));
+      if (b) ctx.lineTo(x, toY(level));
+      else ctx.moveTo(x, toY(level));
+    });
+    ctx.stroke();
+  });
+  // At the right, away from the low frequencies where most motion is, and over the curves.
+  for (let db = top - 20; db > bottom; db -= 20) {
+    ctx.fillStyle = colors.muted;
+    ctx.fillText(`${db}`, width - ctx.measureText(`${db}`).width - 4, toY(db) - 7);
+  }
+
+  if (!spectrum || gyroSpectrumHover.fraction === null) {
+    tip.hidden = true;
+    return;
+  }
+  const binWidthHz = binHz(1, spectrum.rateHz, spectrum.bins);
+  const bin = Math.min(spectrum.bins - 1, Math.round((gyroSpectrumHover.fraction * nyquistHz) / binWidthHz));
+  const x = toX(bin * binWidthHz);
+  hairline(ctx, x, 0, x, height - GYRO_SPECTRUM_LABEL_ROOM, colors.muted);
+  const names = [...AXIS_NAMES, "|ω|"];
+  const rows = curves.flatMap((levels, channel) => {
+    if (!levels) return [];
+    const level = levels[bin];
+    return [[level > bottom ? level.toFixed(1) : `<${bottom}`, names[channel], curveColors[channel]]];
+  });
+  showTooltip(tip, canvas, x / width, `${(bin * binWidthHz).toFixed(1)} Hz · dB`, rows);
+}
+
+// Each curve's loudest frequency, as the traces show their values (Motion's heading keys the colors).
+buildLive($("gyro-spectrum-live"), ["|ω|"]);
+
+function renderGyroSpectrumLegend(board) {
+  const outdated = Boolean(board?.connected && !board.hasGyroSpectrum);
+  $("gyro-spectrum-note").textContent = outdated ? "Update this board's firmware to see it" : "";
+  $("gyro-spectrum-live").hidden = outdated;
+  const spectrum = board ? averageGyroSpectrum(board.gyroSpectrum, gyroSpectrumAverage) : null;
+  [...$("gyro-spectrum-live").children].forEach((item, channel) => {
+    const peak = spectrum && spectrumPeak(spectrum.channels[channel], spectrum.rateHz);
+    item.lastElementChild.textContent = peak ? peak.hz.toFixed(1) : "–";
+  });
+}
+
 function renderMic() {
   const board = selected;
   const levelDbfs = board ? peakToDbfs(recentPeak(board.envelope, 100)) : -Infinity;
@@ -847,6 +1138,8 @@ function drawFrame() {
   drawPose();
   drawEnvelope();
   drawSpectrum();
+  drawGyroSpectrum();
+  renderGyroSpectrumLegend(selected);
   renderLive();
   renderAngles();
   renderMic();
@@ -1075,9 +1368,10 @@ function renderBoards() {
   settleClockRoles();
   renderMotionWake();
   renderThermometer();
+  renderImuCalibration();
   renderVoiceSettings();
+  if (calibrateDialogOpen()) renderCalibrate();
   if (voiceDialogOpen()) renderVoice();
-  if (teachDialogOpen()) renderTeach();
 }
 setInterval(renderBoards, 250);
 
@@ -1679,6 +1973,14 @@ function memberMeta(board, late, part) {
     accel_g_per_lsb: Math.round(board.info.accelGPerLsb * 1e9) / 1e9,
     mic_rate_hz: board.info.micRateHz,
     envelope_window_samples: board.info.envelopeWindowSamples,
+    // What the board corrected samples by: imu.csv's counts are raw, its quaternions corrected.
+    ...(board.imuCalibration && {
+      imu_calibration: {
+        accel_offset_g: board.imuCalibration.accelOffsetG,
+        accel_gain: board.imuCalibration.accelGain,
+        gyro_gain: board.imuCalibration.gyroGain,
+      },
+    }),
     ...(late && { joined: new Date().toISOString() }),
     reconnects: 0,
   };
@@ -2493,6 +2795,29 @@ $("motion-wake").addEventListener("click", async () => {
   renderMotionWake();
 });
 
+// ---- IMU calibration (the selected board; calibrate-view.js has the dialog) -------------------
+function renderImuCalibration() {
+  const board = selected;
+  const cal = board?.connected ? board.imuCalibration : null;
+  $("imu-cal-open").disabled = !cal;
+  $("imu-cal-clear").disabled = !cal || [...cal.accelOffsetG, ...cal.accelGain, ...cal.gyroGain].every((v) => v === 0);
+  if (!board?.connected) $("imu-cal-status").textContent = "Connect a board to calibrate it.";
+  else if (!cal) $("imu-cal-status").textContent = "This board's firmware can't: update it.";
+  else $("imu-cal-status").textContent = describeCalibration(cal);
+}
+
+$("imu-cal-clear").addEventListener("click", async () => {
+  const board = selected;
+  if (!board?.connected || !confirm(`Clear ${board.displayName}'s IMU calibration? It goes back to the sensor's own readings.`)) return;
+  try {
+    await board.setImuCalibration(UNCALIBRATED);
+    setStatus(`${board.displayName}: IMU calibration cleared`);
+  } catch (error) {
+    setStatus(`${board.displayName}: couldn't clear the calibration (${error.message})`, { bad: true });
+  }
+  renderImuCalibration();
+});
+
 // ---- thermometer calibration (the selected board) ---------------------------------------------
 const formatDegrees = (celsius) => `${celsius.toFixed(1)} °C`;
 
@@ -2565,7 +2890,7 @@ $("fw-open").addEventListener("click", openFirmwareDialog);
 $("fw-close").addEventListener("click", () => $("fw-dialog").close());
 closeOnBackdropClick($("fw-dialog"));
 closeOnBackdropClick($("voice-dialog"));
-closeOnBackdropClick($("teach-dialog"));
+closeOnBackdropClick($("cal-dialog"));
 
 // The dialog's Bluetooth / USB cable toggle.
 const firmwareRoute = () => $("fw-route").querySelector("input:checked").value;
@@ -2994,7 +3319,7 @@ $("latency-copy").addEventListener("click", async () => {
 // The Replay key swaps the live panels for a recorded session read back from its folder
 // (replay-view.js). Boards stay connected and recordings carry on underneath.
 initReplay({ getColors: () => colors });
-initTeach({ getBoard: () => selected });
+initCalibrate({ getBoard: () => selected, drawPose, drawBoardPicture, setStatus });
 initVoice({ getBoard: () => selected, getBoards: () => [...boards.values()], isRecording: () => recorder.active, getColors: () => colors });
 initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
