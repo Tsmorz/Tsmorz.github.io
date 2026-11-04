@@ -685,11 +685,11 @@ function drawOverview() {
   });
   const left = toX(state.view.t0);
   const right = toX(state.view.t1);
-  ctx.fillStyle = colors.text;
-  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = colors.outline;
+  ctx.globalAlpha = 0.12;
   ctx.fillRect(left, 0, right - left, height);
   ctx.globalAlpha = 1;
-  ctx.strokeStyle = colors.signal;
+  ctx.strokeStyle = colors.outline;
   ctx.lineWidth = 1.5;
   ctx.strokeRect(left + 0.75, 0.75, Math.max(1, right - left - 1.5), height - 1.5);
 }

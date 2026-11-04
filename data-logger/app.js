@@ -78,7 +78,7 @@ function readColors() {
   const token = (name) => css.getPropertyValue(`--${name}`).trim();
   colors = {
     grid: token("screen-grid"), line: token("screen-line"), muted: token("screen-muted"), text: token("screen-text"), screen: token("screen"),
-    readout: token("readout"), board: token("board"), mono: token("mono"), signal: token("signal"), bad: token("bad"),
+    readout: token("readout"), board: token("board"), mono: token("mono"), signal: token("signal"), outline: token("panel-outline"), bad: token("bad"),
     ledRed: token("led-red"), slot: token("slot"),
     // The board token is the light one on the dark theme's screens, the dark one on the light theme's.
     boardIsLight: effectiveTheme() === "dark",
@@ -134,8 +134,8 @@ document.addEventListener("pointerdown", (event) => {
 // ---- draggable seams ----------------------------------------------------------------------
 // In the laptop layout the seams between panels can be dragged, or moved with the arrow keys once
 // focused, to resize them; a double-click puts that split back to its default. The sizes are kept
-// as fractions in this browser (layout.js), so they scale with the window. Most splits are the
-// page grid's tracks; one `within` a module shares that module's height between its plots instead.
+// as fractions in this browser (layout.js), so they scale with the window. The splits are the page
+// grid's tracks; the plots within a panel always share its height equally.
 const LAYOUT_KEY = "layout";
 const WIDE_LAYOUT = matchMedia("(min-width: 1200px) and (min-height: 600px)");
 const mainEl = document.querySelector("main");
@@ -143,8 +143,6 @@ const SPLITS = {
   top: { axis: "x", minPx: 320, panels: [".boards-section", ".recording-section"] },
   bottom: { axis: "x", minPx: 240, panels: [".orientation-section", ".motion-section", ".mic-section"] },
   rows: { axis: "y", minPx: 150, panels: [".top-row", ".motion-section"] },
-  mic: { axis: "y", minPx: 64, panels: ["#envelope-plot", "#spectrum-plot"], within: ".mic-section" },
-  motion: { axis: "y", minPx: 64, panels: ["#accel-plot", "#gyro-plot"], within: ".motion-section" },
 };
 let savedLayout = {};
 try {
@@ -159,11 +157,6 @@ function saveLayout() {
 
 function applySplit(name) {
   const fractions = savedLayout[name];
-  if (SPLITS[name].within) {
-    // The plots grow from no height (flex-basis 0), so their heights keep these proportions.
-    SPLITS[name].panels.forEach((selector, i) => (document.querySelector(selector).style.flexGrow = fractions?.[i] ?? ""));
-    return;
-  }
   if (fractions) mainEl.style.setProperty(`--${name}-tracks`, gridTracks(fractions));
   else mainEl.style.removeProperty(`--${name}-tracks`);
   mainEl.classList.toggle(`${name}-sized`, Boolean(fractions));
@@ -177,11 +170,6 @@ function placeSeams() {
     const panel = document.querySelector(split.panels[index]).getBoundingClientRect();
     if (split.axis === "x") {
       Object.assign(seam.style, { left: `${panel.right - box.left}px`, top: `${panel.top - box.top}px`, height: `${panel.height}px` });
-    } else if (split.within) {
-      // In the gap above the lower plot's heading (under the upper plot, or under its time axis).
-      const area = document.querySelector(split.within).getBoundingClientRect();
-      const heading = document.querySelector(split.panels[index + 1]).previousElementSibling.getBoundingClientRect();
-      Object.assign(seam.style, { left: `${area.left - box.left}px`, top: `${heading.top - box.top - 6}px`, width: `${area.width}px` });
     } else {
       Object.assign(seam.style, { left: "0px", top: `${panel.bottom - box.top}px`, width: `${box.width}px` });
     }
@@ -190,12 +178,12 @@ function placeSeams() {
 
 function addSeam(name, split, index) {
   const seam = document.createElement("div");
-  seam.className = `seam ${split.axis === "x" ? "vertical" : "horizontal"}${split.within ? " within" : ""}`;
+  seam.className = `seam ${split.axis === "x" ? "vertical" : "horizontal"}`;
   seam.tabIndex = 0;
   seam.title = "Drag to resize; double-click to reset";
   seam.setAttribute("role", "separator");
   seam.setAttribute("aria-orientation", split.axis === "x" ? "vertical" : "horizontal");
-  seam.setAttribute("aria-label", split.within ? "Resize plots" : "Resize panels");
+  seam.setAttribute("aria-label", "Resize panels");
   mainEl.append(seam);
   seams.push({ seam, split, index });
 
@@ -1056,7 +1044,7 @@ function setStatus(text, { bad = false } = {}) {
 }
 
 function connectedSummary() {
-  const count = [...boards.values()].filter((board) => board.connected).length;
+  const count = [...boards.values()].filter((board) => board.shown && board.connected).length;
   $("board-count").textContent = count ? `${count} connected` : "";
   return count;
 }
@@ -1083,6 +1071,7 @@ function buildRow(board) {
   input.addEventListener("change", () => board.setLabel(input.value));
   row.querySelector(".disconnect").addEventListener("click", (event) => {
     event.stopPropagation();
+    if (awayBoards.get(board.key)?.board === board) return stopReconnecting(board);
     board.leaving = true;
     board.disconnect();
   });
@@ -1090,9 +1079,9 @@ function buildRow(board) {
     event.stopPropagation();
     if (confirm(`Put ${board.displayName} to sleep? Press its USER button to wake it.`)) sleepBoards([board]);
   });
-  row.addEventListener("click", () => select(board));
+  row.addEventListener("click", () => boards.get(board.key) === board && select(board));
   dragByHandle(row, row.querySelector(".name"), board);
-  row.dataset.key = board.key;
+  rowBoards.set(row, board);
   board.row = row;
   $("boards").append(row);
   placeRows();
@@ -1110,7 +1099,9 @@ try {
 }
 let draggedBoard = null;
 
-const shownBoards = () => [...$("boards").children].map((row) => boards.get(row.dataset.key)).filter(Boolean);
+// A row's board, the one connected or, for a dropped board's row, the one that dropped out.
+const rowBoards = new WeakMap();
+const shownBoards = () => [...$("boards").children].map((row) => rowBoards.get(row));
 
 // Puts the rows in the remembered order; only touches the table when they're out of it.
 function placeRows() {
@@ -1163,7 +1154,7 @@ function dragByHandle(row, handle, board) {
   row.addEventListener("drop", (event) => {
     if (!draggedBoard || draggedBoard === board) return;
     event.preventDefault();
-    const next = row.nextElementSibling ? boards.get(row.nextElementSibling.dataset.key) : null;
+    const next = row.nextElementSibling ? rowBoards.get(row.nextElementSibling) : null;
     moveBoardRow(draggedBoard, lowerHalf(event) ? (next === draggedBoard ? null : next) : board);
     clearDropMarks();
   });
@@ -1216,6 +1207,49 @@ function batteryDetail(battery) {
   return parts.join(" · ");
 }
 
+// ---- dropped boards' rows
+// The list shows only boards that are connected and set up (so the page's reconnect attempts don't
+// flicker rows in and out), plus, dimmed, any that just dropped out or fell asleep while the page
+// tries to get them back: until they're back, CHROME_FORGETS_MS has passed (Chrome can't find them
+// by itself after that), or ✕ stops the page trying. Not during a recording they're in, as the
+// recorder still waits for them.
+const awayBoards = new Map(); // device id -> { board (the one that dropped out), since }
+const notWanted = new Set(); // device ids whose reconnecting ✕ stopped
+
+function showAway(board, text) {
+  if (!board.shown) return;
+  awayBoards.set(board.key, { board, since: Date.now() });
+  const { row } = board;
+  row.classList.add("away");
+  row.classList.remove("selected");
+  for (const cell of [".battery", ".flash"]) row.querySelector(cell).textContent = "–";
+  row.querySelector(".imu").textContent = text;
+  row.querySelector(".bar i").style.width = "0";
+  row.querySelector(".level").textContent = "";
+  row.querySelector(".user-lamp").classList.remove("on");
+  row.querySelector(".sleep").disabled = true;
+  row.querySelector(".disconnect").title = "Stop reconnecting";
+}
+
+function forgetAway(key) {
+  awayBoards.get(key)?.board.row.remove();
+  awayBoards.delete(key);
+}
+
+function renderAwayRows() {
+  for (const [key, { board, since }] of awayBoards) {
+    if (boards.get(key)?.shown || Date.now() - since > CHROME_FORGETS_MS) forgetAway(key);
+    else board.row.querySelector(".disconnect").disabled = Boolean(recorder.active && recorder.members.has(key));
+  }
+}
+
+function stopReconnecting(board) {
+  if (reconnecting.has(board.key)) notWanted.add(board.key);
+  forgetAway(board.key);
+  setStatus(`Stopped reconnecting ${board.displayName}`);
+  renderBoards();
+}
+
 async function sleepBoards(list) {
   for (const board of list) board.sleeping = true;
   const results = await Promise.allSettled(list.map((board) => board.sleep()));
@@ -1255,7 +1289,8 @@ function renderUserLamps() {
 }
 
 function renderBoards() {
-  for (const board of boards.values()) renderBoardRow(board);
+  renderAwayRows();
+  for (const board of boards.values()) if (board.shown) renderBoardRow(board);
   placeRows(); // a board's ID is known only once it has connected
   const count = connectedSummary();
   renderPairPrompt();
@@ -1432,6 +1467,7 @@ async function connectDevice(device, onStatus = setStatus) {
     device.gatt.disconnect();
     throw error;
   }
+  board.shown = true;
   // A board the page reconnected by itself may be the one whose tag opened it.
   if (tappedBoard && board.boardId === tappedBoard) {
     forgetTappedBoard();
@@ -1473,22 +1509,25 @@ function connectWithin(device, ms, onStatus = () => {}) {
 function onDisconnected(board) {
   if (boards.get(board.key) !== board) return;
   boards.delete(board.key);
-  board.row?.remove();
   const member = memberOf(board);
   if (member?.board === board) detachMember(member);
   const job = firmwareJobs.get(board.key);
   if (job?.stage === "restarting") {
+    board.row?.remove();
     setStatus(`${board.displayName} restarting into v${job.version}…`);
   } else if (board.leaving || job?.active) {
+    board.row?.remove();
     setStatus(`${board.displayName} disconnected`);
   } else if (board.sleeping || board.sleptOnHold(performance.timeOrigin + performance.now())) {
+    showAway(board, "asleep: press USER");
     setStatus(`${board.displayName} is asleep: press its USER button and it reconnects`);
     keepConnected(board.device, board.displayName, { asleep: true });
   } else {
+    showAway(board, "reconnecting…");
     setStatus(`${board.displayName} dropped out: reconnecting…`, { bad: Boolean(member) });
     keepConnected(board.device, board.displayName);
   }
-  if (board === selected) select(boards.values().next().value ?? null);
+  if (board === selected) select([...boards.values()].find((each) => each.shown) ?? null);
   else renderBoards();
 }
 
@@ -1550,7 +1589,8 @@ renderNotify();
 // A board that drops out (out of range, a radio hiccup, or asleep: the page can't always tell, as
 // a board also sleeps by itself on a voice command, a low battery or NFC idling) is tried again
 // for as long as the page is open, so it's back once it's woken or in range; one disconnected with
-// ✕ isn't. After RECONNECT_WINDOW_MS the attempts slow down. Chrome needs no click to reconnect a
+// ✕, or whose reconnecting ✕ stopped, isn't. Boards from before a reload aren't: the page starts
+// with an empty list. After RECONNECT_WINDOW_MS the attempts slow down. Chrome needs no click to reconnect a
 // board it still remembers, but about 3 minutes after last seeing one Chrome forgets it. From then
 // on gatt.connect() and getDevices() never settle, whatever the board does, until a picker scans
 // again (Add board). A connect left pending, watchAdvertisements() and getDevices() didn't help
@@ -1561,12 +1601,12 @@ const RECONNECT_SLOW_PAUSE_MS = 10000;
 const CHROME_FORGETS_MS = 150000;
 const reconnecting = new Set(); // device ids
 
-async function keepConnected(device, name, { quiet = false, asleep = false } = {}) {
+async function keepConnected(device, name, { asleep = false } = {}) {
   if (reconnecting.has(device.id)) return;
   reconnecting.add(device.id);
   const slowFrom = Date.now() + RECONNECT_WINDOW_MS;
-  const wanted = () => !boards.get(device.id)?.connected && !firmwareJobs.get(device.id)?.active;
-  let warned = asleep || quiet; // a sleeping board is meant to be away
+  const wanted = () => !boards.get(device.id)?.connected && !firmwareJobs.get(device.id)?.active && !notWanted.has(device.id);
+  let warned = asleep; // a sleeping board is meant to be away
   const forgottenAt = Date.now() + CHROME_FORGETS_MS;
   let toldToAdd = false;
   try {
@@ -1584,6 +1624,12 @@ async function keepConnected(device, name, { quiet = false, asleep = false } = {
       }
       try {
         const board = await connectWithin(device, CONNECT_ATTEMPT_MS);
+        if (notWanted.has(device.id)) {
+          // ✕ was pressed while this attempt was under way.
+          board.leaving = true;
+          board.disconnect();
+          return;
+        }
         // Its row says it's back; the line only clears the news of it going.
         if ($("status").textContent.startsWith(board.displayName) || $("status").textContent.startsWith(name)) setStatus("");
         if (!selected) select(board);
@@ -1592,25 +1638,11 @@ async function keepConnected(device, name, { quiet = false, asleep = false } = {
       } catch {
         await sleepMs(slow ? RECONNECT_SLOW_PAUSE_MS : RECONNECT_PAUSE_MS);
       }
-      if (quiet && slow && !connectedSummary() && reconnecting.size <= 1) setStatus("No boards connected.");
     }
   } finally {
     reconnecting.delete(device.id);
+    notWanted.delete(device.id);
   }
-}
-
-// Boards this browser has connected before, reconnected on load. Only where Chrome lists them:
-// getDevices() still needs chrome://flags/#enable-web-bluetooth-new-permissions-backend.
-async function reconnectKnownBoards() {
-  let devices = [];
-  try {
-    devices = (await navigator.bluetooth?.getDevices?.()) ?? [];
-  } catch {
-    return;
-  }
-  if (!devices.length) return;
-  setStatus(`Looking for ${devices.length} board${devices.length === 1 ? "" : "s"} from last time…`);
-  for (const device of devices) keepConnected(device, device.name, { quiet: true });
 }
 
 // ---- recording ----------------------------------------------------------------------------
@@ -3239,4 +3271,3 @@ renderBoards();
 renderMouse();
 renderLatency();
 showTappedBoard();
-reconnectKnownBoards();
