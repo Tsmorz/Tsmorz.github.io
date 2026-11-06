@@ -4,6 +4,19 @@
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
 
+- name: Serial Plotter
+  blurb: >-
+    A serial console and plotter that runs in the browser. Plug in a board and it pulls
+    values and units out of each line, plots one chart per unit, records test runs you can
+    compare and export, and reads ESP-IDF and Zephyr timestamps.
+  year: "2026"
+  tags: [JavaScript, Web Serial, Embedded]
+  featured: true
+  on_cv: false
+  links:
+    - label: Open the tool
+      url: /serial-plotter/
+
 - name: Double Pendulum
   blurb: >-
     A double pendulum is a classic underactuated system with multiple equilibrium points.
