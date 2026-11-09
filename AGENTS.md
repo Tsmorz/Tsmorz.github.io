@@ -267,6 +267,15 @@ site's layouts (no front matter, so Jekyll copies it as-is).
 `dashboard/index.html` is this site's own: a redirect from the page's old address (`/dashboard/`, until
 2026-10-25) to `/data-logger/`, keeping any query and hash. The publish task doesn't touch it.
 
+### The serial plotter (`/serial-plotter/`)
+
+`serial-plotter/index.html` is one self-contained page (no front matter, so Jekyll copies it as-is) with its own
+look, like the data logger. It talks to a board over Web Serial (Chrome/Edge desktop), pulls `name:value unit`, `name=value`,
+Teleplot `>name:value` or CSV columns out of each line and draws one chart per unit; a console with filters, recorded
+test runs (kept in IndexedDB, compared as overlays, exported as CSV, log or a Markdown report), markers, A/B measurement
+cursors and an ESP-IDF/Zephyr device-clock time axis. It has a Demo stream and opens saved logs, so it works without a board.
+The same file is also published as a Claude artifact; edit it here and copy it there, not the other way round.
+
 ## When editing, don't
 
 - Reintroduce theme boilerplate (`_sass/`, a gemspec, `docs/`, bundled font files).

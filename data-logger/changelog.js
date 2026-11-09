@@ -8,6 +8,17 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-03-board-list",
+    date: "2026-11-03",
+    title: "A board list that starts empty",
+    items: [
+      "The page opens with no boards: boards from an earlier visit are no longer looked for, so add the ones you want.",
+      "Only connected boards are listed. One that drops out or falls asleep stays in the list, dimmed, while the page tries to get it back, for about 2 minutes; its ✕ stops the page trying.",
+      "Motion's and Microphone's plots always share their panel's height equally; the grip between them is gone.",
+      "Replay is framed in blue, like the dialogs, and the part of the session shown is outlined in blue on the strip at the bottom.",
+    ],
+  },
+  {
     id: "2026-11-02-moved-alert",
     date: "2026-11-02",
     firmware: "next",
