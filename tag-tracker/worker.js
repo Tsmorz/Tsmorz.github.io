@@ -88,7 +88,21 @@ function TagVision(cv, Core) {
   }
 
   // Detect tags and estimate each one's pose. sizes maps id → printed side (m) of the black square;
-  // ids not in it use defaultSize.
+  // ids not in it use defaultSize. Each tag comes back with OpenCV's pose (R, t, err) and, unless `raw`,
+  // `cands`: that pose and its mirror image refined by Levenberg–Marquardt on SE(3), best fit first, each with
+  // a covariance. Each rigid object in `bodies` gets the same, solved from all its visible tags at once.
+  function track(img, cam, sizes, defaultSize, bodies, raw) {
+    const tags = detectTags(img, cam, sizes, defaultSize);
+    const out = { tags, bodies: [] };
+    if (raw) return out;
+    for (const t of tags) if (t.R) t.cands = Core.solveTag(cam, t.corners, t.size, t, { sigma: 'auto' }).slice(0, 2);
+    for (const b of bodies || []) {
+      if (!b.members.some((m) => tags.some((t) => t.id === m.id))) continue;
+      const cands = Core.solveBody(cam, b, tags.filter((t) => t.R), { sigma: 'auto' }).slice(0, 2);
+      if (cands.length) out.bodies.push({ id: b.id, cands, seen: cands[0].seen });
+    }
+    return out;
+  }
   function detectTags(img, cam, sizes, defaultSize) {
     const corners = new cv.MatVector(), ids = new cv.Mat(), rej = new cv.MatVector();
     const out = [];
@@ -209,7 +223,7 @@ function TagVision(cv, Core) {
     } finally { [ov, iv, K, D, rv, tv, sdI, sdE, pe].forEach((m) => m.delete()); }
   }
 
-  return { FAMILIES, BOARD, QUALITY, setFamily, setRGBA, setGray, detectTags, detectBoard, boardImage, tagImage, familySize, calibrate };
+  return { FAMILIES, BOARD, QUALITY, setFamily, setRGBA, setGray, detectTags, track, detectBoard, boardImage, tagImage, familySize, calibrate };
 }
 TagVision.ready = ready;
 return TagVision;
@@ -266,8 +280,8 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
           const b = V.detectBoard(img);
           post({ type: 'board', seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, ids: b.ids, pts: b.pts, markers: b.markers });
         } else {
-          const tags = V.detectTags(img, m.cam, m.sizes, m.defaultSize);
-          post({ type: 'tags', seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, tags });
+          const r = V.track(img, m.cam, m.sizes, m.defaultSize, m.bodies, m.raw);
+          post({ type: 'tags', seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, tags: r.tags, bodies: r.bodies });
         }
       } else if (m.type === 'calibrate') {
         const c = V.calibrate(m.views, m.w, m.h, m.square);

@@ -4,7 +4,10 @@
 //   2. intrinsics: the field-of-view guess, rescaling a calibration, checking an imported one, projection
 //   3. history: trimming to the span, and axes every `every` seconds (with a tracking gap)
 //   4. the 3D plot's orbit camera, grid steps, calibration-view signatures and coverage, settings
-//   5. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
+//   5. SE(3): logs and exps, LM pose refinement and its covariance (checked by Monte Carlo), the mirror-image
+//      ambiguity, rigid objects of several tags, rotation means, and the Kalman filter (smoothing, velocity,
+//      resolving flips by prediction, gating an outlier, restarting after a real jump)
+//   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
 //      To run it: npm i --no-save @techstark/opencv-js@4.12.0-release.1
 const path = require('path');
@@ -106,13 +109,147 @@ console.log('4. plot, calibration views, settings');
   check(C.DEFAULTS.span === 1 && C.DEFAULTS.every === 0.1, 'defaults: 1 s of history, axes every 0.1 s');
 }
 
+console.log('5. SE(3)');
+{
+  const gauss = () => { let u = 0; for (let i = 0; i < 12; i++) u += rnd(); return u - 6; };
+  const randRot = (amp) => C.rodrigues([gauss() * amp, gauss() * amp, gauss() * amp]);
+  const angDeg = (A, B) => C.angleOf(C.mul3(C.tr3(A), B)) * 180 / Math.PI;
+  let worst = 0;
+  for (let i = 0; i < 50; i++) { const r = [gauss(), gauss(), gauss()], n = C.norm(r), v = n > 3.1 ? C.mulv([1, 0, 0, 0, 1, 0, 0, 0, 1], r.map((x) => x / n * 3.1)) : r; worst = Math.max(worst, C.norm(C.sub(C.so3Log(C.rodrigues(v)), v))); }
+  const nearPi = C.so3Log(C.rodrigues([0, Math.PI - 1e-6, 0]));
+  check(worst < 1e-9 && Math.abs(C.norm(nearPi) - Math.PI) < 1e-5, 'log undoes exp on SO(3), including next to a half turn');
+  const e = C.se3Exp([0.1, 0, 0, 0, 0, Math.PI / 2]);
+  check(Math.abs(e.t[0] - 0.2 / Math.PI) < 1e-12 && Math.abs(e.t[1] - 0.2 / Math.PI) < 1e-12, 'SE(3) exp: moving along x while turning a quarter about z ends on the arc');
+
+  const cam = { w: 1280, h: 720, fx: 1000, fy: 1000, cx: 639.5, cy: 359.5, dist: [0, 0, 0, 0, 0] };
+  const camD = Object.assign({}, cam, { dist: [-0.25, 0.08, 0.001, -0.0005, 0] });
+  const flipX = C.rodrigues([Math.PI, 0, 0]); // tag faces the camera
+  const truth = { R: C.mul3(rotXYZ(0.3, -0.4, 0.7), flipX), t: [0.12, -0.05, 1.0] };
+  const obj = C.tagCorners(0.08);
+  const shoot = (c, pose, objs, sig) => objs.map((X) => { const q = C.project(c, C.add(C.mulv(pose.R, X), pose.t)); return [q[0] + sig * gauss(), q[1] + sig * gauss()]; });
+  const start = { R: C.mul3(randRot(0.05), truth.R), t: C.add(truth.t, [0.02, -0.01, 0.05]) };
+  const exact = C.refinePose(camD, obj, shoot(camD, truth, obj, 0), start);
+  check(C.norm(C.sub(exact.t, truth.t)) < 1e-7 && angDeg(exact.R, truth.R) < 1e-5, `LM on SE(3) recovers the pose exactly through lens distortion (${exact.iters} iterations)`);
+  // Monte Carlo: does the covariance match the scatter?
+  const errs = [], sig = 0.2;
+  let pred = null;
+  for (let k = 0; k < 400; k++) {
+    const r = C.refinePose(cam, obj, shoot(cam, truth, obj, sig), truth, { sigma: sig });
+    errs.push(C.sub(r.t, truth.t).concat(C.so3Log(C.mul3(r.R, C.tr3(truth.R)))));
+    pred = pred || r.cov;
+  }
+  const varOf = (i) => errs.reduce((s, e2) => s + e2[i] * e2[i], 0) / errs.length;
+  const ratios = [0, 1, 2, 3, 4, 5].map((i) => Math.sqrt(varOf(i) / pred[i][i]));
+  check(ratios.every((x) => x > 0.75 && x < 1.3), `covariance matches 400 noisy trials: measured/predicted σ = ${ratios.map((x) => x.toFixed(2)).join(', ')}`);
+  const ratioQ = Math.sqrt(pred[2][2]) / C.depthNoise(cam, 0.08, 1.0, sig);
+  check(ratioQ > 1 / 3 && ratioQ < 3, `depth σ ${(Math.sqrt(pred[2][2]) * 1000).toFixed(2)} mm: the same order as the back-of-envelope ${(C.depthNoise(cam, 0.08, 1.0, sig) * 1000).toFixed(2)} mm, which ignores tilt`);
+
+  // the mirror-image ambiguity: a small, nearly face-on tag far away
+  const far = { R: C.mul3(rotXYZ(0.12, 0.1, 0.3), flipX), t: [0.05, 0.02, 2.5] };
+  const fromWrong0 = C.solveTag(cam, shoot(cam, far, obj, 0).flat(), 0.08, C.flipPose(far));
+  check(fromWrong0.length === 2 && fromWrong0.some((r) => angDeg(r.R, far.R) < 0.01), 'two candidate poses fit a far, nearly face-on tag; one is the true pose even when OpenCV starts on the other');
+  const fromWrong = C.solveTag(cam, shoot(cam, far, obj, 0.2).flat(), 0.08, C.flipPose(far));
+  check(fromWrong[1].rms < 1.0, `and the wrong one fits nearly as well (${fromWrong[0].rms.toFixed(2)} vs ${fromWrong[1].rms.toFixed(2)} px): the image alone can't choose`);
+
+  // a rigid object: three tags on three faces of a 6 cm cube
+  const h = 0.03, size = 0.05;
+  const members = [
+    { id: 10, R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, h], size },
+    { id: 11, R: C.rodrigues([0, Math.PI / 2, 0]), t: [h, 0, 0], size },
+    { id: 12, R: C.rodrigues([-Math.PI / 2, 0, 0]), t: [0, h, 0], size },
+  ];
+  const bodyTruth = { R: C.mul3(rotXYZ(0.5, 0.6, 0.2), rotXYZ(Math.PI, 0, Math.PI / 4)), t: [-0.05, 0.03, 0.9] };
+  const dets = [];
+  for (const m of members) {
+    const tagPose = C.compose(bodyTruth, { R: m.R, t: m.t });
+    if (C.mulv(tagPose.R, [0, 0, 1])[2] > -0.05) continue; // facing away: not visible
+    const corners = shoot(cam, tagPose, C.tagCorners(size), 0.2).flat();
+    const raw = C.solveTag(cam, corners, size, tagPose)[0];
+    dets.push(Object.assign({ id: m.id, corners }, m.id === 11 ? C.flipPose(raw) : raw)); // one tag starts on the wrong pose
+  }
+  const bs = C.solveBody(cam, { members }, dets);
+  check(dets.length >= 2, `${dets.length} of the cube's tags face the camera`);
+  check(bs.length && C.norm(C.sub(bs[0].t, bodyTruth.t)) < 0.002 && angDeg(bs[0].R, bodyTruth.R) < 0.5, `one pose from all their corners: ${(C.norm(C.sub(bs[0].t, bodyTruth.t)) * 1000).toFixed(2)} mm, ${angDeg(bs[0].R, bodyTruth.R).toFixed(2)}° off`);
+  check(bs.length === 1 || bs[1].rms > 3 * bs[0].rms, `tags on different faces leave no mirror-image doubt (next best ${bs[1] ? bs[1].rms.toFixed(1) + ' px' : 'none'})`);
+
+  // rotation mean
+  const R0 = rotXYZ(0.4, -0.2, 1.1), samp = [];
+  for (let k = 0; k < 40; k++) samp.push({ R: C.mul3(randRot(0.02), R0), t: [0.1 + 0.001 * gauss(), 0, 0] });
+  samp.push({ R: C.mul3(C.rodrigues([0, 0, 1]), R0), t: [0.3, 0, 0] }); // an outlier
+  const mp = C.meanPose(samp, 5, 0.02);
+  check(angDeg(mp.R, R0) < 0.5 && Math.abs(mp.t[0] - 0.1) < 0.001 && mp.used === 40, `mean pose on SO(3) × R³ drops the outlier (${mp.used} of 41 kept, ${angDeg(mp.R, R0).toFixed(2)}° off)`);
+
+  // the filter, on a pose moving at constant velocity, measured with 4 mm and 1.5° noise
+  const v = [0.3, -0.1, 0.2], w = [0.5, 1.0, -0.4], dt = 1 / 30;
+  const at = (k) => ({ R: C.mul3(C.rodrigues(w.map((x) => x * k * dt)), truth.R), t: C.add(truth.t, v.map((x) => x * k * dt)) });
+  const mcov = [[16e-6, 0, 0, 0, 0, 0], [0, 16e-6, 0, 0, 0, 0], [0, 0, 16e-6, 0, 0, 0], [0, 0, 0, 7e-4, 0, 0], [0, 0, 0, 0, 7e-4, 0], [0, 0, 0, 0, 0, 7e-4]];
+  const noisy = (p) => ({ R: C.mul3(C.rodrigues([0.026 * gauss(), 0.026 * gauss(), 0.026 * gauss()]), p.R), t: C.add(p.t, [0.004 * gauss(), 0.004 * gauss(), 0.004 * gauss()]), cov: mcov, rms: 0.2 });
+  const runFilter = (preset) => {
+    const F = new C.PoseFilter(preset);
+    let eRaw = 0, eF = 0, aRaw = 0, aF = 0, out;
+    for (let k = 0; k < 150; k++) {
+      const tr = at(k), z = noisy(tr);
+      out = F.update(k * dt, [z]);
+      if (k >= 45) { eRaw += C.norm(C.sub(z.t, tr.t)) ** 2; eF += C.norm(C.sub(out.pose.t, tr.t)) ** 2; aRaw += angDeg(z.R, tr.R) ** 2; aF += angDeg(out.pose.R, tr.R) ** 2; }
+    }
+    return { rp: Math.sqrt(eF / eRaw), ra: Math.sqrt(aF / aRaw), out };
+  };
+  // the same filter, cut down to one axis, against a textbook linear Kalman filter
+  {
+    const q = C.MOTION.balanced.qa, r = 16e-6, F = new C.PoseFilter({ qa: q, qw: 1 });
+    let x = [0, 0], P = [[r + 1e-6, 0], [0, 1]], worstDiff = 0;
+    for (let k = 0; k < 200; k++) {
+      const z = 0.3 * k * dt + 0.004 * gauss();
+      if (k === 0) x = [z, 0];
+      else {
+        x = [x[0] + x[1] * dt, x[1]];
+        P = [[P[0][0] + 2 * dt * P[0][1] + dt * dt * P[1][1] + q * dt ** 3 / 3, P[0][1] + dt * P[1][1] + q * dt * dt / 2], [P[0][1] + dt * P[1][1] + q * dt * dt / 2, P[1][1] + q * dt]];
+        const S = P[0][0] + r + 1e-6, K = [P[0][0] / S, P[1][0] / S], y = z - x[0];
+        x = [x[0] + K[0] * y, x[1] + K[1] * y];
+        P = [[(1 - K[0]) * P[0][0], (1 - K[0]) * P[0][1]], [P[1][0] - K[1] * P[0][0], P[1][1] - K[1] * P[0][1]]];
+      }
+      const o = F.update(k * dt, [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [z, 0, 1], cov: [[r, 0, 0, 0, 0, 0], [0, r, 0, 0, 0, 0], [0, 0, r, 0, 0, 0], [0, 0, 0, 1e-3, 0, 0], [0, 0, 0, 0, 1e-3, 0], [0, 0, 0, 0, 0, 1e-3]], rms: 0.1 }]);
+      worstDiff = Math.max(worstDiff, Math.abs(o.pose.t[0] - x[0]));
+    }
+    check(worstDiff < 1e-4, `on one axis it matches a textbook linear Kalman filter to ${(worstDiff * 1e6).toFixed(1)} µm`);
+  }
+  const sm = runFilter(C.MOTION.smooth), ba = runFilter(C.MOTION.balanced), re = runFilter(C.MOTION.responsive);
+  check(sm.rp < ba.rp && ba.rp < re.rp && re.rp < 1, `error vs raw, position: smooth ${(sm.rp * 100).toFixed(0)}%, balanced ${(ba.rp * 100).toFixed(0)}%, responsive ${(re.rp * 100).toFixed(0)}%`);
+  check(sm.ra < 0.6 && ba.ra < 0.8, `and angle: smooth ${(sm.ra * 100).toFixed(0)}%, balanced ${(ba.ra * 100).toFixed(0)}%, responsive ${(re.ra * 100).toFixed(0)}%`);
+  check(C.norm(C.sub(sm.out.pose.v, v)) < 0.1 && C.norm(C.sub(sm.out.pose.w, w)) < 0.4, `it estimates velocity: v (${sm.out.pose.v.map((x) => x.toFixed(2)).join(', ')}) m/s, truth (${v.join(', ')})`);
+
+  // flips: the wrong mirror image is often the better fit, and fits about as well
+  const G = new C.PoseFilter(C.MOTION.balanced);
+  let bad = 0, bestWrong = 0;
+  for (let k = 0; k < 90; k++) {
+    const tr = at(k), z = noisy(tr), zf = Object.assign(C.flipPose(tr), { cov: mcov, rms: 0.21 });
+    const flipFar = angDeg(zf.R, tr.R) > 10;
+    const cands = k >= 5 && rnd() < 0.4 ? [zf, z] : [z, zf];
+    if (cands[0] === zf && flipFar) bestWrong++;
+    const r = G.update(k * dt, cands);
+    if (k >= 5 && r.pose && angDeg(r.pose.R, tr.R) > 5) bad++;
+  }
+  check(bestWrong > 15 && bad === 0, `with the wrong mirror image fitting best in ${bestWrong} frames, the filter follows the right one in all of them`);
+
+  // gating: one wild measurement is skipped; a real jump restarts the track
+  const Hf = new C.PoseFilter(C.MOTION.balanced);
+  for (let k = 0; k < 30; k++) Hf.update(k * dt, [noisy(at(k))]);
+  const wild = Object.assign(noisy(at(30)), { t: C.add(at(30).t, [0.3, 0, 0]) });
+  const rj = Hf.update(30 * dt, [wild]);
+  check(rj.rejected === true && rj.pose === null, `a measurement 30 cm off the prediction is skipped (d² = ${rj.d2.toFixed(0)})`);
+  let last;
+  for (let k = 31; k < 35; k++) last = Hf.update(k * dt, [Object.assign(noisy(at(k)), { t: C.add(at(k).t, [0.3, 0, 0]) })]);
+  check(last.pose && Math.abs(last.pose.t[0] - at(34).t[0] - 0.3) < 0.02, 'but when the tag really is there, the track restarts on it after 3 frames');
+  check(C.sigmaAlong(mcov, [0, 0, 1]) - 0.004 < 1e-12, 'σ along a direction from a covariance');
+}
+
 let cvPkg = null;
 try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
 if (!cvPkg) {
-  console.log('5. detection and calibration: skipped (OpenCV.js not installed)');
+  console.log('6. detection and calibration: skipped (OpenCV.js not installed)');
   finish();
 } else (async () => {
-  console.log('5. detection and calibration (OpenCV.js)');
+  console.log('6. detection and calibration (OpenCV.js)');
   const factory = require(path.join(__dirname, '..', 'tag-tracker/worker.js'));
   const cv = await factory.ready(require(cvPkg));
   const V = factory(cv, C);
@@ -169,24 +306,26 @@ if (!cvPkg) {
   const At = [q, 0, q * o, 0, -q, -q * o, 0, 0, 1]; // y up the tag
   let ms = 0, n = 0;
   for (const z of [1, 2]) {
-    const errs = [], angs = [];
+    const errs = [], angs = [], rawAng = [];
     for (let i = 0; i < 6; i++) {
       // the tag's z comes out of its face, so a tag facing the camera is turned half a turn about x
       const R = C.mul3(rotXYZ((rnd() - 0.5) * 0.9, (rnd() - 0.5) * 0.9, rnd() * 6.28), rotXYZ(Math.PI, 0, 0)), t = [(rnd() - 0.5) * 0.4 * z, (rnd() - 0.5) * 0.2 * z, z];
       const img = render(pad, At, R, t, 150);
-      const t0 = Date.now(), found = V.detectTags(img, cam, { 42: size }, 0.05);
+      const t0 = Date.now(), found = V.track(img, cam, { 42: size }, 0.05, [], false).tags;
       ms += Date.now() - t0; n++;
       img.delete();
       const f = found.find((x) => x.id === 42);
-      if (!f || !f.t) { errs.push(Infinity); continue; }
-      errs.push(C.norm(C.sub(f.t, t)) * 1000);
-      angs.push((C.angleOf(C.mul3(C.tr3(R), f.R)) * 180) / Math.PI);
+      if (!f || !f.t) { errs.push(Infinity); rawAng.push(Infinity); continue; }
+      // the refined candidate nearest the truth: the image alone may not say which of two mirror images it is
+      const near = f.cands.map((c) => ({ e: C.norm(C.sub(c.t, t)) * 1000, a: (C.angleOf(C.mul3(C.tr3(R), c.R)) * 180) / Math.PI })).sort((p, q) => p.a - q.a)[0];
+      errs.push(near.e); angs.push(near.a);
+      rawAng.push((C.angleOf(C.mul3(C.tr3(R), f.R)) * 180) / Math.PI);
     }
-    const worst = Math.max(...errs), lim = z === 1 ? 3 : 10;
+    const worst = Math.max(...errs), lim = z === 1 ? 3 : 25; // depth noise grows as z²: about 1% at 2 m for a 40 px tag
     check(worst < lim, `8 cm tag at ${z} m: position error ${errs.map((e) => e.toFixed(1)).join(', ')} mm (all under ${lim})`);
-    check(angs.length === 6 && Math.max(...angs) < 5, `and its rotation within ${Math.max(...angs).toFixed(2)}° (under 5°)`);
+    check(angs.length === 6 && Math.max(...angs) < 5, `and its rotation within ${Math.max(...angs).toFixed(2)}° (under 5°); OpenCV's own pose alone: up to ${Math.max(...rawAng).toFixed(1)}°`);
   }
-  check(ms / n < 100, `tag detection on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
+  check(ms / n < 100, `detection and SE(3) refinement on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
   // Repeated frames must not leak WebAssembly memory.
   const img = render(pad, At, C.mul3(rotXYZ(0.2, 0.1, 0.3), rotXYZ(Math.PI, 0, 0)), [0, 0, 1], 150);
   const heap0 = cv.HEAPU8 ? cv.HEAPU8.length : 0;

@@ -130,7 +130,19 @@ td.num,th.num{text-align:right}
 .chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 4px 0 9px;border-radius:999px;border:1px dashed var(--border2);font-size:12px;color:var(--text2)}
 .chip button{height:20px;border:0;border-radius:999px;background:var(--accentBg);color:var(--accent);font-weight:600;font-size:11.5px;padding:0 8px}
 .hint{color:var(--muted);font-size:12px;line-height:1.5;margin:0}
-.det{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-top:1px solid var(--border)}
+.det{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-top:1px solid var(--border)}
+.bodies{padding:10px 12px 12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+h3.sub{font-size:12.5px;font-weight:600;margin:0}
+.bform{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface2)}
+.pick{height:26px;border:1px solid var(--border2);background:var(--surface);border-radius:999px;padding:0 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px;color:var(--text2)}
+.pick[aria-pressed=true]{border-color:var(--accent);background:var(--accentBg);color:var(--text)}
+.pick .ord{font:600 10px var(--mono);color:var(--accent)}
+.brow{display:grid;grid-template-columns:auto minmax(90px,1fr) auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--border)}
+.brow:first-child{border-top:0}
+.brow .meta{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12px;color:var(--muted)}
+.mtag{font:500 11.5px var(--mono);padding:1px 6px;border-radius:5px;background:var(--surface3);color:var(--text2)}
+.learn{grid-column:2/-1;display:flex;flex-direction:column;gap:5px;font-size:12px}
+.learn .lrow{display:flex;align-items:center;gap:8px}.learn .lrow .mono{width:42px}
 .scroll{overflow-x:auto}
 
 /* plots */
@@ -276,6 +288,21 @@ footer{max-width:1680px;margin:0 auto;padding:4px 16px 24px;color:var(--muted);f
         <p class="hint" id="noTags">No tags yet. Show one to the camera and it will appear here to name, or add one by its ID.</p>
         <div class="chips" id="unknown" hidden><span class="small muted">Seen, not named:</span></div>
       </div>
+      <div class="bodies" aria-labelledby="h-bodies">
+        <div class="row">
+          <h3 class="sub" id="h-bodies">Rigid objects</h3>
+          <span class="spacer"></span>
+          <button class="btn sm outline" id="newBody"><svg class="i"><use href="#i-plus"/></svg>New object</button>
+        </div>
+        <p class="hint" id="bodiesHint">Fix two or more tags to one object, at different angles, and it is tracked as one pose from all their corners: steadier, and free of the mirror-image flips a single flat tag can have.</p>
+        <form id="bodyForm" class="bform" hidden novalidate>
+          <label class="field">Name <input id="bodyName" class="input sm" maxlength="40" placeholder="e.g. Right hand"></label>
+          <div class="field" style="flex-wrap:wrap;white-space:normal"><span id="bodyPickLbl">Tags</span><span class="chips" id="bodyPick" role="group" aria-labelledby="bodyPickLbl"></span></div>
+          <p class="hint" style="width:100%">The first tag you pick is the object's origin. Then hold the object so that tag and each of the others are in view together, and turn it slowly while it learns how the tags sit.</p>
+          <div class="row"><button class="btn sm primary" id="bodyCreate" type="submit" disabled>Learn shape</button><button class="btn sm" id="bodyCancel" type="button">Cancel</button></div>
+        </form>
+        <div id="bodyList"></div>
+      </div>
       <div class="det">
         <span class="field">Detector
           <span class="seg sm" role="radiogroup" aria-label="Detector">
@@ -283,6 +310,21 @@ footer{max-width:1680px;margin:0 auto;padding:4px 16px 24px;color:var(--muted);f
             <button role="radio" data-q="fast" aria-checked="false" title="Half-resolution search, about 3× faster">Fast</button>
           </span>
         </span>
+        <span class="field">Pose
+          <span class="seg sm" role="radiogroup" aria-label="Pose">
+            <button role="radio" data-pose="raw" aria-checked="false" title="OpenCV's IPPE pose of each tag, frame by frame">Raw</button>
+            <button role="radio" data-pose="refined" aria-checked="false" title="Refined by Levenberg–Marquardt on SE(3), frame by frame">Refined</button>
+            <button role="radio" data-pose="filtered" aria-checked="true" title="Refined, then a Kalman filter on SE(3) with a constant-velocity model">Filtered</button>
+          </span>
+        </span>
+        <span class="field" id="motionField">Motion
+          <span class="seg sm" role="radiogroup" aria-label="Filter tuning">
+            <button role="radio" data-motion="smooth" aria-checked="false" title="Smoothest; lags on sudden moves">Smooth</button>
+            <button role="radio" data-motion="balanced" aria-checked="true">Balanced</button>
+            <button role="radio" data-motion="responsive" aria-checked="false" title="Least lag; less smoothing">Responsive</button>
+          </span>
+        </span>
+        <span class="field"><span id="cmpLbl">Compare with raw</span><button id="cmpSw" class="switch" role="switch" aria-checked="false" aria-labelledby="cmpLbl"></button></span>
         <label class="field">Unlisted tags <input id="defSize" class="input sm num mono" type="number" min="5" max="2000" step="1"><span class="unit">mm</span></label>
         <label class="field" id="fovField">Field of view <input id="hfov" class="input sm num mono" type="number" min="20" max="170" step="1"><span class="unit">° (until calibrated)</span></label>
       </div>
@@ -292,8 +334,8 @@ footer{max-width:1680px;margin:0 auto;padding:4px 16px 24px;color:var(--muted);f
       <div class="card-h"><h2 id="h-now">Now</h2><span class="small muted" id="frameNote"></span></div>
       <div class="scroll">
         <table>
-          <thead><tr><th>Tag</th><th class="num">x</th><th class="num">y</th><th class="num">z</th><th class="num">Distance</th><th class="num" title="Mean distance between the detected corners and the fitted tag, in pixels">Corner fit</th><th class="num" title="Expected depth jitter from 0.2 px of corner noise">± depth</th></tr></thead>
-          <tbody id="nowRows"><tr><td colspan="7" class="muted">Nothing tracked yet.</td></tr></tbody>
+          <thead><tr><th>Tag</th><th class="num">x</th><th class="num">y</th><th class="num">z</th><th class="num">Distance</th><th class="num" title="From the Kalman filter, in cm/s">Speed</th><th class="num" title="RMS distance between the detected corners and the fitted pose, in pixels">Corner fit</th><th class="num" title="One standard deviation along the line of sight, from the pose's covariance">± depth</th></tr></thead>
+          <tbody id="nowRows"><tr><td colspan="8" class="muted">Nothing tracked yet.</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -412,7 +454,12 @@ const S = {
   worker: null, ready: false, busy: false, seq: 0, familyCount: 587,
   stream: null, track: null, running: false, demo: null,
   cam: null, camKey: '',
-  hist: new C.History(), seen: new Map(), last: null, lastBoard: null,
+  // Tracks are keyed by tag id (a number) or 'b:<id>' for a rigid object. hist holds the plotted poses (in the
+  // chosen frame), rawHist the raw ones for "Compare with raw", filters one PoseFilter per track, tracks the
+  // latest camera-frame state per track, seen the last sighting of every tag id.
+  hist: new C.History(), rawHist: new C.History(), filters: new Map(), tracks: new Map(), seen: new Map(), last: null, lastBoard: null,
+  bodies: store.get('bodies', []), // {id, name, members: [{id, R, t}] (first is the origin), spread}
+  learn: null, // {id, name, ids, samples: {id: [poses]}} while an object's shape is being learned
   views: [], still: 0, lastCapture: 0, auto: true, calibResult: null,
   stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 },
   view: { yaw: -0.65, pitch: 0.42, dist: 2.6, target: [0, 1.0, 0], fitted: false },
@@ -441,11 +488,19 @@ function readColors() {
     x: g('x'), y: g('y'), z: g('z'), unknown: g('unknown'), accent: g('accent'), good: g('good'), slots: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => g('s' + i)) };
 }
 
-// ---------------- tags ----------------
+// ---------------- tags and objects ----------------
+// A track key is a tag id (number) or 'b:<id>' for a rigid object, which takes its origin tag's colour.
+const isBody = (k) => typeof k === 'string' && k.startsWith('b:');
+const bodyOf = (k) => S.bodies.find((b) => 'b:' + b.id === k || b.id === k) || null;
+const keySort = (a, b) => (isBody(a) - isBody(b)) || String(a).localeCompare(String(b), undefined, { numeric: true });
+const parseKey = (v) => (v === '' || v === null || v === undefined ? null : v.startsWith('b:') ? v : +v);
+function memberIds() { const m = new Set(); for (const b of S.bodies) for (const x of b.members) m.add(x.id); return m; }
 function tagOf(id) { return S.tags.find((t) => t.id === id) || null; }
-function colorOf(id) { const t = tagOf(id); return t && t.slot >= 0 ? K.slots[t.slot] : K.unknown; }
-function cssColorOf(id) { const t = tagOf(id); return t && t.slot >= 0 ? `var(--s${t.slot + 1})` : 'var(--unknown)'; }
-function nameOf(id) { const t = tagOf(id); return t && t.name ? t.name : '#' + id; }
+function slotOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? slotOf(b.members[0].id) : -1; } const t = tagOf(k); return t ? t.slot : -1; }
+function colorOf(k) { const s = slotOf(k); return s >= 0 ? K.slots[s] : K.unknown; }
+function cssColorOf(k) { const s = slotOf(k); return s >= 0 ? `var(--s${s + 1})` : 'var(--unknown)'; }
+function nameOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? b.name || 'Object' : k; } const t = tagOf(k); return t && t.name ? t.name : '#' + k; }
+function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); }
 function sizeOf(id) { const t = tagOf(id); return t ? t.size : S.settings.tagSize; }
 function freeSlot() { for (let i = 0; i < SLOTS; i++) if (!S.tags.some((t) => t.slot === i)) return i; return -1; }
 function addTag(id, name) {
@@ -465,16 +520,20 @@ function renderTags() {
       <td class="mono">${t.id}</td>
       <td><label class="sr" for="tn${t.id}">Name of tag ${t.id}</label><input id="tn${t.id}" class="input sm tagname" maxlength="40" placeholder="Name, e.g. Left hand"></td>
       <td class="num"><span class="field"><label class="sr" for="ts${t.id}">Black square size of tag ${t.id}, mm</label><input id="ts${t.id}" class="input sm num mono" type="number" min="5" max="2000" step="0.5"><span class="unit">mm</span></span></td>
-      <td><span class="seen" id="seen${t.id}"><span class="dot"></span><span>Not seen</span></span></td>
+      <td><span class="seen" id="seen${t.id}"><span class="dot"></span><span>Not seen</span></span>${S.bodies.filter((b) => b.members.some((x) => x.id === t.id)).map((b) => `<div class="small muted">in ${escapeHtml(b.name || 'Object')}</div>`).join('')}</td>
       <td style="white-space:nowrap"><button class="btn sm sq" title="Print this tag" aria-label="Print tag ${t.id}"><svg class="i"><use href="#i-print"/></svg></button><button class="btn sm sq danger" title="Remove" aria-label="Remove tag ${t.id}"><svg class="i"><use href="#i-x"/></svg></button></td>`;
     const [nm, sz] = tr.querySelectorAll('input'), [pr, rm] = tr.querySelectorAll('button');
     nm.value = t.name; sz.value = +(t.size * 1000).toFixed(1);
     nm.oninput = () => { t.name = nm.value.trim(); saveTags(); refreshFrameSel(); refreshTplotSel(); };
-    sz.onchange = () => { const v = +sz.value; if (v >= 5 && v <= 2000) { t.size = v / 1000; saveTags(); S.hist.clear(); } else sz.value = +(t.size * 1000).toFixed(1); };
+    sz.onchange = () => { const v = +sz.value; if (v >= 5 && v <= 2000) { t.size = v / 1000; saveTags(); resetTracks(); } else sz.value = +(t.size * 1000).toFixed(1); };
     pr.onclick = () => printTag(t.id, t.size);
     rm.onclick = () => {
-      S.tags = S.tags.filter((x) => x !== t); saveTags(); renderTags(); refreshFrameSel(); refreshTplotSel();
-      if (S.settings.frame === String(t.id)) setFrame('camera');
+      const inBodies = S.bodies.filter((b) => b.members.some((x) => x.id === t.id));
+      if (inBodies.length && !confirm(`Tag ${t.id} is part of ${inBodies.map((b) => '“' + (b.name || 'Object') + '”').join(', ')}. Remove the tag and ${inBodies.length > 1 ? 'those objects' : 'that object'}?`)) return;
+      S.bodies = S.bodies.filter((b) => !inBodies.includes(b)); saveBodies();
+      S.tags = S.tags.filter((x) => x !== t); saveTags(); renderTags(); renderBodies(); refreshFrameSel(); refreshTplotSel();
+      if (S.settings.frame === String(t.id) || inBodies.some((b) => S.settings.frame === 'b:' + b.id)) setFrame('camera');
+      resetTracks();
     };
     tb.appendChild(tr);
   }
@@ -529,9 +588,22 @@ function onSettings() {
 $('family').value = S.settings.family;
 $('family').onchange = () => {
   S.settings.family = $('family').value; store.set('settings', S.settings);
-  S.hist.clear(); S.seen.clear();
+  resetTracks(); S.seen.clear();
   if (S.ready) S.worker.postMessage({ type: 'family', family: S.settings.family, quality: S.quality });
 };
+function radios(attr, get, set) {
+  const all = document.querySelectorAll(`[data-${attr}]`), paint = () => all.forEach((x) => x.setAttribute('aria-checked', String(x.dataset[attr] === get())));
+  all.forEach((b) => { b.onclick = () => { set(b.dataset[attr]); paint(); }; });
+  paint();
+}
+radios('pose', () => S.settings.pose, (v) => { S.settings.pose = v; store.set('settings', S.settings); resetTracks(); paintPoseUi(); renderBodies(); });
+radios('motion', () => S.settings.motion, (v) => { S.settings.motion = v; store.set('settings', S.settings); S.filters.clear(); });
+function paintPoseUi() {
+  $('motionField').hidden = S.settings.pose !== 'filtered';
+  $('cmpSw').setAttribute('aria-checked', String(S.settings.compare));
+  $('cmpSw').disabled = S.settings.pose === 'raw';
+}
+$('cmpSw').onclick = () => { S.settings.compare = !S.settings.compare; store.set('settings', S.settings); S.rawHist.clear(); paintPoseUi(); };
 document.querySelectorAll('[data-q]').forEach((b) => {
   b.setAttribute('aria-checked', String(b.dataset.q === S.quality));
   b.onclick = () => {
@@ -541,20 +613,27 @@ document.querySelectorAll('[data-q]').forEach((b) => {
   };
 });
 function refreshFrameSel() {
-  const sel = $('frameSel'), cur = S.settings.frame;
-  sel.innerHTML = '<option value="camera">Camera</option>' + S.tags.map((t) => `<option value="${t.id}">${escapeHtml(nameOf(t.id))} (#${t.id})</option>`).join('');
+  const sel = $('frameSel'), cur = S.settings.frame, mem = memberIds();
+  sel.innerHTML = '<option value="camera">Camera</option>'
+    + S.bodies.map((b) => `<option value="b:${b.id}">${escapeHtml(nameOf('b:' + b.id))} (object)</option>`).join('')
+    + S.tags.filter((t) => !mem.has(t.id)).map((t) => `<option value="${t.id}">${escapeHtml(nameOf(t.id))} (#${t.id})</option>`).join('');
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : 'camera';
-  $('frameNote').textContent = sel.value === 'camera' ? 'Relative to the camera' : 'Relative to ' + nameOf(+sel.value);
+  if (sel.value !== cur) { S.settings.frame = sel.value; store.set('settings', S.settings); }
+  $('frameNote').textContent = sel.value === 'camera' ? 'Relative to the camera' : 'Relative to ' + nameOf(parseKey(sel.value));
 }
-function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); S.hist.clear(); S.view.fitted = false; refreshFrameSel(); }
+function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.view.fitted = false; refreshFrameSel(); }
 $('frameSel').onchange = () => setFrame($('frameSel').value);
+// the tracks a visitor can pick: objects, and tags that aren't part of one
+function trackKeys() {
+  const mem = memberIds();
+  return [...new Set([...S.bodies.map((b) => 'b:' + b.id), ...S.tags.map((t) => t.id).filter((id) => !mem.has(id)), ...S.hist.ids()])].sort(keySort);
+}
 function refreshTplotSel() {
-  const sel = $('tplotTag'), ids = new Set([...S.tags.map((t) => t.id), ...S.hist.ids()]), cur = S.tplotTag;
-  const list = [...ids].sort((a, b) => a - b);
-  const key = list.map((id) => id + ':' + nameOf(id)).join('|');
+  const sel = $('tplotTag'), cur = S.tplotTag, list = trackKeys();
+  const key = list.map((k) => k + ':' + nameOf(k)).join('|');
   if (sel.dataset.key !== key) {
     sel.dataset.key = key;
-    sel.innerHTML = list.length ? list.map((id) => `<option value="${id}">${escapeHtml(nameOf(id))}${tagOf(id) && tagOf(id).name ? ' (#' + id + ')' : ''}</option>`).join('') : '<option value="">No tags</option>';
+    sel.innerHTML = list.length ? list.map((k) => `<option value="${k}">${escapeHtml(nameOf(k))}${isBody(k) ? '' : tagOf(k) && tagOf(k).name ? ' (#' + k + ')' : ''}</option>`).join('') : '<option value="">No tags</option>';
   }
   if (cur !== null && list.includes(cur)) sel.value = String(cur);
   else if (list.length) { S.tplotTag = list[0]; sel.value = String(list[0]); }
@@ -563,7 +642,7 @@ document.querySelectorAll('[data-tp]').forEach((b) => {
   b.setAttribute('aria-checked', String(b.dataset.tp === S.tplotMode));
   b.onclick = () => { S.tplotMode = b.dataset.tp; store.set('tplotMode', S.tplotMode); document.querySelectorAll('[data-tp]').forEach((x) => x.setAttribute('aria-checked', String(x === b))); };
 });
-$('tplotTag').onchange = () => { S.tplotTag = $('tplotTag').value === '' ? null : +$('tplotTag').value; };
+$('tplotTag').onchange = () => { S.tplotTag = parseKey($('tplotTag').value); };
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 
 // ---------------- status ----------------
@@ -743,7 +822,9 @@ function loopFrames() {
     if (Math.abs(time - performance.now()) > 1000) time = performance.now();
     S.busy = true;
     createImageBitmap(video).then((bm) => {
-      S.worker.postMessage({ type: 'frame', bitmap: bm, seq: ++S.seq, time: time / 1000, mode: S.mode, cam: S.cam, sizes: sizesMap(), defaultSize: S.settings.tagSize }, [bm]);
+      const sizes = sizesMap();
+      const bodies = S.bodies.map((b) => ({ id: b.id, members: b.members.map((x) => ({ id: x.id, R: x.R, t: x.t, size: sizes[x.id] || S.settings.tagSize })) }));
+      S.worker.postMessage({ type: 'frame', bitmap: bm, seq: ++S.seq, time: time / 1000, mode: S.mode, cam: S.cam, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
     }).catch(() => { S.busy = false; });
   };
   if (hasRVFC) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
@@ -761,26 +842,64 @@ function tickStats(ms) {
 }
 
 // ---------------- tracking results ----------------
+// For each track this frame: the raw pose (OpenCV's IPPE for a tag; for an object, its first visible tag's raw
+// pose moved to the object's origin) and the refined candidates from the worker. The pose that is plotted is the
+// raw one, the best refined one, or the Kalman filter's, which also settles the mirror-image doubt by prediction.
+function rawBody(b, tags) {
+  for (const m of b.members) {
+    const t = tags.find((x) => x.id === m.id && x.R);
+    if (t) return C.compose(t, C.inverse(m));
+  }
+  return null;
+}
 function onTags(m) {
   tickStats(m.ms);
   if (S.mode !== 'track') return;
-  const wall = performance.now() / 1000;
+  const wall = performance.now() / 1000, mode = S.settings.pose, mem = memberIds();
   S.last = m;
-  const refId = S.settings.frame === 'camera' ? null : +S.settings.frame;
-  let ref = null;
-  if (refId !== null) {
-    const here = m.tags.find((t) => t.id === refId && t.R);
-    if (here) ref = here;
-    else { const s = S.seen.get(refId); if (s && s.R && m.time - s.time < 0.25) ref = s; }
-  }
+  for (const t of m.tags) S.seen.set(t.id, { time: m.time, wall, err: t.err });
+  const meas = new Map();
   for (const t of m.tags) {
-    if (!t.R) continue;
-    S.seen.set(t.id, { time: m.time, wall, R: t.R, t: t.t, err: t.err, size: t.size });
+    if (!t.R || mem.has(t.id)) continue;
     if (!S.settings.showUnknown && !tagOf(t.id)) continue;
-    if (refId !== null && !ref) continue; // the reference tag is out of sight: no frame to plot in
-    S.hist.push(t.id, m.time, C.inFrame({ R: t.R, t: t.t }, ref));
+    meas.set(t.id, { raw: { R: t.R, t: t.t }, cands: t.cands || [], err: t.err, size: t.size });
   }
-  drawOverlay(m);
+  for (const b of S.bodies) {
+    const raw = rawBody(b, m.tags);
+    if (!raw) continue;
+    const got = (m.bodies || []).find((x) => x.id === b.id);
+    meas.set('b:' + b.id, { raw, cands: got ? got.cands : [], seen: got ? got.seen : 1 });
+  }
+  const out = new Map();
+  for (const [key, z] of meas) {
+    let p = null;
+    if (mode === 'raw' || !z.cands.length) p = z.raw;
+    else if (mode === 'refined') p = z.cands[0];
+    else {
+      let f = S.filters.get(key);
+      if (!f) { f = new C.PoseFilter(C.MOTION[S.settings.motion]); S.filters.set(key, f); }
+      const r = f.update(m.time, z.cands);
+      p = r && r.pose;
+    }
+    const best = z.cands[0];
+    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen });
+    if (p) out.set(key, p);
+  }
+  if (S.learn) learnStep(m);
+  // the reference frame: this frame's pose of the chosen track, or its last one within 0.25 s
+  const refKey = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
+  let ref = null, refRaw = null;
+  if (refKey !== null) {
+    const tr = S.tracks.get(refKey);
+    if (tr && m.time - tr.time < 0.25) { ref = tr.pose; refRaw = tr.raw; }
+  }
+  if (refKey === null || ref) {
+    // the reference itself always sits at the origin, where the plot already draws it
+    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.inFrame(p, ref));
+    if (S.settings.compare) for (const [key, z] of meas) if (key !== refKey) S.rawHist.push(key, m.time, C.inFrame(z.raw, refRaw));
+  }
+  S.lastOut = out;
+  drawOverlay(m, out);
 }
 
 // ---------------- video overlay ----------------
@@ -793,48 +912,156 @@ function overlayMap() {
   const vw = video.videoWidth || 1, vh = video.videoHeight || 1, s = Math.min(W / vw, H / vh);
   return { s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2, dpr, W, H };
 }
-function drawOverlay(m) {
+function drawOverlay(m, out) {
   const c = overlay.getContext('2d'), M = overlayMap(), P = (x, y) => [M.ox + x * M.s, M.oy + y * M.s];
   c.clearRect(0, 0, M.W, M.H);
   c.lineJoin = 'round';
-  const placed = [];
-  for (const t of m.tags) {
-    const col = colorOf(t.id), q = t.corners;
-    c.lineWidth = 2 * M.dpr; c.strokeStyle = col;
-    c.beginPath();
-    for (let k = 0; k < 4; k++) { const p = P(q[2 * k], q[2 * k + 1]); k ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]); }
-    c.closePath(); c.stroke();
-    // first corner marked, so the tag's orientation is visible
-    const p0 = P(q[0], q[1]);
-    c.fillStyle = col; c.beginPath(); c.arc(p0[0], p0[1], 3 * M.dpr, 0, 7); c.fill();
-    if (t.R) {
-      const L = Math.min(S.settings.axisLen, t.size), o = C.project(S.cam, t.t);
-      const axes = [[L, 0, 0, K.x], [0, L, 0, K.y], [0, 0, L, K.z]];
-      if (o) for (const a of axes) {
-        const e = C.project(S.cam, C.add(t.t, C.mulv(t.R, a)));
-        if (!e) continue;
-        const A = P(o[0], o[1]), B = P(e[0], e[1]);
-        c.strokeStyle = a[3]; c.lineWidth = 2.5 * M.dpr; c.beginPath(); c.moveTo(A[0], A[1]); c.lineTo(B[0], B[1]); c.stroke();
-      }
+  const placed = [], mem = memberIds();
+  const axes = (pose, L) => {
+    const o = C.project(S.cam, pose.t);
+    if (!o) return;
+    for (const a of [[L, 0, 0, K.x], [0, L, 0, K.y], [0, 0, L, K.z]]) {
+      const e = C.project(S.cam, C.add(pose.t, C.mulv(pose.R, a)));
+      if (!e) continue;
+      const A = P(o[0], o[1]), B = P(e[0], e[1]);
+      c.strokeStyle = a[3]; c.lineWidth = 2.5 * M.dpr; c.beginPath(); c.moveTo(A[0], A[1]); c.lineTo(B[0], B[1]); c.stroke();
     }
-    // label: name and distance, on a dark plate so it reads on any background
-    const xs = [q[0], q[2], q[4], q[6]], ys = [q[1], q[3], q[5], q[7]];
-    const top = P((Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)), bot = P(0, Math.max(...ys));
-    const txt = nameOf(t.id) + (t.t ? `  ${(C.norm(t.t) * 100).toFixed(1)} cm` : '');
+  };
+  // a name plate: above the anchor point; below `below` if that's taken; then further up
+  const plate = (txt, col, top, below) => {
     c.font = `600 ${12 * M.dpr}px Inter, system-ui, sans-serif`;
     const tw = c.measureText(txt).width, pad = 6 * M.dpr, h = 20 * M.dpr, bw = tw + 2 * pad + 10 * M.dpr;
     const x = Math.max(2, Math.min(M.W - bw - 2, top[0] - tw / 2 - pad));
-    // above the tag; below it if that spot is taken; then further up
     const hits = (y) => placed.some((r) => x < r[0] + r[2] && r[0] < x + bw && y < r[1] + r[3] && r[1] < y + h);
     let y = Math.max(2, top[1] - h - 8 * M.dpr);
-    if (hits(y)) { const yb = Math.min(M.H - h - 2, bot[1] + 8 * M.dpr); if (!hits(yb)) y = yb; else for (let k = 0; k < 5 && hits(y); k++) y = Math.max(2, y - h - 3 * M.dpr); }
+    if (hits(y)) { const yb = Math.min(M.H - h - 2, below + 8 * M.dpr); if (!hits(yb)) y = yb; else for (let k = 0; k < 5 && hits(y); k++) y = Math.max(2, y - h - 3 * M.dpr); }
     placed.push([x, y, bw, h]);
     c.fillStyle = 'rgba(12,14,17,.78)'; roundRect(c, x, y, bw, h, 5 * M.dpr); c.fill();
     c.fillStyle = col; roundRect(c, x + pad, y + h / 2 - 4 * M.dpr, 8 * M.dpr, 8 * M.dpr, 2 * M.dpr); c.fill();
     c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(txt, x + pad + 12 * M.dpr, y + h / 2 + 0.5);
+  };
+  for (const t of m.tags) {
+    const inBody = mem.has(t.id), key = inBody ? 'b:' + S.bodies.find((b) => b.members.some((x) => x.id === t.id)).id : t.id;
+    const col = colorOf(key), q = t.corners;
+    c.lineWidth = 2 * M.dpr; c.strokeStyle = col;
+    c.beginPath();
+    for (let k = 0; k < 4; k++) { const p = P(q[2 * k], q[2 * k + 1]); k ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]); }
+    c.closePath(); c.stroke();
+    const p0 = P(q[0], q[1]); // first corner marked, so the tag's orientation is visible
+    c.fillStyle = col; c.beginPath(); c.arc(p0[0], p0[1], 3 * M.dpr, 0, 7); c.fill();
+    const pose = inBody ? null : out.get(t.id) || (t.R ? t : null);
+    if (pose) axes(pose, Math.min(S.settings.axisLen, t.size));
+    const xs = [q[0], q[2], q[4], q[6]], ys = [q[1], q[3], q[5], q[7]];
+    const txt = inBody ? (tagOf(t.id) && tagOf(t.id).name ? tagOf(t.id).name : '#' + t.id) : nameOf(t.id) + (pose ? `  ${(C.norm(pose.t) * 100).toFixed(1)} cm` : '');
+    plate(txt, col, P((Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)), P(0, Math.max(...ys))[1]);
+  }
+  // each rigid object: its axes at its origin, and its name
+  for (const [key, pose] of out) {
+    if (!isBody(key)) continue;
+    axes(pose, S.settings.axisLen);
+    const o = C.project(S.cam, pose.t);
+    if (o) plate(`${nameOf(key)}  ${(C.norm(pose.t) * 100).toFixed(1)} cm`, colorOf(key), P(o[0], o[1] - 14), P(o[0], o[1] + 14)[1]);
   }
 }
 function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+
+// ---------------- rigid objects ----------------
+function saveBodies() { store.set('bodies', S.bodies); }
+const LEARN_N = 20;
+function renderBodies() {
+  const list = $('bodyList');
+  list.textContent = '';
+  for (const b of S.bodies) {
+    const key = 'b:' + b.id, row = document.createElement('div');
+    row.className = 'brow';
+    row.innerHTML = `<span class="sw" style="background:${cssColorOf(key)}"></span>
+      <label class="sr" for="bn${b.id}">Name of object</label><input id="bn${b.id}" class="input sm" maxlength="40">
+      <span class="seen" id="bseen${b.id}"><span class="dot"></span><span>Not seen</span></span>
+      <span style="white-space:nowrap"><button class="btn sm" data-a="relearn" title="Learn the shape again">Relearn</button><button class="btn sm sq danger" data-a="rm" aria-label="Remove object ${escapeHtml(b.name || '')}" title="Remove"><svg class="i"><use href="#i-x"/></svg></button></span>
+      <div class="meta">${b.members.map((x, i) => `<span class="mtag">#${x.id}${i ? '' : ' origin'}</span>`).join('')}${b.spread ? `<span title="How much the learned tag positions scattered">spread ${(b.spread.m * 1000).toFixed(1)} mm, ${b.spread.deg.toFixed(1)}°</span>` : ''}</div>`;
+    const nm = row.querySelector('input');
+    nm.value = b.name || '';
+    nm.oninput = () => { b.name = nm.value.trim(); saveBodies(); refreshFrameSel(); refreshTplotSel(); };
+    row.querySelector('[data-a=rm]').onclick = () => {
+      S.bodies = S.bodies.filter((x) => x !== b); saveBodies();
+      if (S.settings.frame === key) setFrame('camera');
+      resetTracks(); renderBodies(); renderTags(); refreshFrameSel(); refreshTplotSel();
+    };
+    row.querySelector('[data-a=relearn]').onclick = () => startLearn(b.id, b.name, b.members.map((x) => x.id));
+    list.appendChild(row);
+  }
+  if (S.learn) {
+    const L = S.learn, row = document.createElement('div');
+    row.className = 'brow';
+    row.innerHTML = `<span class="sw" style="background:${cssColorOf(L.ids[0])}"></span><strong>${escapeHtml(L.name || 'New object')}</strong><span class="seen on"><span class="dot"></span><span>Learning</span></span><button class="btn sm" data-a="cancel">Cancel</button>
+      <div class="learn" aria-live="polite">${L.ids.slice(1).map((id) => `<div class="lrow"><span class="mono">#${id}</span><div class="progress"><i style="width:${Math.min(100, (100 * L.samples[id].length) / LEARN_N)}%"></i></div><span class="mono muted">${L.samples[id].length}/${LEARN_N}</span></div>`).join('')}
+      <span class="muted">${S.settings.pose === 'raw' ? 'Learning needs Refined or Filtered poses.' : `Keep #${L.ids[0]} in view with each of the others, and turn the object slowly. Frames where a tag could be read two ways are skipped.`}</span></div>`;
+    row.querySelector('[data-a=cancel]').onclick = () => { S.learn = null; renderBodies(); };
+    list.appendChild(row);
+  }
+  $('bodiesHint').hidden = S.bodies.length > 0 || !!S.learn;
+}
+function startLearn(id, name, ids) {
+  S.learn = { id, name, ids, samples: Object.fromEntries(ids.slice(1).map((x) => [x, []])) };
+  $('bodyForm').hidden = true;
+  renderBodies();
+}
+// A frame counts for a tag only when its pose is unambiguous: one candidate, or the other fits clearly worse.
+const unambiguous = (t) => t && t.cands && t.cands.length && (t.cands.length === 1 || t.cands[1].rms > 2 * t.cands[0].rms + 0.3) && t.cands[0].rms < 1.5;
+function learnStep(m) {
+  const L = S.learn, a = m.tags.find((t) => t.id === L.ids[0]);
+  if (!unambiguous(a)) return;
+  let changed = false;
+  for (const id of L.ids.slice(1)) {
+    const t = m.tags.find((x) => x.id === id);
+    if (!unambiguous(t) || L.samples[id].length >= LEARN_N) continue;
+    L.samples[id].push(C.relative(a.cands[0], t.cands[0]));
+    changed = true;
+  }
+  if (!changed) return;
+  if (L.ids.slice(1).every((id) => L.samples[id].length >= LEARN_N)) {
+    const members = [{ id: L.ids[0], R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }];
+    let sm = 0, sd = 0;
+    for (const id of L.ids.slice(1)) {
+      const mp = C.meanPose(L.samples[id], 5, 0.01);
+      members.push({ id, R: mp.R, t: mp.t });
+      sm = Math.max(sm, mp.spread.m); sd = Math.max(sd, mp.spread.deg);
+    }
+    const b = { id: L.id || String(Date.now().toString(36)), name: L.name || 'Object', members, spread: { m: sm, deg: sd } };
+    const i = S.bodies.findIndex((x) => x.id === b.id);
+    if (i >= 0) S.bodies[i] = b; else S.bodies.push(b);
+    S.learn = null;
+    saveBodies(); resetTracks(); renderTags(); refreshFrameSel(); refreshTplotSel();
+  }
+  renderBodies();
+}
+$('newBody').onclick = () => {
+  const f = $('bodyForm');
+  f.hidden = !f.hidden;
+  if (f.hidden) return;
+  $('bodyName').value = `Object ${S.bodies.length + 1}`;
+  const pick = $('bodyPick'), chosen = [];
+  pick.textContent = '';
+  const mem = memberIds();
+  for (const t of S.tags.filter((x) => !mem.has(x.id))) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pick'; b.setAttribute('aria-pressed', 'false');
+    b.innerHTML = `<span class="sw" style="background:${cssColorOf(t.id)}"></span>#${t.id}${t.name ? ' ' + escapeHtml(t.name) : ''}<span class="ord"></span>`;
+    b.onclick = () => {
+      const i = chosen.indexOf(t.id);
+      if (i >= 0) chosen.splice(i, 1); else chosen.push(t.id);
+      pick.querySelectorAll('.pick').forEach((x) => { const id = +x.dataset.id, k = chosen.indexOf(id); x.setAttribute('aria-pressed', String(k >= 0)); x.querySelector('.ord').textContent = k === 0 ? 'origin' : k > 0 ? String(k + 1) : ''; });
+      $('bodyCreate').disabled = chosen.length < 2;
+    };
+    b.dataset.id = t.id;
+    pick.appendChild(b);
+  }
+  if (!pick.children.length) pick.innerHTML = '<span class="small muted">Add at least two tags first.</span>';
+  $('bodyCreate').disabled = true;
+  f.onsubmit = (e) => { e.preventDefault(); if (chosen.length >= 2) startLearn(null, $('bodyName').value.trim(), chosen.slice()); };
+  $('bodyName').focus();
+};
+$('bodyCancel').onclick = () => { $('bodyForm').hidden = true; };
 
 // ---------------- 3D plot ----------------
 function sizeCanvas(cv) {
@@ -883,17 +1110,30 @@ function draw3d() {
     for (let k = 0; k < 4; k++) { line([0, 0, 0], corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
     label([0, 0, -0.02], 'Camera', K.text2, 6, 10);
   } else {
-    const s = sizeOf(+S.settings.frame) / 2;
-    const sq = [[-s, 0, -s], [s, 0, -s], [s, 0, s], [-s, 0, s]];
-    for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(+S.settings.frame), 2);
+    // the reference: its tag, or each of its object's tags, turned upright as the plot shows it
+    const rk = parseKey(S.settings.frame), b = isBody(rk) ? bodyOf(rk) : null;
+    const parts = b ? b.members.map((m) => ({ R: m.R, t: m.t, size: sizeOf(m.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(rk) }];
+    for (const pt of parts) {
+      const sq = C.tagCorners(pt.size).map((q) => C.mulv(C.TAG_TO_VIEW, C.add(C.mulv(pt.R, q), pt.t)));
+      for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(rk), 2);
+    }
   }
   line([0, 0, 0], [L0, 0, 0], alpha(K.x, 0.55), 1.5); line([0, 0, 0], [0, L0, 0], alpha(K.y, 0.55), 1.5); line([0, 0, 0], [0, 0, L0], alpha(K.z, 0.55), 1.5);
   label([L0, 0, 0], 'x', K.muted, 4); label([0, L0, 0], 'y', K.muted, 4); label([0, 0, L0], 'z', K.muted, 4);
 
   const now = performance.now() / 1000, span = S.settings.span, every = S.settings.every;
-  S.hist.trim(now, span);
+  S.hist.trim(now, span); S.rawHist.trim(now, span);
   const legend = [], placed = [];
-  for (const id of S.hist.ids().sort((a, b) => a - b)) {
+  // raw tracks, faint and dashed, to compare
+  if (S.settings.compare && S.settings.pose !== 'raw') {
+    c.setLineDash([4, 4]);
+    for (const id of S.rawHist.ids()) {
+      const a = S.rawHist.get(id);
+      for (let k = 1; k < a.length; k++) if (a[k].time - a[k - 1].time <= 0.25) line(a[k - 1].t, a[k].t, alpha(K.muted, 0.75), 1.5);
+    }
+    c.setLineDash([]);
+  }
+  for (const id of S.hist.ids().sort(keySort)) {
     const a = S.hist.get(id), col = colorOf(id);
     // trail, fading with age
     for (let k = 1; k < a.length; k++) {
@@ -912,8 +1152,12 @@ function draw3d() {
     // newest: the tag's outline, axis letters and its name
     const s = a[a.length - 1];
     if (now - s.time < 0.3) {
-      const hs = sizeOf(id) / 2, sq = [[-hs, hs, 0], [hs, hs, 0], [hs, -hs, 0], [-hs, -hs, 0]].map((p) => C.add(s.t, C.mulv(s.R, p)));
-      for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], col, 2);
+      // the tag's square, or each of an object's tags where they sit on it
+      const parts = isBody(id) ? bodyOf(id).members.map((m) => ({ R: m.R, t: m.t, size: sizeOf(m.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(id) }];
+      for (const pt of parts) {
+        const sq = C.tagCorners(pt.size).map((q) => C.add(s.t, C.mulv(s.R, C.add(C.mulv(pt.R, q), pt.t))));
+        for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], col, 2);
+      }
       label(C.add(s.t, C.mulv(s.R, [Lx, 0, 0])), 'x', K.x, 3, 0, 600);
       label(C.add(s.t, C.mulv(s.R, [0, Lx, 0])), 'y', K.y, 3, 0, 600);
       label(C.add(s.t, C.mulv(s.R, [0, 0, Lx])), 'z', K.z, 3, 0, 600);
@@ -1056,21 +1300,30 @@ function drawTable() {
   if (now - lastTable < 150) return;
   lastTable = now;
   const t = now / 1000, rows = [];
-  const ids = [...new Set([...S.tags.map((x) => x.id), ...S.hist.ids()])].sort((a, b) => a - b);
-  for (const id of ids) {
-    const s = S.hist.latest(id), seen = S.seen.get(id), fresh = seen && t - seen.wall < 0.3;
-    const el = $('seen' + id);
-    if (el) {
-      el.classList.toggle('on', !!fresh);
-      el.lastElementChild.textContent = fresh ? 'Tracking' : seen ? `Seen ${fmtAgo(t - seen.wall)} ago` : 'Not seen';
-    }
-    if (!s || t - s.time > 0.5) continue;
-    const z = seen ? C.norm(seen.t) : 0, dn = seen && S.cam ? C.depthNoise(S.cam, seen.size, z, 0.2) : NaN;
-    rows.push(`<tr><td><span style="display:inline-flex;align-items:center;gap:7px"><span class="sw" style="background:${cssColorOf(id)}"></span>${escapeHtml(nameOf(id))}</span></td>` +
-      s.t.map((v) => `<td class="num mono">${(v * 100).toFixed(1)}</td>`).join('') +
-      `<td class="num mono">${(C.norm(s.t) * 100).toFixed(1)}</td><td class="num mono">${seen ? seen.err.toFixed(2) + ' px' : '—'}</td><td class="num mono">${isFinite(dn) ? (dn * 1000).toFixed(1) + ' mm' : '—'}</td></tr>`);
+  for (const tg of S.tags) {
+    const seen = S.seen.get(tg.id), fresh = seen && t - seen.wall < 0.3, el = $('seen' + tg.id);
+    if (!el) continue;
+    el.classList.toggle('on', !!fresh);
+    el.lastElementChild.textContent = fresh ? 'Tracking' : seen ? `Seen ${fmtAgo(t - seen.wall)} ago` : 'Not seen';
   }
-  $('nowRows').innerHTML = rows.length ? rows.join('') : `<tr><td colspan="7" class="muted">${S.running ? 'No tags in view.' : 'Nothing tracked yet.'}</td></tr>`;
+  for (const b of S.bodies) {
+    const tr = S.tracks.get('b:' + b.id), fresh = tr && t - tr.wall < 0.3, el = $('bseen' + b.id);
+    if (!el) continue;
+    el.classList.toggle('on', !!fresh);
+    el.lastElementChild.textContent = fresh ? `Tracking · ${tr.seen} of ${b.members.length} tags` : tr ? `Seen ${fmtAgo(t - tr.wall)} ago` : 'Not seen';
+  }
+  for (const key of trackKeys()) {
+    const s = S.hist.latest(key), tr = S.tracks.get(key);
+    if (!s || !tr || t - s.time > 0.5) continue;
+    const p = tr.pose || tr.raw, dir = C.mulv([1, 0, 0, 0, 1, 0, 0, 0, 1], p.t.map((x) => x / C.norm(p.t)));
+    // ± along the line of sight, from the pose covariance (raw poses have none: a quick estimate instead)
+    const sd = tr.cov ? C.sigmaAlong(tr.cov, dir) : !isBody(key) && S.cam ? C.depthNoise(S.cam, tr.size || S.settings.tagSize, C.norm(p.t), 0.2) : NaN;
+    const speed = tr.v ? C.norm(tr.v) * 100 : NaN;
+    rows.push(`<tr><td><span style="display:inline-flex;align-items:center;gap:7px"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}</span></td>` +
+      s.t.map((v) => `<td class="num mono">${(v * 100).toFixed(1)}</td>`).join('') +
+      `<td class="num mono">${(C.norm(s.t) * 100).toFixed(1)}</td><td class="num mono">${isFinite(speed) ? speed.toFixed(0) : '—'}</td><td class="num mono">${isFinite(tr.rms) ? tr.rms.toFixed(2) + ' px' : '—'}</td><td class="num mono">${isFinite(sd) ? (sd * 1000).toFixed(1) + ' mm' : '—'}</td></tr>`);
+  }
+  $('nowRows').innerHTML = rows.length ? rows.join('') : `<tr><td colspan="8" class="muted">${S.running ? 'No tags in view.' : 'Nothing tracked yet.'}</td></tr>`;
   renderUnknown();
   refreshTplotSel();
 }
@@ -1199,7 +1452,7 @@ function onCalibrated(c) {
   c.camera = S.camKey;
   S.calibs[S.camKey] = c; store.set('calibs', S.calibs);
   S.calibResult = c;
-  S.hist.clear();
+  resetTracks();
   updateCam(); renderCalib();
 }
 $('forgetBtn').onclick = () => { if (!confirm(`Forget the calibration for “${S.camKey}”?`)) return; delete S.calibs[S.camKey]; store.set('calibs', S.calibs); S.calibResult = null; updateCam(); renderCalib(); };
@@ -1216,7 +1469,7 @@ $('importFile').onchange = async () => {
     const c = JSON.parse(await f.text()), err = C.checkCalibration(c);
     if (err) throw new Error(err);
     c.rms = typeof c.rms === 'number' ? c.rms : 0;
-    S.calibs[S.camKey] = c; store.set('calibs', S.calibs); S.calibResult = null; S.hist.clear(); updateCam(); renderCalib();
+    S.calibs[S.camKey] = c; store.set('calibs', S.calibs); S.calibResult = null; resetTracks(); updateCam(); renderCalib();
   } catch (e) { $('calibResult').innerHTML = `<div class="note"><svg class="i"><use href="#i-alert"/></svg><span>That file isn’t a calibration (${escapeHtml(e.message)}).</span></div>`; }
 };
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'camera'; }
@@ -1300,11 +1553,11 @@ async function startDemo() {
 
 // ---------------- boot ----------------
 paintThemeBtn();
-renderTags(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
+renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
 listCameras();
 startWorker();
 requestAnimationFrame(frame);
-window.addEventListener('resize', () => { if (S.last) drawOverlay(S.last); });
+window.addEventListener('resize', () => { if (S.last && S.mode === 'track') drawOverlay(S.last, S.lastOut || new Map()); });
 })();
 </script>
 </body>

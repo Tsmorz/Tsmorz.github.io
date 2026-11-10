@@ -329,14 +329,26 @@ printed size, calibrates the camera with a printed ChArUco board, and sees the l
 plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
 
 - `index.html`: the UI. `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
-  camera, calibration-view checks. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
+  camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
   its `TagVision` factory also runs in Node.
 - OpenCV.js is **pinned** (`@techstark/opencv-js@4.12.0-release.1`, jsDelivr then unpkg) and loaded by the worker; it is
   not vendored. Tags use OpenCV's ArUco detector with an AprilTag dictionary and AprilTag corner refinement, shifted by
   half a pixel to OpenCV's pixel-centre convention; the board uses DICT_5X5_100 so it never clashes with tag IDs.
+- Pose (the "Pose" control): **Raw** is OpenCV's IPPE pose per tag. **Refined** runs `TagCore.refinePose`, Levenberg–Marquardt
+  on SE(3) with left perturbations `T ← exp(ξ^)·T`, from that pose and from its mirror image (`flipPose`: a flat tag seen
+  nearly face-on has two poses that fit), keeping both as candidates with covariances (corner noise from the fit, 0.15 to 3 px).
+  **Filtered** adds `PoseFilter`, an error-state Kalman filter on SE(3) with a constant-velocity model (state p, v, R, ω;
+  `R ← exp(δθ)·R`); among candidates that fit about as well as the best it takes the one nearest the prediction, which
+  settles the mirror-image doubt, and it gates outliers (restarting after 3 in a row). `MOTION` holds the three tunings.
+  "Compare with raw" draws the raw track dashed. All of it runs in the worker except the filter.
+- Rigid objects (`bodies` in storage): two or more tags fixed to one thing. "Learn shape" collects each tag's pose relative
+  to the first (the origin) over 20 unambiguous frames and averages them on SO(3) × R³ (`meanPose`, outliers dropped);
+  then the worker solves one SE(3) pose from every visible corner (`solveBody`). Tags in an object are tracked only as it.
 - Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
   ninth tag is grey with its name. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
-- `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore; with OpenCV.js installed
+- `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
+  against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating;
+  with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.
 
