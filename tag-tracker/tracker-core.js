@@ -572,6 +572,120 @@
     return JSON.stringify({ t: fix(t, 3), frame, view: view || 'in person', tracks: rows.map((r) => ({ track: r.track, name: r.name, p: r.p.map((x) => fix(x, 4)), q: r.q.map((x) => fix(x, 5)) })) }) + '\n';
   }
 
+  // ---- recordings, notes and voice ----
+  // A recording is every new plotted pose, sample by sample, as the Stream tab would send it, plus the visitor's
+  // notes. In the notes box one line is one note; a line that starts with a time (m:ss.s, or h:mm:ss.s, since the
+  // recording began) is a note at that time, and any other line is a note about the whole recording.
+  function fmtStamp(s) {
+    const d = Math.max(0, Math.floor(s * 10 + 1e-6)), h = Math.floor(d / 36000), m = Math.floor(d / 600) % 60, sec = (d % 600) / 10;
+    const ss = (sec < 10 ? '0' : '') + sec.toFixed(1);
+    return h ? `${h}:${m < 10 ? '0' : ''}${m}:${ss}` : `${m}:${ss}`;
+  }
+  const STAMP = /^\s*(?:(\d+):)?(\d+):([0-5]\d(?:\.\d+)?)(?=\s|$)\s*(.*)$/;
+  function parseNotes(text) {
+    const out = [];
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const m = STAMP.exec(line);
+      if (m) { if (m[4].trim()) out.push({ t: (+m[1] || 0) * 3600 + +m[2] * 60 + +m[3], text: m[4].trim() }); }
+      else if (line.trim()) out.push({ t: null, text: line.trim() });
+    }
+    return out;
+  }
+  // rec: { start (Unix s), samples: [{ t (Unix s), frame, view, rows: [{ track, name, p, q }] }] }; notes from
+  // parseNotes, their times still since the start. JSON: one object, every time in Unix seconds, each sample shaped
+  // like a Stream JSON message. CSV: the Stream CSV columns plus `note`, the notes on rows of their own at their times
+  // (a note about the whole recording at its start).
+  const RECORDING_CSV_HEADER = STREAM_CSV_HEADER + ',note';
+  function recordingJson(rec, notes) {
+    const fix = (x, d) => Number(x.toFixed(d)) || 0;
+    const last = rec.samples.length ? rec.samples[rec.samples.length - 1].t : rec.start;
+    return JSON.stringify({
+      format: 'tag-tracker-recording/1', start: fix(rec.start, 3), end: fix(Math.max(rec.end || 0, last), 3),
+      notes: notes.map((n) => ({ t: n.t === null ? null : fix(rec.start + n.t, 3), text: n.text })),
+      samples: rec.samples.map((s) => ({ t: fix(s.t, 3), frame: s.frame, view: s.view, tracks: s.rows.map((r) => ({ track: r.track, name: r.name, p: r.p.map((x) => fix(x, 4)), q: r.q.map((x) => fix(x, 5)) })) })),
+    }, null, 1) + '\n';
+  }
+  function recordingCsv(rec, notes) {
+    const lines = [RECORDING_CSV_HEADER];
+    const ns = notes.map((n) => ({ t: rec.start + (n.t === null ? 0 : n.t), text: n.text })).sort((a, b) => a.t - b.t);
+    let k = 0;
+    const noteLine = (n) => [n.t.toFixed(3), '', '', '', '', '', '', '', '', '', n.text].map(csvField).join(',');
+    for (const s of rec.samples) {
+      while (k < ns.length && ns[k].t <= s.t) lines.push(noteLine(ns[k++]));
+      const msg = streamMessage('csv', s.t, s.rows);
+      if (msg) lines.push(msg.replace(/\n$/, '').split('\n').map((l) => l + ',').join('\n'));
+    }
+    while (k < ns.length) lines.push(noteLine(ns[k++]));
+    return lines.join('\n') + '\n';
+  }
+
+  // Whisper marks what isn't speech as [BLANK_AUDIO], (music), *coughs*: drop those, squeeze the spaces, start with
+  // a capital and end the sentence. Nothing left that is a letter or a digit gives ''.
+  function tidySpeech(raw) {
+    let t = String(raw || '').replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*/g, ' ').replace(/\s+/g, ' ').replace(/\s+([,.!?;:])/g, '$1').trim();
+    if (!/[\p{L}\p{N}]/u.test(t)) return '';
+    t = t[0].toUpperCase() + t.slice(1);
+    if (!/[.!?…]["')\]]?$/.test(t)) t += '.';
+    return t;
+  }
+  // Dictated text into a text box at the caret (start..end, replacing a selection): a space either side where it
+  // needs one, and a lower-case start when it carries on a sentence ("I" stays). Returns the new value and caret.
+  function insertSpeech(value, start, end, text) {
+    const before = value.slice(0, start), after = value.slice(end);
+    if (/[\p{L}\p{N},;:]\s*$/u.test(before) && !/^I\b/.test(text)) text = text[0].toLowerCase() + text.slice(1);
+    const ins = (before === '' || /\s$/.test(before) ? '' : ' ') + text + (after === '' || /^\s/.test(after) ? '' : ' ');
+    return { value: before + ins + after, caret: start + ins.length };
+  }
+  // Spoken commands. The whole utterance has to be one of these (after "go to", "switch to", "the", "tab", "please"
+  // and the like are taken off), so a note that merely mentions a tab is still a note. "Note ..." is always a note.
+  const VOICE_COMMANDS = {
+    track: ['track', 'tracking', 'tracks', 'tracker'],
+    calib: ['calibrate', 'calibration', 'calibrating', 'calibrate camera', 'calibrate the camera', 'calibrate cameras'],
+    stream: ['stream', 'streaming', 'streams'],
+    record: ['record', 'start recording', 'start a recording', 'start the recording', 'start record', 'new recording', 'begin recording'],
+    stop: ['stop', 'stop recording', 'stop the recording', 'end recording', 'end the recording', 'finish recording'],
+    tare: ['tare', 'tear', 'tare orientation', 'tare the orientation', 'zero orientation'],
+    untare: ['clear tare', 'clear tear', 'clear the tare', 'untare', 'clear orientation'],
+    fit: ['fit', 'fit view', 'fit the view', 'zoom to fit'],
+    reset: ['reset view', 'reset the view'],
+  };
+  const VOICE_LOOKUP = new Map();
+  for (const [cmd, phrases] of Object.entries(VOICE_COMMANDS)) for (const p of phrases) VOICE_LOOKUP.set(p, cmd);
+  function voiceCommand(text) {
+    const note = /^\s*(?:(?:take|add|make) (?:a )?)?note\b[\s,.:;!-]*/i.exec(text || '');
+    if (note) { const rest = tidySpeech(text.slice(note[0].length)); return rest ? { cmd: 'note', text: rest } : null; }
+    let s = String(text || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+    for (let k = 0; k < 4; k++) {
+      s = s.replace(/^(?:ok(?:ay)?|please|now|go to|go back to|switch to|change to|open|show me|show|the)\s+/, '')
+        .replace(/\s+(?:tab|page|mode|please|now)$/, '').trim();
+    }
+    const cmd = VOICE_LOOKUP.get(s);
+    return cmd ? { cmd } : null;
+  }
+
+  // When an utterance starts and ends, from the microphone's level (the RMS of each block of samples, at `now` ms):
+  // speech has started once the level stays above `on` for `minMs`, and ended once it then stays below `off` for
+  // `quietMs`. With no speech within `waitMs` of the reset it gives up. step() returns 'start', 'end', 'none' or null.
+  function VoiceGate(opts) { this.o = Object.assign({ on: 0.02, off: 0.012, minMs: 60, quietMs: 1400, waitMs: 8000 }, opts || {}); this.reset(0); }
+  VoiceGate.prototype.reset = function (now) { this.t0 = now; this.loud = null; this.start = null; this.quiet = null; this.done = false; };
+  VoiceGate.prototype.step = function (level, now) {
+    const o = this.o;
+    if (this.done) return null;
+    if (this.start === null) {
+      if (level > o.on) {
+        if (this.loud === null) this.loud = now;
+        if (now - this.loud >= o.minMs) { this.start = this.loud; return 'start'; }
+      } else this.loud = null;
+      if (now - this.t0 >= o.waitMs && this.loud === null) { this.done = true; return 'none'; }
+      return null;
+    }
+    if (level < o.off) {
+      if (this.quiet === null) this.quiet = now;
+      if (now - this.quiet >= o.quietMs) { this.done = true; return 'end'; }
+    } else this.quiet = null;
+    return null;
+  };
+
   // Error-state Kalman filter for a pose moving at nearly constant velocity. State: position p, velocity v,
   // rotation R and angular velocity w (both velocities in the camera frame); error δx = (δp, δv, δθ, δw) with
   // R ← exp(δθ)·R. qa and qw are the spectral densities of the random acceleration (m²/s³) and angular
@@ -1013,6 +1127,7 @@
     PoseFilter, MOTION, sigmaAlong,
     toRig, fusePoses, plausible, chooseCand, sighting, jointSystem, refineJoint, planSearch, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
     PAPER, paperFor, printArea, maxTagSize, maxBoardSquare, STREAM_CSV_HEADER, streamMessage,
+    fmtStamp, parseNotes, RECORDING_CSV_HEADER, recordingJson, recordingCsv, tidySpeech, insertSpeech, VOICE_COMMANDS, voiceCommand, VoiceGate,
     DEFAULTS, clampSettings, boardFit, displayMap,
   };
 });

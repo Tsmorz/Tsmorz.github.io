@@ -417,7 +417,7 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   cleared by Clear tare or a change of "Relative to"; the stored history is re-expressed at once (`retare`). The video
   overlay always shows true poses.
 
-- `index.html`: the UI. `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
+- `index.html`: the UI. `speech-worker.js`: speech to text (above). `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
   camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
   its `TagVision` factory also runs in Node.
 - OpenCV.js is **pinned** (`@techstark/opencv-js@4.12.0-release.1`, jsDelivr then unpkg) and loaded by the worker; it is
@@ -443,6 +443,18 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   and counted, never queued. Settings in `stream`.
 - Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
   ninth tag is grey with its name. The demo cubes' side and top tags have no slot (`-1`), since only their hand is drawn. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
+- **Recording and notes** (the Recording card, on Track and Stream): Record keeps every new plotted pose (each track's sample
+  from each detection, once; `recTick`), in the Track tab's frame, tare and view, up to an hour or 600,000 poses, in memory
+  only (leaving the page with one not downloaded asks first). The notes box is the recording's: one line per note, and while
+  recording a new line starts with the time it was begun (`TagCore.fmtStamp`; `parseNotes` reads them back). Downloads:
+  CSV (the Stream columns plus `note`, notes on rows of their own) or JSON (`tag-tracker-recording/1`, samples shaped like
+  Stream messages); all times Unix seconds.
+- **Voice** (V outside a text box, the top bar's microphone, or Dictate): MediaRecorder takes the microphone until
+  `TagCore.VoiceGate` hears a pause; the clip is decoded to 16 kHz mono and `speech-worker.js` (a module worker) turns it
+  into text with Whisper tiny.en through Transformers.js (**pinned**, `@huggingface/transformers@4.3.2`, jsDelivr then
+  unpkg; WebGPU where there is one, else WebAssembly), on the computer. The model downloads on first use only. A whole
+  utterance that is a command (`TagCore.voiceCommand`, `VOICE_COMMANDS`: the tabs, start/stop recording, tare, clear tare,
+  fit, reset view) runs it (`VOICE_ACTIONS`); anything else, or "Note ...", is a note (`tidySpeech`, `insertSpeech`).
 - **The board on a screen**: `/tag-tracker/#board` is a shareable link that fills any screen with the ChArUco board (nothing
   stored), for a tablet or second monitor. `TagCore.boardFit` picks whole device pixels per square with half a square of
   white round it, turning the board a quarter when that's bigger; the worker draws it (`boardImage`), so the page waits for
@@ -453,7 +465,7 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
 - `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
   against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating,
   the mirror-image choice, the joint fit (against one camera and against fusing poses, its covariance by Monte Carlo,
-  unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, and (with
+  unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, the recording exports, notes, voice commands and the voice gate, and (with
   python3) the UDP bridge end to end; with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.

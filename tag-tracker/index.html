@@ -291,6 +291,23 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .views{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
 .views .chip{border-style:solid;border-color:var(--rule2)}
 footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap}
+/* recording and notes; voice. A key that is listening or recording turns violet, like everything live. */
+.btn.mic[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--onAccent)}
+.rec-info{display:inline-flex;align-items:center;gap:8px;color:var(--ink2);font-size:13px}
+.rec-info .dot{width:9px;height:9px;background:var(--muted);flex:none}
+.rec-info.on .dot{background:var(--accent);animation:blink 1s steps(2,start) infinite}
+.rec-b{display:flex;flex-direction:column;gap:8px;padding:2px 12px 12px}
+.rec-b textarea{font:inherit;color:inherit;display:block;width:100%;height:auto;min-height:6.5em;resize:vertical;padding:7px 10px;line-height:1.5;font-size:13.5px}
+.voice{position:fixed;left:18px;bottom:18px;z-index:30;display:flex;align-items:center;gap:10px;max-width:min(480px,calc(100vw - 32px));padding:9px 12px;background:var(--panel);border:1px solid var(--ink);border-radius:2px;color:var(--ink);font-size:13px;line-height:1.4}
+.voice .dot{width:9px;height:9px;background:var(--muted);flex:none}
+.voice[data-state=listening] .dot{background:var(--accent);animation:blink 1s steps(2,start) infinite}
+.voice[data-state=loading] .dot,.voice[data-state=processing] .dot{background:var(--accent)}
+.voice[data-state=done] .dot{background:var(--good)}
+.voice[data-state=error]{border-color:var(--crit)}.voice[data-state=error] .dot{background:var(--crit)}
+.voice .meter{width:56px;height:4px;background:var(--rule);flex:none;overflow:hidden}
+.voice .meter i{display:block;height:100%;background:var(--accent);transform-origin:left;transform:scaleX(0)}
+.voice:not([data-state=listening]):not([data-state=loading]) .meter{display:none}
+@media (max-width:640px){.voice{left:16px;bottom:16px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (forced-colors:active){.sw,.ax i{forced-color-adjust:none}}
 </style>
@@ -314,6 +331,8 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <symbol id="i-tag" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><rect x="7" y="7" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="13" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="7" width="4" height="2" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8M3 3v5h5"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -339,6 +358,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <button id="startBtn" class="btn primary"><svg class="i"><use href="#i-cam"/></svg><span>Start</span></button>
   </div>
   <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
+  <button id="voiceBtn" class="btn sq mic" aria-pressed="false" aria-label="Voice" title="Voice (or press V): say a tab’s name, “Start recording”, “Stop recording”, “Tare” or “Fit”; anything else becomes a note"><svg class="i"><use href="#i-mic"/></svg></button>
   <button id="printBtn" class="btn" title="Print AprilTags and the calibration board" aria-haspopup="dialog"><svg class="i"><use href="#i-print"/></svg><span>Print</span></button>
   <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
 </header>
@@ -375,6 +395,24 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           </div>
           <p class="note">Video is processed on this computer and never sent anywhere.</p>
         </div>
+      </div>
+    </section>
+
+    <!-- Track and Stream: a recording of the poses, with notes typed or spoken -->
+    <section class="card" id="recCard" aria-labelledby="h-rec">
+      <div class="card-h">
+        <h2 id="h-rec">Recording</h2>
+        <button class="btn sm primary mic" id="recBtn" aria-pressed="false"><svg class="i"><use href="#i-rec"/></svg><span>Record</span></button>
+        <span class="rec-info" id="recInfo"><span class="dot" aria-hidden="true"></span><span id="recText">Records every pose the Track tab plots, with your notes.</span></span>
+        <div class="spacer"></div>
+        <button class="btn sm" id="recCsv" disabled title="One row per pose (the Stream tab’s CSV columns), and a row per note in the note column"><svg class="i"><use href="#i-down"/></svg>CSV</button>
+        <button class="btn sm" id="recJson" disabled title="The notes, and every sample shaped like a Stream JSON message"><svg class="i"><use href="#i-down"/></svg>JSON</button>
+        <button class="btn sm danger" id="recDiscard" disabled>Discard</button>
+      </div>
+      <div class="rec-b">
+        <div class="row"><label class="sub" for="notes" style="font-weight:700">Notes</label><span class="spacer"></span><button class="btn sm outline mic" id="dictBtn" aria-pressed="false" title="Speak a note (or press V)"><svg class="i"><use href="#i-mic"/></svg><span>Dictate</span></button></div>
+        <textarea id="notes" class="input" spellcheck="true" placeholder="One line per note. While recording, each line starts with the time you began it."></textarea>
+        <p class="hint">Press V and speak. “Track”, “Calibrate”, “Stream”, “Start recording”, “Stop recording”, “Tare”, “Clear tare”, “Fit” and “Reset view” are commands; anything else is a note. Speech stays on this computer; the model downloads once (40 MB, or 120 MB on the graphics card).</p>
       </div>
     </section>
 
@@ -671,6 +709,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <div class="row"><button class="btn sm primary" id="bvFull">Full screen</button><button class="btn sm outline" id="bvClose">Close</button></div>
   </div>
 </div>
+<div class="voice" id="voice" data-state="idle" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="voiceText"></span><span class="meter" aria-hidden="true"><i id="voiceMeter"></i></span></div>
 <footer>
   <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face. Orientations are unit quaternions (w, x, y, z) in the same frame.<span id="mirrorNote" hidden> Mirror view: left and right are swapped, as in a mirror, so x is the camera’s −x and orientations are the mirror image’s.</span></span>
   <span class="spacer"></span>
@@ -1533,6 +1572,7 @@ function fuse(c, m, meas, wall) {
     if (S.settings.compare) for (const [key, z] of rig) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(shown(z.raw, refRaw), S.tare.get(key)));
   }
   streamTick(m.time);
+  recTick(m.time);
 }
 
 // ---------------- video overlays ----------------
@@ -2048,6 +2088,7 @@ function frame() {
   if (S.tab === 'track') { draw3d(); drawTplot(); }
   if (S.mode === 'track') drawTable();
   if (S.tab === 'stream') paintStream();
+  if (REC.on) paintRec();
   if (S.mode === 'track') for (const c of S.cams) if (c.last && performance.now() / 1000 - c.last.time > 0.5) { clearOverlay(c); c.last = null; }
   requestAnimationFrame(frame);
 }
@@ -2062,6 +2103,7 @@ function setMode(m) {
   $('nowCard').hidden = m !== 'track';
   $('calibCard').hidden = m !== 'calib';
   $('streamCard').hidden = m !== 'stream';
+  $('recCard').hidden = m === 'calib';
   document.querySelector('main').classList.toggle('calib', m === 'calib');
   if (m === 'calib') {
     // the steps sit in the right-hand column
@@ -2631,6 +2673,264 @@ $('stSerialBtn').onclick = serialConnect;
 $('stUdpBtn').onclick = udpConnect;
 $('stCopy').onclick = () => { navigator.clipboard.writeText(bridgeCmd()).then(() => { $('stCopy').textContent = 'Copied'; setTimeout(() => { $('stCopy').textContent = 'Copy'; }, 1500); }, () => {}); };
 paintStreamForm();
+
+// ---------------- recording and notes ----------------
+// Record keeps every new plotted pose (each track's sample from each detection, once), in the Track tab's frame, tare
+// and view, as the Stream tab would send it. The notes box belongs to the recording: one line per note, and while
+// recording each new line starts with the time it was begun (typed or spoken; TagCore.parseNotes reads them back).
+// Notes written before the first recording stay as notes about it; a new recording after that starts with an empty box.
+const REC_MAX_S = 3600, REC_MAX_POSES = 600000;
+const REC = { on: false, rec: null, saved: true, t0: 0, painted: 0 };
+const notesEl = $('notes');
+const recNow = () => performance.now() / 1000 - REC.t0; // seconds since the recording began
+function recStart() {
+  if (REC.on) return true;
+  if (REC.rec && REC.rec.poses && !REC.saved && !confirm('Start a new recording? The last one hasn’t been downloaded, and it will be lost with its notes.')) return false;
+  if (REC.rec) notesEl.value = '';
+  REC.t0 = performance.now() / 1000;
+  REC.rec = { start: performance.timeOrigin / 1000 + REC.t0, end: 0, samples: [], poses: 0, tracks: new Set(), why: '' };
+  REC.on = true; REC.saved = true;
+  paintRecUi();
+  return true;
+}
+function recStop(why) {
+  if (!REC.on) return;
+  REC.on = false;
+  REC.rec.end = performance.timeOrigin / 1000 + performance.now() / 1000;
+  REC.rec.why = why || '';
+  paintRecUi();
+}
+function recTick(time) {
+  if (!REC.on || time < REC.t0) return;
+  const rows = [];
+  for (const key of S.hist.ids().sort(keySort)) {
+    const s = S.hist.latest(key);
+    if (s && s.time === time) rows.push({ track: key, name: nameOf(key), p: s.t.slice(), q: C.quatOf(s.R) });
+  }
+  if (!rows.length) return;
+  const r = REC.rec;
+  r.samples.push({ t: performance.timeOrigin / 1000 + time, frame: frameName(), view: S.settings.mirror ? 'mirror' : 'in person', rows });
+  r.poses += rows.length;
+  for (const x of rows) r.tracks.add(x.track);
+  REC.saved = false;
+  if (r.poses >= REC_MAX_POSES) recStop('full');
+}
+function recSummary() {
+  const r = REC.rec;
+  if (!r) return 'Records every pose the Track tab plots, with your notes.';
+  const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
+  const notes = C.parseNotes(notesEl.value).length;
+  const what = r.poses ? `${plural(r.poses, 'pose')} of ${plural(r.tracks.size, 'track')}` : REC.on && !S.running ? 'start a camera or the demo' : 'nothing in view yet';
+  const why = r.why === 'full' ? ' (stopped: that’s as many poses as one recording holds)' : r.why === 'long' ? ' (stopped after an hour)' : '';
+  return `${C.fmtStamp(REC.on ? recNow() : r.end - r.start)}${REC.on ? '' : ' recorded'}: ${what}${notes ? `, ${plural(notes, 'note')}` : ''}${why}`;
+}
+function paintRec() {
+  const now = performance.now();
+  if (REC.on && recNow() > REC_MAX_S) recStop('long');
+  if (now - REC.painted < 250) return;
+  REC.painted = now;
+  $('recText').textContent = recSummary();
+}
+function paintRecUi() {
+  const b = $('recBtn');
+  b.setAttribute('aria-pressed', String(REC.on));
+  b.querySelector('use').setAttribute('href', REC.on ? '#i-stop' : '#i-rec');
+  b.querySelector('span').textContent = REC.on ? 'Stop' : 'Record';
+  $('recInfo').classList.toggle('on', REC.on);
+  $('recCsv').disabled = $('recJson').disabled = !REC.rec || REC.on;
+  $('recDiscard').disabled = !REC.rec && !notesEl.value;
+  REC.painted = 0; paintRec();
+}
+function recFile(ext) {
+  const d = new Date(REC.rec.start * 1000), p = (x) => String(x).padStart(2, '0');
+  return `tag-recording-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;
+}
+$('recBtn').onclick = () => { if (REC.on) recStop(); else recStart(); };
+$('recCsv').onclick = () => { download(new Blob([C.recordingCsv(REC.rec, C.parseNotes(notesEl.value))], { type: 'text/csv' }), recFile('csv')); REC.saved = true; };
+$('recJson').onclick = () => { download(new Blob([C.recordingJson(REC.rec, C.parseNotes(notesEl.value))], { type: 'application/json' }), recFile('json')); REC.saved = true; };
+$('recDiscard').onclick = () => {
+  if (REC.rec && REC.rec.poses && !REC.saved && !confirm('Discard this recording and its notes? It hasn’t been downloaded.')) return;
+  REC.on = false; REC.rec = null; REC.saved = true; notesEl.value = '';
+  paintRecUi();
+};
+// While recording, the first thing typed on an empty line puts the time in front of it.
+notesEl.addEventListener('beforeinput', (e) => {
+  if (!REC.on || e.inputType !== 'insertText' || !e.data || !e.data.trim()) return;
+  const v = notesEl.value, a = notesEl.selectionStart, b = notesEl.selectionEnd;
+  const ls = v.lastIndexOf('\n', a - 1) + 1;
+  let le = v.indexOf('\n', b); if (le < 0) le = v.length;
+  if (v.slice(ls, a).trim() || v.slice(b, le).trim()) return;
+  e.preventDefault();
+  notesEl.setRangeText(`${C.fmtStamp(recNow())}  ${e.data}`, ls, le, 'end');
+  notesEl.dispatchEvent(new Event('input', { bubbles: true }));
+});
+notesEl.addEventListener('input', () => { if (REC.rec && REC.rec.poses) REC.saved = false; $('recDiscard').disabled = !REC.rec && !notesEl.value; REC.painted = 0; paintRec(); });
+window.addEventListener('beforeunload', (e) => { if (REC.rec && REC.rec.poses && !REC.saved) { e.preventDefault(); e.returnValue = ''; } });
+// A spoken note: a new timed line at the end while recording (timed from when you began speaking), else at the caret.
+function addNote(text, at) {
+  const v = notesEl.value;
+  if (REC.on) {
+    notesEl.value = v + (v === '' || v.endsWith('\n') ? '' : '\n') + `${C.fmtStamp(Math.max(0, at - REC.t0))}  ${text}`;
+    notesEl.setSelectionRange(notesEl.value.length, notesEl.value.length);
+    notesEl.scrollTop = notesEl.scrollHeight;
+  } else {
+    const r = C.insertSpeech(v, notesEl.selectionStart, notesEl.selectionEnd, text);
+    notesEl.value = r.value; notesEl.setSelectionRange(r.caret, r.caret);
+  }
+  notesEl.dispatchEvent(new Event('input', { bubbles: true }));
+}
+paintRecUi();
+
+// ---------------- voice: notes and commands, spoken ----------------
+// Press V (outside a text box), the top bar's microphone or Dictate, and speak; the take ends after a pause
+// (TagCore.VoiceGate), or press again, or Escape. MediaRecorder records the microphone; the clip is decoded to 16 kHz
+// mono (an OfflineAudioContext resamples it) and speech-worker.js turns it into text with Whisper tiny.en, on this
+// computer. An utterance that is a command as a whole (TagCore.voiceCommand) runs it; anything else becomes a note.
+// The model downloads on first use (you can speak meanwhile: the take waits for it), then comes from the cache.
+const SR = 16000, MAX_TAKE_S = 60, SILENCE_RMS = 0.004;
+const V = { worker: null, ready: false, failed: '', progress: 0, rec: null, stream: null, chunks: [], at: null, pressAt: 0, none: false, ctx: null, raf: 0, stopT: 0, hideT: 0, job: 0, pending: new Map(), opening: false };
+const voiceOk = window.isSecureContext && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && 'MediaRecorder' in window && 'OfflineAudioContext' in window;
+const VOICE_ACTIONS = {
+  track: () => { setMode('track'); return 'Track tab'; },
+  calib: () => { setMode('calib'); return 'Calibrate tab'; },
+  stream: () => { setMode('stream'); return 'Stream tab'; },
+  record: () => (REC.on ? 'Already recording' : recStart() ? 'Recording' : 'Kept the last recording'),
+  stop: () => (REC.on ? (recStop(), 'Recording stopped') : 'Not recording'),
+  tare: () => { tareNow(); return 'Orientation tared'; },
+  untare: () => { clearTare(); return 'Tare cleared'; },
+  fit: () => { if (S.tab !== 'track') setMode('track'); fitView(); return 'View fitted'; },
+  reset: () => { if (S.tab !== 'track') setMode('track'); resetView(); return 'View reset'; },
+};
+function voiceSay(state, text, hold) {
+  const el = $('voice');
+  el.dataset.state = state; $('voiceText').textContent = text; el.hidden = false;
+  clearTimeout(V.hideT);
+  if (hold) V.hideT = setTimeout(() => { el.hidden = true; el.dataset.state = 'idle'; }, hold);
+  const on = state === 'listening';
+  for (const id of ['voiceBtn', 'dictBtn']) { $(id).setAttribute('aria-pressed', String(on)); $(id).disabled = state === 'processing'; }
+  $('dictBtn').querySelector('span').textContent = on ? 'Stop' : 'Dictate';
+}
+function speechWorker() {
+  if (V.worker) return;
+  const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
+  V.worker = new Worker(base + 'speech-worker.js', { type: 'module' });
+  const fail = (msg) => { V.failed = msg; for (const f of V.pending.values()) f({ error: msg }); V.pending.clear(); };
+  V.worker.onmessage = ({ data: d }) => {
+    if (d.type === 'progress') {
+      V.progress = d.value;
+      if (!V.ready && $('voice').dataset.state === 'processing') voiceSay('processing', `Downloading the speech model, ${Math.round(d.value)}% (only the first time)…`);
+    } else if (d.type === 'ready') V.ready = true;
+    else if (d.type === 'error') fail(`the speech model could not load: ${d.message}`);
+    else if (d.type === 'result') { const f = V.pending.get(d.id); V.pending.delete(d.id); if (f) f(d); }
+  };
+  V.worker.onerror = (e) => fail(e.message || 'the speech worker failed');
+  V.worker.postMessage({ type: 'load' });
+}
+function transcribe(audio) {
+  if (V.failed) return Promise.reject(new Error(V.failed));
+  const id = ++V.job;
+  return new Promise((resolve, reject) => {
+    V.pending.set(id, (d) => (d.error ? reject(new Error(d.error)) : resolve(d.text)));
+    V.worker.postMessage({ type: 'transcribe', id, audio }, [audio.buffer]);
+  });
+}
+const rmsOf = (a) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * a[i]; return Math.sqrt(s / (a.length || 1)); };
+async function voiceStart() {
+  if (V.rec || V.opening || $('voice').dataset.state === 'processing') return;
+  if (!voiceOk) { voiceSay('error', 'This browser can’t record audio here: it needs HTTPS and MediaRecorder.', 6000); return; }
+  if (V.failed) { V.worker.terminate(); V.worker = null; V.failed = ''; V.ready = false; } // try again
+  speechWorker();
+  V.opening = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) {
+    V.opening = false;
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+    voiceSay('error', denied ? 'Microphone access was blocked. Allow it in the address bar and try again.' : `No microphone (${e.message}).`, 6000);
+    return;
+  }
+  V.opening = false;
+  V.stream = stream; V.chunks = []; V.at = null; V.none = false; V.pressAt = performance.now();
+  V.rec = new MediaRecorder(stream);
+  V.rec.ondataavailable = (e) => { if (e.data.size) V.chunks.push(e.data); };
+  V.rec.onstop = voiceFinish;
+  V.rec.start();
+  listen(stream);
+  V.stopT = setTimeout(voiceStop, MAX_TAKE_S * 1000);
+  voiceSay('listening', V.ready ? 'Listening…' : 'Listening… (the speech model downloads meanwhile)');
+}
+// The level meter, and the gate that ends the take after a pause.
+function listen(stream) {
+  const ctx = new AudioContext(), an = ctx.createAnalyser();
+  an.fftSize = 1024;
+  ctx.createMediaStreamSource(stream).connect(an);
+  const buf = new Float32Array(an.fftSize), gate = new C.VoiceGate();
+  gate.reset(performance.now());
+  V.ctx = ctx;
+  const tick = () => {
+    an.getFloatTimeDomainData(buf);
+    const level = rmsOf(buf), ev = gate.step(level, performance.now());
+    $('voiceMeter').style.transform = `scaleX(${Math.min(1, level * 6)})`;
+    if (ev === 'start') V.at = gate.start;
+    if (ev === 'end' || ev === 'none') { V.none = ev === 'none'; voiceStop(); return; }
+    V.raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function voiceStop() {
+  clearTimeout(V.stopT); cancelAnimationFrame(V.raf);
+  if (V.rec && V.rec.state !== 'inactive') V.rec.stop();
+}
+async function voiceFinish() {
+  cancelAnimationFrame(V.raf); $('voiceMeter').style.transform = 'scaleX(0)';
+  if (V.ctx) { V.ctx.close(); V.ctx = null; }
+  V.stream.getTracks().forEach((t) => t.stop());
+  const blob = new Blob(V.chunks, { type: V.rec.mimeType }), at = (V.at === null ? V.pressAt : V.at) / 1000, none = V.none;
+  V.rec = null; V.stream = null; V.chunks = [];
+  if (none) { voiceSay('done', 'Didn’t hear anything. Try again a little closer to the microphone.', 4000); return; }
+  voiceSay('processing', V.ready ? 'Turning speech into text…' : `Downloading the speech model${V.progress ? `, ${Math.round(V.progress)}%` : ''} (only the first time)…`);
+  try {
+    const audio = await toMono16k(blob);
+    // Whisper invents words in silence, so a quiet take is dropped
+    if (rmsOf(audio) < SILENCE_RMS) { voiceSay('done', 'Didn’t hear anything. Try again a little closer to the microphone.', 4000); return; }
+    const text = C.tidySpeech(await transcribe(audio));
+    if (!text) { voiceSay('done', 'No words recognised. Try again.', 4000); return; }
+    const c = C.voiceCommand(text);
+    if (c && c.cmd !== 'note') voiceSay('done', `“${text.replace(/[.!?]$/, '')}”: ${VOICE_ACTIONS[c.cmd]()}.`, 4000);
+    else {
+      const note = c ? c.text : text;
+      addNote(note, at);
+      voiceSay('done', `${REC.on ? 'Note at ' + C.fmtStamp(Math.max(0, at - REC.t0)) : 'Note'}: “${note}”`, 5000);
+    }
+  } catch (e) {
+    voiceSay('error', `Couldn’t turn that into text (${e.message}).`, 7000);
+  }
+}
+// Whatever the recorder made (webm/opus, mp4/aac), decoded at 16 kHz, which resamples it, and mixed down to one channel.
+async function toMono16k(blob) {
+  const buf = await new OfflineAudioContext(1, SR, SR).decodeAudioData(await blob.arrayBuffer());
+  if (buf.numberOfChannels === 1) return buf.getChannelData(0).slice();
+  const out = new Float32Array(buf.length);
+  for (let c = 0; c < buf.numberOfChannels; c++) { const ch = buf.getChannelData(c); for (let i = 0; i < out.length; i++) out[i] += ch[i] / buf.numberOfChannels; }
+  return out;
+}
+const voiceToggle = () => { if (V.rec) voiceStop(); else voiceStart(); };
+$('voiceBtn').onclick = voiceToggle;
+$('dictBtn').onclick = voiceToggle;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && V.rec) { voiceStop(); return; }
+  if ((e.key !== 'v' && e.key !== 'V') || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable], dialog[open]')) return;
+  if (!$('boardView').hidden) return;
+  e.preventDefault(); voiceToggle();
+});
+window.addEventListener('pagehide', () => {
+  if (!V.rec) return;
+  V.rec.onstop = null; voiceStop();
+  if (V.stream) V.stream.getTracks().forEach((t) => t.stop());
+  if (V.ctx) V.ctx.close();
+});
 
 // ---------------- demo: three simulated cameras round one scene ----------------
 // The scene (three tags moving, or while calibrating the board, moving and holding still) is rendered with WebGL in

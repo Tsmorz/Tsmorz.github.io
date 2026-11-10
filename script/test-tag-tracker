@@ -15,6 +15,8 @@
 //   5e. one pose from every camera's corners: the joint fit (against one camera, against fusing each camera's pose,
 //      its covariance by Monte Carlo, moving tags from unsynchronised cameras, a bad corner) and the filter fed corners;
 //      and the search windows for the next frame
+//   5f. recordings and notes (the export formats, timed note lines), cleaning Whisper's text, voice commands, and the
+//      voice gate that ends an utterance after a pause
 //   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
@@ -529,6 +531,68 @@ console.log('5e. one pose from every camera\'s corners, and where to look next')
     check(C.planSearch([{ pts: sq(100, 100, 600), pad: 100 }], 1280, 720) === null && C.planSearch([], 1280, 720) === null, 'windows over half the picture, or nothing to look for: search it all');
     check(C.planSearch([{ pts: [[640, 360]], pad: 2 }], 1280, 720).rois[0].w === 64, 'a window is at least 64 px across');
   }
+}
+
+console.log('5f. recordings, notes and voice');
+{
+  check(C.fmtStamp(0) === '0:00.0' && C.fmtStamp(72.46) === '1:12.4' && C.fmtStamp(3725.07) === '1:02:05.0' && C.fmtStamp(9.99) === '0:09.9', 'times since the start read m:ss.s (h:mm:ss.s past an hour), never rounded up');
+  const notes = C.parseNotes('Trial 3, left hand\n0:12.4  Tag slipped\n\n1:02:05.0 Second camera bumped\n  3:30 \n10:00.5 Done.');
+  check(notes.length === 4 && notes[0].t === null && notes[0].text === 'Trial 3, left hand', 'a line with no time is a note about the whole recording; blank lines and bare times are skipped');
+  check(notes[1].t === 12.4 && notes[2].t === 3725 && notes[3].t === 600.5 && notes[3].text === 'Done.', 'a line that starts with a time is a note at that time');
+  for (const s of [0, 9.95, 72.46, 3725.07, 5999.9]) { const n = C.parseNotes(`${C.fmtStamp(s)}  x`)[0]; if (!(n && Math.abs(n.t - s) < 0.1)) check(false, `a stamp reads back (${s})`); }
+  check(C.parseNotes('12:345 x')[0].t === null && C.parseNotes('1:5 x')[0].t === null, 'something that only looks like a time is text');
+
+  const row = (track, x) => ({ track, name: track === 2 ? 'Body, front' : 'Hand', p: [x, 0.2, -0.0000001], q: [1, 0, 0, 0] });
+  const rec = { start: 1700000000, end: 1700000003, samples: [
+    { t: 1700000000.5, frame: 'camera', view: 'in person', rows: [row(2, 0.1), row(5, 0.3)] },
+    { t: 1700000002, frame: 'camera', view: 'mirror', rows: [row(2, 0.12)] },
+  ] };
+  const ns = C.parseNotes('Setup A\n0:01.0 Flip');
+  const csv = C.recordingCsv(rec, ns).trim().split('\n');
+  check(csv[0] === C.STREAM_CSV_HEADER + ',note' && csv.length === 6, 'CSV: the Stream columns plus a note column, a row per pose and per note');
+  check(csv[1] === '1700000000.000,,,,,,,,,,Setup A' && csv[4] === '1700000001.000,,,,,,,,,,Flip', 'CSV: notes at their Unix times, among the poses (one about the whole recording at its start)');
+  check(csv[2] === '1700000000.500,2,"Body, front",0.1,0.2,0,1,0,0,0,' && csv[5].startsWith('1700000002.000,2,'), 'CSV: pose rows as the Stream tab writes them, with an empty note');
+  check(csv.every((l) => l.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).length === 11), 'CSV: every row has all eleven columns');
+  const js = JSON.parse(C.recordingJson(rec, ns));
+  check(js.format === 'tag-tracker-recording/1' && js.start === 1700000000 && js.end === 1700000003, 'JSON: format, start and end in Unix seconds');
+  check(js.notes[0].t === null && js.notes[1].t === 1700000001 && js.samples[1].view === 'mirror' && js.samples[0].tracks[1].p[0] === 0.3, 'JSON: notes in Unix time (null: the whole recording), each sample like a Stream message');
+  check(C.recordingCsv({ start: 5, samples: [] }, []).trim() === C.STREAM_CSV_HEADER + ',note', 'an empty recording is just the header');
+
+  check(C.tidySpeech(' [BLANK_AUDIO] ') === '' && C.tidySpeech('(music) *coughs*') === '', 'Whisper\'s non-speech marks alone give nothing');
+  check(C.tidySpeech(' the tag slipped , again') === 'The tag slipped, again.' && C.tidySpeech('Is it on?') === 'Is it on?', 'speech gets a capital, tight commas and an ending');
+  const ins = (v, a, b, t) => C.insertSpeech(v, a, b, t);
+  let r = ins('', 0, 0, 'Hello.');
+  check(r.value === 'Hello.' && r.caret === 6, 'into an empty box as it is');
+  r = ins('The tag', 7, 7, 'Slipped off.');
+  check(r.value === 'The tag slipped off.' && r.caret === 20, 'carrying on a sentence: a space, and lower case');
+  r = ins('Done. ', 6, 6, 'Next one.');
+  check(r.value === 'Done. Next one.', 'after a full stop and a space: as it is');
+  r = ins('A B', 2, 2, 'I moved it.');
+  check(r.value === 'A I moved it. B', '"I" keeps its capital, and a space goes after when text follows');
+  r = ins('keep this OLD end', 10, 13, 'New.');
+  check(r.value === 'keep this new. end', 'a selection is replaced');
+
+  const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
+  check(cmd('Calibrate.') === 'calib' && cmd('Go to the calibrate tab.') === 'calib' && cmd('Stream!') === 'stream' && cmd('Switch to tracking, please.') === 'track', 'a tab by name, with or without "go to ... tab"');
+  check(cmd('Start recording.') === 'record' && cmd('Stop.') === 'stop' && cmd('Stop recording.') === 'stop' && cmd('Clear tare.') === 'untare' && cmd('Tare.') === 'tare' && cmd('Reset view.') === 'reset', 'recording, tare and view commands');
+  check(cmd('Calibrate again after lunch.') === null && cmd('The stream dropped out.') === null && cmd('') === null, 'a sentence that only mentions a command is a note');
+  const n = C.voiceCommand('Note: calibrate the second camera');
+  check(n.cmd === 'note' && n.text === 'Calibrate the second camera.' && C.voiceCommand('Note.') === null && C.voiceCommand('Take a note stop').text === 'Stop.', '"Note ..." is always a note, even of a command\'s word');
+  check(Object.values(C.VOICE_COMMANDS).flat().every((p) => C.voiceCommand(p[0].toUpperCase() + p.slice(1) + '.').cmd !== 'note' && C.voiceCommand(p + '.')), 'every listed phrase, as Whisper writes it, is recognised');
+
+  // the voice gate, fed a level every 20 ms
+  const run = (levels, opts) => {
+    const g = new C.VoiceGate(opts); g.reset(0); const ev = [];
+    levels.forEach((l, i) => { const e = g.step(l, i * 20); if (e) ev.push([e, i * 20, g.start]); });
+    return ev;
+  };
+  const quiet = (ms) => Array(ms / 20).fill(0.003), loud = (ms) => Array(ms / 20).fill(0.08);
+  let ev = run([...quiet(500), ...loud(800), ...quiet(400), ...loud(300), ...quiet(2000)]);
+  check(ev.length === 2 && ev[0][0] === 'start' && ev[0][2] === 500 && ev[1][0] === 'end' && ev[1][1] === 2000 + 1400, 'speech starts where it got loud; a short pause doesn\'t end it, a long one does');
+  ev = run([...quiet(300), 0.08, 0.08, ...quiet(9000)]);
+  check(ev.length === 1 && ev[0][0] === 'none' && ev[0][1] === 8000, 'a click is not speech, and nothing said in 8 s gives up');
+  ev = run([...quiet(7900), ...loud(400), ...quiet(1600)]);
+  check(ev[0][0] === 'start' && ev[1][0] === 'end', 'starting to talk just before the wait runs out still counts');
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
