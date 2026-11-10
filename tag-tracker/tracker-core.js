@@ -725,6 +725,20 @@
     return out.map((r) => Object.assign(r, { x: r.x - mx, y: r.y - my }));
   }
 
+  // Tag IDs typed as a list: "3, 10-12 7" (commas or spaces; a range with -, – or ..). Returns the IDs in the order
+  // given without repeats, and the pieces that aren't IDs below `count` (the family's size). At most `limit` IDs.
+  function parseIdList(text, count, limit) {
+    const ids = [], bad = [], lim = limit || 200;
+    for (const part of String(text || '').split(/[\s,;]+/).filter(Boolean)) {
+      const m = part.match(/^(\d+)(?:(?:-|–|\.\.)(\d+))?$/);
+      if (!m) { bad.push(part); continue; }
+      const a = +m[1], b = m[2] === undefined ? a : +m[2];
+      if (b < a || b >= count) { bad.push(part); continue; }
+      for (let i = a; i <= b && ids.length < lim; i++) if (!ids.includes(i)) ids.push(i);
+    }
+    return { ids, bad };
+  }
+
   // ---- settings ----
   const DEFAULTS = {
     family: 'APRILTAG_36h11',
@@ -775,7 +789,7 @@
     quatOf, quatNear, tared,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    toRig, fusePoses, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles,
+    toRig, fusePoses, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
     DEFAULTS, clampSettings, boardFit, displayMap,
   };
 });

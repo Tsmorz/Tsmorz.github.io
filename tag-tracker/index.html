@@ -145,7 +145,10 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 .stage .tl{position:absolute;left:8px;top:8px;right:40px;z-index:3;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:12px;pointer-events:none}
 .stage .tl b,.stage .tl .nm,.stage .tl .st{background:rgba(12,14,17,.78);color:#fff;padding:2px 6px;line-height:16px;white-space:nowrap}
 .stage .tl b{background:var(--accent);color:var(--onAccent)}
-.stage .tl .nm{max-width:16ch;overflow:hidden;text-overflow:ellipsis}
+.stage .tl .nm{max-width:16ch;overflow:hidden;text-overflow:ellipsis;border:0;font:inherit;pointer-events:auto;cursor:text}
+.stage .tl .nm:hover{background:#000;text-decoration:underline;text-underline-offset:2px}
+.stage .tl .nm:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.stage .tl .nm-in{pointer-events:auto;font:inherit;font-size:12px;line-height:16px;padding:2px 6px;width:18ch;max-width:100%;border:1px solid var(--accent);background:#0c0e11;color:#fff;outline:none}
 .stage .tl .st{color:#c3cbcf;font-weight:500}
 .stage .tl .st.warn{color:#f5b544}
 .stage .tbtn{position:absolute;right:8px;top:8px;z-index:3;width:24px;height:24px;padding:0;border:0;background:rgba(12,14,17,.78);color:#fff;display:grid;place-items:center}
@@ -202,6 +205,16 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .bform{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:12px;background:var(--well);border-left:3px solid var(--accent)}
 .pick{height:28px;border:1px solid var(--rule2);background:var(--field);padding:0 10px;font-size:13px;display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
 .pick[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:var(--panel)}
+.dlg{border:1px solid var(--ink);border-radius:4px;background:var(--panel);color:var(--ink);padding:0;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px)}
+.dlg::backdrop{background:rgba(10,12,14,.5)}
+.dlg form{display:flex;flex-direction:column;max-height:calc(100vh - 34px)}
+.dlg-h{display:flex;align-items:center;gap:12px;padding:12px 14px 10px;border-bottom:1px solid var(--rule2)}
+.dlg-h h2{flex:1;margin:0;font-size:17px;font-weight:700;font-stretch:118%}
+.dlg-b{padding:6px 14px 14px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.dlg fieldset{border:0;border-top:1px solid var(--rule);margin:0;padding:12px 0 0;display:flex;flex-direction:column;gap:10px;min-width:0}
+.dlg legend{font-weight:700;font-size:14px;font-stretch:112%;padding:0 8px 0 0}
+.dlg-f{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--rule2);flex-wrap:wrap}
+.dlg .hint.bad{color:var(--warn)}
 .pick .ord{font-weight:650;font-size:11.5px;color:var(--accent)}
 .brow{display:grid;grid-template-columns:auto minmax(90px,1fr) auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
 .brow:first-child{border-top:0}
@@ -321,6 +334,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <button id="startBtn" class="btn primary"><svg class="i"><use href="#i-cam"/></svg><span>Start</span></button>
   </div>
   <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
+  <button id="printBtn" class="btn" title="Print AprilTags and the calibration board" aria-haspopup="dialog"><svg class="i"><use href="#i-print"/></svg><span>Print</span></button>
   <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
 </header>
 
@@ -557,6 +571,32 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     </section>
   </div>
 </main>
+<dialog class="dlg" id="printDlg" aria-labelledby="h-print">
+  <form method="dialog" id="printForm" novalidate>
+    <div class="dlg-h"><h2 id="h-print">Print tags and the board</h2><button type="button" class="btn sm sq" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="dlg-b">
+      <fieldset>
+        <legend>AprilTags, <span id="printFam">tag36h11</span></legend>
+        <div class="chips" id="printTags" role="group" aria-label="Your tags to print"></div>
+        <div class="row">
+          <label class="field" style="flex:1;min-width:200px">Other IDs <input id="printIds" class="input sm mono" style="flex:1;min-width:0" placeholder="e.g. 3, 10-12" autocomplete="off"></label>
+          <label class="field">at <input id="printSize" class="input sm num mono" type="number" min="5" max="2000" step="0.5"><span class="unit">mm</span></label>
+        </div>
+        <p class="hint" id="printIdsMsg">Your tags print at their own sizes. Size is the black square; a white border of one cell is added round it.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Calibration board</legend>
+        <div class="row">
+          <span class="field"><span id="printBoardLbl">ChArUco board, 9 × 6 squares</span><button type="button" id="printBoardSw" class="switch" role="switch" aria-checked="false" aria-labelledby="printBoardLbl"></button></span>
+          <label class="field">squares of <input id="printSquare" class="input sm num mono" type="number" min="3" max="200" step="0.1"><span class="unit">mm</span></label>
+        </div>
+        <p class="hint">On its own landscape page. Glue it to card so it stays flat, then measure a square and enter it in Calibrate.</p>
+      </fieldset>
+      <p class="hint">Print at 100% scale (turn off “fit to page”). A 50 mm bar on the page lets you check the scale with a ruler.</p>
+    </div>
+    <div class="dlg-f"><span class="small muted" id="printSummary"></span><span class="spacer"></span><button type="button" class="btn sm" data-close>Cancel</button><button class="btn sm primary" id="printGo">Print</button></div>
+  </form>
+</dialog>
 <div class="board-view" id="boardView" hidden>
   <canvas id="boardCanvas" role="img" aria-label="ChArUco calibration board, 9 by 6 squares"></canvas>
   <div class="bv-bar" id="bvBar">
@@ -603,6 +643,7 @@ const S = {
   // the rig: each camera's saved pose (by camera key); views of the board for placing cameras; fused poses per track
   rig: store.get('rig', null), rigViews: [], lastRig: 0, rigAuto: true, rigFresh: null,
   arrange: Object.assign({ mode: 'auto', tiles: {} }, store.get('arrange', {})),
+  camNames: store.get('camNames', {}), // camera key → the name the visitor gave it (lens calibrations stay keyed by the device's own label)
   fused: new Map(), zs: new Map(),
   // Tracks are keyed by tag id (a number) or 'b:<id>' for a rigid object. hist holds the plotted poses (in the
   // chosen frame), rawHist the raw ones for "Compare with raw", filters one PoseFilter per track, tracks the
@@ -881,15 +922,18 @@ async function listCameras() {
   const sel = $('camSel');
   try { devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch (e) { devices = []; }
   const first = S.cams[0], cur = first ? (first.demo !== null ? 'demo' : first.key) : S.camId || (devices[0] && devices[0].deviceId) || '';
-  sel.innerHTML = devices.map((c, i) => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || 'Camera ' + (i + 1))}</option>`).join('') + '<option value="demo">Demo (3 cameras)</option>';
+  sel.innerHTML = devices.map((c, i) => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(nameFor(c.deviceId, c.label || 'Camera ' + (i + 1)))}</option>`).join('') + '<option value="demo">Demo (3 cameras)</option>';
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : sel.options[0].value;
   paintAddCam();
 }
 function deviceLabel(id) { const i = devices.findIndex((d) => d.deviceId === id); return i < 0 ? 'Camera' : devices[i].label || 'Camera ' + (i + 1); }
+// A camera's name: the one the visitor gave it, else the device's own label (or Demo k).
+const nameFor = (key, fallback) => S.camNames[key] || fallback;
+const camName = (c) => nameFor(c.key, c.label);
 // what can still be added: real cameras not running or, in the demo, demo cameras not running
 function paintAddCam() {
-  const opts = S.demo ? DEMO.cams.map((_, k) => k).filter((k) => !camOf('demo:' + k)).map((k) => ['demo:' + k, `Demo ${k + 1}`])
-    : devices.filter((d) => d.deviceId && !camOf(d.deviceId)).map((d) => [d.deviceId, deviceLabel(d.deviceId)]);
+  const opts = S.demo ? DEMO.cams.map((_, k) => k).filter((k) => !camOf('demo:' + k)).map((k) => ['demo:' + k, nameFor('demo:' + k, `Demo ${k + 1}`)])
+    : devices.filter((d) => d.deviceId && !camOf(d.deviceId)).map((d) => [d.deviceId, nameFor(d.deviceId, deviceLabel(d.deviceId))]);
   $('addCamWrap').hidden = !S.cams.length || !opts.length;
   $('addCamSel').innerHTML = opts.map(([v, l]) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`).join('');
 }
@@ -945,6 +989,7 @@ function makeTile(c) {
     <span class="tl"></span><button class="tbtn rm" title="Remove this camera"><svg class="i"><use href="#i-x"/></svg></button>
     <span class="vstats mono" hidden></span><span class="rs" aria-hidden="true" title="Drag to resize"></span>`;
   el.querySelector('.rm').onclick = () => removeCamera(c);
+  el.querySelector('.tl').addEventListener('click', (e) => { if (e.target.closest('.nm')) renameCamera(c); });
   arrangeHandlers(c, el);
   return el;
 }
@@ -985,6 +1030,30 @@ function removeCamera(c) {
   S.cams = S.cams.filter((x) => x !== c);
   onCamsChanged();
 }
+// Rename a camera in place: its name turns into a text box; Enter or leaving it keeps the name, Escape doesn't. An
+// empty name goes back to the device's own.
+function renameCamera(c) {
+  const tl = c.el.querySelector('.tl'), btn = tl.querySelector('.nm');
+  if (!btn) return;
+  const inp = document.createElement('input');
+  inp.className = 'nm-in'; inp.maxLength = 40; inp.value = camName(c); inp.placeholder = c.label;
+  inp.setAttribute('aria-label', `Name of camera ${c.n}`);
+  btn.replaceWith(inp); inp.focus(); inp.select();
+  let done = false;
+  const finish = (keep) => {
+    if (done) return;
+    done = true;
+    const v = inp.value.trim();
+    if (keep) { if (!v || v === c.label) delete S.camNames[c.key]; else S.camNames[c.key] = v; store.set('camNames', S.camNames); }
+    inp.remove();
+    paintNames();
+  };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(true); c.el.focus(); } else if (e.key === 'Escape') { e.preventDefault(); finish(false); c.el.focus(); } e.stopPropagation(); });
+  inp.addEventListener('blur', () => finish(true));
+}
+// Everything that shows a camera's name.
+function paintNames() { S.cams.forEach(paintTile); renderCalibCams(); renderRig(); paintAddCam(); listCameras(); }
+
 // After cameras come or go: number them, place them from the saved rig, and lay out their tiles.
 function onCamsChanged() {
   const first = S.cams.length ? S.cams[0].key : null;
@@ -1046,15 +1115,16 @@ function updateCam(c) {
   }
   paintTile(c);
   $('fovField').hidden = !S.cams.some((x) => x.lens[0] === 'warn');
-  if (c === S.cams[S.calibCam]) { $('calibFor').textContent = `${c.label}, ${w}×${h}`; renderCalibStatus(); }
+  if (c === S.cams[S.calibCam]) { $('calibFor').textContent = `${camName(c)}, ${w}×${h}`; renderCalibStatus(); }
 }
 function paintTile(c) {
   if (!c.el || !c.lens) return;
   const place = c.n === 1 ? null : c.T ? ['good', 'placed', 'Its position relative to camera 1 is known, so its tags are combined with the other cameras’.'] : ['warn', 'not placed', 'Place the cameras (Calibrate, step 4) to combine its tags with camera 1’s.'];
-  c.el.querySelector('.tl').innerHTML = `<b>${c.n}</b><span class="nm">${escapeHtml(c.label)}</span><span class="st ${c.lens[0]}" title="${escapeHtml(c.lensTitle)}">${c.lens[1]}</span>` +
+  if (c.el.querySelector('.tl .nm-in')) return; // being renamed: leave the text box alone
+  c.el.querySelector('.tl').innerHTML = `<b>${c.n}</b><button class="nm" title="Rename this camera">${escapeHtml(camName(c))}</button><span class="st ${c.lens[0]}" title="${escapeHtml(c.lensTitle)}">${c.lens[1]}</span>` +
     (place ? `<span class="st ${place[0]}" title="${place[2]}">${place[1]}</span>` : '');
-  c.el.title = `Camera ${c.n}: ${c.label}. Lens ${c.lens[1]}${place ? ', ' + place[1] : ''}.` + (S.cams.length > 1 ? ' Drag to move this view, its corner to resize it.' : '');
-  c.el.setAttribute('aria-label', `Camera ${c.n}, ${c.label}, lens ${c.lens[1]}${place ? ', ' + place[1] : ''}. Arrow keys move this view, plus and minus resize it.`);
+  c.el.title = `Camera ${c.n}: ${camName(c)}${S.camNames[c.key] ? ` (${c.label})` : ''}. Lens ${c.lens[1]}${place ? ', ' + place[1] : ''}.` + (S.cams.length > 1 ? ' Drag to move this view, its corner to resize it.' : '');
+  c.el.setAttribute('aria-label', `Camera ${c.n}, ${camName(c)}, lens ${c.lens[1]}${place ? ', ' + place[1] : ''}. Arrow keys move this view, plus and minus resize it.`);
   c.el.querySelector('.rm').setAttribute('aria-label', `Remove camera ${c.n}`);
 }
 
@@ -1118,7 +1188,7 @@ document.querySelectorAll('[data-arr]').forEach((b) => {
 function arrangeHandlers(c, el) {
   let drag = null;
   el.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || e.target.closest('button') || S.cams.length < 2) return;
+    if (e.button !== 0 || e.target.closest('button, input') || S.cams.length < 2) return;
     toCustom();
     const r = S.arrange.tiles[c.key];
     if (!r) return;
@@ -1525,7 +1595,8 @@ function draw3d() {
       const corners = [[-a, -b, 1], [a, -b, 1], [a, b, 1], [-a, b, 1]].map((q) => at(q.map((x) => x * d)));
       for (let k = 0; k < 4; k++) { line(P.t, corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
       line(corners[0], corners[1], K.text2, 2.5); // the top edge, so which way is up reads at a glance
-      label(at([0, b * d * 1.6, 0]), list.length > 1 ? `Camera ${cm.n}` : 'Camera', K.text2, 6, 10);
+      const given = cm.key && S.camNames[cm.key];
+      label(at([0, b * d * 1.6, 0]), given ? (list.length > 1 ? `${cm.n} ${given}` : given) : list.length > 1 ? `Camera ${cm.n}` : 'Camera', K.text2, 6, 10);
     }
   }
   if (S.settings.frame !== 'camera') {
@@ -1745,7 +1816,7 @@ function drawTable() {
     const sd = tr.cov ? C.sigmaAlong(tr.cov, dir) : !isBody(key) && S.cams[0] ? C.depthNoise(S.cams[0].cam, tr.size || S.settings.tagSize, C.norm(p.t), 0.2) : NaN;
     const speed = tr.v ? C.norm(tr.v) * 100 : NaN;
     const q = C.quatOf(s.R), cell = (v, d, g) => `<td class="num mono${g ? ' g' : ''}">${v.toFixed(d).replace(/^-(0\.0*)$/, '$1')}</td>`;
-    rows.push(`<tr data-key="${key}" aria-selected="${key === S.tplotTag}"><td><span style="display:inline-flex;align-items:center;gap:7px;white-space:nowrap"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}${S.tare.has(key) ? ' <span class="tared">tared</span>' : ''}${S.cams.length > 1 && tr.cams && tr.cams.length ? ` <span class="tared" title="Seen by these cameras">cam ${tr.cams.join(', ')}</span>` : ''}</span></td>` +
+    rows.push(`<tr data-key="${key}" aria-selected="${key === S.tplotTag}"><td><span style="display:inline-flex;align-items:center;gap:7px;white-space:nowrap"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}${S.tare.has(key) ? ' <span class="tared">tared</span>' : ''}${S.cams.length > 1 && tr.cams && tr.cams.length ? ` <span class="tared" title="Seen by ${escapeHtml(tr.cams.map((n) => (S.cams[n - 1] ? camName(S.cams[n - 1]) : 'camera ' + n)).join(', '))}">cam ${tr.cams.join(', ')}</span>` : ''}</span></td>` +
       s.t.map((v, i) => cell(v * 100, 1, !i)).join('') + q.map((v, i) => cell(v, 3, !i)).join('') +
       `<td class="num mono g">${(C.norm(s.t) * 100).toFixed(1)}</td><td class="num mono">${isFinite(speed) ? speed.toFixed(0) : '—'}</td><td class="num mono">${isFinite(tr.rms) ? tr.rms.toFixed(2) + ' px' : '—'}</td><td class="num mono">${isFinite(sd) ? (sd * 1000).toFixed(1) + ' mm' : '—'}</td></tr>`);
   }
@@ -1806,11 +1877,11 @@ $('solveBtn').onclick = () => {
 };
 function renderCalibCams() {
   const sel = $('calibCamSel');
-  sel.innerHTML = S.cams.map((c, i) => `<option value="${i}">Camera ${c.n}: ${escapeHtml(c.label)}</option>`).join('');
+  sel.innerHTML = S.cams.map((c, i) => `<option value="${i}">Camera ${c.n}: ${escapeHtml(camName(c))}</option>`).join('');
   sel.value = String(S.calibCam);
   $('calibCamWrap').hidden = S.cams.length < 2;
   const c = calibCam();
-  $('calibFor').textContent = c ? `${c.label}, ${c.video.videoWidth || c.cam.w}×${c.video.videoHeight || c.cam.h}` : '';
+  $('calibFor').textContent = c ? `${camName(c)}, ${c.video.videoWidth || c.cam.w}×${c.video.videoHeight || c.cam.h}` : '';
 }
 $('calibCamSel').onchange = () => { S.calibCam = +$('calibCamSel').value; S.views = []; S.calibResult = null; for (const c of S.cams) clearOverlay(c); renderCalibCams(); renderCalib(); };
 function onBoard(c, m) {
@@ -1905,7 +1976,7 @@ function onCalibrated(c) {
   resetTracks();
   S.cams.forEach(updateCam); renderCalib();
 }
-$('forgetBtn').onclick = () => { const k = calibKey(); if (!confirm(`Forget the calibration for “${k}”?`)) return; delete S.calibs[k]; store.set('calibs', S.calibs); S.calibResult = null; S.cams.forEach(updateCam); renderCalib(); };
+$('forgetBtn').onclick = () => { const k = calibKey(); if (!confirm(`Forget the calibration for “${calibCam() ? camName(calibCam()) : k}”?`)) return; delete S.calibs[k]; store.set('calibs', S.calibs); S.calibResult = null; S.cams.forEach(updateCam); renderCalib(); };
 $('exportBtn').onclick = () => {
   const c = S.calibs[calibKey()]; if (!c) return;
   const blob = new Blob([JSON.stringify(Object.assign({ format: 'tag-tracker-calibration/1' }, c), null, 2)], { type: 'application/json' });
@@ -1961,7 +2032,7 @@ $('rigSolve').onclick = () => {
   const keys = S.cams.map((c) => c.key);
   const views = S.rigViews.map((v) => ({ obs: v.obs.filter((o) => keys.includes(o.key)).map((o) => ({ cam: keys.indexOf(o.key), obj: o.obj, pts: o.pts, pose: o.pose })) })).filter((v) => v.obs.length >= 2);
   const r = C.calibrateRig(S.cams.map((c) => c.cam), views);
-  S.rig = { keys, labels: S.cams.map((c) => c.label), poses: r.poses, rms: r.rms, perCam: r.perCam, views: r.views, date: new Date().toISOString() };
+  S.rig = { keys, labels: S.cams.map(camName), poses: r.poses, rms: r.rms, perCam: r.perCam, views: r.views, date: new Date().toISOString() };
   S.rigFresh = S.rig;
   store.set('rig', S.rig);
   placeCams(); resetTracks(); renderRig(); layoutTiles();
@@ -1993,7 +2064,7 @@ function renderRig() {
       where = `<span class="mono">${fmt(v[0])}, ${fmt(v[1])}, ${fmt(v[2])}</span> <span class="muted">cm, turned</span> <span class="mono">${(C.angleOf(c.T.R) * 180 / Math.PI).toFixed(1)}°</span>` +
         (truth ? `<div class="small truth">Demo truth: off by ${(C.norm(C.sub(c.T.t, truth.t)) * 1000).toFixed(1)} mm and ${(C.angleOf(C.mul3(C.tr3(truth.R), c.T.R)) * 180 / Math.PI).toFixed(2)}°</div>` : '');
     }
-    return `<tr><td><b>${c.n}</b> ${escapeHtml(c.label)}</td><td class="num mono">${inViews}</td><td>${where}</td><td class="num mono">${pc && isFinite(pc.rms) ? pc.rms.toFixed(2) + ' px' : '—'}</td></tr>`;
+    return `<tr><td><b>${c.n}</b> ${escapeHtml(camName(c))}</td><td class="num mono">${inViews}</td><td>${where}</td><td class="num mono">${pc && isFinite(pc.rms) ? pc.rms.toFixed(2) + ' px' : '—'}</td></tr>`;
   }).join('');
   $('rigRows').innerHTML = rows || '<tr><td colspan="4" class="muted">No cameras running.</td></tr>';
   const r = S.rig;
@@ -2009,13 +2080,13 @@ function grayToCanvas(img, quiet) {
   c.putImageData(id, q, q);
   return cv;
 }
-function printPage(win, title, body) {
+function printPage(win, title, body, css) {
   win.document.open();
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>
     @page{margin:12mm}body{font:12px/1.5 system-ui,sans-serif;color:#111;margin:0;display:flex;flex-direction:column;align-items:center;gap:6mm;padding-top:4mm}
     img{image-rendering:pixelated;display:block}.cap{text-align:center;max-width:180mm}.rule{height:0;border-top:.4mm solid #111;width:50mm;position:relative}
     .rule::before,.rule::after{content:"";position:absolute;top:-1.6mm;height:3mm;border-left:.4mm solid #111}.rule::before{left:0}.rule::after{right:0}
-    @media screen{body{background:#eee;padding:20px}.sheet{background:#fff;padding:10mm;box-shadow:0 2px 12px rgba(0,0,0,.15)}}</style></head>
+    @media screen{body{background:#eee;padding:20px}.sheet{background:#fff;padding:10mm;box-shadow:0 2px 12px rgba(0,0,0,.15)}}${css || ''}</style></head>
     <body>${body}<script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
   win.document.close();
 }
@@ -2037,6 +2108,87 @@ $('printBoard').onclick = async () => {
   printPage(win, 'Calibration board 9×6', `<style>@page{size:landscape}</style><div class="sheet"><img src="${cv.toDataURL()}" style="width:${(9 * sq).toFixed(1)}mm;height:${(6 * sq).toFixed(1)}mm" alt="ChArUco calibration board"></div>
     <div class="cap">ChArUco board, 9 × 6 squares of ${sq} mm, DICT_5X5_100. Print at 100% on stiff paper (or glue it to card) and keep it flat. Measure the squares and enter the size in Tag Tracker. The bar below should be 50 mm.</div><div class="rule"></div>`);
 };
+// ---------------- the Print dialog: any of your tags, other IDs, and the board, printed together ----------------
+const PD = { chosen: new Set() };
+function openPrintDlg() {
+  $('printFam').textContent = FAMILY_LABEL[S.settings.family];
+  // the tag picked in the Now panel starts chosen
+  PD.chosen = new Set(typeof S.tplotTag === 'number' && tagOf(S.tplotTag) ? [S.tplotTag] : []);
+  $('printBoardSw').setAttribute('aria-checked', String(S.mode === 'calib'));
+  $('printSize').value = +(S.settings.tagSize * 1000).toFixed(1);
+  $('printSquare').value = S.square;
+  $('printIds').value = '';
+  renderPrintDlg();
+  $('printDlg').showModal();
+}
+function renderPrintDlg() {
+  const box = $('printTags');
+  box.innerHTML = S.tags.length ? S.tags.map((t) => `<button type="button" class="pick" data-id="${t.id}" aria-pressed="${PD.chosen.has(t.id)}"><span class="sw" style="background:${cssColorOf(t.id)}"></span>${escapeHtml(nameOf(t.id))}${t.name ? ` #${t.id}` : ''}, ${+(t.size * 1000).toFixed(1)} mm</button>`).join('')
+    : '<span class="hint">No tags in your list yet: type their IDs below.</span>';
+  box.querySelectorAll('.pick').forEach((b) => {
+    b.onclick = () => { const id = +b.dataset.id; if (PD.chosen.has(id)) PD.chosen.delete(id); else PD.chosen.add(id); b.setAttribute('aria-pressed', String(PD.chosen.has(id))); paintPrintSummary(); };
+  });
+  paintPrintSummary();
+}
+// what is chosen: your tags at their own sizes, then the typed IDs at the typed size, and the board
+function printChoice() {
+  const extra = C.parseIdList($('printIds').value, S.familyCount, 100), size = +$('printSize').value / 1000, square = +$('printSquare').value;
+  const tags = [...PD.chosen].map((id) => ({ id, size: sizeOf(id) }));
+  for (const id of extra.ids) if (!PD.chosen.has(id)) tags.push({ id, size });
+  return { tags, bad: extra.bad, typed: extra.ids.length, board: $('printBoardSw').getAttribute('aria-checked') === 'true', square, sizeOk: size >= 0.005 && size <= 2, squareOk: square >= 3 && square <= 200 };
+}
+function paintPrintSummary() {
+  const ch = printChoice(), n = ch.tags.length, msg = $('printIdsMsg');
+  const parts = [n ? `${n} tag${n > 1 ? 's' : ''}` : '', ch.board ? 'the board' : ''].filter(Boolean);
+  const ok = (n || ch.board) && (!ch.typed || ch.sizeOk) && (!ch.board || ch.squareOk) && !ch.bad.length;
+  $('printSummary').textContent = parts.length ? parts.join(' and ') : 'Nothing chosen yet';
+  $('printGo').disabled = !ok;
+  msg.classList.toggle('bad', !!ch.bad.length || (ch.typed > 0 && !ch.sizeOk));
+  msg.textContent = ch.bad.length ? `Not ${FAMILY_LABEL[S.settings.family]} IDs (0 to ${S.familyCount - 1}): ${ch.bad.join(', ')}.`
+    : ch.typed && !ch.sizeOk ? 'Enter a size from 5 to 2000 mm.'
+    : 'Your tags print at their own sizes. Size is the black square; a white border of one cell is added round it.';
+}
+['printIds', 'printSize', 'printSquare'].forEach((id) => { $(id).oninput = paintPrintSummary; });
+$('printBoardSw').onclick = () => { const b = $('printBoardSw'); b.setAttribute('aria-checked', String(b.getAttribute('aria-checked') !== 'true')); paintPrintSummary(); };
+$('printBtn').onclick = openPrintDlg;
+$('printDlg').querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => $('printDlg').close(); });
+$('printForm').onsubmit = (e) => {
+  e.preventDefault();
+  const ch = printChoice();
+  if ($('printGo').disabled) return;
+  // the print window opens now, inside the click, so pop-up blockers allow it; it fills in once the images are made
+  const win = window.open('', '_blank');
+  $('printDlg').close();
+  if (!win) { alert('Allow pop-ups for this site to print.'); return; }
+  win.document.write('<p style="font:14px system-ui;padding:20px">Making the page…</p>');
+  printSet(win, ch);
+};
+async function printSet(win, ch) {
+  const fam = S.settings.family, cells = FAMILY_CELLS[fam], label = FAMILY_LABEL[fam];
+  const imgs = await Promise.all(ch.tags.map((t) => requestImage('tagImage', { family: fam, id: t.id, px: cells * 40 })));
+  const figs = ch.tags.map((t, i) => {
+    const cv = grayToCanvas(imgs[i], 40), mm = t.size * 1000, w = mm + (2 * mm) / cells, nm = tagOf(t.id) && tagOf(t.id).name;
+    return `<figure class="tg"><img src="${cv.toDataURL()}" style="width:${w.toFixed(2)}mm;height:${w.toFixed(2)}mm" alt="${label} tag ${t.id}"><figcaption><b>ID ${t.id}</b>${nm ? ', ' + escapeHtml(nm) : ''}<br>${label}, black square ${mm.toFixed(1)} mm</figcaption></figure>`;
+  }).join('');
+  let board = '';
+  if (ch.board) {
+    const img = await requestImage('boardImage', { px: 100 }), sq = ch.square;
+    S.square = sq; store.set('square', sq); $('square').value = sq;
+    board = `<section class="bp"><img src="${grayToCanvas(img, 0).toDataURL()}" style="width:${(9 * sq).toFixed(1)}mm;height:${(6 * sq).toFixed(1)}mm" alt="ChArUco calibration board">
+      <div class="cap">ChArUco board, 9 × 6 squares of ${sq} mm, DICT_5X5_100. Keep it flat (glue it to card), measure a square and enter it in Tag Tracker. The bar below should measure 50 mm.</div><div class="rule"></div></section>`;
+  }
+  const tags = ch.tags.length ? `<section class="tp"><div class="tags">${figs}</div>
+    <div class="cap">Print at 100% (turn off “fit to page”). The bar below should measure 50 mm. If a black square doesn’t measure its size, enter what it measures in Tag Tracker.</div><div class="rule"></div></section>` : '';
+  const title = [ch.tags.length ? `${label} ${ch.tags.map((t) => t.id).join(', ')}` : '', ch.board ? 'Calibration board' : ''].filter(Boolean).join(' and ');
+  printPage(win, escapeHtml(title), tags + board, `
+    @page board{size:landscape}
+    .tp,.bp{display:flex;flex-direction:column;align-items:center;gap:6mm;width:100%}
+    .bp{page:board}.tp+.bp{break-before:page}
+    .tags{display:flex;flex-wrap:wrap;gap:6mm 8mm;justify-content:center;align-items:flex-start;max-width:186mm}
+    .tg{margin:0;display:flex;flex-direction:column;align-items:center;gap:1.5mm;break-inside:avoid}
+    .tg figcaption{font-size:9pt;line-height:1.3;text-align:center}`);
+}
+
 $('pngBoard').onclick = async () => {
   const img = await requestImage('boardImage', { px: 160 }), cv = grayToCanvas(img, 80);
   cv.toBlob((b) => download(b, 'charuco-9x6-5x5_100.png'));

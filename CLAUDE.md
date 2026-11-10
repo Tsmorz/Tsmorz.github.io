@@ -357,6 +357,13 @@ overlay, whose labels stay readable); detection, poses and the 3D plot always us
   camera only draws its own view. A placed camera also draws, dashed, the tags only the other cameras see.
   The table says which cameras see each track; the 3D plot draws every placed camera. Lens calibration (steps 2–3) picks
   its camera in step 2.
+- **Camera names**: click a camera's name on its view to rename it (Enter keeps, Escape cancels, empty goes back to the
+  device's label). Names are kept by camera key in `camNames` and shown everywhere a camera is named (`camName`); lens
+  calibrations stay keyed by the device's own label, so renaming never loses one.
+- **Print** (top bar) opens a dialog to print any of your tags (at their own sizes), other IDs typed as a list
+  (`TagCore.parseIdList`: "3, 10-12") at one size, and the ChArUco board, in one print window: tags packed at true size
+  with captions, the board on its own landscape page (`@page board`), a 50 mm check bar under each. The quick buttons
+  (a tag's row, "Print board" in step 1) still print one thing.
 - **Arranging the views** like monitors in display settings (`arrangement()`, `layoutTiles()`): Auto sizes each tile by
   its picture's pixels and places it where its camera sits, as seen from behind camera 1 (`TagCore.arrangeTiles`, spread
   just enough not to overlap; unplaced cameras in rows of two; one column under 500 px). Dragging a view (or its corner,

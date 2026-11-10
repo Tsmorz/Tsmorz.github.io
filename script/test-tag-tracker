@@ -131,6 +131,10 @@ console.log('4. plot, calibration views, settings');
   check(qnear(C.quatOf(C.tared({ R: R0, t: [1, 2, 3] }, R0).R), [1, 0, 0, 0]) && C.tared({ R: R0, t: [1, 2, 3] }, R0).t[2] === 3, 'tare: the orientation it was tared at reads as the identity; position is untouched');
   check(qnear(C.quatOf(C.tared({ R: C.mul3(R0, turn), t: [0, 0, 0] }, R0).R), C.quatOf(turn)), 'tare: a turn after taring reads as that turn, in the tag’s own axes');
   check(C.tared({ R: R0, t: [0, 0, 0] }, null).R === R0, 'no tare leaves the pose as it is');
+  const pl = C.parseIdList('3, 10-12 7;10 4–5 0..1', 587), pb = C.parseIdList('2, x, 9-3, 600, 586', 587);
+  check(pl.ids.join() === '3,10,11,12,7,4,5,0,1' && !pl.bad.length, 'tag IDs to print: lists and ranges, in order, no repeats');
+  check(pb.ids.join() === '2,586' && pb.bad.join() === 'x,9-3,600', 'tag IDs to print: what isn’t an ID in the family is reported');
+  check(C.parseIdList('0-586', 587, 50).ids.length === 50, 'tag IDs to print: at most the limit');
   check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true, 'mirror and flip are booleans, off by default');
   // a 1280 × 720 picture in a 1000 × 1000 box: 1000 × 562.5, letterboxed 218.75 px top and bottom
   const near = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
