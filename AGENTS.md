@@ -328,8 +328,9 @@ itself and moves open tabs to the new address, deleting no caches (the terrain c
 ### The tag tracker (`/tag-tracker/`)
 
 `tag-tracker/` is a self-contained tool page (no front matter, so Jekyll copies it as-is) with its own look: an instrument on a
-vision bench. Cool anodised greys and ink with one Kapton amber (`--accent`) for what is live or pressed; panels are plain outlined boxes
-(1 px rule, 4 px corners, no shadows); viewfinder corner marks only on the video (`.reticle`, amber while detecting); flat ink-outlined
+vision bench. Cool anodised greys and ink with the site's violet (`--accent`, as in main.css) for what is live or pressed, and amber
+only for warnings (never an orange accent on the dark greys: it reads as a certain adult site's branding); panels are plain outlined boxes
+(1 px rule, 4 px corners, no shadows); viewfinder corner marks only on the video (`.reticle`, violet while detecting); flat ink-outlined
 keys that invert when chosen; one typeface, Archivo, its width axis wide for the name and titles. Keep it that way: no rounded
 cards, pills, middle-dot strings or monospace labels.
 It tracks AprilTags from a webcam (or a built-in Demo camera) in Chrome/Edge: the visitor names each tag ID and enters its
@@ -355,6 +356,13 @@ plot and a readout table. Tags, settings and calibrations (keyed by camera label
   then the worker solves one SE(3) pose from every visible corner (`solveBody`). Tags in an object are tracked only as it.
 - Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
   ninth tag is grey with its name. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
+- **The board on a screen**: `/tag-tracker/#board` is a shareable link that fills any screen with the ChArUco board (nothing
+  stored), for a tablet or second monitor. `TagCore.boardFit` picks whole device pixels per square with half a square of
+  white round it, turning the board a quarter when that's bigger; the worker draws it (`boardImage`), so the page waits for
+  OpenCV. It keeps the screen awake (Wake Lock), has a Full screen button, and its instructions fade after 5 s so nothing
+  covers the board. "Show on a screen" in Calibrate step 1 gives the link as a QR code, Copy, Share (Web Share) and a new
+  window. The QR code comes from `lib/qrcode-generator/` (1.4.4, MIT, vendored unchanged). With OpenCV.js installed, test
+  section 6b finds all 40 corners on the screen board (turned too) and decodes the QR code back to the link.
 - `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
   against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating;
   with OpenCV.js installed

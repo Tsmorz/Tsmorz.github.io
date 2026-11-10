@@ -505,6 +505,16 @@
     compare: false, // also draw the raw track, faint, to compare
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
   };
+  // The calibration board on a screen: the largest whole number of device pixels per square that fits a w × h screen
+  // with `margin` squares of white round the board, turned a quarter if that makes the squares bigger (a tablet held
+  // upright). Whole pixels keep every square edge sharp. Returns the pixels per square and the board's size on screen.
+  function boardFit(w, h, cols, rows, margin) {
+    const m = margin == null ? 0.5 : margin;
+    const fit = (W, H) => Math.max(0, Math.floor(Math.min(W / (cols + 2 * m), H / (rows + 2 * m))));
+    const flat = fit(w, h), turned = fit(h, w), rotate = turned > flat, px = rotate ? turned : flat;
+    return { px, rotate, w: (rotate ? rows : cols) * px, h: (rotate ? cols : rows) * px };
+  }
+
   function clampSettings(s) {
     const o = Object.assign({}, DEFAULTS, s || {});
     const num = (k, lo, hi) => { const x = Number(o[k]); o[k] = isFinite(x) ? Math.min(hi, Math.max(lo, x)) : DEFAULTS[k]; };
@@ -522,6 +532,6 @@
     History, axisSamples, orbit, niceStep, viewSignature, signatureDistance, cornerMotion, coverage,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    DEFAULTS, clampSettings,
+    DEFAULTS, clampSettings, boardFit,
   };
 });
