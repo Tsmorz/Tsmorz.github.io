@@ -7,9 +7,9 @@
 - name: Glide Reach
   blurb: >-
     Where can an RC glider still land from here? Pick a launch point, set the glide ratio
-    and wind, and the page traces the glide out in every direction against real terrain,
-    so a hill in the way cuts it short. Save an area while you have signal and it works
-    offline at the field.
+    and wind, and the page works out every spot the glider can reach over real terrain,
+    including by curving round a hill, with a cross-section of the glide. Save an area
+    while you have signal and it works offline at the field.
   year: "2026"
   tags: [JavaScript, Terrain, RC Gliders]
   featured: true

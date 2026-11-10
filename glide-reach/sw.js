@@ -4,13 +4,13 @@
 //   - everything else (OpenStreetMap, OpenTopoMap) is left to the browser: their tile policies don't allow
 //     offline storage, so offline the page switches to the shaded-terrain map drawn from the saved terrain.
 // Bump VERSION when the list of SHELL files changes.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = 'glide-shell-' + VERSION;
 const SAVED = 'glide-terrain-saved';     // written by the page's "Save this area"; only the page deletes from it
 const RUNTIME = 'glide-terrain-runtime'; // tiles fetched while browsing, capped
 const RUNTIME_MAX = 600;                 // about 30–60 MB of terrain
 const SHELL_FILES = [
-  './', 'glide-core.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
+  './', 'glide-core.js', 'glide-worker.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
   'lib/leaflet/leaflet.js', 'lib/leaflet/leaflet.css',
   'lib/leaflet/images/marker-icon.png', 'lib/leaflet/images/marker-icon-2x.png', 'lib/leaflet/images/marker-shadow.png',
   'lib/leaflet/images/layers.png', 'lib/leaflet/images/layers-2x.png'

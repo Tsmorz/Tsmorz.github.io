@@ -4,145 +4,302 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glide Reach: where can the glider still land?</title>
-<meta name="description" content="Pick a launch point, set the glide ratio and wind, and see where an RC glider can reach and land, with the terrain in the way. Works offline once an area is saved.">
-<meta name="theme-color" content="#1f5f8b">
+<meta name="description" content="Pick a launch point, set the glide ratio and wind, and see where an RC glider can reach and land, round the terrain in the way. Works offline once an area is saved.">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="lib/leaflet/leaflet.css">
+<script>try { const t = localStorage.getItem('theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <script src="lib/leaflet/leaflet.js"></script>
 <script src="glide-core.js"></script>
 <style>
-  :root { --bg:#f6f6f3; --panel:#ffffff; --ink:#1d1f21; --muted:#6b7075; --line:#e3e3df; --accent:#1f5f8b;
-          --land:#16a34a; --hit:#dc2626; --prof:#f59e0b; --warn:#b45309; --chip:#eef3f7; }
+  /* Tokens. Light is the default (sunlight on a hilltop); dark follows the OS or the site's own toggle.
+     Data colours are the validated colour-blind-safe set: blue = landable on a straight glide, aqua (hatched) =
+     landable only by curving round terrain, orange = where a glide runs into steep ground. */
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb; --surface-2: #f3f2ee; --line: #e0dfd9; --line-2: #cfcdc5;
+    --ink: #1d1f21; --ink-2: #4a4945; --muted: #6a6964;
+    --accent: #1f63b8; --accent-ink: #ffffff; --focus: #2a78d6;
+    --warn: #8f5300; --warn-bg: #fdf1dc;
+    --s-straight: #2a78d6; --s-curve: #1baf7a; --s-hit: #eb6834;
+    --terrain: #dcd8cd; --terrain-edge: #8f8a7e; --steep: #9a988f;
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#111315; --panel:#181b1e; --ink:#e8eaec; --muted:#9aa0a6; --line:#2a2e33; --accent:#5aa6dc; --warn:#e2a336; --chip:#1f2a33; }
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface: #1a1a19; --surface-2: #232321; --line: #34332f; --line-2: #45443f;
+      --ink: #f0efec; --ink-2: #c3c2b7; --muted: #a2a197;
+      --accent: #3987e5; --accent-ink: #0d1620; --focus: #6da7ec;
+      --warn: #e2a336; --warn-bg: #3a2c12;
+      --s-straight: #3987e5; --s-curve: #199e70; --s-hit: #d95926;
+      --terrain: #3b3a35; --terrain-edge: #7d7a70; --steep: #7d7b73;
+    }
   }
-  * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; font:14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); }
-  #app { display:flex; height:100%; height:100dvh; }
-  #panel { width:350px; flex:none; overflow-y:auto; background:var(--panel); border-right:1px solid var(--line); padding:12px 16px 28px; }
-  #map { flex:1; min-height:300px; background:#e9e4d8; }
-  .top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
-  h1 { font-size:17px; margin:0; }
-  .home { font-size:12px; color:var(--muted); text-decoration:none; }
-  .home:hover { color:var(--accent); }
-  .sub { color:var(--muted); font-size:12px; margin:2px 0 10px; }
-  .row { margin:9px 0; }
-  .row label { display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted); }
-  .row label b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
-  input[type=range] { width:100%; margin:3px 0 0; accent-color:var(--accent); }
-  input[type=text] { font:inherit; font-size:12.5px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--ink); width:100%; }
-  .btns { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 4px; }
-  button { font:inherit; font-size:12.5px; padding:6px 10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:7px; cursor:pointer; }
-  button:hover { border-color:var(--accent); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button:disabled { opacity:.5; cursor:default; }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:16px 0 4px; border-top:1px solid var(--line); padding-top:12px; }
-  #status { font-size:12px; color:var(--muted); min-height:1.4em; }
-  .net { font-size:11px; padding:2px 7px; border-radius:99px; background:var(--chip); color:var(--muted); white-space:nowrap; }
-  .net.off { background:#fdf0dc; color:#8a5300; }
-  #stats { font-size:12.5px; font-variant-numeric:tabular-nums; }
-  #stats div { display:flex; justify-content:space-between; padding:2px 0; gap:8px; }
-  #stats span:first-child { color:var(--muted); }
-  .legend { font-size:12px; display:grid; grid-template-columns:16px 1fr; gap:4px 8px; align-items:center; }
-  .sw { width:14px; height:14px; border-radius:3px; }
-  #profile { width:100%; height:170px; display:block; background:var(--bg); border:1px solid var(--line); border-radius:6px; }
-  .note { font-size:11.5px; color:var(--muted); margin-top:12px; }
-  .note a { color:inherit; }
-  .warn { color:var(--warn); }
-  #areas { list-style:none; margin:6px 0 0; padding:0; font-size:12.5px; }
-  #areas li { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--line); }
-  #areas li .nm { flex:1; min-width:0; }
-  #areas li .nm small { display:block; color:var(--muted); }
-  #areas li button { padding:3px 8px; font-size:12px; }
-  .meter { height:6px; background:var(--chip); border-radius:3px; overflow:hidden; margin:6px 0 3px; }
-  .meter > div { height:100%; background:var(--accent); width:0; }
-  .small { font-size:11.5px; color:var(--muted); }
-  @media (max-width: 760px) {
-    #app { flex-direction:column-reverse; }
-    #panel { width:100%; height:52%; border-right:none; border-top:1px solid var(--line); }
-    #map { height:48%; flex:none; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #232321; --line: #34332f; --line-2: #45443f;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #a2a197;
+    --accent: #3987e5; --accent-ink: #0d1620; --focus: #6da7ec;
+    --warn: #e2a336; --warn-bg: #3a2c12;
+    --s-straight: #3987e5; --s-curve: #199e70; --s-hit: #d95926;
+    --terrain: #3b3a35; --terrain-edge: #7d7a70; --steep: #7d7b73;
   }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--surface);
+         font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* Layout: controls on the left; map with the cross-section under it on the right. On a phone: header, map,
+     cross-section, then the controls, all in one scroll. */
+  #app { display: grid; height: 100vh; height: 100dvh;
+         grid-template-columns: minmax(300px, 360px) 1fr; grid-template-rows: auto 1fr auto;
+         grid-template-areas: "head map" "panel map" "panel prof"; }
+  #head { grid-area: head; padding: 14px 18px 10px; border-right: 1px solid var(--line); }
+  #panel { grid-area: panel; overflow-y: auto; padding: 0 18px 28px; border-right: 1px solid var(--line); }
+  #map { grid-area: map; min-height: 320px; background: #e6e2d7; }
+  #prof { grid-area: prof; border-top: 1px solid var(--line); background: var(--surface-2); display: grid;
+          grid-template-columns: 1fr auto; grid-template-rows: auto 190px; }
+
+  .title { display: flex; align-items: center; gap: 10px; }
+  h1 { font-size: 20px; line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+  .chip { font-size: 12.5px; padding: 2px 9px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+  .chip.off { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+  .icon-btn { margin-left: auto; width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: transparent; cursor: pointer; display: grid; place-items: center; }
+  .icon-btn svg { width: 18px; height: 18px; }
+  .lede { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+  .lede a { color: var(--muted); }
+
+  section.group { padding: 14px 0 6px; border-top: 1px solid var(--line); }
+  section.group:first-child { border-top: 0; padding-top: 4px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .row { margin: 10px 0 12px; }
+  .row label, .lab { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; color: var(--ink-2); }
+  .row output { color: var(--ink); font-weight: 600; }
+  .hint { font-size: 13px; color: var(--muted); margin: 2px 0 0; }
+
+  input[type=range] { width: 100%; height: 32px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  input[type=text] { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  button.btn { min-height: 44px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); cursor: pointer; font-weight: 500; }
+  button.btn:hover { border-color: var(--accent); }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.btn:disabled { opacity: .5; cursor: not-allowed; }
+  button.link { background: none; border: 0; padding: 6px 4px; color: var(--accent); cursor: pointer; text-decoration: underline; min-height: 36px; }
+  .status { font-size: 14px; color: var(--ink-2); min-height: 1.45em; margin-top: 8px; }
+  .warn { color: var(--warn); }
+
+  .switch { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; font-size: 14px; }
+  .switch input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+  /* Wind: a speed slider and a dial for where it comes from */
+  .wind { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; }
+  .dial { width: 84px; height: 84px; touch-action: none; cursor: grab; border-radius: 50%; }
+  .dial svg { width: 100%; height: 100%; display: block; }
+  .dial .rim { fill: var(--surface); stroke: var(--line-2); stroke-width: 1.5; }
+  .dial .tick { stroke: var(--muted); stroke-width: 1.5; }
+  .dial text { fill: var(--muted); font-size: 11px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
+  .dial .needle { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; fill: none; }
+  .dial .head { fill: var(--ink); }
+  .dial.calm svg { opacity: .45; }
+  .dial-cap { text-align: center; font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+
+  /* Legend (on the map, always light like the map under it) and results */
+  .legend { list-style: none; margin: 0; padding: 8px 10px; display: grid; gap: 5px; font-size: 13px; line-height: 1.3;
+            background: rgba(255,255,255,.94); color: #1d1f21; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.18);
+            --s-straight: #2a78d6; --s-curve: #1baf7a; --s-hit: #eb6834; --steep: #9a988f; --ink: #1d1f21; }
+  .legend .hint { color: #5d5c57; font-size: 12.5px; margin: 2px 0 0; }
+  .legend li { display: flex; align-items: center; gap: 8px; }
+  .key { width: 22px; height: 14px; border-radius: 3px; flex: none; }
+  .k-straight { background: var(--s-straight); opacity: .8; }
+  .k-curve { background: repeating-linear-gradient(135deg, var(--s-curve) 0 3px, color-mix(in srgb, var(--s-curve) 55%, transparent) 3px 6px); }
+  .k-steep { background: var(--steep); opacity: .55; }
+  .k-hit { height: 4px; border-radius: 2px; background: var(--s-hit); }
+  .k-line { height: 0; border-top: 2px dashed var(--ink); border-radius: 0; }
+  dl.stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 6px 0 0; font-size: 14px; }
+  dl.stats dt { color: var(--ink-2); }
+  dl.stats dd { margin: 0; text-align: right; font-weight: 600; }
+  dl.stats .gain { color: var(--ink); }
+
+  /* Offline areas */
+  #areas { list-style: none; margin: 10px 0 0; padding: 0; }
+  #areas li { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  #areas li:first-child { border-top: 0; }
+  #areas .nm { flex: 1; min-width: 0; }
+  #areas .nm span { display: block; color: var(--muted); font-size: 13px; }
+  .meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 12px 0 4px; }
+  .meter > div { height: 100%; width: 0; background: var(--accent); }
+  .note { font-size: 13px; color: var(--muted); margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .note a { color: inherit; }
+
+  /* Cross-section strip under the map */
+  .prof-head { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 10px 16px 0; }
+  .prof-head h2 { margin: 0; }
+  .prof-what { color: var(--ink-2); font-size: 14px; }
+  .prof-keys { margin-left: auto; display: flex; gap: 14px; font-size: 13px; color: var(--ink-2); }
+  .prof-keys span { display: inline-flex; align-items: center; gap: 6px; }
+  .prof-keys i { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--s-straight); }
+  .prof-keys i.m { border-top: 2px dashed var(--s-straight); opacity: .6; }
+  .prof-keys i.t { height: 10px; border: 1px solid var(--terrain-edge); background: var(--terrain); }
+  .prof-body { position: relative; min-width: 0; }
+  #profile { position: absolute; inset: 4px 0 6px 0; width: 100%; height: calc(100% - 10px); cursor: crosshair; touch-action: pan-y; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px;
+         padding: 6px 9px; font-size: 13px; line-height: 1.35; box-shadow: 0 2px 8px rgba(0,0,0,.12); white-space: nowrap; color: var(--ink); }
+  .tip b { font-weight: 600; }
+  .prof-side { padding: 6px 16px 10px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+
+  /* Leaflet bits that should follow the page's look */
+  .leaflet-container { font: inherit; }
+  .leaflet-control-layers, .leaflet-bar a { color: #1d1f21; }
+
+  @media (max-width: 820px) {
+    #app { display: block; height: auto; }
+    #head { border-right: 0; padding-bottom: 12px; }
+    #map { height: 56vh; height: 56svh; }
+    #prof { grid-template-rows: auto 160px; border-bottom: 1px solid var(--line); }
+    #panel { border-right: 0; overflow: visible; }
+    .prof-keys { margin-left: 0; width: 100%; }
+    .prof-side { padding: 4px 10px 8px 4px; }
+    input[type=range] { height: 44px; }
+    .legend { font-size: 12px; padding: 6px 8px; gap: 3px; }
+  }
+  @media (pointer: coarse) { input[type=range] { height: 44px; } .dial { width: 92px; height: 92px; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  @media (forced-colors: active) { .key, .prof-keys i { forced-color-adjust: none; } }
 </style>
 </head>
 <body>
 <div id="app">
-  <aside id="panel">
-    <div class="top">
+  <header id="head">
+    <div class="title">
       <h1>Glide Reach</h1>
-      <span id="net" class="net">Online</span>
+      <span id="net" class="chip" role="status">Online</span>
+      <button id="theme" class="icon-btn" type="button" aria-label="Switch light or dark" title="Switch light or dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
+      </button>
     </div>
-    <div class="sub">Where can the glider still land? Tap the map or drag the marker to move the launch. <a class="home" href="/">tsmorz.github.io</a></div>
+    <p class="lede">Where can the glider still land from here, with the hills in the way? <a href="/">tsmorz.github.io</a></p>
+  </header>
 
-    <div class="btns">
-      <button id="btnGeo" class="primary">Use my location</button>
-      <button id="btnMHill">Example: M Hill, Rapid City</button>
+  <div id="map" role="application" aria-label="Map. Tap to move the launch; long-press or right-click a spot for the best route there."></div>
+
+  <section id="prof" aria-labelledby="prof-h">
+    <div class="prof-head">
+      <h2 id="prof-h">Cross-section</h2>
+      <span id="profWhat" class="prof-what"></span>
+      <button id="profBack" class="link" type="button" hidden>Back to the bearing</button>
+      <div class="prof-keys" aria-hidden="true">
+        <span><i id="profKeyLine"></i>Glider</span><span><i id="profKeyMargin" class="m"></i>Glider − margin</span><span><i class="t"></i>Ground</span>
+      </div>
     </div>
-    <div id="status">Loading…</div>
-
-    <h2>Glider</h2>
-    <div class="row"><label for="gr">Glide ratio (L/D) <b id="v_gr"></b></label><input id="gr" type="range" min="4" max="40" step="0.5" value="15"></div>
-    <div class="row"><label for="va">Best-glide airspeed <b id="v_va"></b></label><input id="va" type="range" min="5" max="25" step="0.5" value="10"></div>
-    <div class="row"><label for="agl">Launch height above you <b id="v_agl"></b></label><input id="agl" type="range" min="0" max="300" step="5" value="120"></div>
-
-    <h2>Wind</h2>
-    <div class="row"><label for="ws">Wind speed <b id="v_ws"></b></label><input id="ws" type="range" min="0" max="15" step="0.5" value="0"></div>
-    <div class="row"><label for="wd">Wind from <b id="v_wd"></b></label><input id="wd" type="range" min="0" max="355" step="5" value="270"></div>
-
-    <h2>Safety</h2>
-    <div class="row"><label for="mg">Terrain clearance margin <b id="v_mg"></b></label><input id="mg" type="range" min="0" max="60" step="5" value="20"></div>
-    <div class="row"><label for="sl">Max landable slope <b id="v_sl"></b></label><input id="sl" type="range" min="2" max="30" step="1" value="12"></div>
-
-    <h2>Cross-section</h2>
-    <div class="row"><label for="pb">Profile bearing <b id="v_pb"></b></label><input id="pb" type="range" min="0" max="359" step="1" value="270"></div>
-    <canvas id="profile"></canvas>
-
-    <h2>Result</h2>
-    <div class="legend">
-      <div class="sw" style="background:rgba(22,163,74,.6)"></div><div>Reachable, gentle enough to land</div>
-      <div class="sw" style="background:rgba(37,99,235,.3)"></div><div>Reachable, too steep to land</div>
-      <div class="sw" style="background:var(--hit)"></div><div>Glide path runs into a steep slope</div>
-      <div class="sw" style="background:var(--prof)"></div><div>Cross-section line</div>
+    <div class="prof-body">
+      <canvas id="profile" role="img" aria-label="Height of the glider and the ground along the cross-section"></canvas>
+      <div id="profTip" class="tip" hidden></div>
     </div>
-    <div id="stats" style="margin-top:10px"></div>
+    <div class="prof-side">
+      <div id="pbDial" class="dial" aria-label="Cross-section bearing"></div>
+      <div class="dial-cap">Bearing</div>
+    </div>
+  </section>
 
-    <h2>Offline</h2>
-    <div class="small">Save the terrain around the launch while you have signal; the calculation and a shaded terrain map then work with no connection.</div>
-    <div class="row"><input id="areaName" type="text" placeholder="Name this area (optional)" aria-label="Area name"></div>
-    <div class="btns"><button id="btnSave">Save this area for offline</button></div>
-    <div id="saveStatus" class="small"></div>
-    <ul id="areas"></ul>
-    <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
-    <div id="storage" class="small"></div>
+  <aside id="panel">
+    <section class="group" aria-labelledby="g-launch">
+      <h2 id="g-launch">Launch</h2>
+      <div class="btns">
+        <button id="btnGeo" class="btn primary" type="button">Use my location</button>
+        <button id="btnMHill" class="btn" type="button">Example: M Hill, Rapid City</button>
+      </div>
+      <p class="hint">Or tap the map, or drag the pin. Long-press (right-click) any spot to see the best route there.</p>
+      <div id="status" class="status" role="status" aria-live="polite">Loading…</div>
+    </section>
 
-    <div class="note">Straight-line glide at best L/D in steady wind, checked against the terrain every few metres. It doesn't model lift, sink, turns or curving round a ridge, and "landable" only looks at slope, not trees, buildings or water. A planning toy, not a safety tool.<br>
-      Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (USGS, SRTM and others). Street map © OpenStreetMap contributors, online only. <a href="https://github.com/Tsmorz/Tsmorz.github.io/tree/main/glide-reach">Source</a></div>
+    <section class="group" aria-labelledby="g-glider">
+      <h2 id="g-glider">Glider</h2>
+      <div class="row"><label for="gr">Glide ratio <output id="v_gr" for="gr"></output></label><input id="gr" type="range" min="4" max="40" step="0.5" value="15"></div>
+      <div class="row"><label for="va">Best-glide airspeed <output id="v_va" for="va"></output></label><input id="va" type="range" min="5" max="25" step="0.5" value="10"></div>
+      <div class="row"><label for="agl">Launch height above you <output id="v_agl" for="agl"></output></label><input id="agl" type="range" min="0" max="300" step="5" value="120"></div>
+    </section>
+
+    <section class="group" aria-labelledby="g-wind">
+      <h2 id="g-wind">Wind</h2>
+      <div class="wind">
+        <div class="row" style="margin:0"><label for="ws">Speed <output id="v_ws" for="ws"></output></label><input id="ws" type="range" min="0" max="15" step="0.5" value="0">
+          <p id="windWords" class="hint"></p></div>
+        <div><div id="wdDial" class="dial" aria-label="Wind direction (where it blows from)"></div><div class="dial-cap">From</div></div>
+      </div>
+    </section>
+
+    <section class="group" aria-labelledby="g-safety">
+      <h2 id="g-safety">Safety margins</h2>
+      <div class="row"><label for="mg">Clearance over terrain <output id="v_mg" for="mg"></output></label><input id="mg" type="range" min="0" max="60" step="5" value="20"></div>
+      <div class="row"><label for="sl">Steepest ground you'd land on <output id="v_sl" for="sl"></output></label><input id="sl" type="range" min="2" max="30" step="1" value="12"></div>
+      <label class="switch"><input id="curve" type="checkbox" checked> Let the glide curve round hills</label>
+    </section>
+
+    <section class="group" aria-labelledby="g-result">
+      <h2 id="g-result">What you can reach</h2>
+      <dl id="stats" class="stats"></dl>
+    </section>
+
+    <section class="group" aria-labelledby="g-offline">
+      <h2 id="g-offline">Offline areas</h2>
+      <p class="hint">Save the terrain round the launch while you have signal. The reach, the cross-section and a shaded terrain map then work with no connection.</p>
+      <div class="row"><input id="areaName" type="text" placeholder="Name, e.g. M Hill" aria-label="Name for this area (optional)"></div>
+      <div class="btns"><button id="btnSave" class="btn" type="button">Save this area</button></div>
+      <div id="saveStatus" class="status" role="status" aria-live="polite"></div>
+      <ul id="areas"></ul>
+      <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
+      <p id="storage" class="hint"></p>
+    </section>
+
+    <p class="note">Glides at best L/D in steady wind, checked against the terrain every few metres; curving routes are searched on a grid. No lift, sink or turn losses, and "landable" only looks at slope, not trees, buildings or water. For planning, not for safety.
+      Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (USGS, SRTM and others). Street map © OpenStreetMap contributors, online only. <a href="https://github.com/Tsmorz/Tsmorz.github.io/tree/main/glide-reach">Source</a></p>
   </aside>
-  <div id="map"></div>
 </div>
 
 <script>
 'use strict';
 const G = GlideCore;
-const Z = 13, TS = 256, RT = 3;          // compute on zoom-13 terrain (~14 m/px at 44°N), 7×7 tiles round the launch
-const SAVE_R = RT + 1, SAVE_ZMIN = 10;   // a saved area keeps 9×9 tiles at z13 (room to move the launch) plus z10–12 for the map
+const TS = 256, RT = 3;                   // compute on a 7 × 7 block of terrain tiles round the launch
+const Z_MAX = 13, Z_MIN = 9;              // zoom 13 is ~14 m per pixel here; long glides drop to coarser zooms
+const SAVE_R = RT + 1, SAVE_R_LOW = RT;   // a saved area: 9 × 9 tiles at zoom 13, 7 × 7 at zooms 12 to 9
 const SAVED = 'glide-terrain-saved', RUNTIME = 'glide-terrain-runtime';
 const terrUrl = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
 const M_HILL = { lat: 44.0860, lon: -103.2490, snap: 200 };
+// Map overlay colours: the light steps of the validated set, since both base maps are light.
+const C = { straight: [42, 120, 214], curve: [27, 175, 122], curveDark: [14, 122, 84], steep: [120, 118, 110], hit: '#eb6834', route: '#0e7a54', line: '#1d1f21' };
+const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+const SHORT = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const compass = (d, long) => (long ? COMPASS : SHORT)[Math.round(d / 45) % 8];
+
 const LS = {
   get(k, d) { try { const v = localStorage.getItem('glide-reach-' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem('glide-reach-' + k, JSON.stringify(v)); } catch (e) {} }
 };
 const $ = id => document.getElementById(id);
-const status = t => { $('status').innerHTML = t; };
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const setStatus = html => { $('status').innerHTML = html; };
+const km = m => m >= 10000 ? (m / 1000).toFixed(0) + ' km' : m >= 1000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m) + ' m';
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
-}
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('sw.js').catch(() => {});
 
-// ---------- Terrain tiles (one decoder for the calculation and the shaded map) ----------
-const tileMem = new Map(); // url -> Promise<Float32Array>, small LRU
+$('theme').onclick = () => {
+  const root = document.documentElement;
+  const dark = root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.setAttribute('data-theme', dark ? 'light' : 'dark');
+  try { localStorage.setItem('theme', dark ? 'light' : 'dark'); } catch (e) {}
+  drawProfile();
+};
+
+// ---------- Terrain tiles: one decoder for the calculation and the shaded map ----------
+const tileMem = new Map(); // url -> Promise<Float32Array>, a small LRU
 const decodeCanvas = document.createElement('canvas'); decodeCanvas.width = decodeCanvas.height = TS;
 const decodeCtx = decodeCanvas.getContext('2d', { willReadFrequently: true });
 function loadTerrTile(url) {
@@ -158,26 +315,27 @@ function loadTerrTile(url) {
   })();
   p.catch(() => tileMem.delete(url));
   tileMem.set(url, p);
-  if (tileMem.size > 160) tileMem.delete(tileMem.keys().next().value);
+  if (tileMem.size > 200) tileMem.delete(tileMem.keys().next().value);
   return p;
 }
 
-async function loadMosaic(lat, lon, onProgress) {
-  const [px, py] = G.lonLatToPx(lon, lat, Z);
+async function loadMosaic(lat, lon, z, onProgress) {
+  const [px, py] = G.lonLatToPx(lon, lat, z);
   const tx = Math.floor(px / TS), ty = Math.floor(py / TS), W = (2 * RT + 1) * TS;
   const data = new Float32Array(W * W).fill(NaN);
   let done = 0, failed = 0; const jobs = [];
   for (let j = -RT; j <= RT; j++) for (let i = -RT; i <= RT; i++) {
-    jobs.push(loadTerrTile(terrUrl(Z, tx + i, ty + j)).then(t => {
+    jobs.push(loadTerrTile(terrUrl(z, tx + i, ty + j)).then(t => {
       const ox = (i + RT) * TS, oy = (j + RT) * TS;
       for (let y = 0; y < TS; y++) data.set(t.subarray(y * TS, y * TS + TS), (oy + y) * W + ox);
     }).catch(() => { failed++; }).finally(() => onProgress(++done, jobs.length)));
   }
   await Promise.all(jobs);
-  return { x0: (tx - RT) * TS, y0: (ty - RT) * TS, W, data, failed, total: jobs.length };
+  let minT = Infinity; for (const v of data) if (v < minT) minT = v;
+  return { z, x0: (tx - RT) * TS, y0: (ty - RT) * TS, W, data, failed, total: jobs.length, minT, mpp: G.mppAt(lat, z) };
 }
 
-function sample(M, x, y) { // bilinear; x, y in mosaic pixels, pixel centres at .5
+function sample(x, y) { // bilinear on the loaded block; x, y in its pixels, pixel centres at .5
   x -= 0.5; y -= 0.5;
   const x0 = Math.floor(x), y0 = Math.floor(y);
   if (x0 < 0 || y0 < 0 || x0 >= M.W - 1 || y0 >= M.W - 1) return NaN;
@@ -185,13 +343,23 @@ function sample(M, x, y) { // bilinear; x, y in mosaic pixels, pixel centres at 
   return (d[i] * (1 - fx) + d[i + 1] * fx) * (1 - fy) + (d[i + M.W] * (1 - fx) + d[i + M.W + 1] * fx) * fy;
 }
 
-function slopeGrid(M, mpp) {
-  const W = M.W, d = M.data, s = new Float32Array(W * W).fill(90);
+function slopeGrid() {
+  const W = M.W, d = M.data, s = new Float32Array(W * W).fill(90), mpp = M.mpp;
   for (let y = 1; y < W - 1; y++) for (let x = 1; x < W - 1; x++) {
     const i = y * W + x;
     s[i] = Math.atan(Math.hypot((d[i + 1] - d[i - 1]) / (2 * mpp), (d[i + W] - d[i - W]) / (2 * mpp))) * 180 / Math.PI;
   }
   return s;
+}
+
+// The route search runs on a half-resolution grid; each cell takes the highest ground under it, so it never cuts a corner.
+function poolGrid() {
+  const GW = M.W / 2, t = new Float32Array(GW * GW), d = M.data, W = M.W;
+  for (let y = 0; y < GW; y++) for (let x = 0; x < GW; x++) {
+    const i = 2 * y * W + 2 * x;
+    t[y * GW + x] = Math.max(d[i], d[i + 1], d[i + W], d[i + W + 1]); // NaN anywhere stays NaN: no data is a wall
+  }
+  return { GW, terr: t };
 }
 
 // ---------- Shaded terrain base map, drawn from the same tiles, so it works offline ----------
@@ -201,16 +369,15 @@ const Hillshade = L.GridLayer.extend({
     loadTerrTile(terrUrl(c.z, c.x, c.y)).then(e => {
       const lat = G.pxToLonLat(0, (c.y + 0.5) * TS, c.z)[1], mpp = G.mppAt(lat, c.z);
       const ctx = tile.getContext('2d'), img = ctx.createImageData(TS, TS), p = img.data;
-      // light from the north-west, 45° up; ESRI convention (rows run south, azimuth turned to maths angle)
+      // light from the north-west, 45° up (ESRI convention: rows run south, azimuth turned to a maths angle)
       const zen = 45 * Math.PI / 180, azMath = (360 - 315 + 90) * Math.PI / 180, zf = 1.6;
       const at = (x, y) => e[Math.min(TS - 1, Math.max(0, y)) * TS + Math.min(TS - 1, Math.max(0, x))];
       for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {
         const dzdx = (at(x + 1, y) - at(x - 1, y)) / (2 * mpp) * zf, dzdy = (at(x, y + 1) - at(x, y - 1)) / (2 * mpp) * zf;
         const slope = Math.atan(Math.hypot(dzdx, dzdy)), aspect = Math.atan2(dzdy, -dzdx);
-        let s = Math.cos(zen) * Math.cos(slope) + Math.sin(zen) * Math.sin(slope) * Math.cos(azMath - aspect);
-        s = Math.max(0, s);
-        const k = (y * TS + x) * 4, f = 0.45 + 0.55 * s;
-        p[k] = 236 * f; p[k + 1] = 230 * f; p[k + 2] = 214 * f; p[k + 3] = 255;
+        const s = Math.max(0, Math.cos(zen) * Math.cos(slope) + Math.sin(zen) * Math.sin(slope) * Math.cos(azMath - aspect));
+        const k = (y * TS + x) * 4, f = 0.5 + 0.5 * s;
+        p[k] = 238 * f; p[k + 1] = 234 * f; p[k + 2] = 222 * f; p[k + 3] = 255;
       }
       ctx.putImageData(img, 0, 0);
       done(null, tile);
@@ -220,28 +387,44 @@ const Hillshade = L.GridLayer.extend({
 });
 
 // ---------- Map ----------
-let M = null, SL = null, mpp = 0, launch = null, lpx = 0, lpy = 0, groundAtLaunch = NaN, R = null, loading = false;
+let M = null, SL = null, GRID = null, gridId = 0, launch = null, lpx = 0, lpy = 0, groundAtLaunch = NaN, R = null, loading = false;
+let Gres = null, route = null, fitNext = false;
 const start = LS.get('launch', null) || M_HILL;
 const map = L.map('map', { zoomControl: true }).setView([start.lat, start.lon], 13);
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
 const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)' });
-const shade = new Hillshade({ minNativeZoom: SAVE_ZMIN, maxNativeZoom: Z, minZoom: 9, maxZoom: 18, attribution: 'Terrain: AWS Terrain Tiles' });
-const baseLayers = { 'Street map (online)': osm, 'Topo map (online)': topo, 'Terrain shading (works offline)': shade };
+const shade = new Hillshade({ minNativeZoom: Z_MIN, maxNativeZoom: Z_MAX, minZoom: 8, maxZoom: 18, attribution: 'Terrain: AWS Terrain Tiles' });
 let base = navigator.onLine ? osm : shade;
 base.addTo(map);
 map.on('baselayerchange', e => { base = e.layer; });
-L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
+L.control.layers({ 'Street map (online)': osm, 'Topo map (online)': topo, 'Shaded terrain (works offline)': shade }, null, { position: 'topright' }).addTo(map);
 L.control.scale({ imperial: true }).addTo(map);
+const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
+  const ul = L.DomUtil.create('ul', 'legend');
+  ul.setAttribute('aria-label', 'Map key');
+  ul.innerHTML = '<li><span class="key k-straight"></span>Landable, straight glide</li>' +
+    '<li id="keyCurve"><span class="key k-curve"></span>Landable by curving round a hill</li>' +
+    '<li><span class="key k-steep"></span>Reachable, too steep to land</li>' +
+    '<li><span class="key k-hit"></span>Straight glide hits a slope</li>' +
+    '<li><span class="key k-line"></span>Cross-section</li>';
+  L.DomEvent.disableClickPropagation(ul);
+  return ul;
+} });
+new Legend().addTo(map);
 
 const overlayCanvas = document.createElement('canvas');
 let overlay = null;
-const outline = L.polyline([], { color: '#1e3a8a', weight: 1.5, opacity: .8 }).addTo(map);
-const hitLines = L.polyline([], { color: '#dc2626', weight: 3.5, opacity: .9 }).addTo(map);
-const profLine = L.polyline([], { color: '#f59e0b', weight: 2.5, dashArray: '6 5' }).addTo(map);
+const outline = L.polyline([], { color: C.line, weight: 1, opacity: .45, interactive: false }).addTo(map);
+const hitLines = L.polyline([], { color: C.hit, weight: 4, opacity: .95, interactive: false }).addTo(map);
+const profLine = L.polyline([], { color: C.line, weight: 2, dashArray: '6 6', opacity: .85, interactive: false }).addTo(map);
+const routeCase = L.polyline([], { color: '#ffffff', weight: 7, opacity: .9, interactive: false }).addTo(map);
+const routeLine = L.polyline([], { color: C.route, weight: 4, interactive: false }).addTo(map);
+const routeEnd = L.circleMarker([0, 0], { radius: 7, color: '#ffffff', weight: 2, fillColor: C.route, fillOpacity: 1, interactive: false });
 const areaBoxes = L.layerGroup().addTo(map);
-const marker = L.marker([start.lat, start.lon], { draggable: true, title: 'Launch' }).addTo(map);
+const marker = L.marker([start.lat, start.lon], { draggable: true, title: 'Launch', alt: 'Launch' }).addTo(map);
 marker.on('dragend', () => setLaunch(marker.getLatLng().lat, marker.getLatLng().lng));
 map.on('click', e => setLaunch(e.latlng.lat, e.latlng.lng));
+map.on('contextmenu', e => showRoute(e.latlng));
 
 function setNet() {
   const on = navigator.onLine;
@@ -254,18 +437,57 @@ addEventListener('online', setNet); addEventListener('offline', setNet);
 
 // ---------- Controls ----------
 const P = {};
-const fmt = {
-  gr: v => `${v}:1`, va: v => `${v} m/s`, agl: v => `${v} m`, ws: v => `${v} m/s`,
-  wd: v => `${v}° ${['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(v / 45) % 8]}`,
-  mg: v => `${v} m`, sl: v => `${v}°`, pb: v => `${v}°`
-};
-const savedParams = LS.get('params', {});
-for (const k of Object.keys(fmt)) if (savedParams[k] != null) $(k).value = savedParams[k];
+const fmt = { gr: v => `${v}:1`, va: v => `${v} m/s`, agl: v => `${v} m`, ws: v => `${v} m/s`, mg: v => `${v} m`, sl: v => `${v}°` };
+const saved = LS.get('params', {});
+for (const k of Object.keys(fmt)) if (saved[k] != null) $(k).value = saved[k];
+P.wd = saved.wd != null ? saved.wd : 270;
+P.pb = saved.pb != null ? saved.pb : 180;
+$('curve').checked = saved.curve !== false;
 function readParams() {
   for (const k of Object.keys(fmt)) { P[k] = parseFloat($(k).value); $('v_' + k).textContent = fmt[k](P[k]); }
+  P.curve = $('curve').checked;
+  const kc = document.getElementById('keyCurve'); if (kc) kc.hidden = !P.curve;
+  $('wdDial').classList.toggle('calm', !P.ws);
+  $('windWords').textContent = P.ws ? `From the ${compass(P.wd, true)}, blowing ${compass((P.wd + 180) % 360, true)}.` : 'Calm.';
   LS.set('params', P);
 }
-for (const k of Object.keys(fmt)) $(k).addEventListener('input', () => { readParams(); schedule(k === 'pb' ? 'profile' : 'all'); });
+for (const k of Object.keys(fmt)) $(k).addEventListener('input', () => { readParams(); schedule('all'); });
+$('curve').addEventListener('change', () => { readParams(); schedule('all'); });
+
+// A compass dial: drag round it, or use the arrow keys. mode 'from' draws an arrow blowing in from the rim (wind);
+// 'to' draws a needle out from the centre (a bearing).
+function makeDial(el, { mode, get, set, step }) {
+  el.setAttribute('role', 'slider'); el.tabIndex = 0;
+  el.setAttribute('aria-valuemin', '0'); el.setAttribute('aria-valuemax', '359');
+  const ns = 'http://www.w3.org/2000/svg';
+  el.innerHTML = `<svg viewBox="-50 -50 100 100" aria-hidden="true"><circle class="rim" r="46"/>` +
+    [0, 90, 180, 270].map(a => `<line class="tick" x1="0" y1="-46" x2="0" y2="-40" transform="rotate(${a})"/>`).join('') +
+    `<text x="0" y="-30">N</text><text x="30" y="0">E</text><text x="0" y="30">S</text><text x="-30" y="0">W</text>` +
+    `<g class="arm"><path class="needle"/><path class="head"/></g></svg>`;
+  const arm = el.querySelector('.arm');
+  if (mode === 'from') { arm.querySelector('.needle').setAttribute('d', 'M0 -44 L0 -8'); arm.querySelector('.head').setAttribute('d', 'M-7 -14 L0 -2 L7 -14 Z'); }
+  else { arm.querySelector('.needle').setAttribute('d', 'M0 0 L0 -34'); arm.querySelector('.head').setAttribute('d', 'M-7 -30 L0 -44 L7 -30 Z'); }
+  const render = () => {
+    const v = get();
+    arm.setAttribute('transform', `rotate(${v})`);
+    el.setAttribute('aria-valuenow', String(v));
+    el.setAttribute('aria-valuetext', `${v}°, ${compass(v, true)}`);
+  };
+  const put = v => { set(((Math.round(v / step) * step) % 360 + 360) % 360); render(); };
+  const fromPointer = e => { const r = el.getBoundingClientRect(); put(Math.atan2(e.clientX - r.left - r.width / 2, -(e.clientY - r.top - r.height / 2)) * 180 / Math.PI); };
+  el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); fromPointer(e); });
+  el.addEventListener('pointermove', e => { if (el.hasPointerCapture(e.pointerId)) fromPointer(e); });
+  el.addEventListener('keydown', e => {
+    const big = e.shiftKey ? 45 : step, v = get();
+    const d = { ArrowRight: big, ArrowUp: big, ArrowLeft: -big, ArrowDown: -big, PageUp: 45, PageDown: -45 }[e.key];
+    if (d !== undefined) { put(v + d); e.preventDefault(); }
+    else if (e.key === 'Home') { put(0); e.preventDefault(); }
+  });
+  render();
+  return { render };
+}
+makeDial($('wdDial'), { mode: 'from', step: 5, get: () => P.wd, set: v => { P.wd = v; readParams(); schedule('all'); } });
+const pbDial = makeDial($('pbDial'), { mode: 'to', step: 1, get: () => P.pb, set: v => { P.pb = v; route = null; readParams(); schedule('profile'); } });
 
 let pending = null;
 function schedule(what) {
@@ -274,198 +496,368 @@ function schedule(what) {
   requestAnimationFrame(() => { const w = pending; pending = null; if (w === 'all') compute(); else drawProfile(); });
 }
 
-// ---------- Launch + calculation ----------
+// ---------- Route search in a worker ----------
+let worker = null, runId = 0, busy = false, queued = null, inflightKey = null;
+try {
+  worker = new Worker('glide-worker.js');
+  worker.onmessage = e => {
+    busy = false;
+    if (e.data.gridId === gridId) { Gres = { ...e.data, key: inflightKey }; onGrid(); }
+    if (queued) { const q = queued; queued = null; send(q); }
+  };
+  worker.onerror = () => { worker = null; busy = false; runGrid(); }; // e.g. opened from a file: run on the page instead
+} catch (e) { worker = null; }
+function send(run) {
+  if (!worker) {
+    const t0 = performance.now(), r = G.reachGrid(run, GRID.terr, GRID.GW, GRID.GW);
+    Gres = { ...r, gridId, key: run.key, ms: performance.now() - t0 }; onGrid(); return;
+  }
+  if (busy) { queued = run; return; } // only the newest request waits; older ones are dropped
+  busy = true; inflightKey = run.key;
+  worker.postMessage({ run, id: ++runId, gridId });
+}
+function postGrid() { if (worker) worker.postMessage({ grid: { id: gridId, terr: GRID.terr.slice(), W: GRID.GW } }); }
+function runKey() { return [lpx, lpy, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, gridId].join(); }
+function runGrid() {
+  if (!P.curve || !GRID) { Gres = null; drawOverlay(); return; }
+  const key = runKey();
+  if (Gres && Gres.key === key && Gres.gridId === gridId) return;
+  send({ key, cell: 2 * M.mpp, si: Math.floor((lpx - M.x0) / 2), sj: Math.floor((lpy - M.y0) / 2), h0: groundAtLaunch + P.agl,
+         margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd });
+}
+function onGrid() {
+  drawOverlay();
+  if (route) refreshRoute();
+  checkZoom();
+}
+
+// ---------- Launch, terrain and the calculation ----------
+async function useMosaic(lat, lon, z) {
+  loading = true; setStatus('Loading terrain…');
+  try { M = await loadMosaic(lat, lon, z, (d, n) => setStatus(`Loading terrain ${d} of ${n}…`)); }
+  finally { loading = false; }
+  SL = slopeGrid(); GRID = poolGrid(); gridId++; Gres = null; postGrid();
+}
+
 async function setLaunch(lat, lon, snapRadius = 0) {
   if (loading) return;
+  const z = M ? M.z : Z_MAX;
   const far = () => {
     if (!M) return true;
-    const [x, y] = G.lonLatToPx(lon, lat, Z);
+    const [x, y] = G.lonLatToPx(lon, lat, M.z);
     return Math.abs(x - (M.x0 + M.W / 2)) > TS * 1.2 || Math.abs(y - (M.y0 + M.W / 2)) > TS * 1.2;
   };
-  if (far()) {
-    loading = true; status('Loading terrain…');
-    try { M = await loadMosaic(lat, lon, (d, n) => status(`Loading terrain ${d}/${n}…`)); }
-    finally { loading = false; }
-    mpp = G.mppAt(lat, Z);
-    SL = slopeGrid(M, mpp);
-  }
+  if (far()) await useMosaic(lat, lon, z);
   if (snapRadius > 0) { // move to the highest point within snapRadius metres
-    const [x, y] = G.lonLatToPx(lon, lat, Z), r = snapRadius / mpp;
+    const [x, y] = G.lonLatToPx(lon, lat, M.z), r = snapRadius / M.mpp;
     let best = -1e9, bx = x, by = y;
     for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
       if (dx * dx + dy * dy > r * r) continue;
-      const e = sample(M, x + dx - M.x0, y + dy - M.y0);
+      const e = sample(x + dx - M.x0, y + dy - M.y0);
       if (e > best) { best = e; bx = x + dx; by = y + dy; }
     }
-    [lon, lat] = G.pxToLonLat(bx, by, Z);
+    [lon, lat] = G.pxToLonLat(bx, by, M.z);
   }
-  launch = L.latLng(lat, lon);
-  [lpx, lpy] = G.lonLatToPx(lon, lat, Z);
-  groundAtLaunch = sample(M, lpx - M.x0, lpy - M.y0);
-  marker.setLatLng(launch);
-  LS.set('launch', { lat, lon });
-  if (groundAtLaunch !== groundAtLaunch) {
-    status(`<span class="warn">No terrain here${navigator.onLine ? ' (download failed)' : ': this area isn\'t saved for offline use'}.</span>`);
-    return clearResult();
-  }
-  if (M.failed) status(`<span class="warn">${M.failed} of ${M.total} terrain tiles are missing${navigator.onLine ? '' : ' (outside the saved area)'}; reach in those directions stops at the gap.</span>`);
-  else status(`Launch ${lat.toFixed(5)}, ${lon.toFixed(5)}, ground ${groundAtLaunch.toFixed(0)} m`);
+  placeLaunch(lat, lon);
   compute();
 }
 
-function clearResult() {
-  R = null; outline.setLatLngs([]); hitLines.setLatLngs([]); profLine.setLatLngs([]);
-  if (overlay) { map.removeLayer(overlay); overlay = null; }
-  $('stats').innerHTML = '';
-  const c = $('profile').getContext('2d'); c.clearRect(0, 0, 1e4, 1e4);
+function placeLaunch(lat, lon) {
+  launch = L.latLng(lat, lon);
+  [lpx, lpy] = G.lonLatToPx(lon, lat, M.z);
+  groundAtLaunch = sample(lpx - M.x0, lpy - M.y0);
+  marker.setLatLng(launch);
+  LS.set('launch', { lat, lon });
+  clearRoute(false);
+  if (groundAtLaunch !== groundAtLaunch) {
+    setStatus(`<span class="warn">No terrain here. ${navigator.onLine ? 'It failed to download; try again.' : 'This spot is outside your saved areas.'}</span>`);
+  } else if (M.failed) {
+    setStatus(`<span class="warn">${M.failed} of ${M.total} terrain tiles are missing${navigator.onLine ? '' : ' (outside the saved area)'}, so the reach stops short there.</span>`);
+  } else {
+    setStatus(`Ground at the launch: ${groundAtLaunch.toFixed(0)} m above sea level.`);
+  }
 }
 
-const elevAtENU = (e, n) => sample(M, lpx + e / mpp - M.x0, lpy - n / mpp - M.y0);
-const enuToLatLng = (e, n) => { const [lo, la] = G.pxToLonLat(lpx + e / mpp, lpy - n / mpp, Z); return L.latLng(la, lo); };
-const pxLatLng = (x, y) => { const [lo, la] = G.pxToLonLat(x, y, Z); return L.latLng(la, lo); };
+// A high launch over low ground can glide past the loaded block: pick the zoom whose block holds the whole glide.
+let zoomTimer = null;
+function checkZoom() {
+  clearTimeout(zoomTimer);
+  zoomTimer = setTimeout(async () => {
+    if (!M || loading || groundAtLaunch !== groundAtLaunch) return;
+    const lat = launch.lat;
+    const range = Math.max(0, groundAtLaunch + P.agl - P.mg - M.minT) * P.gr * (P.va + P.ws) / P.va;
+    let want = G.chooseZoom(range, lat, RT, Z_MAX, Z_MIN);
+    const edge = (R && R.kind.some(k => k === 1)) || (Gres && Gres.edge);
+    if (edge && want >= M.z && M.z > Z_MIN) want = M.z - 1; // lower ground just outside the block
+    if (want === M.z) return;
+    await useMosaic(lat, launch.lng, want);
+    placeLaunch(lat, launch.lng);
+    compute();
+  }, 350);
+}
+
+const elevAtENU = (e, n) => sample(lpx + e / M.mpp - M.x0, lpy - n / M.mpp - M.y0);
+const pxLatLng = (x, y) => { const [lo, la] = G.pxToLonLat(x, y, M.z); return L.latLng(la, lo); };
+const enuToLatLng = (e, n) => pxLatLng(lpx + e / M.mpp, lpy - n / M.mpp);
+const cellLatLng = i => { const GW = GRID.GW; return pxLatLng(M.x0 + 2 * (i % GW) + 1, M.y0 + 2 * Math.floor(i / GW) + 1); };
 
 function compute() {
-  if (!M || !launch || groundAtLaunch !== groundAtLaunch) return;
+  if (!M || !launch) return;
+  if (groundAtLaunch !== groundAtLaunch) { clearResult(); return; }
   const t0 = performance.now();
-  const h0 = groundAtLaunch + P.agl;
-  R = G.castRays({ n: 720, h0, margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd, ds: mpp / 2, maxD: M.W * mpp }, elevAtENU);
-  R.h0 = h0;
-  const t1 = performance.now();
+  R = G.castRays({ n: 720, h0: groundAtLaunch + P.agl, margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd,
+                   ds: M.mpp / 2, maxD: M.W * M.mpp }, elevAtENU);
+  R.h0 = groundAtLaunch + P.agl; R.ms = performance.now() - t0;
+  drawOverlay();
+  drawProfile();
+  runGrid();
+  checkZoom();
+}
 
-  // Raster overlay at half resolution
-  const F = 2, Gn = M.W / F;
-  overlayCanvas.width = overlayCanvas.height = Gn;
-  const ctx = overlayCanvas.getContext('2d'), img = ctx.createImageData(Gn, Gn), px = img.data;
-  let reachCells = 0, landCells = 0;
-  for (let gy = 0; gy < Gn; gy++) for (let gx = 0; gx < Gn; gx++) {
-    const mx = gx * F + F / 2, my = gy * F + F / 2;
-    const e = (mx + M.x0 - lpx) * mpp, n = -(my + M.y0 - lpy) * mpp;
+function clearResult() {
+  R = null; Gres = null;
+  outline.setLatLngs([]); hitLines.setLatLngs([]); profLine.setLatLngs([]); clearRoute(false);
+  if (overlay) { map.removeLayer(overlay); overlay = null; }
+  $('stats').innerHTML = '';
+  const c = $('profile'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
+  $('profWhat').textContent = '';
+}
+
+function drawOverlay() {
+  if (!R) return;
+  const GW = M.W / 2, mpp = M.mpp, cellA = (2 * mpp) ** 2 / 1e6;
+  const useG = Gres && Gres.gridId === gridId && P.curve;
+  overlayCanvas.width = overlayCanvas.height = GW;
+  const ctx = overlayCanvas.getContext('2d'), img = ctx.createImageData(GW, GW), px = img.data;
+  let straightA = 0, curveA = 0, landA = 0, curveLandA = 0;
+  for (let gy = 0; gy < GW; gy++) for (let gx = 0; gx < GW; gx++) {
+    const mx = 2 * gx + 1, my = 2 * gy + 1, e = (mx + M.x0 - lpx) * mpp, n = -(my + M.y0 - lpy) * mpp;
     let brg = Math.atan2(e, n); if (brg < 0) brg += 2 * Math.PI;
-    if (!G.reachAt(R, brg, Math.hypot(e, n))) continue;
-    const s = SL[Math.floor(my) * M.W + Math.floor(mx)], k = (gy * Gn + gx) * 4;
-    reachCells++;
-    if (s <= P.sl) { landCells++; px[k] = 22; px[k + 1] = 163; px[k + 2] = 74; px[k + 3] = 150; }
-    else { px[k] = 37; px[k + 1] = 99; px[k + 2] = 235; px[k + 3] = 75; }
+    const i = gy * GW + gx;
+    const straight = G.reachAt(R, brg, Math.hypot(e, n)) > 0;
+    const curved = !straight && useG && Gres.alt[i] > -Infinity;
+    if (!straight && !curved) continue;
+    const landable = SL[my * M.W + mx] <= P.sl, k = i * 4;
+    if (straight) straightA += cellA; else curveA += cellA;
+    if (landable) { landA += cellA; if (curved) curveLandA += cellA; }
+    let c, a;
+    if (!landable) { c = C.steep; a = curved && ((gx + gy) & 3) < 2 ? 60 : 85; }
+    else if (straight) { c = C.straight; a = 120; }
+    else { const stripe = ((gx + gy) & 3) < 2; c = stripe ? C.curveDark : C.curve; a = stripe ? 190 : 120; }
+    px[k] = c[0]; px[k + 1] = c[1]; px[k + 2] = c[2]; px[k + 3] = a;
   }
   ctx.putImageData(img, 0, 0);
   const bounds = L.latLngBounds(pxLatLng(M.x0, M.y0 + M.W), pxLatLng(M.x0 + M.W, M.y0));
   const url = overlayCanvas.toDataURL();
-  if (!overlay) overlay = L.imageOverlay(url, bounds, { interactive: false }).addTo(map);
+  if (!overlay) overlay = L.imageOverlay(url, bounds, { interactive: false, className: 'reach' }).addTo(map);
   else { overlay.setUrl(url); overlay.setBounds(bounds); }
 
-  // Outline, and the edges where the glide runs into steep ground
+  // outline of the straight glide, and the stretches where it runs into steep ground
   const pts = [], hits = [], steep = new Uint8Array(R.n);
-  let edge = 0, steepHits = 0, maxD = 0, maxB = 0;
+  let steepHits = 0, maxD = 0, maxB = 0;
   for (let i = 0; i < R.n; i++) {
     const b = (i / R.n) * 2 * Math.PI, d = R.dmax[i];
     pts.push(enuToLatLng(Math.sin(b) * d, Math.cos(b) * d));
-    if (R.kind[i] === 1) edge++;
     if (R.kind[i] === 0) {
-      const de = d + mpp, x = lpx + Math.sin(b) * de / mpp - M.x0, y = lpy - Math.cos(b) * de / mpp - M.y0;
-      if (SL[Math.floor(y) * M.W + Math.floor(x)] > P.sl) { steep[i] = 1; steepHits++; }
+      const de = d + mpp, x = Math.floor(lpx + Math.sin(b) * de / mpp - M.x0), y = Math.floor(lpy - Math.cos(b) * de / mpp - M.y0);
+      if (SL[y * M.W + x] > P.sl) { steep[i] = 1; steepHits++; }
     }
     if (d > maxD) { maxD = d; maxB = b; }
   }
   pts.push(pts[0]);
   for (let i = 0; i < R.n; i++) if (steep[i] && steep[(i + 1) % R.n]) hits.push([pts[i], pts[i + 1]]);
   outline.setLatLngs(pts); hitLines.setLatLngs(hits);
+  if (fitNext) { // keep the reach clear of the key in the bottom-left corner
+    fitNext = false;
+    const key = document.querySelector('.legend'), kh = key ? key.offsetHeight + 16 : 0;
+    map.fitBounds(outline.getBounds(), { paddingTopLeft: [24, 24], paddingBottomRight: [24, 24 + kh], maxZoom: 15 });
+  }
 
-  const cellArea = (F * mpp) ** 2 / 1e6;
-  $('stats').innerHTML = [
-    ['Ground at launch', `${groundAtLaunch.toFixed(0)} m`],
-    ['Glider starts at', `${h0.toFixed(0)} m above sea level`],
-    ['Farthest reach', `${(maxD / 1000).toFixed(2)} km toward ${Math.round(maxB * 180 / Math.PI)}°`],
-    ['Reachable area', `${(reachCells * cellArea).toFixed(1)} km²`],
-    ['Landable area', `${(landCells * cellArea).toFixed(1)} km²`],
-    ['Directions stopped by steep ground', `${Math.round(100 * steepHits / R.n)}%`],
-    ['Compute time', `${(t1 - t0).toFixed(0)} ms rays, ${(performance.now() - t1).toFixed(0)} ms map`],
-  ].map(([a, b]) => `<div><span>${a}</span><span>${b}</span></div>`).join('') +
-    (edge ? `<div class="warn">${edge} of ${R.n} directions reach the edge of the loaded terrain, so the reach there is longer than shown.</div>` : '');
+  const rows = [
+    ['Glider starts at', `${R.h0.toFixed(0)} m above sea level`],
+    ['Farthest straight glide', `${km(maxD)} toward ${compass(maxB * 180 / Math.PI)}`],
+    ['Landable ground in reach', `${landA.toFixed(1)} km²`],
+    ['Straight glides that hit a slope', `${Math.round(100 * steepHits / R.n)}%`],
+  ];
+  if (P.curve) rows.splice(3, 0, ['Gained by curving round hills', useG ? `+${curveLandA.toFixed(1)} km² landable` : 'working…']);
+  rows.push(['Terrain detail', `${Math.round(mpp)} m per point${M.z < Z_MAX ? ' (coarser, for a long glide)' : ''}`]);
+  $('stats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+}
+
+// ---------- Routes round terrain ----------
+function showRoute(ll) {
+  if (!Gres || Gres.gridId !== gridId || !P.curve) { setStatus('Turn on curving round hills to see routes.'); return; }
+  route = { target: ll };
+  refreshRoute();
+}
+function refreshRoute() {
+  const GW = GRID.GW, [x, y] = G.lonLatToPx(route.target.lng, route.target.lat, M.z);
+  const gx = Math.floor((x - M.x0) / 2), gy = Math.floor((y - M.y0) / 2);
+  const cells = gx >= 0 && gy >= 0 && gx < GW && gy < GW ? G.routeTo(Gres.parent, Gres.alt, gy * GW + gx) : [];
+  route.cells = cells;
+  if (!cells.length) { clearRoute(true); setStatus('<span class="warn">The glider can\'t reach that spot from this launch.</span>'); return; }
+  const pts = cells.map(cellLatLng);
+  routeCase.setLatLngs(pts); routeLine.setLatLngs(pts);
+  routeEnd.setLatLng(pts[pts.length - 1]).addTo(map);
+  profLine.setLatLngs([]);
+  $('profBack').hidden = false;
   drawProfile();
+}
+function clearRoute(redraw) {
+  route = null; routeCase.setLatLngs([]); routeLine.setLatLngs([]); routeEnd.remove();
+  $('profBack').hidden = true;
+  if (redraw) drawProfile();
+}
+$('profBack').onclick = () => clearRoute(true);
+
+// ---------- Cross-section ----------
+let PROF = null; // what's drawn, for the hover read-out
+function profileData() {
+  if (route && route.cells && route.cells.length > 1) {
+    const GW = GRID.GW, cell = 2 * M.mpp, d = [0], ground = [], glide = [];
+    route.cells.forEach((c, k) => {
+      if (k) { const p = route.cells[k - 1], dx = c % GW - p % GW, dy = Math.floor(c / GW) - Math.floor(p / GW); d.push(d[k - 1] + Math.hypot(dx, dy) * cell); }
+      ground.push(GRID.terr[c]); glide.push(Gres.alt[c]);
+    });
+    const last = route.cells[route.cells.length - 1], arrive = Gres.alt[last] - GRID.terr[last];
+    return { d, ground, glide, end: d.length - 1, hit: false, curve: true,
+             what: `Best route to the spot you picked: ${km(d[d.length - 1])} flown, arriving ${arrive.toFixed(0)} m above the ground.` };
+  }
+  const b = P.pb * Math.PI / 180, i = Math.round(P.pb / 360 * R.n) % R.n, dEnd = R.dmax[i], g = R.grg[i], ux = Math.sin(b), uy = Math.cos(b);
+  const d = [], ground = [], glide = [];
+  for (let s = 0; s <= Math.max(dEnd * 1.4, 800); s += M.mpp) {
+    const t = elevAtENU(ux * s, uy * s); if (t !== t) break;
+    d.push(s); ground.push(t); glide.push(g > 0 && s <= dEnd ? R.h0 - s / g : NaN);
+  }
+  profLine.setLatLngs(d.length ? [launch, enuToLatLng(ux * d[d.length - 1], uy * d[d.length - 1])] : []);
+  const what = g > 0 ? `Straight toward ${P.pb}° (${compass(P.pb, true)}): ${R.kind[i] === 0 ? 'meets the ground' : 'leaves the loaded terrain'} after ${km(dEnd)}.`
+                     : `Straight toward ${P.pb}°: the wind is too strong to fly this way.`;
+  return { d, ground, glide, end: Math.min(d.length - 1, Math.floor(dEnd / M.mpp)), hit: R.kind[i] === 0, curve: false, what };
 }
 
 function drawProfile() {
-  if (!R) return;
-  const cv = $('profile'), dpr = window.devicePixelRatio || 1, Wc = cv.clientWidth, Hc = cv.clientHeight;
-  cv.width = Wc * dpr; cv.height = Hc * dpr;
-  const c = cv.getContext('2d'); c.scale(dpr, dpr); c.clearRect(0, 0, Wc, Hc);
-  const cs = getComputedStyle(document.documentElement);
-  const b = P.pb * Math.PI / 180, i = Math.round(P.pb / 360 * R.n) % R.n;
-  const dEnd = R.dmax[i], g = R.grg[i], ux = Math.sin(b), uy = Math.cos(b);
-  const terr = [];
-  for (let d = 0; d <= Math.max(dEnd * 1.35, 800); d += mpp) { const t = elevAtENU(ux * d, uy * d); if (t !== t) break; terr.push([d, t]); }
-  if (terr.length < 2) return;
-  const dMax = terr[terr.length - 1][0];
-  let lo = Math.min(...terr.map(p => p[1])), hi = Math.max(R.h0, ...terr.map(p => p[1]));
-  const pad = (hi - lo) * 0.12 + 5; lo -= pad; hi += pad;
-  const L0 = 40, B0 = 20, T0 = 8, R0 = 8;
+  const cv = $('profile');
+  if (!R || !M) return;
+  const dpr = window.devicePixelRatio || 1, Wc = cv.clientWidth, Hc = cv.clientHeight;
+  if (!Wc || !Hc) return;
+  cv.width = Math.round(Wc * dpr); cv.height = Math.round(Hc * dpr);
+  const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, Wc, Hc);
+  const p = profileData();
+  $('profWhat').textContent = p.what;
+  const series = p.curve ? css('--s-curve') : css('--s-straight');
+  $('profKeyLine').style.borderTopColor = series; $('profKeyMargin').style.borderTopColor = series;
+  if (p.d.length < 2) { PROF = null; return; }
+  const dMax = p.d[p.d.length - 1];
+  let lo = Infinity, hi = -Infinity;
+  for (let k = 0; k < p.d.length; k++) { lo = Math.min(lo, p.ground[k]); hi = Math.max(hi, p.ground[k], p.glide[k] || -Infinity); }
+  hi = Math.max(hi, R.h0);
+  const pad = (hi - lo) * 0.1 + 5; lo -= pad; hi += pad;
+  const L0 = 52, B0 = 22, T0 = 8, R0 = 14;
   const X = d => L0 + (d / dMax) * (Wc - L0 - R0), Y = h => T0 + (1 - (h - lo) / (hi - lo)) * (Hc - T0 - B0);
-  c.beginPath(); c.moveTo(X(0), Hc - B0);
-  terr.forEach(([d, t]) => c.lineTo(X(d), Y(t)));
-  c.lineTo(X(dMax), Hc - B0); c.closePath();
-  c.fillStyle = '#c9bca4'; c.fill(); c.strokeStyle = '#8a7a60'; c.lineWidth = 1; c.stroke();
-  if (g > 0) {
-    c.setLineDash([4, 4]); c.strokeStyle = '#93c5fd';
-    c.beginPath(); c.moveTo(X(0), Y(R.h0 - P.mg)); c.lineTo(X(dEnd), Y(R.h0 - P.mg - dEnd / g)); c.stroke();
-    c.setLineDash([]); c.strokeStyle = '#2563eb'; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(X(0), Y(R.h0)); c.lineTo(X(dEnd), Y(R.h0 - dEnd / g)); c.stroke();
-    c.fillStyle = R.kind[i] === 0 ? '#dc2626' : '#6b7075';
-    c.beginPath(); c.arc(X(dEnd), Y(R.h0 - dEnd / g), 4, 0, 7); c.fill();
+  PROF = { ...p, X, Y, L0, R0, Wc, Hc, B0, T0, dMax };
+
+  // recessive grid: three height lines and distance ticks
+  c.font = '12px system-ui, sans-serif'; c.fillStyle = css('--muted'); c.strokeStyle = css('--line'); c.lineWidth = 1;
+  const hStep = niceStep((hi - lo) / 3);
+  c.textAlign = 'right'; c.textBaseline = 'middle';
+  for (let h = Math.ceil(lo / hStep) * hStep; h <= hi; h += hStep) {
+    c.beginPath(); c.moveTo(L0, Math.round(Y(h)) + .5); c.lineTo(Wc - R0, Math.round(Y(h)) + .5); c.stroke();
+    c.fillText(`${Math.round(h)} m`, L0 - 6, Y(h));
   }
-  c.fillStyle = cs.getPropertyValue('--muted'); c.font = '10px sans-serif'; c.textAlign = 'right';
-  for (const h of [lo + pad, (lo + hi) / 2, hi - pad]) c.fillText(Math.round(h) + ' m', L0 - 4, Y(h) + 3);
-  c.textAlign = 'center';
-  const step = dMax > 6000 ? 2000 : dMax > 2500 ? 1000 : 500;
-  for (let d = 0; d <= dMax; d += step) c.fillText((d / 1000) + ' km', X(d), Hc - 6);
-  c.textAlign = 'left'; c.fillStyle = cs.getPropertyValue('--accent');
-  c.fillText(g > 0 ? `reach ${(dEnd / 1000).toFixed(2)} km, ${g.toFixed(1)}:1 over ground` : 'track not flyable in this wind', L0 + 4, T0 + 10);
-  profLine.setLatLngs([launch, enuToLatLng(ux * dMax, uy * dMax)]);
+  const dStep = niceStep(dMax / 5);
+  c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  for (let d = 0; d <= dMax + 1; d += dStep) c.fillText(d >= 1000 || dStep >= 1000 ? `${+(d / 1000).toFixed(1)} km` : `${d} m`, X(d), Hc - 6);
+
+  // ground
+  c.beginPath(); c.moveTo(X(0), Hc - B0);
+  for (let k = 0; k < p.d.length; k++) c.lineTo(X(p.d[k]), Y(p.ground[k]));
+  c.lineTo(X(dMax), Hc - B0); c.closePath();
+  c.fillStyle = css('--terrain'); c.fill(); c.strokeStyle = css('--terrain-edge'); c.lineWidth = 1.5; c.stroke();
+  // glider − margin (dashed), then the glider (solid)
+  const line = (off, color, width, dash) => {
+    c.beginPath(); let on = false;
+    for (let k = 0; k <= p.end; k++) { const v = p.glide[k]; if (!(v === v)) { on = false; continue; } const yy = Y(v - off); if (on) c.lineTo(X(p.d[k]), yy); else { c.moveTo(X(p.d[k]), yy); on = true; } }
+    c.setLineDash(dash); c.strokeStyle = color; c.lineWidth = width; c.lineJoin = 'round'; c.stroke(); c.setLineDash([]);
+  };
+  c.globalAlpha = 0.6; line(P.mg, series, 2, [5, 4]); c.globalAlpha = 1;
+  line(0, series, 2.5, []);
+  const ek = p.end, ev = p.glide[ek];
+  if (ev === ev) {
+    c.beginPath(); c.arc(X(p.d[ek]), Y(ev), 5, 0, 2 * Math.PI);
+    c.fillStyle = p.hit ? css('--s-hit') : series; c.fill();
+    c.lineWidth = 2; c.strokeStyle = css('--surface-2'); c.stroke();
+  }
 }
+function niceStep(raw) { const m = 10 ** Math.floor(Math.log10(raw)), f = raw / m; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * m; }
+
+// hover / touch read-out on the cross-section
+function profHover(e) {
+  const tip = $('profTip');
+  if (!PROF) { tip.hidden = true; return; }
+  const r = $('profile').getBoundingClientRect(), x = e.clientX - r.left;
+  if (x < PROF.L0 || x > PROF.Wc - PROF.R0) { tip.hidden = true; drawProfile(); return; }
+  const dq = (x - PROF.L0) / (PROF.Wc - PROF.L0 - PROF.R0) * PROF.dMax;
+  let k = 0; while (k < PROF.d.length - 1 && PROF.d[k + 1] < dq) k++;
+  drawProfile();
+  const c = $('profile').getContext('2d'), X = PROF.X(PROF.d[k]);
+  c.strokeStyle = css('--ink-2'); c.lineWidth = 1; c.beginPath(); c.moveTo(X + .5, PROF.T0); c.lineTo(X + .5, PROF.Hc - PROF.B0); c.stroke();
+  const g = PROF.ground[k], v = PROF.glide[k];
+  tip.innerHTML = `<b>${km(PROF.d[k])}</b> out<br>Ground ${g.toFixed(0)} m` + (v === v && k <= PROF.end ? `<br>Glider ${v.toFixed(0)} m, ${(v - g).toFixed(0)} m above it` : '');
+  tip.hidden = false;
+  const tw = tip.offsetWidth;
+  tip.style.left = Math.min(Math.max(4, x + 12), r.width - tw - 4) + 'px';
+  tip.style.top = '10px';
+}
+$('profile').addEventListener('pointermove', profHover);
+$('profile').addEventListener('pointerdown', profHover);
+$('profile').addEventListener('pointerleave', () => { $('profTip').hidden = true; drawProfile(); });
 
 // ---------- Saved areas ----------
 const areas = () => LS.get('areas', []);
-const areaKeys = a => G.areaTiles(a.lat, a.lon, Z, SAVE_R, SAVE_ZMIN).map(([z, x, y]) => terrUrl(z, x, y));
+const areaKeys = a => G.areaTiles(a.lat, a.lon, Z_MAX, SAVE_R, Z_MIN, SAVE_R_LOW).map(([z, x, y]) => terrUrl(z, x, y));
 const fmtMB = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
+const fmtDate = s => new Date(s + 'T12:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
 function areaBounds(a) {
-  const [px, py] = G.lonLatToPx(a.lon, a.lat, Z), tx = Math.floor(px / TS), ty = Math.floor(py / TS);
-  return L.latLngBounds(pxLatLng((tx - SAVE_R) * TS, (ty + SAVE_R + 1) * TS), pxLatLng((tx + SAVE_R + 1) * TS, (ty - SAVE_R) * TS));
+  const [px, py] = G.lonLatToPx(a.lon, a.lat, Z_MAX), tx = Math.floor(px / TS), ty = Math.floor(py / TS);
+  const ll = (x, y) => { const [lo, la] = G.pxToLonLat(x, y, Z_MAX); return L.latLng(la, lo); };
+  return L.latLngBounds(ll((tx - SAVE_R) * TS, (ty + SAVE_R + 1) * TS), ll((tx + SAVE_R + 1) * TS, (ty - SAVE_R) * TS));
 }
 
 async function saveArea() {
-  if (!launch || !('caches' in window)) { $('saveStatus').textContent = 'This browser can\'t store data for offline use.'; return; }
+  if (!launch || !('caches' in window)) { $('saveStatus').textContent = 'This browser can\'t keep data for offline use.'; return; }
   const a = { id: Date.now().toString(36), lat: launch.lat, lon: launch.lng,
               name: $('areaName').value.trim() || `Near ${launch.lat.toFixed(3)}, ${launch.lng.toFixed(3)}`, date: new Date().toLocaleDateString('en-CA') };
   const keys = areaKeys(a);
   $('btnSave').disabled = true;
-  const saved = await caches.open(SAVED), runtime = await caches.open(RUNTIME);
+  const savedC = await caches.open(SAVED), runtime = await caches.open(RUNTIME);
   let done = 0, bytes = 0, failed = 0, next = 0;
-  const worker = async () => {
+  const pull = async () => {
     while (next < keys.length) {
       const url = keys[next++];
       try {
-        let res = await saved.match(url);
+        let res = await savedC.match(url);
         if (!res) {
           res = await fetch(url, { mode: 'cors' });
           if (!res.ok) throw new Error(res.status);
-          await saved.put(url, res.clone());
+          await savedC.put(url, res.clone());
           runtime.delete(url); // the service worker may have kept a copy too
         }
         bytes += (await res.blob()).size;
       } catch (e) { failed++; }
-      $('saveStatus').textContent = `Saving terrain ${++done}/${keys.length}…`;
+      $('saveStatus').textContent = `Saving terrain: ${++done} of ${keys.length} tiles…`;
     }
   };
-  await Promise.all(Array.from({ length: 6 }, worker));
+  await Promise.all(Array.from({ length: 6 }, pull));
   a.bytes = bytes;
-  if (failed) { $('saveStatus').innerHTML = `<span class="warn">${failed} tiles failed to download; try again.</span>`; }
+  if (failed) { $('saveStatus').innerHTML = `<span class="warn">${failed} tiles didn't download. Check the connection and save again.</span>`; }
   else {
     LS.set('areas', [a, ...areas()]);
     $('areaName').value = '';
     let persisted = false;
     try { persisted = await navigator.storage.persist(); } catch (e) {}
-    $('saveStatus').textContent = `Saved ${keys.length} terrain tiles (${fmtMB(bytes)}).` +
-      (persisted ? '' : ' The browser may clear this if space runs low; on iPhone, add the page to your Home Screen to keep it.');
+    $('saveStatus').textContent = `Saved "${a.name}" (${fmtMB(bytes)}).` +
+      (persisted ? '' : ' The browser may clear it if space runs low; on iPhone, add this page to your Home Screen to keep it.');
   }
   $('btnSave').disabled = !navigator.onLine;
   renderAreas();
@@ -475,8 +867,8 @@ async function deleteArea(id) {
   const all = areas(), a = all.find(x => x.id === id); if (!a) return;
   const rest = all.filter(x => x.id !== id);
   const gone = G.tilesOnlyIn(areaKeys(a), rest.map(areaKeys));
-  const saved = await caches.open(SAVED);
-  await Promise.all(gone.map(u => saved.delete(u)));
+  const savedC = await caches.open(SAVED);
+  await Promise.all(gone.map(u => savedC.delete(u)));
   LS.set('areas', rest);
   $('saveStatus').textContent = `Deleted "${a.name}".`;
   renderAreas();
@@ -484,46 +876,49 @@ async function deleteArea(id) {
 
 async function renderAreas() {
   const list = areas(), ul = $('areas');
-  ul.innerHTML = '';
-  areaBoxes.clearLayers();
+  ul.innerHTML = ''; areaBoxes.clearLayers();
   for (const a of list) {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="nm"></span><button data-go>Go</button><button data-del>Delete</button>`;
-    li.querySelector('.nm').innerHTML = `${a.name.replace(/</g, '&lt;')}<small>${fmtMB(a.bytes || 0)} · saved ${a.date}</small>`;
-    li.querySelector('[data-go]').onclick = () => { map.setView([a.lat, a.lon], 13); setLaunch(a.lat, a.lon); };
+    li.innerHTML = `<div class="nm"></div><button class="btn" type="button" data-go>Go</button><button class="btn" type="button" data-del>Delete</button>`;
+    li.querySelector('.nm').textContent = a.name;
+    const sub = document.createElement('span'); sub.textContent = `${fmtMB(a.bytes || 0)}, saved ${fmtDate(a.date)}`; li.querySelector('.nm').appendChild(sub);
+    li.querySelector('[data-go]').setAttribute('aria-label', `Go to ${a.name}`);
+    li.querySelector('[data-del]').setAttribute('aria-label', `Delete ${a.name}`);
+    li.querySelector('[data-go]').onclick = () => { fitNext = true; map.setView([a.lat, a.lon], 13); setLaunch(a.lat, a.lon); };
     li.querySelector('[data-del]').onclick = () => deleteArea(a.id);
     ul.appendChild(li);
-    L.rectangle(areaBounds(a), { color: '#1f5f8b', weight: 1, dashArray: '3 4', fill: false, interactive: false }).addTo(areaBoxes);
+    L.rectangle(areaBounds(a), { color: C.line, weight: 1, dashArray: '2 5', opacity: .6, fill: false, interactive: false }).addTo(areaBoxes);
   }
-  if (!list.length) ul.innerHTML = '<li class="small">No areas saved yet.</li>';
-  // The browser's own usage figure can lag a fresh save by a while, so count the saved areas too.
-  const savedBytes = list.reduce((s, a) => s + (a.bytes || 0), 0);
+  if (!list.length) ul.innerHTML = '<li class="hint">No saved areas yet.</li>';
+  const savedBytes = list.reduce((s, a) => s + (a.bytes || 0), 0); // the browser's own figure can lag a fresh save
   try {
     const { usage, quota } = await navigator.storage.estimate();
     const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false;
     const used = Math.max(usage, savedBytes);
     $('meterBar').style.width = Math.min(100, 100 * used / quota).toFixed(2) + '%';
-    $('storage').textContent = `Using ${fmtMB(used)} of about ${fmtMB(quota)} this browser allows the site.` + (persisted ? ' Kept until you delete it.' : '');
+    $('storage').textContent = `Using ${fmtMB(used)} of about ${fmtMB(quota)} this browser allows.` + (persisted ? ' Kept until you delete it.' : '');
   } catch (e) { $('storage').textContent = savedBytes ? `Saved areas use ${fmtMB(savedBytes)}.` : ''; }
 }
 
 // ---------- Buttons ----------
 $('btnSave').onclick = saveArea;
-$('btnMHill').onclick = () => { map.setView([M_HILL.lat, M_HILL.lon], 13); setLaunch(M_HILL.lat, M_HILL.lon, M_HILL.snap); };
+$('btnMHill').onclick = () => { fitNext = true; setLaunch(M_HILL.lat, M_HILL.lon, M_HILL.snap); };
 $('btnGeo').onclick = () => {
-  if (!navigator.geolocation) return status('<span class="warn">Location isn\'t available in this browser.</span>');
-  status('Getting your location…');
+  if (!navigator.geolocation) return setStatus('<span class="warn">This browser can\'t share your location. Tap the map instead.</span>');
+  setStatus('Finding your location…');
   navigator.geolocation.getCurrentPosition(
-    p => { map.setView([p.coords.latitude, p.coords.longitude], 13); setLaunch(p.coords.latitude, p.coords.longitude); },
-    e => status(`<span class="warn">Location failed: ${e.message}</span>`), { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+    p => { fitNext = true; map.setView([p.coords.latitude, p.coords.longitude], 13); setLaunch(p.coords.latitude, p.coords.longitude); },
+    e => setStatus(`<span class="warn">Couldn't get your location (${e.message}). Tap the map instead.</span>`),
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
 };
-addEventListener('resize', () => schedule('profile'));
+new ResizeObserver(() => schedule('profile')).observe($('profile'));
 
 readParams();
+pbDial.render();
 setNet();
 renderAreas();
-// Offline with nothing saved where we last were? Start at the newest saved area instead.
 const first = (!navigator.onLine && areas().length && !LS.get('launch', null)) ? areas()[0] : start;
+fitNext = true;
 setLaunch(first.lat, first.lon, first === M_HILL ? M_HILL.snap : 0);
 </script>
 </body>
