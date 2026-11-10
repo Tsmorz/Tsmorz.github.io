@@ -61,7 +61,7 @@ assets/js/embedded/      /embedded/ (embedded.md): embedded-core.js (no DOM) and
 assets/img/vision/       the /vision/ photos: three CC0 Commons photos at 640 × 480, credited on vision.md; add new ones only once approved
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
 controls/swingup/real/   /controls/swingup/real/: browser firmware installer (esp-web-tools, pinned to an exact version); manifest, image pieces, the model (`n-cartpole-model.ncpm`) and its own `manifest-model.json` (an "Install model" button that writes it to the `model` partition) come from `task fw-installer -- fw-vX.Y.Z [--model <.ncpm>]` in `../n-cartpole`, never hand-edit; `script/test-installer` checks them
-script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-embedded, test-fit, test-recipes, train-verify-net
+script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-embedded, test-fit, test-recipes, test-glide, train-verify-net
 ```
 
 ### Conventions
@@ -275,6 +275,23 @@ Teleplot `>name:value` or CSV columns out of each line and draws one chart per u
 test runs (kept in IndexedDB, compared as overlays, exported as CSV, log or a Markdown report), markers, A/B measurement
 cursors and an ESP-IDF/Zephyr device-clock time axis. It has a Demo stream and opens saved logs, so it works without a board.
 The same file is also published as a Claude artifact; edit it here and copy it there, not the other way round.
+
+### Glide Reach (`/glide-reach/`)
+
+`glide-reach/` is a self-contained page like the serial plotter (no front matter, its own look, outside the layouts):
+pick a launch point, set glide ratio, airspeed, launch height, wind, a terrain margin and the steepest slope you would land on,
+and it casts 720 straight-line glides out from the launch over Terrarium terrain tiles (zoom 13, AWS Terrain Tiles), stopping
+each where the glide path minus the margin meets the ground. It shades what is reachable, green where the slope is landable,
+draws red where a glide runs into steep ground, and plots a cross-section on one bearing. `glide-core.js` (no DOM) holds the
+maths; `script/test-glide` (`task check:glide`, in `check:fast`) guards it.
+
+It works offline. `sw.js` keeps the page and every terrain tile it has fetched (a capped `glide-terrain-runtime` cache), and
+"Save this area" stores 9 × 9 zoom-13 tiles round the launch plus zooms 10–12 (about 120 tiles) in `glide-terrain-saved`,
+which only the page deletes from (a tile shared by two saved areas stays until both are gone). Saved areas are listed in
+`localStorage` (`glide-reach-areas`). **Street maps are never stored for offline use**: OpenStreetMap's tile policy forbids
+"save area" features, so offline the page switches to a hillshade it draws from the saved terrain. Leaflet is vendored in
+`glide-reach/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in
+`sw.js` whenever `SHELL_FILES` changes.
 
 ## When editing, don't
 

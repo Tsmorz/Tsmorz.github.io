@@ -104,6 +104,11 @@ tasks:
     cmds:
       - script/test-embedded
 
+  check:glide:
+    desc: Check the glide, wind, terrain and saved-area maths behind /glide-reach/ (Node, no build)
+    cmds:
+      - script/test-glide
+
   check:links:
     desc: Check internal links with html-proofer
     cmds:
@@ -111,7 +116,7 @@ tasks:
       - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt --ignore-urls "http://192.168.4.1,http://cartpole.local"
 
   check:fast:
-    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, vision and embedded models, CSV fit, recipe units"
+    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, vision and embedded models, CSV fit, recipe units, glide reach"
     cmds:
       - task: check:data
       - task: check:installer
@@ -121,6 +126,7 @@ tasks:
       - task: check:embedded
       - task: check:fit
       - task: check:recipes
+      - task: check:glide
 
   check:
     desc: "Everything CI runs: quick checks, then build, JS references, internal links"

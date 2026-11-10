@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1f5f8b"/>
+  <!-- terrain -->
+  <path d="M0 390 L110 300 L170 340 L260 250 L330 320 L400 280 L512 360 L512 512 L0 512 Z" fill="#7fb38a"/>
+  <path d="M0 430 L120 380 L230 410 L340 370 L512 420 L512 512 L0 512 Z" fill="#5a9468"/>
+  <!-- glide path -->
+  <path d="M120 150 L392 286" stroke="#ffffff" stroke-width="14" stroke-dasharray="26 18" stroke-linecap="round" fill="none" opacity=".85"/>
+  <circle cx="392" cy="286" r="18" fill="#f59e0b"/>
+  <!-- glider -->
+  <g transform="translate(120 150) rotate(26)">
+    <path d="M-70 0 L70 0" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
+    <path d="M0 -10 L0 60" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
+    <path d="M-22 60 L22 60" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+  </g>
+</svg>

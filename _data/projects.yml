@@ -4,6 +4,20 @@
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
 
+- name: Glide Reach
+  blurb: >-
+    Where can an RC glider still land from here? Pick a launch point, set the glide ratio
+    and wind, and the page traces the glide out in every direction against real terrain,
+    so a hill in the way cuts it short. Save an area while you have signal and it works
+    offline at the field.
+  year: "2026"
+  tags: [JavaScript, Terrain, RC Gliders]
+  featured: true
+  on_cv: false
+  links:
+    - label: Open the tool
+      url: /glide-reach/
+
 - name: Serial Plotter
   blurb: >-
     A serial console and plotter that runs in the browser. Plug in a board and it pulls
