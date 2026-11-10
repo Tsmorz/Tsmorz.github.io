@@ -558,6 +558,168 @@
     return { rois: boxes.map((b) => ({ x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] })), frac };
   }
 
+  // ---- motion sensors: nrf-controller boards over Bluetooth ----
+  // The boards' data service (nrf-controller's src/sysid_wire.h; its dashboard's wire.js decodes the same bytes). Every
+  // value is little-endian. The IMU characteristic notifies batches: a 12-byte header (u8 version, u8 count, u32 first
+  // seq, i16[3] VQF's gyro bias in centi-degrees/s), then `count` 25-byte samples (u32 board time in µs, low 32 bits;
+  // i16[3] gyro counts, bias not removed; i16[3] accelerometer counts; i16[4] VQF's quaternion w, x, y, z with
+  // 1.0 = 16384, turning the IMU's frame into a world frame with z up and a free heading; u8 flags, bit 0 at rest).
+  // Board info is read once: the gyro's and accelerometer's scales per count.
+  const IMU = {
+    service: '6f524c03-0001-4a3c-9d21-1122334455aa', data: '6f524c03-0002-4a3c-9d21-1122334455aa', info: '6f524c03-0005-4a3c-9d21-1122334455aa',
+    version: 1, header: 12, sample: 25, infoBytes: 20, namePrefix: 'nrf-controller',
+  };
+  function decodeBoardInfo(v) {
+    if (v.byteLength !== IMU.infoBytes || v.getUint8(0) !== IMU.version) return null;
+    return { boardId: v.getUint16(1, true).toString(16).toUpperCase().padStart(4, '0'), imuRateHz: v.getUint16(3, true), gyroDpsPerLsb: v.getFloat32(5, true), accelGPerLsb: v.getFloat32(9, true), imuDropped: v.getUint32(16, true) };
+  }
+  function decodeImuBatch(v) {
+    if (v.byteLength < IMU.header || v.getUint8(0) !== IMU.version) return null;
+    const n = v.getUint8(1);
+    if (v.byteLength !== IMU.header + n * IMU.sample) return null;
+    const i16 = (o) => v.getInt16(o, true), first = v.getUint32(2, true), samples = [];
+    for (let i = 0; i < n; i++) {
+      const o = IMU.header + i * IMU.sample;
+      samples.push({ seq: (first + i) >>> 0, tUs: v.getUint32(o, true), gyro: [i16(o + 4), i16(o + 6), i16(o + 8)], accel: [i16(o + 10), i16(o + 12), i16(o + 14)], q: [i16(o + 16), i16(o + 18), i16(o + 20), i16(o + 22)].map((x) => x / 16384), rest: !!(v.getUint8(o + 24) & 1) });
+    }
+    return { firstSeq: first, biasDps: [i16(6) / 100, i16(8) / 100, i16(10) / 100], samples };
+  }
+  // The same bytes, for the demo's simulated boards and the tests.
+  function encodeImuBatch(firstSeq, biasDps, samples) {
+    const b = new DataView(new ArrayBuffer(IMU.header + samples.length * IMU.sample)), i16 = (o, x) => b.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(x))), true);
+    b.setUint8(0, IMU.version); b.setUint8(1, samples.length); b.setUint32(2, firstSeq >>> 0, true);
+    biasDps.forEach((x, k) => i16(6 + 2 * k, x * 100));
+    samples.forEach((s, i) => {
+      const o = IMU.header + i * IMU.sample;
+      b.setUint32(o, s.tUs >>> 0, true);
+      s.gyro.forEach((x, k) => i16(o + 4 + 2 * k, x)); s.accel.forEach((x, k) => i16(o + 10 + 2 * k, x)); s.q.forEach((x, k) => i16(o + 16 + 2 * k, x * 16384));
+      b.setUint8(o + 24, s.rest ? 1 : 0);
+    });
+    return b;
+  }
+  function encodeBoardInfo(boardId, imuRateHz, gyroDpsPerLsb, accelGPerLsb) {
+    const b = new DataView(new ArrayBuffer(IMU.infoBytes));
+    b.setUint8(0, IMU.version); b.setUint16(1, boardId, true); b.setUint16(3, imuRateHz, true); b.setFloat32(5, gyroDpsPerLsb, true); b.setFloat32(9, accelGPerLsb, true);
+    return b;
+  }
+  // A unit quaternion [w, x, y, z] as a rotation matrix.
+  function rotOfQuat(q) {
+    const n = Math.hypot(...q), [w, x, y, z] = q.map((v) => v / n);
+    return [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y), 2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x), 2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)];
+  }
+  // A board's clock on the page's: board time (µs, 32 bits, wrapping every ~71.6 min) is unwrapped, and each batch's
+  // last sample is paired with when the batch reached the page. Bluetooth only ever adds delay, so the fit follows the
+  // lower envelope of (arrival − board time): its drift from the earliest arrivals in each half of the last `span`
+  // seconds (once there are `minSpan` seconds), its offset from the earliest of all. What it can't see is the
+  // smallest delay itself (a few ms), so board times come out that much late.
+  function BoardClock(opts) { this.o = Object.assign({ span: 30, minSpan: 8, maxPpm: 500 }, opts || {}); this.pts = []; this.ext = null; this.b0 = null; this.k = 0; this.off = null; }
+  BoardClock.prototype.unwrap = function (tUs) {
+    if (this.ext === null) this.ext = tUs;
+    else { let d = (tUs - (this.ext % 4294967296)) % 4294967296; if (d > 2147483648) d -= 4294967296; else if (d < -2147483648) d += 4294967296; this.ext += d; }
+    if (this.b0 === null) this.b0 = this.ext;
+    return this.ext;
+  };
+  // Board µs (unwrapped) of a batch's last sample, and its arrival (s, page clock).
+  BoardClock.prototype.add = function (bUs, hostS) {
+    const b = (bUs - this.b0) / 1e6;
+    this.pts.push([b, hostS]);
+    while (this.pts.length && b - this.pts[0][0] > this.o.span) this.pts.shift();
+    const a = this.pts, low = (lo, hi) => { let m = null; for (const p of a) if (p[0] >= lo && p[0] < hi && (!m || p[1] - p[0] < m[1] - m[0])) m = p; return m; };
+    const span = a[a.length - 1][0] - a[0][0];
+    if (span >= this.o.minSpan) {
+      const mid = (a[0][0] + a[a.length - 1][0]) / 2, p = low(-Infinity, mid), q = low(mid, Infinity);
+      if (p && q && q[0] - p[0] > span / 4) this.k = Math.max(-this.o.maxPpm * 1e-6, Math.min(this.o.maxPpm * 1e-6, (q[1] - q[0] - (p[1] - p[0])) / (q[0] - p[0])));
+    }
+    let off = Infinity;
+    for (const p of a) off = Math.min(off, p[1] - p[0] * (1 + this.k));
+    this.off = off;
+  };
+  // A board time (µs, unwrapped) on the page's clock (s).
+  BoardClock.prototype.toHost = function (bUs) { return this.off === null ? null : this.off + ((bUs - this.b0) / 1e6) * (1 + this.k); };
+
+  // How a board sits: the camera sees the object's orientation Rc (object → rig), the board reports Q (its IMU → VQF's
+  // world). With M the object in the IMU's frame (object → IMU) and W VQF's world in the rig (world → rig),
+  //   Rc = W · Q · M.
+  // M comes from turns: between two moments the object turns by B = Rcᵢᵀ·Rcⱼ in its own frame and the IMU by
+  // A = Qᵢᵀ·Qⱼ in its own, and B = Mᵀ·A·M, so A's axis is M times B's (the hand-eye problem). The axes give M (the
+  // rotation nearest Σ w·a·bᵀ, weighted by how far each turn went), the mean of Rc·Mᵀ·Qᵀ gives W, and Gauss–Newton
+  // on SO(3) × SO(3) refines both from every pair, dropping those more than 3× the median error. Needs turns about at
+  // least two axes 30° apart. Returns {W, M, rms (rad), used} or {error}.
+  function nearestRotation(B) {
+    let X = B.slice();
+    for (let i = 0; i < 40; i++) {
+      const Y = minv([[X[0], X[1], X[2]], [X[3], X[4], X[5]], [X[6], X[7], X[8]]]);
+      if (!Y) return null;
+      const Xn = X.map((v, k) => (v + Y[k % 3][Math.floor(k / 3)]) / 2); // (X + X⁻ᵀ)/2
+      const d = Xn.reduce((s, v, k) => s + Math.abs(v - X[k]), 0);
+      X = Xn;
+      if (d < 1e-13) break;
+    }
+    const det = X[0] * (X[4] * X[8] - X[5] * X[7]) - X[1] * (X[3] * X[8] - X[5] * X[6]) + X[2] * (X[3] * X[7] - X[4] * X[6]);
+    return det > 0 ? X : null;
+  }
+  function lineUp(pairs, opts) {
+    const o = Object.assign({ minTurn: 0.25, iters: 15 }, opts || {});
+    if (pairs.length < 6) return { error: 'few' };
+    const axes = [];
+    let Bm = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j += Math.max(1, Math.floor(pairs.length / 25))) {
+      const A = mul3(tr3(pairs[i].Q), pairs[j].Q), B = mul3(tr3(pairs[i].Rc), pairs[j].Rc), a = so3Log(A), b = so3Log(B), ta = norm(a), tb = norm(b);
+      if (ta < o.minTurn || tb < o.minTurn || Math.abs(ta - tb) > 0.2) continue;
+      const ua = scale(a, 1 / ta), ub = scale(b, 1 / tb), w = Math.sin(Math.min(ta, Math.PI / 2));
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) Bm[3 * r + c] += w * ua[r] * ub[c];
+      axes.push(ub);
+    }
+    let spread = 0;
+    for (let i = 0; i < axes.length; i++) for (let j = i + 1; j < axes.length; j++) spread = Math.max(spread, Math.acos(Math.min(1, Math.abs(dot(axes[i], axes[j])))));
+    if (axes.length < 3 || spread < (30 * Math.PI) / 180) return { error: 'turn', spread };
+    let M = nearestRotation(Bm);
+    if (!M) return { error: 'turn', spread };
+    let W = meanRotation(pairs.map((p) => mul3(p.Rc, mul3(tr3(M), tr3(p.Q)))));
+    let use = pairs, rms = 0;
+    for (let round = 0; round < 2; round++) {
+      for (let it = 0; it < o.iters; it++) {
+        const H = zeros(6, 6), g = new Array(6).fill(0);
+        for (const p of use) {
+          const P = mul3(W, mul3(p.Q, M)), r = so3Log(mul3(p.Rc, tr3(P)));
+          // r(W ← exp(δw)W, M ← M·exp(δm)) ≈ r − δw − (W·Q·M)·δm
+          const J = [0, 1, 2].map((i) => [-(i === 0), -(i === 1), -(i === 2), -P[3 * i], -P[3 * i + 1], -P[3 * i + 2]].map(Number));
+          for (let i = 0; i < 3; i++) for (let a = 0; a < 6; a++) { g[a] += J[i][a] * r[i]; for (let b = 0; b < 6; b++) H[a][b] += J[i][a] * J[i][b]; }
+        }
+        const Hi = minv(H.map((row, i) => row.map((v, j) => v + (i === j ? 1e-9 : 0))));
+        if (!Hi) break;
+        const d = mv(Hi, g).map((v) => -v);
+        W = mul3(rodrigues(d.slice(0, 3)), W); M = mul3(M, rodrigues(d.slice(3, 6)));
+        if (norm(d) < 1e-10) break;
+      }
+      const errs = use.map((p) => angleOf(mul3(p.Rc, tr3(mul3(W, mul3(p.Q, M))))));
+      const med = errs.slice().sort((a, b) => a - b)[errs.length >> 1];
+      rms = Math.sqrt(errs.reduce((s, e) => s + e * e, 0) / errs.length);
+      const keep = use.filter((_, i) => errs[i] <= Math.max(3 * med, 0.02));
+      if (keep.length === use.length || keep.length < 6) break;
+      use = keep;
+    }
+    // enough turning about other axes than the main one, among the poses kept (a mirror-image outlier makes up turns)
+    if (turnSpread(use, o.minTurn) < 0.2) return { error: 'turn', spread };
+    return { W, M, rms, used: use.length, spread };
+  }
+  // The share of turns (between poses, in the object's frame) more than 30° from the main turn axis.
+  function turnSpread(pairs, minTurn) {
+    const axes = [];
+    for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j += Math.max(1, Math.floor(pairs.length / 25))) {
+      const b = so3Log(mul3(tr3(pairs[i].Rc), pairs[j].Rc)), tb = norm(b);
+      if (tb >= minTurn) axes.push(scale(b, 1 / tb));
+    }
+    if (axes.length < 3) return 0;
+    let d = [1, 0.5, 0.25];
+    for (let it = 0; it < 50; it++) { // the main axis: the top eigenvector of Σ b·bᵀ, by power iteration
+      const n = [0, 0, 0];
+      for (const a of axes) { const k = dot(a, d); n[0] += a[0] * k; n[1] += a[1] * k; n[2] += a[2] * k; }
+      d = scale(n, 1 / norm(n));
+    }
+    return axes.filter((a) => Math.abs(dot(a, d)) < Math.cos(Math.PI / 6)).length / axes.length;
+  }
+
   // ---- streaming ----
   // One message for the Stream tab: every track in view at time t (seconds since 1970), each with its key (a tag's id,
   // or "b:<id>" for a rigid object), name, position in metres and orientation as a unit quaternion (w, x, y, z).
@@ -691,7 +853,7 @@
   // R ← exp(δθ)·R. qa and qw are the spectral densities of the random acceleration (m²/s³) and angular
   // acceleration (rad²/s³): bigger follows faster motion, smaller smooths more.
   function PoseFilter(opts) {
-    this.o = Object.assign({ qa: 4, qw: 40, gate: 40, maxGap: 0.5, lateBy: 0.1, floorP: 1e-6, floorR: 1e-5, maxMiss: 3 }, opts || {});
+    this.o = Object.assign({ qa: 4, qw: 40, gate: 40, maxGap: 0.5, lateBy: 0.1, floorP: 1e-6, floorR: 1e-5, maxMiss: 3, imuFor: 0.5 }, opts || {});
     this.x = null;
   }
   PoseFilter.prototype.reset = function () { this.x = null; this.miss = 0; };
@@ -706,6 +868,7 @@
     for (let i = 0; i < 3; i++) { P[3 + i][3 + i] = 1; P[9 + i][9 + i] = 10; } // up to ~1 m/s and ~3 rad/s, unknown
     this.x = { time, p: z.t.slice(), v: [0, 0, 0], R: z.R.slice(), w: [0, 0, 0], P };
     this.miss = 0;
+    this.lastCam = time;
   };
   // Predicted state at `time` (does not change the filter).
   PoseFilter.prototype.predict = function (time) {
@@ -761,6 +924,7 @@
     }
     this.miss = 0;
     this.correct(pr, inn);
+    this.lastCam = time;
     return { pose: this.pose(), chosen: pick, d2: inn.d2 };
   };
   // The same, but from one camera frame's corners (sightings with dt 0, at `time`) instead of a pose: an iterated
@@ -805,7 +969,38 @@
     if (d2 > this.o.gate || fit > o.maxFit) return this.miss1(time, start, d2);
     this.miss = 0;
     this.x = Object.assign(x, { P: sym(A) });
+    this.lastCam = Math.max(this.lastCam || 0, time);
     return { pose: this.pose(), d2, fit };
+  };
+  // A motion sensor on the tracked thing (a board lined up with lineUp). Neither starts a track or keeps one alive:
+  // they act only within `imuFor` seconds of the last camera update. A reading older than the state (Bluetooth
+  // delivers them tens of ms late) is taken against the state moved back by its own turning.
+  // `updateRate`: the gyro, as the angular velocity in the rig frame (rad/s), a direct reading of the state's w.
+  // `updateTilt`: VQF's orientation (object → rig, through W and M), whose turn about world up (`up`, in the rig) drifts
+  // with VQF's heading, so its covariance is sigma² everywhere plus sigmaUp² about `up`. Gated at `gate` (3 dof).
+  PoseFilter.prototype.imuOk = function (time) {
+    return this.x && this.lastCam != null && time - this.lastCam < this.o.imuFor && this.x.time - time < this.o.lateBy;
+  };
+  PoseFilter.prototype.linear = function (time, idx, resid, Rm, gate) {
+    const pr = this.predict(Math.max(time, this.x.time)), y = resid(pr);
+    const S = madd(idx.map((i) => idx.map((j) => pr.P[i][j])), Rm), Si = minv(S);
+    if (!Si) return null;
+    const d2 = dot6(y, mv(Si, y));
+    if (gate && d2 > gate) return { rejected: true, d2 };
+    const PHt = pr.P.map((r) => idx.map((j) => r[j])), K = mm(PHt, Si), dx = mv(K, y), KH = zeros(12, 12);
+    for (let i = 0; i < 12; i++) for (let a = 0; a < idx.length; a++) KH[i][idx[a]] = K[i][a];
+    const IKH = eye(12).map((r, i) => r.map((v, j) => v - KH[i][j]));
+    this.x = { time: pr.time, p: add(pr.p, dx.slice(0, 3)), v: add(pr.v, dx.slice(3, 6)), R: mul3(rodrigues(dx.slice(6, 9)), pr.R), w: add(pr.w, dx.slice(9, 12)), P: sym(mm(IKH, pr.P)) };
+    return { d2 };
+  };
+  PoseFilter.prototype.updateRate = function (time, w, sigma) {
+    if (!this.imuOk(time)) return null;
+    return this.linear(time, [9, 10, 11], (pr) => sub(w, pr.w), eye(3).map((r) => r.map((v) => v * sigma * sigma)), 0);
+  };
+  PoseFilter.prototype.updateTilt = function (time, R, up, sigma, sigmaUp, gate) {
+    if (!this.imuOk(time)) return null;
+    const Rm = [0, 1, 2].map((i) => [0, 1, 2].map((j) => (i === j ? sigma * sigma : 0) + sigmaUp * sigmaUp * up[i] * up[j]));
+    return this.linear(time, [6, 7, 8], (pr) => so3Log(mul3(R, tr3(time < pr.time ? mul3(rodrigues(scale(pr.w, time - pr.time)), pr.R) : pr.R))), Rm, gate || 25);
   };
   // A rejected frame: count it, and restart on `start` after maxMiss in a row.
   PoseFilter.prototype.miss1 = function (time, start, d2) {
@@ -1125,7 +1320,8 @@
     quatOf, quatNear, tared,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    toRig, fusePoses, plausible, chooseCand, sighting, jointSystem, refineJoint, planSearch, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
+    toRig, fusePoses, plausible, chooseCand, sighting, jointSystem, refineJoint, planSearch,
+    IMU, decodeBoardInfo, decodeImuBatch, encodeImuBatch, encodeBoardInfo, rotOfQuat, BoardClock, nearestRotation, lineUp, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
     PAPER, paperFor, printArea, maxTagSize, maxBoardSquare, STREAM_CSV_HEADER, streamMessage,
     fmtStamp, parseNotes, RECORDING_CSV_HEADER, recordingJson, recordingCsv, tidySpeech, insertSpeech, VOICE_COMMANDS, voiceCommand, VoiceGate,
     DEFAULTS, clampSettings, boardFit, displayMap,

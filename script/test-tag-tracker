@@ -17,6 +17,8 @@
 //      and the search windows for the next frame
 //   5f. recordings and notes (the export formats, timed note lines), cleaning Whisper's text, voice commands, and the
 //      voice gate that ends an utterance after a pause
+//   5g. motion sensors (nrf-controller boards): their bytes, their clocks on the page's, how a board sits on its
+//      object (with mirror-image outliers), and the filter with a gyro and VQF's tilt against without
 //   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
@@ -593,6 +595,63 @@ console.log('5f. recordings, notes and voice');
   check(ev.length === 1 && ev[0][0] === 'none' && ev[0][1] === 8000, 'a click is not speech, and nothing said in 8 s gives up');
   ev = run([...quiet(7900), ...loud(400), ...quiet(1600)]);
   check(ev[0][0] === 'start' && ev[1][0] === 'end', 'starting to talk just before the wait runs out still counts');
+}
+
+console.log('5g. motion sensors');
+{
+  let g = 5; const u01 = () => { g = (g * 1103515245 + 12345) % 2147483648; return g / 2147483648; }, gauss = () => { let x = 0; for (let i = 0; i < 12; i++) x += u01(); return x - 6; };
+  const deg = (R1, R2) => (C.angleOf(C.mul3(C.tr3(R1), R2)) * 180) / Math.PI;
+  // bytes
+  const smp = [{ tUs: 4294967000, gyro: [-1200, 5, 32767], accel: [16384, -8192, 0], q: [0.5, -0.5, 0.5, -0.5], rest: true }, { tUs: 4807, gyro: [1, -1, 0], accel: [0, 0, -16384], q: [1, 0, 0, 0], rest: false }];
+  const d = C.decodeImuBatch(C.encodeImuBatch(4294967295, [1.25, -0.5, 0], smp)), info = C.decodeBoardInfo(C.encodeBoardInfo(0xd892, 208, 0.07, 0.000244));
+  check(d && d.samples.length === 2 && d.samples[1].seq === 0 && d.samples[0].gyro[2] === 32767 && d.samples[0].rest && !d.samples[1].rest && d.samples[0].q[1] === -0.5 && d.biasDps[0] === 1.25, 'a batch decodes as nrf-controller sends it (sequence wraps, signs, at-rest flag, bias)');
+  check(info.boardId === 'D892' && info.imuRateHz === 208 && Math.abs(info.gyroDpsPerLsb - 0.07) < 1e-7 && C.decodeImuBatch(new DataView(new ArrayBuffer(13))) === null, 'board info decodes; a short or foreign packet is refused');
+  // clock: 40 ppm fast, starting near the 32-bit wrap; arrivals 2 ms + up to ~30 ms late
+  {
+    const clk = new C.BoardClock(), t0 = 100, ppm = 40e-6, start = 4294967296 - 3e6;
+    let worst = 0;
+    for (let k = 0; k < 1200; k++) {
+      const host = t0 + k * 0.0385, bUs = start + (host - t0) * 1e6 * (1 + ppm), ext = clk.unwrap(Math.round(bUs) % 4294967296);
+      clk.add(ext, host + 0.002 + -Math.log(1 - u01()) * 0.008);
+      if (k > 400) worst = Math.max(worst, Math.abs(clk.toHost(ext) - (host + 0.002)));
+    }
+    check(worst < 0.0015 && Math.abs(clk.k + ppm) < 10e-6, `a board's clock (40 ppm fast, across the 32-bit wrap) on the page's: within ${(worst * 1000).toFixed(2)} ms of arrival minus the least delay (the page gains ${(clk.k * 1e6).toFixed(1)} ppm per board second)`);
+  }
+  // lining up: the object turns about several axes; camera 0.5°, IMU 0.3°; one camera pose in ten is its mirror image
+  const Wt = C.mul3(C.rodrigues([Math.PI / 2, 0, 0]), C.rodrigues([0, 0, 1.1])), Mt = C.mul3(C.rodrigues([0, 0, Math.PI / 2]), C.rodrigues([0.1, -0.05, 0.03]));
+  const turn = (t) => C.mul3(C.rodrigues([0.6 * Math.sin(0.7 * t), 0.5 * Math.sin(1.1 * t + 1), 0.4 * Math.sin(0.9 * t + 2)]), C.rodrigues([Math.PI, 0, 0]));
+  const noisy = (R, sd) => C.mul3(C.rodrigues([gauss() * sd, gauss() * sd, gauss() * sd]), R);
+  const pairsOf = (fn, n) => Array.from({ length: n }, (_, k) => { const Rc = fn(k * 0.2); return { Rc: k % 10 === 7 ? C.mul3(C.rodrigues([0.3, 0, 0]), Rc) : noisy(Rc, 0.009), Q: noisy(C.mul3(C.tr3(Wt), C.mul3(Rc, C.tr3(Mt))), 0.005) }; });
+  const L = C.lineUp(pairsOf(turn, 60));
+  check(!L.error && deg(L.M, Mt) < 0.6 && deg(L.W, Wt) < 0.6, `lined up from 60 poses: the board on its object within ${L.M ? deg(L.M, Mt).toFixed(2) : '?'}°, VQF's world in the rig within ${L.W ? deg(L.W, Wt).toFixed(2) : '?'}° (${L.used} of 60 kept)`);
+  check(C.lineUp(pairsOf((t) => C.mul3(C.rodrigues([0, 0.8 * Math.sin(t), 0]), C.rodrigues([Math.PI, 0, 0])), 60)).error === 'turn', 'turned about one axis only, it asks for more turning');
+  // the filter: a turning object at 1.3 m, one camera, 0.5 px corners; with the gyro (0.02 rad/s) and VQF's tilt (1°,
+  // heading free) against without. And the face-on tag one camera can't settle: the tilt settles it.
+  const cam = C.guessIntrinsics(1280, 720, 70), I = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, obj = C.tagCorners(0.08), up = C.mulv(Wt, [0, 0, 1]);
+  const see = (P, sd) => obj.map((o) => { const q = C.project(cam, C.add(C.mulv(P.R, o), P.t)); return [q[0] + sd * gauss(), q[1] + sd * gauss()]; });
+  const run = (poseAt, imu, n) => {
+    const f = new C.PoseFilter(C.MOTION.balanced), e = [];
+    f.init(0, poseAt(0));
+    for (let k = 1; k < n; k++) {
+      const t = k / 30, P = poseAt(t);
+      if (imu) for (let j = 0; j < 7; j++) { // seven IMU readings a frame, 20 ms late
+        const ti = t - 0.02 - j * 0.0048, Ri = poseAt(ti).R, Rn = poseAt(ti + 0.001).R, w = C.so3Log(C.mul3(Rn, C.tr3(Ri))).map((x) => x / 0.001 + 0.02 * gauss());
+        f.updateRate(ti, w, 0.02);
+        f.updateTilt(ti, noisy(Ri, 0.015), up, 0.02, 0.5);
+      }
+      const r = f.updateCorners(t, [C.sighting(cam, I, obj, see(P, 0.5), 0.5, 0)], null);
+      if (k > 30 && r && r.pose) e.push(deg(r.pose.R, P.R));
+    }
+    return Math.sqrt(e.reduce((a, x) => a + x * x, 0) / e.length);
+  };
+  const moving = (t) => ({ R: turn(t), t: [0.1 * Math.sin(t), 0.05, 1.3] });
+  const a = run(moving, true, 150), b = run(moving, false, 150);
+  check(a < b * 0.7, `a turning tag, one camera: ${a.toFixed(2)}° RMS with the motion sensor, ${b.toFixed(2)}° without`);
+  const face = () => ({ R: C.mul3(C.rodrigues([0.06, 0.05, 0.2]), C.rodrigues([Math.PI, 0, 0])), t: [0, 0.02, 1.6] });
+  const fa = run(face, true, 120), fb = run(face, false, 120);
+  check(fa < 2 && fa < fb / 3, `a face-on tag one camera can't settle: ${fa.toFixed(2)}° RMS with the sensor's tilt, ${fb.toFixed(2)}° without`);
+  const f = new C.PoseFilter(C.MOTION.balanced); f.init(0, moving(0));
+  check(f.updateRate(0.6, [0, 0, 0], 0.02) === null, 'a motion sensor alone never keeps a track alive (nothing half a second after the last camera frame)');
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.

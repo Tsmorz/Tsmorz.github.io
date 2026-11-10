@@ -441,6 +441,24 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   each message as one datagram to the `?to=host:port` the page names, and refuses pages from origins other than
   tsmorz.github.io and localhost unless `--origin` adds one. A message that finds the last still being written is dropped
   and counted, never queued. Settings in `stream`.
+- **Motion sensors** (Tags card; `S.boards`): nrf-controller boards (XIAO nRF54LM20A Sense, the private repo's firmware)
+  over Web Bluetooth. The page reads the board's data service the way nrf-controller's dashboard does (`TagCore.IMU`,
+  `decodeBoardInfo`, `decodeImuBatch`: a copy of its `src/sysid_wire.h` IMU batch, keep the two in step): 208 Hz, up to
+  8 samples a notification, each with board µs, gyro and accelerometer counts and VQF's quaternion (IMU → a z-up world
+  whose heading drifts). Every characteristic needs an authenticated link, so an unbonded board makes the system ask
+  for its code. `rememberBoards` lists boards the site may already use (`getDevices`; the data logger shares the
+  origin). Each board's clock goes onto the page's with `TagCore.BoardClock` (lower envelope of arrival − board time,
+  with drift; it can't see the smallest delay, a few ms). A board is fixed to one track (`boards` in storage: track,
+  M, use). `TagCore.lineUp` learns M (object → IMU) and W (VQF's world → rig) from the cameras' own poses of the track
+  (`noteCamPose`, the chosen candidate, never the filter's) paired with the board's orientation at the same moment
+  (`imuAt`): hand-eye from turn axes, then Gauss–Newton on SO(3)×SO(3) with outliers dropped; it asks for turns about
+  two axes. M is kept; W is found again on each connection and its heading follows the cameras slowly (`pairUp`).
+  Lined up, each batch goes into the track's filter in Filtered mode only (`boardFuse`): the mean gyro turned into the
+  rig (`PoseFilter.updateRate`) and VQF's tilt (`updateTilt`, loose about world up). Neither starts a track or keeps
+  one alive past `imuFor` (0.5 s) without a camera. The demo adds a simulated board on each hand (`SIM_BOARDS`,
+  `startSimBoards`) that sends the real bytes with its own clock, bias, noise, drifting heading and delay; it lines up in
+  ~4 s. Measured in the demo: one camera, a hand's orientation 0.18° with its board against 0.73° without (worst frame
+  0.4° against 4.7°); with three placed cameras the hands are ~0.16° either way. Not yet run with real boards.
 - Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
   ninth tag is grey with its name. The demo cubes' side and top tags have no slot (`-1`), since only their hand is drawn. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
 - **Recording and notes** (the Recording card, on Track and Stream): Record keeps every new plotted pose (each track's sample
@@ -466,7 +484,8 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating,
   the mirror-image choice, the joint fit (against one camera and against fusing poses, its covariance by Monte Carlo,
   unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, the recording exports, notes, voice commands and the voice gate, and (with
-  python3) the UDP bridge end to end; with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
+  python3) the UDP bridge end to end; the motion sensors (their bytes, clock mapping, lining up, the filter with and
+  without them); with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.
 
