@@ -288,8 +288,11 @@ to 9) whose block holds the furthest possible glide, and the page steps down a z
 Long-press (right-click) a spot for the best route there. `glide-core.js` (no DOM) holds the maths; `script/test-glide`
 (`task check:glide`, in `check:fast`) guards it, including the service worker in a mock.
 
-Layout: controls on the left; the map with the cross-section strip under it on the right (on a phone: header, map,
-cross-section, controls). The map key is a Leaflet control. Colours are the colour-blind-safe set validated with the dataviz
+Layout: controls on the left; the map with the cross-section strip under it on the right (on a phone, or any screen under
+520 px tall: header with the status line, map, cross-section, controls). The map has its own locate button and a key that
+folds away on small maps (a `<details>` Leaflet control). Long-press is a touch timer of its own (550 ms, held within 10 px),
+not just Leaflet's `contextmenu`, so it behaves the same on iOS and Android and never also moves the launch. Inputs are 16 px
+so iOS doesn't zoom in on them; touch targets are at least 40 px. Colours are the colour-blind-safe set validated with the dataviz
 skill (blue `#2a78d6` landable on a straight glide, aqua `#1baf7a` **plus hatching** landable only by curving, orange `#eb6834`
 where a straight glide hits steep ground, grey too steep); keep identity off colour alone. Tokens are defined three times like
 main.css, and the page follows the site's `theme` in `localStorage` and has its own light/dark switch.
