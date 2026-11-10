@@ -10,8 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
 <style>
 /* Tag Tracker: an instrument for a vision bench. Cool anodised greys, ink, and one Kapton-amber for what is live or
-   what you press. Panels have no boxes or shadows: each is framed only by viewfinder corner marks, the way a camera
-   frames what it measures. One typeface, Archivo, whose width axis does the work: wide for the name and panel titles,
+   what you press. Panels are plain outlined boxes with no shadows; the video alone carries viewfinder corner marks
+   (the reticle), amber while detecting. One typeface, Archivo, whose width axis does the work: wide for the name and panel titles,
    normal for reading, tabular figures for numbers.
    Tokens: light on bare :root, dark for the OS setting unless the toggle says light, and dark when the toggle says so. */
 :root{--font:Archivo,"Helvetica Neue",Arial,sans-serif;color-scheme:light;
@@ -102,13 +102,8 @@ a{color:var(--ink);text-decoration-color:var(--accent);text-decoration-thickness
 /* layout */
 main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;padding:22px 18px;max-width:1680px;margin:0 auto}
 .col{display:flex;flex-direction:column;gap:22px;min-width:0}
-/* a panel: no box, just the four corner marks of a viewfinder */
-.card{--tl:14px;--tw:2px;min-width:0;background:
-  linear-gradient(var(--tick) 0 0) left top/var(--tl) var(--tw),linear-gradient(var(--tick) 0 0) left top/var(--tw) var(--tl),
-  linear-gradient(var(--tick) 0 0) right top/var(--tl) var(--tw),linear-gradient(var(--tick) 0 0) right top/var(--tw) var(--tl),
-  linear-gradient(var(--tick) 0 0) left bottom/var(--tl) var(--tw),linear-gradient(var(--tick) 0 0) left bottom/var(--tw) var(--tl),
-  linear-gradient(var(--tick) 0 0) right bottom/var(--tl) var(--tw),linear-gradient(var(--tick) 0 0) right bottom/var(--tw) var(--tl),
-  var(--panel);background-repeat:no-repeat;padding:4px}
+/* a panel: a plain outlined box */
+.card{min-width:0;background:var(--panel);border:1px solid var(--rule2);border-radius:4px;padding:4px}
 .card-h{display:flex;align-items:center;gap:10px 12px;padding:10px 12px 8px;flex-wrap:wrap;min-height:48px}
 .card-h h2{font-size:16px;font-weight:700;font-stretch:118%;margin:0 6px 0 0;letter-spacing:-.005em}
 .card-b{padding:10px 12px}
@@ -118,7 +113,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 .brk{display:none}@media (max-width:640px){.brk{display:block}}
 
 /* video */
-.stage{position:relative;background:var(--stage);aspect-ratio:16/9;overflow:hidden}
+.stage{position:relative;background:var(--stage);aspect-ratio:16/9;overflow:hidden;border-radius:0 0 3px 3px}
 .stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
 .stage video{object-fit:contain}
 /* the reticle: corner marks inside the picture, amber while detecting */
@@ -211,7 +206,7 @@ h3.sub{font-size:14px;font-weight:700;font-stretch:112%;margin:0}
 .views .chip{border-style:solid;border-color:var(--rule2)}
 footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-@media (forced-colors:active){.sw,.ax i{forced-color-adjust:none}.card{border:1px solid CanvasText}}
+@media (forced-colors:active){.sw,.ax i{forced-color-adjust:none}}
 </style>
 </head>
 <body>

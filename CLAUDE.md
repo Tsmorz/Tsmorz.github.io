@@ -323,8 +323,8 @@ whenever `SHELL_FILES` changes (it lists every file of the page). The service wo
 ### The tag tracker (`/tag-tracker/`)
 
 `tag-tracker/` is a self-contained tool page (no front matter, so Jekyll copies it as-is) with its own look: an instrument on a
-vision bench. Cool anodised greys and ink with one Kapton amber (`--accent`) for what is live or pressed; panels have no boxes or
-shadows, only viewfinder corner marks (`.card` backgrounds, and `.reticle` over the video, amber while detecting); flat ink-outlined
+vision bench. Cool anodised greys and ink with one Kapton amber (`--accent`) for what is live or pressed; panels are plain outlined boxes
+(1 px rule, 4 px corners, no shadows); viewfinder corner marks only on the video (`.reticle`, amber while detecting); flat ink-outlined
 keys that invert when chosen; one typeface, Archivo, its width axis wide for the name and titles. Keep it that way: no rounded
 cards, pills, middle-dot strings or monospace labels.
 It tracks AprilTags from a webcam (or a built-in Demo camera) in Chrome/Edge: the visitor names each tag ID and enters its
