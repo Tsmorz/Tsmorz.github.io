@@ -337,6 +337,8 @@ It tracks AprilTags from a webcam (or a built-in Demo camera) in Chrome/Edge: th
 printed size, calibrates the camera with a printed ChArUco board, and sees the last `History` seconds of each tag in 3D
 (axes drawn every `Axes every` seconds, defaults 1 s and 0.1 s), relative to the camera or to a chosen tag, plus an x/y/z
 plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
+Mirror and Flip on the Camera card turn only the picture (a CSS transform on the video, and `TagCore.displayMap` for the
+overlay, whose labels stay readable); detection, poses and the 3D plot always use the camera's true image.
 
 - `index.html`: the UI. `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
   camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);

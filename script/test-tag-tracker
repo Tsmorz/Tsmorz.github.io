@@ -109,6 +109,13 @@ console.log('4. plot, calibration views, settings');
   const st = C.clampSettings({ span: 0.05, every: 5, axisLen: 'x' });
   check(st.span === 0.1 && st.every === 0.1 && st.axisLen === C.DEFAULTS.axisLen, 'settings are clamped (span ≥ 0.1 s, axes no sparser than the span)');
   check(C.DEFAULTS.span === 1 && C.DEFAULTS.every === 0.1, 'defaults: 1 s of history, axes every 0.1 s');
+  check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true, 'mirror and flip are booleans, off by default');
+  // a 1280 × 720 picture in a 1000 × 1000 box: 1000 × 562.5, letterboxed 218.75 px top and bottom
+  const near = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+  const dm = (m, f) => C.displayMap(1000, 1000, 1280, 720, m, f);
+  check(near(dm(false, false)(0, 0), [0, 218.75]) && near(dm(false, false)(1280, 720), [1000, 781.25]), 'display map: letterboxed like object-fit: contain');
+  check(near(dm(true, false)(0, 0), [1000, 218.75]) && near(dm(false, true)(0, 0), [0, 781.25]) && near(dm(true, true)(640, 360), [500, 500]),
+    'display map: mirror swaps left and right, flip top and bottom, the centre stays put');
 }
 
 console.log('4b. the board on a screen');

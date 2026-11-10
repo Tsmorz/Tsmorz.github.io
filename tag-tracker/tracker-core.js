@@ -504,7 +504,15 @@
     pose: 'filtered', // what is plotted: raw (OpenCV's IPPE), refined (LM on SE(3)) or filtered (Kalman on SE(3))
     compare: false, // also draw the raw track, faint, to compare
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
+    mirror: false, // show the camera picture mirrored left to right (display only: poses are never mirrored)
+    flip: false, // show it upside down
   };
+  // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
+  // and/or flipped about the box's centre, as the CSS transform on the video does. Returns (x, y) -> [x, y].
+  function displayMap(W, H, vw, vh, mirror, flip) {
+    const s = Math.min(W / vw, H / vh), ox = (W - vw * s) / 2, oy = (H - vh * s) / 2;
+    return (x, y) => [mirror ? W - ox - x * s : ox + x * s, flip ? H - oy - y * s : oy + y * s];
+  }
   // The calibration board on a screen: the largest whole number of device pixels per square that fits a w × h screen
   // with `margin` squares of white round the board, turned a quarter if that makes the squares bigger (a tablet held
   // upright). Whole pixels keep every square edge sharp. Returns the pixels per square and the board's size on screen.
@@ -522,7 +530,7 @@
     if (o.every > o.span) o.every = o.span;
     if (!['raw', 'refined', 'filtered'].includes(o.pose)) o.pose = DEFAULTS.pose;
     if (!MOTION[o.motion]) o.motion = DEFAULTS.motion;
-    o.compare = !!o.compare;
+    o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip;
     return o;
   }
 
@@ -532,6 +540,6 @@
     History, axisSamples, orbit, niceStep, viewSignature, signatureDistance, cornerMotion, coverage,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    DEFAULTS, clampSettings, boardFit,
+    DEFAULTS, clampSettings, boardFit, displayMap,
   };
 });
