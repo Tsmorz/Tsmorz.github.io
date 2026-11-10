@@ -354,9 +354,12 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button role="radio" data-arr="auto" aria-checked="true" title="Each view as big as its picture, placed where its camera sits once the cameras are placed (Calibrate, step 4)">Auto</button>
           <button role="radio" data-arr="custom" aria-checked="false" title="Where you put them: drag a view to move it, its corner to resize it">Custom</button>
         </span>
+        <span class="seg sm" role="radiogroup" aria-label="View">
+          <button role="radio" data-view="person" aria-checked="true" title="As someone facing you sees you: raise your right hand and it rises on the left of the screen. Plots and data are the camera's own.">In person</button>
+          <button role="radio" data-view="mirror" aria-checked="false" title="As in a mirror: raise your right hand and it rises on the right. The picture, the plots and the data (x, and orientations) are all mirrored.">Mirror</button>
+        </span>
         <span class="seg sm" role="group" aria-label="Picture">
-          <button type="button" id="mirrorBtn" aria-pressed="false" title="Mirror the picture left to right, like a mirror. Only the picture changes: poses stay true.">Mirror</button>
-          <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture upside down, for a camera mounted that way. Only the picture changes: poses stay true.">Flip</button>
+          <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture upside down, for a camera mounted that way. Only the picture changes.">Flip</button>
         </span>
         <span id="focusWrap" class="field" hidden><span id="focusLbl">Lock focus</span><button id="focusSw" class="switch" role="switch" aria-checked="false" aria-labelledby="focusLbl"></button></span>
       </div>
@@ -587,7 +590,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <div class="steps">
       <div class="step">
         <h3>What is sent</h3>
-        <p>One message for every track in view: its key (a tag's ID, or b: and an object's ID), its name, its position in metres and its orientation as a unit quaternion w, x, y, z. The frame is the Track tab's: the camera, or the tag chosen in Relative to, with any tare.</p>
+        <p>One message for every track in view: its key (a tag's ID, or b: and an object's ID), its name, its position in metres and its orientation as a unit quaternion w, x, y, z. The frame is the Track tab's: the camera, or the tag chosen in Relative to, with any tare, and mirrored in Mirror view.</p>
         <div class="row">
           <span class="field">Format
             <span class="seg sm" role="radiogroup" aria-label="Format">
@@ -669,7 +672,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   </div>
 </div>
 <footer>
-  <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face. Orientations are unit quaternions (w, x, y, z) in the same frame.</span>
+  <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face. Orientations are unit quaternions (w, x, y, z) in the same frame.<span id="mirrorNote" hidden> Mirror view: left and right are swapped, as in a mirror, so x is the camera’s −x and orientations are the mirror image’s.</span></span>
   <span class="spacer"></span>
   <a href="/projects/">tsmorz.github.io</a>
 </footer>
@@ -1470,6 +1473,9 @@ function onTags(c, m) {
 // straight into the track's one Kalman filter (PoseFilter.updateCorners).
 // Refined has no motion model of its own, so a track's velocity for moving frames to one time is taken from its last
 // poses: each step's change over its time, smoothed (each new step counts for 30%).
+// A pose as the plots, the table and the stream show it: in the plotted frame (the camera's, or relative to the
+// reference), mirrored in Mirror view.
+function shown(p, ref) { const q = C.inFrame(p, ref); return S.settings.mirror ? C.mirrorPose(q) : q; }
 function trackVelocity(key, time, p) {
   const last = S.fused.get(key), dt = last ? time - last.time : 0;
   if (!last || dt < 0.005 || dt > 0.2) { if (!last || dt > 0.2) S.vel.delete(key); return; }
@@ -1523,8 +1529,8 @@ function fuse(c, m, meas, wall) {
   }
   if (refKey === null || ref) {
     // the reference itself always sits at the origin, where the plot already draws it
-    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.tared(C.inFrame(p, ref), S.tare.get(key)));
-    if (S.settings.compare) for (const [key, z] of rig) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(C.inFrame(z.raw, refRaw), S.tare.get(key)));
+    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.tared(shown(p, ref), S.tare.get(key)));
+    if (S.settings.compare) for (const [key, z] of rig) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(shown(z.raw, refRaw), S.tare.get(key)));
   }
   streamTick(m.time);
 }
@@ -1544,13 +1550,23 @@ function overlayMap(c) {
 function paintPicture() {
   $('stages').style.setProperty('--sx', S.settings.mirror ? -1 : 1);
   $('stages').style.setProperty('--sy', S.settings.flip ? -1 : 1);
-  $('mirrorBtn').setAttribute('aria-pressed', String(S.settings.mirror));
+  document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.view === 'mirror') === S.settings.mirror)));
   $('flipBtn').setAttribute('aria-pressed', String(S.settings.flip));
+  $('mirrorNote').hidden = !S.settings.mirror;
 }
-for (const k of ['mirror', 'flip']) $(k + 'Btn').onclick = () => {
-  S.settings[k] = !S.settings[k]; store.set('settings', S.settings); paintPicture();
-  for (const c of S.cams) if (S.mode === 'track' && c.last) drawOverlay(c); else clearOverlay(c);
-};
+const redrawOverlays = () => { for (const c of S.cams) if (S.mode === 'track' && c.last) drawOverlay(c); else clearOverlay(c); };
+// The view (In person or Mirror) is the picture's and the data's alike: the plotted history and the tares are
+// re-expressed at once, and the 3D view's target moves with the data, so nothing jumps or restarts.
+document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => {
+  const m = b.dataset.view === 'mirror';
+  if (m === S.settings.mirror) return;
+  S.settings.mirror = m; store.set('settings', S.settings);
+  for (const h of [S.hist, S.rawHist]) for (const id of h.ids()) for (const smp of h.get(id)) { const q = C.mirrorPose(smp); smp.R = q.R; smp.t = q.t; }
+  for (const [k, R0] of S.tare) S.tare.set(k, C.mirrorR(R0));
+  S.view.target = [-S.view.target[0], S.view.target[1], S.view.target[2]];
+  lastTable = 0; paintPicture(); redrawOverlays();
+});
+$('flipBtn').onclick = () => { S.settings.flip = !S.settings.flip; store.set('settings', S.settings); paintPicture(); redrawOverlays(); };
 paintPicture();
 // One camera's view: an outline and the pose's axes on each tag it sees, a name plate, and each rigid object's axes.
 // A placed camera also draws, dashed, the tags it doesn't see itself but the other cameras do, where they would be.
@@ -1790,7 +1806,7 @@ function draw3d() {
     const list = S.cams.length ? S.cams.filter((c) => c.T) : [{ n: 1, T: { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, cam: null }];
     for (const cm of list) {
       const a = cm.cam ? Math.tan((C.hfov(cm.cam) * Math.PI) / 360) : 0.7, b = cm.cam ? (a * cm.cam.h) / cm.cam.w : 0.4, d = L0;
-      const P = C.inFrame(cm.T, camRef), at = (q) => C.add(C.mulv(P.R, q), P.t);
+      const P = shown(cm.T, camRef), at = (q) => C.add(C.mulv(P.R, q), P.t);
       const corners = [[-a, -b, 1], [a, -b, 1], [a, b, 1], [-a, b, 1]].map((q) => at(q.map((x) => x * d)));
       for (let k = 0; k < 4; k++) { line(P.t, corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
       line(corners[0], corners[1], K.text2, 2.5); // the top edge, so which way is up reads at a glance
@@ -1803,7 +1819,7 @@ function draw3d() {
     const rk = parseKey(S.settings.frame), b = isBody(rk) ? bodyOf(rk) : null;
     const parts = b ? b.members.map((m) => ({ R: m.R, t: m.t, size: sizeOf(m.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(rk) }];
     for (const pt of parts) {
-      const sq = C.tagCorners(pt.size).map((q) => C.mulv(C.TAG_TO_VIEW, C.add(C.mulv(pt.R, q), pt.t)));
+      const sq = C.tagCorners(pt.size).map((q) => C.mulv(C.TAG_TO_VIEW, C.add(C.mulv(pt.R, q), pt.t))).map((v) => (S.settings.mirror ? [-v[0], v[1], v[2]] : v));
       for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(rk), 2);
     }
   }
@@ -2509,7 +2525,7 @@ function streamTick(time) {
     const s = S.hist.latest(key);
     if (s && time - s.time < 0.25) rows.push({ track: key, name: nameOf(key), p: s.t, q: C.quatOf(s.R) });
   }
-  const msg = C.streamMessage(ST.fmt, performance.timeOrigin / 1000 + time, rows, frameName());
+  const msg = C.streamMessage(ST.fmt, performance.timeOrigin / 1000 + time, rows, frameName(), S.settings.mirror ? 'mirror' : 'in person');
   if (msg) stLive.msg = msg;
   if (msg) send(msg);
 }

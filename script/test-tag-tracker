@@ -424,6 +424,17 @@ console.log('5c. mirror-image choice, and the Stream messages');
   const csv = C.streamMessage('csv', 1731234567.12345, rows).split('\n');
   check(C.STREAM_CSV_HEADER.split(',').length === 10 && csv.length === 3 && csv[2] === '', 'CSV: ten columns, one line per track');
   check(csv[0] === '1731234567.123,0,"Left, ""hand""",0.1235,0,1,1,0,0,0' && csv[1] === '1731234567.123,b:x,Cube,0,0,0,0.5,0.5,0.5,0.5', 'CSV: a name with a comma or quote is quoted');
+  check(o.view === 'in person' && JSON.parse(C.streamMessage('json', 1, rows, 'camera', 'mirror')).view === 'mirror', 'JSON: says which view (in person or mirror)');
+  // Mirror view: x → −x, orientations conjugated by diag(−1, 1, 1)
+  const P = { R: rotXYZ(0.4, -0.7, 1.1), t: [0.2, 1.1, -0.3] }, Mp = C.mirrorPose(P), det = (R) => R[0] * (R[4] * R[8] - R[5] * R[7]) - R[1] * (R[3] * R[8] - R[5] * R[6]) + R[2] * (R[3] * R[7] - R[4] * R[6]);
+  const q = C.quatOf(P.R), qm = C.quatOf(Mp.R), same = (a, b) => near(a, b, 1e-12) || near(a, b.map((x) => -x), 1e-12);
+  check(near(Mp.t, [-0.2, 1.1, -0.3], 0) && Math.abs(det(Mp.R) - 1) < 1e-12 && near(C.mul3(Mp.R, C.tr3(Mp.R)), [1, 0, 0, 0, 1, 0, 0, 0, 1], 1e-12), 'mirror view: x changes sign, and an orientation stays a rotation');
+  check(same(qm, [q[0], q[1], -q[2], -q[3]]), 'mirror view: a quaternion (w, x, y, z) becomes (w, x, −y, −z)');
+  // the mirror image of a point carried by the pose is the mirrored pose carrying the mirrored point
+  const X = [0.03, -0.02, 0.01], img = C.add(C.mulv(P.R, X), P.t), viaM = C.add(C.mulv(Mp.R, [-X[0], X[1], X[2]]), Mp.t);
+  check(near(viaM, [-img[0], img[1], img[2]], 1e-12) && near(C.mirrorPose(Mp).R, P.R, 0), 'mirror view: it is the mirror image of the posed object, and twice is no change');
+  const R0 = rotXYZ(0.1, 0.2, -0.3), a = C.mirrorPose(C.tared(P, R0)), b = C.tared(Mp, C.mirrorR(R0));
+  check(near(a.R, b.R, 1e-12) && near(a.t, b.t, 1e-12), 'mirror view: a tare mirrored with the data gives the same tared pose');
   check(C.streamMessage('csv', 1, []) === '' && JSON.parse(C.streamMessage('json', 1, [], 'Body')).tracks.length === 0, 'nothing in view: no CSV line, an empty JSON list');
 }
 

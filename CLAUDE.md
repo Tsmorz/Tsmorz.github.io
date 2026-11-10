@@ -337,8 +337,12 @@ It tracks AprilTags from one or more webcams (or a built-in three-camera Demo) i
 printed size, calibrates the camera with a printed ChArUco board, and sees the last `History` seconds of each tag in 3D
 (axes drawn every `Axes every` seconds, defaults 1 s and 0.1 s), relative to the camera or to a chosen tag, plus an x/y/z
 plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
-Mirror and Flip on the Camera card turn only the picture (a CSS transform on the video, and `TagCore.displayMap` for the
-overlay, whose labels stay readable); detection, poses and the 3D plot always use the camera's true image.
+**View** on the Camera card is In person (the camera's own view: as someone facing you sees you) or Mirror (as in a
+mirror), and it is the data's as well as the picture's: in Mirror view every plotted, tabled and streamed pose is
+`TagCore.mirrorPose` of the true one (x → −x in the plotted frame, R → M·R·M with M = diag(−1, 1, 1), so still a rotation;
+quaternions become (w, x, −y, −z)), applied in `shown()` after the frame and before the tare; switching re-expresses the
+history and tares in place. The picture turns with a CSS transform and the overlay with `TagCore.displayMap`, its labels
+kept readable. Detection, fusion and calibration always use the true image. Flip (upside down) is the picture's only.
 Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is what the detector looks for (`calib`: the board;
 `track`: tags, on Track and Stream alike). The page's icon (`favicon.svg`, and the logo) is the real tag36h11 #0.
 - Layout: on a wide screen the right column (the 3D plot, then the **Now** panel) is sticky and fills the window, so nothing

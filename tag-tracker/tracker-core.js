@@ -74,6 +74,13 @@
     return { R: mul3(TAG_TO_VIEW, r.R), t: mulv(TAG_TO_VIEW, r.t) };
   }
 
+  // Mirror view: everything as seen in a mirror, left and right swapped (x → −x in the plotted frame, whose x is the
+  // camera's x, or the reference tag's). A reflection isn't a rotation, so each orientation is conjugated:
+  // R → M·R·M with M = diag(−1, 1, 1), still a rotation (the mirror image's orientation; a quaternion (w, x, y, z)
+  // becomes (w, x, −y, −z)). Doing it twice undoes it. Other fields are kept.
+  function mirrorR(R) { return [R[0], -R[1], -R[2], -R[3], R[4], R[5], -R[6], R[7], R[8]]; }
+  function mirrorPose(p) { return Object.assign({}, p, { R: mirrorR(p.R), t: [-p.t[0], p.t[1], p.t[2]] }); }
+
   // ---- camera intrinsics ----
   // A guess from the horizontal field of view, for an uncalibrated camera.
   function guessIntrinsics(w, h, hfovDeg) {
@@ -558,10 +565,11 @@
   // no track is in view); a field with a comma, quote or line break is quoted.
   const STREAM_CSV_HEADER = 't,track,name,x,y,z,qw,qx,qy,qz';
   function csvField(v) { const s = String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
-  function streamMessage(fmt, t, rows, frame) {
+  // `view` ('in person' or 'mirror') is the JSON message's too, so a receiver knows which way left is.
+  function streamMessage(fmt, t, rows, frame, view) {
     const fix = (x, d) => Number(x.toFixed(d)) || 0; // || 0 drops a "-0"
     if (fmt === 'csv') return rows.map((r) => [t.toFixed(3), r.track, r.name, ...r.p.map((x) => fix(x, 4)), ...r.q.map((x) => fix(x, 5))].map(csvField).join(',') + '\n').join('');
-    return JSON.stringify({ t: fix(t, 3), frame, tracks: rows.map((r) => ({ track: r.track, name: r.name, p: r.p.map((x) => fix(x, 4)), q: r.q.map((x) => fix(x, 5)) })) }) + '\n';
+    return JSON.stringify({ t: fix(t, 3), frame, view: view || 'in person', tracks: rows.map((r) => ({ track: r.track, name: r.name, p: r.p.map((x) => fix(x, 4)), q: r.q.map((x) => fix(x, 5)) })) }) + '\n';
   }
 
   // Error-state Kalman filter for a pose moving at nearly constant velocity. State: position p, velocity v,
@@ -964,8 +972,8 @@
     pose: 'filtered', // what is plotted: raw (OpenCV's IPPE), refined (LM on SE(3)) or filtered (Kalman on SE(3))
     compare: false, // also draw the raw track, faint, to compare
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
-    mirror: false, // show the camera picture mirrored left to right (display only: poses are never mirrored)
-    flip: false, // show it upside down
+    mirror: false, // Mirror view: the picture, the plots and the data mirrored left to right, as in a mirror (else In person)
+    flip: false, // show the picture upside down, for a camera mounted that way (the picture only)
     search: 'predicted', // predicted: search only where the tags should be (the whole picture every 10th frame); whole: every frame
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
@@ -997,7 +1005,7 @@
   }
 
   return {
-    mul3, tr3, mulv, add, sub, norm, rodrigues, angleOf, compose, inverse, relative, toView, inFrame, CAM_TO_VIEW, TAG_TO_VIEW,
+    mul3, tr3, mulv, add, sub, norm, rodrigues, angleOf, compose, inverse, relative, toView, inFrame, CAM_TO_VIEW, TAG_TO_VIEW, mirrorR, mirrorPose,
     guessIntrinsics, scaleIntrinsics, checkCalibration, hfov, project, depthNoise,
     History, axisSamples, orbit, niceStep, viewSignature, signatureDistance, cornerMotion, coverage,
     quatOf, quatNear, tared,
