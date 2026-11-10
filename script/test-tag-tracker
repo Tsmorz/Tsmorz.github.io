@@ -10,6 +10,9 @@
 //      resolving flips by prediction, gating an outlier, restarting after a real jump)
 //   5b. several cameras: moving poses into the rig, information-weighted fusion, multi-camera calibration (three
 //      cameras, one placed only through another, one that shares nothing), re-expressing a saved rig, late frames
+//   5c. choosing between a face-on tag's mirror-image poses (by the other cameras, then by the last pose), and the
+//      Stream tab's messages (JSON lines and CSV)
+//   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
 //      Also 6b: the board as the page shows it on a screen (turned too) is found, and the link's QR code decodes.
@@ -394,12 +397,76 @@ console.log('5b. several cameras: moving poses into the rig, fusing them, and pl
   check(!late.restarted && late.pose && old.restarted, 'the filter takes a frame 13 ms late as current, and restarts on one far older');
 }
 
+console.log('5c. mirror-image choice, and the Stream messages');
+{
+  const deg = (a, b) => (C.angleOf(C.mul3(C.tr3(a), b)) * 180) / Math.PI;
+  const truth = { R: rotXYZ(Math.PI + 0.12, 0.08, 0.3), t: [0.05, -0.02, 1.6] }, mirror = C.flipPose(truth);
+  const sep = deg(truth.R, mirror.R);
+  const T = { ...truth, rms: 0.31 }, M = { ...mirror, rms: 0.29 }; // noise has the mirror image fitting a little better
+  check(sep > 8, `a face-on tag at 1.6 m: its mirror-image pose is ${sep.toFixed(1)}° away`);
+  check(C.plausible([M, T]).length === 2 && C.plausible([M, { ...truth, rms: 2.5 }]).length === 1, 'plausible: both fit about as well; one clearly worse is dropped');
+  check(C.chooseCand([M, T], [], null) === M, 'with nothing else to go on, the best fit');
+  check(C.chooseCand([M, T], [], truth.R) === T && C.chooseCand([T, M], [], mirror.R) === M, 'with one camera, the one nearest the last pose (it doesn\'t flip back and forth)');
+  const other = [rotXYZ(Math.PI + 0.13, 0.07, 0.31)]; // another camera, seeing it unambiguously
+  check(C.chooseCand([M, T], [other], mirror.R) === T, 'another camera\'s view outweighs the last pose');
+  check(C.chooseCand([M, { ...truth, rms: 2.5 }], [other], truth.R) === M, 'a candidate that fits clearly worse is never chosen');
+  check(C.chooseCand([], [], null) === null, 'no candidates, nothing chosen');
+  // messages
+  const rows = [{ track: 0, name: 'Left, "hand"', p: [0.123456, -0.00001, 1], q: [1, 0, 0, 0] }, { track: 'b:x', name: 'Cube', p: [0, 0, 0], q: [0.5, 0.5, 0.5, 0.5] }];
+  const j = C.streamMessage('json', 1731234567.12345, rows, 'camera');
+  const o = JSON.parse(j);
+  check(j.endsWith('\n') && j.indexOf('\n') === j.length - 1, 'JSON: one line per message');
+  check(o.t === 1731234567.123 && o.frame === 'camera' && o.tracks.length === 2 && o.tracks[0].track === 0 && o.tracks[1].track === 'b:x', 'JSON: time to the millisecond, the frame, each track by key');
+  check(o.tracks[0].p[0] === 0.1235 && Object.is(o.tracks[0].p[1], 0) && o.tracks[0].name === 'Left, "hand"', 'JSON: metres to 0.1 mm, no "-0", names intact');
+  const csv = C.streamMessage('csv', 1731234567.12345, rows).split('\n');
+  check(C.STREAM_CSV_HEADER.split(',').length === 10 && csv.length === 3 && csv[2] === '', 'CSV: ten columns, one line per track');
+  check(csv[0] === '1731234567.123,0,"Left, ""hand""",0.1235,0,1,1,0,0,0' && csv[1] === '1731234567.123,b:x,Cube,0,0,0,0.5,0.5,0.5,0.5', 'CSV: a name with a comma or quote is quoted');
+  check(C.streamMessage('csv', 1, []) === '' && JSON.parse(C.streamMessage('json', 1, [], 'Body')).tracks.length === 0, 'nothing in view: no CSV line, an empty JSON list');
+}
+
+// The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
+function testBridge() {
+  const { spawnSync, spawn } = require('child_process'), dgram = require('dgram'), net = require('net');
+  if (spawnSync('python3', ['--version']).status !== 0 || typeof WebSocket !== 'function') {
+    console.log('5d. the UDP bridge: skipped (needs python3 and Node 22 or later)');
+    return Promise.resolve();
+  }
+  console.log('5d. the UDP bridge');
+  const freePort = () => new Promise((res) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  return (async () => {
+    const wsPort = await freePort(), udp = dgram.createSocket('udp4'), got = [];
+    await new Promise((r) => udp.bind(0, '127.0.0.1', r));
+    udp.on('message', (m) => got.push(m.toString()));
+    const br = spawn('python3', [path.join(__dirname, '..', 'tag-tracker/udp-bridge.py'), '--port', String(wsPort)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      for (let i = 0; i < 50; i++) { await wait(100); if (await new Promise((r) => { const c = net.connect(wsPort, '127.0.0.1', () => { c.destroy(); r(true); }); c.on('error', () => r(false)); })) break; }
+      const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/?to=127.0.0.1:${udp.address().port}`);
+      const hello = await new Promise((res, rej) => { ws.onmessage = (e) => res(JSON.parse(e.data)); ws.onerror = () => rej(new Error('no connection')); setTimeout(() => rej(new Error('no hello')), 3000); });
+      check(hello.bridge === 'tag-tracker-udp' && hello.to === `127.0.0.1:${udp.address().port}`, 'it answers with where it sends');
+      const big = 'x'.repeat(3000) + '\n', huge = 'y'.repeat(70000);
+      ws.send('{"t":1}\n'); ws.send(big); ws.send(huge); ws.send('last\n');
+      for (let i = 0; i < 30 && got.length < 3; i++) await wait(50);
+      check(got.length === 3 && got[0] === '{"t":1}\n' && got[1] === big && got[2] === 'last\n', 'each message is one datagram, in order (one of 3 kB too); one too big for UDP is dropped');
+      ws.close();
+      // a page from another site is refused before any WebSocket opens
+      const reply = await new Promise((res) => {
+        const c = net.connect(wsPort, '127.0.0.1', () => c.write(`GET /?to=127.0.0.1:9 HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: https://elsewhere.example\r\n\r\n`));
+        let d = ''; c.on('data', (b) => { d += b; }); c.on('close', () => res(d)); c.on('error', () => res(d));
+      });
+      check(/^HTTP\/1\.1 403/.test(reply), 'a page from another site is refused (403)');
+    } finally { br.kill(); udp.close(); }
+  })().catch((e) => { check(false, 'the bridge: ' + e.message); });
+}
+
 let cvPkg = null;
 try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
-if (!cvPkg) {
+const bridged = testBridge();
+if (!cvPkg) bridged.then(() => {
   console.log('6. detection and calibration: skipped (OpenCV.js not installed)');
   finish();
-} else (async () => {
+});
+else bridged.then(async () => {
   console.log('6. detection and calibration (OpenCV.js)');
   const factory = require(path.join(__dirname, '..', 'tag-tracker/worker.js'));
   const cv = await factory.ready(require(cvPkg));
@@ -518,7 +585,7 @@ if (!cvPkg) {
     [qm, pts, st].forEach((m) => m.delete()); det.delete();
   }
   finish();
-})().catch((e) => { console.log('  FAIL ' + (e && e.stack || e)); failed = true; finish(); });
+}).catch((e) => { console.log('  FAIL ' + (e && e.stack || e)); failed = true; finish(); });
 
 function finish() {
   if (failed) { console.log('\nFAIL'); process.exit(1); }

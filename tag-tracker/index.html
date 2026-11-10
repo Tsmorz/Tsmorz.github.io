@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tag Tracker: AprilTag pose in the browser</title>
 <meta name="description" content="Track AprilTags with your webcam, in the browser: name each tag, calibrate the camera, and see the last second of each tag's position and orientation in 3D.">
-<link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/tag-tracker/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
 <style>
@@ -270,6 +270,10 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .step h3{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:15px;font-weight:700;font-stretch:112%}
 .step h3 .n{font-size:22px;font-weight:800;font-stretch:125%;color:var(--accentInk);line-height:1}
 .step p{margin:0 0 12px;color:var(--ink2);line-height:1.55;max-width:68ch}
+.stlbl{margin:14px 0 6px;font-size:13px;font-weight:650;color:var(--ink2)}
+.stpre{margin:0;padding:10px 12px;background:var(--well);border:1px solid var(--rule);font:12.5px/1.5 var(--font);font-variant-numeric:tabular-nums;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}
+.stcmd{margin:0 0 12px}.stcmd code{padding:6px 10px;background:var(--well);border:1px solid var(--rule);font:600 13px var(--font);color:var(--ink);user-select:all}
+#streamCard .step>div[id$=Msg]:not(:empty){margin-top:10px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .cov{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;width:150px;aspect-ratio:16/9;padding:2px;background:var(--rule2)}
 .cov i{background:var(--panel)}
@@ -314,11 +318,12 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 
 <header class="topbar">
   <a class="brand" href="/projects/" title="Back to tsmorz.github.io projects">
-    <span class="logo" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="currentColor"/><g fill="var(--page)"><rect x="1" y="1" width="2" height="1"/><rect x="4" y="1" width="1" height="2"/><rect x="6" y="1" width="1" height="1"/><rect x="2" y="3" width="1" height="2"/><rect x="5" y="3" width="2" height="1"/><rect x="1" y="5" width="1" height="2"/><rect x="3" y="5" width="2" height="1"/><rect x="6" y="5" width="1" height="2"/><rect x="4" y="6" width="1" height="1"/></g></svg></span><span class="bt">Tag Tracker</span>
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="currentColor"/><g fill="var(--page)"><rect x="3" y="1" width="1" height="1"/><rect x="2" y="2" width="2" height="1"/><rect x="5" y="2" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="4" y="4" width="2" height="1"/><rect x="1" y="5" width="1" height="1"/><rect x="3" y="5" width="3" height="1"/><rect x="1" y="6" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="5" y="6" width="2" height="1"/></g></svg></span><span class="bt">Tag Tracker</span>
   </a>
   <div class="tabs" role="tablist" aria-label="Mode">
     <button role="tab" id="tab-track" aria-selected="true" aria-controls="view-track">Track</button>
     <button role="tab" id="tab-calib" aria-selected="false" aria-controls="calibCard">Calibrate</button>
+    <button role="tab" id="tab-stream" aria-selected="false" aria-controls="streamCard">Stream</button>
   </div>
   <div class="spacer"></div>
   <div class="brk"></div>
@@ -526,7 +531,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <div class="col" id="view-track" role="tabpanel" aria-labelledby="tab-track">
     <section class="card card3d" aria-labelledby="h-3d">
       <div class="card-h">
-        <h2 id="h-3d">Last <span id="spanTxt">1.0</span> s</h2>
+        <h2 id="h-3d">Tracking</h2>
         <div class="toolbar">
           <label class="field">History <input id="span" class="input sm num mono" type="number" min="0.1" max="30" step="0.1"><span class="unit">s</span></label>
           <label class="field">Axes every <input id="every" class="input sm num mono" type="number" min="0.01" max="10" step="0.01"><span class="unit">s</span></label>
@@ -570,6 +575,50 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       <div class="tplot" id="tplotWrap"><canvas id="tplot" role="img" aria-label="x, y and z of the chosen tag over the history, in centimetres"></canvas><div class="tip" id="tip" hidden></div></div>
     </section>
   </div>
+  <!-- Stream mode: the poses, sent on over serial or UDP -->
+  <section class="card" id="streamCard" role="tabpanel" aria-labelledby="h-stream" hidden>
+    <div class="card-h"><h2 id="h-stream">Stream</h2><div class="spacer"></div><span class="small muted" id="stCount" aria-live="polite"></span></div>
+    <div class="steps">
+      <div class="step">
+        <h3>What is sent</h3>
+        <p>One message for every track in view: its key (a tag's ID, or b: and an object's ID), its name, its position in metres and its orientation as a unit quaternion w, x, y, z. The frame is the Track tab's: the camera, or the tag chosen in Relative to, with any tare.</p>
+        <div class="row">
+          <span class="field">Format
+            <span class="seg sm" role="radiogroup" aria-label="Format">
+              <button role="radio" data-stfmt="json" aria-checked="true" title="One JSON object per line, with every track in it">JSON lines</button>
+              <button role="radio" data-stfmt="csv" aria-checked="false" title="One line per track, under a header line">CSV</button>
+            </span>
+          </span>
+          <label class="field">Rate <select id="stRate" class="select sm"><option value="10">10 a second</option><option value="30">30 a second</option><option value="60">60 a second</option><option value="0">Every frame</option></select></label>
+        </div>
+        <h4 class="stlbl">Last message</h4>
+        <pre class="stpre" id="stPreview">Start a camera, or the demo, to see messages here.</pre>
+      </div>
+      <div class="step">
+        <h3>Serial or USB</h3>
+        <p>To a microcontroller, or anything on a serial port, one line at a time. Needs Chrome or Edge on a computer.</p>
+        <div class="row">
+          <label class="field">Baud <select id="stBaud" class="select sm"><option>9600</option><option>57600</option><option>115200</option><option>230400</option><option>460800</option><option>921600</option></select></label>
+          <button class="btn sm primary" id="stSerialBtn">Connect a port</button>
+          <span class="seen" id="stSerialState"><span class="dot"></span><span>Not connected</span></span>
+        </div>
+        <div id="stSerialMsg"></div>
+      </div>
+      <div class="step">
+        <h3>UDP</h3>
+        <p>A web page can't send UDP itself, so a small bridge on your computer passes each message on as one datagram. Download <a href="/tag-tracker/udp-bridge.py" download>udp-bridge.py</a> (Python 3, nothing else to install) and run it:</p>
+        <div class="row stcmd"><code id="stCmd">python3 udp-bridge.py</code><button class="btn sm outline" id="stCopy" type="button">Copy</button></div>
+        <div class="row">
+          <label class="field">Send to <input id="stHost" class="input sm" style="width:130px" autocomplete="off" spellcheck="false"></label>
+          <label class="field">port <input id="stPort" class="input sm num" style="width:84px" type="number" min="1" max="65535"></label>
+          <label class="field">Bridge on port <input id="stBridge" class="input sm num" style="width:84px" type="number" min="1" max="65535"></label>
+          <button class="btn sm primary" id="stUdpBtn">Connect</button>
+          <span class="seen" id="stUdpState"><span class="dot"></span><span>Not connected</span></span>
+        </div>
+        <div id="stUdpMsg"></div>
+      </div>
+    </div>
+  </section>
 </main>
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
   <form method="dialog" id="printForm" novalidate>
@@ -645,7 +694,7 @@ const S = {
   quality: store.get('quality', 'precise'),
   res: store.get('res', '1280x720'),
   camId: store.get('camId', ''),
-  mode: 'track',
+  mode: 'track', tab: 'track',
   worker: null, ready: false, familyCount: 587,
   // the running cameras (see "cameras" below); the first is camera 1, whose frame the rig and the plot use
   cams: [], running: false, demo: null, firstKey: null, calibCam: 0, calibFor: '',
@@ -783,7 +832,6 @@ bindNum('axisLen', () => S.settings.axisLen, (v) => { S.settings.axisLen = v; },
 bindNum('defSize', () => S.settings.tagSize, (v) => { S.settings.tagSize = v; }, 1000);
 bindNum('hfov', () => S.settings.hfov, (v) => { S.settings.hfov = v; });
 function onSettings() {
-  $('spanTxt').textContent = S.settings.span.toFixed(S.settings.span < 10 ? 1 : 0);
   $('span').value = S.settings.span; $('every').value = S.settings.every;
   S.cams.forEach(updateCam);
 }
@@ -791,7 +839,7 @@ $('family').value = S.settings.family;
 $('family').onchange = () => {
   S.settings.family = $('family').value; store.set('settings', S.settings);
   resetTracks(); S.seen.clear();
-  if (S.ready) S.worker.postMessage({ type: 'family', family: S.settings.family, quality: S.quality });
+  toWorkers({ type: 'family', family: S.settings.family, quality: S.quality });
 };
 function radios(attr, get, set) {
   const all = document.querySelectorAll(`[data-${attr}]`), paint = () => all.forEach((x) => x.setAttribute('aria-checked', String(x.dataset[attr] === get())));
@@ -811,7 +859,7 @@ document.querySelectorAll('[data-q]').forEach((b) => {
   b.onclick = () => {
     S.quality = b.dataset.q; store.set('quality', S.quality);
     document.querySelectorAll('[data-q]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
-    if (S.ready) S.worker.postMessage({ type: 'family', family: S.settings.family, quality: S.quality });
+    toWorkers({ type: 'family', family: S.settings.family, quality: S.quality });
   };
 });
 function refreshFrameSel() {
@@ -822,7 +870,7 @@ function refreshFrameSel() {
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : 'camera';
   if (sel.value !== cur) { S.settings.frame = sel.value; store.set('settings', S.settings); }
 }
-function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.tare.clear(); paintTare(); S.view.fitted = false; refreshFrameSel(); }
+function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.tare.clear(); paintTare(); S.view.fitted = false; refreshFrameSel(); refreshTplotSel(); }
 // ---------------- tare ----------------
 // Re-express a track's stored history under a new tare (null: none), so the trail and the plot change at once.
 function retare(key, R0) {
@@ -846,7 +894,9 @@ function trackKeys() {
   return [...new Set([...S.bodies.map((b) => 'b:' + b.id), ...S.tags.map((t) => t.id).filter((id) => !mem.has(id)), ...S.hist.ids()])].sort(keySort);
 }
 function refreshTplotSel() {
-  const sel = $('tplotTag'), cur = S.tplotTag, list = trackKeys();
+  // not the reference: it always sits at the origin, so there is nothing to plot
+  const ref = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
+  const sel = $('tplotTag'), cur = S.tplotTag, list = trackKeys().filter((k) => k !== ref);
   const key = list.map((k) => k + ':' + nameOf(k)).join('|');
   if (sel.dataset.key !== key) {
     sel.dataset.key = key;
@@ -881,28 +931,50 @@ function status(text, kind) {
 }
 
 // ---------------- worker ----------------
-function startWorker() {
+// Detection runs in a pool of workers, each with its own OpenCV: every camera's frames go to whichever worker is
+// idle, so frames are detected in parallel (one camera keeps several in flight). The first worker also calibrates
+// and draws tags and boards; the others start once it is ready, when OpenCV.js is already in the browser's cache.
+const POOL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+function spawnWorker() {
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  const w = new Worker(base + 'worker.js');
-  S.worker = w;
-  w.onmessage = (ev) => onWorker(ev.data);
-  w.onerror = (e) => { status('Detector failed to start', 'bad'); console.error(e); };
+  const w = new Worker(base + 'worker.js'), slot = { w, ready: false, busy: false, first: !S.pool.length };
+  S.pool.push(slot);
+  w.onmessage = (ev) => onWorker(ev.data, slot);
+  w.onerror = (e) => { if (slot.first) status('Detector failed to start', 'bad'); else S.pool = S.pool.filter((x) => x !== slot); console.error(e); };
   w.postMessage({ type: 'init', family: S.settings.family, quality: S.quality });
+  return slot;
+}
+function startWorker() { S.pool = []; S.worker = spawnWorker().w; }
+function toWorkers(msg) { for (const x of S.pool) if (x.ready) x.w.postMessage(msg); }
+// A worker for camera c's next frame: an idle one, as long as c has no more than its share of the pool in flight.
+function idleWorker(c) {
+  const ready = S.pool.filter((x) => x.ready);
+  if (c.inflight >= Math.max(1, Math.ceil(ready.length / Math.max(1, S.cams.length)))) return null;
+  return ready.find((x) => !x.busy) || null;
 }
 const pending = new Map(); // printing windows waiting for an image
 let workerReadyResolve = null;
 const workerReady = new Promise((res) => { workerReadyResolve = res; }); // requests sent before this are dropped by the worker
-function onWorker(m) {
+function onWorker(m, slot) {
+  if (!slot.first && m.type !== 'tags' && m.type !== 'board' && m.type !== 'ready' && !(m.type === 'error' && m.of === 'frame')) return;
   if (m.type === 'status') status(m.text, 'busy');
-  else if (m.type === 'ready') {
+  else if (m.type === 'ready' && !slot.first) {
+    slot.ready = true;
+    slot.w.postMessage({ type: 'family', family: S.settings.family, quality: S.quality }); // in case it changed while loading
+  } else if (m.type === 'ready') {
+    slot.ready = true;
+    for (let k = 1; k < POOL; k++) spawnWorker();
     S.ready = true; S.familyCount = m.count; workerReadyResolve();
     status(S.running ? 'Detecting…' : 'Ready to start', S.running ? 'live' : '');
     $('emptyDemo').disabled = false;
   } else if (m.type === 'family') { S.familyCount = m.count; }
   else if (m.type === 'tags' || m.type === 'board') {
+    slot.busy = false;
     const c = camOf(m.src);
     if (!c) return;
-    c.busy = false;
+    c.inflight = Math.max(0, c.inflight - 1);
+    if (m.seq <= c.doneSeq) return; // overtaken by a later frame from another worker
+    c.doneSeq = m.seq;
     if (m.type === 'tags') onTags(c, m); else onBoard(c, m);
   }
   else if (m.type === 'calibrated') onCalibrated(m.calib);
@@ -910,7 +982,7 @@ function onWorker(m) {
     const cb = pending.get(m.purpose);
     if (cb) { pending.delete(m.purpose); cb(m.img); }
   } else if (m.type === 'error') {
-    if (m.of === 'frame') { const c = camOf(m.src); if (c) c.busy = false; return; }
+    if (m.of === 'frame') { slot.busy = false; const c = camOf(m.src); if (c) c.inflight = Math.max(0, c.inflight - 1); return; }
     if (m.of === 'init') { status('Could not load the detector', 'bad'); showEmpty('The detector didn’t load', 'OpenCV.js (about 10 MB) is fetched from a CDN the first time. Check your connection and reload the page.'); }
     if (m.of === 'calibrate') { $('solveBtn').disabled = S.views.length < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate'; $('calibResult').innerHTML = `<div class="note warn"><svg class="i"><use href="#i-alert"/></svg><span>Calibration failed: ${escapeHtml(m.text)}</span></div>`; }
     console.warn('worker:', m.of, m.text);
@@ -1013,7 +1085,7 @@ async function addCamera(key) {
     const [w, h] = S.res.split('x').map(Number);
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: key ? { exact: key } : undefined, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
   }
-  const c = { key, demo, stream, track: stream.getVideoTracks()[0], busy: false, seq: 0, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
+  const c = { key, demo, stream, track: stream.getVideoTracks()[0], inflight: 0, seq: 0, doneSeq: 0, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
   if (demo === null) {
     const st = c.track.getSettings();
     if (st.deviceId) c.key = st.deviceId;
@@ -1237,8 +1309,7 @@ paintArrange();
 if ('ResizeObserver' in window) new ResizeObserver(() => layoutTiles()).observe($('stages'));
 
 // ---------------- frame loop ----------------
-// Each camera sends its newest frame to the one detector whenever its last one is done, so with several cameras
-// they take turns.
+// Each camera sends its newest frame to an idle worker of the pool, keeping up to its share of the pool busy.
 function loopFrames(c) {
   const v = c.video, hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   let lastT = -1;
@@ -1248,17 +1319,19 @@ function loopFrames(c) {
     if (!hasRVFC) { if (v.currentTime === lastT) return; lastT = v.currentTime; }
     c.stats.frames++;
     if (v.videoWidth && (c.cam.w !== v.videoWidth || c.cam.h !== v.videoHeight)) { updateCam(c); layoutTiles(); }
-    if (!S.ready || c.busy || !v.videoWidth) return;
+    const slot = S.ready && v.videoWidth ? idleWorker(c) : null;
+    if (!slot) return;
     let time = meta && meta.captureTime ? meta.captureTime : performance.now();
     if (Math.abs(time - performance.now()) > 1000) time = performance.now();
-    c.busy = true;
+    slot.busy = true; c.inflight++;
+    const release = () => { slot.busy = false; c.inflight = Math.max(0, c.inflight - 1); };
     createImageBitmap(v).then((bm) => {
-      if (c.gone) { bm.close(); return; }
+      if (c.gone) { bm.close(); release(); return; }
       const sizes = sizesMap();
       const bodies = S.bodies.map((b) => ({ id: b.id, members: b.members.map((x) => ({ id: x.id, R: x.R, t: x.t, size: sizes[x.id] || S.settings.tagSize })) }));
       const square = S.mode === 'calib' ? (S.demo ? DEMO.square : S.square / 1000) : 0;
-      S.worker.postMessage({ type: 'frame', src: c.key, bitmap: bm, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
-    }).catch(() => { c.busy = false; });
+      slot.w.postMessage({ type: 'frame', src: c.key, bitmap: bm, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
+    }).catch(release);
   };
   if (hasRVFC) v.requestVideoFrameCallback(step); else requestAnimationFrame(step);
 }
@@ -1320,16 +1393,22 @@ function fuse(c, m, meas, wall) {
     rig.set(key, z);
     let zs = S.zs.get(key);
     if (!zs) S.zs.set(key, (zs = new Map()));
-    zs.set(c.key, { time: m.time, z });
+    // A face-on tag fits two mirror-image poses about equally well. Take the one the other cameras agree with
+    // (what they see of this track within 50 ms), or with one camera the one nearest the track's last pose, so it
+    // doesn't flip from frame to frame.
+    const others = [...zs].filter(([k, x]) => k !== c.key && Math.abs(x.time - m.time) < 0.05 && x.z.cands.length).map(([, x]) => C.plausible(x.z.cands).map((q) => q.R));
+    const last = S.fused.get(key), prevR = last && m.time - last.time < 0.25 ? last.pose.R : null;
+    const pick = z.cands.length ? C.chooseCand(z.cands, others, prevR) : null;
+    zs.set(c.key, { time: m.time, z, pick });
     let p = null;
-    if (mode === 'raw' || !z.cands.length) p = z.raw;
+    if (mode === 'raw' || !pick) p = z.raw;
     else if (mode === 'refined') {
-      const now = [...zs.values()].filter((x) => Math.abs(x.time - m.time) < 0.05 && x.z.cands.length).map((x) => x.z.cands[0]);
-      p = now.length > 1 ? C.fusePoses(now) : z.cands[0];
+      const now = [...zs.values()].filter((x) => Math.abs(x.time - m.time) < 0.05 && x.pick).map((x) => x.pick);
+      p = now.length > 1 ? C.fusePoses(now) : pick;
     } else {
       let f = S.filters.get(key);
       if (!f) { f = new C.PoseFilter(C.MOTION[S.settings.motion]); S.filters.set(key, f); }
-      const r = f.update(m.time, z.cands);
+      const r = f.update(m.time, others.length ? [pick] : z.cands); // with other cameras the choice is already made
       p = r && r.pose;
     }
     const best = z.cands[0], cams = S.cams.filter((x) => { const q = zs.get(x.key); return q && m.time - q.time < 0.25; }).map((x) => x.n);
@@ -1348,6 +1427,7 @@ function fuse(c, m, meas, wall) {
     for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.tared(C.inFrame(p, ref), S.tare.get(key)));
     if (S.settings.compare) for (const [key, z] of rig) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(C.inFrame(z.raw, refRaw), S.tare.get(key)));
   }
+  streamTick(m.time);
 }
 
 // ---------------- video overlays ----------------
@@ -1426,9 +1506,9 @@ function drawOverlay(c) {
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sp[0][0], sp[0][1], 3 * u, 0, 7); ctx.fill(); // first corner: the tag's orientation
     const pose = inBody ? null : inCam(t.id) || (t.R ? t : null);
     if (pose) axes(pose, Math.min(S.settings.axisLen, t.size));
+    if (inBody) continue; // a tag of an object: its outline only, the object's own plate names it
     const xs = sp.map((p) => p[0]), ys = sp.map((p) => p[1]);
-    const txt = inBody ? (tagOf(t.id) && tagOf(t.id).name ? tagOf(t.id).name : '#' + t.id) : nameOf(t.id) + (pose ? `  ${(C.norm(pose.t) * 100).toFixed(1)} cm` : '');
-    plate(txt, col, [(Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)], Math.max(...ys));
+    plate(nameOf(t.id) + (pose ? `  ${(C.norm(pose.t) * 100).toFixed(1)} cm` : ''), col, [(Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)], Math.max(...ys));
   }
   // tracks the other cameras see and this one doesn't: dashed, where they would be in this picture
   if (c.T && S.cams.length > 1) for (const [key] of S.fused) {
@@ -1577,6 +1657,16 @@ function fitView() {
 $('fitBtn').onclick = fitView;
 function resetView() { Object.assign(S.view, VIEW0); fitView(); }
 $('resetViewBtn').onclick = resetView;
+// The cameras stand still, but a reference tag's pose wobbles with its noise (a degree at 1.5 m moves a camera by
+// 3 cm), so the cameras are drawn from the reference's mean pose over the last half second.
+function steadyRef() {
+  const key = parseKey(S.settings.frame), tr = S.tracks.get(key);
+  if (!tr || !tr.pose) return null;
+  const b = S.refBuf && S.refBuf.key === key ? S.refBuf : (S.refBuf = { key, a: [] });
+  if (!b.a.length || b.a[b.a.length - 1].time !== tr.time) b.a.push({ time: tr.time, R: tr.pose.R, t: tr.pose.t });
+  while (tr.time - b.a[0].time > 0.5) b.a.shift();
+  return b.a.length > 2 ? C.meanPose(b.a, 10, 0.1) : tr.pose;
+}
 function draw3d() {
   const { c, w, h } = sizeCanvas(plot);
   c.clearRect(0, 0, w, h);
@@ -1596,7 +1686,7 @@ function draw3d() {
   // origin: the camera, or the reference tag
   const L0 = Math.max(0.05, step * 0.6);
   // the cameras: each placed one as a small pyramid where the rig puts it (camera 1 alone before any start)
-  const camRef = S.settings.frame === 'camera' ? null : (S.tracks.get(parseKey(S.settings.frame)) || {}).pose || null;
+  const camRef = S.settings.frame === 'camera' ? null : steadyRef();
   if (S.settings.frame === 'camera' || camRef) {
     const list = S.cams.length ? S.cams.filter((c) => c.T) : [{ n: 1, T: { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, cam: null }];
     for (const cm of list) {
@@ -1780,7 +1870,8 @@ function drawTplot() {
     for (const p of ys) { c.fillStyle = cols[p.i]; c.fillText(names[p.i], L + pw + 6, p.y); c.fillStyle = K.text2; c.font = '11px Archivo, sans-serif'; c.fillText((motion ? (val(kl, p.i) >= 0 ? '+' : '') : '') + fmt(val(kl, p.i)), L + pw + 16, p.y); c.font = '600 11px Archivo, system-ui, sans-serif'; }
   } else {
     c.fillStyle = K.muted; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '12px Archivo, system-ui, sans-serif';
-    c.fillText(id === null ? 'Pick a tag' : `${nameOf(id)} isn’t in view`, L + pw / 2, T + ph / 2);
+    const ref = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
+    c.fillText(id === null ? 'Pick a tag' : id === ref ? `${nameOf(id)} is the reference, so it stays at the origin` : `${nameOf(id)} isn’t in view`, L + pw / 2, T + ph / 2);
   }
   // hover: crosshair and a tooltip at the nearest sample
   const tip = $('tip');
@@ -1839,20 +1930,23 @@ function fmtAgo(s) { return s < 60 ? `${s.toFixed(0)} s` : s < 3600 ? `${(s / 60
 
 // ---------------- render loop ----------------
 function frame() {
-  if (S.mode === 'track') { draw3d(); drawTplot(); drawTable(); }
+  if (S.tab === 'track') { draw3d(); drawTplot(); }
+  if (S.mode === 'track') drawTable();
+  if (S.tab === 'stream') paintStream();
   if (S.mode === 'track') for (const c of S.cams) if (c.last && performance.now() / 1000 - c.last.time > 0.5) { clearOverlay(c); c.last = null; }
   requestAnimationFrame(frame);
 }
 
 // ---------------- modes ----------------
+// S.tab is the tab shown; S.mode what the detector does: 'calib' looks for the board, 'track' (Track and Stream) for tags.
 function setMode(m) {
-  S.mode = m;
-  $('tab-track').setAttribute('aria-selected', String(m === 'track'));
-  $('tab-calib').setAttribute('aria-selected', String(m === 'calib'));
+  S.tab = m; S.mode = m === 'calib' ? 'calib' : 'track';
+  for (const t of TABS) $('tab-' + t).setAttribute('aria-selected', String(m === t));
   $('view-track').hidden = m !== 'track';
-  $('tagsCard').hidden = m !== 'track';
+  $('tagsCard').hidden = m === 'calib';
   $('nowCard').hidden = m !== 'track';
   $('calibCard').hidden = m !== 'calib';
+  $('streamCard').hidden = m !== 'stream';
   document.querySelector('main').classList.toggle('calib', m === 'calib');
   if (m === 'calib') {
     // the steps sit in the right-hand column
@@ -1861,13 +1955,18 @@ function setMode(m) {
   } else document.querySelector('.col').appendChild($('calibCard'));
   clearOverlays(); renderRig();
 }
-$('tab-track').onclick = () => setMode('track');
-$('tab-calib').onclick = () => setMode('calib');
-[$('tab-track'), $('tab-calib')].forEach((b) => b.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const other = b.id === 'tab-track' ? $('tab-calib') : $('tab-track'); other.click(); other.focus(); }
-}));
+const TABS = ['track', 'calib', 'stream'];
+TABS.forEach((t, i) => {
+  const b = $('tab-' + t);
+  b.onclick = () => setMode(t);
+  b.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d) return;
+    const other = $('tab-' + TABS[(i + d + TABS.length) % TABS.length]); other.click(); other.focus();
+  });
+});
 const mq = matchMedia('(max-width:1000px)');
-mq.addEventListener('change', () => setMode(S.mode));
+mq.addEventListener('change', () => setMode(S.tab));
 
 // ---------------- calibration ----------------
 // Steps 2 and 3 calibrate one camera's lens (S.calibCam, picked in step 2); step 4 places the cameras.
@@ -2287,6 +2386,137 @@ window.addEventListener('resize', () => { if (!$('boardView').hidden) { clearTim
 const routeHash = () => { if (location.hash === BOARD_HASH) showBoardView(); else hideBoardView(); };
 window.addEventListener('hashchange', routeHash);
 
+// ---------------- stream: the poses, sent on over serial or UDP ----------------
+// After each detection, at most `rate` times a second: one message (TagCore.streamMessage) with the newest plotted
+// pose of every track in view, so it is in the Track tab's frame and tare. It goes to the serial port (Web Serial) and
+// to the UDP bridge (a WebSocket to udp-bridge.py on this computer, which sends each message as one datagram). A
+// message that finds the last one still being written is dropped, not queued, so the link never falls behind.
+const ST = Object.assign({ fmt: 'json', rate: 30, baud: 115200, host: '127.0.0.1', port: 9870, bridge: 8770 }, store.get('stream', {}));
+ST.fmt = ST.fmt === 'csv' ? 'csv' : 'json';
+if (![10, 30, 60, 0].includes(ST.rate)) ST.rate = 30;
+if (![9600, 57600, 115200, 230400, 460800, 921600].includes(ST.baud)) ST.baud = 115200;
+for (const [k, d] of [['port', 9870], ['bridge', 8770]]) if (!(Number.isInteger(ST[k]) && ST[k] >= 1 && ST[k] <= 65535)) ST[k] = d;
+if (typeof ST.host !== 'string' || !ST.host) ST.host = '127.0.0.1';
+const stLive = { last: 0, sent: 0, dropped: 0, msg: '', serial: null, ws: null, painted: 0 };
+const enc = new TextEncoder();
+function saveStream() { store.set('stream', { fmt: ST.fmt, rate: ST.rate, baud: ST.baud, host: ST.host, port: ST.port, bridge: ST.bridge }); }
+function frameName() { return S.settings.frame === 'camera' ? 'camera' : nameOf(parseKey(S.settings.frame)); }
+function streamTick(time) {
+  const wall = performance.now();
+  if (ST.rate && wall - stLive.last < 1000 / ST.rate - 2) return;
+  stLive.last = wall;
+  const rows = [];
+  for (const key of S.hist.ids().sort(keySort)) {
+    const s = S.hist.latest(key);
+    if (s && time - s.time < 0.25) rows.push({ track: key, name: nameOf(key), p: s.t, q: C.quatOf(s.R) });
+  }
+  const msg = C.streamMessage(ST.fmt, performance.timeOrigin / 1000 + time, rows, frameName());
+  if (msg) stLive.msg = msg;
+  if (msg) send(msg);
+}
+function send(msg) {
+  const sp = stLive.serial, ws = stLive.ws;
+  let out = false;
+  if (sp && sp.writer) {
+    if (sp.busy) stLive.dropped++;
+    else { sp.busy = true; out = true; sp.writer.write(enc.encode(msg)).then(() => { sp.busy = false; }, (e) => serialGone(e)); }
+  }
+  if (ws && ws.ok && ws.sock.readyState === 1) {
+    if (ws.sock.bufferedAmount > 65536) stLive.dropped++;
+    else { ws.sock.send(msg); out = true; }
+  }
+  if (out) stLive.sent++;
+}
+const header = () => (ST.fmt === 'csv' ? C.STREAM_CSV_HEADER + '\n' : '');
+function note(id, text, warn) { $(id).innerHTML = text ? `<div class="note${warn ? ' warn' : ''}"><svg class="i"><use href="#i-${warn ? 'alert' : 'info'}"/></svg><span>${text}</span></div>` : ''; }
+function stState(id, on, text) { const el = $(id); el.classList.toggle('on', on); el.lastElementChild.textContent = text; }
+// serial
+async function serialConnect() {
+  if (stLive.serial) return serialClose();
+  if (!('serial' in navigator)) return note('stSerialMsg', 'This browser has no Web Serial. Use Chrome or Edge on a computer, or send over UDP.', true);
+  let port;
+  try { port = await navigator.serial.requestPort(); } catch (e) { return; } // closed the chooser
+  try { await port.open({ baudRate: ST.baud }); } catch (e) { return note('stSerialMsg', `Couldn’t open the port (${escapeHtml(e.message)}). Is another program using it?`, true); }
+  const sp = { port, writer: port.writable.getWriter(), busy: false };
+  stLive.serial = sp;
+  if (header()) sp.writer.write(enc.encode(header())).catch(() => {});
+  const info = port.getInfo ? port.getInfo() : {};
+  stState('stSerialState', true, `Sending at ${ST.baud} baud${info.usbVendorId ? ` (USB ${info.usbVendorId.toString(16).padStart(4, '0')}:${(info.usbProductId || 0).toString(16).padStart(4, '0')})` : ''}`);
+  $('stSerialBtn').textContent = 'Disconnect'; $('stBaud').disabled = true; note('stSerialMsg', '');
+}
+async function serialClose() {
+  const sp = stLive.serial;
+  if (!sp) return;
+  stLive.serial = null;
+  try { await sp.writer.close(); } catch (e) { /* already gone */ }
+  try { sp.writer.releaseLock(); } catch (e) { /* released */ }
+  try { await sp.port.close(); } catch (e) { /* unplugged */ }
+  stState('stSerialState', false, 'Not connected'); $('stSerialBtn').textContent = 'Connect a port'; $('stBaud').disabled = false;
+}
+function serialGone(e) {
+  if (!stLive.serial) return;
+  serialClose();
+  note('stSerialMsg', `The port closed${e && e.message ? ` (${escapeHtml(e.message)})` : ''}. Was it unplugged?`, true);
+}
+if ('serial' in navigator) navigator.serial.addEventListener('disconnect', (e) => { if (stLive.serial && e.target === stLive.serial.port) serialGone(); });
+// UDP, through the bridge
+function bridgeCmd() {
+  const o = location.origin, ok = o === 'https://tsmorz.github.io' || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(o);
+  return 'python3 udp-bridge.py' + (ST.bridge !== 8770 ? ` --port ${ST.bridge}` : '') + (ok ? '' : ` --origin ${o}`);
+}
+function udpConnect() {
+  if (stLive.ws) return udpClose();
+  const to = `${ST.host.includes(':') ? `[${ST.host}]` : ST.host}:${ST.port}`;
+  let sock;
+  try { sock = new WebSocket(`ws://127.0.0.1:${ST.bridge}/?to=${encodeURIComponent(to)}`); } catch (e) { return note('stUdpMsg', escapeHtml(e.message), true); }
+  const ws = { sock, ok: false };
+  stLive.ws = ws;
+  stState('stUdpState', false, 'Connecting…'); $('stUdpBtn').textContent = 'Disconnect'; note('stUdpMsg', '');
+  sock.onmessage = (ev) => {
+    let m = null;
+    try { m = JSON.parse(ev.data); } catch (e) { /* not the bridge */ }
+    if (!m || m.bridge !== 'tag-tracker-udp' || ws.ok) return;
+    ws.ok = true;
+    if (header()) sock.send(header());
+    stState('stUdpState', true, `Sending to ${m.to}`);
+  };
+  sock.onclose = () => {
+    if (stLive.ws !== ws) return;
+    stLive.ws = null;
+    stState('stUdpState', false, 'Not connected'); $('stUdpBtn').textContent = 'Connect';
+    note('stUdpMsg', ws.ok ? 'The bridge closed the connection.' : `No bridge answered on port ${ST.bridge}. Start it with the command above, and if the browser asks, allow this page to reach devices on your local network.`, true);
+  };
+}
+function udpClose() { const ws = stLive.ws; stLive.ws = null; if (ws) ws.sock.close(); stState('stUdpState', false, 'Not connected'); $('stUdpBtn').textContent = 'Connect'; }
+// the panel
+function paintStream() {
+  const now = performance.now();
+  if (now - stLive.painted < 250) return;
+  stLive.painted = now;
+  $('stPreview').textContent = stLive.msg ? (ST.fmt === 'csv' ? header() : '') + stLive.msg.replace(/\n$/, '') : (S.running ? 'No tracks in view.' : 'Start a camera, or the demo, to see messages here.');
+  const linked = stLive.serial || (stLive.ws && stLive.ws.ok);
+  $('stCount').textContent = linked || stLive.sent ? `${stLive.sent.toLocaleString()} sent${stLive.dropped ? `, ${stLive.dropped.toLocaleString()} dropped: the link is slower than the rate` : ''}` : '';
+}
+function paintStreamForm() {
+  document.querySelectorAll('[data-stfmt]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.stfmt === ST.fmt)));
+  $('stRate').value = String(ST.rate); $('stBaud').value = String(ST.baud);
+  $('stHost').value = ST.host; $('stPort').value = ST.port; $('stBridge').value = ST.bridge;
+  $('stCmd').textContent = bridgeCmd();
+}
+document.querySelectorAll('[data-stfmt]').forEach((b) => b.onclick = () => {
+  ST.fmt = b.dataset.stfmt; saveStream(); paintStreamForm(); stLive.msg = '';
+  if (header()) send(header()); // the receiver gets the column names before the first CSV line
+});
+$('stRate').onchange = () => { ST.rate = +$('stRate').value; saveStream(); };
+$('stBaud').onchange = () => { ST.baud = +$('stBaud').value; saveStream(); };
+$('stHost').onchange = () => { ST.host = $('stHost').value.trim() || '127.0.0.1'; saveStream(); paintStreamForm(); };
+const portIn = (id, k, d) => { $(id).onchange = () => { const v = Math.round(+$(id).value); ST[k] = v >= 1 && v <= 65535 ? v : d; saveStream(); paintStreamForm(); }; };
+portIn('stPort', 'port', 9870); portIn('stBridge', 'bridge', 8770);
+$('stSerialBtn').onclick = serialConnect;
+$('stUdpBtn').onclick = udpConnect;
+$('stCopy').onclick = () => { navigator.clipboard.writeText(bridgeCmd()).then(() => { $('stCopy').textContent = 'Copied'; setTimeout(() => { $('stCopy').textContent = 'Copy'; }, 1500); }, () => {}); };
+paintStreamForm();
+
 // ---------------- demo: three simulated cameras round one scene ----------------
 // The scene (three tags moving, or while calibrating the board, moving and holding still) is rendered with WebGL in
 // true perspective from each camera's pose and lens, so each camera sees it from its own side and the detector,
@@ -2309,13 +2539,39 @@ function facing(p, at, roll, tilt, away) {
   const F = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
   return C.mul3(F, C.mul3(C.rodrigues([0, 0, roll || 0]), C.rodrigues([0, tilt || 0, 0])));
 }
+// The scene: a body tag, and two hands, each a 10 cm cube with a tag on its front (0, 1), sides and top. The poses
+// are of each tag (and of each hand's front tag, which is its object's origin).
 function demoTags(t) {
-  const A = DEMO.audience, pose = (p, roll, tilt) => ({ R: facing(p, A, roll, tilt), t: p });
+  const A = DEMO.audience, pose = (p, roll, tilt, pitch) => ({ R: C.mul3(facing(p, A, roll, tilt), C.rodrigues([pitch || 0, 0, 0])), t: p });
   return [
-    { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0) },
-    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.5 * Math.sin(1.1 * t)) },
-    { id: 1, ...pose([0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.4 * Math.cos(0.9 * t)) },
+    { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.45, 0.25) }, // turned a little, as a tag on a chest would be
+    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.9 * Math.sin(0.6 * t), 0.35 + 0.3 * Math.sin(0.7 * t)) },
+    { id: 1, ...pose([0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.9 * Math.cos(0.5 * t), 0.35 + 0.3 * Math.cos(0.8 * t)) },
   ];
+}
+// Each hand's cube: the front tag is the origin (x right, y up, z out of its face); the others sit on the left, right
+// and top faces, upright as seen from the front (the top one from the front, looking down).
+const CUBE = 0.1, DEMO_HANDS = [
+  { id: 'demo-left', name: 'Left hand', ids: [0, 3, 4, 5] },
+  { id: 'demo-right', name: 'Right hand', ids: [1, 6, 7, 8] },
+];
+function cubeMembers(ids) {
+  const e = CUBE / 2;
+  return [
+    { id: ids[0], R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] },
+    { id: ids[1], R: [0, 0, -1, 0, 1, 0, 1, 0, 0], t: [-e, 0, -e] }, // left side, facing −x
+    { id: ids[2], R: [0, 0, 1, 0, 1, 0, -1, 0, 0], t: [e, 0, -e] }, // right side, facing +x
+    { id: ids[3], R: [1, 0, 0, 0, 0, 1, 0, -1, 0], t: [0, e, -e] }, // top, facing +y
+  ];
+}
+function demoScene(t) {
+  const out = [];
+  for (const g of demoTags(t)) {
+    const hand = DEMO_HANDS.find((h) => h.ids[0] === g.id);
+    if (!hand) { out.push(g); continue; }
+    for (const m of cubeMembers(hand.ids)) out.push({ id: m.id, ...C.compose(g, m) });
+  }
+  return out;
 }
 // The board while calibrating: it holds each of 12 poses for 1.5 s and moves between them in 0.7 s.
 const BOARD_KEYS = Array.from({ length: 12 }, (_, k) => ({
@@ -2397,9 +2653,11 @@ function demoRenderer(W, H) {
   return { canvas: glc, texture, render };
 }
 async function startDemo() {
-  const ids = [0, 1, 2], names = ['Left hand', 'Right hand', 'Body'];
-  ids.forEach((id, i) => { if (!tagOf(id)) { S.tags.push({ id, name: names[i], size: 0.08, slot: freeSlot() }); } });
-  saveTags(); renderTags(); refreshFrameSel();
+  const ids = [0, 1, 2, 3, 4, 5, 6, 7, 8], names = ['Left hand, front', 'Right hand, front', 'Body', 'Left hand, left side', 'Left hand, right side', 'Left hand, top', 'Right hand, left side', 'Right hand, right side', 'Right hand, top'];
+  // the side and top tags are only ever seen as part of their hand, so they don't take a colour of their own
+  ids.forEach((id, i) => { if (!tagOf(id)) { S.tags.push({ id, name: names[i], size: 0.08, slot: i < 3 ? freeSlot() : -1 }); } });
+  for (const h of DEMO_HANDS) if (!S.bodies.some((b) => b.members.some((x) => h.ids.includes(x.id)))) S.bodies.push({ id: h.id, name: h.name, members: cubeMembers(h.ids) });
+  saveTags(); saveBodies(); resetTracks(); renderTags(); renderBodies(); refreshFrameSel(); refreshTplotSel();
   const quiet = 30, cells = FAMILY_CELLS[S.settings.family];
   const imgs = await Promise.all(ids.map((id) => requestImage('tagImage', { family: S.settings.family, id, px: cells * 30 })));
   const boardImg = await requestImage('boardImage', { px: 80 });
@@ -2415,7 +2673,7 @@ async function startDemo() {
       const P = (x, y) => C.add(C.mulv(B.R, [x, y, 0]), B.t);
       return [{ tex: boardTex, corners: [P(-m, -m), P(9 * sq + m, -m), P(9 * sq + m, 6 * sq + m), P(-m, 6 * sq + m)] }];
     }
-    return demoTags(t).map((g) => {
+    return demoScene(t).map((g) => {
       const im = imgs[ids.indexOf(g.id)], h = (sizeOf(g.id) / 2) * (im.w + 2 * quiet) / im.w;
       return { tex: tagTex.get(g.id), corners: [[-h, h], [h, h], [h, -h], [-h, -h]].map(([x, y]) => C.add(C.mulv(g.R, [x, y, 0]), g.t)) };
     });

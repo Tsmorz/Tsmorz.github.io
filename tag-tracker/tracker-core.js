@@ -424,6 +424,40 @@
     return Object.assign(mu, { used: keep.length, spread });
   }
 
+  // The candidates that fit the image about as well as the best (best first): a flat tag seen nearly face-on fits two
+  // poses, mirror images of each other, and noise decides which fits better. The filter uses the same rule.
+  function plausible(cands) {
+    const b = cands[0];
+    return cands.filter((c, i) => !i || c.rms <= Math.max(2 * b.rms, b.rms + 0.5));
+  }
+  // Pick one of a frame's candidates. `others`: what the other cameras see of the same track now, each a list of
+  // rotations (its plausible candidates); the candidate nearest all of them wins. With no other camera, `prev` (the
+  // track's last rotation) keeps the choice where it was, so the pose doesn't flip back and forth. Otherwise, the best fit.
+  function chooseCand(cands, others, prev) {
+    if (!cands.length) return null;
+    const ok = plausible(cands);
+    if (ok.length < 2) return ok[0];
+    const near = (R, Rs) => Math.min(...Rs.map((Q) => angleOf(mul3(tr3(Q), R))));
+    let score = null;
+    if (others && others.length) score = (c) => others.reduce((s, Rs) => s + near(c.R, Rs), 0);
+    else if (prev) score = (c) => near(c.R, [prev]);
+    if (!score) return ok[0];
+    return ok.reduce((a, c) => (score(c) < score(a) ? c : a));
+  }
+
+  // ---- streaming ----
+  // One message for the Stream tab: every track in view at time t (seconds since 1970), each with its key (a tag's id,
+  // or "b:<id>" for a rigid object), name, position in metres and orientation as a unit quaternion (w, x, y, z).
+  // JSON: one object per line, with the frame's name. CSV: one line per track, under STREAM_CSV_HEADER (nothing when
+  // no track is in view); a field with a comma, quote or line break is quoted.
+  const STREAM_CSV_HEADER = 't,track,name,x,y,z,qw,qx,qy,qz';
+  function csvField(v) { const s = String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  function streamMessage(fmt, t, rows, frame) {
+    const fix = (x, d) => Number(x.toFixed(d)) || 0; // || 0 drops a "-0"
+    if (fmt === 'csv') return rows.map((r) => [t.toFixed(3), r.track, r.name, ...r.p.map((x) => fix(x, 4)), ...r.q.map((x) => fix(x, 5))].map(csvField).join(',') + '\n').join('');
+    return JSON.stringify({ t: fix(t, 3), frame, tracks: rows.map((r) => ({ track: r.track, name: r.name, p: r.p.map((x) => fix(x, 4)), q: r.q.map((x) => fix(x, 5)) })) }) + '\n';
+  }
+
   // Error-state Kalman filter for a pose moving at nearly constant velocity. State: position p, velocity v,
   // rotation R and angular velocity w (both velocities in the camera frame); error δx = (δp, δv, δθ, δw) with
   // R ← exp(δθ)·R. qa and qw are the spectral densities of the random acceleration (m²/s³) and angular
@@ -811,8 +845,8 @@
     quatOf, quatNear, tared,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    toRig, fusePoses, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
-    PAPER, paperFor, printArea, maxTagSize, maxBoardSquare,
+    toRig, fusePoses, plausible, chooseCand, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
+    PAPER, paperFor, printArea, maxTagSize, maxBoardSquare, STREAM_CSV_HEADER, streamMessage,
     DEFAULTS, clampSettings, boardFit, displayMap,
   };
 });

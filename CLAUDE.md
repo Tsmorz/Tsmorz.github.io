@@ -339,13 +339,18 @@ printed size, calibrates the camera with a printed ChArUco board, and sees the l
 plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
 Mirror and Flip on the Camera card turn only the picture (a CSS transform on the video, and `TagCore.displayMap` for the
 overlay, whose labels stay readable); detection, poses and the 3D plot always use the camera's true image.
+Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is what the detector looks for (`calib`: the board;
+`track`: tags, on Track and Stream alike). The page's icon (`favicon.svg`, and the logo) is the real tag36h11 #0.
 - Layout: on a wide screen the right column (the 3D plot, then the **Now** panel) is sticky and fills the window, so nothing
   in it needs scrolling; the 3D plot takes the height that is left, and it has Fit and Reset view (back to `VIEW0`, then fit).
   Now is one panel: the readout table (position in cm, orientation as a unit quaternion w, x, y, z from `TagCore.quatOf`,
   distance, speed, corner fit, ± depth; click a row to plot it) over the time plot (Motion, Position or Quaternion; the
   quaternion keeps its sign continuous with `quatNear`).
-- **Several cameras** (`S.cams`, each with its own tile, video, overlay and frame loop; one shared worker that they take
-  turns on, results tagged with the camera's key as `src`). Camera 1 (the top bar's camera) is the frame of everything;
+- **Detection runs in a pool of workers** (`S.pool`, `POOL`: one per spare core, up to 4, each with its own OpenCV; the
+  others start once the first is ready, from the browser's cache). Each camera's frames go to an idle worker, up to its share
+  of the pool in flight (`idleWorker`), so one camera is detected several frames at a time; a result overtaken by a later
+  frame of the same camera is dropped (`doneSeq`). The first worker also calibrates and draws tags and boards.
+- **Several cameras** (`S.cams`, each with its own tile, video, overlay and frame loop; results tagged with the camera's key as `src`). Camera 1 (the top bar's camera) is the frame of everything;
   "Add camera" adds more. **Placing the cameras** is Calibrate step 4: whenever two or more cameras see the whole board,
   held still, the board's pose in each (the worker's `boardPose`: IPPE, then `refinePose`) is captured as a rig view;
   `TagCore.calibrateRig` chains first poses out from camera 1 through shared views, then refines every camera pose and
@@ -353,9 +358,14 @@ overlay, whose labels stay readable); detection, poses and the 3D plot always us
   (`rig`; device ids, or `demo:k`), and `placeCameras` re-expresses it from whichever camera is now first. A placed
   camera's measurements go into the rig frame (`toRig`, covariance turned too) and are fused per track: Filtered feeds
   every camera's frames to the one Kalman filter (it takes frames up to `lateBy` 0.1 s out of order), Refined fuses the
-  latest from each camera with `fusePoses` (information-weighted), Raw takes each camera's as it comes. An unplaced
+  latest from each camera within 50 ms with `fusePoses` (information-weighted), Raw takes each camera's as it comes. Before
+  that, `TagCore.chooseCand` picks between a face-on tag's two mirror-image poses (`plausible`: those that fit about as well
+  as the best): the one the other cameras agree with, else the one nearest the track's last pose, so Refined doesn't flip
+  frame to frame; with other cameras the filter gets only that choice. An unplaced
   camera only draws its own view. A placed camera also draws, dashed, the tags only the other cameras see.
-  The table says which cameras see each track; the 3D plot draws every placed camera. Lens calibration (steps 2–3) picks
+  The table says which cameras see each track; the 3D plot draws every placed camera (relative to a tag, from that tag's mean
+  pose over the last half second, `steadyRef`, so its noise doesn't shake them). The time plot never offers the reference
+  tag (it sits at the origin). Lens calibration (steps 2–3) picks
   its camera in step 2.
 - **Camera names**: click a camera's name on its view to rename it (Enter keeps, Escape cancels, empty goes back to the
   device's label). Names are kept by camera key in `camNames` and shown everywhere a camera is named (`camName`); lens
@@ -372,7 +382,10 @@ overlay, whose labels stay readable); detection, poses and the 3D plot always us
   just enough not to overlap; unplaced cameras in rows of two; one column under 500 px). Dragging a view (or its corner,
   or arrow keys and +/−) makes it Custom, kept per camera key in `arrange`. Small views drop their name plates.
 - **The demo** is three cameras round one scene (`DEMO`), rendered with WebGL in true perspective from each camera's
-  pose and the exact 70° lens (`demoRenderer`), so detection, fusion and placing run on real pictures; in Calibrate the
+  pose and the exact 70° lens (`demoRenderer`), so detection, fusion and placing run on real pictures. The scene: a Body
+  tag (#2, turned a little so one camera can tell its mirror poses apart) and two hands, each a 10 cm partial cube
+  (`CUBE`, `DEMO_HANDS`, `cubeMembers`: tags on the front, both sides and the top), added as rigid objects with their exact
+  shape when the demo starts (`demoScene` gives every tag's pose); in Calibrate the
   scene is the board, holding 12 poses in turn (`demoBoard`, 60 mm squares). Step 4 then shows how far the solved rig is
   from the demo's true layout (under a millimetre). Headless Chrome needs the GPU (`--use-angle=metal`) to run it at speed.
 - **Tare orientation** makes the current orientation of every tag in view the identity: plotted poses become `R0ᵀR`
@@ -396,8 +409,15 @@ overlay, whose labels stay readable); detection, poses and the 3D plot always us
 - Rigid objects (`bodies` in storage): two or more tags fixed to one thing. "Learn shape" collects each tag's pose relative
   to the first (the origin) over 20 unambiguous frames and averages them on SO(3) × R³ (`meanPose`, outliers dropped);
   then the worker solves one SE(3) pose from every visible corner (`solveBody`). Tags in an object are tracked only as it.
+- **Stream** sends the poses on: after each detection, at most `rate` times a second, one message (`TagCore.streamMessage`,
+  JSON lines or CSV under `STREAM_CSV_HEADER`) with the newest plotted pose of every track in view, so in the Track tab's
+  frame and tare: key, name, metres, quaternion w, x, y, z, Unix time. **Serial/USB** goes through Web Serial; **UDP** goes
+  through `udp-bridge.py` (Python standard library, served for download), a WebSocket server on 127.0.0.1:8770 that sends
+  each message as one datagram to the `?to=host:port` the page names, and refuses pages from origins other than
+  tsmorz.github.io and localhost unless `--origin` adds one. A message that finds the last still being written is dropped
+  and counted, never queued. Settings in `stream`.
 - Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
-  ninth tag is grey with its name. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
+  ninth tag is grey with its name. The demo cubes' side and top tags have no slot (`-1`), since only their hand is drawn. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
 - **The board on a screen**: `/tag-tracker/#board` is a shareable link that fills any screen with the ChArUco board (nothing
   stored), for a tablet or second monitor. `TagCore.boardFit` picks whole device pixels per square with half a square of
   white round it, turning the board a quarter when that's bigger; the worker draws it (`boardImage`), so the page waits for
@@ -406,8 +426,8 @@ overlay, whose labels stay readable); detection, poses and the 3D plot always us
   window. The QR code comes from `lib/qrcode-generator/` (1.4.4, MIT, vendored unchanged). With OpenCV.js installed, test
   section 6b finds all 40 corners on the screen board (turned too) and decodes the QR code back to the link.
 - `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
-  against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating;
-  with OpenCV.js installed
+  against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating,
+  the mirror-image choice, the Stream messages, and (with python3) the UDP bridge end to end; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.
 
