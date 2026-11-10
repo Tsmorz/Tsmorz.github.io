@@ -74,6 +74,13 @@
     return { R: mul3(TAG_TO_VIEW, r.R), t: mulv(TAG_TO_VIEW, r.t) };
   }
 
+  // Mirror view: everything as seen in a mirror, left and right swapped (x → −x in the plotted frame, whose x is the
+  // camera's x, or the reference tag's). A reflection isn't a rotation, so each orientation is conjugated:
+  // R → M·R·M with M = diag(−1, 1, 1), still a rotation (the mirror image's orientation; a quaternion (w, x, y, z)
+  // becomes (w, x, −y, −z)). Doing it twice undoes it. Other fields are kept.
+  function mirrorR(R) { return [R[0], -R[1], -R[2], -R[3], R[4], R[5], -R[6], R[7], R[8]]; }
+  function mirrorPose(p) { return Object.assign({}, p, { R: mirrorR(p.R), t: [-p.t[0], p.t[1], p.t[2]] }); }
+
   // ---- camera intrinsics ----
   // A guess from the horizontal field of view, for an uncalibrated camera.
   function guessIntrinsics(w, h, hfovDeg) {
@@ -382,17 +389,20 @@
   }
   // A rigid object: several tags at known poses in the object's frame (members: {id, R, t, size}), solved as one
   // pose from every visible corner. Each visible tag (and its mirror) gives a starting guess.
+  // Starting guesses come from the two tags that look biggest in the picture (the best-measured), and their mirrors.
   function solveBody(c, body, dets, opts) {
-    const obj = [], img = [], starts = [];
+    const obj = [], img = [], seeds = [];
     for (const m of body.members) {
       const d = dets.find((x) => x.id === m.id);
       if (!d) continue;
-      const pts = tagCorners(m.size);
-      for (let k = 0; k < 4; k++) { obj.push(add(mulv(m.R, pts[k]), m.t)); img.push([d.corners[2 * k], d.corners[2 * k + 1]]); }
-      if (d.R) {
-        const inv = inverse({ R: m.R, t: m.t });
-        starts.push(compose(d, inv), compose(flipPose(d), inv));
-      }
+      const pts = tagCorners(m.size), q = d.corners;
+      for (let k = 0; k < 4; k++) { obj.push(add(mulv(m.R, pts[k]), m.t)); img.push([q[2 * k], q[2 * k + 1]]); }
+      if (d.R) seeds.push({ d, m, area: Math.abs((q[0] - q[4]) * (q[3] - q[7]) - (q[2] - q[6]) * (q[1] - q[5])) });
+    }
+    const starts = [];
+    for (const { d, m } of seeds.sort((a, b) => b.area - a.area).slice(0, 2)) {
+      const inv = inverse({ R: m.R, t: m.t });
+      starts.push(compose(d, inv), compose(flipPose(d), inv));
     }
     if (!starts.length) return [];
     const seen = new Set(dets.map((d) => d.id));
@@ -424,12 +434,426 @@
     return Object.assign(mu, { used: keep.length, spread });
   }
 
+  // The candidates that fit the image about as well as the best (best first): a flat tag seen nearly face-on fits two
+  // poses, mirror images of each other, and noise decides which fits better. The filter uses the same rule.
+  function plausible(cands) {
+    const b = cands[0];
+    return cands.filter((c, i) => !i || c.rms <= Math.max(2 * b.rms, b.rms + 0.5));
+  }
+  // Pick one of a frame's candidates. `others`: what the other cameras see of the same track now, each a list of
+  // rotations (its plausible candidates); the candidate nearest all of them wins. With no other camera, `prev` (the
+  // track's last rotation) keeps the choice where it was, so the pose doesn't flip back and forth. Otherwise, the best fit.
+  function chooseCand(cands, others, prev) {
+    if (!cands.length) return null;
+    const ok = plausible(cands);
+    if (ok.length < 2) return ok[0];
+    const near = (R, Rs) => Math.min(...Rs.map((Q) => angleOf(mul3(tr3(Q), R))));
+    let score = null;
+    if (others && others.length) score = (c) => others.reduce((s, Rs) => s + near(c.R, Rs), 0);
+    else if (prev) score = (c) => near(c.R, [prev]);
+    if (!score) return ok[0];
+    return ok.reduce((a, c) => (score(c) < score(a) ? c : a));
+  }
+
+  // ---- one pose from every camera's corners ----
+  // The corners themselves, not each camera's own pose, are what the joint fit and the filter use ("tightly coupled",
+  // as in Neunert et al. 2016 and TagSLAM): a camera that sees a tag small or nearly face-on adds exactly as much as
+  // its corners say, and two views settle the mirror-image doubt that one view can't.
+  //
+  // One camera's sighting of a track: its lens (cam) and pose in the rig (T: camera → rig), the track's points in the
+  // track's own frame (obj) and where the camera saw them (img, pixels, as detected, so still distorted), the corner
+  // noise (sigma, px), and dt: this frame's time minus the time being solved for (cameras aren't synchronised).
+  function sighting(cam, T, obj, img, sigma, dt) {
+    const P = T || { R: I3, t: [0, 0, 0] };
+    return { cam, T: P, Rt: tr3(P.R), obj, obs: img.map((q) => undistort(cam, q[0], q[1])), sigma: Math.max(0.1, sigma || 0.5), dt: dt || 0 };
+  }
+  // The normal equations of every corner of every sighting, for the track at (R, t) in the rig frame, each sighting moved
+  // to its own time by `vel` ({v, w}: m/s and rad/s in the rig frame, t + v·dt and exp(w·dt)·R, the filter's motion model).
+  // Residuals are pixels on undistorted coordinates divided by each sighting's sigma (so whitened); the Jacobian is in
+  // (δp, δθ), t ← t + δp and R ← exp(δθ)·R. A Huber weight (k, in sigmas) keeps one bad corner from dragging the rest.
+  function jointSystem(views, R, t, vel, k) {
+    const H = zeros(6, 6), g = new Array(6).fill(0), per = [];
+    let cost = 0, n = 0, chi = 0;
+    for (const s of views) {
+      const moved = vel && s.dt, E = moved ? rodrigues(scale(vel.w || [0, 0, 0], s.dt)) : I3, tt = moved ? add(t, scale(vel.v || [0, 0, 0], s.dt)) : t;
+      const fx = s.cam.fx / s.sigma, fy = s.cam.fy / s.sigma;
+      let ss = 0;
+      for (let i = 0; i < s.obj.length; i++) {
+        const Ro = mulv(R, s.obj[i]), X = add(mulv(E, Ro), tt), Xc = mulv(s.Rt, sub(X, s.T.t));
+        if (Xc[2] <= 1e-6) return { cost: Infinity };
+        const iz = 1 / Xc[2], r = [fx * (Xc[0] * iz - s.obs[i][0]), fy * (Xc[1] * iz - s.obs[i][1])];
+        const e2 = r[0] * r[0] + r[1] * r[1], e = Math.sqrt(e2), w = e <= k ? 1 : k / e;
+        cost += e <= k ? e2 : 2 * k * e - k * k; ss += e2; chi += e2; n++;
+        // dr/dX = Jp·Rtᵀ; dX/dδp = I; dX/dδθ = −E·[R o]×
+        const Jp = [[fx * iz, 0, -fx * Xc[0] * iz * iz], [0, fy * iz, -fy * Xc[1] * iz * iz]];
+        const ERo = mul3(E, skew(Ro));
+        for (let a = 0; a < 2; a++) {
+          const JX = [0, 1, 2].map((j) => Jp[a][0] * s.Rt[j] + Jp[a][1] * s.Rt[3 + j] + Jp[a][2] * s.Rt[6 + j]);
+          const J = [JX[0], JX[1], JX[2], ...[0, 1, 2].map((j) => -(JX[0] * ERo[j] + JX[1] * ERo[3 + j] + JX[2] * ERo[6 + j]))];
+          for (let u = 0; u < 6; u++) { g[u] += w * J[u] * r[a]; for (let v = 0; v < 6; v++) H[u][v] += w * J[u] * J[v]; }
+        }
+      }
+      per.push(Math.sqrt(ss / Math.max(1, s.obj.length)) * s.sigma);
+    }
+    return { H, g, cost, chi, n, per };
+  }
+  // Levenberg–Marquardt for one pose against every sighting at once (a bundle adjustment with the cameras held where
+  // the rig put them). Returns the pose, its covariance in (δp, δθ) (inflated when the corners scatter more than their
+  // sigmas say), the RMS error in pixels overall and per sighting, and the number of iterations.
+  function refineJoint(views, pose, opts) {
+    const o = Object.assign({ iters: 15, k: 2.5, vel: null }, opts || {});
+    let R = pose.R.slice(), t = pose.t.slice(), sys = jointSystem(views, R, t, o.vel, o.k), lambda = 1e-3, it = 0;
+    for (; it < o.iters && isFinite(sys.cost); it++) {
+      let improved = false;
+      for (let tries = 0; tries < 8; tries++) {
+        const Ai = minv(sys.H.map((r, i) => r.map((x, j) => (i === j ? x * (1 + lambda) + 1e-9 : x))));
+        if (!Ai) { lambda *= 10; continue; }
+        const d = mv(Ai, sys.g).map((x) => -x), R2 = mul3(rodrigues(d.slice(3, 6)), R), t2 = add(t, d.slice(0, 3));
+        const s2 = jointSystem(views, R2, t2, o.vel, o.k);
+        if (s2.cost < sys.cost) {
+          improved = sys.cost - s2.cost > 1e-10 * (1 + sys.cost) && norm(d) > 1e-12;
+          R = R2; t = t2; sys = s2; lambda = Math.max(1e-9, lambda / 3);
+          break;
+        }
+        lambda *= 4;
+      }
+      if (!improved) break;
+    }
+    if (!isFinite(sys.cost)) return null;
+    const Hi = minv(sys.H), dof = Math.max(1, 2 * sys.n - 6), s2 = Math.max(1, sys.chi / dof);
+    return { R, t, cov: Hi ? sym(Hi.map((r) => r.map((x) => x * s2))) : null, rms: Math.sqrt((sys.chi / Math.max(1, sys.n)) * (views.reduce((a, v) => a + v.sigma * v.sigma, 0) / views.length)), perView: sys.per, iters: it, views: views.length };
+  }
+
+  // ---- where to look next ----
+  // Search windows for the detector from predicted corners: preds = [{pts: [[u, v], ...], pad}] in pixels. Each becomes
+  // its corners' bounding box grown by `pad`, kept inside the picture and at least `min` wide; windows that touch or
+  // nearly touch (within `join` px) are merged. Returns {rois: [{x, y, w, h}], frac} (frac: the share of the picture
+  // searched), or null when a full search is as cheap (the windows cover more than `most` of the picture) or there
+  // is nothing to look for.
+  function planSearch(preds, W, H, opts) {
+    const o = Object.assign({ min: 64, join: 24, most: 0.5 }, opts || {});
+    let boxes = [];
+    for (const p of preds) {
+      if (!p.pts.length) continue;
+      const xs = p.pts.map((q) => q[0]), ys = p.pts.map((q) => q[1]);
+      let x0 = Math.min(...xs) - p.pad, x1 = Math.max(...xs) + p.pad, y0 = Math.min(...ys) - p.pad, y1 = Math.max(...ys) + p.pad;
+      if (x1 - x0 < o.min) { const c = (x0 + x1) / 2; x0 = c - o.min / 2; x1 = c + o.min / 2; }
+      if (y1 - y0 < o.min) { const c = (y0 + y1) / 2; y0 = c - o.min / 2; y1 = c + o.min / 2; }
+      x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1));
+      if (x1 - x0 >= 8 && y1 - y0 >= 8) boxes.push([x0, y0, x1, y1]);
+    }
+    if (!boxes.length) return null;
+    for (let merged = true; merged;) {
+      merged = false;
+      outer: for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        if (a[0] - o.join <= b[2] && b[0] - o.join <= a[2] && a[1] - o.join <= b[3] && b[1] - o.join <= a[3]) {
+          boxes[i] = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+          boxes.splice(j, 1); merged = true; break outer;
+        }
+      }
+    }
+    const area = boxes.reduce((s, b) => s + (b[2] - b[0]) * (b[3] - b[1]), 0), frac = area / (W * H);
+    if (frac > o.most) return null;
+    return { rois: boxes.map((b) => ({ x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] })), frac };
+  }
+
+  // ---- motion sensors: nrf-controller boards over Bluetooth ----
+  // The boards' data service (nrf-controller's src/sysid_wire.h; its dashboard's wire.js decodes the same bytes). Every
+  // value is little-endian. The IMU characteristic notifies batches: a 12-byte header (u8 version, u8 count, u32 first
+  // seq, i16[3] VQF's gyro bias in centi-degrees/s), then `count` 25-byte samples (u32 board time in µs, low 32 bits;
+  // i16[3] gyro counts, bias not removed; i16[3] accelerometer counts; i16[4] VQF's quaternion w, x, y, z with
+  // 1.0 = 16384, turning the IMU's frame into a world frame with z up and a free heading; u8 flags, bit 0 at rest).
+  // Board info is read once: the gyro's and accelerometer's scales per count.
+  const IMU = {
+    service: '6f524c03-0001-4a3c-9d21-1122334455aa', data: '6f524c03-0002-4a3c-9d21-1122334455aa', info: '6f524c03-0005-4a3c-9d21-1122334455aa',
+    version: 1, header: 12, sample: 25, infoBytes: 20, namePrefix: 'nrf-controller',
+  };
+  function decodeBoardInfo(v) {
+    if (v.byteLength !== IMU.infoBytes || v.getUint8(0) !== IMU.version) return null;
+    return { boardId: v.getUint16(1, true).toString(16).toUpperCase().padStart(4, '0'), imuRateHz: v.getUint16(3, true), gyroDpsPerLsb: v.getFloat32(5, true), accelGPerLsb: v.getFloat32(9, true), imuDropped: v.getUint32(16, true) };
+  }
+  function decodeImuBatch(v) {
+    if (v.byteLength < IMU.header || v.getUint8(0) !== IMU.version) return null;
+    const n = v.getUint8(1);
+    if (v.byteLength !== IMU.header + n * IMU.sample) return null;
+    const i16 = (o) => v.getInt16(o, true), first = v.getUint32(2, true), samples = [];
+    for (let i = 0; i < n; i++) {
+      const o = IMU.header + i * IMU.sample;
+      samples.push({ seq: (first + i) >>> 0, tUs: v.getUint32(o, true), gyro: [i16(o + 4), i16(o + 6), i16(o + 8)], accel: [i16(o + 10), i16(o + 12), i16(o + 14)], q: [i16(o + 16), i16(o + 18), i16(o + 20), i16(o + 22)].map((x) => x / 16384), rest: !!(v.getUint8(o + 24) & 1) });
+    }
+    return { firstSeq: first, biasDps: [i16(6) / 100, i16(8) / 100, i16(10) / 100], samples };
+  }
+  // The same bytes, for the demo's simulated boards and the tests.
+  function encodeImuBatch(firstSeq, biasDps, samples) {
+    const b = new DataView(new ArrayBuffer(IMU.header + samples.length * IMU.sample)), i16 = (o, x) => b.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(x))), true);
+    b.setUint8(0, IMU.version); b.setUint8(1, samples.length); b.setUint32(2, firstSeq >>> 0, true);
+    biasDps.forEach((x, k) => i16(6 + 2 * k, x * 100));
+    samples.forEach((s, i) => {
+      const o = IMU.header + i * IMU.sample;
+      b.setUint32(o, s.tUs >>> 0, true);
+      s.gyro.forEach((x, k) => i16(o + 4 + 2 * k, x)); s.accel.forEach((x, k) => i16(o + 10 + 2 * k, x)); s.q.forEach((x, k) => i16(o + 16 + 2 * k, x * 16384));
+      b.setUint8(o + 24, s.rest ? 1 : 0);
+    });
+    return b;
+  }
+  function encodeBoardInfo(boardId, imuRateHz, gyroDpsPerLsb, accelGPerLsb) {
+    const b = new DataView(new ArrayBuffer(IMU.infoBytes));
+    b.setUint8(0, IMU.version); b.setUint16(1, boardId, true); b.setUint16(3, imuRateHz, true); b.setFloat32(5, gyroDpsPerLsb, true); b.setFloat32(9, accelGPerLsb, true);
+    return b;
+  }
+  // A unit quaternion [w, x, y, z] as a rotation matrix.
+  function rotOfQuat(q) {
+    const n = Math.hypot(...q), [w, x, y, z] = q.map((v) => v / n);
+    return [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y), 2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x), 2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)];
+  }
+  // A board's clock on the page's: board time (µs, 32 bits, wrapping every ~71.6 min) is unwrapped, and each batch's
+  // last sample is paired with when the batch reached the page. Bluetooth only ever adds delay, so the fit follows the
+  // lower envelope of (arrival − board time): its drift from the earliest arrivals in each half of the last `span`
+  // seconds (once there are `minSpan` seconds), its offset from the earliest of all. What it can't see is the
+  // smallest delay itself (a few ms), so board times come out that much late.
+  function BoardClock(opts) { this.o = Object.assign({ span: 30, minSpan: 8, maxPpm: 500 }, opts || {}); this.pts = []; this.ext = null; this.b0 = null; this.k = 0; this.off = null; }
+  BoardClock.prototype.unwrap = function (tUs) {
+    if (this.ext === null) this.ext = tUs;
+    else { let d = (tUs - (this.ext % 4294967296)) % 4294967296; if (d > 2147483648) d -= 4294967296; else if (d < -2147483648) d += 4294967296; this.ext += d; }
+    if (this.b0 === null) this.b0 = this.ext;
+    return this.ext;
+  };
+  // Board µs (unwrapped) of a batch's last sample, and its arrival (s, page clock).
+  BoardClock.prototype.add = function (bUs, hostS) {
+    const b = (bUs - this.b0) / 1e6;
+    this.pts.push([b, hostS]);
+    while (this.pts.length && b - this.pts[0][0] > this.o.span) this.pts.shift();
+    const a = this.pts, low = (lo, hi) => { let m = null; for (const p of a) if (p[0] >= lo && p[0] < hi && (!m || p[1] - p[0] < m[1] - m[0])) m = p; return m; };
+    const span = a[a.length - 1][0] - a[0][0];
+    if (span >= this.o.minSpan) {
+      const mid = (a[0][0] + a[a.length - 1][0]) / 2, p = low(-Infinity, mid), q = low(mid, Infinity);
+      if (p && q && q[0] - p[0] > span / 4) this.k = Math.max(-this.o.maxPpm * 1e-6, Math.min(this.o.maxPpm * 1e-6, (q[1] - q[0] - (p[1] - p[0])) / (q[0] - p[0])));
+    }
+    let off = Infinity;
+    for (const p of a) off = Math.min(off, p[1] - p[0] * (1 + this.k));
+    this.off = off;
+  };
+  // A board time (µs, unwrapped) on the page's clock (s).
+  BoardClock.prototype.toHost = function (bUs) { return this.off === null ? null : this.off + ((bUs - this.b0) / 1e6) * (1 + this.k); };
+
+  // How a board sits: the camera sees the object's orientation Rc (object → rig), the board reports Q (its IMU → VQF's
+  // world). With M the object in the IMU's frame (object → IMU) and W VQF's world in the rig (world → rig),
+  //   Rc = W · Q · M.
+  // M comes from turns: between two moments the object turns by B = Rcᵢᵀ·Rcⱼ in its own frame and the IMU by
+  // A = Qᵢᵀ·Qⱼ in its own, and B = Mᵀ·A·M, so A's axis is M times B's (the hand-eye problem). The axes give M (the
+  // rotation nearest Σ w·a·bᵀ, weighted by how far each turn went), the mean of Rc·Mᵀ·Qᵀ gives W, and Gauss–Newton
+  // on SO(3) × SO(3) refines both from every pair, dropping those more than 3× the median error. Needs turns about at
+  // least two axes 30° apart. Returns {W, M, rms (rad), used} or {error}.
+  function nearestRotation(B) {
+    let X = B.slice();
+    for (let i = 0; i < 40; i++) {
+      const Y = minv([[X[0], X[1], X[2]], [X[3], X[4], X[5]], [X[6], X[7], X[8]]]);
+      if (!Y) return null;
+      const Xn = X.map((v, k) => (v + Y[k % 3][Math.floor(k / 3)]) / 2); // (X + X⁻ᵀ)/2
+      const d = Xn.reduce((s, v, k) => s + Math.abs(v - X[k]), 0);
+      X = Xn;
+      if (d < 1e-13) break;
+    }
+    const det = X[0] * (X[4] * X[8] - X[5] * X[7]) - X[1] * (X[3] * X[8] - X[5] * X[6]) + X[2] * (X[3] * X[7] - X[4] * X[6]);
+    return det > 0 ? X : null;
+  }
+  function lineUp(pairs, opts) {
+    const o = Object.assign({ minTurn: 0.25, iters: 15 }, opts || {});
+    if (pairs.length < 6) return { error: 'few' };
+    const axes = [];
+    let Bm = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j += Math.max(1, Math.floor(pairs.length / 25))) {
+      const A = mul3(tr3(pairs[i].Q), pairs[j].Q), B = mul3(tr3(pairs[i].Rc), pairs[j].Rc), a = so3Log(A), b = so3Log(B), ta = norm(a), tb = norm(b);
+      if (ta < o.minTurn || tb < o.minTurn || Math.abs(ta - tb) > 0.2) continue;
+      const ua = scale(a, 1 / ta), ub = scale(b, 1 / tb), w = Math.sin(Math.min(ta, Math.PI / 2));
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) Bm[3 * r + c] += w * ua[r] * ub[c];
+      axes.push(ub);
+    }
+    let spread = 0;
+    for (let i = 0; i < axes.length; i++) for (let j = i + 1; j < axes.length; j++) spread = Math.max(spread, Math.acos(Math.min(1, Math.abs(dot(axes[i], axes[j])))));
+    if (axes.length < 3 || spread < (30 * Math.PI) / 180) return { error: 'turn', spread };
+    let M = nearestRotation(Bm);
+    if (!M) return { error: 'turn', spread };
+    let W = meanRotation(pairs.map((p) => mul3(p.Rc, mul3(tr3(M), tr3(p.Q)))));
+    let use = pairs, rms = 0;
+    for (let round = 0; round < 2; round++) {
+      for (let it = 0; it < o.iters; it++) {
+        const H = zeros(6, 6), g = new Array(6).fill(0);
+        for (const p of use) {
+          const P = mul3(W, mul3(p.Q, M)), r = so3Log(mul3(p.Rc, tr3(P)));
+          // r(W ← exp(δw)W, M ← M·exp(δm)) ≈ r − δw − (W·Q·M)·δm
+          const J = [0, 1, 2].map((i) => [-(i === 0), -(i === 1), -(i === 2), -P[3 * i], -P[3 * i + 1], -P[3 * i + 2]].map(Number));
+          for (let i = 0; i < 3; i++) for (let a = 0; a < 6; a++) { g[a] += J[i][a] * r[i]; for (let b = 0; b < 6; b++) H[a][b] += J[i][a] * J[i][b]; }
+        }
+        const Hi = minv(H.map((row, i) => row.map((v, j) => v + (i === j ? 1e-9 : 0))));
+        if (!Hi) break;
+        const d = mv(Hi, g).map((v) => -v);
+        W = mul3(rodrigues(d.slice(0, 3)), W); M = mul3(M, rodrigues(d.slice(3, 6)));
+        if (norm(d) < 1e-10) break;
+      }
+      const errs = use.map((p) => angleOf(mul3(p.Rc, tr3(mul3(W, mul3(p.Q, M))))));
+      const med = errs.slice().sort((a, b) => a - b)[errs.length >> 1];
+      rms = Math.sqrt(errs.reduce((s, e) => s + e * e, 0) / errs.length);
+      const keep = use.filter((_, i) => errs[i] <= Math.max(3 * med, 0.02));
+      if (keep.length === use.length || keep.length < 6) break;
+      use = keep;
+    }
+    // enough turning about other axes than the main one, among the poses kept (a mirror-image outlier makes up turns)
+    if (turnSpread(use, o.minTurn) < 0.2) return { error: 'turn', spread };
+    return { W, M, rms, used: use.length, spread };
+  }
+  // The share of turns (between poses, in the object's frame) more than 30° from the main turn axis.
+  function turnSpread(pairs, minTurn) {
+    const axes = [];
+    for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j += Math.max(1, Math.floor(pairs.length / 25))) {
+      const b = so3Log(mul3(tr3(pairs[i].Rc), pairs[j].Rc)), tb = norm(b);
+      if (tb >= minTurn) axes.push(scale(b, 1 / tb));
+    }
+    if (axes.length < 3) return 0;
+    let d = [1, 0.5, 0.25];
+    for (let it = 0; it < 50; it++) { // the main axis: the top eigenvector of Σ b·bᵀ, by power iteration
+      const n = [0, 0, 0];
+      for (const a of axes) { const k = dot(a, d); n[0] += a[0] * k; n[1] += a[1] * k; n[2] += a[2] * k; }
+      d = scale(n, 1 / norm(n));
+    }
+    return axes.filter((a) => Math.abs(dot(a, d)) < Math.cos(Math.PI / 6)).length / axes.length;
+  }
+
+  // ---- streaming ----
+  // One message for the Stream tab: every track in view at time t (seconds since 1970), each with its key (a tag's id,
+  // or "b:<id>" for a rigid object), name, position in metres and orientation as a unit quaternion (w, x, y, z).
+  // JSON: one object per line, with the frame's name. CSV: one line per track, under STREAM_CSV_HEADER (nothing when
+  // no track is in view); a field with a comma, quote or line break is quoted.
+  const STREAM_CSV_HEADER = 't,track,name,x,y,z,qw,qx,qy,qz';
+  function csvField(v) { const s = String(v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  // `view` ('in person' or 'mirror') is the JSON message's too, so a receiver knows which way left is.
+  function streamMessage(fmt, t, rows, frame, view) {
+    const fix = (x, d) => Number(x.toFixed(d)) || 0; // || 0 drops a "-0"
+    if (fmt === 'csv') return rows.map((r) => [t.toFixed(3), r.track, r.name, ...r.p.map((x) => fix(x, 4)), ...r.q.map((x) => fix(x, 5))].map(csvField).join(',') + '\n').join('');
+    return JSON.stringify({ t: fix(t, 3), frame, view: view || 'in person', tracks: rows.map((r) => ({ track: r.track, name: r.name, p: r.p.map((x) => fix(x, 4)), q: r.q.map((x) => fix(x, 5)) })) }) + '\n';
+  }
+
+  // ---- recordings, notes and voice ----
+  // A recording is every new plotted pose, sample by sample, as the Stream tab would send it, plus the visitor's
+  // notes. In the notes box one line is one note; a line that starts with a time (m:ss.s, or h:mm:ss.s, since the
+  // recording began) is a note at that time, and any other line is a note about the whole recording.
+  function fmtStamp(s) {
+    const d = Math.max(0, Math.floor(s * 10 + 1e-6)), h = Math.floor(d / 36000), m = Math.floor(d / 600) % 60, sec = (d % 600) / 10;
+    const ss = (sec < 10 ? '0' : '') + sec.toFixed(1);
+    return h ? `${h}:${m < 10 ? '0' : ''}${m}:${ss}` : `${m}:${ss}`;
+  }
+  const STAMP = /^\s*(?:(\d+):)?(\d+):([0-5]\d(?:\.\d+)?)(?=\s|$)\s*(.*)$/;
+  function parseNotes(text) {
+    const out = [];
+    for (const line of String(text || '').split(/\r?\n/)) {
+      const m = STAMP.exec(line);
+      if (m) { if (m[4].trim()) out.push({ t: (+m[1] || 0) * 3600 + +m[2] * 60 + +m[3], text: m[4].trim() }); }
+      else if (line.trim()) out.push({ t: null, text: line.trim() });
+    }
+    return out;
+  }
+  // rec: { start (Unix s), samples: [{ t (Unix s), frame, view, rows: [{ track, name, p, q }] }] }; notes from
+  // parseNotes, their times still since the start. JSON: one object, every time in Unix seconds, each sample shaped
+  // like a Stream JSON message. CSV: the Stream CSV columns plus `note`, the notes on rows of their own at their times
+  // (a note about the whole recording at its start).
+  const RECORDING_CSV_HEADER = STREAM_CSV_HEADER + ',note';
+  function recordingJson(rec, notes) {
+    const fix = (x, d) => Number(x.toFixed(d)) || 0;
+    const last = rec.samples.length ? rec.samples[rec.samples.length - 1].t : rec.start;
+    return JSON.stringify({
+      format: 'tag-tracker-recording/1', start: fix(rec.start, 3), end: fix(Math.max(rec.end || 0, last), 3),
+      notes: notes.map((n) => ({ t: n.t === null ? null : fix(rec.start + n.t, 3), text: n.text })),
+      samples: rec.samples.map((s) => ({ t: fix(s.t, 3), frame: s.frame, view: s.view, tracks: s.rows.map((r) => ({ track: r.track, name: r.name, p: r.p.map((x) => fix(x, 4)), q: r.q.map((x) => fix(x, 5)) })) })),
+    }, null, 1) + '\n';
+  }
+  function recordingCsv(rec, notes) {
+    const lines = [RECORDING_CSV_HEADER];
+    const ns = notes.map((n) => ({ t: rec.start + (n.t === null ? 0 : n.t), text: n.text })).sort((a, b) => a.t - b.t);
+    let k = 0;
+    const noteLine = (n) => [n.t.toFixed(3), '', '', '', '', '', '', '', '', '', n.text].map(csvField).join(',');
+    for (const s of rec.samples) {
+      while (k < ns.length && ns[k].t <= s.t) lines.push(noteLine(ns[k++]));
+      const msg = streamMessage('csv', s.t, s.rows);
+      if (msg) lines.push(msg.replace(/\n$/, '').split('\n').map((l) => l + ',').join('\n'));
+    }
+    while (k < ns.length) lines.push(noteLine(ns[k++]));
+    return lines.join('\n') + '\n';
+  }
+
+  // Whisper marks what isn't speech as [BLANK_AUDIO], (music), *coughs*: drop those, squeeze the spaces, start with
+  // a capital and end the sentence. Nothing left that is a letter or a digit gives ''.
+  function tidySpeech(raw) {
+    let t = String(raw || '').replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*/g, ' ').replace(/\s+/g, ' ').replace(/\s+([,.!?;:])/g, '$1').trim();
+    if (!/[\p{L}\p{N}]/u.test(t)) return '';
+    t = t[0].toUpperCase() + t.slice(1);
+    if (!/[.!?…]["')\]]?$/.test(t)) t += '.';
+    return t;
+  }
+  // Dictated text into a text box at the caret (start..end, replacing a selection): a space either side where it
+  // needs one, and a lower-case start when it carries on a sentence ("I" stays). Returns the new value and caret.
+  function insertSpeech(value, start, end, text) {
+    const before = value.slice(0, start), after = value.slice(end);
+    if (/[\p{L}\p{N},;:]\s*$/u.test(before) && !/^I\b/.test(text)) text = text[0].toLowerCase() + text.slice(1);
+    const ins = (before === '' || /\s$/.test(before) ? '' : ' ') + text + (after === '' || /^\s/.test(after) ? '' : ' ');
+    return { value: before + ins + after, caret: start + ins.length };
+  }
+  // Spoken commands. The whole utterance has to be one of these (after "go to", "switch to", "the", "tab", "please"
+  // and the like are taken off), so a note that merely mentions a tab is still a note. "Note ..." is always a note.
+  const VOICE_COMMANDS = {
+    track: ['track', 'tracking', 'tracks', 'tracker'],
+    calib: ['calibrate', 'calibration', 'calibrating', 'calibrate camera', 'calibrate the camera', 'calibrate cameras'],
+    stream: ['stream', 'streaming', 'streams'],
+    record: ['record', 'start recording', 'start a recording', 'start the recording', 'start record', 'new recording', 'begin recording'],
+    stop: ['stop', 'stop recording', 'stop the recording', 'end recording', 'end the recording', 'finish recording'],
+    tare: ['tare', 'tear', 'tare orientation', 'tare the orientation', 'zero orientation'],
+    untare: ['clear tare', 'clear tear', 'clear the tare', 'untare', 'clear orientation'],
+    fit: ['fit', 'fit view', 'fit the view', 'zoom to fit'],
+    reset: ['reset view', 'reset the view'],
+  };
+  const VOICE_LOOKUP = new Map();
+  for (const [cmd, phrases] of Object.entries(VOICE_COMMANDS)) for (const p of phrases) VOICE_LOOKUP.set(p, cmd);
+  function voiceCommand(text) {
+    const note = /^\s*(?:(?:take|add|make) (?:a )?)?note\b[\s,.:;!-]*/i.exec(text || '');
+    if (note) { const rest = tidySpeech(text.slice(note[0].length)); return rest ? { cmd: 'note', text: rest } : null; }
+    let s = String(text || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+    for (let k = 0; k < 4; k++) {
+      s = s.replace(/^(?:ok(?:ay)?|please|now|go to|go back to|switch to|change to|open|show me|show|the)\s+/, '')
+        .replace(/\s+(?:tab|page|mode|please|now)$/, '').trim();
+    }
+    const cmd = VOICE_LOOKUP.get(s);
+    return cmd ? { cmd } : null;
+  }
+
+  // When an utterance starts and ends, from the microphone's level (the RMS of each block of samples, at `now` ms):
+  // speech has started once the level stays above `on` for `minMs`, and ended once it then stays below `off` for
+  // `quietMs`. With no speech within `waitMs` of the reset it gives up. step() returns 'start', 'end', 'none' or null.
+  function VoiceGate(opts) { this.o = Object.assign({ on: 0.02, off: 0.012, minMs: 60, quietMs: 1400, waitMs: 8000 }, opts || {}); this.reset(0); }
+  VoiceGate.prototype.reset = function (now) { this.t0 = now; this.loud = null; this.start = null; this.quiet = null; this.done = false; };
+  VoiceGate.prototype.step = function (level, now) {
+    const o = this.o;
+    if (this.done) return null;
+    if (this.start === null) {
+      if (level > o.on) {
+        if (this.loud === null) this.loud = now;
+        if (now - this.loud >= o.minMs) { this.start = this.loud; return 'start'; }
+      } else this.loud = null;
+      if (now - this.t0 >= o.waitMs && this.loud === null) { this.done = true; return 'none'; }
+      return null;
+    }
+    if (level < o.off) {
+      if (this.quiet === null) this.quiet = now;
+      if (now - this.quiet >= o.quietMs) { this.done = true; return 'end'; }
+    } else this.quiet = null;
+    return null;
+  };
+
   // Error-state Kalman filter for a pose moving at nearly constant velocity. State: position p, velocity v,
   // rotation R and angular velocity w (both velocities in the camera frame); error δx = (δp, δv, δθ, δw) with
   // R ← exp(δθ)·R. qa and qw are the spectral densities of the random acceleration (m²/s³) and angular
   // acceleration (rad²/s³): bigger follows faster motion, smaller smooths more.
   function PoseFilter(opts) {
-    this.o = Object.assign({ qa: 4, qw: 40, gate: 40, maxGap: 0.5, lateBy: 0.1, floorP: 1e-6, floorR: 1e-5, maxMiss: 3 }, opts || {});
+    this.o = Object.assign({ qa: 4, qw: 40, gate: 40, maxGap: 0.5, lateBy: 0.1, floorP: 1e-6, floorR: 1e-5, maxMiss: 3, imuFor: 0.5 }, opts || {});
     this.x = null;
   }
   PoseFilter.prototype.reset = function () { this.x = null; this.miss = 0; };
@@ -444,6 +868,7 @@
     for (let i = 0; i < 3; i++) { P[3 + i][3 + i] = 1; P[9 + i][9 + i] = 10; } // up to ~1 m/s and ~3 rad/s, unknown
     this.x = { time, p: z.t.slice(), v: [0, 0, 0], R: z.R.slice(), w: [0, 0, 0], P };
     this.miss = 0;
+    this.lastCam = time;
   };
   // Predicted state at `time` (does not change the filter).
   PoseFilter.prototype.predict = function (time) {
@@ -499,7 +924,89 @@
     }
     this.miss = 0;
     this.correct(pr, inn);
+    this.lastCam = time;
     return { pose: this.pose(), chosen: pick, d2: inn.d2 };
+  };
+  // The same, but from one camera frame's corners (sightings with dt 0, at `time`) instead of a pose: an iterated
+  // error-state update, which is Gauss–Newton on the posterior (Bell and Cathey 1993), relinearising the projection
+  // about each new estimate. In information form, so its size is the state's (12), not the corners' (8 per tag):
+  //   e ← (P⁻¹ + JᵀWJ)⁻¹ (JᵀWJ·e − JᵀW·r),  e = x ⊟ prediction,  P⁺ = (P⁻¹ + JᵀWJ)⁻¹.
+  // A frame older than the state (another camera's, up to `lateBy`) is not pushed forward to the state's time as if
+  // it were current: its sightings carry the negative dt, and the state's velocity carries the pose back to it.
+  // `start` (a pose with a covariance) starts or restarts the track. Gating is on the size of the correction
+  // against the prediction's spread (eᵀP⁻¹e) and on the corners' fit afterwards.
+  PoseFilter.prototype.updateCorners = function (time, views, start, opts) {
+    const o = Object.assign({ iters: 5, k: 2.5, maxFit: 4 }, opts || {});
+    if (!views.length) return null;
+    const restart = () => { if (!start) return null; this.init(time, start); return { pose: this.pose(), d2: 0, restarted: true }; };
+    if (!this.x || time - this.x.time > this.o.maxGap || this.x.time - time > this.o.lateBy) return restart();
+    let pr, vs = views;
+    if (time < this.x.time) { // late: solve at the state's time, the sighting moved back by the state's own motion
+      pr = this.predict(this.x.time);
+      vs = views.map((v) => Object.assign({}, v, { dt: time - this.x.time }));
+    } else pr = this.predict(time);
+    const Pi = minv(pr.P);
+    if (!Pi) return restart();
+    const vel = { v: pr.v, w: pr.w }, idx = [0, 1, 2, 6, 7, 8];
+    let e = new Array(12).fill(0), x = pr, A = null, sys = null;
+    for (let it = 0; it < o.iters; it++) {
+      sys = jointSystem(vs, x.R, x.p, vel, o.k);
+      if (!isFinite(sys.cost)) return this.miss1(time, start);
+      A = Pi.map((r) => r.slice());
+      const He = new Array(12).fill(0);
+      for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) { A[idx[a]][idx[b]] += sys.H[a][b]; He[idx[a]] += sys.H[a][b] * e[idx[b]]; }
+      const Ai = minv(A);
+      if (!Ai) return this.miss1(time, start);
+      const rhs = He.slice();
+      for (let a = 0; a < 6; a++) rhs[idx[a]] -= sys.g[a];
+      const e2 = mv(Ai, rhs), step = Math.hypot(...e2.map((v, i) => v - e[i]));
+      e = e2;
+      x = { time: pr.time, p: add(pr.p, e.slice(0, 3)), v: add(pr.v, e.slice(3, 6)), R: mul3(rodrigues(e.slice(6, 9)), pr.R), w: add(pr.w, e.slice(9, 12)) };
+      A = Ai;
+      if (step < 1e-9) break;
+    }
+    const d2 = dot6(e, mv(Pi, e)), fit = Math.sqrt(jointSystem(vs, x.R, x.p, vel, o.k).chi / Math.max(1, 2 * sys.n));
+    if (d2 > this.o.gate || fit > o.maxFit) return this.miss1(time, start, d2);
+    this.miss = 0;
+    this.x = Object.assign(x, { P: sym(A) });
+    this.lastCam = Math.max(this.lastCam || 0, time);
+    return { pose: this.pose(), d2, fit };
+  };
+  // A motion sensor on the tracked thing (a board lined up with lineUp). Neither starts a track or keeps one alive:
+  // they act only within `imuFor` seconds of the last camera update. A reading older than the state (Bluetooth
+  // delivers them tens of ms late) is taken against the state moved back by its own turning.
+  // `updateRate`: the gyro, as the angular velocity in the rig frame (rad/s), a direct reading of the state's w.
+  // `updateTilt`: VQF's orientation (object → rig, through W and M), whose turn about world up (`up`, in the rig) drifts
+  // with VQF's heading, so its covariance is sigma² everywhere plus sigmaUp² about `up`. Gated at `gate` (3 dof).
+  PoseFilter.prototype.imuOk = function (time) {
+    return this.x && this.lastCam != null && time - this.lastCam < this.o.imuFor && this.x.time - time < this.o.lateBy;
+  };
+  PoseFilter.prototype.linear = function (time, idx, resid, Rm, gate) {
+    const pr = this.predict(Math.max(time, this.x.time)), y = resid(pr);
+    const S = madd(idx.map((i) => idx.map((j) => pr.P[i][j])), Rm), Si = minv(S);
+    if (!Si) return null;
+    const d2 = dot6(y, mv(Si, y));
+    if (gate && d2 > gate) return { rejected: true, d2 };
+    const PHt = pr.P.map((r) => idx.map((j) => r[j])), K = mm(PHt, Si), dx = mv(K, y), KH = zeros(12, 12);
+    for (let i = 0; i < 12; i++) for (let a = 0; a < idx.length; a++) KH[i][idx[a]] = K[i][a];
+    const IKH = eye(12).map((r, i) => r.map((v, j) => v - KH[i][j]));
+    this.x = { time: pr.time, p: add(pr.p, dx.slice(0, 3)), v: add(pr.v, dx.slice(3, 6)), R: mul3(rodrigues(dx.slice(6, 9)), pr.R), w: add(pr.w, dx.slice(9, 12)), P: sym(mm(IKH, pr.P)) };
+    return { d2 };
+  };
+  PoseFilter.prototype.updateRate = function (time, w, sigma) {
+    if (!this.imuOk(time)) return null;
+    return this.linear(time, [9, 10, 11], (pr) => sub(w, pr.w), eye(3).map((r) => r.map((v) => v * sigma * sigma)), 0);
+  };
+  PoseFilter.prototype.updateTilt = function (time, R, up, sigma, sigmaUp, gate) {
+    if (!this.imuOk(time)) return null;
+    const Rm = [0, 1, 2].map((i) => [0, 1, 2].map((j) => (i === j ? sigma * sigma : 0) + sigmaUp * sigmaUp * up[i] * up[j]));
+    return this.linear(time, [6, 7, 8], (pr) => so3Log(mul3(R, tr3(time < pr.time ? mul3(rodrigues(scale(pr.w, time - pr.time)), pr.R) : pr.R))), Rm, gate || 25);
+  };
+  // A rejected frame: count it, and restart on `start` after maxMiss in a row.
+  PoseFilter.prototype.miss1 = function (time, start, d2) {
+    this.miss = (this.miss || 0) + 1;
+    if (this.miss >= this.o.maxMiss && start) { this.init(time, start); return { pose: this.pose(), d2: d2 || 0, restarted: true }; }
+    return { pose: null, d2: d2 || Infinity, rejected: true };
   };
   PoseFilter.prototype.pose = function () {
     const x = this.x;
@@ -774,8 +1281,9 @@
     pose: 'filtered', // what is plotted: raw (OpenCV's IPPE), refined (LM on SE(3)) or filtered (Kalman on SE(3))
     compare: false, // also draw the raw track, faint, to compare
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
-    mirror: false, // show the camera picture mirrored left to right (display only: poses are never mirrored)
-    flip: false, // show it upside down
+    mirror: false, // Mirror view: the picture, the plots and the data mirrored left to right, as in a mirror (else In person)
+    flip: false, // show the picture upside down, for a camera mounted that way (the picture only)
+    search: 'predicted', // predicted: search only where the tags should be (the whole picture every 10th frame); whole: every frame
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
   // and/or flipped about the box's centre, as the CSS transform on the video does. Returns (x, y) -> [x, y].
@@ -801,18 +1309,21 @@
     if (!['raw', 'refined', 'filtered'].includes(o.pose)) o.pose = DEFAULTS.pose;
     if (!MOTION[o.motion]) o.motion = DEFAULTS.motion;
     o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip;
+    if (!['predicted', 'whole'].includes(o.search)) o.search = DEFAULTS.search;
     return o;
   }
 
   return {
-    mul3, tr3, mulv, add, sub, norm, rodrigues, angleOf, compose, inverse, relative, toView, inFrame, CAM_TO_VIEW, TAG_TO_VIEW,
+    mul3, tr3, mulv, add, sub, norm, rodrigues, angleOf, compose, inverse, relative, toView, inFrame, CAM_TO_VIEW, TAG_TO_VIEW, mirrorR, mirrorPose,
     guessIntrinsics, scaleIntrinsics, checkCalibration, hfov, project, depthNoise,
     History, axisSamples, orbit, niceStep, viewSignature, signatureDistance, cornerMotion, coverage,
     quatOf, quatNear, tared,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    toRig, fusePoses, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
-    PAPER, paperFor, printArea, maxTagSize, maxBoardSquare,
+    toRig, fusePoses, plausible, chooseCand, sighting, jointSystem, refineJoint, planSearch,
+    IMU, decodeBoardInfo, decodeImuBatch, encodeImuBatch, encodeBoardInfo, rotOfQuat, BoardClock, nearestRotation, lineUp, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
+    PAPER, paperFor, printArea, maxTagSize, maxBoardSquare, STREAM_CSV_HEADER, streamMessage,
+    fmtStamp, parseNotes, RECORDING_CSV_HEADER, recordingJson, recordingCsv, tidySpeech, insertSpeech, VOICE_COMMANDS, voiceCommand, VoiceGate,
     DEFAULTS, clampSettings, boardFit, displayMap,
   };
 });

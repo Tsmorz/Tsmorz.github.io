@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tag Tracker: AprilTag pose in the browser</title>
 <meta name="description" content="Track AprilTags with your webcam, in the browser: name each tag, calibrate the camera, and see the last second of each tag's position and orientation in 3D.">
-<link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/tag-tracker/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
 <style>
@@ -218,6 +218,8 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .pick .ord{font-weight:650;font-size:11.5px;color:var(--accent)}
 .brow{display:grid;grid-template-columns:auto minmax(90px,1fr) auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
 .brow:first-child{border-top:0}
+.brow.board{grid-template-columns:auto minmax(90px,1fr) auto auto auto}
+.brow.board .select{max-width:170px}
 .brow .meta{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12.5px;color:var(--muted)}
 .mtag{font-size:12px;font-weight:600;padding:1px 6px;border:1px solid var(--rule2);color:var(--ink2)}
 .learn{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;font-size:13px}
@@ -270,6 +272,10 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .step h3{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:15px;font-weight:700;font-stretch:112%}
 .step h3 .n{font-size:22px;font-weight:800;font-stretch:125%;color:var(--accentInk);line-height:1}
 .step p{margin:0 0 12px;color:var(--ink2);line-height:1.55;max-width:68ch}
+.stlbl{margin:14px 0 6px;font-size:13px;font-weight:650;color:var(--ink2)}
+.stpre{margin:0;padding:10px 12px;background:var(--well);border:1px solid var(--rule);font:12.5px/1.5 var(--font);font-variant-numeric:tabular-nums;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}
+.stcmd{margin:0 0 12px}.stcmd code{padding:6px 10px;background:var(--well);border:1px solid var(--rule);font:600 13px var(--font);color:var(--ink);user-select:all}
+#streamCard .step>div[id$=Msg]:not(:empty){margin-top:10px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .cov{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;width:150px;aspect-ratio:16/9;padding:2px;background:var(--rule2)}
 .cov i{background:var(--panel)}
@@ -287,6 +293,23 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .views{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
 .views .chip{border-style:solid;border-color:var(--rule2)}
 footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap}
+/* recording and notes; voice. A key that is listening or recording turns violet, like everything live. */
+.btn.mic[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--onAccent)}
+.rec-info{display:inline-flex;align-items:center;gap:8px;color:var(--ink2);font-size:13px}
+.rec-info .dot{width:9px;height:9px;background:var(--muted);flex:none}
+.rec-info.on .dot{background:var(--accent);animation:blink 1s steps(2,start) infinite}
+.rec-b{display:flex;flex-direction:column;gap:8px;padding:2px 12px 12px}
+.rec-b textarea{font:inherit;color:inherit;display:block;width:100%;height:auto;min-height:6.5em;resize:vertical;padding:7px 10px;line-height:1.5;font-size:13.5px}
+.voice{position:fixed;left:18px;bottom:18px;z-index:30;display:flex;align-items:center;gap:10px;max-width:min(480px,calc(100vw - 32px));padding:9px 12px;background:var(--panel);border:1px solid var(--ink);border-radius:2px;color:var(--ink);font-size:13px;line-height:1.4}
+.voice .dot{width:9px;height:9px;background:var(--muted);flex:none}
+.voice[data-state=listening] .dot{background:var(--accent);animation:blink 1s steps(2,start) infinite}
+.voice[data-state=loading] .dot,.voice[data-state=processing] .dot{background:var(--accent)}
+.voice[data-state=done] .dot{background:var(--good)}
+.voice[data-state=error]{border-color:var(--crit)}.voice[data-state=error] .dot{background:var(--crit)}
+.voice .meter{width:56px;height:4px;background:var(--rule);flex:none;overflow:hidden}
+.voice .meter i{display:block;height:100%;background:var(--accent);transform-origin:left;transform:scaleX(0)}
+.voice:not([data-state=listening]):not([data-state=loading]) .meter{display:none}
+@media (max-width:640px){.voice{left:16px;bottom:16px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (forced-colors:active){.sw,.ax i{forced-color-adjust:none}}
 </style>
@@ -310,15 +333,18 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <symbol id="i-tag" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><rect x="7" y="7" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="13" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="7" width="4" height="2" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8M3 3v5h5"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></symbol>
 </svg>
 
 <header class="topbar">
   <a class="brand" href="/projects/" title="Back to tsmorz.github.io projects">
-    <span class="logo" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="currentColor"/><g fill="var(--page)"><rect x="1" y="1" width="2" height="1"/><rect x="4" y="1" width="1" height="2"/><rect x="6" y="1" width="1" height="1"/><rect x="2" y="3" width="1" height="2"/><rect x="5" y="3" width="2" height="1"/><rect x="1" y="5" width="1" height="2"/><rect x="3" y="5" width="2" height="1"/><rect x="6" y="5" width="1" height="2"/><rect x="4" y="6" width="1" height="1"/></g></svg></span><span class="bt">Tag Tracker</span>
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="currentColor"/><g fill="var(--page)"><rect x="3" y="1" width="1" height="1"/><rect x="2" y="2" width="2" height="1"/><rect x="5" y="2" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="4" y="4" width="2" height="1"/><rect x="1" y="5" width="1" height="1"/><rect x="3" y="5" width="3" height="1"/><rect x="1" y="6" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="5" y="6" width="2" height="1"/></g></svg></span><span class="bt">Tag Tracker</span>
   </a>
   <div class="tabs" role="tablist" aria-label="Mode">
     <button role="tab" id="tab-track" aria-selected="true" aria-controls="view-track">Track</button>
     <button role="tab" id="tab-calib" aria-selected="false" aria-controls="calibCard">Calibrate</button>
+    <button role="tab" id="tab-stream" aria-selected="false" aria-controls="streamCard">Stream</button>
   </div>
   <div class="spacer"></div>
   <div class="brk"></div>
@@ -334,6 +360,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <button id="startBtn" class="btn primary"><svg class="i"><use href="#i-cam"/></svg><span>Start</span></button>
   </div>
   <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
+  <button id="voiceBtn" class="btn sq mic" aria-pressed="false" aria-label="Voice" title="Voice (or press V): say a tab’s name, “Start recording”, “Stop recording”, “Tare” or “Fit”; anything else becomes a note"><svg class="i"><use href="#i-mic"/></svg></button>
   <button id="printBtn" class="btn" title="Print AprilTags and the calibration board" aria-haspopup="dialog"><svg class="i"><use href="#i-print"/></svg><span>Print</span></button>
   <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
 </header>
@@ -349,9 +376,12 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button role="radio" data-arr="auto" aria-checked="true" title="Each view as big as its picture, placed where its camera sits once the cameras are placed (Calibrate, step 4)">Auto</button>
           <button role="radio" data-arr="custom" aria-checked="false" title="Where you put them: drag a view to move it, its corner to resize it">Custom</button>
         </span>
+        <span class="seg sm" role="radiogroup" aria-label="View">
+          <button role="radio" data-view="person" aria-checked="true" title="As someone facing you sees you: raise your right hand and it rises on the left of the screen. Plots and data are the camera's own.">In person</button>
+          <button role="radio" data-view="mirror" aria-checked="false" title="As in a mirror: raise your right hand and it rises on the right. The picture, the plots and the data (x, and orientations) are all mirrored.">Mirror</button>
+        </span>
         <span class="seg sm" role="group" aria-label="Picture">
-          <button type="button" id="mirrorBtn" aria-pressed="false" title="Mirror the picture left to right, like a mirror. Only the picture changes: poses stay true.">Mirror</button>
-          <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture upside down, for a camera mounted that way. Only the picture changes: poses stay true.">Flip</button>
+          <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture upside down, for a camera mounted that way. Only the picture changes.">Flip</button>
         </span>
         <span id="focusWrap" class="field" hidden><span id="focusLbl">Lock focus</span><button id="focusSw" class="switch" role="switch" aria-checked="false" aria-labelledby="focusLbl"></button></span>
       </div>
@@ -367,6 +397,24 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           </div>
           <p class="note">Video is processed on this computer and never sent anywhere.</p>
         </div>
+      </div>
+    </section>
+
+    <!-- Track and Stream: a recording of the poses, with notes typed or spoken -->
+    <section class="card" id="recCard" aria-labelledby="h-rec">
+      <div class="card-h">
+        <h2 id="h-rec">Recording</h2>
+        <button class="btn sm primary mic" id="recBtn" aria-pressed="false"><svg class="i"><use href="#i-rec"/></svg><span>Record</span></button>
+        <span class="rec-info" id="recInfo"><span class="dot" aria-hidden="true"></span><span id="recText">Records every pose the Track tab plots, with your notes.</span></span>
+        <div class="spacer"></div>
+        <button class="btn sm" id="recCsv" disabled title="One row per pose (the Stream tab’s CSV columns), and a row per note in the note column"><svg class="i"><use href="#i-down"/></svg>CSV</button>
+        <button class="btn sm" id="recJson" disabled title="The notes, and every sample shaped like a Stream JSON message"><svg class="i"><use href="#i-down"/></svg>JSON</button>
+        <button class="btn sm danger" id="recDiscard" disabled>Discard</button>
+      </div>
+      <div class="rec-b">
+        <div class="row"><label class="sub" for="notes" style="font-weight:700">Notes</label><span class="spacer"></span><button class="btn sm outline mic" id="dictBtn" aria-pressed="false" title="Speak a note (or press V)"><svg class="i"><use href="#i-mic"/></svg><span>Dictate</span></button></div>
+        <textarea id="notes" class="input" spellcheck="true" placeholder="One line per note. While recording, each line starts with the time you began it."></textarea>
+        <p class="hint">Press V and speak. “Track”, “Calibrate”, “Stream”, “Start recording”, “Stop recording”, “Tare”, “Clear tare”, “Fit” and “Reset view” are commands; anything else is a note. Speech stays on this computer; the model downloads once (40 MB, or 120 MB on the graphics card).</p>
       </div>
     </section>
 
@@ -413,11 +461,26 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         </form>
         <div id="bodyList"></div>
       </div>
+      <div class="bodies" aria-labelledby="h-boards">
+        <div class="row">
+          <h3 class="sub" id="h-boards">Motion sensors</h3>
+          <span class="spacer"></span>
+          <button class="btn sm outline" id="addBoard"><svg class="i"><use href="#i-plus"/></svg>Connect a board</button>
+        </div>
+        <p class="hint" id="boardsHint">An nrf-controller board (XIAO nRF54LM20A Sense) fixed to a tag or an object sends its gyro and VQF orientation over Bluetooth, 208 times a second. Once it has learned how it sits, Filtered poses use it: steadier turns, and no mirror-image doubt even with one camera.</p>
+        <div id="boardList"></div>
+      </div>
       <div class="det">
         <span class="field">Detector
           <span class="seg sm" role="radiogroup" aria-label="Detector">
             <button role="radio" data-q="precise" aria-checked="true" title="Full-resolution corners, about 0.1 px">Precise</button>
             <button role="radio" data-q="fast" aria-checked="false" title="Half-resolution search, about 3× faster">Fast</button>
+          </span>
+        </span>
+        <span class="field">Search
+          <span class="seg sm" role="radiogroup" aria-label="Search">
+            <button role="radio" data-search="predicted" aria-checked="true" title="Once tags are found, search only where they should be next; the whole picture every 10th frame, and whenever one isn't where it should be">Predicted</button>
+            <button role="radio" data-search="whole" aria-checked="false" title="Search the whole picture every frame">Whole picture</button>
           </span>
         </span>
         <span class="field">Pose
@@ -526,7 +589,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <div class="col" id="view-track" role="tabpanel" aria-labelledby="tab-track">
     <section class="card card3d" aria-labelledby="h-3d">
       <div class="card-h">
-        <h2 id="h-3d">Last <span id="spanTxt">1.0</span> s</h2>
+        <h2 id="h-3d">Tracking</h2>
         <div class="toolbar">
           <label class="field">History <input id="span" class="input sm num mono" type="number" min="0.1" max="30" step="0.1"><span class="unit">s</span></label>
           <label class="field">Axes every <input id="every" class="input sm num mono" type="number" min="0.01" max="10" step="0.01"><span class="unit">s</span></label>
@@ -570,6 +633,50 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       <div class="tplot" id="tplotWrap"><canvas id="tplot" role="img" aria-label="x, y and z of the chosen tag over the history, in centimetres"></canvas><div class="tip" id="tip" hidden></div></div>
     </section>
   </div>
+  <!-- Stream mode: the poses, sent on over serial or UDP -->
+  <section class="card" id="streamCard" role="tabpanel" aria-labelledby="h-stream" hidden>
+    <div class="card-h"><h2 id="h-stream">Stream</h2><div class="spacer"></div><span class="small muted" id="stCount" aria-live="polite"></span></div>
+    <div class="steps">
+      <div class="step">
+        <h3>What is sent</h3>
+        <p>One message for every track in view: its key (a tag's ID, or b: and an object's ID), its name, its position in metres and its orientation as a unit quaternion w, x, y, z. The frame is the Track tab's: the camera, or the tag chosen in Relative to, with any tare, and mirrored in Mirror view.</p>
+        <div class="row">
+          <span class="field">Format
+            <span class="seg sm" role="radiogroup" aria-label="Format">
+              <button role="radio" data-stfmt="json" aria-checked="true" title="One JSON object per line, with every track in it">JSON lines</button>
+              <button role="radio" data-stfmt="csv" aria-checked="false" title="One line per track, under a header line">CSV</button>
+            </span>
+          </span>
+          <label class="field">Rate <select id="stRate" class="select sm"><option value="10">10 a second</option><option value="30">30 a second</option><option value="60">60 a second</option><option value="0">Every frame</option></select></label>
+        </div>
+        <h4 class="stlbl">Last message</h4>
+        <pre class="stpre" id="stPreview">Start a camera, or the demo, to see messages here.</pre>
+      </div>
+      <div class="step">
+        <h3>Serial or USB</h3>
+        <p>To a microcontroller, or anything on a serial port, one line at a time. Needs Chrome or Edge on a computer.</p>
+        <div class="row">
+          <label class="field">Baud <select id="stBaud" class="select sm"><option>9600</option><option>57600</option><option>115200</option><option>230400</option><option>460800</option><option>921600</option></select></label>
+          <button class="btn sm primary" id="stSerialBtn">Connect a port</button>
+          <span class="seen" id="stSerialState"><span class="dot"></span><span>Not connected</span></span>
+        </div>
+        <div id="stSerialMsg"></div>
+      </div>
+      <div class="step">
+        <h3>UDP</h3>
+        <p>A web page can't send UDP itself, so a small bridge on your computer passes each message on as one datagram. Download <a href="/tag-tracker/udp-bridge.py" download>udp-bridge.py</a> (Python 3, nothing else to install) and run it:</p>
+        <div class="row stcmd"><code id="stCmd">python3 udp-bridge.py</code><button class="btn sm outline" id="stCopy" type="button">Copy</button></div>
+        <div class="row">
+          <label class="field">Send to <input id="stHost" class="input sm" style="width:130px" autocomplete="off" spellcheck="false"></label>
+          <label class="field">port <input id="stPort" class="input sm num" style="width:84px" type="number" min="1" max="65535"></label>
+          <label class="field">Bridge on port <input id="stBridge" class="input sm num" style="width:84px" type="number" min="1" max="65535"></label>
+          <button class="btn sm primary" id="stUdpBtn">Connect</button>
+          <span class="seen" id="stUdpState"><span class="dot"></span><span>Not connected</span></span>
+        </div>
+        <div id="stUdpMsg"></div>
+      </div>
+    </div>
+  </section>
 </main>
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
   <form method="dialog" id="printForm" novalidate>
@@ -613,8 +720,9 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <div class="row"><button class="btn sm primary" id="bvFull">Full screen</button><button class="btn sm outline" id="bvClose">Close</button></div>
   </div>
 </div>
+<div class="voice" id="voice" data-state="idle" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="voiceText"></span><span class="meter" aria-hidden="true"><i id="voiceMeter"></i></span></div>
 <footer>
-  <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face. Orientations are unit quaternions (w, x, y, z) in the same frame.</span>
+  <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face. Orientations are unit quaternions (w, x, y, z) in the same frame.<span id="mirrorNote" hidden> Mirror view: left and right are swapped, as in a mirror, so x is the camera’s −x and orientations are the mirror image’s.</span></span>
   <span class="spacer"></span>
   <a href="/projects/">tsmorz.github.io</a>
 </footer>
@@ -645,7 +753,7 @@ const S = {
   quality: store.get('quality', 'precise'),
   res: store.get('res', '1280x720'),
   camId: store.get('camId', ''),
-  mode: 'track',
+  mode: 'track', tab: 'track',
   worker: null, ready: false, familyCount: 587,
   // the running cameras (see "cameras" below); the first is camera 1, whose frame the rig and the plot use
   cams: [], running: false, demo: null, firstKey: null, calibCam: 0, calibFor: '',
@@ -654,7 +762,7 @@ const S = {
   arrange: Object.assign({ mode: 'auto', tiles: {} }, store.get('arrange', {})),
   paper: C.PAPER[store.get('paper', '')] ? store.get('paper', '') : C.paperFor(navigator.language), // a4 or letter
   camNames: store.get('camNames', {}), // camera key → the name the visitor gave it (lens calibrations stay keyed by the device's own label)
-  fused: new Map(), zs: new Map(),
+  fused: new Map(), zs: new Map(), vel: new Map(),
   // Tracks are keyed by tag id (a number) or 'b:<id>' for a rigid object. hist holds the plotted poses (in the
   // chosen frame), rawHist the raw ones for "Compare with raw", filters one PoseFilter per track, tracks the
   // latest camera-frame state per track, seen the last sighting of every tag id.
@@ -702,7 +810,7 @@ function slotOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? slotOf(b.m
 function colorOf(k) { const s = slotOf(k); return s >= 0 ? K.slots[s] : K.unknown; }
 function cssColorOf(k) { const s = slotOf(k); return s >= 0 ? `var(--s${s + 1})` : 'var(--unknown)'; }
 function nameOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? b.name || 'Object' : k; } const t = tagOf(k); return t && t.name ? t.name : '#' + k; }
-function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); S.fused.clear(); S.zs.clear(); }
+function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); S.fused.clear(); S.zs.clear(); S.vel.clear(); }
 function sizeOf(id) { const t = tagOf(id); return t ? t.size : S.settings.tagSize; }
 function freeSlot() { for (let i = 0; i < SLOTS; i++) if (!S.tags.some((t) => t.slot === i)) return i; return -1; }
 function addTag(id, name) {
@@ -783,7 +891,6 @@ bindNum('axisLen', () => S.settings.axisLen, (v) => { S.settings.axisLen = v; },
 bindNum('defSize', () => S.settings.tagSize, (v) => { S.settings.tagSize = v; }, 1000);
 bindNum('hfov', () => S.settings.hfov, (v) => { S.settings.hfov = v; });
 function onSettings() {
-  $('spanTxt').textContent = S.settings.span.toFixed(S.settings.span < 10 ? 1 : 0);
   $('span').value = S.settings.span; $('every').value = S.settings.every;
   S.cams.forEach(updateCam);
 }
@@ -791,7 +898,7 @@ $('family').value = S.settings.family;
 $('family').onchange = () => {
   S.settings.family = $('family').value; store.set('settings', S.settings);
   resetTracks(); S.seen.clear();
-  if (S.ready) S.worker.postMessage({ type: 'family', family: S.settings.family, quality: S.quality });
+  toWorkers({ type: 'family', family: S.settings.family, quality: S.quality });
 };
 function radios(attr, get, set) {
   const all = document.querySelectorAll(`[data-${attr}]`), paint = () => all.forEach((x) => x.setAttribute('aria-checked', String(x.dataset[attr] === get())));
@@ -811,7 +918,14 @@ document.querySelectorAll('[data-q]').forEach((b) => {
   b.onclick = () => {
     S.quality = b.dataset.q; store.set('quality', S.quality);
     document.querySelectorAll('[data-q]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
-    if (S.ready) S.worker.postMessage({ type: 'family', family: S.settings.family, quality: S.quality });
+    toWorkers({ type: 'family', family: S.settings.family, quality: S.quality });
+  };
+});
+document.querySelectorAll('[data-search]').forEach((b) => {
+  b.setAttribute('aria-checked', String(b.dataset.search === S.settings.search));
+  b.onclick = () => {
+    S.settings.search = b.dataset.search; store.set('settings', S.settings);
+    document.querySelectorAll('[data-search]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
   };
 });
 function refreshFrameSel() {
@@ -822,7 +936,7 @@ function refreshFrameSel() {
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : 'camera';
   if (sel.value !== cur) { S.settings.frame = sel.value; store.set('settings', S.settings); }
 }
-function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.tare.clear(); paintTare(); S.view.fitted = false; refreshFrameSel(); }
+function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.tare.clear(); paintTare(); S.view.fitted = false; refreshFrameSel(); refreshTplotSel(); }
 // ---------------- tare ----------------
 // Re-express a track's stored history under a new tare (null: none), so the trail and the plot change at once.
 function retare(key, R0) {
@@ -846,7 +960,9 @@ function trackKeys() {
   return [...new Set([...S.bodies.map((b) => 'b:' + b.id), ...S.tags.map((t) => t.id).filter((id) => !mem.has(id)), ...S.hist.ids()])].sort(keySort);
 }
 function refreshTplotSel() {
-  const sel = $('tplotTag'), cur = S.tplotTag, list = trackKeys();
+  // not the reference: it always sits at the origin, so there is nothing to plot
+  const ref = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
+  const sel = $('tplotTag'), cur = S.tplotTag, list = trackKeys().filter((k) => k !== ref);
   const key = list.map((k) => k + ':' + nameOf(k)).join('|');
   if (sel.dataset.key !== key) {
     sel.dataset.key = key;
@@ -881,28 +997,50 @@ function status(text, kind) {
 }
 
 // ---------------- worker ----------------
-function startWorker() {
+// Detection runs in a pool of workers, each with its own OpenCV: every camera's frames go to whichever worker is
+// idle, so frames are detected in parallel (one camera keeps several in flight). The first worker also calibrates
+// and draws tags and boards; the others start once it is ready, when OpenCV.js is already in the browser's cache.
+const POOL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+function spawnWorker() {
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  const w = new Worker(base + 'worker.js');
-  S.worker = w;
-  w.onmessage = (ev) => onWorker(ev.data);
-  w.onerror = (e) => { status('Detector failed to start', 'bad'); console.error(e); };
+  const w = new Worker(base + 'worker.js'), slot = { w, ready: false, busy: false, first: !S.pool.length };
+  S.pool.push(slot);
+  w.onmessage = (ev) => onWorker(ev.data, slot);
+  w.onerror = (e) => { if (slot.first) status('Detector failed to start', 'bad'); else S.pool = S.pool.filter((x) => x !== slot); console.error(e); };
   w.postMessage({ type: 'init', family: S.settings.family, quality: S.quality });
+  return slot;
+}
+function startWorker() { S.pool = []; S.worker = spawnWorker().w; }
+function toWorkers(msg) { for (const x of S.pool) if (x.ready) x.w.postMessage(msg); }
+// A worker for camera c's next frame: an idle one, as long as c has no more than its share of the pool in flight.
+function idleWorker(c) {
+  const ready = S.pool.filter((x) => x.ready);
+  if (c.inflight >= Math.max(1, Math.ceil(ready.length / Math.max(1, S.cams.length)))) return null;
+  return ready.find((x) => !x.busy) || null;
 }
 const pending = new Map(); // printing windows waiting for an image
 let workerReadyResolve = null;
 const workerReady = new Promise((res) => { workerReadyResolve = res; }); // requests sent before this are dropped by the worker
-function onWorker(m) {
+function onWorker(m, slot) {
+  if (!slot.first && m.type !== 'tags' && m.type !== 'board' && m.type !== 'ready' && !(m.type === 'error' && m.of === 'frame')) return;
   if (m.type === 'status') status(m.text, 'busy');
-  else if (m.type === 'ready') {
+  else if (m.type === 'ready' && !slot.first) {
+    slot.ready = true;
+    slot.w.postMessage({ type: 'family', family: S.settings.family, quality: S.quality }); // in case it changed while loading
+  } else if (m.type === 'ready') {
+    slot.ready = true;
+    for (let k = 1; k < POOL; k++) spawnWorker();
     S.ready = true; S.familyCount = m.count; workerReadyResolve();
     status(S.running ? 'Detecting…' : 'Ready to start', S.running ? 'live' : '');
     $('emptyDemo').disabled = false;
   } else if (m.type === 'family') { S.familyCount = m.count; }
   else if (m.type === 'tags' || m.type === 'board') {
+    slot.busy = false;
     const c = camOf(m.src);
     if (!c) return;
-    c.busy = false;
+    c.inflight = Math.max(0, c.inflight - 1);
+    if (m.seq <= c.doneSeq) return; // overtaken by a later frame from another worker
+    c.doneSeq = m.seq;
     if (m.type === 'tags') onTags(c, m); else onBoard(c, m);
   }
   else if (m.type === 'calibrated') onCalibrated(m.calib);
@@ -910,7 +1048,7 @@ function onWorker(m) {
     const cb = pending.get(m.purpose);
     if (cb) { pending.delete(m.purpose); cb(m.img); }
   } else if (m.type === 'error') {
-    if (m.of === 'frame') { const c = camOf(m.src); if (c) c.busy = false; return; }
+    if (m.of === 'frame') { slot.busy = false; const c = camOf(m.src); if (c) c.inflight = Math.max(0, c.inflight - 1); return; }
     if (m.of === 'init') { status('Could not load the detector', 'bad'); showEmpty('The detector didn’t load', 'OpenCV.js (about 10 MB) is fetched from a CDN the first time. Check your connection and reload the page.'); }
     if (m.of === 'calibrate') { $('solveBtn').disabled = S.views.length < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate'; $('calibResult').innerHTML = `<div class="note warn"><svg class="i"><use href="#i-alert"/></svg><span>Calibration failed: ${escapeHtml(m.text)}</span></div>`; }
     console.warn('worker:', m.of, m.text);
@@ -1013,7 +1151,7 @@ async function addCamera(key) {
     const [w, h] = S.res.split('x').map(Number);
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: key ? { exact: key } : undefined, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
   }
-  const c = { key, demo, stream, track: stream.getVideoTracks()[0], busy: false, seq: 0, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
+  const c = { key, demo, stream, track: stream.getVideoTracks()[0], inflight: 0, seq: 0, doneSeq: 0, sinceFull: 0, forceFull: false, expect: new Map(), prevCtr: null, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
   if (demo === null) {
     const st = c.track.getSettings();
     if (st.deviceId) c.key = st.deviceId;
@@ -1082,9 +1220,17 @@ function onCamsChanged() {
   paintAddCam(); setupFocus(); renderCalibCams(); renderCalib(); renderRig(); layoutTiles();
 }
 // Each camera's pose in camera 1's frame, from the saved rig. Changing it moves the fused tracks, so they restart.
+// Each camera's corners are trusted to their own scatter plus a model error: how well the rig fitted that camera (its
+// reprojection RMS in the multi-camera calibration), at least MODEL_PX. Without it, the small disagreements a rig
+// calibration always leaves look like motion, and the filter chases them.
+const MODEL_PX = 0.25;
 function placeCams() {
   const T = C.placeCameras(S.rig, S.cams.map((c) => c.key));
-  S.cams.forEach((c, i) => { c.T = T[i]; });
+  S.cams.forEach((c, i) => {
+    c.T = T[i];
+    const k = S.rig ? S.rig.keys.indexOf(c.key) : -1, pc = k >= 0 && S.rig.perCam ? S.rig.perCam[k] : null;
+    c.modelPx = Math.max(MODEL_PX, pc && isFinite(pc.rms) ? pc.rms : 0);
+  });
   S.cams.forEach(paintTile);
 }
 function stop(quiet) {
@@ -1236,9 +1382,44 @@ function arrangeHandlers(c, el) {
 paintArrange();
 if ('ResizeObserver' in window) new ResizeObserver(() => layoutTiles()).observe($('stages'));
 
+// ---------------- where to look ----------------
+// Once a full search has found the tags, a camera's next frames search only where they should be (TagCore.planSearch):
+// each tag it saw last, moved on by its own speed across the picture to this frame's time, with a margin of 40% of its
+// size plus half the distance it moves; and, for a placed camera, every track the other cameras see that should be in
+// its picture (so a tag coming into view is found without a full search). The whole picture is searched every
+// FULL_EVERY frames, to find new tags, and on the next frame whenever a tag wasn't where it was predicted.
+const FULL_EVERY = 10, HAS_VF = typeof VideoFrame === 'function';
+const centroid = (cs) => [(cs[0] + cs[2] + cs[4] + cs[6]) / 4, (cs[1] + cs[3] + cs[5] + cs[7]) / 4];
+function searchPlan(c, time) {
+  if (S.mode !== 'track' || S.settings.search !== 'predicted' || c.forceFull || c.sinceFull >= FULL_EVERY - 1 || !c.last) return null;
+  const preds = [], own = new Set(), age = Math.max(0, time - c.last.time);
+  for (const t of c.last.tags) {
+    const ctr = centroid(t.corners), prev = c.prevCtr && c.prevCtr.get(t.id), dt = prev ? c.last.time - prev.time : 0;
+    const v = dt > 0.005 && dt < 0.2 ? [(ctr[0] - prev.ctr[0]) / dt, (ctr[1] - prev.ctr[1]) / dt] : [0, 0];
+    const d = [v[0] * age, v[1] * age], cs = t.corners;
+    const size = Math.sqrt(Math.abs((cs[0] - cs[4]) * (cs[3] - cs[7]) - (cs[2] - cs[6]) * (cs[1] - cs[5])) / 2);
+    preds.push({ pts: [0, 1, 2, 3].map((k) => [cs[2 * k] + d[0], cs[2 * k + 1] + d[1]]), pad: 0.4 * size + 0.5 * Math.hypot(d[0], d[1]) + 12 });
+    own.add(t.id);
+  }
+  if (c.T && S.cams.length > 1) for (const [key, f] of S.fused) {
+    if (time - f.time > 0.25) continue;
+    const parts = isBody(key) ? (bodyOf(key) ? bodyOf(key).members.map((mb) => ({ id: mb.id, pose: C.compose(f.pose, mb) })) : []) : [{ id: key, pose: f.pose }];
+    const inv = C.inverse(c.T);
+    for (const q of parts) {
+      if (own.has(q.id)) continue;
+      const P = C.compose(inv, q.pose), pts = C.tagCorners(sizeOf(q.id)).map((X) => C.project(c.cam, C.add(C.mulv(P.R, X), P.t)));
+      if (pts.some((x) => !x) || pts.every((x) => x[0] < 0 || x[1] < 0 || x[0] > c.cam.w || x[1] > c.cam.h)) continue;
+      const size = Math.hypot(pts[0][0] - pts[2][0], pts[0][1] - pts[2][1]) / Math.SQRT2;
+      preds.push({ pts, pad: 0.5 * size + 20 });
+    }
+  }
+  const plan = C.planSearch(preds, c.cam.w, c.cam.h);
+  if (plan) plan.expect = [...own];
+  return plan;
+}
+
 // ---------------- frame loop ----------------
-// Each camera sends its newest frame to the one detector whenever its last one is done, so with several cameras
-// they take turns.
+// Each camera sends its newest frame to an idle worker of the pool, keeping up to its share of the pool busy.
 function loopFrames(c) {
   const v = c.video, hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   let lastT = -1;
@@ -1248,17 +1429,28 @@ function loopFrames(c) {
     if (!hasRVFC) { if (v.currentTime === lastT) return; lastT = v.currentTime; }
     c.stats.frames++;
     if (v.videoWidth && (c.cam.w !== v.videoWidth || c.cam.h !== v.videoHeight)) { updateCam(c); layoutTiles(); }
-    if (!S.ready || c.busy || !v.videoWidth) return;
+    const slot = S.ready && v.videoWidth ? idleWorker(c) : null;
+    if (!slot) return;
     let time = meta && meta.captureTime ? meta.captureTime : performance.now();
     if (Math.abs(time - performance.now()) > 1000) time = performance.now();
-    c.busy = true;
-    createImageBitmap(v).then((bm) => {
-      if (c.gone) { bm.close(); return; }
+    slot.busy = true; c.inflight++;
+    const release = () => { slot.busy = false; c.inflight = Math.max(0, c.inflight - 1); };
+    const send = (pic) => {
+      if (c.gone) { pic.close(); release(); return; }
       const sizes = sizesMap();
       const bodies = S.bodies.map((b) => ({ id: b.id, members: b.members.map((x) => ({ id: x.id, R: x.R, t: x.t, size: sizes[x.id] || S.settings.tagSize })) }));
       const square = S.mode === 'calib' ? (S.demo ? DEMO.square : S.square / 1000) : 0;
-      S.worker.postMessage({ type: 'frame', src: c.key, bitmap: bm, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
-    }).catch(() => { c.busy = false; });
+      const plan = searchPlan(c, time / 1000);
+      if (plan) { c.sinceFull++; c.expect.set(c.seq + 1, plan.expect); } else c.sinceFull = 0;
+      const msg = { type: 'frame', rois: plan ? plan.rois : null, src: c.key, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn, learn: !!S.learn };
+      msg[pic instanceof ImageBitmap ? 'bitmap' : 'frame'] = pic;
+      slot.w.postMessage(msg, [pic]);
+    };
+    // The frame goes to the worker as a WebCodecs VideoFrame where the browser has them: the worker then reads just the
+    // pixels it searches, straight from the camera's own format. Otherwise as an ImageBitmap.
+    let vf = null;
+    if (HAS_VF) try { vf = new VideoFrame(v, { timestamp: Math.round(time * 1000) }); } catch (e) { vf = null; }
+    if (vf) send(vf); else createImageBitmap(v).then(send).catch(release);
   };
   if (hasRVFC) v.requestVideoFrameCallback(step); else requestAnimationFrame(step);
 }
@@ -1270,8 +1462,9 @@ function tickStats(c, ms) {
   st.frames = 0; st.dets = 0; st.t0 = now;
   const vs = c.el.querySelector('.vstats'), many = S.cams.length > 1;
   vs.hidden = false;
-  vs.innerHTML = many ? `<span>${st.dfps.toFixed(0)} fps</span><span>${st.ms.toFixed(0)} ms</span>`
-    : `<span>${c.video.videoWidth}×${c.video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>`;
+  const part = c.searched != null && c.searched < 0.98 ? Math.max(1, Math.round(c.searched * 100)) + '%' : '';
+  vs.innerHTML = many ? `<span>${st.dfps.toFixed(0)} fps</span><span>${st.ms.toFixed(0)} ms</span>${part ? `<span title="Share of the picture searched, on average">${part}</span>` : ''}`
+    : `<span>${c.video.videoWidth}×${c.video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>${part ? `<span>searching ${part} of the picture</span>` : ''}`;
   if (c === S.cams[0]) status(many ? `${S.cams.length} cameras, ${S.cams.reduce((s, x) => s + x.stats.dfps, 0).toFixed(0)} frames a second` : `${st.dfps.toFixed(0)} fps, ${st.ms.toFixed(0)} ms per frame`, 'live');
 }
 
@@ -1290,20 +1483,33 @@ function onTags(c, m) {
   tickStats(c, m.ms);
   if (S.mode !== 'track') return;
   const wall = performance.now() / 1000, mem = memberIds();
+  // where this camera's tags were last time, for their speed across the picture
+  if (c.last) c.prevCtr = new Map(c.last.tags.map((t) => [t.id, { time: c.last.time, ctr: centroid(t.corners) }]));
+  // a predicted tag that wasn't in its window: search the whole picture next
+  if (m.rois) { const ex = c.expect.get(m.seq) || []; c.forceFull = ex.some((id) => !m.tags.some((t) => t.id === id)); }
+  else c.forceFull = false;
+  for (const k of c.expect.keys()) if (k <= m.seq) c.expect.delete(k);
+  c.searched = c.searched == null ? m.searched : 0.9 * c.searched + 0.1 * (m.searched == null ? 1 : m.searched);
   c.last = m;
   for (const t of m.tags) S.seen.set(t.id, { time: m.time, wall, err: t.err });
-  // this camera's measurements, in its own frame
-  const meas = new Map();
+  // this camera's measurements, in its own frame, each with its corners (sight: the track's points in its own frame,
+  // and where this camera saw them) for the joint fit and the filter
+  const meas = new Map(), px = (t) => [0, 1, 2, 3].map((k) => [t.corners[2 * k], t.corners[2 * k + 1]]);
   for (const t of m.tags) {
     if (!t.R || mem.has(t.id)) continue;
     if (!S.settings.showUnknown && !tagOf(t.id)) continue;
-    meas.set(t.id, { raw: { R: t.R, t: t.t }, cands: t.cands || [], err: t.err, size: t.size });
+    meas.set(t.id, { raw: { R: t.R, t: t.t }, cands: t.cands || [], err: t.err, size: t.size, sight: { obj: C.tagCorners(t.size), img: px(t) } });
   }
   for (const b of S.bodies) {
     const raw = rawBody(b, m.tags);
     if (!raw) continue;
-    const got = (m.bodies || []).find((x) => x.id === b.id);
-    meas.set('b:' + b.id, { raw, cands: got ? got.cands : [], seen: got ? got.seen : 1 });
+    const got = (m.bodies || []).find((x) => x.id === b.id), obj = [], img = [];
+    for (const mb of b.members) {
+      const t = m.tags.find((x) => x.id === mb.id);
+      if (!t) continue;
+      C.tagCorners(t.size).forEach((q, k) => { obj.push(C.add(C.mulv(mb.R, q), mb.t)); img.push(px(t)[k]); });
+    }
+    meas.set('b:' + b.id, { raw, cands: got ? got.cands : [], seen: got ? got.seen : 1, sight: { obj, img } });
   }
   c.local = new Map([...meas].map(([k, z]) => [k, z.cands[0] || z.raw]));
   if (S.learn) learnStep(m);
@@ -1311,8 +1517,22 @@ function onTags(c, m) {
   drawOverlay(c);
 }
 // A placed camera's measurements, moved into the rig's frame (camera 1's) and combined with the other cameras'.
-// Raw takes this camera's pose; Refined fuses the latest pose from every camera that saw the track within 50 ms;
-// Filtered feeds every camera's frames to the track's one Kalman filter as they arrive.
+// Raw takes this camera's pose. Refined fits one pose to the corners of every camera that saw the track within 50 ms
+// (TagCore.refineJoint: robust, each camera weighted by its corner noise, each frame moved to this one's time by the
+// track's velocity, since the cameras aren't synchronised). Filtered feeds each camera's corners, as its frames arrive,
+// straight into the track's one Kalman filter (PoseFilter.updateCorners).
+// Refined has no motion model of its own, so a track's velocity for moving frames to one time is taken from its last
+// poses: each step's change over its time, smoothed (each new step counts for 30%).
+// A pose as the plots, the table and the stream show it: in the plotted frame (the camera's, or relative to the
+// reference), mirrored in Mirror view.
+function shown(p, ref) { const q = C.inFrame(p, ref); return S.settings.mirror ? C.mirrorPose(q) : q; }
+function trackVelocity(key, time, p) {
+  const last = S.fused.get(key), dt = last ? time - last.time : 0;
+  if (!last || dt < 0.005 || dt > 0.2) { if (!last || dt > 0.2) S.vel.delete(key); return; }
+  const v = C.sub(p.t, last.pose.t).map((x) => x / dt), w = C.so3Log(C.mul3(p.R, C.tr3(last.pose.R))).map((x) => x / dt);
+  const o = S.vel.get(key), mix = (a, b) => a.map((x, i) => 0.7 * x + 0.3 * b[i]);
+  S.vel.set(key, o ? { v: mix(o.v, v), w: mix(o.w, w) } : { v, w });
+}
 function fuse(c, m, meas, wall) {
   const mode = S.settings.pose, out = new Map(), rig = new Map();
   for (const [key, z0] of meas) {
@@ -1320,20 +1540,35 @@ function fuse(c, m, meas, wall) {
     rig.set(key, z);
     let zs = S.zs.get(key);
     if (!zs) S.zs.set(key, (zs = new Map()));
-    zs.set(c.key, { time: m.time, z });
+    // A face-on tag fits two mirror-image poses about equally well. Take the one the other cameras agree with
+    // (what they see of this track within 50 ms), or with one camera the one nearest the track's last pose, so it
+    // doesn't flip from frame to frame.
+    const others = [...zs].filter(([k, x]) => k !== c.key && Math.abs(x.time - m.time) < 0.05 && x.z.cands.length).map(([, x]) => C.plausible(x.z.cands).map((q) => q.R));
+    const last = S.fused.get(key), prevR = last && m.time - last.time < 0.25 ? last.pose.R : null;
+    const pick = z.cands.length ? C.chooseCand(z.cands, others, prevR) : null;
+    const sight = z0.sight && z0.sight.img.length ? z0.sight : null;
+    const sigma = pick ? Math.hypot(pick.sigma || 0.5, c.modelPx || MODEL_PX) : 0;
+    noteCamPose(key, m.time, (pick || z.raw).R); // the camera's own view of it, for lining motion sensors up
+    zs.set(c.key, { time: m.time, z, pick, sight, sigma, cam: c.cam, T: c.T });
     let p = null;
-    if (mode === 'raw' || !z.cands.length) p = z.raw;
+    if (mode === 'raw' || !pick) p = z.raw;
     else if (mode === 'refined') {
-      const now = [...zs.values()].filter((x) => Math.abs(x.time - m.time) < 0.05 && x.z.cands.length).map((x) => x.z.cands[0]);
-      p = now.length > 1 ? C.fusePoses(now) : z.cands[0];
+      const now = [...zs.values()].filter((x) => Math.abs(x.time - m.time) < 0.05 && x.pick && x.sight);
+      if (now.length > 1) {
+        const views = now.map((x) => C.sighting(x.cam, x.T, x.sight.obj, x.sight.img, x.sigma, x.time - m.time));
+        const start = C.fusePoses(now.map((x) => x.pick));
+        p = C.refineJoint(views, start, { vel: S.vel.get(key) }) || start;
+      } else p = pick;
+      trackVelocity(key, m.time, p);
     } else {
       let f = S.filters.get(key);
       if (!f) { f = new C.PoseFilter(C.MOTION[S.settings.motion]); S.filters.set(key, f); }
-      const r = f.update(m.time, z.cands);
+      // the chosen candidate only starts (or restarts) the track; after that the corners steer it
+      const r = sight ? f.updateCorners(m.time, [C.sighting(c.cam, c.T, sight.obj, sight.img, sigma, 0)], pick) : f.update(m.time, [pick]);
       p = r && r.pose;
     }
     const best = z.cands[0], cams = S.cams.filter((x) => { const q = zs.get(x.key); return q && m.time - q.time < 0.25; }).map((x) => x.n);
-    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen, cams });
+    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: p && p.views > 1 ? p.rms : best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen, cams });
     if (p) { out.set(key, p); S.fused.set(key, { pose: p, time: m.time }); }
   }
   // the reference frame: this frame's pose of the chosen track, or its last one within 0.25 s
@@ -1345,9 +1580,11 @@ function fuse(c, m, meas, wall) {
   }
   if (refKey === null || ref) {
     // the reference itself always sits at the origin, where the plot already draws it
-    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.tared(C.inFrame(p, ref), S.tare.get(key)));
-    if (S.settings.compare) for (const [key, z] of rig) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(C.inFrame(z.raw, refRaw), S.tare.get(key)));
+    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.tared(shown(p, ref), S.tare.get(key)));
+    if (S.settings.compare) for (const [key, z] of rig) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(shown(z.raw, refRaw), S.tare.get(key)));
   }
+  streamTick(m.time);
+  recTick(m.time);
 }
 
 // ---------------- video overlays ----------------
@@ -1365,13 +1602,23 @@ function overlayMap(c) {
 function paintPicture() {
   $('stages').style.setProperty('--sx', S.settings.mirror ? -1 : 1);
   $('stages').style.setProperty('--sy', S.settings.flip ? -1 : 1);
-  $('mirrorBtn').setAttribute('aria-pressed', String(S.settings.mirror));
+  document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.view === 'mirror') === S.settings.mirror)));
   $('flipBtn').setAttribute('aria-pressed', String(S.settings.flip));
+  $('mirrorNote').hidden = !S.settings.mirror;
 }
-for (const k of ['mirror', 'flip']) $(k + 'Btn').onclick = () => {
-  S.settings[k] = !S.settings[k]; store.set('settings', S.settings); paintPicture();
-  for (const c of S.cams) if (S.mode === 'track' && c.last) drawOverlay(c); else clearOverlay(c);
-};
+const redrawOverlays = () => { for (const c of S.cams) if (S.mode === 'track' && c.last) drawOverlay(c); else clearOverlay(c); };
+// The view (In person or Mirror) is the picture's and the data's alike: the plotted history and the tares are
+// re-expressed at once, and the 3D view's target moves with the data, so nothing jumps or restarts.
+document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => {
+  const m = b.dataset.view === 'mirror';
+  if (m === S.settings.mirror) return;
+  S.settings.mirror = m; store.set('settings', S.settings);
+  for (const h of [S.hist, S.rawHist]) for (const id of h.ids()) for (const smp of h.get(id)) { const q = C.mirrorPose(smp); smp.R = q.R; smp.t = q.t; }
+  for (const [k, R0] of S.tare) S.tare.set(k, C.mirrorR(R0));
+  S.view.target = [-S.view.target[0], S.view.target[1], S.view.target[2]];
+  lastTable = 0; paintPicture(); redrawOverlays();
+});
+$('flipBtn').onclick = () => { S.settings.flip = !S.settings.flip; store.set('settings', S.settings); paintPicture(); redrawOverlays(); };
 paintPicture();
 // One camera's view: an outline and the pose's axes on each tag it sees, a name plate, and each rigid object's axes.
 // A placed camera also draws, dashed, the tags it doesn't see itself but the other cameras do, where they would be.
@@ -1426,9 +1673,9 @@ function drawOverlay(c) {
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sp[0][0], sp[0][1], 3 * u, 0, 7); ctx.fill(); // first corner: the tag's orientation
     const pose = inBody ? null : inCam(t.id) || (t.R ? t : null);
     if (pose) axes(pose, Math.min(S.settings.axisLen, t.size));
+    if (inBody) continue; // a tag of an object: its outline only, the object's own plate names it
     const xs = sp.map((p) => p[0]), ys = sp.map((p) => p[1]);
-    const txt = inBody ? (tagOf(t.id) && tagOf(t.id).name ? tagOf(t.id).name : '#' + t.id) : nameOf(t.id) + (pose ? `  ${(C.norm(pose.t) * 100).toFixed(1)} cm` : '');
-    plate(txt, col, [(Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)], Math.max(...ys));
+    plate(nameOf(t.id) + (pose ? `  ${(C.norm(pose.t) * 100).toFixed(1)} cm` : ''), col, [(Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)], Math.max(...ys));
   }
   // tracks the other cameras see and this one doesn't: dashed, where they would be in this picture
   if (c.T && S.cams.length > 1) for (const [key] of S.fused) {
@@ -1577,6 +1824,16 @@ function fitView() {
 $('fitBtn').onclick = fitView;
 function resetView() { Object.assign(S.view, VIEW0); fitView(); }
 $('resetViewBtn').onclick = resetView;
+// The cameras stand still, but a reference tag's pose wobbles with its noise (a degree at 1.5 m moves a camera by
+// 3 cm), so the cameras are drawn from the reference's mean pose over the last half second.
+function steadyRef() {
+  const key = parseKey(S.settings.frame), tr = S.tracks.get(key);
+  if (!tr || !tr.pose) return null;
+  const b = S.refBuf && S.refBuf.key === key ? S.refBuf : (S.refBuf = { key, a: [] });
+  if (!b.a.length || b.a[b.a.length - 1].time !== tr.time) b.a.push({ time: tr.time, R: tr.pose.R, t: tr.pose.t });
+  while (tr.time - b.a[0].time > 0.5) b.a.shift();
+  return b.a.length > 2 ? C.meanPose(b.a, 10, 0.1) : tr.pose;
+}
 function draw3d() {
   const { c, w, h } = sizeCanvas(plot);
   c.clearRect(0, 0, w, h);
@@ -1596,12 +1853,12 @@ function draw3d() {
   // origin: the camera, or the reference tag
   const L0 = Math.max(0.05, step * 0.6);
   // the cameras: each placed one as a small pyramid where the rig puts it (camera 1 alone before any start)
-  const camRef = S.settings.frame === 'camera' ? null : (S.tracks.get(parseKey(S.settings.frame)) || {}).pose || null;
+  const camRef = S.settings.frame === 'camera' ? null : steadyRef();
   if (S.settings.frame === 'camera' || camRef) {
     const list = S.cams.length ? S.cams.filter((c) => c.T) : [{ n: 1, T: { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, cam: null }];
     for (const cm of list) {
       const a = cm.cam ? Math.tan((C.hfov(cm.cam) * Math.PI) / 360) : 0.7, b = cm.cam ? (a * cm.cam.h) / cm.cam.w : 0.4, d = L0;
-      const P = C.inFrame(cm.T, camRef), at = (q) => C.add(C.mulv(P.R, q), P.t);
+      const P = shown(cm.T, camRef), at = (q) => C.add(C.mulv(P.R, q), P.t);
       const corners = [[-a, -b, 1], [a, -b, 1], [a, b, 1], [-a, b, 1]].map((q) => at(q.map((x) => x * d)));
       for (let k = 0; k < 4; k++) { line(P.t, corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
       line(corners[0], corners[1], K.text2, 2.5); // the top edge, so which way is up reads at a glance
@@ -1614,7 +1871,7 @@ function draw3d() {
     const rk = parseKey(S.settings.frame), b = isBody(rk) ? bodyOf(rk) : null;
     const parts = b ? b.members.map((m) => ({ R: m.R, t: m.t, size: sizeOf(m.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(rk) }];
     for (const pt of parts) {
-      const sq = C.tagCorners(pt.size).map((q) => C.mulv(C.TAG_TO_VIEW, C.add(C.mulv(pt.R, q), pt.t)));
+      const sq = C.tagCorners(pt.size).map((q) => C.mulv(C.TAG_TO_VIEW, C.add(C.mulv(pt.R, q), pt.t))).map((v) => (S.settings.mirror ? [-v[0], v[1], v[2]] : v));
       for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(rk), 2);
     }
   }
@@ -1780,7 +2037,8 @@ function drawTplot() {
     for (const p of ys) { c.fillStyle = cols[p.i]; c.fillText(names[p.i], L + pw + 6, p.y); c.fillStyle = K.text2; c.font = '11px Archivo, sans-serif'; c.fillText((motion ? (val(kl, p.i) >= 0 ? '+' : '') : '') + fmt(val(kl, p.i)), L + pw + 16, p.y); c.font = '600 11px Archivo, system-ui, sans-serif'; }
   } else {
     c.fillStyle = K.muted; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '12px Archivo, system-ui, sans-serif';
-    c.fillText(id === null ? 'Pick a tag' : `${nameOf(id)} isn’t in view`, L + pw / 2, T + ph / 2);
+    const ref = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
+    c.fillText(id === null ? 'Pick a tag' : id === ref ? `${nameOf(id)} is the reference, so it stays at the origin` : `${nameOf(id)} isn’t in view`, L + pw / 2, T + ph / 2);
   }
   // hover: crosshair and a tooltip at the nearest sample
   const tip = $('tip');
@@ -1839,20 +2097,25 @@ function fmtAgo(s) { return s < 60 ? `${s.toFixed(0)} s` : s < 3600 ? `${(s / 60
 
 // ---------------- render loop ----------------
 function frame() {
-  if (S.mode === 'track') { draw3d(); drawTplot(); drawTable(); }
+  if (S.tab === 'track') { draw3d(); drawTplot(); }
+  if (S.mode === 'track') drawTable();
+  if (S.tab === 'stream') paintStream();
+  if (REC.on) paintRec();
   if (S.mode === 'track') for (const c of S.cams) if (c.last && performance.now() / 1000 - c.last.time > 0.5) { clearOverlay(c); c.last = null; }
   requestAnimationFrame(frame);
 }
 
 // ---------------- modes ----------------
+// S.tab is the tab shown; S.mode what the detector does: 'calib' looks for the board, 'track' (Track and Stream) for tags.
 function setMode(m) {
-  S.mode = m;
-  $('tab-track').setAttribute('aria-selected', String(m === 'track'));
-  $('tab-calib').setAttribute('aria-selected', String(m === 'calib'));
+  S.tab = m; S.mode = m === 'calib' ? 'calib' : 'track';
+  for (const t of TABS) $('tab-' + t).setAttribute('aria-selected', String(m === t));
   $('view-track').hidden = m !== 'track';
-  $('tagsCard').hidden = m !== 'track';
+  $('tagsCard').hidden = m === 'calib';
   $('nowCard').hidden = m !== 'track';
   $('calibCard').hidden = m !== 'calib';
+  $('streamCard').hidden = m !== 'stream';
+  $('recCard').hidden = m === 'calib';
   document.querySelector('main').classList.toggle('calib', m === 'calib');
   if (m === 'calib') {
     // the steps sit in the right-hand column
@@ -1861,13 +2124,18 @@ function setMode(m) {
   } else document.querySelector('.col').appendChild($('calibCard'));
   clearOverlays(); renderRig();
 }
-$('tab-track').onclick = () => setMode('track');
-$('tab-calib').onclick = () => setMode('calib');
-[$('tab-track'), $('tab-calib')].forEach((b) => b.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const other = b.id === 'tab-track' ? $('tab-calib') : $('tab-track'); other.click(); other.focus(); }
-}));
+const TABS = ['track', 'calib', 'stream'];
+TABS.forEach((t, i) => {
+  const b = $('tab-' + t);
+  b.onclick = () => setMode(t);
+  b.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d) return;
+    const other = $('tab-' + TABS[(i + d + TABS.length) % TABS.length]); other.click(); other.focus();
+  });
+});
 const mq = matchMedia('(max-width:1000px)');
-mq.addEventListener('change', () => setMode(S.mode));
+mq.addEventListener('change', () => setMode(S.tab));
 
 // ---------------- calibration ----------------
 // Steps 2 and 3 calibrate one camera's lens (S.calibCam, picked in step 2); step 4 places the cameras.
@@ -2287,6 +2555,658 @@ window.addEventListener('resize', () => { if (!$('boardView').hidden) { clearTim
 const routeHash = () => { if (location.hash === BOARD_HASH) showBoardView(); else hideBoardView(); };
 window.addEventListener('hashchange', routeHash);
 
+// ---------------- stream: the poses, sent on over serial or UDP ----------------
+// After each detection, at most `rate` times a second: one message (TagCore.streamMessage) with the newest plotted
+// pose of every track in view, so it is in the Track tab's frame and tare. It goes to the serial port (Web Serial) and
+// to the UDP bridge (a WebSocket to udp-bridge.py on this computer, which sends each message as one datagram). A
+// message that finds the last one still being written is dropped, not queued, so the link never falls behind.
+const ST = Object.assign({ fmt: 'json', rate: 30, baud: 115200, host: '127.0.0.1', port: 9870, bridge: 8770 }, store.get('stream', {}));
+ST.fmt = ST.fmt === 'csv' ? 'csv' : 'json';
+if (![10, 30, 60, 0].includes(ST.rate)) ST.rate = 30;
+if (![9600, 57600, 115200, 230400, 460800, 921600].includes(ST.baud)) ST.baud = 115200;
+for (const [k, d] of [['port', 9870], ['bridge', 8770]]) if (!(Number.isInteger(ST[k]) && ST[k] >= 1 && ST[k] <= 65535)) ST[k] = d;
+if (typeof ST.host !== 'string' || !ST.host) ST.host = '127.0.0.1';
+const stLive = { last: 0, sent: 0, dropped: 0, msg: '', serial: null, ws: null, painted: 0 };
+const enc = new TextEncoder();
+function saveStream() { store.set('stream', { fmt: ST.fmt, rate: ST.rate, baud: ST.baud, host: ST.host, port: ST.port, bridge: ST.bridge }); }
+function frameName() { return S.settings.frame === 'camera' ? 'camera' : nameOf(parseKey(S.settings.frame)); }
+function streamTick(time) {
+  const wall = performance.now();
+  if (ST.rate && wall - stLive.last < 1000 / ST.rate - 2) return;
+  stLive.last = wall;
+  const rows = [];
+  for (const key of S.hist.ids().sort(keySort)) {
+    const s = S.hist.latest(key);
+    if (s && time - s.time < 0.25) rows.push({ track: key, name: nameOf(key), p: s.t, q: C.quatOf(s.R) });
+  }
+  const msg = C.streamMessage(ST.fmt, performance.timeOrigin / 1000 + time, rows, frameName(), S.settings.mirror ? 'mirror' : 'in person');
+  if (msg) stLive.msg = msg;
+  if (msg) send(msg);
+}
+function send(msg) {
+  const sp = stLive.serial, ws = stLive.ws;
+  let out = false;
+  if (sp && sp.writer) {
+    if (sp.busy) stLive.dropped++;
+    else { sp.busy = true; out = true; sp.writer.write(enc.encode(msg)).then(() => { sp.busy = false; }, (e) => serialGone(e)); }
+  }
+  if (ws && ws.ok && ws.sock.readyState === 1) {
+    if (ws.sock.bufferedAmount > 65536) stLive.dropped++;
+    else { ws.sock.send(msg); out = true; }
+  }
+  if (out) stLive.sent++;
+}
+const header = () => (ST.fmt === 'csv' ? C.STREAM_CSV_HEADER + '\n' : '');
+function note(id, text, warn) { $(id).innerHTML = text ? `<div class="note${warn ? ' warn' : ''}"><svg class="i"><use href="#i-${warn ? 'alert' : 'info'}"/></svg><span>${text}</span></div>` : ''; }
+function stState(id, on, text) { const el = $(id); el.classList.toggle('on', on); el.lastElementChild.textContent = text; }
+// serial
+async function serialConnect() {
+  if (stLive.serial) return serialClose();
+  if (!('serial' in navigator)) return note('stSerialMsg', 'This browser has no Web Serial. Use Chrome or Edge on a computer, or send over UDP.', true);
+  let port;
+  try { port = await navigator.serial.requestPort(); } catch (e) { return; } // closed the chooser
+  try { await port.open({ baudRate: ST.baud }); } catch (e) { return note('stSerialMsg', `Couldn’t open the port (${escapeHtml(e.message)}). Is another program using it?`, true); }
+  const sp = { port, writer: port.writable.getWriter(), busy: false };
+  stLive.serial = sp;
+  if (header()) sp.writer.write(enc.encode(header())).catch(() => {});
+  const info = port.getInfo ? port.getInfo() : {};
+  stState('stSerialState', true, `Sending at ${ST.baud} baud${info.usbVendorId ? ` (USB ${info.usbVendorId.toString(16).padStart(4, '0')}:${(info.usbProductId || 0).toString(16).padStart(4, '0')})` : ''}`);
+  $('stSerialBtn').textContent = 'Disconnect'; $('stBaud').disabled = true; note('stSerialMsg', '');
+}
+async function serialClose() {
+  const sp = stLive.serial;
+  if (!sp) return;
+  stLive.serial = null;
+  try { await sp.writer.close(); } catch (e) { /* already gone */ }
+  try { sp.writer.releaseLock(); } catch (e) { /* released */ }
+  try { await sp.port.close(); } catch (e) { /* unplugged */ }
+  stState('stSerialState', false, 'Not connected'); $('stSerialBtn').textContent = 'Connect a port'; $('stBaud').disabled = false;
+}
+function serialGone(e) {
+  if (!stLive.serial) return;
+  serialClose();
+  note('stSerialMsg', `The port closed${e && e.message ? ` (${escapeHtml(e.message)})` : ''}. Was it unplugged?`, true);
+}
+if ('serial' in navigator) navigator.serial.addEventListener('disconnect', (e) => { if (stLive.serial && e.target === stLive.serial.port) serialGone(); });
+// UDP, through the bridge
+function bridgeCmd() {
+  const o = location.origin, ok = o === 'https://tsmorz.github.io' || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(o);
+  return 'python3 udp-bridge.py' + (ST.bridge !== 8770 ? ` --port ${ST.bridge}` : '') + (ok ? '' : ` --origin ${o}`);
+}
+function udpConnect() {
+  if (stLive.ws) return udpClose();
+  const to = `${ST.host.includes(':') ? `[${ST.host}]` : ST.host}:${ST.port}`;
+  let sock;
+  try { sock = new WebSocket(`ws://127.0.0.1:${ST.bridge}/?to=${encodeURIComponent(to)}`); } catch (e) { return note('stUdpMsg', escapeHtml(e.message), true); }
+  const ws = { sock, ok: false };
+  stLive.ws = ws;
+  stState('stUdpState', false, 'Connecting…'); $('stUdpBtn').textContent = 'Disconnect'; note('stUdpMsg', '');
+  sock.onmessage = (ev) => {
+    let m = null;
+    try { m = JSON.parse(ev.data); } catch (e) { /* not the bridge */ }
+    if (!m || m.bridge !== 'tag-tracker-udp' || ws.ok) return;
+    ws.ok = true;
+    if (header()) sock.send(header());
+    stState('stUdpState', true, `Sending to ${m.to}`);
+  };
+  sock.onclose = () => {
+    if (stLive.ws !== ws) return;
+    stLive.ws = null;
+    stState('stUdpState', false, 'Not connected'); $('stUdpBtn').textContent = 'Connect';
+    note('stUdpMsg', ws.ok ? 'The bridge closed the connection.' : `No bridge answered on port ${ST.bridge}. Start it with the command above, and if the browser asks, allow this page to reach devices on your local network.`, true);
+  };
+}
+function udpClose() { const ws = stLive.ws; stLive.ws = null; if (ws) ws.sock.close(); stState('stUdpState', false, 'Not connected'); $('stUdpBtn').textContent = 'Connect'; }
+// the panel
+function paintStream() {
+  const now = performance.now();
+  if (now - stLive.painted < 250) return;
+  stLive.painted = now;
+  $('stPreview').textContent = stLive.msg ? (ST.fmt === 'csv' ? header() : '') + stLive.msg.replace(/\n$/, '') : (S.running ? 'No tracks in view.' : 'Start a camera, or the demo, to see messages here.');
+  const linked = stLive.serial || (stLive.ws && stLive.ws.ok);
+  $('stCount').textContent = linked || stLive.sent ? `${stLive.sent.toLocaleString()} sent${stLive.dropped ? `, ${stLive.dropped.toLocaleString()} dropped: the link is slower than the rate` : ''}` : '';
+}
+function paintStreamForm() {
+  document.querySelectorAll('[data-stfmt]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.stfmt === ST.fmt)));
+  $('stRate').value = String(ST.rate); $('stBaud').value = String(ST.baud);
+  $('stHost').value = ST.host; $('stPort').value = ST.port; $('stBridge').value = ST.bridge;
+  $('stCmd').textContent = bridgeCmd();
+}
+document.querySelectorAll('[data-stfmt]').forEach((b) => b.onclick = () => {
+  ST.fmt = b.dataset.stfmt; saveStream(); paintStreamForm(); stLive.msg = '';
+  if (header()) send(header()); // the receiver gets the column names before the first CSV line
+});
+$('stRate').onchange = () => { ST.rate = +$('stRate').value; saveStream(); };
+$('stBaud').onchange = () => { ST.baud = +$('stBaud').value; saveStream(); };
+$('stHost').onchange = () => { ST.host = $('stHost').value.trim() || '127.0.0.1'; saveStream(); paintStreamForm(); };
+const portIn = (id, k, d) => { $(id).onchange = () => { const v = Math.round(+$(id).value); ST[k] = v >= 1 && v <= 65535 ? v : d; saveStream(); paintStreamForm(); }; };
+portIn('stPort', 'port', 9870); portIn('stBridge', 'bridge', 8770);
+$('stSerialBtn').onclick = serialConnect;
+$('stUdpBtn').onclick = udpConnect;
+$('stCopy').onclick = () => { navigator.clipboard.writeText(bridgeCmd()).then(() => { $('stCopy').textContent = 'Copied'; setTimeout(() => { $('stCopy').textContent = 'Copy'; }, 1500); }, () => {}); };
+paintStreamForm();
+
+// ---------------- recording and notes ----------------
+// Record keeps every new plotted pose (each track's sample from each detection, once), in the Track tab's frame, tare
+// and view, as the Stream tab would send it. The notes box belongs to the recording: one line per note, and while
+// recording each new line starts with the time it was begun (typed or spoken; TagCore.parseNotes reads them back).
+// Notes written before the first recording stay as notes about it; a new recording after that starts with an empty box.
+const REC_MAX_S = 3600, REC_MAX_POSES = 600000;
+const REC = { on: false, rec: null, saved: true, t0: 0, painted: 0 };
+const notesEl = $('notes');
+const recNow = () => performance.now() / 1000 - REC.t0; // seconds since the recording began
+function recStart() {
+  if (REC.on) return true;
+  if (REC.rec && REC.rec.poses && !REC.saved && !confirm('Start a new recording? The last one hasn’t been downloaded, and it will be lost with its notes.')) return false;
+  if (REC.rec) notesEl.value = '';
+  REC.t0 = performance.now() / 1000;
+  REC.rec = { start: performance.timeOrigin / 1000 + REC.t0, end: 0, samples: [], poses: 0, tracks: new Set(), why: '' };
+  REC.on = true; REC.saved = true;
+  paintRecUi();
+  return true;
+}
+function recStop(why) {
+  if (!REC.on) return;
+  REC.on = false;
+  REC.rec.end = performance.timeOrigin / 1000 + performance.now() / 1000;
+  REC.rec.why = why || '';
+  paintRecUi();
+}
+function recTick(time) {
+  if (!REC.on || time < REC.t0) return;
+  const rows = [];
+  for (const key of S.hist.ids().sort(keySort)) {
+    const s = S.hist.latest(key);
+    if (s && s.time === time) rows.push({ track: key, name: nameOf(key), p: s.t.slice(), q: C.quatOf(s.R) });
+  }
+  if (!rows.length) return;
+  const r = REC.rec;
+  r.samples.push({ t: performance.timeOrigin / 1000 + time, frame: frameName(), view: S.settings.mirror ? 'mirror' : 'in person', rows });
+  r.poses += rows.length;
+  for (const x of rows) r.tracks.add(x.track);
+  REC.saved = false;
+  if (r.poses >= REC_MAX_POSES) recStop('full');
+}
+function recSummary() {
+  const r = REC.rec;
+  if (!r) return 'Records every pose the Track tab plots, with your notes.';
+  const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
+  const notes = C.parseNotes(notesEl.value).length;
+  const what = r.poses ? `${plural(r.poses, 'pose')} of ${plural(r.tracks.size, 'track')}` : REC.on && !S.running ? 'start a camera or the demo' : 'nothing in view yet';
+  const why = r.why === 'full' ? ' (stopped: that’s as many poses as one recording holds)' : r.why === 'long' ? ' (stopped after an hour)' : '';
+  return `${C.fmtStamp(REC.on ? recNow() : r.end - r.start)}${REC.on ? '' : ' recorded'}: ${what}${notes ? `, ${plural(notes, 'note')}` : ''}${why}`;
+}
+function paintRec() {
+  const now = performance.now();
+  if (REC.on && recNow() > REC_MAX_S) recStop('long');
+  if (now - REC.painted < 250) return;
+  REC.painted = now;
+  $('recText').textContent = recSummary();
+}
+function paintRecUi() {
+  const b = $('recBtn');
+  b.setAttribute('aria-pressed', String(REC.on));
+  b.querySelector('use').setAttribute('href', REC.on ? '#i-stop' : '#i-rec');
+  b.querySelector('span').textContent = REC.on ? 'Stop' : 'Record';
+  $('recInfo').classList.toggle('on', REC.on);
+  $('recCsv').disabled = $('recJson').disabled = !REC.rec || REC.on;
+  $('recDiscard').disabled = !REC.rec && !notesEl.value;
+  REC.painted = 0; paintRec();
+}
+function recFile(ext) {
+  const d = new Date(REC.rec.start * 1000), p = (x) => String(x).padStart(2, '0');
+  return `tag-recording-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;
+}
+$('recBtn').onclick = () => { if (REC.on) recStop(); else recStart(); };
+$('recCsv').onclick = () => { download(new Blob([C.recordingCsv(REC.rec, C.parseNotes(notesEl.value))], { type: 'text/csv' }), recFile('csv')); REC.saved = true; };
+$('recJson').onclick = () => { download(new Blob([C.recordingJson(REC.rec, C.parseNotes(notesEl.value))], { type: 'application/json' }), recFile('json')); REC.saved = true; };
+$('recDiscard').onclick = () => {
+  if (REC.rec && REC.rec.poses && !REC.saved && !confirm('Discard this recording and its notes? It hasn’t been downloaded.')) return;
+  REC.on = false; REC.rec = null; REC.saved = true; notesEl.value = '';
+  paintRecUi();
+};
+// While recording, the first thing typed on an empty line puts the time in front of it.
+notesEl.addEventListener('beforeinput', (e) => {
+  if (!REC.on || e.inputType !== 'insertText' || !e.data || !e.data.trim()) return;
+  const v = notesEl.value, a = notesEl.selectionStart, b = notesEl.selectionEnd;
+  const ls = v.lastIndexOf('\n', a - 1) + 1;
+  let le = v.indexOf('\n', b); if (le < 0) le = v.length;
+  if (v.slice(ls, a).trim() || v.slice(b, le).trim()) return;
+  e.preventDefault();
+  notesEl.setRangeText(`${C.fmtStamp(recNow())}  ${e.data}`, ls, le, 'end');
+  notesEl.dispatchEvent(new Event('input', { bubbles: true }));
+});
+notesEl.addEventListener('input', () => { if (REC.rec && REC.rec.poses) REC.saved = false; $('recDiscard').disabled = !REC.rec && !notesEl.value; REC.painted = 0; paintRec(); });
+window.addEventListener('beforeunload', (e) => { if (REC.rec && REC.rec.poses && !REC.saved) { e.preventDefault(); e.returnValue = ''; } });
+// A spoken note: a new timed line at the end while recording (timed from when you began speaking), else at the caret.
+function addNote(text, at) {
+  const v = notesEl.value;
+  if (REC.on) {
+    notesEl.value = v + (v === '' || v.endsWith('\n') ? '' : '\n') + `${C.fmtStamp(Math.max(0, at - REC.t0))}  ${text}`;
+    notesEl.setSelectionRange(notesEl.value.length, notesEl.value.length);
+    notesEl.scrollTop = notesEl.scrollHeight;
+  } else {
+    const r = C.insertSpeech(v, notesEl.selectionStart, notesEl.selectionEnd, text);
+    notesEl.value = r.value; notesEl.setSelectionRange(r.caret, r.caret);
+  }
+  notesEl.dispatchEvent(new Event('input', { bubbles: true }));
+}
+paintRecUi();
+
+// ---------------- voice: notes and commands, spoken ----------------
+// Press V (outside a text box), the top bar's microphone or Dictate, and speak; the take ends after a pause
+// (TagCore.VoiceGate), or press again, or Escape. MediaRecorder records the microphone; the clip is decoded to 16 kHz
+// mono (an OfflineAudioContext resamples it) and speech-worker.js turns it into text with Whisper tiny.en, on this
+// computer. An utterance that is a command as a whole (TagCore.voiceCommand) runs it; anything else becomes a note.
+// The model downloads on first use (you can speak meanwhile: the take waits for it), then comes from the cache.
+const SR = 16000, MAX_TAKE_S = 60, SILENCE_RMS = 0.004;
+const V = { worker: null, ready: false, failed: '', progress: 0, rec: null, stream: null, chunks: [], at: null, pressAt: 0, none: false, ctx: null, raf: 0, stopT: 0, hideT: 0, job: 0, pending: new Map(), opening: false };
+const voiceOk = window.isSecureContext && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && 'MediaRecorder' in window && 'OfflineAudioContext' in window;
+const VOICE_ACTIONS = {
+  track: () => { setMode('track'); return 'Track tab'; },
+  calib: () => { setMode('calib'); return 'Calibrate tab'; },
+  stream: () => { setMode('stream'); return 'Stream tab'; },
+  record: () => (REC.on ? 'Already recording' : recStart() ? 'Recording' : 'Kept the last recording'),
+  stop: () => (REC.on ? (recStop(), 'Recording stopped') : 'Not recording'),
+  tare: () => { tareNow(); return 'Orientation tared'; },
+  untare: () => { clearTare(); return 'Tare cleared'; },
+  fit: () => { if (S.tab !== 'track') setMode('track'); fitView(); return 'View fitted'; },
+  reset: () => { if (S.tab !== 'track') setMode('track'); resetView(); return 'View reset'; },
+};
+function voiceSay(state, text, hold) {
+  const el = $('voice');
+  el.dataset.state = state; $('voiceText').textContent = text; el.hidden = false;
+  clearTimeout(V.hideT);
+  if (hold) V.hideT = setTimeout(() => { el.hidden = true; el.dataset.state = 'idle'; }, hold);
+  const on = state === 'listening';
+  for (const id of ['voiceBtn', 'dictBtn']) { $(id).setAttribute('aria-pressed', String(on)); $(id).disabled = state === 'processing'; }
+  $('dictBtn').querySelector('span').textContent = on ? 'Stop' : 'Dictate';
+}
+function speechWorker() {
+  if (V.worker) return;
+  const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
+  V.worker = new Worker(base + 'speech-worker.js', { type: 'module' });
+  const fail = (msg) => { V.failed = msg; for (const f of V.pending.values()) f({ error: msg }); V.pending.clear(); };
+  V.worker.onmessage = ({ data: d }) => {
+    if (d.type === 'progress') {
+      V.progress = d.value;
+      if (!V.ready && $('voice').dataset.state === 'processing') voiceSay('processing', `Downloading the speech model, ${Math.round(d.value)}% (only the first time)…`);
+    } else if (d.type === 'ready') V.ready = true;
+    else if (d.type === 'error') fail(`the speech model could not load: ${d.message}`);
+    else if (d.type === 'result') { const f = V.pending.get(d.id); V.pending.delete(d.id); if (f) f(d); }
+  };
+  V.worker.onerror = (e) => fail(e.message || 'the speech worker failed');
+  V.worker.postMessage({ type: 'load' });
+}
+function transcribe(audio) {
+  if (V.failed) return Promise.reject(new Error(V.failed));
+  const id = ++V.job;
+  return new Promise((resolve, reject) => {
+    V.pending.set(id, (d) => (d.error ? reject(new Error(d.error)) : resolve(d.text)));
+    V.worker.postMessage({ type: 'transcribe', id, audio }, [audio.buffer]);
+  });
+}
+const rmsOf = (a) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * a[i]; return Math.sqrt(s / (a.length || 1)); };
+async function voiceStart() {
+  if (V.rec || V.opening || $('voice').dataset.state === 'processing') return;
+  if (!voiceOk) { voiceSay('error', 'This browser can’t record audio here: it needs HTTPS and MediaRecorder.', 6000); return; }
+  if (V.failed) { V.worker.terminate(); V.worker = null; V.failed = ''; V.ready = false; } // try again
+  speechWorker();
+  V.opening = true;
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) {
+    V.opening = false;
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+    voiceSay('error', denied ? 'Microphone access was blocked. Allow it in the address bar and try again.' : `No microphone (${e.message}).`, 6000);
+    return;
+  }
+  V.opening = false;
+  V.stream = stream; V.chunks = []; V.at = null; V.none = false; V.pressAt = performance.now();
+  V.rec = new MediaRecorder(stream);
+  V.rec.ondataavailable = (e) => { if (e.data.size) V.chunks.push(e.data); };
+  V.rec.onstop = voiceFinish;
+  V.rec.start();
+  listen(stream);
+  V.stopT = setTimeout(voiceStop, MAX_TAKE_S * 1000);
+  voiceSay('listening', V.ready ? 'Listening…' : 'Listening… (the speech model downloads meanwhile)');
+}
+// The level meter, and the gate that ends the take after a pause.
+function listen(stream) {
+  const ctx = new AudioContext(), an = ctx.createAnalyser();
+  an.fftSize = 1024;
+  ctx.createMediaStreamSource(stream).connect(an);
+  const buf = new Float32Array(an.fftSize), gate = new C.VoiceGate();
+  gate.reset(performance.now());
+  V.ctx = ctx;
+  const tick = () => {
+    an.getFloatTimeDomainData(buf);
+    const level = rmsOf(buf), ev = gate.step(level, performance.now());
+    $('voiceMeter').style.transform = `scaleX(${Math.min(1, level * 6)})`;
+    if (ev === 'start') V.at = gate.start;
+    if (ev === 'end' || ev === 'none') { V.none = ev === 'none'; voiceStop(); return; }
+    V.raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function voiceStop() {
+  clearTimeout(V.stopT); cancelAnimationFrame(V.raf);
+  if (V.rec && V.rec.state !== 'inactive') V.rec.stop();
+}
+async function voiceFinish() {
+  cancelAnimationFrame(V.raf); $('voiceMeter').style.transform = 'scaleX(0)';
+  if (V.ctx) { V.ctx.close(); V.ctx = null; }
+  V.stream.getTracks().forEach((t) => t.stop());
+  const blob = new Blob(V.chunks, { type: V.rec.mimeType }), at = (V.at === null ? V.pressAt : V.at) / 1000, none = V.none;
+  V.rec = null; V.stream = null; V.chunks = [];
+  if (none) { voiceSay('done', 'Didn’t hear anything. Try again a little closer to the microphone.', 4000); return; }
+  voiceSay('processing', V.ready ? 'Turning speech into text…' : `Downloading the speech model${V.progress ? `, ${Math.round(V.progress)}%` : ''} (only the first time)…`);
+  try {
+    const audio = await toMono16k(blob);
+    // Whisper invents words in silence, so a quiet take is dropped
+    if (rmsOf(audio) < SILENCE_RMS) { voiceSay('done', 'Didn’t hear anything. Try again a little closer to the microphone.', 4000); return; }
+    const text = C.tidySpeech(await transcribe(audio));
+    if (!text) { voiceSay('done', 'No words recognised. Try again.', 4000); return; }
+    const c = C.voiceCommand(text);
+    if (c && c.cmd !== 'note') voiceSay('done', `“${text.replace(/[.!?]$/, '')}”: ${VOICE_ACTIONS[c.cmd]()}.`, 4000);
+    else {
+      const note = c ? c.text : text;
+      addNote(note, at);
+      voiceSay('done', `${REC.on ? 'Note at ' + C.fmtStamp(Math.max(0, at - REC.t0)) : 'Note'}: “${note}”`, 5000);
+    }
+  } catch (e) {
+    voiceSay('error', `Couldn’t turn that into text (${e.message}).`, 7000);
+  }
+}
+// Whatever the recorder made (webm/opus, mp4/aac), decoded at 16 kHz, which resamples it, and mixed down to one channel.
+async function toMono16k(blob) {
+  const buf = await new OfflineAudioContext(1, SR, SR).decodeAudioData(await blob.arrayBuffer());
+  if (buf.numberOfChannels === 1) return buf.getChannelData(0).slice();
+  const out = new Float32Array(buf.length);
+  for (let c = 0; c < buf.numberOfChannels; c++) { const ch = buf.getChannelData(c); for (let i = 0; i < out.length; i++) out[i] += ch[i] / buf.numberOfChannels; }
+  return out;
+}
+const voiceToggle = () => { if (V.rec) voiceStop(); else voiceStart(); };
+$('voiceBtn').onclick = voiceToggle;
+$('dictBtn').onclick = voiceToggle;
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && V.rec) { voiceStop(); return; }
+  if ((e.key !== 'v' && e.key !== 'V') || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable], dialog[open]')) return;
+  if (!$('boardView').hidden) return;
+  e.preventDefault(); voiceToggle();
+});
+window.addEventListener('pagehide', () => {
+  if (!V.rec) return;
+  V.rec.onstop = null; voiceStop();
+  if (V.stream) V.stream.getTracks().forEach((t) => t.stop());
+  if (V.ctx) V.ctx.close();
+});
+
+// ---------------- motion sensors: nrf-controller boards over Bluetooth ----------------
+// A board (a XIAO nRF54LM20A Sense running nrf-controller) notifies its IMU in batches of up to 8 samples at 208 Hz
+// (TagCore.decodeImuBatch). Its clock is put on the page's (TagCore.BoardClock), and each sample is kept for 1.5 s:
+// its time, VQF's orientation Q (IMU → VQF's world, z up) and the gyro in rad/s with VQF's bias estimate taken off.
+// A board is fixed to one track. Lining it up (TagCore.lineUp) learns M, how it sits on the track (kept per board),
+// and W, VQF's world in the rig (per connection: VQF's heading is free and drifts), from the cameras' own poses of the
+// track (noteCamPose) paired with the board's orientation at the same moment. W's heading then follows the cameras
+// slowly. Once lined up, each batch gives the track's Kalman filter (Filtered poses only) the gyro, turned into the
+// rig, and VQF's tilt (W·Q·M, loose about world up).
+const BOARD_RATE_SIGMA = 0.03, BOARD_TILT_SIGMA = 0.02, BOARD_UP_SIGMA = 0.5; // rad/s, rad, rad
+const HAS_BT = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+S.boards = [];
+const boardStore = {
+  get: () => store.get('boards', {}),
+  save(b) { const all = store.get('boards', {}); all[b.id] = { track: b.track, M: b.M, use: b.use, rms: b.rms }; store.set('boards', all); },
+};
+const camPoses = new Map();
+function noteCamPose(key, time, R) {
+  if (!S.boards.some((b) => b.track === key)) return;
+  let a = camPoses.get(key);
+  if (!a) camPoses.set(key, (a = []));
+  a.push({ time, R });
+  while (a.length && time - a[0].time > 1.5) a.shift();
+}
+function newBoard(id, name, extra) {
+  const saved = boardStore.get()[id] || {};
+  const b = Object.assign({
+    id, name, device: null, sim: false, info: null, clock: new C.BoardClock(), buf: [], track: saved.track === undefined ? null : saved.track,
+    M: saved.M || null, rms: saved.rms == null ? null : saved.rms, use: saved.use !== false, W: null, pairs: [], wPairs: [], pairT: -Infinity,
+    state: 'connecting', err: '', lastSeq: null, lost: 0, n: 0, nPrev: 0, rate: 0, rateT: performance.now(), fit: null, learn: '',
+  }, extra || {});
+  S.boards.push(b);
+  renderBoards();
+  return b;
+}
+// one batch from a board, `arrival` on the page's clock (s)
+function onBatch(b, view, arrival) {
+  const d = C.decodeImuBatch(view);
+  if (!d || !b.info) return;
+  if (b.lastSeq !== null) { const gap = (d.firstSeq - b.lastSeq - 1) >>> 0; if (gap < 100000) b.lost += gap; }
+  b.lastSeq = (d.firstSeq + d.samples.length - 1) >>> 0;
+  const ext = d.samples.map((x) => b.clock.unwrap(x.tUs));
+  b.clock.add(ext[ext.length - 1], arrival);
+  const k = (b.info.gyroDpsPerLsb * Math.PI) / 180, bias = d.biasDps.map((x) => (x * Math.PI) / 180);
+  d.samples.forEach((x, i) => b.buf.push({ t: b.clock.toHost(ext[i]), Q: C.rotOfQuat(x.q), w: x.gyro.map((v, j) => v * k - bias[j]) }));
+  const tn = b.buf[b.buf.length - 1].t;
+  while (tn - b.buf[0].t > 1.5) b.buf.shift();
+  b.n += d.samples.length;
+  boardLineUp(b);
+  boardFuse(b, d.samples.length);
+}
+// the board's orientation at page time t, between the samples either side
+function imuAt(b, t) {
+  const a = b.buf;
+  for (let i = a.length - 1; i > 0; i--) {
+    if (a[i - 1].t > t) continue;
+    if (a[i].t < t) return null;
+    const f = (t - a[i - 1].t) / Math.max(1e-6, a[i].t - a[i - 1].t), Q0 = a[i - 1].Q;
+    return C.mul3(Q0, C.rodrigues(C.so3Log(C.mul3(C.tr3(Q0), a[i].Q)).map((x) => x * f)));
+  }
+  return null;
+}
+// pair each camera pose of the track with the board's orientation then, once the board's data has caught up with it
+function boardLineUp(b) {
+  if (b.track === null || !b.buf.length) return;
+  const last = b.buf[b.buf.length - 1].t;
+  for (const c of camPoses.get(b.track) || []) {
+    if (c.time <= b.pairT || c.time > last) continue;
+    b.pairT = c.time;
+    const Q = imuAt(b, c.time);
+    if (Q) pairUp(b, c.R, Q, c.time);
+  }
+}
+function pairUp(b, Rc, Q, time) {
+  if (!b.M) { // learning how it sits: poses 0.1 s apart, tried every 5 once there are 20
+    if (b.pairs.length && time - b.pairs[b.pairs.length - 1].time < 0.1) return;
+    b.pairs.push({ Rc, Q, time });
+    if (b.pairs.length > 90) b.pairs.shift();
+    if (b.pairs.length >= 20 && b.pairs.length % 5 === 0) {
+      const L = C.lineUp(b.pairs);
+      b.learn = L.error || '';
+      if (!L.error && L.rms < (3 * Math.PI) / 180 && L.used >= 15) { b.M = L.M; b.W = L.W; b.rms = L.rms; b.fit = L.rms; b.pairs = []; boardStore.save(b); renderBoards(); }
+      else if (!L.error) b.learn = 'fit';
+    }
+    return;
+  }
+  const Wobs = C.mul3(Rc, C.mul3(C.tr3(b.M), C.tr3(Q)));
+  if (!b.W) { // finding VQF's heading in the rig, with M known: the mean of 8 poses' worth
+    b.wPairs.push({ R: Wobs, t: [0, 0, 0] });
+    if (b.wPairs.length < 8) return;
+    const mp = C.meanPose(b.wPairs, 10, 1);
+    if (mp.used >= 5) { b.W = mp.R; b.fit = null; b.wPairs = []; } else b.wPairs.shift();
+    return;
+  }
+  // lined up: follow VQF's heading as it drifts (a turn about world up), slowly, and keep score
+  const dW = C.so3Log(C.mul3(Wobs, C.tr3(b.W))), err = C.norm(dW), up = C.mulv(b.W, [0, 0, 1]);
+  b.fit = b.fit == null ? err : 0.95 * b.fit + 0.05 * err;
+  if (err < 0.2) { const along = dW[0] * up[0] + dW[1] * up[1] + dW[2] * up[2]; b.W = C.mul3(C.rodrigues(up.map((x) => x * 0.05 * along)), b.W); }
+  if (b.fit > (10 * Math.PI) / 180) { b.W = null; b.fit = null; } // lost its heading (the board restarted?): find it again
+}
+// a lined-up board's batch into its track's filter: the batch's mean turn rate, and its last orientation's tilt
+function boardFuse(b, n) {
+  if (!b.use || !b.M || !b.W || b.track === null || S.settings.pose !== 'filtered') return;
+  const f = S.filters.get(b.track);
+  if (!f || !f.x) return;
+  const fresh = b.buf.slice(-n), w = [0, 0, 0];
+  let tm = 0;
+  for (const x of fresh) { const v = C.mulv(C.mul3(b.W, x.Q), x.w); for (let i = 0; i < 3; i++) w[i] += v[i] / n; tm += x.t / n; }
+  f.updateRate(tm, w, BOARD_RATE_SIGMA);
+  const L = fresh[fresh.length - 1], r = f.updateTilt(L.t, C.mul3(b.W, C.mul3(L.Q, b.M)), C.mulv(b.W, [0, 0, 1]), BOARD_TILT_SIGMA, BOARD_UP_SIGMA);
+  if (r) { b.fused = (b.fused || 0) + 1; if (r.rejected) b.rejected = (b.rejected || 0) + 1; }
+}
+
+// Bluetooth: Chrome and Edge. The first read needs an encrypted, authenticated link, so a board that isn't bonded yet
+// makes the system ask for its six-digit code (the board prints it on its USB console). A board that drops is tried
+// again a few times.
+function idOf(device) { const m = /([0-9A-F]{4})$/i.exec(device.name || ''); return m ? m[1].toUpperCase() : String(device.id).slice(0, 6); }
+async function addBoard() {
+  if (!HAS_BT) { boardNote('This browser has no Web Bluetooth. Use Chrome or Edge on a computer.'); return; }
+  let device;
+  try { device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: C.IMU.namePrefix }], optionalServices: [C.IMU.service] }); } catch (e) { return; } // closed the chooser
+  connectDevice(device);
+}
+async function connectDevice(device) {
+  const id = idOf(device);
+  let b = S.boards.find((x) => x.id === id);
+  if (b && ['connecting', 'pairing', 'live'].includes(b.state)) return;
+  if (!b) b = newBoard(id, device.name || 'nrf-controller-' + id);
+  b.device = device; b.state = 'connecting'; b.err = ''; b.closing = false;
+  renderBoards();
+  if (!b.listening) { device.addEventListener('gattserverdisconnected', () => boardGone(b)); b.listening = true; }
+  try {
+    const server = await device.gatt.connect(), svc = await server.getPrimaryService(C.IMU.service);
+    b.state = 'pairing'; paintBoards();
+    const info = C.decodeBoardInfo(await (await svc.getCharacteristic(C.IMU.info)).readValue());
+    if (!info) throw new Error('its firmware sends another data format; update it with the data logger');
+    b.info = info; b.W = null; b.lastSeq = null;
+    const ch = await svc.getCharacteristic(C.IMU.data);
+    ch.addEventListener('characteristicvaluechanged', (e) => onBatch(b, e.target.value, (e.timeStamp || performance.now()) / 1000));
+    await ch.startNotifications();
+    b.state = 'live'; b.retries = 0;
+  } catch (e) {
+    b.state = 'error'; b.err = e && e.message ? e.message : String(e);
+    if (device.gatt.connected) device.gatt.disconnect();
+  }
+  renderBoards();
+}
+function boardGone(b) {
+  if (b.closing || b.state === 'error') { if (b.closing) b.state = 'saved'; paintBoards(); return; }
+  b.state = 'lost'; b.retries = (b.retries || 0) + 1; paintBoards();
+  if (b.retries <= 5) setTimeout(() => { if (b.state === 'lost' && S.boards.includes(b)) connectDevice(b.device); }, 1500 * b.retries);
+  else { b.state = 'error'; b.err = 'Lost it. Is it on and in range? Press Connect to try again.'; renderBoards(); }
+}
+// boards this site may already use (chosen before, here or in the data logger: Chrome's permission is per site)
+async function rememberBoards() {
+  if (!HAS_BT || !navigator.bluetooth.getDevices) return;
+  try {
+    for (const d of await navigator.bluetooth.getDevices()) {
+      if (!(d.name || '').startsWith(C.IMU.namePrefix) || S.boards.some((b) => b.id === idOf(d))) continue;
+      Object.assign(newBoard(idOf(d), d.name), { device: d, state: 'saved' });
+    }
+    renderBoards();
+  } catch (e) { /* not allowed here */ }
+}
+function boardNote(text) { $('boardsHint').hidden = false; $('boardsHint').textContent = text; }
+
+// the panel
+function renderBoards() {
+  const list = $('boardList');
+  list.textContent = '';
+  const keys = trackKeys();
+  for (const b of S.boards) {
+    const row = document.createElement('div');
+    row.className = 'brow board';
+    const canConnect = !b.sim && b.device && ['saved', 'error', 'lost'].includes(b.state);
+    row.innerHTML = `<span class="sw" style="background:${b.track !== null ? cssColorOf(b.track) : 'var(--unknown)'}"></span>
+      <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</strong>
+      <label class="sr" for="bt-${b.id}">What board ${escapeHtml(b.id)} is fixed to</label>
+      <select id="bt-${b.id}" class="select sm"><option value="">Fixed to…</option>${keys.map((k) => `<option value="${k}"${k === b.track ? ' selected' : ''}>${escapeHtml(nameOf(k))}</option>`).join('')}</select>
+      <span class="field" title="Use it in Filtered poses once it is lined up"><span id="bu-${b.id}">Use</span><button class="switch" role="switch" aria-checked="${b.use}" aria-labelledby="bu-${b.id}" data-a="use"></button></span>
+      <span style="white-space:nowrap">${canConnect ? '<button class="btn sm" data-a="connect">Connect</button>' : ''}<button class="btn sm" data-a="relearn" title="Learn again how it sits on what it's fixed to">Relearn</button>${b.sim ? '' : `<button class="btn sm sq danger" data-a="rm" aria-label="Disconnect ${escapeHtml(b.name)}" title="Disconnect"><svg class="i"><use href="#i-x"/></svg></button>`}</span>
+      <div class="meta"><span class="seen" id="bs-${b.id}"><span class="dot"></span><span></span></span><span id="bl-${b.id}"></span></div>`;
+    row.querySelector('select').onchange = (e) => {
+      b.track = e.target.value === '' ? null : parseKey(e.target.value);
+      b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; boardStore.save(b); renderBoards();
+    };
+    row.querySelector('[data-a=use]').onclick = () => { b.use = !b.use; boardStore.save(b); renderBoards(); };
+    row.querySelector('[data-a=relearn]').onclick = () => { b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; b.learn = ''; boardStore.save(b); renderBoards(); };
+    const rm = row.querySelector('[data-a=rm]');
+    if (rm) rm.onclick = () => { b.closing = true; if (b.device && b.device.gatt.connected) b.device.gatt.disconnect(); S.boards = S.boards.filter((x) => x !== b); renderBoards(); };
+    const cn = row.querySelector('[data-a=connect]');
+    if (cn) cn.onclick = () => { b.retries = 0; connectDevice(b.device); };
+    list.appendChild(row);
+  }
+  list.dataset.keys = keys.join('|');
+  if (S.boards.length) $('boardsHint').hidden = true;
+  paintBoards();
+}
+function paintBoards() {
+  if ($('boardList').dataset.keys !== trackKeys().join('|')) { renderBoards(); return; }
+  const now = performance.now(), deg = (r) => ((r * 180) / Math.PI).toFixed(1);
+  for (const b of S.boards) {
+    if (now - b.rateT > 900) { b.rate = ((b.n - b.nPrev) * 1000) / (now - b.rateT); b.nPrev = b.n; b.rateT = now; }
+    const st = $('bs-' + b.id), ln = $('bl-' + b.id);
+    if (!st) continue;
+    const live = b.state === 'live';
+    st.classList.toggle('on', live && b.rate > 50);
+    st.lastElementChild.textContent = live ? `${b.rate.toFixed(0)} Hz${b.lost ? `, ${b.lost} lost` : ''}` : { connecting: 'Connecting…', pairing: 'Pairing: if asked, enter the code the board prints on its USB console', lost: 'Disconnected, trying again…', saved: 'Not connected', error: b.err }[b.state] || '';
+    ln.textContent = !live ? '' : b.track === null ? 'Choose what it’s fixed to.'
+      : !b.M ? `Learning how it sits: turn it slowly about different axes while a camera sees it (${b.pairs.length} poses${b.learn === 'turn' ? ', needs more turning' : b.learn === 'fit' ? ', poses disagree: is it fixed firmly?' : ''})`
+      : !b.W ? 'Finding its heading…'
+      : `Lined up${b.fit != null ? `, within ${deg(b.fit)}°` : ''}${!b.use ? ', not used' : S.settings.pose !== 'filtered' ? '; used by Filtered poses' : ''}`;
+  }
+}
+$('addBoard').onclick = addBoard;
+setInterval(paintBoards, 500);
+
+// The demo's motion sensors: one simulated board on each hand, fixed at a slant, sending the bytes a real board sends
+// (encodeImuBatch): 208 Hz in batches of up to 8, its own clock (30 ppm fast, starting near the 32-bit wrap), a gyro
+// bias VQF has nearly learned, noise, a heading that wanders, and 4 to 20 ms of Bluetooth delay. It feels the scene as
+// the demo's cameras see it: drawn about DEMO_LAG before each frame reaches the page.
+const DEMO_LAG = 0.02;
+const SIM_BOARDS = [
+  { id: 'SIM1', name: 'Simulated board, left hand', hand: 0, track: 'b:demo-left', M: C.mul3(C.rodrigues([0, 0, Math.PI / 2]), C.rodrigues([0.12, -0.08, 0.05])) },
+  { id: 'SIM2', name: 'Simulated board, right hand', hand: 1, track: 'b:demo-right', M: C.mul3(C.rodrigues([Math.PI, 0, 0]), C.rodrigues([-0.05, 0.1, 0.2])) },
+];
+function startSimBoards(t0) {
+  const timers = [];
+  let g = 17;
+  const gauss = () => { let x = 0; for (let i = 0; i < 12; i++) { g = (g * 1103515245 + 12345) % 2147483648; x += g / 2147483648; } return x - 6; };
+  for (const sb of SIM_BOARDS) {
+    let b = S.boards.find((x) => x.id === sb.id);
+    if (!b) b = newBoard(sb.id, sb.name, { sim: true });
+    if (b.track === null) { b.track = sb.track; boardStore.save(b); }
+    b.info = C.decodeBoardInfo(C.encodeBoardInfo(0x5100 + sb.hand, 208, 0.07, 0.000244));
+    b.state = 'live'; b.W = null;
+    const W0 = C.mul3(C.rodrigues([Math.PI / 2, 0, 0]), C.rodrigues([0, 0, 0.7 + sb.hand])); // VQF's z up is camera 1's −y
+    const bias = [0.6, -0.4, 0.9], est = [0.55, -0.43, 0.86], front = DEMO_HANDS[sb.hand].ids[0];
+    const objR = (tp) => demoTags(tp - t0 / 1000 - DEMO_LAG).find((x) => x.id === front).R;
+    let next = performance.now() / 1000, seq = 4294967200, heading = 0;
+    timers.push(setInterval(() => {
+      const now = performance.now() / 1000, out = [];
+      while (next <= now && out.length < 8) {
+        const tp = next;
+        next += 1 / 208; heading += 0.0004 * gauss();
+        const W = C.mul3(W0, C.rodrigues([0, 0, heading])), Q = C.mul3(C.tr3(W), C.mul3(objR(tp), C.tr3(sb.M))), Q1 = C.mul3(C.tr3(W), C.mul3(objR(tp + 0.001), C.tr3(sb.M)));
+        const wb = C.so3Log(C.mul3(C.tr3(Q), Q1)).map((x) => (x / 0.001) * (180 / Math.PI));
+        out.push({
+          tUs: Math.round(tp * 1e6 * (1 + 30e-6) + 4294000000) % 4294967296,
+          gyro: wb.map((x, i) => (x + bias[i] + 0.1 * gauss()) / 0.07), accel: C.mulv(C.tr3(Q), [0, 0, 1]).map((x) => x / 0.000244),
+          q: C.quatOf(C.mul3(Q, C.rodrigues([0.004 * gauss(), 0.004 * gauss(), 0]))), rest: false,
+        });
+      }
+      if (!out.length) return;
+      const view = C.encodeImuBatch(seq, est, out), wait = (next - 1 / 208 + 0.004 + 0.016 * Math.random() - now) * 1000;
+      seq = (seq + out.length) >>> 0;
+      setTimeout(() => { if (S.boards.includes(b)) onBatch(b, view, performance.now() / 1000); }, Math.max(0, wait));
+    }, 38));
+  }
+  renderBoards();
+  return () => { timers.forEach(clearInterval); S.boards = S.boards.filter((b) => !b.sim); renderBoards(); };
+}
+
 // ---------------- demo: three simulated cameras round one scene ----------------
 // The scene (three tags moving, or while calibrating the board, moving and holding still) is rendered with WebGL in
 // true perspective from each camera's pose and lens, so each camera sees it from its own side and the detector,
@@ -2309,13 +3229,39 @@ function facing(p, at, roll, tilt, away) {
   const F = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
   return C.mul3(F, C.mul3(C.rodrigues([0, 0, roll || 0]), C.rodrigues([0, tilt || 0, 0])));
 }
+// The scene: a body tag, and two hands, each a 10 cm cube with a tag on its front (0, 1), sides and top. The poses
+// are of each tag (and of each hand's front tag, which is its object's origin).
 function demoTags(t) {
-  const A = DEMO.audience, pose = (p, roll, tilt) => ({ R: facing(p, A, roll, tilt), t: p });
+  const A = DEMO.audience, pose = (p, roll, tilt, pitch) => ({ R: C.mul3(facing(p, A, roll, tilt), C.rodrigues([pitch || 0, 0, 0])), t: p });
   return [
-    { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0) },
-    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.5 * Math.sin(1.1 * t)) },
-    { id: 1, ...pose([0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.4 * Math.cos(0.9 * t)) },
+    { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.45, 0.25) }, // turned a little, as a tag on a chest would be
+    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.9 * Math.sin(0.6 * t), 0.35 + 0.3 * Math.sin(0.7 * t)) },
+    { id: 1, ...pose([0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.9 * Math.cos(0.5 * t), 0.35 + 0.3 * Math.cos(0.8 * t)) },
   ];
+}
+// Each hand's cube: the front tag is the origin (x right, y up, z out of its face); the others sit on the left, right
+// and top faces, upright as seen from the front (the top one from the front, looking down).
+const CUBE = 0.1, DEMO_HANDS = [
+  { id: 'demo-left', name: 'Left hand', ids: [0, 3, 4, 5] },
+  { id: 'demo-right', name: 'Right hand', ids: [1, 6, 7, 8] },
+];
+function cubeMembers(ids) {
+  const e = CUBE / 2;
+  return [
+    { id: ids[0], R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] },
+    { id: ids[1], R: [0, 0, -1, 0, 1, 0, 1, 0, 0], t: [-e, 0, -e] }, // left side, facing −x
+    { id: ids[2], R: [0, 0, 1, 0, 1, 0, -1, 0, 0], t: [e, 0, -e] }, // right side, facing +x
+    { id: ids[3], R: [1, 0, 0, 0, 0, 1, 0, -1, 0], t: [0, e, -e] }, // top, facing +y
+  ];
+}
+function demoScene(t) {
+  const out = [];
+  for (const g of demoTags(t)) {
+    const hand = DEMO_HANDS.find((h) => h.ids[0] === g.id);
+    if (!hand) { out.push(g); continue; }
+    for (const m of cubeMembers(hand.ids)) out.push({ id: m.id, ...C.compose(g, m) });
+  }
+  return out;
 }
 // The board while calibrating: it holds each of 12 poses for 1.5 s and moves between them in 0.7 s.
 const BOARD_KEYS = Array.from({ length: 12 }, (_, k) => ({
@@ -2397,9 +3343,11 @@ function demoRenderer(W, H) {
   return { canvas: glc, texture, render };
 }
 async function startDemo() {
-  const ids = [0, 1, 2], names = ['Left hand', 'Right hand', 'Body'];
-  ids.forEach((id, i) => { if (!tagOf(id)) { S.tags.push({ id, name: names[i], size: 0.08, slot: freeSlot() }); } });
-  saveTags(); renderTags(); refreshFrameSel();
+  const ids = [0, 1, 2, 3, 4, 5, 6, 7, 8], names = ['Left hand, front', 'Right hand, front', 'Body', 'Left hand, left side', 'Left hand, right side', 'Left hand, top', 'Right hand, left side', 'Right hand, right side', 'Right hand, top'];
+  // the side and top tags are only ever seen as part of their hand, so they don't take a colour of their own
+  ids.forEach((id, i) => { if (!tagOf(id)) { S.tags.push({ id, name: names[i], size: 0.08, slot: i < 3 ? freeSlot() : -1 }); } });
+  for (const h of DEMO_HANDS) if (!S.bodies.some((b) => b.members.some((x) => h.ids.includes(x.id)))) S.bodies.push({ id: h.id, name: h.name, members: cubeMembers(h.ids) });
+  saveTags(); saveBodies(); resetTracks(); renderTags(); renderBodies(); refreshFrameSel(); refreshTplotSel();
   const quiet = 30, cells = FAMILY_CELLS[S.settings.family];
   const imgs = await Promise.all(ids.map((id) => requestImage('tagImage', { family: S.settings.family, id, px: cells * 30 })));
   const boardImg = await requestImage('boardImage', { px: 80 });
@@ -2415,7 +3363,7 @@ async function startDemo() {
       const P = (x, y) => C.add(C.mulv(B.R, [x, y, 0]), B.t);
       return [{ tex: boardTex, corners: [P(-m, -m), P(9 * sq + m, -m), P(9 * sq + m, 6 * sq + m), P(-m, 6 * sq + m)] }];
     }
-    return demoTags(t).map((g) => {
+    return demoScene(t).map((g) => {
       const im = imgs[ids.indexOf(g.id)], h = (sizeOf(g.id) / 2) * (im.w + 2 * quiet) / im.w;
       return { tex: tagTex.get(g.id), corners: [[-h, h], [h, h], [h, -h], [-h, -h]].map(([x, y]) => C.add(C.mulv(g.R, [x, y, 0]), g.t)) };
     });
@@ -2433,10 +3381,12 @@ async function startDemo() {
     });
   };
   frameAll(performance.now() + 100);
-  S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; } };
+  const stopSims = startSimBoards(t0);
+  S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; stopSims(); } };
 }
 
 // ---------------- boot ----------------
+rememberBoards();
 paintThemeBtn();
 renderCalibCams(); renderRig();
 renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();

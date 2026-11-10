@@ -10,6 +10,16 @@
 //      resolving flips by prediction, gating an outlier, restarting after a real jump)
 //   5b. several cameras: moving poses into the rig, information-weighted fusion, multi-camera calibration (three
 //      cameras, one placed only through another, one that shares nothing), re-expressing a saved rig, late frames
+//   5c. choosing between a face-on tag's mirror-image poses (by the other cameras, then by the last pose), and the
+//      Stream tab's messages (JSON lines and CSV)
+//   5e. one pose from every camera's corners: the joint fit (against one camera, against fusing each camera's pose,
+//      its covariance by Monte Carlo, moving tags from unsynchronised cameras, a bad corner) and the filter fed corners;
+//      and the search windows for the next frame
+//   5f. recordings and notes (the export formats, timed note lines), cleaning Whisper's text, voice commands, and the
+//      voice gate that ends an utterance after a pause
+//   5g. motion sensors (nrf-controller boards): their bytes, their clocks on the page's, how a board sits on its
+//      object (with mirror-image outliers), and the filter with a gyro and VQF's tilt against without
+//   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
 //      Also 6b: the board as the page shows it on a screen (turned too) is found, and the link's QR code decodes.
@@ -394,12 +404,299 @@ console.log('5b. several cameras: moving poses into the rig, fusing them, and pl
   check(!late.restarted && late.pose && old.restarted, 'the filter takes a frame 13 ms late as current, and restarts on one far older');
 }
 
+console.log('5c. mirror-image choice, and the Stream messages');
+{
+  const deg = (a, b) => (C.angleOf(C.mul3(C.tr3(a), b)) * 180) / Math.PI;
+  const truth = { R: rotXYZ(Math.PI + 0.12, 0.08, 0.3), t: [0.05, -0.02, 1.6] }, mirror = C.flipPose(truth);
+  const sep = deg(truth.R, mirror.R);
+  const T = { ...truth, rms: 0.31 }, M = { ...mirror, rms: 0.29 }; // noise has the mirror image fitting a little better
+  check(sep > 8, `a face-on tag at 1.6 m: its mirror-image pose is ${sep.toFixed(1)}° away`);
+  check(C.plausible([M, T]).length === 2 && C.plausible([M, { ...truth, rms: 2.5 }]).length === 1, 'plausible: both fit about as well; one clearly worse is dropped');
+  check(C.chooseCand([M, T], [], null) === M, 'with nothing else to go on, the best fit');
+  check(C.chooseCand([M, T], [], truth.R) === T && C.chooseCand([T, M], [], mirror.R) === M, 'with one camera, the one nearest the last pose (it doesn\'t flip back and forth)');
+  const other = [rotXYZ(Math.PI + 0.13, 0.07, 0.31)]; // another camera, seeing it unambiguously
+  check(C.chooseCand([M, T], [other], mirror.R) === T, 'another camera\'s view outweighs the last pose');
+  check(C.chooseCand([M, { ...truth, rms: 2.5 }], [other], truth.R) === M, 'a candidate that fits clearly worse is never chosen');
+  check(C.chooseCand([], [], null) === null, 'no candidates, nothing chosen');
+  // messages
+  const rows = [{ track: 0, name: 'Left, "hand"', p: [0.123456, -0.00001, 1], q: [1, 0, 0, 0] }, { track: 'b:x', name: 'Cube', p: [0, 0, 0], q: [0.5, 0.5, 0.5, 0.5] }];
+  const j = C.streamMessage('json', 1731234567.12345, rows, 'camera');
+  const o = JSON.parse(j);
+  check(j.endsWith('\n') && j.indexOf('\n') === j.length - 1, 'JSON: one line per message');
+  check(o.t === 1731234567.123 && o.frame === 'camera' && o.tracks.length === 2 && o.tracks[0].track === 0 && o.tracks[1].track === 'b:x', 'JSON: time to the millisecond, the frame, each track by key');
+  check(o.tracks[0].p[0] === 0.1235 && Object.is(o.tracks[0].p[1], 0) && o.tracks[0].name === 'Left, "hand"', 'JSON: metres to 0.1 mm, no "-0", names intact');
+  const csv = C.streamMessage('csv', 1731234567.12345, rows).split('\n');
+  check(C.STREAM_CSV_HEADER.split(',').length === 10 && csv.length === 3 && csv[2] === '', 'CSV: ten columns, one line per track');
+  check(csv[0] === '1731234567.123,0,"Left, ""hand""",0.1235,0,1,1,0,0,0' && csv[1] === '1731234567.123,b:x,Cube,0,0,0,0.5,0.5,0.5,0.5', 'CSV: a name with a comma or quote is quoted');
+  check(o.view === 'in person' && JSON.parse(C.streamMessage('json', 1, rows, 'camera', 'mirror')).view === 'mirror', 'JSON: says which view (in person or mirror)');
+  // Mirror view: x → −x, orientations conjugated by diag(−1, 1, 1)
+  const P = { R: rotXYZ(0.4, -0.7, 1.1), t: [0.2, 1.1, -0.3] }, Mp = C.mirrorPose(P), det = (R) => R[0] * (R[4] * R[8] - R[5] * R[7]) - R[1] * (R[3] * R[8] - R[5] * R[6]) + R[2] * (R[3] * R[7] - R[4] * R[6]);
+  const q = C.quatOf(P.R), qm = C.quatOf(Mp.R), same = (a, b) => near(a, b, 1e-12) || near(a, b.map((x) => -x), 1e-12);
+  check(near(Mp.t, [-0.2, 1.1, -0.3], 0) && Math.abs(det(Mp.R) - 1) < 1e-12 && near(C.mul3(Mp.R, C.tr3(Mp.R)), [1, 0, 0, 0, 1, 0, 0, 0, 1], 1e-12), 'mirror view: x changes sign, and an orientation stays a rotation');
+  check(same(qm, [q[0], q[1], -q[2], -q[3]]), 'mirror view: a quaternion (w, x, y, z) becomes (w, x, −y, −z)');
+  // the mirror image of a point carried by the pose is the mirrored pose carrying the mirrored point
+  const X = [0.03, -0.02, 0.01], img = C.add(C.mulv(P.R, X), P.t), viaM = C.add(C.mulv(Mp.R, [-X[0], X[1], X[2]]), Mp.t);
+  check(near(viaM, [-img[0], img[1], img[2]], 1e-12) && near(C.mirrorPose(Mp).R, P.R, 0), 'mirror view: it is the mirror image of the posed object, and twice is no change');
+  const R0 = rotXYZ(0.1, 0.2, -0.3), a = C.mirrorPose(C.tared(P, R0)), b = C.tared(Mp, C.mirrorR(R0));
+  check(near(a.R, b.R, 1e-12) && near(a.t, b.t, 1e-12), 'mirror view: a tare mirrored with the data gives the same tared pose');
+  check(C.streamMessage('csv', 1, []) === '' && JSON.parse(C.streamMessage('json', 1, [], 'Body')).tracks.length === 0, 'nothing in view: no CSV line, an empty JSON list');
+}
+
+console.log('5e. one pose from every camera\'s corners, and where to look next');
+{
+  const cam = C.guessIntrinsics(1280, 720, 70), center = [0, 0.05, 1.35];
+  const rigs = [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, C.lookAt([-0.8, -0.25, 0.45], center), C.lookAt([0.75, -0.4, 0.55], center)];
+  let g = 11; const gauss = () => { let u = 0; for (let i = 0; i < 12; i++) { g = (g * 1103515245 + 12345) % 2147483648; u += g / 2147483648; } return u - 6; };
+  const obj = C.tagCorners(0.08);
+  // pixels of a tag at pose P (rig frame) in camera T, with noise
+  const see = (T, P, sd) => obj.map((o) => { const X = C.add(C.mulv(P.R, o), P.t), Xc = C.mulv(C.tr3(T.R), C.sub(X, T.t)), q = C.project(cam, Xc); return [q[0] + sd * gauss(), q[1] + sd * gauss()]; });
+  const inCam = (T, P) => ({ R: C.mul3(C.tr3(T.R), P.R), t: C.mulv(C.tr3(T.R), C.sub(P.t, T.t)) });
+  const errs = (P, Q) => [C.norm(C.sub(P.t, Q.t)) * 1000, (C.angleOf(C.mul3(C.tr3(P.R), Q.R)) * 180) / Math.PI];
+  const truth = { R: rotXYZ(Math.PI + 0.15, -0.25, 0.4), t: [-0.1, 0.05, 1.3] };
+  // 1. one camera, no time offset: the same as refinePose
+  {
+    const img = see(rigs[0], truth, 0.3), a = C.refinePose(cam, obj, img, truth, { sigma: 0.3 }), b = C.refineJoint([C.sighting(cam, rigs[0], obj, img, 0.3, 0)], truth, { k: Infinity });
+    check(errs(a, b)[0] < 1e-6 && errs(a, b)[1] < 1e-6, 'one camera: the joint fit is the single-camera fit');
+  }
+  // 2. three cameras, 0.3 px noise: the joint fit against camera 1 alone and against fusing each camera's own pose
+  {
+    const N = 150, sd = 0.3, eJ = [0, 0], eF = [0, 0], e1 = [0, 0];
+    let m2 = 0;
+    for (let k = 0; k < N; k++) {
+      const imgs = rigs.map((T) => see(T, truth, sd)), own = rigs.map((T, i) => C.toRig(T, C.refinePose(cam, obj, imgs[i], inCam(T, truth), { sigma: sd })));
+      const J = C.refineJoint(rigs.map((T, i) => C.sighting(cam, T, obj, imgs[i], sd, 0)), C.fusePoses(own)), F = C.fusePoses(own);
+      [[J, eJ], [F, eF], [own[0], e1]].forEach(([P, acc]) => { const e = errs(P, truth); acc[0] += e[0] ** 2; acc[1] += e[1] ** 2; });
+      const y = C.sub(J.t, truth.t).concat(C.so3Log(C.mul3(J.R, C.tr3(truth.R)))), Ci = C.minv(J.cov);
+      m2 += y.reduce((s, v, i) => s + v * Ci[i].reduce((q, w, j) => q + w * y[j], 0), 0);
+    }
+    const rm = (a) => a.map((x) => Math.sqrt(x / N));
+    const [J, F, O] = [rm(eJ), rm(eF), rm(e1)];
+    check(J[0] < O[0] / 2 && J[1] < O[1] / 2, `three cameras: ${J[0].toFixed(2)} mm, ${J[1].toFixed(3)}°, against camera 1 alone ${O[0].toFixed(2)} mm, ${O[1].toFixed(3)}°`);
+    check(J[0] <= F[0] * 1.02 && J[1] <= F[1] * 1.02, `the joint fit is at least as good as fusing each camera's pose (${F[0].toFixed(2)} mm, ${F[1].toFixed(3)}°)`);
+    check(m2 / N > 4.5 && m2 / N < 8, `its covariance matches its errors (mean Mahalanobis² ${(m2 / N).toFixed(2)}, 6 expected)`);
+  }
+  // 3. a moving tag, cameras 20 ms apart: the velocity carries each frame to one time
+  {
+    const vel = { v: [0.5, -0.2, 0.1], w: [0.4, 1.6, -0.3] }, at = (dt) => ({ R: C.mul3(C.rodrigues(vel.w.map((x) => x * dt)), truth.R), t: C.add(truth.t, vel.v.map((x) => x * dt)) });
+    const dts = [0, -0.02, -0.04], vs = rigs.map((T, i) => C.sighting(cam, T, obj, see(T, at(dts[i]), 0), 0.3, dts[i]));
+    const moved = C.refineJoint(vs, truth, { vel }), still = C.refineJoint(vs, truth, {});
+    check(errs(moved, truth)[0] < 0.1 && errs(still, truth)[0] > 5, `unsynchronised cameras: ${errs(moved, truth)[0].toFixed(3)} mm with the motion, ${errs(still, truth)[0].toFixed(1)} mm without`);
+  }
+  // 4. one corner 25 px off: the Huber weight keeps it from dragging the fit
+  {
+    const imgs = rigs.map((T) => see(T, truth, 0.3)); imgs[1][2][0] += 25;
+    const vs = rigs.map((T, i) => C.sighting(cam, T, obj, imgs[i], 0.3, 0));
+    const rob = C.refineJoint(vs, truth), ls = C.refineJoint(vs, truth, { k: Infinity });
+    check(errs(rob, truth)[0] < errs(ls, truth)[0] / 2 && errs(rob, truth)[1] < errs(ls, truth)[1] / 2, `a corner 25 px off: ${errs(rob, truth)[0].toFixed(2)} mm, ${errs(rob, truth)[1].toFixed(2)}° robust; ${errs(ls, truth)[0].toFixed(2)} mm, ${errs(ls, truth)[1].toFixed(2)}° least squares`);
+  }
+  // 5. the filter fed corners: three cameras in turn, a moving tag, against the same filter fed each camera's pose
+  {
+    const vel = { v: [0.2, 0, -0.1], w: [0, 0.8, 0] }, at = (t) => ({ R: C.mul3(C.rodrigues(vel.w.map((x) => x * t)), truth.R), t: C.add(truth.t, vel.v.map((x) => x * t)) });
+    const fc = new C.PoseFilter(C.MOTION.balanced), fp = new C.PoseFilter(C.MOTION.balanced), ec = [], ep = [];
+    let rej = 0;
+    for (let k = 0; k < 90; k++) {
+      const t = k / 90, i = k % 3, P = at(t), img = see(rigs[i], P, 0.4), own = C.toRig(rigs[i], C.refinePose(cam, obj, img, inCam(rigs[i], P), { sigma: 0.4 }));
+      const a = fc.updateCorners(t, [C.sighting(cam, rigs[i], obj, img, 0.4, 0)], own), b = fp.update(t, [own]);
+      if (!a.pose) rej++;
+      if (k >= 45) { ec.push(errs(a.pose || fc.pose(), P)); ep.push(errs(b.pose || fp.pose(), P)); }
+    }
+    const rms = (a, j) => Math.sqrt(a.reduce((s, e) => s + e[j] ** 2, 0) / a.length);
+    check(rej === 0 && rms(ec, 0) <= rms(ep, 0) * 1.05 && rms(ec, 1) <= rms(ep, 1) * 1.05, `filter fed corners: ${rms(ec, 0).toFixed(2)} mm, ${rms(ec, 1).toFixed(3)}°; fed poses: ${rms(ep, 0).toFixed(2)} mm, ${rms(ep, 1).toFixed(3)}° (moving, three cameras in turn)`);
+    // a frame 20 ms older than the state is taken at its own time, not restarted; a frame 40 px off is rejected
+    const late = fc.updateCorners(1 - 0.02, [C.sighting(cam, rigs[1], obj, see(rigs[1], at(1 - 0.02), 0.4), 0.4, 0)], null);
+    const bad = see(rigs[2], at(1.01), 0.4).map((q) => [q[0] + 40, q[1] - 30]), off = fc.updateCorners(1.01, [C.sighting(cam, rigs[2], obj, bad, 0.4, 0)], null);
+    check(late.pose && !late.restarted && off.rejected, 'the filter takes a late frame at its own time, and rejects one whose corners are 50 px off');
+  }
+  // 6. a nearly face-on tag seen by camera 1 alone, 0.5 px noise: one view can't tell it from its mirror image, so both
+  //    filters wander, but the one fed corners less than the one fed poses
+  {
+    const face = { R: rotXYZ(Math.PI + 0.06, 0.05, 0.2), t: [0, 0.02, 1.6] }, run = (corners) => {
+      g = 11; const f = new C.PoseFilter(C.MOTION.balanced); f.init(0, face);
+      let s2 = 0, n = 0;
+      for (let k = 1; k < 120; k++) {
+        const img = see(rigs[0], face, 0.5), cands = C.solveTag(cam, img.flat(), 0.08, C.refinePose(cam, obj, img, face, {}), { sigma: 'auto' });
+        const r = corners ? f.updateCorners(k / 30, [C.sighting(cam, rigs[0], obj, img, 0.5, 0)], null) : f.update(k / 30, cands);
+        if (r && r.pose) { s2 += errs(r.pose, face)[1] ** 2; n++; }
+      }
+      return Math.sqrt(s2 / n);
+    };
+    const a = run(true), b = run(false);
+    check(a < b, `a face-on tag, one camera: ${a.toFixed(1)}° RMS fed corners, ${b.toFixed(1)}° fed poses (only a second view really settles it)`);
+  }
+  // 7. search windows
+  {
+    const sq = (x, y, s) => [[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
+    const a = C.planSearch([{ pts: sq(100, 100, 50), pad: 20 }, { pts: sq(175, 110, 40), pad: 20 }, { pts: sq(900, 500, 60), pad: 30 }], 1280, 720);
+    check(a && a.rois.length === 2 && a.rois[0].x === 80 && a.rois[0].w === 155 && a.frac < 0.1, 'two tags close together share one window; a far one has its own');
+    const b = C.planSearch([{ pts: sq(-30, 690, 40), pad: 20 }], 1280, 720);
+    check(b && b.rois[0].x === 0 && b.rois[0].y + b.rois[0].h === 720, 'a window is kept inside the picture');
+    check(C.planSearch([{ pts: sq(100, 100, 600), pad: 100 }], 1280, 720) === null && C.planSearch([], 1280, 720) === null, 'windows over half the picture, or nothing to look for: search it all');
+    check(C.planSearch([{ pts: [[640, 360]], pad: 2 }], 1280, 720).rois[0].w === 64, 'a window is at least 64 px across');
+  }
+}
+
+console.log('5f. recordings, notes and voice');
+{
+  check(C.fmtStamp(0) === '0:00.0' && C.fmtStamp(72.46) === '1:12.4' && C.fmtStamp(3725.07) === '1:02:05.0' && C.fmtStamp(9.99) === '0:09.9', 'times since the start read m:ss.s (h:mm:ss.s past an hour), never rounded up');
+  const notes = C.parseNotes('Trial 3, left hand\n0:12.4  Tag slipped\n\n1:02:05.0 Second camera bumped\n  3:30 \n10:00.5 Done.');
+  check(notes.length === 4 && notes[0].t === null && notes[0].text === 'Trial 3, left hand', 'a line with no time is a note about the whole recording; blank lines and bare times are skipped');
+  check(notes[1].t === 12.4 && notes[2].t === 3725 && notes[3].t === 600.5 && notes[3].text === 'Done.', 'a line that starts with a time is a note at that time');
+  for (const s of [0, 9.95, 72.46, 3725.07, 5999.9]) { const n = C.parseNotes(`${C.fmtStamp(s)}  x`)[0]; if (!(n && Math.abs(n.t - s) < 0.1)) check(false, `a stamp reads back (${s})`); }
+  check(C.parseNotes('12:345 x')[0].t === null && C.parseNotes('1:5 x')[0].t === null, 'something that only looks like a time is text');
+
+  const row = (track, x) => ({ track, name: track === 2 ? 'Body, front' : 'Hand', p: [x, 0.2, -0.0000001], q: [1, 0, 0, 0] });
+  const rec = { start: 1700000000, end: 1700000003, samples: [
+    { t: 1700000000.5, frame: 'camera', view: 'in person', rows: [row(2, 0.1), row(5, 0.3)] },
+    { t: 1700000002, frame: 'camera', view: 'mirror', rows: [row(2, 0.12)] },
+  ] };
+  const ns = C.parseNotes('Setup A\n0:01.0 Flip');
+  const csv = C.recordingCsv(rec, ns).trim().split('\n');
+  check(csv[0] === C.STREAM_CSV_HEADER + ',note' && csv.length === 6, 'CSV: the Stream columns plus a note column, a row per pose and per note');
+  check(csv[1] === '1700000000.000,,,,,,,,,,Setup A' && csv[4] === '1700000001.000,,,,,,,,,,Flip', 'CSV: notes at their Unix times, among the poses (one about the whole recording at its start)');
+  check(csv[2] === '1700000000.500,2,"Body, front",0.1,0.2,0,1,0,0,0,' && csv[5].startsWith('1700000002.000,2,'), 'CSV: pose rows as the Stream tab writes them, with an empty note');
+  check(csv.every((l) => l.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).length === 11), 'CSV: every row has all eleven columns');
+  const js = JSON.parse(C.recordingJson(rec, ns));
+  check(js.format === 'tag-tracker-recording/1' && js.start === 1700000000 && js.end === 1700000003, 'JSON: format, start and end in Unix seconds');
+  check(js.notes[0].t === null && js.notes[1].t === 1700000001 && js.samples[1].view === 'mirror' && js.samples[0].tracks[1].p[0] === 0.3, 'JSON: notes in Unix time (null: the whole recording), each sample like a Stream message');
+  check(C.recordingCsv({ start: 5, samples: [] }, []).trim() === C.STREAM_CSV_HEADER + ',note', 'an empty recording is just the header');
+
+  check(C.tidySpeech(' [BLANK_AUDIO] ') === '' && C.tidySpeech('(music) *coughs*') === '', 'Whisper\'s non-speech marks alone give nothing');
+  check(C.tidySpeech(' the tag slipped , again') === 'The tag slipped, again.' && C.tidySpeech('Is it on?') === 'Is it on?', 'speech gets a capital, tight commas and an ending');
+  const ins = (v, a, b, t) => C.insertSpeech(v, a, b, t);
+  let r = ins('', 0, 0, 'Hello.');
+  check(r.value === 'Hello.' && r.caret === 6, 'into an empty box as it is');
+  r = ins('The tag', 7, 7, 'Slipped off.');
+  check(r.value === 'The tag slipped off.' && r.caret === 20, 'carrying on a sentence: a space, and lower case');
+  r = ins('Done. ', 6, 6, 'Next one.');
+  check(r.value === 'Done. Next one.', 'after a full stop and a space: as it is');
+  r = ins('A B', 2, 2, 'I moved it.');
+  check(r.value === 'A I moved it. B', '"I" keeps its capital, and a space goes after when text follows');
+  r = ins('keep this OLD end', 10, 13, 'New.');
+  check(r.value === 'keep this new. end', 'a selection is replaced');
+
+  const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
+  check(cmd('Calibrate.') === 'calib' && cmd('Go to the calibrate tab.') === 'calib' && cmd('Stream!') === 'stream' && cmd('Switch to tracking, please.') === 'track', 'a tab by name, with or without "go to ... tab"');
+  check(cmd('Start recording.') === 'record' && cmd('Stop.') === 'stop' && cmd('Stop recording.') === 'stop' && cmd('Clear tare.') === 'untare' && cmd('Tare.') === 'tare' && cmd('Reset view.') === 'reset', 'recording, tare and view commands');
+  check(cmd('Calibrate again after lunch.') === null && cmd('The stream dropped out.') === null && cmd('') === null, 'a sentence that only mentions a command is a note');
+  const n = C.voiceCommand('Note: calibrate the second camera');
+  check(n.cmd === 'note' && n.text === 'Calibrate the second camera.' && C.voiceCommand('Note.') === null && C.voiceCommand('Take a note stop').text === 'Stop.', '"Note ..." is always a note, even of a command\'s word');
+  check(Object.values(C.VOICE_COMMANDS).flat().every((p) => C.voiceCommand(p[0].toUpperCase() + p.slice(1) + '.').cmd !== 'note' && C.voiceCommand(p + '.')), 'every listed phrase, as Whisper writes it, is recognised');
+
+  // the voice gate, fed a level every 20 ms
+  const run = (levels, opts) => {
+    const g = new C.VoiceGate(opts); g.reset(0); const ev = [];
+    levels.forEach((l, i) => { const e = g.step(l, i * 20); if (e) ev.push([e, i * 20, g.start]); });
+    return ev;
+  };
+  const quiet = (ms) => Array(ms / 20).fill(0.003), loud = (ms) => Array(ms / 20).fill(0.08);
+  let ev = run([...quiet(500), ...loud(800), ...quiet(400), ...loud(300), ...quiet(2000)]);
+  check(ev.length === 2 && ev[0][0] === 'start' && ev[0][2] === 500 && ev[1][0] === 'end' && ev[1][1] === 2000 + 1400, 'speech starts where it got loud; a short pause doesn\'t end it, a long one does');
+  ev = run([...quiet(300), 0.08, 0.08, ...quiet(9000)]);
+  check(ev.length === 1 && ev[0][0] === 'none' && ev[0][1] === 8000, 'a click is not speech, and nothing said in 8 s gives up');
+  ev = run([...quiet(7900), ...loud(400), ...quiet(1600)]);
+  check(ev[0][0] === 'start' && ev[1][0] === 'end', 'starting to talk just before the wait runs out still counts');
+}
+
+console.log('5g. motion sensors');
+{
+  let g = 5; const u01 = () => { g = (g * 1103515245 + 12345) % 2147483648; return g / 2147483648; }, gauss = () => { let x = 0; for (let i = 0; i < 12; i++) x += u01(); return x - 6; };
+  const deg = (R1, R2) => (C.angleOf(C.mul3(C.tr3(R1), R2)) * 180) / Math.PI;
+  // bytes
+  const smp = [{ tUs: 4294967000, gyro: [-1200, 5, 32767], accel: [16384, -8192, 0], q: [0.5, -0.5, 0.5, -0.5], rest: true }, { tUs: 4807, gyro: [1, -1, 0], accel: [0, 0, -16384], q: [1, 0, 0, 0], rest: false }];
+  const d = C.decodeImuBatch(C.encodeImuBatch(4294967295, [1.25, -0.5, 0], smp)), info = C.decodeBoardInfo(C.encodeBoardInfo(0xd892, 208, 0.07, 0.000244));
+  check(d && d.samples.length === 2 && d.samples[1].seq === 0 && d.samples[0].gyro[2] === 32767 && d.samples[0].rest && !d.samples[1].rest && d.samples[0].q[1] === -0.5 && d.biasDps[0] === 1.25, 'a batch decodes as nrf-controller sends it (sequence wraps, signs, at-rest flag, bias)');
+  check(info.boardId === 'D892' && info.imuRateHz === 208 && Math.abs(info.gyroDpsPerLsb - 0.07) < 1e-7 && C.decodeImuBatch(new DataView(new ArrayBuffer(13))) === null, 'board info decodes; a short or foreign packet is refused');
+  // clock: 40 ppm fast, starting near the 32-bit wrap; arrivals 2 ms + up to ~30 ms late
+  {
+    const clk = new C.BoardClock(), t0 = 100, ppm = 40e-6, start = 4294967296 - 3e6;
+    let worst = 0;
+    for (let k = 0; k < 1200; k++) {
+      const host = t0 + k * 0.0385, bUs = start + (host - t0) * 1e6 * (1 + ppm), ext = clk.unwrap(Math.round(bUs) % 4294967296);
+      clk.add(ext, host + 0.002 + -Math.log(1 - u01()) * 0.008);
+      if (k > 400) worst = Math.max(worst, Math.abs(clk.toHost(ext) - (host + 0.002)));
+    }
+    check(worst < 0.0015 && Math.abs(clk.k + ppm) < 10e-6, `a board's clock (40 ppm fast, across the 32-bit wrap) on the page's: within ${(worst * 1000).toFixed(2)} ms of arrival minus the least delay (the page gains ${(clk.k * 1e6).toFixed(1)} ppm per board second)`);
+  }
+  // lining up: the object turns about several axes; camera 0.5°, IMU 0.3°; one camera pose in ten is its mirror image
+  const Wt = C.mul3(C.rodrigues([Math.PI / 2, 0, 0]), C.rodrigues([0, 0, 1.1])), Mt = C.mul3(C.rodrigues([0, 0, Math.PI / 2]), C.rodrigues([0.1, -0.05, 0.03]));
+  const turn = (t) => C.mul3(C.rodrigues([0.6 * Math.sin(0.7 * t), 0.5 * Math.sin(1.1 * t + 1), 0.4 * Math.sin(0.9 * t + 2)]), C.rodrigues([Math.PI, 0, 0]));
+  const noisy = (R, sd) => C.mul3(C.rodrigues([gauss() * sd, gauss() * sd, gauss() * sd]), R);
+  const pairsOf = (fn, n) => Array.from({ length: n }, (_, k) => { const Rc = fn(k * 0.2); return { Rc: k % 10 === 7 ? C.mul3(C.rodrigues([0.3, 0, 0]), Rc) : noisy(Rc, 0.009), Q: noisy(C.mul3(C.tr3(Wt), C.mul3(Rc, C.tr3(Mt))), 0.005) }; });
+  const L = C.lineUp(pairsOf(turn, 60));
+  check(!L.error && deg(L.M, Mt) < 0.6 && deg(L.W, Wt) < 0.6, `lined up from 60 poses: the board on its object within ${L.M ? deg(L.M, Mt).toFixed(2) : '?'}°, VQF's world in the rig within ${L.W ? deg(L.W, Wt).toFixed(2) : '?'}° (${L.used} of 60 kept)`);
+  check(C.lineUp(pairsOf((t) => C.mul3(C.rodrigues([0, 0.8 * Math.sin(t), 0]), C.rodrigues([Math.PI, 0, 0])), 60)).error === 'turn', 'turned about one axis only, it asks for more turning');
+  // the filter: a turning object at 1.3 m, one camera, 0.5 px corners; with the gyro (0.02 rad/s) and VQF's tilt (1°,
+  // heading free) against without. And the face-on tag one camera can't settle: the tilt settles it.
+  const cam = C.guessIntrinsics(1280, 720, 70), I = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, obj = C.tagCorners(0.08), up = C.mulv(Wt, [0, 0, 1]);
+  const see = (P, sd) => obj.map((o) => { const q = C.project(cam, C.add(C.mulv(P.R, o), P.t)); return [q[0] + sd * gauss(), q[1] + sd * gauss()]; });
+  const run = (poseAt, imu, n) => {
+    const f = new C.PoseFilter(C.MOTION.balanced), e = [];
+    f.init(0, poseAt(0));
+    for (let k = 1; k < n; k++) {
+      const t = k / 30, P = poseAt(t);
+      if (imu) for (let j = 0; j < 7; j++) { // seven IMU readings a frame, 20 ms late
+        const ti = t - 0.02 - j * 0.0048, Ri = poseAt(ti).R, Rn = poseAt(ti + 0.001).R, w = C.so3Log(C.mul3(Rn, C.tr3(Ri))).map((x) => x / 0.001 + 0.02 * gauss());
+        f.updateRate(ti, w, 0.02);
+        f.updateTilt(ti, noisy(Ri, 0.015), up, 0.02, 0.5);
+      }
+      const r = f.updateCorners(t, [C.sighting(cam, I, obj, see(P, 0.5), 0.5, 0)], null);
+      if (k > 30 && r && r.pose) e.push(deg(r.pose.R, P.R));
+    }
+    return Math.sqrt(e.reduce((a, x) => a + x * x, 0) / e.length);
+  };
+  const moving = (t) => ({ R: turn(t), t: [0.1 * Math.sin(t), 0.05, 1.3] });
+  const a = run(moving, true, 150), b = run(moving, false, 150);
+  check(a < b * 0.7, `a turning tag, one camera: ${a.toFixed(2)}° RMS with the motion sensor, ${b.toFixed(2)}° without`);
+  const face = () => ({ R: C.mul3(C.rodrigues([0.06, 0.05, 0.2]), C.rodrigues([Math.PI, 0, 0])), t: [0, 0.02, 1.6] });
+  const fa = run(face, true, 120), fb = run(face, false, 120);
+  check(fa < 2 && fa < fb / 3, `a face-on tag one camera can't settle: ${fa.toFixed(2)}° RMS with the sensor's tilt, ${fb.toFixed(2)}° without`);
+  const f = new C.PoseFilter(C.MOTION.balanced); f.init(0, moving(0));
+  check(f.updateRate(0.6, [0, 0, 0], 0.02) === null, 'a motion sensor alone never keeps a track alive (nothing half a second after the last camera frame)');
+}
+
+// The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
+function testBridge() {
+  const { spawnSync, spawn } = require('child_process'), dgram = require('dgram'), net = require('net');
+  if (spawnSync('python3', ['--version']).status !== 0 || typeof WebSocket !== 'function') {
+    console.log('5d. the UDP bridge: skipped (needs python3 and Node 22 or later)');
+    return Promise.resolve();
+  }
+  console.log('5d. the UDP bridge');
+  const freePort = () => new Promise((res) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  return (async () => {
+    const wsPort = await freePort(), udp = dgram.createSocket('udp4'), got = [];
+    await new Promise((r) => udp.bind(0, '127.0.0.1', r));
+    udp.on('message', (m) => got.push(m.toString()));
+    const br = spawn('python3', [path.join(__dirname, '..', 'tag-tracker/udp-bridge.py'), '--port', String(wsPort)], { stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      for (let i = 0; i < 50; i++) { await wait(100); if (await new Promise((r) => { const c = net.connect(wsPort, '127.0.0.1', () => { c.destroy(); r(true); }); c.on('error', () => r(false)); })) break; }
+      const ws = new WebSocket(`ws://127.0.0.1:${wsPort}/?to=127.0.0.1:${udp.address().port}`);
+      const hello = await new Promise((res, rej) => { ws.onmessage = (e) => res(JSON.parse(e.data)); ws.onerror = () => rej(new Error('no connection')); setTimeout(() => rej(new Error('no hello')), 3000); });
+      check(hello.bridge === 'tag-tracker-udp' && hello.to === `127.0.0.1:${udp.address().port}`, 'it answers with where it sends');
+      const big = 'x'.repeat(3000) + '\n', huge = 'y'.repeat(70000);
+      ws.send('{"t":1}\n'); ws.send(big); ws.send(huge); ws.send('last\n');
+      for (let i = 0; i < 30 && got.length < 3; i++) await wait(50);
+      check(got.length === 3 && got[0] === '{"t":1}\n' && got[1] === big && got[2] === 'last\n', 'each message is one datagram, in order (one of 3 kB too); one too big for UDP is dropped');
+      ws.close();
+      // a page from another site is refused before any WebSocket opens
+      const reply = await new Promise((res) => {
+        const c = net.connect(wsPort, '127.0.0.1', () => c.write(`GET /?to=127.0.0.1:9 HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: https://elsewhere.example\r\n\r\n`));
+        let d = ''; c.on('data', (b) => { d += b; }); c.on('close', () => res(d)); c.on('error', () => res(d));
+      });
+      check(/^HTTP\/1\.1 403/.test(reply), 'a page from another site is refused (403)');
+    } finally { br.kill(); udp.close(); }
+  })().catch((e) => { check(false, 'the bridge: ' + e.message); });
+}
+
 let cvPkg = null;
 try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
-if (!cvPkg) {
+const bridged = testBridge();
+if (!cvPkg) bridged.then(() => {
   console.log('6. detection and calibration: skipped (OpenCV.js not installed)');
   finish();
-} else (async () => {
+});
+else bridged.then(async () => {
   console.log('6. detection and calibration (OpenCV.js)');
   const factory = require(path.join(__dirname, '..', 'tag-tracker/worker.js'));
   const cv = await factory.ready(require(cvPkg));
@@ -483,6 +780,22 @@ if (!cvPkg) {
     check(angs.length === 6 && Math.max(...angs) < 5, `and its rotation within ${Math.max(...angs).toFixed(2)}° (under 5°); OpenCV's own pose alone: up to ${Math.max(...rawAng).toFixed(1)}°`);
   }
   check(ms / n < 100, `detection and SE(3) refinement on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
+  // Searching only a window round where the tag should be finds the same corners as searching the whole picture, in
+  // whole-picture pixels, and costs a fraction of the time.
+  {
+    const R = C.mul3(rotXYZ(0.25, -0.2, 0.7), rotXYZ(Math.PI, 0, 0)), img = render(pad, At, R, [0.12, -0.05, 1.2], 150);
+    const whole = V.track(img, cam, { 42: size }, 0.05, [], false).tags.find((x) => x.id === 42), cs = whole.corners;
+    const xs = [cs[0], cs[2], cs[4], cs[6]], ys = [cs[1], cs[3], cs[5], cs[7]];
+    const plan = C.planSearch([{ pts: [0, 1, 2, 3].map((k) => [cs[2 * k] + 9, cs[2 * k + 1] - 6]), pad: 0.4 * (Math.max(...xs) - Math.min(...xs)) + 12 }], img.cols, img.rows);
+    const r = plan.rois[0], part = img.roi(new cv.Rect(r.x, r.y, r.w, r.h)), win = part.clone();
+    const got = V.track([{ img: win, x: r.x, y: r.y }], cam, { 42: size }, 0.05, [], false).tags.find((x) => x.id === 42);
+    const d = got ? Math.max(...got.corners.map((v, i) => Math.abs(v - cs[i]))) : Infinity;
+    let tW = Date.now(); for (let i = 0; i < 20; i++) V.detectTags(img, cam, {}, size); tW = (Date.now() - tW) / 20;
+    let tR = Date.now(); for (let i = 0; i < 20; i++) V.detectTags(win, cam, {}, size, r.x, r.y); tR = (Date.now() - tR) / 20;
+    check(d < 0.01 && got.cands.length > 0, `a search window (${(plan.frac * 100).toFixed(0)}% of the picture, the tag moved 11 px since) finds the same corners (within ${d.toFixed(4)} px)`);
+    check(tR < tW / 3, `and takes ${tR.toFixed(1)} ms against ${tW.toFixed(1)} ms for the whole picture`);
+    part.delete(); win.delete(); img.delete();
+  }
   // Repeated frames must not leak WebAssembly memory.
   const img = render(pad, At, C.mul3(rotXYZ(0.2, 0.1, 0.3), rotXYZ(Math.PI, 0, 0)), [0, 0, 1], 150);
   const heap0 = cv.HEAPU8 ? cv.HEAPU8.length : 0;
@@ -518,7 +831,7 @@ if (!cvPkg) {
     [qm, pts, st].forEach((m) => m.delete()); det.delete();
   }
   finish();
-})().catch((e) => { console.log('  FAIL ' + (e && e.stack || e)); failed = true; finish(); });
+}).catch((e) => { console.log('  FAIL ' + (e && e.stack || e)); failed = true; finish(); });
 
 function finish() {
   if (failed) { console.log('\nFAIL'); process.exit(1); }
