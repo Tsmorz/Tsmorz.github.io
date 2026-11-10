@@ -9,28 +9,28 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
 <style>
-/* Tag Tracker: an instrument for a vision bench. Cool anodised greys, ink, and one Kapton-amber for what is live or
-   what you press. Panels are plain outlined boxes with no shadows; the video alone carries viewfinder corner marks
-   (the reticle), amber while detecting. One typeface, Archivo, whose width axis does the work: wide for the name and panel titles,
+/* Tag Tracker: an instrument for a vision bench. Cool anodised greys, ink, and the site's violet for what is live or
+   what you press (amber only means a warning; never orange accents on the dark greys). Panels are plain outlined boxes with no shadows; the video alone carries viewfinder corner marks
+   (the reticle), violet while detecting. One typeface, Archivo, whose width axis does the work: wide for the name and panel titles,
    normal for reading, tabular figures for numbers.
    Tokens: light on bare :root, dark for the OS setting unless the toggle says light, and dark when the toggle says so. */
 :root{--font:Archivo,"Helvetica Neue",Arial,sans-serif;color-scheme:light;
 --page:#dde1e3;--panel:#f4f6f6;--well:#e8ecee;--field:#ffffff;--ink:#1b1f22;--ink2:#465056;--muted:#5f696f;--rule:#cdd3d6;--rule2:#b4bcc1;
---tick:#1b1f22;--accent:#e09b1a;--onAccent:#1b1f22;--accentInk:#875700;--accentWash:rgba(224,155,26,.16);--ring:rgba(224,155,26,.55);
+--tick:#1b1f22;--accent:#6459d3;--onAccent:#ffffff;--accentInk:#4f45b8;--accentWash:rgba(100,89,211,.1);--ring:rgba(100,89,211,.5);
 --stage:#15191b;--grid:#e2e7e9;--axis:#b4bcc1;
 --good:#2b7a4b;--goodWash:rgba(43,122,75,.12);--crit:#b3261e;--critWash:rgba(179,38,30,.08);--warn:#875700;--warnWash:rgba(224,155,26,.16);
 --x:#d9483b;--y:#14a37f;--z:#4a5fd9;--unknown:#8b939a;
 --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;--s8:#e34948;--sh:0 10px 28px rgba(27,31,34,.18)}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;
 --page:#1f2427;--panel:#2a3034;--well:#232a2e;--field:#20262a;--ink:#e8eced;--ink2:#b5bec3;--muted:#99a3a9;--rule:#3a4247;--rule2:#4b555b;
---tick:#c9d1d5;--accent:#f2b13a;--onAccent:#1b1f22;--accentInk:#f2b13a;--accentWash:rgba(242,177,58,.16);--ring:rgba(242,177,58,.6);
+--tick:#c9d1d5;--accent:#c8c0ff;--onAccent:#1b1f22;--accentInk:#c8c0ff;--accentWash:rgba(200,192,255,.12);--ring:rgba(200,192,255,.55);
 --stage:#111416;--grid:#343c41;--axis:#4b555b;
 --good:#62c08d;--goodWash:rgba(98,192,141,.14);--crit:#f08a80;--critWash:rgba(240,138,128,.1);--warn:#f2b13a;--warnWash:rgba(242,177,58,.14);
 --x:#e5604f;--y:#1aa883;--z:#5b7fe8;--unknown:#7d878d;
 --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;--sh:0 12px 32px rgba(0,0,0,.45)}}
 :root[data-theme=dark]{color-scheme:dark;
 --page:#1f2427;--panel:#2a3034;--well:#232a2e;--field:#20262a;--ink:#e8eced;--ink2:#b5bec3;--muted:#99a3a9;--rule:#3a4247;--rule2:#4b555b;
---tick:#c9d1d5;--accent:#f2b13a;--onAccent:#1b1f22;--accentInk:#f2b13a;--accentWash:rgba(242,177,58,.16);--ring:rgba(242,177,58,.6);
+--tick:#c9d1d5;--accent:#c8c0ff;--onAccent:#1b1f22;--accentInk:#c8c0ff;--accentWash:rgba(200,192,255,.12);--ring:rgba(200,192,255,.55);
 --stage:#111416;--grid:#343c41;--axis:#4b555b;
 --good:#62c08d;--goodWash:rgba(98,192,141,.14);--crit:#f08a80;--critWash:rgba(240,138,128,.1);--warn:#f2b13a;--warnWash:rgba(242,177,58,.14);
 --x:#e5604f;--y:#1aa883;--z:#5b7fe8;--unknown:#7d878d;
@@ -67,7 +67,7 @@ a{color:var(--ink);text-decoration-color:var(--accent);text-decoration-thickness
 .seg button:hover{color:var(--ink);background:var(--well)}
 .seg button[aria-selected=true],.seg button[aria-pressed=true],.seg button[aria-checked=true]{background:var(--ink);color:var(--panel)}
 .seg.sm button{height:26px;padding:0 9px;font-size:13px}
-/* a square latching toggle: empty when off, amber with a check when on */
+/* a square latching toggle: empty when off, violet with a check when on */
 .switch{border:1px solid var(--ink);background:transparent;width:18px;height:18px;border-radius:2px;position:relative;padding:0;flex:none}
 .switch[aria-checked=true]{background:var(--accent);border-color:var(--accent)}
 .switch[aria-checked=true]::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid var(--onAccent);border-width:0 2px 2px 0;transform:rotate(45deg)}
@@ -116,7 +116,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 .stage{position:relative;background:var(--stage);aspect-ratio:16/9;overflow:hidden;border-radius:0 0 3px 3px}
 .stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
 .stage video{object-fit:contain}
-/* the reticle: corner marks inside the picture, amber while detecting */
+/* the reticle: corner marks inside the picture, violet while detecting */
 .reticle{position:absolute;inset:10px;pointer-events:none;--rc:rgba(255,255,255,.35);background:
   linear-gradient(var(--rc) 0 0) left top/22px 2px,linear-gradient(var(--rc) 0 0) left top/2px 22px,
   linear-gradient(var(--rc) 0 0) right top/22px 2px,linear-gradient(var(--rc) 0 0) right top/2px 22px,
@@ -200,8 +200,9 @@ h3.sub{font-size:14px;font-weight:700;font-stretch:112%;margin:0}
 .badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;font-size:13px;font-weight:600}
 .badge.good{background:var(--goodWash);color:var(--good)}.badge.warn{background:var(--warnWash);color:var(--warn)}.badge.bad{background:var(--critWash);color:var(--crit)}
 .badge .i{width:14px;height:14px}
-.note{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;background:var(--warnWash);color:var(--ink);font-size:13px;line-height:1.5;border-left:3px solid var(--accent)}
-.note .i{color:var(--warn);margin-top:1px}
+.note{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;background:var(--well);color:var(--ink);font-size:13px;line-height:1.5;border-left:3px solid var(--accent)}
+.note .i{color:var(--accentInk);margin-top:1px}
+.note.warn{background:var(--warnWash);border-left-color:var(--warn)}.note.warn .i{color:var(--warn)}
 .views{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
 .views .chip{border-style:solid;border-color:var(--rule2)}
 footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap}
@@ -697,7 +698,7 @@ function onWorker(m) {
   } else if (m.type === 'error') {
     if (m.of === 'frame') { S.busy = false; return; }
     if (m.of === 'init') { status('Could not load the detector', 'bad'); showEmpty('The detector didn’t load', 'OpenCV.js (about 10 MB) is fetched from a CDN the first time. Check your connection and reload the page.'); }
-    if (m.of === 'calibrate') { $('solveBtn').disabled = S.views.length < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate'; $('calibResult').innerHTML = `<div class="note"><svg class="i"><use href="#i-alert"/></svg><span>Calibration failed: ${escapeHtml(m.text)}</span></div>`; }
+    if (m.of === 'calibrate') { $('solveBtn').disabled = S.views.length < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate'; $('calibResult').innerHTML = `<div class="note warn"><svg class="i"><use href="#i-alert"/></svg><span>Calibration failed: ${escapeHtml(m.text)}</span></div>`; }
     console.warn('worker:', m.of, m.text);
   }
 }
@@ -1492,7 +1493,7 @@ $('importFile').onchange = async () => {
     if (err) throw new Error(err);
     c.rms = typeof c.rms === 'number' ? c.rms : 0;
     S.calibs[S.camKey] = c; store.set('calibs', S.calibs); S.calibResult = null; resetTracks(); updateCam(); renderCalib();
-  } catch (e) { $('calibResult').innerHTML = `<div class="note"><svg class="i"><use href="#i-alert"/></svg><span>That file isn’t a calibration (${escapeHtml(e.message)}).</span></div>`; }
+  } catch (e) { $('calibResult').innerHTML = `<div class="note warn"><svg class="i"><use href="#i-alert"/></svg><span>That file isn’t a calibration (${escapeHtml(e.message)}).</span></div>`; }
 };
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'camera'; }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
