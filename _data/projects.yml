@@ -31,6 +31,19 @@
     - label: Open the tool
       url: /serial-plotter/
 
+- name: Tag Tracker
+  blurb: >-
+    Tracks AprilTags with any webcam, in the browser. Name each tag, calibrate the camera
+    with a printed board, and watch the last second of every tag's position and orientation
+    in 3D, relative to the camera or to another tag. Nothing leaves your computer.
+  year: "2026"
+  tags: [JavaScript, Computer Vision, OpenCV]
+  featured: true
+  on_cv: false
+  links:
+    - label: Open the tool
+      url: /tag-tracker/
+
 - name: Double Pendulum
   blurb: >-
     A double pendulum is a classic underactuated system with multiple equilibrium points.

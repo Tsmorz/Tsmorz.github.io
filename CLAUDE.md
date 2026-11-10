@@ -61,7 +61,7 @@ assets/js/embedded/      /embedded/ (embedded.md): embedded-core.js (no DOM) and
 assets/img/vision/       the /vision/ photos: three CC0 Commons photos at 640 × 480, credited on vision.md; add new ones only once approved
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
 controls/swingup/real/   /controls/swingup/real/: browser firmware installer (esp-web-tools, pinned to an exact version); manifest, image pieces, the model (`n-cartpole-model.ncpm`) and its own `manifest-model.json` (an "Install model" button that writes it to the `model` partition) come from `task fw-installer -- fw-vX.Y.Z [--model <.ncpm>]` in `../n-cartpole`, never hand-edit; `script/test-installer` checks them
-script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-embedded, test-fit, test-recipes, test-glide, train-verify-net
+script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-embedded, test-fit, test-recipes, test-glide, test-tag-tracker, train-verify-net
 ```
 
 ### Conventions
@@ -319,6 +319,26 @@ are listed in `localStorage` (`glide-reach-areas`). **Street maps are never stor
 forbids "save area" features, so offline the page switches to a hillshade it draws from the saved terrain. Leaflet is vendored in
 `glide-reach/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in `sw.js`
 whenever `SHELL_FILES` changes (it lists every file of the page). The service worker also registers on `localhost`, so `script/serve` exercises it.
+
+### The tag tracker (`/tag-tracker/`)
+
+`tag-tracker/` is a self-contained tool page (no front matter, so Jekyll copies it as-is) with the serial plotter's look.
+It tracks AprilTags from a webcam (or a built-in Demo camera) in Chrome/Edge: the visitor names each tag ID and enters its
+printed size, calibrates the camera with a printed ChArUco board, and sees the last `History` seconds of each tag in 3D
+(axes drawn every `Axes every` seconds, defaults 1 s and 0.1 s), relative to the camera or to a chosen tag, plus an x/y/z
+plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
+
+- `index.html`: the UI. `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
+  camera, calibration-view checks. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
+  its `TagVision` factory also runs in Node.
+- OpenCV.js is **pinned** (`@techstark/opencv-js@4.12.0-release.1`, jsDelivr then unpkg) and loaded by the worker; it is
+  not vendored. Tags use OpenCV's ArUco detector with an AprilTag dictionary and AprilTag corner refinement, shifted by
+  half a pixel to OpenCV's pixel-centre convention; the board uses DICT_5X5_100 so it never clashes with tag IDs.
+- Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
+  ninth tag is grey with its name. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
+- `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore; with OpenCV.js installed
+  (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
+  that calibration recovers the camera and poses come back within millimetres.
 
 ## When editing, don't
 

@@ -1,0 +1,204 @@
+#!/usr/bin/env node
+// Check the maths behind /tag-tracker/ (tag-tracker/tracker-core.js), in Node.
+//   1. rotations and poses: Rodrigues, compose, inverse, poses relative to a reference tag
+//   2. intrinsics: the field-of-view guess, rescaling a calibration, checking an imported one, projection
+//   3. history: trimming to the span, and axes every `every` seconds (with a tracking gap)
+//   4. the 3D plot's orbit camera, grid steps, calibration-view signatures and coverage, settings
+//   5. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
+//      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
+//      To run it: npm i --no-save @techstark/opencv-js@4.12.0-release.1
+const path = require('path');
+const C = require(path.join(__dirname, '..', 'tag-tracker/tracker-core.js'));
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+const near = (a, b, tol) => a.every((x, i) => Math.abs(x - b[i]) <= tol);
+function rotXYZ(a, b, c) {
+  const Rx = [1, 0, 0, 0, Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a)];
+  const Ry = [Math.cos(b), 0, Math.sin(b), 0, 1, 0, -Math.sin(b), 0, Math.cos(b)];
+  const Rz = [Math.cos(c), -Math.sin(c), 0, Math.sin(c), Math.cos(c), 0, 0, 0, 1];
+  return C.mul3(Rz, C.mul3(Ry, Rx));
+}
+
+console.log('1. rotations and poses');
+{
+  const R = C.rodrigues([0, 0, Math.PI / 2]);
+  check(near(R, [0, -1, 0, 1, 0, 0, 0, 0, 1], 1e-12), 'a quarter turn about z');
+  const r = [0.3, -0.7, 0.2], Rr = C.rodrigues(r);
+  check(near(C.mul3(Rr, C.tr3(Rr)), [1, 0, 0, 0, 1, 0, 0, 0, 1], 1e-12), 'Rodrigues gives an orthonormal matrix');
+  check(Math.abs(C.angleOf(Rr) - C.norm(r)) < 1e-12, 'its angle is the vector\'s length');
+  check(near(C.rodrigues([0, 0, 0]), [1, 0, 0, 0, 1, 0, 0, 0, 1], 0), 'zero rotation is the identity');
+  const a = { R: rotXYZ(0.2, 0.5, -0.3), t: [0.1, -0.2, 1.5] }, b = { R: rotXYZ(-0.4, 0.1, 1.2), t: [-0.3, 0.05, 2.1] };
+  const id = C.compose(C.inverse(a), a);
+  check(near(id.R, [1, 0, 0, 0, 1, 0, 0, 0, 1], 1e-12) && near(id.t, [0, 0, 0], 1e-12), 'a pose times its inverse is the identity');
+  const rel = C.relative(a, b), back = C.compose(a, rel);
+  check(near(back.R, b.R, 1e-12) && near(back.t, b.t, 1e-12), 'relative(a, b) composed with a gives b back');
+  const v = C.toView({ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0.1, 0.2, 1] });
+  check(near(v.t, [0.1, 1, -0.2], 1e-12), 'the plot puts depth along Y and camera "down" as -Z');
+  const self = C.inFrame(a, a);
+  check(near(self.t, [0, 0, 0], 1e-12) && near(C.mulv(self.R, [0, 1, 0]), [0, 0, 1], 1e-12), 'the reference tag sits at the origin of its own frame, its y axis pointing up');
+  const above = C.inFrame({ R: a.R, t: C.add(a.t, C.mulv(a.R, [0, 0.1, 0.02])) }, a);
+  check(near(above.t, [0, -0.02, 0.1], 1e-12), 'a point 10 cm up the reference tag plots 10 cm up, and in front of its face is -Y');
+  check(Math.abs(C.mul3(C.TAG_TO_VIEW, C.tr3(C.TAG_TO_VIEW))[0] - 1) < 1e-12, 'the frame turns are rotations');
+}
+
+console.log('2. intrinsics');
+{
+  const g = C.guessIntrinsics(1280, 720, 90);
+  check(Math.abs(g.fx - 640) < 1e-9 && g.cx === 639.5 && g.cy === 359.5 && g.guess, 'a 90° camera at 1280 wide has f = 640 px');
+  check(Math.abs(C.hfov(g) - 90) < 1e-9, 'and its field of view reads back as 90°');
+  const cal = { w: 1280, h: 720, fx: 900, fy: 901, cx: 641, cy: 358, dist: [0.1, -0.2, 0, 0, 0], rms: 0.3 };
+  const s = C.scaleIntrinsics(cal, 640, 360);
+  check(Math.abs(s.fx - 450) < 1e-9 && Math.abs(s.cx - 320.25) < 1e-9 && s.dist[0] === 0.1, 'a 1280×720 calibration scales to 640×360');
+  check(C.scaleIntrinsics(cal, 640, 480) === null, 'but not to 640×480, where the crop is unknown');
+  check(C.checkCalibration(cal) === null && C.checkCalibration({ w: 1 }) !== null && C.checkCalibration(Object.assign({}, cal, { dist: [1, 'x', 0, 0] })) !== null, 'imported calibrations are checked');
+  const P = [0.1, -0.05, 2], q = C.project({ fx: 1000, fy: 1000, cx: 640, cy: 360, dist: [0, 0, 0, 0, 0] }, P);
+  check(near(q, [690, 335], 1e-9), 'pinhole projection');
+  const qd = C.project({ fx: 1000, fy: 1000, cx: 640, cy: 360, dist: [-0.2, 0, 0, 0, 0] }, [0.5, 0, 1]);
+  check(Math.abs(qd[0] - (640 + 1000 * 0.5 * (1 - 0.2 * 0.25))) < 1e-9, 'radial distortion pulls the edge in (barrel)');
+  const n = C.depthNoise({ fx: 1700 }, 0.1, 2, 0.2);
+  check(n > 0.002 && n < 0.003, `depth noise of a 10 cm tag at 2 m, f = 1700 px, 0.2 px corners: ${(n * 1000).toFixed(1)} mm`);
+}
+
+console.log('3. history and axis samples');
+{
+  const H = new C.History(), pose = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 1] };
+  for (let k = 0; k <= 60; k++) H.push(5, k / 30, pose); // 2 s at 30 fps
+  H.push(5, 1, pose); // repeated time is ignored
+  H.trim(2, 1);
+  const a = H.get(5);
+  check(a.length === 31 && Math.abs(a[0].time - 1) < 1e-9, 'trimmed to the last 1 s (' + a.length + ' samples)');
+  const ax = C.axisSamples(a, 2, 1, 0.1);
+  check(ax.length === 11, 'axes every 0.1 s over 1 s: 11 of them');
+  check(ax.every((s, i) => Math.abs(s.time - (1 + i * 0.1)) <= 1 / 60 + 1e-9), 'each within half a frame of its 0.1 s mark, oldest first');
+  const G = new C.History();
+  for (let k = 0; k <= 60; k++) if (k < 30 || k > 45) G.push(1, k / 30, pose); // lost from 1.0 to 1.5 s
+  const gx = C.axisSamples(G.get(1), 2, 1, 0.1);
+  check(gx.length === 6 && gx.every((s) => s.time < 1 + 1e-9 || s.time > 1.5), `a tracking gap leaves a gap (${gx.length} axes)`);
+  check(C.axisSamples(G.get(1), 2, 1, 0.25).length === 3, 'axes every 0.25 s: the marks that fall outside the gap');
+  const S = new C.History();
+  for (let k = 0; k <= 20; k++) S.push(2, k / 10, pose); // 10 fps, slower than the axis step
+  check(C.axisSamples(S.get(2), 2, 1, 0.05).length === 11, 'a camera slower than the step draws one axis per frame, never the same frame twice');
+  H.trim(10, 1);
+  check(H.ids().length === 0, 'a track with nothing recent is dropped');
+}
+
+console.log('4. plot, calibration views, settings');
+{
+  const o = C.orbit({ yaw: 0.3, pitch: 0.4, dist: 2, target: [0, 1, 0], fov: 50, w: 800, h: 600 });
+  const c = o.project([0, 1, 0]);
+  check(Math.abs(c[0] - 400) < 1e-9 && Math.abs(c[1] - 300) < 1e-9 && Math.abs(c[2] - 2) < 1e-9, 'the orbit target lands in the middle, at the orbit distance');
+  const up = o.project([0, 1, 0.1]), right = o.project(C.add([0, 1, 0], o.right.map((x) => x * 0.1)));
+  check(up[1] < 300 && right[0] > 400, 'up is up and right is right on screen');
+  check(o.project(o.eye) === null, 'points behind the eye are not drawn');
+  check(C.niceStep(1, 10) === 0.1 && C.niceStep(3, 10) === 0.2 && C.niceStep(0.7, 10) === 0.05, 'grid steps of 1, 2 and 5');
+  const grid = [];
+  for (let j = 0; j < 5; j++) for (let i = 0; i < 8; i++) grid.push([300 + i * 40, 200 + j * 40]);
+  const sA = C.viewSignature(grid, 1280, 720), sB = C.viewSignature(grid.map((p) => [p[0] + 400, p[1]]), 1280, 720);
+  check(C.signatureDistance(sA, sA) === 0 && C.signatureDistance(sA, sB) > 0.25, 'moving the board across the frame is a new view');
+  const ids = grid.map((_, i) => i);
+  check(C.cornerMotion({ ids, pts: grid }, { ids, pts: grid.map((p) => [p[0] + 2, p[1]]) }) === 2, 'corner motion between frames, matched by id');
+  check(C.cornerMotion({ ids: [1, 2], pts: [[0, 0], [1, 1]] }, { ids: [1, 2], pts: [[0, 0], [1, 1]] }) === Infinity, 'fewer than 4 shared corners is not "still"');
+  const cov = C.coverage([grid], 1280, 720, 4, 3);
+  check(cov.fraction > 0 && cov.fraction < 0.5, `one central view covers ${(cov.fraction * 100).toFixed(0)}% of a 4×3 grid`);
+  const st = C.clampSettings({ span: 0.05, every: 5, axisLen: 'x' });
+  check(st.span === 0.1 && st.every === 0.1 && st.axisLen === C.DEFAULTS.axisLen, 'settings are clamped (span ≥ 0.1 s, axes no sparser than the span)');
+  check(C.DEFAULTS.span === 1 && C.DEFAULTS.every === 0.1, 'defaults: 1 s of history, axes every 0.1 s');
+}
+
+let cvPkg = null;
+try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
+if (!cvPkg) {
+  console.log('5. detection and calibration: skipped (OpenCV.js not installed)');
+  finish();
+} else (async () => {
+  console.log('5. detection and calibration (OpenCV.js)');
+  const factory = require(path.join(__dirname, '..', 'tag-tracker/worker.js'));
+  const cv = await factory.ready(require(cvPkg));
+  const V = factory(cv, C);
+  const W = 1280, Hh = 720, cam = { w: W, h: Hh, fx: 1000, fy: 1000, cx: 639.5, cy: 359.5, dist: [0, 0, 0, 0, 0] };
+
+  // Render a flat picture `src` into the camera. A maps a source pixel index (u, v, 1) to plane coordinates
+  // (X, Y, 1) in metres; the plane sits at pose (R, t). Rendered 3× larger and averaged down, so edges are
+  // anti-aliased like a real sensor's.
+  function render(src, A, R, t, bg) {
+    const S = 3, Ks = [cam.fx * S, 0, (cam.cx + 0.5) * S - 0.5, 0, cam.fy * S, (cam.cy + 0.5) * S - 0.5, 0, 0, 1];
+    const M = [R[0], R[1], t[0], R[3], R[4], t[1], R[6], R[7], t[2]];
+    const Hm = cv.matFromArray(3, 3, cv.CV_64F, C.mul3(Ks, C.mul3(M, A)));
+    const big = new cv.Mat(), out = new cv.Mat();
+    cv.warpPerspective(src, big, Hm, new cv.Size(W * S, Hh * S), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar(bg));
+    cv.resize(big, out, new cv.Size(W, Hh), 0, 0, cv.INTER_AREA);
+    Hm.delete(); big.delete();
+    // a little sensor noise
+    const d = out.data;
+    for (let i = 0; i < d.length; i++) d[i] = Math.max(0, Math.min(255, d[i] + Math.round((rnd() - 0.5) * 6)));
+    return out;
+  }
+  const toMat = (img) => { const m = new cv.Mat(img.h, img.w, cv.CV_8UC1); m.data.set(img.data); return m; };
+
+  // Calibration: a board with 25 mm squares, from 12 random poses.
+  const px = 120, square = 0.025, bimg = toMat(V.boardImage(px));
+  const Ab = [square / px, 0, 0.5 * square / px, 0, square / px, 0.5 * square / px, 0, 0, 1];
+  const views = [];
+  let boardMs = 0;
+  for (let v = 0; v < 12; v++) {
+    const R = rotXYZ((rnd() - 0.5) * 0.9, (rnd() - 0.5) * 0.9, (rnd() - 0.5) * 0.6);
+    const ctr = C.mulv(R, [4.5 * square, 3 * square, 0]);
+    const t = C.sub([(rnd() - 0.5) * 0.25, (rnd() - 0.5) * 0.15, 0.35 + rnd() * 0.3], ctr);
+    const img = render(bimg, Ab, R, t, 140);
+    const t0 = Date.now(), b = V.detectBoard(img);
+    boardMs += Date.now() - t0;
+    V.setGray(img.data, W, Hh);
+    if (b.ids.length >= 6) views.push({ ids: b.ids, pts: b.pts });
+    img.delete();
+  }
+  check(views.length >= 10, `the board is found in ${views.length} of 12 views (${(boardMs / 12).toFixed(0)} ms each)`);
+  const k = V.calibrate(views, W, Hh, square);
+  check(k.rms < 0.5, `calibration RMS ${k.rms.toFixed(3)} px`);
+  check(Math.abs(k.fx / cam.fx - 1) < 0.01 && Math.abs(k.fy / cam.fy - 1) < 0.01, `focal length within 1%: fx ${k.fx.toFixed(1)}, fy ${k.fy.toFixed(1)} (truth 1000)`);
+  check(Math.abs(k.cx - cam.cx) < 6 && Math.abs(k.cy - cam.cy) < 6, `principal point within 6 px: (${k.cx.toFixed(1)}, ${k.cy.toFixed(1)})`);
+  check(k.dist[4] === 0 && Math.abs(k.dist[0]) < 0.1, `k3 held at 0, k1 small (${k.dist[0].toFixed(3)})`);
+  bimg.delete();
+
+  // Tracking: an 8 cm tag36h11 at 1 m and 2 m, at random tilts.
+  V.setFamily('APRILTAG_36h11', 'precise');
+  const tpx = 400, size = 0.08, tag = V.tagImage('APRILTAG_36h11', 42, tpx);
+  const tm = toMat(tag), pad = new cv.Mat();
+  cv.copyMakeBorder(tm, pad, 100, 100, 100, 100, cv.BORDER_CONSTANT, new cv.Scalar(255));
+  const q = size / tpx, o = -(100 + tpx / 2) + 0.5;
+  const At = [q, 0, q * o, 0, -q, -q * o, 0, 0, 1]; // y up the tag
+  let ms = 0, n = 0;
+  for (const z of [1, 2]) {
+    const errs = [], angs = [];
+    for (let i = 0; i < 6; i++) {
+      // the tag's z comes out of its face, so a tag facing the camera is turned half a turn about x
+      const R = C.mul3(rotXYZ((rnd() - 0.5) * 0.9, (rnd() - 0.5) * 0.9, rnd() * 6.28), rotXYZ(Math.PI, 0, 0)), t = [(rnd() - 0.5) * 0.4 * z, (rnd() - 0.5) * 0.2 * z, z];
+      const img = render(pad, At, R, t, 150);
+      const t0 = Date.now(), found = V.detectTags(img, cam, { 42: size }, 0.05);
+      ms += Date.now() - t0; n++;
+      img.delete();
+      const f = found.find((x) => x.id === 42);
+      if (!f || !f.t) { errs.push(Infinity); continue; }
+      errs.push(C.norm(C.sub(f.t, t)) * 1000);
+      angs.push((C.angleOf(C.mul3(C.tr3(R), f.R)) * 180) / Math.PI);
+    }
+    const worst = Math.max(...errs), lim = z === 1 ? 3 : 10;
+    check(worst < lim, `8 cm tag at ${z} m: position error ${errs.map((e) => e.toFixed(1)).join(', ')} mm (all under ${lim})`);
+    check(angs.length === 6 && Math.max(...angs) < 5, `and its rotation within ${Math.max(...angs).toFixed(2)}° (under 5°)`);
+  }
+  check(ms / n < 100, `tag detection on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
+  // Repeated frames must not leak WebAssembly memory.
+  const img = render(pad, At, C.mul3(rotXYZ(0.2, 0.1, 0.3), rotXYZ(Math.PI, 0, 0)), [0, 0, 1], 150);
+  const heap0 = cv.HEAPU8 ? cv.HEAPU8.length : 0;
+  for (let i = 0; i < 150; i++) { V.detectTags(img, cam, {}, size); V.detectBoard(img); }
+  const heap1 = cv.HEAPU8 ? cv.HEAPU8.length : 0;
+  check(heap1 === heap0, `150 frames of detection don't grow the WebAssembly heap (${(heap0 / 1e6).toFixed(0)} MB)`);
+  img.delete(); tm.delete(); pad.delete();
+  check(V.familySize('APRILTAG_36h11') === 587 && V.familySize('APRILTAG_16h5') === 30, 'family sizes: 587 tags in 36h11, 30 in 16h5');
+  finish();
+})().catch((e) => { console.log('  FAIL ' + (e && e.stack || e)); failed = true; finish(); });
+
+function finish() {
+  if (failed) { console.log('\nFAIL'); process.exit(1); }
+  console.log('\nOK');
+}
