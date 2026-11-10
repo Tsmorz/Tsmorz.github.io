@@ -56,6 +56,76 @@ check(!G.reachAt(R, Math.PI / 2, 3500), '3.5 km east is not');
 R = G.castRays(base, ridge(300));
 check(!G.reachAt(R, Math.PI / 2, 2500), 'behind the ridge is not');
 
+console.log('4b. route search round terrain (reachGrid)');
+{
+  const cell = 20, W = 500, c = 250; // 10 km × 10 km grid, launch in the middle
+  const grid = f => { const t = new Float32Array(W * W); for (let j = 0; j < W; j++) for (let i = 0; i < W; i++) t[j * W + i] = f((i - c) * cell, (c - j) * cell); return t; };
+  const run = (terr, extra = {}) => G.reachGrid({ cell, si: c, sj: c, h0: 220, margin: 20, Va: 10, GR: 15, windSpeed: 0, windFromDeg: 270, ...extra }, terr, W, W);
+  const at = (r, e, n) => r.alt[(c - Math.round(n / cell)) * W + c + Math.round(e / cell)];
+  const ok = v => v > -Infinity;
+  let r = run(grid(() => 0));
+  const dirs = [0, 13, 27, 45, 70, 90, 200, 300];
+  check(dirs.every(d => ok(at(r, 2880 * Math.sin(d * Math.PI / 180), 2880 * Math.cos(d * Math.PI / 180)))), 'flat ground: 2.88 km is reachable in every direction (true reach 3 km)');
+  check(dirs.every(d => !ok(at(r, 3060 * Math.sin(d * Math.PI / 180), 3060 * Math.cos(d * Math.PI / 180)))), 'and 3.06 km in none');
+  near(at(r, 2000, 0), 220 - 2000 / 15, 1, 'height over a spot 2 km east is 220 − 2000/15');
+  r = run(grid(() => 0), { windSpeed: 5 });
+  check(ok(at(r, 4400, 0)) && !ok(at(r, 4600, 0)) && ok(at(r, -1440, 0)) && !ok(at(r, -1560, 0)), 'wind 5 m/s from the west: 4.5 km downwind, 1.5 km upwind, as the rays');
+  // a 300 m wall 1 km east, with a 200 m gap to the south-east
+  const wall = gap => (e, n) => (e >= 1000 && e < 1100 && !(gap && n > -1200 && n < -1000) ? 300 : 0);
+  const behind = [1500, 0];
+  const rays = G.castRays({ ...base, maxD: 4900 }, (e, n) => wall(true)(e, n));
+  check(rays.dmax[E] < 1000, 'straight east, the wall stops the glide');
+  r = run(grid(wall(true)));
+  // shortest way round: to the gap's near corner, along it, then to the target; the grid may lose up to ~3% more
+  const L = Math.hypot(1000, 1000) + 100 + Math.hypot(400, 1000), h = at(r, ...behind), best = 220 - L / 15, worst = 220 - 1.03 * L / 15;
+  check(ok(h) && h <= best + 0.5 && h >= worst, `round the wall through the gap reaches 1.5 km east (${h.toFixed(1)} m; best possible ${best.toFixed(1)} m)`);
+  const route = G.routeTo(r.parent, r.alt, (c - behind[1] / cell) * W + c + behind[0] / cell);
+  const thru = route.some(i => { const e = (i % W - c) * cell, n = (c - Math.floor(i / W)) * cell; return e >= 1000 && e < 1100 && n > -1200 && n < -1000; });
+  check(route[0] === c * W + c && thru, `the route starts at the launch and goes through the gap (${route.length} cells)`);
+  let falls = true; for (let k = 1; k < route.length; k++) if (r.alt[route[k]] >= r.alt[route[k - 1]]) falls = false;
+  check(falls, 'and loses height at every step');
+  r = run(grid(wall(false)));
+  check(!ok(at(r, ...behind)), 'with no gap, behind the wall stays out of reach');
+  check(!r.edge, 'a reach that fits inside the grid is not flagged at the edge');
+  r = G.reachGrid({ cell, si: 5, sj: 5, h0: 220, margin: 20, Va: 10, GR: 15, windSpeed: 0, windFromDeg: 0 }, new Float32Array(100), 10, 10);
+  check(r.edge, 'one that runs off the grid is');
+  const big = new Float32Array(896 * 896), t0 = Date.now();
+  G.reachGrid({ cell: 27.4, si: 448, sj: 448, h0: 500, margin: 20, Va: 10, GR: 15, windSpeed: 0, windFromDeg: 0 }, big, 896, 896);
+  const ms = Date.now() - t0;
+  check(ms < 5000, `a full page-sized grid (896 × 896, all reachable) runs in ${ms} ms`);
+}
+
+console.log('4c. height limits, line of sight, rules and units');
+{
+  // a 100 m plateau that drops to a plain 200 m east of the launch; launch 120 m above the plateau
+  const plateau = (e) => (e < 200 ? 100 : 0);
+  const o = { ...base, h0: 220, maxD: 6000 };
+  let R = G.castRays(o, plateau);
+  near(R.dmax[E], 3000, 5, 'no limit: 200 m of height × 15 = 3 km east');
+  R = G.castRays({ ...o, ceilAgl: 121.92 }, plateau);
+  const capped = 200 + (121.92 - 20) * 15 - (100 - 0) * 0; // over the plain the glider is held at 122 m above the ground
+  check(R.dmax[E] < 2000 && Math.abs(R.dmax[E] - (200 + (121.92 - 20) * 15 - 15 * 0)) < 120,
+    `FAA 400 ft limit: the glider has to lose height over the plain, so the reach drops to ${R.dmax[E].toFixed(0)} m (about ${capped.toFixed(0)})`);
+  near(G.castRays({ ...o, ceilAgl: 121.92 }, plateau).dmax[W], G.castRays(o, plateau).dmax[W], 5, 'over the plateau, where it stays under the limit, nothing changes');
+  const prof = G.glideAlong({ ...o, ceilAgl: 121.92 }, plateau, Math.PI / 2, 300);
+  const over = prof.glide.some((h, k) => h === h && h - prof.ground[k] > 121.92 + 0.01 && prof.d[k] > 0);
+  check(!over && prof.kind === 0 && Math.abs(prof.d[prof.end] - R.dmax[E]) <= 5, 'glideAlong agrees with the rays and never goes over the limit');
+  const W2 = 500, c = 250, cell = 20, terr = new Float32Array(W2 * W2);
+  for (let j = 0; j < W2; j++) for (let i = 0; i < W2; i++) terr[j * W2 + i] = plateau((i - c) * cell);
+  const run = extra => G.reachGrid({ cell, si: c, sj: c, h0: 220, margin: 20, Va: 10, GR: 15, windSpeed: 0, windFromDeg: 0, ...extra }, terr, W2, W2);
+  const reachE = r => { let i = c; while (i + 1 < W2 && r.alt[c * W2 + i + 1] > -Infinity) i++; return (i - c) * cell; };
+  const gFree = reachE(run({})), gCap = reachE(run({ ceilAgl: 121.92 }));
+  check(Math.abs(gFree - 3000) <= 60 && Math.abs(gCap - R.dmax[E]) <= 80, `the route search agrees: ${gFree} m free, ${gCap} m under the limit`);
+  const rs = run({ maxR: 600 });
+  let farthest = 0; for (let i = 0; i < W2 * W2; i++) if (rs.alt[i] > -Infinity) farthest = Math.max(farthest, Math.hypot(i % W2 - c, Math.floor(i / W2) - c) * cell);
+  check(farthest <= 600 && farthest > 560, `staying in sight (600 m): nothing past ${farthest.toFixed(0)} m`);
+  check(G.ruleFor(44.09, -103.25) === 'faa' && G.ruleFor(48.14, 11.58) === 'eu' && G.ruleFor(-33.9, 151.2) === 'none', 'rules by place: Rapid City FAA, Munich EU, Sydney none');
+  check(G.Units.imperial.h(121.92) === '400 ft' && G.Units.metric.h(121.92) === '122 m', '400 ft limit reads 400 ft or 122 m');
+  check(G.Units.imperial.d(3500) === '2.2 mi' && G.Units.imperial.d(200) === '656 ft' && G.Units.metric.d(3500) === '3.5 km', 'distances: 3.5 km = 2.2 mi, 200 m = 656 ft');
+  check(G.Units.imperial.v(10) === '22 mph' && G.Units.metric.v(10) === '10 m/s', 'speeds: 10 m/s = 22 mph');
+  check(G.Units.imperial.a(2.589988) === '1.0 mi²', 'areas: 2.59 km² = 1 mi²');
+}
+
 console.log('5. map maths');
 const [px, py] = G.lonLatToPx(-103.2498, 44.0877, 13);
 const [lo, la] = G.pxToLonLat(px, py, 13);
@@ -63,18 +133,21 @@ near(lo, -103.2498, 1e-9, 'longitude round trip'); near(la, 44.0877, 1e-9, 'lati
 check(Math.floor(px / 256) === 1746 && Math.floor(py / 256) === 2975, 'M Hill is z13 tile 1746/2975 (textbook formula: y = 2975.996)');
 near(G.mppAt(0, 13), 19.109, 0.001, 'metres per pixel at z13 on the equator');
 near(G.mppAt(44.0877, 13), 13.72, 0.01, 'and at 44° N');
+check(G.chooseZoom(3000, 44.09, 3) === 13, 'a 3 km glide fits zoom 13 (3 tiles of 3.5 km each way)');
+check(G.chooseZoom(15000, 44.09, 3) === 12 && G.chooseZoom(25000, 44.09, 3) === 11, '15 km needs zoom 12, 25 km zoom 11');
+check(G.chooseZoom(1e6, 44.09, 3) === 9, 'and it never goes coarser than zoom 9');
 check(G.decodeTerrarium(128, 0, 0) === 0, 'Terrarium (128, 0, 0) is sea level');
 check(G.decodeTerrarium(132, 76, 128) === 1100.5, 'Terrarium (132, 76, 128) is 1100.5 m');
 
 console.log('6. saved areas');
-const t = G.areaTiles(44.0877, -103.2498, 13, 4, 10);
+const t = G.areaTiles(44.0877, -103.2498, 13, 4, 9, 3);
 const byZ = z => t.filter(k => k[0] === z).length;
 check(byZ(13) === 81, `9 × 9 tiles at z13 (${byZ(13)})`);
-check(byZ(12) >= 16 && byZ(12) <= 25 && byZ(11) >= 4 && byZ(11) <= 9 && byZ(10) >= 1 && byZ(10) <= 4, `lower zooms cover the same ground (${byZ(12)}, ${byZ(11)}, ${byZ(10)})`);
+check([12, 11, 10, 9].every(z => byZ(z) === 49), `7 × 7 at each of zooms 12 to 9, for longer glides (${byZ(12)}, ${byZ(11)}, ${byZ(10)}, ${byZ(9)})`);
 check(new Set(t.map(k => k.join('/'))).size === t.length, 'no tile listed twice');
 const t13 = t.filter(k => k[0] === 13), xs = t13.map(k => k[1]), ys = t13.map(k => k[2]);
 check(Math.min(...xs) === 1742 && Math.max(...xs) === 1750 && Math.min(...ys) === 2971 && Math.max(...ys) === 2979, 'centred on the launch tile');
-const key = a => G.areaTiles(a[0], a[1], 13, 4, 10).map(k => k.join('/'));
+const key = a => G.areaTiles(a[0], a[1], 13, 4, 9, 3).map(k => k.join('/'));
 const a1 = key([44.0877, -103.2498]), a2 = key([44.10, -103.20]), a3 = key([47.49, 11.10]);
 const gone = G.tilesOnlyIn(a1, [a2, a3]);
 check(gone.length > 0 && gone.length < a1.length, `deleting one of two overlapping areas frees ${gone.length} of ${a1.length} tiles`);
@@ -107,7 +180,7 @@ console.log('7. service worker');
   const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
 
   await run('install', {});
-  check((await caches.open('glide-shell-v1')).size() === 13, 'install caches the page, the core, the manifest, icons and Leaflet');
+  check((await caches.open('glide-shell-v3')).size() === 16, 'install caches the page, its script and styles, the core, the worker, the manifest, icons and Leaflet');
   stores.set('glide-shell-v0', mkCache());
   await run('activate', {});
   check(!stores.has('glide-shell-v0'), 'activate drops an old version of the page');

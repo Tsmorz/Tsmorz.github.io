@@ -4,527 +4,118 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glide Reach: where can the glider still land?</title>
-<meta name="description" content="Pick a launch point, set the glide ratio and wind, and see where an RC glider can reach and land, with the terrain in the way. Works offline once an area is saved.">
-<meta name="theme-color" content="#1f5f8b">
+<meta name="description" content="Pick a launch point, set the glide ratio and wind, and see where an RC glider can reach and land, round the terrain in the way, in sight and under the height limit. Works offline once an area is saved.">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="lib/leaflet/leaflet.css">
-<script src="lib/leaflet/leaflet.js"></script>
-<script src="glide-core.js"></script>
-<style>
-  :root { --bg:#f6f6f3; --panel:#ffffff; --ink:#1d1f21; --muted:#6b7075; --line:#e3e3df; --accent:#1f5f8b;
-          --land:#16a34a; --hit:#dc2626; --prof:#f59e0b; --warn:#b45309; --chip:#eef3f7; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#111315; --panel:#181b1e; --ink:#e8eaec; --muted:#9aa0a6; --line:#2a2e33; --accent:#5aa6dc; --warn:#e2a336; --chip:#1f2a33; }
-  }
-  * { box-sizing:border-box; }
-  html, body { margin:0; height:100%; font:14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color:var(--ink); background:var(--bg); }
-  #app { display:flex; height:100%; height:100dvh; }
-  #panel { width:350px; flex:none; overflow-y:auto; background:var(--panel); border-right:1px solid var(--line); padding:12px 16px 28px; }
-  #map { flex:1; min-height:300px; background:#e9e4d8; }
-  .top { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
-  h1 { font-size:17px; margin:0; }
-  .home { font-size:12px; color:var(--muted); text-decoration:none; }
-  .home:hover { color:var(--accent); }
-  .sub { color:var(--muted); font-size:12px; margin:2px 0 10px; }
-  .row { margin:9px 0; }
-  .row label { display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted); }
-  .row label b { color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums; }
-  input[type=range] { width:100%; margin:3px 0 0; accent-color:var(--accent); }
-  input[type=text] { font:inherit; font-size:12.5px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--ink); width:100%; }
-  .btns { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 4px; }
-  button { font:inherit; font-size:12.5px; padding:6px 10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); border-radius:7px; cursor:pointer; }
-  button:hover { border-color:var(--accent); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button:disabled { opacity:.5; cursor:default; }
-  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:16px 0 4px; border-top:1px solid var(--line); padding-top:12px; }
-  #status { font-size:12px; color:var(--muted); min-height:1.4em; }
-  .net { font-size:11px; padding:2px 7px; border-radius:99px; background:var(--chip); color:var(--muted); white-space:nowrap; }
-  .net.off { background:#fdf0dc; color:#8a5300; }
-  #stats { font-size:12.5px; font-variant-numeric:tabular-nums; }
-  #stats div { display:flex; justify-content:space-between; padding:2px 0; gap:8px; }
-  #stats span:first-child { color:var(--muted); }
-  .legend { font-size:12px; display:grid; grid-template-columns:16px 1fr; gap:4px 8px; align-items:center; }
-  .sw { width:14px; height:14px; border-radius:3px; }
-  #profile { width:100%; height:170px; display:block; background:var(--bg); border:1px solid var(--line); border-radius:6px; }
-  .note { font-size:11.5px; color:var(--muted); margin-top:12px; }
-  .note a { color:inherit; }
-  .warn { color:var(--warn); }
-  #areas { list-style:none; margin:6px 0 0; padding:0; font-size:12.5px; }
-  #areas li { display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid var(--line); }
-  #areas li .nm { flex:1; min-width:0; }
-  #areas li .nm small { display:block; color:var(--muted); }
-  #areas li button { padding:3px 8px; font-size:12px; }
-  .meter { height:6px; background:var(--chip); border-radius:3px; overflow:hidden; margin:6px 0 3px; }
-  .meter > div { height:100%; background:var(--accent); width:0; }
-  .small { font-size:11.5px; color:var(--muted); }
-  @media (max-width: 760px) {
-    #app { flex-direction:column-reverse; }
-    #panel { width:100%; height:52%; border-right:none; border-top:1px solid var(--line); }
-    #map { height:48%; flex:none; }
-  }
-</style>
+<link rel="stylesheet" href="glide.css">
+<script>try { const t = localStorage.getItem('theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 </head>
 <body>
 <div id="app">
-  <aside id="panel">
-    <div class="top">
+  <header id="head">
+    <div class="title">
       <h1>Glide Reach</h1>
-      <span id="net" class="net">Online</span>
+      <span id="net" class="chip off" role="status" hidden>Offline</span>
+      <div class="seg" role="group" aria-label="Units">
+        <button type="button" data-units="metric" aria-pressed="true">m</button>
+        <button type="button" data-units="imperial" aria-pressed="false">ft</button>
+      </div>
+      <button id="theme" class="icon-btn" type="button" aria-label="Switch light or dark" title="Switch light or dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
+      </button>
     </div>
-    <div class="sub">Where can the glider still land? Tap the map or drag the marker to move the launch. <a class="home" href="/">tsmorz.github.io</a></div>
+    <p class="lede">Where can the glider still land from here, with the hills in the way? <a href="/">tsmorz.github.io</a></p>
+    <div id="status" class="status" role="status" aria-live="polite">Loading…</div>
+  </header>
 
-    <div class="btns">
-      <button id="btnGeo" class="primary">Use my location</button>
-      <button id="btnMHill">Example: M Hill, Rapid City</button>
+  <div id="map" role="application" aria-label="Map. Tap to move the launch; long-press or right-click a spot for the best route there."></div>
+
+  <section id="prof" aria-labelledby="prof-h">
+    <div class="prof-head">
+      <h2 id="prof-h">Cross-section</h2>
+      <span id="profWhat" class="prof-what"></span>
+      <button id="profBack" class="link" type="button" hidden>Back to the bearing</button>
+      <div class="prof-keys" aria-hidden="true">
+        <span><i id="profKeyLine"></i>Glider</span><span><i id="profKeyMargin" class="m"></i>Glider − margin</span><span><i class="t"></i>Ground</span><span id="profKeyLim" hidden><i class="lim"></i>Height limit</span>
+      </div>
     </div>
-    <div id="status">Loading…</div>
-
-    <h2>Glider</h2>
-    <div class="row"><label for="gr">Glide ratio (L/D) <b id="v_gr"></b></label><input id="gr" type="range" min="4" max="40" step="0.5" value="15"></div>
-    <div class="row"><label for="va">Best-glide airspeed <b id="v_va"></b></label><input id="va" type="range" min="5" max="25" step="0.5" value="10"></div>
-    <div class="row"><label for="agl">Launch height above you <b id="v_agl"></b></label><input id="agl" type="range" min="0" max="300" step="5" value="120"></div>
-
-    <h2>Wind</h2>
-    <div class="row"><label for="ws">Wind speed <b id="v_ws"></b></label><input id="ws" type="range" min="0" max="15" step="0.5" value="0"></div>
-    <div class="row"><label for="wd">Wind from <b id="v_wd"></b></label><input id="wd" type="range" min="0" max="355" step="5" value="270"></div>
-
-    <h2>Safety</h2>
-    <div class="row"><label for="mg">Terrain clearance margin <b id="v_mg"></b></label><input id="mg" type="range" min="0" max="60" step="5" value="20"></div>
-    <div class="row"><label for="sl">Max landable slope <b id="v_sl"></b></label><input id="sl" type="range" min="2" max="30" step="1" value="12"></div>
-
-    <h2>Cross-section</h2>
-    <div class="row"><label for="pb">Profile bearing <b id="v_pb"></b></label><input id="pb" type="range" min="0" max="359" step="1" value="270"></div>
-    <canvas id="profile"></canvas>
-
-    <h2>Result</h2>
-    <div class="legend">
-      <div class="sw" style="background:rgba(22,163,74,.6)"></div><div>Reachable, gentle enough to land</div>
-      <div class="sw" style="background:rgba(37,99,235,.3)"></div><div>Reachable, too steep to land</div>
-      <div class="sw" style="background:var(--hit)"></div><div>Glide path runs into a steep slope</div>
-      <div class="sw" style="background:var(--prof)"></div><div>Cross-section line</div>
+    <div class="prof-body">
+      <canvas id="profile" role="img" aria-label="Height of the glider and the ground along the cross-section"></canvas>
+      <div id="profTip" class="tip" hidden></div>
     </div>
-    <div id="stats" style="margin-top:10px"></div>
+    <div class="prof-side">
+      <div id="pbDial" class="dial" aria-label="Cross-section bearing"></div>
+      <div class="dial-cap">Bearing</div>
+    </div>
+  </section>
 
-    <h2>Offline</h2>
-    <div class="small">Save the terrain around the launch while you have signal; the calculation and a shaded terrain map then work with no connection.</div>
-    <div class="row"><input id="areaName" type="text" placeholder="Name this area (optional)" aria-label="Area name"></div>
-    <div class="btns"><button id="btnSave">Save this area for offline</button></div>
-    <div id="saveStatus" class="small"></div>
-    <ul id="areas"></ul>
-    <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
-    <div id="storage" class="small"></div>
+  <aside id="panel">
+    <section class="group" aria-labelledby="g-launch">
+      <h2 id="g-launch">Launch</h2>
+      <div class="btns">
+        <button id="btnGeo" class="btn primary" type="button">Use my location</button>
+        <button id="btnMHill" class="btn" type="button">Example: M Hill, Rapid City</button>
+      </div>
+      <p class="hint">Or tap the map, or drag the pin. Long-press (right-click) any spot to see the best route there.</p>
+    </section>
 
-    <div class="note">Straight-line glide at best L/D in steady wind, checked against the terrain every few metres. It doesn't model lift, sink, turns or curving round a ridge, and "landable" only looks at slope, not trees, buildings or water. A planning toy, not a safety tool.<br>
-      Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (USGS, SRTM and others). Street map © OpenStreetMap contributors, online only. <a href="https://github.com/Tsmorz/Tsmorz.github.io/tree/main/glide-reach">Source</a></div>
+    <section class="group" aria-labelledby="g-glider">
+      <h2 id="g-glider">Glider</h2>
+      <div class="row"><label for="gr">Glide ratio <output id="v_gr" for="gr"></output></label><input id="gr" type="range"></div>
+      <div class="row"><label for="va">Best-glide airspeed <output id="v_va" for="va"></output></label><input id="va" type="range"></div>
+      <div class="row"><label for="agl">Launch height above you <output id="v_agl" for="agl"></output></label><input id="agl" type="range"></div>
+    </section>
+
+    <section class="group" aria-labelledby="g-wind">
+      <h2 id="g-wind">Wind</h2>
+      <div class="wind">
+        <div class="row" style="margin:0"><label for="ws">Speed <output id="v_ws" for="ws"></output></label><input id="ws" type="range">
+          <p id="windWords" class="hint"></p></div>
+        <div><div id="wdDial" class="dial" aria-label="Wind direction (where it blows from)"></div><div class="dial-cap">From</div></div>
+      </div>
+    </section>
+
+    <section class="group" aria-labelledby="g-rules">
+      <h2 id="g-rules">Rules and margins</h2>
+      <div class="row"><span class="lab" id="ruleLab">Height limit</span>
+        <div id="ruleSeg" class="seg wide" role="group" aria-labelledby="ruleLab">
+          <button type="button" data-rule="faa" aria-pressed="false">US (FAA)</button>
+          <button type="button" data-rule="eu" aria-pressed="false">EU</button>
+        </div>
+        <p id="ruleNote" class="rule-note"></p></div>
+      <div class="row"><label for="vis">How far away you can still see it <output id="v_vis" for="vis"></output></label><input id="vis" type="range">
+        <p class="hint">You have to keep it in sight. About 500–800 m for a 2 m glider, less for a small one.</p></div>
+      <div class="row"><label for="mg">Clearance over terrain <output id="v_mg" for="mg"></output></label><input id="mg" type="range"></div>
+      <div class="row"><label for="sl">Steepest ground you'd land on <output id="v_sl" for="sl"></output></label><input id="sl" type="range"></div>
+      <label class="switch"><input id="curve" type="checkbox" checked> Let the glide curve round hills</label>
+    </section>
+
+    <section class="group" aria-labelledby="g-result">
+      <h2 id="g-result">What you can reach</h2>
+      <dl id="stats" class="stats"></dl>
+    </section>
+
+    <section class="group" aria-labelledby="g-offline">
+      <h2 id="g-offline">Offline areas</h2>
+      <p class="hint">Save the terrain round the launch while you have signal. The reach, the cross-section and a shaded terrain map then work with no connection.</p>
+      <div class="row"><input id="areaName" type="text" placeholder="Name, e.g. M Hill" aria-label="Name for this area (optional)"></div>
+      <div class="btns"><button id="btnSave" class="btn" type="button">Save this area</button></div>
+      <div id="saveStatus" class="status" role="status" aria-live="polite"></div>
+      <ul id="areas"></ul>
+      <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
+      <p id="storage" class="hint"></p>
+    </section>
+
+    <p class="note">Glides at best L/D in steady wind, checked against the terrain every few metres; curving routes are searched on a grid. No lift, sink or turn losses, and "landable" only looks at slope, not trees, buildings or water. The height rules are a summary, not legal advice: check your local rules and airspace before you fly. For planning, not for safety.
+      Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (USGS, SRTM and others). Street map © OpenStreetMap contributors, online only. <a href="https://github.com/Tsmorz/Tsmorz.github.io/tree/main/glide-reach">Source</a></p>
   </aside>
-  <div id="map"></div>
 </div>
-
-<script>
-'use strict';
-const G = GlideCore;
-const Z = 13, TS = 256, RT = 3;          // compute on zoom-13 terrain (~14 m/px at 44°N), 7×7 tiles round the launch
-const SAVE_R = RT + 1, SAVE_ZMIN = 10;   // a saved area keeps 9×9 tiles at z13 (room to move the launch) plus z10–12 for the map
-const SAVED = 'glide-terrain-saved', RUNTIME = 'glide-terrain-runtime';
-const terrUrl = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
-const M_HILL = { lat: 44.0860, lon: -103.2490, snap: 200 };
-const LS = {
-  get(k, d) { try { const v = localStorage.getItem('glide-reach-' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('glide-reach-' + k, JSON.stringify(v)); } catch (e) {} }
-};
-const $ = id => document.getElementById(id);
-const status = t => { $('status').innerHTML = t; };
-
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
-}
-
-// ---------- Terrain tiles (one decoder for the calculation and the shaded map) ----------
-const tileMem = new Map(); // url -> Promise<Float32Array>, small LRU
-const decodeCanvas = document.createElement('canvas'); decodeCanvas.width = decodeCanvas.height = TS;
-const decodeCtx = decodeCanvas.getContext('2d', { willReadFrequently: true });
-function loadTerrTile(url) {
-  if (tileMem.has(url)) { const p = tileMem.get(url); tileMem.delete(url); tileMem.set(url, p); return p; }
-  const p = (async () => {
-    const r = await fetch(url, { mode: 'cors' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const bmp = await createImageBitmap(await r.blob());
-    decodeCtx.drawImage(bmp, 0, 0);
-    const d = decodeCtx.getImageData(0, 0, TS, TS).data, out = new Float32Array(TS * TS);
-    for (let i = 0, k = 0; i < out.length; i++, k += 4) out[i] = G.decodeTerrarium(d[k], d[k + 1], d[k + 2]);
-    return out;
-  })();
-  p.catch(() => tileMem.delete(url));
-  tileMem.set(url, p);
-  if (tileMem.size > 160) tileMem.delete(tileMem.keys().next().value);
-  return p;
-}
-
-async function loadMosaic(lat, lon, onProgress) {
-  const [px, py] = G.lonLatToPx(lon, lat, Z);
-  const tx = Math.floor(px / TS), ty = Math.floor(py / TS), W = (2 * RT + 1) * TS;
-  const data = new Float32Array(W * W).fill(NaN);
-  let done = 0, failed = 0; const jobs = [];
-  for (let j = -RT; j <= RT; j++) for (let i = -RT; i <= RT; i++) {
-    jobs.push(loadTerrTile(terrUrl(Z, tx + i, ty + j)).then(t => {
-      const ox = (i + RT) * TS, oy = (j + RT) * TS;
-      for (let y = 0; y < TS; y++) data.set(t.subarray(y * TS, y * TS + TS), (oy + y) * W + ox);
-    }).catch(() => { failed++; }).finally(() => onProgress(++done, jobs.length)));
-  }
-  await Promise.all(jobs);
-  return { x0: (tx - RT) * TS, y0: (ty - RT) * TS, W, data, failed, total: jobs.length };
-}
-
-function sample(M, x, y) { // bilinear; x, y in mosaic pixels, pixel centres at .5
-  x -= 0.5; y -= 0.5;
-  const x0 = Math.floor(x), y0 = Math.floor(y);
-  if (x0 < 0 || y0 < 0 || x0 >= M.W - 1 || y0 >= M.W - 1) return NaN;
-  const fx = x - x0, fy = y - y0, i = y0 * M.W + x0, d = M.data;
-  return (d[i] * (1 - fx) + d[i + 1] * fx) * (1 - fy) + (d[i + M.W] * (1 - fx) + d[i + M.W + 1] * fx) * fy;
-}
-
-function slopeGrid(M, mpp) {
-  const W = M.W, d = M.data, s = new Float32Array(W * W).fill(90);
-  for (let y = 1; y < W - 1; y++) for (let x = 1; x < W - 1; x++) {
-    const i = y * W + x;
-    s[i] = Math.atan(Math.hypot((d[i + 1] - d[i - 1]) / (2 * mpp), (d[i + W] - d[i - W]) / (2 * mpp))) * 180 / Math.PI;
-  }
-  return s;
-}
-
-// ---------- Shaded terrain base map, drawn from the same tiles, so it works offline ----------
-const Hillshade = L.GridLayer.extend({
-  createTile(c, done) {
-    const tile = document.createElement('canvas'); tile.width = tile.height = TS;
-    loadTerrTile(terrUrl(c.z, c.x, c.y)).then(e => {
-      const lat = G.pxToLonLat(0, (c.y + 0.5) * TS, c.z)[1], mpp = G.mppAt(lat, c.z);
-      const ctx = tile.getContext('2d'), img = ctx.createImageData(TS, TS), p = img.data;
-      // light from the north-west, 45° up; ESRI convention (rows run south, azimuth turned to maths angle)
-      const zen = 45 * Math.PI / 180, azMath = (360 - 315 + 90) * Math.PI / 180, zf = 1.6;
-      const at = (x, y) => e[Math.min(TS - 1, Math.max(0, y)) * TS + Math.min(TS - 1, Math.max(0, x))];
-      for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {
-        const dzdx = (at(x + 1, y) - at(x - 1, y)) / (2 * mpp) * zf, dzdy = (at(x, y + 1) - at(x, y - 1)) / (2 * mpp) * zf;
-        const slope = Math.atan(Math.hypot(dzdx, dzdy)), aspect = Math.atan2(dzdy, -dzdx);
-        let s = Math.cos(zen) * Math.cos(slope) + Math.sin(zen) * Math.sin(slope) * Math.cos(azMath - aspect);
-        s = Math.max(0, s);
-        const k = (y * TS + x) * 4, f = 0.45 + 0.55 * s;
-        p[k] = 236 * f; p[k + 1] = 230 * f; p[k + 2] = 214 * f; p[k + 3] = 255;
-      }
-      ctx.putImageData(img, 0, 0);
-      done(null, tile);
-    }).catch(err => done(err, tile));
-    return tile;
-  }
-});
-
-// ---------- Map ----------
-let M = null, SL = null, mpp = 0, launch = null, lpx = 0, lpy = 0, groundAtLaunch = NaN, R = null, loading = false;
-const start = LS.get('launch', null) || M_HILL;
-const map = L.map('map', { zoomControl: true }).setView([start.lat, start.lon], 13);
-const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
-const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)' });
-const shade = new Hillshade({ minNativeZoom: SAVE_ZMIN, maxNativeZoom: Z, minZoom: 9, maxZoom: 18, attribution: 'Terrain: AWS Terrain Tiles' });
-const baseLayers = { 'Street map (online)': osm, 'Topo map (online)': topo, 'Terrain shading (works offline)': shade };
-let base = navigator.onLine ? osm : shade;
-base.addTo(map);
-map.on('baselayerchange', e => { base = e.layer; });
-L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
-L.control.scale({ imperial: true }).addTo(map);
-
-const overlayCanvas = document.createElement('canvas');
-let overlay = null;
-const outline = L.polyline([], { color: '#1e3a8a', weight: 1.5, opacity: .8 }).addTo(map);
-const hitLines = L.polyline([], { color: '#dc2626', weight: 3.5, opacity: .9 }).addTo(map);
-const profLine = L.polyline([], { color: '#f59e0b', weight: 2.5, dashArray: '6 5' }).addTo(map);
-const areaBoxes = L.layerGroup().addTo(map);
-const marker = L.marker([start.lat, start.lon], { draggable: true, title: 'Launch' }).addTo(map);
-marker.on('dragend', () => setLaunch(marker.getLatLng().lat, marker.getLatLng().lng));
-map.on('click', e => setLaunch(e.latlng.lat, e.latlng.lng));
-
-function setNet() {
-  const on = navigator.onLine;
-  $('net').textContent = on ? 'Online' : 'Offline';
-  $('net').classList.toggle('off', !on);
-  $('btnSave').disabled = !on;
-  if (!on && base !== shade) { map.removeLayer(base); shade.addTo(map); base = shade; }
-}
-addEventListener('online', setNet); addEventListener('offline', setNet);
-
-// ---------- Controls ----------
-const P = {};
-const fmt = {
-  gr: v => `${v}:1`, va: v => `${v} m/s`, agl: v => `${v} m`, ws: v => `${v} m/s`,
-  wd: v => `${v}° ${['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(v / 45) % 8]}`,
-  mg: v => `${v} m`, sl: v => `${v}°`, pb: v => `${v}°`
-};
-const savedParams = LS.get('params', {});
-for (const k of Object.keys(fmt)) if (savedParams[k] != null) $(k).value = savedParams[k];
-function readParams() {
-  for (const k of Object.keys(fmt)) { P[k] = parseFloat($(k).value); $('v_' + k).textContent = fmt[k](P[k]); }
-  LS.set('params', P);
-}
-for (const k of Object.keys(fmt)) $(k).addEventListener('input', () => { readParams(); schedule(k === 'pb' ? 'profile' : 'all'); });
-
-let pending = null;
-function schedule(what) {
-  if (pending === 'all') return;
-  pending = what;
-  requestAnimationFrame(() => { const w = pending; pending = null; if (w === 'all') compute(); else drawProfile(); });
-}
-
-// ---------- Launch + calculation ----------
-async function setLaunch(lat, lon, snapRadius = 0) {
-  if (loading) return;
-  const far = () => {
-    if (!M) return true;
-    const [x, y] = G.lonLatToPx(lon, lat, Z);
-    return Math.abs(x - (M.x0 + M.W / 2)) > TS * 1.2 || Math.abs(y - (M.y0 + M.W / 2)) > TS * 1.2;
-  };
-  if (far()) {
-    loading = true; status('Loading terrain…');
-    try { M = await loadMosaic(lat, lon, (d, n) => status(`Loading terrain ${d}/${n}…`)); }
-    finally { loading = false; }
-    mpp = G.mppAt(lat, Z);
-    SL = slopeGrid(M, mpp);
-  }
-  if (snapRadius > 0) { // move to the highest point within snapRadius metres
-    const [x, y] = G.lonLatToPx(lon, lat, Z), r = snapRadius / mpp;
-    let best = -1e9, bx = x, by = y;
-    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-      if (dx * dx + dy * dy > r * r) continue;
-      const e = sample(M, x + dx - M.x0, y + dy - M.y0);
-      if (e > best) { best = e; bx = x + dx; by = y + dy; }
-    }
-    [lon, lat] = G.pxToLonLat(bx, by, Z);
-  }
-  launch = L.latLng(lat, lon);
-  [lpx, lpy] = G.lonLatToPx(lon, lat, Z);
-  groundAtLaunch = sample(M, lpx - M.x0, lpy - M.y0);
-  marker.setLatLng(launch);
-  LS.set('launch', { lat, lon });
-  if (groundAtLaunch !== groundAtLaunch) {
-    status(`<span class="warn">No terrain here${navigator.onLine ? ' (download failed)' : ': this area isn\'t saved for offline use'}.</span>`);
-    return clearResult();
-  }
-  if (M.failed) status(`<span class="warn">${M.failed} of ${M.total} terrain tiles are missing${navigator.onLine ? '' : ' (outside the saved area)'}; reach in those directions stops at the gap.</span>`);
-  else status(`Launch ${lat.toFixed(5)}, ${lon.toFixed(5)}, ground ${groundAtLaunch.toFixed(0)} m`);
-  compute();
-}
-
-function clearResult() {
-  R = null; outline.setLatLngs([]); hitLines.setLatLngs([]); profLine.setLatLngs([]);
-  if (overlay) { map.removeLayer(overlay); overlay = null; }
-  $('stats').innerHTML = '';
-  const c = $('profile').getContext('2d'); c.clearRect(0, 0, 1e4, 1e4);
-}
-
-const elevAtENU = (e, n) => sample(M, lpx + e / mpp - M.x0, lpy - n / mpp - M.y0);
-const enuToLatLng = (e, n) => { const [lo, la] = G.pxToLonLat(lpx + e / mpp, lpy - n / mpp, Z); return L.latLng(la, lo); };
-const pxLatLng = (x, y) => { const [lo, la] = G.pxToLonLat(x, y, Z); return L.latLng(la, lo); };
-
-function compute() {
-  if (!M || !launch || groundAtLaunch !== groundAtLaunch) return;
-  const t0 = performance.now();
-  const h0 = groundAtLaunch + P.agl;
-  R = G.castRays({ n: 720, h0, margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd, ds: mpp / 2, maxD: M.W * mpp }, elevAtENU);
-  R.h0 = h0;
-  const t1 = performance.now();
-
-  // Raster overlay at half resolution
-  const F = 2, Gn = M.W / F;
-  overlayCanvas.width = overlayCanvas.height = Gn;
-  const ctx = overlayCanvas.getContext('2d'), img = ctx.createImageData(Gn, Gn), px = img.data;
-  let reachCells = 0, landCells = 0;
-  for (let gy = 0; gy < Gn; gy++) for (let gx = 0; gx < Gn; gx++) {
-    const mx = gx * F + F / 2, my = gy * F + F / 2;
-    const e = (mx + M.x0 - lpx) * mpp, n = -(my + M.y0 - lpy) * mpp;
-    let brg = Math.atan2(e, n); if (brg < 0) brg += 2 * Math.PI;
-    if (!G.reachAt(R, brg, Math.hypot(e, n))) continue;
-    const s = SL[Math.floor(my) * M.W + Math.floor(mx)], k = (gy * Gn + gx) * 4;
-    reachCells++;
-    if (s <= P.sl) { landCells++; px[k] = 22; px[k + 1] = 163; px[k + 2] = 74; px[k + 3] = 150; }
-    else { px[k] = 37; px[k + 1] = 99; px[k + 2] = 235; px[k + 3] = 75; }
-  }
-  ctx.putImageData(img, 0, 0);
-  const bounds = L.latLngBounds(pxLatLng(M.x0, M.y0 + M.W), pxLatLng(M.x0 + M.W, M.y0));
-  const url = overlayCanvas.toDataURL();
-  if (!overlay) overlay = L.imageOverlay(url, bounds, { interactive: false }).addTo(map);
-  else { overlay.setUrl(url); overlay.setBounds(bounds); }
-
-  // Outline, and the edges where the glide runs into steep ground
-  const pts = [], hits = [], steep = new Uint8Array(R.n);
-  let edge = 0, steepHits = 0, maxD = 0, maxB = 0;
-  for (let i = 0; i < R.n; i++) {
-    const b = (i / R.n) * 2 * Math.PI, d = R.dmax[i];
-    pts.push(enuToLatLng(Math.sin(b) * d, Math.cos(b) * d));
-    if (R.kind[i] === 1) edge++;
-    if (R.kind[i] === 0) {
-      const de = d + mpp, x = lpx + Math.sin(b) * de / mpp - M.x0, y = lpy - Math.cos(b) * de / mpp - M.y0;
-      if (SL[Math.floor(y) * M.W + Math.floor(x)] > P.sl) { steep[i] = 1; steepHits++; }
-    }
-    if (d > maxD) { maxD = d; maxB = b; }
-  }
-  pts.push(pts[0]);
-  for (let i = 0; i < R.n; i++) if (steep[i] && steep[(i + 1) % R.n]) hits.push([pts[i], pts[i + 1]]);
-  outline.setLatLngs(pts); hitLines.setLatLngs(hits);
-
-  const cellArea = (F * mpp) ** 2 / 1e6;
-  $('stats').innerHTML = [
-    ['Ground at launch', `${groundAtLaunch.toFixed(0)} m`],
-    ['Glider starts at', `${h0.toFixed(0)} m above sea level`],
-    ['Farthest reach', `${(maxD / 1000).toFixed(2)} km toward ${Math.round(maxB * 180 / Math.PI)}°`],
-    ['Reachable area', `${(reachCells * cellArea).toFixed(1)} km²`],
-    ['Landable area', `${(landCells * cellArea).toFixed(1)} km²`],
-    ['Directions stopped by steep ground', `${Math.round(100 * steepHits / R.n)}%`],
-    ['Compute time', `${(t1 - t0).toFixed(0)} ms rays, ${(performance.now() - t1).toFixed(0)} ms map`],
-  ].map(([a, b]) => `<div><span>${a}</span><span>${b}</span></div>`).join('') +
-    (edge ? `<div class="warn">${edge} of ${R.n} directions reach the edge of the loaded terrain, so the reach there is longer than shown.</div>` : '');
-  drawProfile();
-}
-
-function drawProfile() {
-  if (!R) return;
-  const cv = $('profile'), dpr = window.devicePixelRatio || 1, Wc = cv.clientWidth, Hc = cv.clientHeight;
-  cv.width = Wc * dpr; cv.height = Hc * dpr;
-  const c = cv.getContext('2d'); c.scale(dpr, dpr); c.clearRect(0, 0, Wc, Hc);
-  const cs = getComputedStyle(document.documentElement);
-  const b = P.pb * Math.PI / 180, i = Math.round(P.pb / 360 * R.n) % R.n;
-  const dEnd = R.dmax[i], g = R.grg[i], ux = Math.sin(b), uy = Math.cos(b);
-  const terr = [];
-  for (let d = 0; d <= Math.max(dEnd * 1.35, 800); d += mpp) { const t = elevAtENU(ux * d, uy * d); if (t !== t) break; terr.push([d, t]); }
-  if (terr.length < 2) return;
-  const dMax = terr[terr.length - 1][0];
-  let lo = Math.min(...terr.map(p => p[1])), hi = Math.max(R.h0, ...terr.map(p => p[1]));
-  const pad = (hi - lo) * 0.12 + 5; lo -= pad; hi += pad;
-  const L0 = 40, B0 = 20, T0 = 8, R0 = 8;
-  const X = d => L0 + (d / dMax) * (Wc - L0 - R0), Y = h => T0 + (1 - (h - lo) / (hi - lo)) * (Hc - T0 - B0);
-  c.beginPath(); c.moveTo(X(0), Hc - B0);
-  terr.forEach(([d, t]) => c.lineTo(X(d), Y(t)));
-  c.lineTo(X(dMax), Hc - B0); c.closePath();
-  c.fillStyle = '#c9bca4'; c.fill(); c.strokeStyle = '#8a7a60'; c.lineWidth = 1; c.stroke();
-  if (g > 0) {
-    c.setLineDash([4, 4]); c.strokeStyle = '#93c5fd';
-    c.beginPath(); c.moveTo(X(0), Y(R.h0 - P.mg)); c.lineTo(X(dEnd), Y(R.h0 - P.mg - dEnd / g)); c.stroke();
-    c.setLineDash([]); c.strokeStyle = '#2563eb'; c.lineWidth = 2;
-    c.beginPath(); c.moveTo(X(0), Y(R.h0)); c.lineTo(X(dEnd), Y(R.h0 - dEnd / g)); c.stroke();
-    c.fillStyle = R.kind[i] === 0 ? '#dc2626' : '#6b7075';
-    c.beginPath(); c.arc(X(dEnd), Y(R.h0 - dEnd / g), 4, 0, 7); c.fill();
-  }
-  c.fillStyle = cs.getPropertyValue('--muted'); c.font = '10px sans-serif'; c.textAlign = 'right';
-  for (const h of [lo + pad, (lo + hi) / 2, hi - pad]) c.fillText(Math.round(h) + ' m', L0 - 4, Y(h) + 3);
-  c.textAlign = 'center';
-  const step = dMax > 6000 ? 2000 : dMax > 2500 ? 1000 : 500;
-  for (let d = 0; d <= dMax; d += step) c.fillText((d / 1000) + ' km', X(d), Hc - 6);
-  c.textAlign = 'left'; c.fillStyle = cs.getPropertyValue('--accent');
-  c.fillText(g > 0 ? `reach ${(dEnd / 1000).toFixed(2)} km, ${g.toFixed(1)}:1 over ground` : 'track not flyable in this wind', L0 + 4, T0 + 10);
-  profLine.setLatLngs([launch, enuToLatLng(ux * dMax, uy * dMax)]);
-}
-
-// ---------- Saved areas ----------
-const areas = () => LS.get('areas', []);
-const areaKeys = a => G.areaTiles(a.lat, a.lon, Z, SAVE_R, SAVE_ZMIN).map(([z, x, y]) => terrUrl(z, x, y));
-const fmtMB = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
-
-function areaBounds(a) {
-  const [px, py] = G.lonLatToPx(a.lon, a.lat, Z), tx = Math.floor(px / TS), ty = Math.floor(py / TS);
-  return L.latLngBounds(pxLatLng((tx - SAVE_R) * TS, (ty + SAVE_R + 1) * TS), pxLatLng((tx + SAVE_R + 1) * TS, (ty - SAVE_R) * TS));
-}
-
-async function saveArea() {
-  if (!launch || !('caches' in window)) { $('saveStatus').textContent = 'This browser can\'t store data for offline use.'; return; }
-  const a = { id: Date.now().toString(36), lat: launch.lat, lon: launch.lng,
-              name: $('areaName').value.trim() || `Near ${launch.lat.toFixed(3)}, ${launch.lng.toFixed(3)}`, date: new Date().toLocaleDateString('en-CA') };
-  const keys = areaKeys(a);
-  $('btnSave').disabled = true;
-  const saved = await caches.open(SAVED), runtime = await caches.open(RUNTIME);
-  let done = 0, bytes = 0, failed = 0, next = 0;
-  const worker = async () => {
-    while (next < keys.length) {
-      const url = keys[next++];
-      try {
-        let res = await saved.match(url);
-        if (!res) {
-          res = await fetch(url, { mode: 'cors' });
-          if (!res.ok) throw new Error(res.status);
-          await saved.put(url, res.clone());
-          runtime.delete(url); // the service worker may have kept a copy too
-        }
-        bytes += (await res.blob()).size;
-      } catch (e) { failed++; }
-      $('saveStatus').textContent = `Saving terrain ${++done}/${keys.length}…`;
-    }
-  };
-  await Promise.all(Array.from({ length: 6 }, worker));
-  a.bytes = bytes;
-  if (failed) { $('saveStatus').innerHTML = `<span class="warn">${failed} tiles failed to download; try again.</span>`; }
-  else {
-    LS.set('areas', [a, ...areas()]);
-    $('areaName').value = '';
-    let persisted = false;
-    try { persisted = await navigator.storage.persist(); } catch (e) {}
-    $('saveStatus').textContent = `Saved ${keys.length} terrain tiles (${fmtMB(bytes)}).` +
-      (persisted ? '' : ' The browser may clear this if space runs low; on iPhone, add the page to your Home Screen to keep it.');
-  }
-  $('btnSave').disabled = !navigator.onLine;
-  renderAreas();
-}
-
-async function deleteArea(id) {
-  const all = areas(), a = all.find(x => x.id === id); if (!a) return;
-  const rest = all.filter(x => x.id !== id);
-  const gone = G.tilesOnlyIn(areaKeys(a), rest.map(areaKeys));
-  const saved = await caches.open(SAVED);
-  await Promise.all(gone.map(u => saved.delete(u)));
-  LS.set('areas', rest);
-  $('saveStatus').textContent = `Deleted "${a.name}".`;
-  renderAreas();
-}
-
-async function renderAreas() {
-  const list = areas(), ul = $('areas');
-  ul.innerHTML = '';
-  areaBoxes.clearLayers();
-  for (const a of list) {
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="nm"></span><button data-go>Go</button><button data-del>Delete</button>`;
-    li.querySelector('.nm').innerHTML = `${a.name.replace(/</g, '&lt;')}<small>${fmtMB(a.bytes || 0)} · saved ${a.date}</small>`;
-    li.querySelector('[data-go]').onclick = () => { map.setView([a.lat, a.lon], 13); setLaunch(a.lat, a.lon); };
-    li.querySelector('[data-del]').onclick = () => deleteArea(a.id);
-    ul.appendChild(li);
-    L.rectangle(areaBounds(a), { color: '#1f5f8b', weight: 1, dashArray: '3 4', fill: false, interactive: false }).addTo(areaBoxes);
-  }
-  if (!list.length) ul.innerHTML = '<li class="small">No areas saved yet.</li>';
-  // The browser's own usage figure can lag a fresh save by a while, so count the saved areas too.
-  const savedBytes = list.reduce((s, a) => s + (a.bytes || 0), 0);
-  try {
-    const { usage, quota } = await navigator.storage.estimate();
-    const persisted = navigator.storage.persisted ? await navigator.storage.persisted() : false;
-    const used = Math.max(usage, savedBytes);
-    $('meterBar').style.width = Math.min(100, 100 * used / quota).toFixed(2) + '%';
-    $('storage').textContent = `Using ${fmtMB(used)} of about ${fmtMB(quota)} this browser allows the site.` + (persisted ? ' Kept until you delete it.' : '');
-  } catch (e) { $('storage').textContent = savedBytes ? `Saved areas use ${fmtMB(savedBytes)}.` : ''; }
-}
-
-// ---------- Buttons ----------
-$('btnSave').onclick = saveArea;
-$('btnMHill').onclick = () => { map.setView([M_HILL.lat, M_HILL.lon], 13); setLaunch(M_HILL.lat, M_HILL.lon, M_HILL.snap); };
-$('btnGeo').onclick = () => {
-  if (!navigator.geolocation) return status('<span class="warn">Location isn\'t available in this browser.</span>');
-  status('Getting your location…');
-  navigator.geolocation.getCurrentPosition(
-    p => { map.setView([p.coords.latitude, p.coords.longitude], 13); setLaunch(p.coords.latitude, p.coords.longitude); },
-    e => status(`<span class="warn">Location failed: ${e.message}</span>`), { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
-};
-addEventListener('resize', () => schedule('profile'));
-
-readParams();
-setNet();
-renderAreas();
-// Offline with nothing saved where we last were? Start at the newest saved area instead.
-const first = (!navigator.onLine && areas().length && !LS.get('launch', null)) ? areas()[0] : start;
-setLaunch(first.lat, first.lon, first === M_HILL ? M_HILL.snap : 0);
-</script>
+<script src="lib/leaflet/leaflet.js"></script>
+<script src="glide-core.js"></script>
+<script src="glide-app.js"></script>
 </body>
 </html>

@@ -279,19 +279,46 @@ The same file is also published as a Claude artifact; edit it here and copy it t
 ### Glide Reach (`/glide-reach/`)
 
 `glide-reach/` is a self-contained page like the serial plotter (no front matter, its own look, outside the layouts):
-pick a launch point, set glide ratio, airspeed, launch height, wind, a terrain margin and the steepest slope you would land on,
-and it casts 720 straight-line glides out from the launch over Terrarium terrain tiles (zoom 13, AWS Terrain Tiles), stopping
-each where the glide path minus the margin meets the ground. It shades what is reachable, green where the slope is landable,
-draws red where a glide runs into steep ground, and plots a cross-section on one bearing. `glide-core.js` (no DOM) holds the
-maths; `script/test-glide` (`task check:glide`, in `check:fast`) guards it.
+`index.html` is markup only, `glide.css` the styles, `glide-app.js` the page, `glide-core.js` the maths (no DOM) and
+`glide-worker.js` the route search. Pick a launch point and set glide ratio, airspeed, launch height, wind, a terrain margin,
+the steepest slope you would land on and **how far away you can still see the glider**. It loads a 7 × 7 block of Terrarium
+terrain tiles (AWS Terrain Tiles) round the launch and works out the reach two ways: 720 straight glides (`castRays`,
+stopping where the glide path minus the margin meets the ground) and a route search on a half-resolution grid
+(`reachGrid`: a max-height Dijkstra over 16 neighbours with wind, in the worker) that must stay within the sight distance,
+so a glide can curve round a hill. Ground beyond the sight ring is shown as a faint wash ("reachable, but out of sight").
+**A long glide gets coarser terrain, never a cut-off**: `chooseZoom` picks the most detailed zoom (13 down to 9) whose block
+holds the furthest possible glide, and the page steps down a zoom if a glide still reaches the block's edge. Long-press
+(right-click) a spot for the best route there. `script/test-glide` (`task check:glide`, in `check:fast`) guards the core,
+including the service worker in a mock.
+
+**Height rules** are a US / EU switch (`RULES`, `ruleFor` in the core picks one from the launch's position until the visitor
+taps the other). US (FAA, 49 USC 44809): at most 400 ft above the ground, so the glide is capped at ground + 121.92 m as it
+goes (`ceilAgl` in `castRays`, `glideAlong` and `reachGrid`): over low ground the glider has to shed height, which shortens
+the reach. EU (2019/947 UAS.OPEN.010, sailplanes under 10 kg): never more than 120 m above the pilot, so only the launch height
+is capped. The cross-section draws the limit as a dotted line. **Units** are metric or imperial (`Units` in the core; `SPEC`
+in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
+
+**Redraws stay cheap**: the reach is painted straight into a canvas that Leaflet positions like an image (`CanvasOverlay`,
+no PNG encode), each grid cell's ray and distance are cached until the launch or the terrain changes (`geometry()`), and theme
+colours are read once per theme change (`COL`).
+
+Layout: controls on the left; the map with the cross-section strip under it on the right (on a phone, or any screen under
+520 px tall: header with the status line, map, cross-section, controls). The header shows an "Offline" badge only when offline.
+The map has its own locate button and a key that folds away on small maps (a `<details>` Leaflet control). Long-press is a
+touch timer of its own (550 ms, held within 10 px), not just Leaflet's `contextmenu`, so it behaves the same on iOS and Android
+and never also moves the launch. Inputs are 16 px so iOS doesn't zoom in on them; touch targets are at least 40 px. Colours are
+the colour-blind-safe set validated with the dataviz skill (blue `#2a78d6` landable on a straight glide, aqua `#1baf7a` **plus
+hatching** landable only by curving, orange `#eb6834` where a straight glide hits steep ground, grey too steep); keep identity
+off colour alone. Tokens are defined three times like main.css, and the page follows the site's `theme` in `localStorage` and
+has its own light/dark switch.
 
 It works offline. `sw.js` keeps the page and every terrain tile it has fetched (a capped `glide-terrain-runtime` cache), and
-"Save this area" stores 9 × 9 zoom-13 tiles round the launch plus zooms 10–12 (about 120 tiles) in `glide-terrain-saved`,
-which only the page deletes from (a tile shared by two saved areas stays until both are gone). Saved areas are listed in
-`localStorage` (`glide-reach-areas`). **Street maps are never stored for offline use**: OpenStreetMap's tile policy forbids
-"save area" features, so offline the page switches to a hillshade it draws from the saved terrain. Leaflet is vendored in
-`glide-reach/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in
-`sw.js` whenever `SHELL_FILES` changes.
+"Save this area" stores 9 × 9 zoom-13 tiles round the launch plus 7 × 7 at each of zooms 12 to 9 (277 tiles) in
+`glide-terrain-saved`, which only the page deletes from (a tile shared by two saved areas stays until both are gone). Saved areas
+are listed in `localStorage` (`glide-reach-areas`). **Street maps are never stored for offline use**: OpenStreetMap's tile policy
+forbids "save area" features, so offline the page switches to a hillshade it draws from the saved terrain. Leaflet is vendored in
+`glide-reach/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in `sw.js`
+whenever `SHELL_FILES` changes (it lists every file of the page). The service worker also registers on `localhost`, so `script/serve` exercises it.
 
 ## When editing, don't
 
