@@ -362,8 +362,11 @@ overlay, whose labels stay readable); detection, poses and the 3D plot always us
   calibrations stay keyed by the device's own label, so renaming never loses one.
 - **Print** (top bar) opens a dialog to print any of your tags (at their own sizes), other IDs typed as a list
   (`TagCore.parseIdList`: "3, 10-12") at one size, and the ChArUco board, in one print window: tags packed at true size
-  with captions, the board on its own landscape page (`@page board`), a 50 mm check bar under each. The quick buttons
-  (a tag's row, "Print board" in step 1) still print one thing.
+  with captions, the board on its own landscape page (`@page board`), check bars of 50 mm and 2 inches under each.
+  **Paper** is A4 or US Letter (`TagCore.PAPER`; the default from the browser's region, `paperFor`, then kept as
+  `paper`): the print page declares it in `@page`, and the dialog refuses anything that wouldn't print at full size on it
+  (`maxTagSize`, `maxBoardSquare`: about 148 mm tags and 26 mm squares on either), since fit-to-page would shrink it.
+  A tag's row print button and "Print board" in step 1 open the same dialog with that already chosen.
 - **Arranging the views** like monitors in display settings (`arrangement()`, `layoutTiles()`): Auto sizes each tile by
   its picture's pixels and places it where its camera sits, as seen from behind camera 1 (`TagCore.arrangeTiles`, spread
   just enough not to overlap; unplaced cameras in rows of two; one column under 500 px). Dragging a view (or its corner,

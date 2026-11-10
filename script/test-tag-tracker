@@ -135,6 +135,12 @@ console.log('4. plot, calibration views, settings');
   check(pl.ids.join() === '3,10,11,12,7,4,5,0,1' && !pl.bad.length, 'tag IDs to print: lists and ranges, in order, no repeats');
   check(pb.ids.join() === '2,586' && pb.bad.join() === 'x,9-3,600', 'tag IDs to print: what isn’t an ID in the family is reported');
   check(C.parseIdList('0-586', 587, 50).ids.length === 50, 'tag IDs to print: at most the limit');
+  check(C.paperFor('en-US') === 'letter' && C.paperFor('fr-CA') === 'letter' && C.paperFor('es-MX') === 'letter' && C.paperFor('en-GB') === 'a4' && C.paperFor('de-DE') === 'a4' && C.paperFor('en') === 'a4' && C.paperFor('') === 'a4',
+    'paper: US Letter for the US, Canada and Mexico; A4 for the UK, Germany, and when the region is unknown');
+  const sqA4 = C.maxBoardSquare('a4'), sqL = C.maxBoardSquare('letter'), tA4 = C.maxTagSize('a4', 8), tL = C.maxTagSize('letter', 8);
+  // the default 25 mm board and 80 mm tags must print at full size on both
+  check(sqA4 >= 25 && sqL >= 25 && 9 * sqL <= 279.4 - 24 && 6 * sqA4 + 30 <= 210 - 24, `paper: the board fits both at full size up to ${sqA4} mm squares on A4 and ${sqL} mm on US Letter`);
+  check(tA4 >= 80 && tL >= 80 && tA4 * 1.25 <= 210 - 24 && tL * 1.25 + 30 <= 279.4 - 24, `paper: a tag36h11 fits both up to ${tA4} mm on A4 and ${tL} mm on US Letter`);
   check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true, 'mirror and flip are booleans, off by default');
   // a 1280 × 720 picture in a 1000 × 1000 box: 1000 × 562.5, letterboxed 218.75 px top and bottom
   const near = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;

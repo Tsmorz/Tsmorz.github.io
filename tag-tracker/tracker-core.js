@@ -739,6 +739,28 @@
     return { ids, bad };
   }
 
+  // ---- paper ----
+  // The two sheets printers use: A4 (Europe and most of the world) and US Letter (the US, Canada, Mexico and a few
+  // others). Pages print with 12 mm margins; a page of tags keeps 30 mm for captions and the check bars below them.
+  const PAPER = { a4: { name: 'A4', w: 210, h: 297, css: 'A4' }, letter: { name: 'US Letter', w: 215.9, h: 279.4, css: 'letter' } };
+  const LETTER_REGIONS = ['US', 'CA', 'MX', 'PH', 'CL', 'CO', 'VE', 'GT', 'CR', 'PA', 'DO', 'PR', 'SV', 'NI', 'HN', 'BZ'];
+  const PRINT_MARGIN = 12, PRINT_FOOT = 30;
+  // The paper to start with for a browser language such as "en-US" or "de-DE".
+  function paperFor(lang) {
+    const m = String(lang || '').match(/[-_]([A-Za-z]{2})\b/);
+    return m && LETTER_REGIONS.includes(m[1].toUpperCase()) ? 'letter' : 'a4';
+  }
+  // What fits inside the margins, in mm, upright or turned (landscape).
+  function printArea(paper, landscape) {
+    const P = PAPER[paper] || PAPER.a4, w = P.w - 2 * PRINT_MARGIN, h = P.h - 2 * PRINT_MARGIN;
+    return landscape ? { w: h, h: w } : { w, h };
+  }
+  // The largest tag (its black square, mm) that prints at full size on this paper: with its white border of one cell
+  // (`cells` across the black square) it must fit an upright page above the captions.
+  function maxTagSize(paper, cells) { const a = printArea(paper, false); return Math.floor((Math.min(a.w, a.h - PRINT_FOOT) / (1 + 2 / cells)) * 10) / 10; }
+  // The largest square (mm) of the 9 × 6 board on its own landscape page, with its caption and check bars below.
+  function maxBoardSquare(paper) { const a = printArea(paper, true); return Math.floor(Math.min(a.w / 9, (a.h - PRINT_FOOT) / 6) * 10) / 10; }
+
   // ---- settings ----
   const DEFAULTS = {
     family: 'APRILTAG_36h11',
@@ -790,6 +812,7 @@
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
     toRig, fusePoses, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
+    PAPER, paperFor, printArea, maxTagSize, maxBoardSquare,
     DEFAULTS, clampSettings, boardFit, displayMap,
   };
 });
