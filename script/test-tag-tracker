@@ -12,6 +12,9 @@
 //      cameras, one placed only through another, one that shares nothing), re-expressing a saved rig, late frames
 //   5c. choosing between a face-on tag's mirror-image poses (by the other cameras, then by the last pose), and the
 //      Stream tab's messages (JSON lines and CSV)
+//   5e. one pose from every camera's corners: the joint fit (against one camera, against fusing each camera's pose,
+//      its covariance by Monte Carlo, moving tags from unsynchronised cameras, a bad corner) and the filter fed corners;
+//      and the search windows for the next frame
 //   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
@@ -424,6 +427,99 @@ console.log('5c. mirror-image choice, and the Stream messages');
   check(C.streamMessage('csv', 1, []) === '' && JSON.parse(C.streamMessage('json', 1, [], 'Body')).tracks.length === 0, 'nothing in view: no CSV line, an empty JSON list');
 }
 
+console.log('5e. one pose from every camera\'s corners, and where to look next');
+{
+  const cam = C.guessIntrinsics(1280, 720, 70), center = [0, 0.05, 1.35];
+  const rigs = [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, C.lookAt([-0.8, -0.25, 0.45], center), C.lookAt([0.75, -0.4, 0.55], center)];
+  let g = 11; const gauss = () => { let u = 0; for (let i = 0; i < 12; i++) { g = (g * 1103515245 + 12345) % 2147483648; u += g / 2147483648; } return u - 6; };
+  const obj = C.tagCorners(0.08);
+  // pixels of a tag at pose P (rig frame) in camera T, with noise
+  const see = (T, P, sd) => obj.map((o) => { const X = C.add(C.mulv(P.R, o), P.t), Xc = C.mulv(C.tr3(T.R), C.sub(X, T.t)), q = C.project(cam, Xc); return [q[0] + sd * gauss(), q[1] + sd * gauss()]; });
+  const inCam = (T, P) => ({ R: C.mul3(C.tr3(T.R), P.R), t: C.mulv(C.tr3(T.R), C.sub(P.t, T.t)) });
+  const errs = (P, Q) => [C.norm(C.sub(P.t, Q.t)) * 1000, (C.angleOf(C.mul3(C.tr3(P.R), Q.R)) * 180) / Math.PI];
+  const truth = { R: rotXYZ(Math.PI + 0.15, -0.25, 0.4), t: [-0.1, 0.05, 1.3] };
+  // 1. one camera, no time offset: the same as refinePose
+  {
+    const img = see(rigs[0], truth, 0.3), a = C.refinePose(cam, obj, img, truth, { sigma: 0.3 }), b = C.refineJoint([C.sighting(cam, rigs[0], obj, img, 0.3, 0)], truth, { k: Infinity });
+    check(errs(a, b)[0] < 1e-6 && errs(a, b)[1] < 1e-6, 'one camera: the joint fit is the single-camera fit');
+  }
+  // 2. three cameras, 0.3 px noise: the joint fit against camera 1 alone and against fusing each camera's own pose
+  {
+    const N = 150, sd = 0.3, eJ = [0, 0], eF = [0, 0], e1 = [0, 0];
+    let m2 = 0;
+    for (let k = 0; k < N; k++) {
+      const imgs = rigs.map((T) => see(T, truth, sd)), own = rigs.map((T, i) => C.toRig(T, C.refinePose(cam, obj, imgs[i], inCam(T, truth), { sigma: sd })));
+      const J = C.refineJoint(rigs.map((T, i) => C.sighting(cam, T, obj, imgs[i], sd, 0)), C.fusePoses(own)), F = C.fusePoses(own);
+      [[J, eJ], [F, eF], [own[0], e1]].forEach(([P, acc]) => { const e = errs(P, truth); acc[0] += e[0] ** 2; acc[1] += e[1] ** 2; });
+      const y = C.sub(J.t, truth.t).concat(C.so3Log(C.mul3(J.R, C.tr3(truth.R)))), Ci = C.minv(J.cov);
+      m2 += y.reduce((s, v, i) => s + v * Ci[i].reduce((q, w, j) => q + w * y[j], 0), 0);
+    }
+    const rm = (a) => a.map((x) => Math.sqrt(x / N));
+    const [J, F, O] = [rm(eJ), rm(eF), rm(e1)];
+    check(J[0] < O[0] / 2 && J[1] < O[1] / 2, `three cameras: ${J[0].toFixed(2)} mm, ${J[1].toFixed(3)}°, against camera 1 alone ${O[0].toFixed(2)} mm, ${O[1].toFixed(3)}°`);
+    check(J[0] <= F[0] * 1.02 && J[1] <= F[1] * 1.02, `the joint fit is at least as good as fusing each camera's pose (${F[0].toFixed(2)} mm, ${F[1].toFixed(3)}°)`);
+    check(m2 / N > 4.5 && m2 / N < 8, `its covariance matches its errors (mean Mahalanobis² ${(m2 / N).toFixed(2)}, 6 expected)`);
+  }
+  // 3. a moving tag, cameras 20 ms apart: the velocity carries each frame to one time
+  {
+    const vel = { v: [0.5, -0.2, 0.1], w: [0.4, 1.6, -0.3] }, at = (dt) => ({ R: C.mul3(C.rodrigues(vel.w.map((x) => x * dt)), truth.R), t: C.add(truth.t, vel.v.map((x) => x * dt)) });
+    const dts = [0, -0.02, -0.04], vs = rigs.map((T, i) => C.sighting(cam, T, obj, see(T, at(dts[i]), 0), 0.3, dts[i]));
+    const moved = C.refineJoint(vs, truth, { vel }), still = C.refineJoint(vs, truth, {});
+    check(errs(moved, truth)[0] < 0.1 && errs(still, truth)[0] > 5, `unsynchronised cameras: ${errs(moved, truth)[0].toFixed(3)} mm with the motion, ${errs(still, truth)[0].toFixed(1)} mm without`);
+  }
+  // 4. one corner 25 px off: the Huber weight keeps it from dragging the fit
+  {
+    const imgs = rigs.map((T) => see(T, truth, 0.3)); imgs[1][2][0] += 25;
+    const vs = rigs.map((T, i) => C.sighting(cam, T, obj, imgs[i], 0.3, 0));
+    const rob = C.refineJoint(vs, truth), ls = C.refineJoint(vs, truth, { k: Infinity });
+    check(errs(rob, truth)[0] < errs(ls, truth)[0] / 2 && errs(rob, truth)[1] < errs(ls, truth)[1] / 2, `a corner 25 px off: ${errs(rob, truth)[0].toFixed(2)} mm, ${errs(rob, truth)[1].toFixed(2)}° robust; ${errs(ls, truth)[0].toFixed(2)} mm, ${errs(ls, truth)[1].toFixed(2)}° least squares`);
+  }
+  // 5. the filter fed corners: three cameras in turn, a moving tag, against the same filter fed each camera's pose
+  {
+    const vel = { v: [0.2, 0, -0.1], w: [0, 0.8, 0] }, at = (t) => ({ R: C.mul3(C.rodrigues(vel.w.map((x) => x * t)), truth.R), t: C.add(truth.t, vel.v.map((x) => x * t)) });
+    const fc = new C.PoseFilter(C.MOTION.balanced), fp = new C.PoseFilter(C.MOTION.balanced), ec = [], ep = [];
+    let rej = 0;
+    for (let k = 0; k < 90; k++) {
+      const t = k / 90, i = k % 3, P = at(t), img = see(rigs[i], P, 0.4), own = C.toRig(rigs[i], C.refinePose(cam, obj, img, inCam(rigs[i], P), { sigma: 0.4 }));
+      const a = fc.updateCorners(t, [C.sighting(cam, rigs[i], obj, img, 0.4, 0)], own), b = fp.update(t, [own]);
+      if (!a.pose) rej++;
+      if (k >= 45) { ec.push(errs(a.pose || fc.pose(), P)); ep.push(errs(b.pose || fp.pose(), P)); }
+    }
+    const rms = (a, j) => Math.sqrt(a.reduce((s, e) => s + e[j] ** 2, 0) / a.length);
+    check(rej === 0 && rms(ec, 0) <= rms(ep, 0) * 1.05 && rms(ec, 1) <= rms(ep, 1) * 1.05, `filter fed corners: ${rms(ec, 0).toFixed(2)} mm, ${rms(ec, 1).toFixed(3)}°; fed poses: ${rms(ep, 0).toFixed(2)} mm, ${rms(ep, 1).toFixed(3)}° (moving, three cameras in turn)`);
+    // a frame 20 ms older than the state is taken at its own time, not restarted; a frame 40 px off is rejected
+    const late = fc.updateCorners(1 - 0.02, [C.sighting(cam, rigs[1], obj, see(rigs[1], at(1 - 0.02), 0.4), 0.4, 0)], null);
+    const bad = see(rigs[2], at(1.01), 0.4).map((q) => [q[0] + 40, q[1] - 30]), off = fc.updateCorners(1.01, [C.sighting(cam, rigs[2], obj, bad, 0.4, 0)], null);
+    check(late.pose && !late.restarted && off.rejected, 'the filter takes a late frame at its own time, and rejects one whose corners are 50 px off');
+  }
+  // 6. a nearly face-on tag seen by camera 1 alone, 0.5 px noise: one view can't tell it from its mirror image, so both
+  //    filters wander, but the one fed corners less than the one fed poses
+  {
+    const face = { R: rotXYZ(Math.PI + 0.06, 0.05, 0.2), t: [0, 0.02, 1.6] }, run = (corners) => {
+      g = 11; const f = new C.PoseFilter(C.MOTION.balanced); f.init(0, face);
+      let s2 = 0, n = 0;
+      for (let k = 1; k < 120; k++) {
+        const img = see(rigs[0], face, 0.5), cands = C.solveTag(cam, img.flat(), 0.08, C.refinePose(cam, obj, img, face, {}), { sigma: 'auto' });
+        const r = corners ? f.updateCorners(k / 30, [C.sighting(cam, rigs[0], obj, img, 0.5, 0)], null) : f.update(k / 30, cands);
+        if (r && r.pose) { s2 += errs(r.pose, face)[1] ** 2; n++; }
+      }
+      return Math.sqrt(s2 / n);
+    };
+    const a = run(true), b = run(false);
+    check(a < b, `a face-on tag, one camera: ${a.toFixed(1)}° RMS fed corners, ${b.toFixed(1)}° fed poses (only a second view really settles it)`);
+  }
+  // 7. search windows
+  {
+    const sq = (x, y, s) => [[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
+    const a = C.planSearch([{ pts: sq(100, 100, 50), pad: 20 }, { pts: sq(175, 110, 40), pad: 20 }, { pts: sq(900, 500, 60), pad: 30 }], 1280, 720);
+    check(a && a.rois.length === 2 && a.rois[0].x === 80 && a.rois[0].w === 155 && a.frac < 0.1, 'two tags close together share one window; a far one has its own');
+    const b = C.planSearch([{ pts: sq(-30, 690, 40), pad: 20 }], 1280, 720);
+    check(b && b.rois[0].x === 0 && b.rois[0].y + b.rois[0].h === 720, 'a window is kept inside the picture');
+    check(C.planSearch([{ pts: sq(100, 100, 600), pad: 100 }], 1280, 720) === null && C.planSearch([], 1280, 720) === null, 'windows over half the picture, or nothing to look for: search it all');
+    check(C.planSearch([{ pts: [[640, 360]], pad: 2 }], 1280, 720).rois[0].w === 64, 'a window is at least 64 px across');
+  }
+}
+
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
 function testBridge() {
   const { spawnSync, spawn } = require('child_process'), dgram = require('dgram'), net = require('net');
@@ -550,6 +646,22 @@ else bridged.then(async () => {
     check(angs.length === 6 && Math.max(...angs) < 5, `and its rotation within ${Math.max(...angs).toFixed(2)}° (under 5°); OpenCV's own pose alone: up to ${Math.max(...rawAng).toFixed(1)}°`);
   }
   check(ms / n < 100, `detection and SE(3) refinement on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
+  // Searching only a window round where the tag should be finds the same corners as searching the whole picture, in
+  // whole-picture pixels, and costs a fraction of the time.
+  {
+    const R = C.mul3(rotXYZ(0.25, -0.2, 0.7), rotXYZ(Math.PI, 0, 0)), img = render(pad, At, R, [0.12, -0.05, 1.2], 150);
+    const whole = V.track(img, cam, { 42: size }, 0.05, [], false).tags.find((x) => x.id === 42), cs = whole.corners;
+    const xs = [cs[0], cs[2], cs[4], cs[6]], ys = [cs[1], cs[3], cs[5], cs[7]];
+    const plan = C.planSearch([{ pts: [0, 1, 2, 3].map((k) => [cs[2 * k] + 9, cs[2 * k + 1] - 6]), pad: 0.4 * (Math.max(...xs) - Math.min(...xs)) + 12 }], img.cols, img.rows);
+    const r = plan.rois[0], part = img.roi(new cv.Rect(r.x, r.y, r.w, r.h)), win = part.clone();
+    const got = V.track([{ img: win, x: r.x, y: r.y }], cam, { 42: size }, 0.05, [], false).tags.find((x) => x.id === 42);
+    const d = got ? Math.max(...got.corners.map((v, i) => Math.abs(v - cs[i]))) : Infinity;
+    let tW = Date.now(); for (let i = 0; i < 20; i++) V.detectTags(img, cam, {}, size); tW = (Date.now() - tW) / 20;
+    let tR = Date.now(); for (let i = 0; i < 20; i++) V.detectTags(win, cam, {}, size, r.x, r.y); tR = (Date.now() - tR) / 20;
+    check(d < 0.01 && got.cands.length > 0, `a search window (${(plan.frac * 100).toFixed(0)}% of the picture, the tag moved 11 px since) finds the same corners (within ${d.toFixed(4)} px)`);
+    check(tR < tW / 3, `and takes ${tR.toFixed(1)} ms against ${tW.toFixed(1)} ms for the whole picture`);
+    part.delete(); win.delete(); img.delete();
+  }
   // Repeated frames must not leak WebAssembly memory.
   const img = render(pad, At, C.mul3(rotXYZ(0.2, 0.1, 0.3), rotXYZ(Math.PI, 0, 0)), [0, 0, 1], 150);
   const heap0 = cv.HEAPU8 ? cv.HEAPU8.length : 0;

@@ -425,6 +425,12 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
             <button role="radio" data-q="fast" aria-checked="false" title="Half-resolution search, about 3× faster">Fast</button>
           </span>
         </span>
+        <span class="field">Search
+          <span class="seg sm" role="radiogroup" aria-label="Search">
+            <button role="radio" data-search="predicted" aria-checked="true" title="Once tags are found, search only where they should be next; the whole picture every 10th frame, and whenever one isn't where it should be">Predicted</button>
+            <button role="radio" data-search="whole" aria-checked="false" title="Search the whole picture every frame">Whole picture</button>
+          </span>
+        </span>
         <span class="field">Pose
           <span class="seg sm" role="radiogroup" aria-label="Pose">
             <button role="radio" data-pose="raw" aria-checked="false" title="OpenCV's IPPE pose of each tag, frame by frame">Raw</button>
@@ -703,7 +709,7 @@ const S = {
   arrange: Object.assign({ mode: 'auto', tiles: {} }, store.get('arrange', {})),
   paper: C.PAPER[store.get('paper', '')] ? store.get('paper', '') : C.paperFor(navigator.language), // a4 or letter
   camNames: store.get('camNames', {}), // camera key → the name the visitor gave it (lens calibrations stay keyed by the device's own label)
-  fused: new Map(), zs: new Map(),
+  fused: new Map(), zs: new Map(), vel: new Map(),
   // Tracks are keyed by tag id (a number) or 'b:<id>' for a rigid object. hist holds the plotted poses (in the
   // chosen frame), rawHist the raw ones for "Compare with raw", filters one PoseFilter per track, tracks the
   // latest camera-frame state per track, seen the last sighting of every tag id.
@@ -751,7 +757,7 @@ function slotOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? slotOf(b.m
 function colorOf(k) { const s = slotOf(k); return s >= 0 ? K.slots[s] : K.unknown; }
 function cssColorOf(k) { const s = slotOf(k); return s >= 0 ? `var(--s${s + 1})` : 'var(--unknown)'; }
 function nameOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? b.name || 'Object' : k; } const t = tagOf(k); return t && t.name ? t.name : '#' + k; }
-function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); S.fused.clear(); S.zs.clear(); }
+function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); S.fused.clear(); S.zs.clear(); S.vel.clear(); }
 function sizeOf(id) { const t = tagOf(id); return t ? t.size : S.settings.tagSize; }
 function freeSlot() { for (let i = 0; i < SLOTS; i++) if (!S.tags.some((t) => t.slot === i)) return i; return -1; }
 function addTag(id, name) {
@@ -860,6 +866,13 @@ document.querySelectorAll('[data-q]').forEach((b) => {
     S.quality = b.dataset.q; store.set('quality', S.quality);
     document.querySelectorAll('[data-q]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
     toWorkers({ type: 'family', family: S.settings.family, quality: S.quality });
+  };
+});
+document.querySelectorAll('[data-search]').forEach((b) => {
+  b.setAttribute('aria-checked', String(b.dataset.search === S.settings.search));
+  b.onclick = () => {
+    S.settings.search = b.dataset.search; store.set('settings', S.settings);
+    document.querySelectorAll('[data-search]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
   };
 });
 function refreshFrameSel() {
@@ -1085,7 +1098,7 @@ async function addCamera(key) {
     const [w, h] = S.res.split('x').map(Number);
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: key ? { exact: key } : undefined, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
   }
-  const c = { key, demo, stream, track: stream.getVideoTracks()[0], inflight: 0, seq: 0, doneSeq: 0, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
+  const c = { key, demo, stream, track: stream.getVideoTracks()[0], inflight: 0, seq: 0, doneSeq: 0, sinceFull: 0, forceFull: false, expect: new Map(), prevCtr: null, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
   if (demo === null) {
     const st = c.track.getSettings();
     if (st.deviceId) c.key = st.deviceId;
@@ -1154,9 +1167,17 @@ function onCamsChanged() {
   paintAddCam(); setupFocus(); renderCalibCams(); renderCalib(); renderRig(); layoutTiles();
 }
 // Each camera's pose in camera 1's frame, from the saved rig. Changing it moves the fused tracks, so they restart.
+// Each camera's corners are trusted to their own scatter plus a model error: how well the rig fitted that camera (its
+// reprojection RMS in the multi-camera calibration), at least MODEL_PX. Without it, the small disagreements a rig
+// calibration always leaves look like motion, and the filter chases them.
+const MODEL_PX = 0.25;
 function placeCams() {
   const T = C.placeCameras(S.rig, S.cams.map((c) => c.key));
-  S.cams.forEach((c, i) => { c.T = T[i]; });
+  S.cams.forEach((c, i) => {
+    c.T = T[i];
+    const k = S.rig ? S.rig.keys.indexOf(c.key) : -1, pc = k >= 0 && S.rig.perCam ? S.rig.perCam[k] : null;
+    c.modelPx = Math.max(MODEL_PX, pc && isFinite(pc.rms) ? pc.rms : 0);
+  });
   S.cams.forEach(paintTile);
 }
 function stop(quiet) {
@@ -1308,6 +1329,42 @@ function arrangeHandlers(c, el) {
 paintArrange();
 if ('ResizeObserver' in window) new ResizeObserver(() => layoutTiles()).observe($('stages'));
 
+// ---------------- where to look ----------------
+// Once a full search has found the tags, a camera's next frames search only where they should be (TagCore.planSearch):
+// each tag it saw last, moved on by its own speed across the picture to this frame's time, with a margin of 40% of its
+// size plus half the distance it moves; and, for a placed camera, every track the other cameras see that should be in
+// its picture (so a tag coming into view is found without a full search). The whole picture is searched every
+// FULL_EVERY frames, to find new tags, and on the next frame whenever a tag wasn't where it was predicted.
+const FULL_EVERY = 10, HAS_VF = typeof VideoFrame === 'function';
+const centroid = (cs) => [(cs[0] + cs[2] + cs[4] + cs[6]) / 4, (cs[1] + cs[3] + cs[5] + cs[7]) / 4];
+function searchPlan(c, time) {
+  if (S.mode !== 'track' || S.settings.search !== 'predicted' || c.forceFull || c.sinceFull >= FULL_EVERY - 1 || !c.last) return null;
+  const preds = [], own = new Set(), age = Math.max(0, time - c.last.time);
+  for (const t of c.last.tags) {
+    const ctr = centroid(t.corners), prev = c.prevCtr && c.prevCtr.get(t.id), dt = prev ? c.last.time - prev.time : 0;
+    const v = dt > 0.005 && dt < 0.2 ? [(ctr[0] - prev.ctr[0]) / dt, (ctr[1] - prev.ctr[1]) / dt] : [0, 0];
+    const d = [v[0] * age, v[1] * age], cs = t.corners;
+    const size = Math.sqrt(Math.abs((cs[0] - cs[4]) * (cs[3] - cs[7]) - (cs[2] - cs[6]) * (cs[1] - cs[5])) / 2);
+    preds.push({ pts: [0, 1, 2, 3].map((k) => [cs[2 * k] + d[0], cs[2 * k + 1] + d[1]]), pad: 0.4 * size + 0.5 * Math.hypot(d[0], d[1]) + 12 });
+    own.add(t.id);
+  }
+  if (c.T && S.cams.length > 1) for (const [key, f] of S.fused) {
+    if (time - f.time > 0.25) continue;
+    const parts = isBody(key) ? (bodyOf(key) ? bodyOf(key).members.map((mb) => ({ id: mb.id, pose: C.compose(f.pose, mb) })) : []) : [{ id: key, pose: f.pose }];
+    const inv = C.inverse(c.T);
+    for (const q of parts) {
+      if (own.has(q.id)) continue;
+      const P = C.compose(inv, q.pose), pts = C.tagCorners(sizeOf(q.id)).map((X) => C.project(c.cam, C.add(C.mulv(P.R, X), P.t)));
+      if (pts.some((x) => !x) || pts.every((x) => x[0] < 0 || x[1] < 0 || x[0] > c.cam.w || x[1] > c.cam.h)) continue;
+      const size = Math.hypot(pts[0][0] - pts[2][0], pts[0][1] - pts[2][1]) / Math.SQRT2;
+      preds.push({ pts, pad: 0.5 * size + 20 });
+    }
+  }
+  const plan = C.planSearch(preds, c.cam.w, c.cam.h);
+  if (plan) plan.expect = [...own];
+  return plan;
+}
+
 // ---------------- frame loop ----------------
 // Each camera sends its newest frame to an idle worker of the pool, keeping up to its share of the pool busy.
 function loopFrames(c) {
@@ -1325,13 +1382,22 @@ function loopFrames(c) {
     if (Math.abs(time - performance.now()) > 1000) time = performance.now();
     slot.busy = true; c.inflight++;
     const release = () => { slot.busy = false; c.inflight = Math.max(0, c.inflight - 1); };
-    createImageBitmap(v).then((bm) => {
-      if (c.gone) { bm.close(); release(); return; }
+    const send = (pic) => {
+      if (c.gone) { pic.close(); release(); return; }
       const sizes = sizesMap();
       const bodies = S.bodies.map((b) => ({ id: b.id, members: b.members.map((x) => ({ id: x.id, R: x.R, t: x.t, size: sizes[x.id] || S.settings.tagSize })) }));
       const square = S.mode === 'calib' ? (S.demo ? DEMO.square : S.square / 1000) : 0;
-      slot.w.postMessage({ type: 'frame', src: c.key, bitmap: bm, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
-    }).catch(release);
+      const plan = searchPlan(c, time / 1000);
+      if (plan) { c.sinceFull++; c.expect.set(c.seq + 1, plan.expect); } else c.sinceFull = 0;
+      const msg = { type: 'frame', rois: plan ? plan.rois : null, src: c.key, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn, learn: !!S.learn };
+      msg[pic instanceof ImageBitmap ? 'bitmap' : 'frame'] = pic;
+      slot.w.postMessage(msg, [pic]);
+    };
+    // The frame goes to the worker as a WebCodecs VideoFrame where the browser has them: the worker then reads just the
+    // pixels it searches, straight from the camera's own format. Otherwise as an ImageBitmap.
+    let vf = null;
+    if (HAS_VF) try { vf = new VideoFrame(v, { timestamp: Math.round(time * 1000) }); } catch (e) { vf = null; }
+    if (vf) send(vf); else createImageBitmap(v).then(send).catch(release);
   };
   if (hasRVFC) v.requestVideoFrameCallback(step); else requestAnimationFrame(step);
 }
@@ -1343,8 +1409,9 @@ function tickStats(c, ms) {
   st.frames = 0; st.dets = 0; st.t0 = now;
   const vs = c.el.querySelector('.vstats'), many = S.cams.length > 1;
   vs.hidden = false;
-  vs.innerHTML = many ? `<span>${st.dfps.toFixed(0)} fps</span><span>${st.ms.toFixed(0)} ms</span>`
-    : `<span>${c.video.videoWidth}×${c.video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>`;
+  const part = c.searched != null && c.searched < 0.98 ? Math.max(1, Math.round(c.searched * 100)) + '%' : '';
+  vs.innerHTML = many ? `<span>${st.dfps.toFixed(0)} fps</span><span>${st.ms.toFixed(0)} ms</span>${part ? `<span title="Share of the picture searched, on average">${part}</span>` : ''}`
+    : `<span>${c.video.videoWidth}×${c.video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>${part ? `<span>searching ${part} of the picture</span>` : ''}`;
   if (c === S.cams[0]) status(many ? `${S.cams.length} cameras, ${S.cams.reduce((s, x) => s + x.stats.dfps, 0).toFixed(0)} frames a second` : `${st.dfps.toFixed(0)} fps, ${st.ms.toFixed(0)} ms per frame`, 'live');
 }
 
@@ -1363,20 +1430,33 @@ function onTags(c, m) {
   tickStats(c, m.ms);
   if (S.mode !== 'track') return;
   const wall = performance.now() / 1000, mem = memberIds();
+  // where this camera's tags were last time, for their speed across the picture
+  if (c.last) c.prevCtr = new Map(c.last.tags.map((t) => [t.id, { time: c.last.time, ctr: centroid(t.corners) }]));
+  // a predicted tag that wasn't in its window: search the whole picture next
+  if (m.rois) { const ex = c.expect.get(m.seq) || []; c.forceFull = ex.some((id) => !m.tags.some((t) => t.id === id)); }
+  else c.forceFull = false;
+  for (const k of c.expect.keys()) if (k <= m.seq) c.expect.delete(k);
+  c.searched = c.searched == null ? m.searched : 0.9 * c.searched + 0.1 * (m.searched == null ? 1 : m.searched);
   c.last = m;
   for (const t of m.tags) S.seen.set(t.id, { time: m.time, wall, err: t.err });
-  // this camera's measurements, in its own frame
-  const meas = new Map();
+  // this camera's measurements, in its own frame, each with its corners (sight: the track's points in its own frame,
+  // and where this camera saw them) for the joint fit and the filter
+  const meas = new Map(), px = (t) => [0, 1, 2, 3].map((k) => [t.corners[2 * k], t.corners[2 * k + 1]]);
   for (const t of m.tags) {
     if (!t.R || mem.has(t.id)) continue;
     if (!S.settings.showUnknown && !tagOf(t.id)) continue;
-    meas.set(t.id, { raw: { R: t.R, t: t.t }, cands: t.cands || [], err: t.err, size: t.size });
+    meas.set(t.id, { raw: { R: t.R, t: t.t }, cands: t.cands || [], err: t.err, size: t.size, sight: { obj: C.tagCorners(t.size), img: px(t) } });
   }
   for (const b of S.bodies) {
     const raw = rawBody(b, m.tags);
     if (!raw) continue;
-    const got = (m.bodies || []).find((x) => x.id === b.id);
-    meas.set('b:' + b.id, { raw, cands: got ? got.cands : [], seen: got ? got.seen : 1 });
+    const got = (m.bodies || []).find((x) => x.id === b.id), obj = [], img = [];
+    for (const mb of b.members) {
+      const t = m.tags.find((x) => x.id === mb.id);
+      if (!t) continue;
+      C.tagCorners(t.size).forEach((q, k) => { obj.push(C.add(C.mulv(mb.R, q), mb.t)); img.push(px(t)[k]); });
+    }
+    meas.set('b:' + b.id, { raw, cands: got ? got.cands : [], seen: got ? got.seen : 1, sight: { obj, img } });
   }
   c.local = new Map([...meas].map(([k, z]) => [k, z.cands[0] || z.raw]));
   if (S.learn) learnStep(m);
@@ -1384,8 +1464,19 @@ function onTags(c, m) {
   drawOverlay(c);
 }
 // A placed camera's measurements, moved into the rig's frame (camera 1's) and combined with the other cameras'.
-// Raw takes this camera's pose; Refined fuses the latest pose from every camera that saw the track within 50 ms;
-// Filtered feeds every camera's frames to the track's one Kalman filter as they arrive.
+// Raw takes this camera's pose. Refined fits one pose to the corners of every camera that saw the track within 50 ms
+// (TagCore.refineJoint: robust, each camera weighted by its corner noise, each frame moved to this one's time by the
+// track's velocity, since the cameras aren't synchronised). Filtered feeds each camera's corners, as its frames arrive,
+// straight into the track's one Kalman filter (PoseFilter.updateCorners).
+// Refined has no motion model of its own, so a track's velocity for moving frames to one time is taken from its last
+// poses: each step's change over its time, smoothed (each new step counts for 30%).
+function trackVelocity(key, time, p) {
+  const last = S.fused.get(key), dt = last ? time - last.time : 0;
+  if (!last || dt < 0.005 || dt > 0.2) { if (!last || dt > 0.2) S.vel.delete(key); return; }
+  const v = C.sub(p.t, last.pose.t).map((x) => x / dt), w = C.so3Log(C.mul3(p.R, C.tr3(last.pose.R))).map((x) => x / dt);
+  const o = S.vel.get(key), mix = (a, b) => a.map((x, i) => 0.7 * x + 0.3 * b[i]);
+  S.vel.set(key, o ? { v: mix(o.v, v), w: mix(o.w, w) } : { v, w });
+}
 function fuse(c, m, meas, wall) {
   const mode = S.settings.pose, out = new Map(), rig = new Map();
   for (const [key, z0] of meas) {
@@ -1399,20 +1490,28 @@ function fuse(c, m, meas, wall) {
     const others = [...zs].filter(([k, x]) => k !== c.key && Math.abs(x.time - m.time) < 0.05 && x.z.cands.length).map(([, x]) => C.plausible(x.z.cands).map((q) => q.R));
     const last = S.fused.get(key), prevR = last && m.time - last.time < 0.25 ? last.pose.R : null;
     const pick = z.cands.length ? C.chooseCand(z.cands, others, prevR) : null;
-    zs.set(c.key, { time: m.time, z, pick });
+    const sight = z0.sight && z0.sight.img.length ? z0.sight : null;
+    const sigma = pick ? Math.hypot(pick.sigma || 0.5, c.modelPx || MODEL_PX) : 0;
+    zs.set(c.key, { time: m.time, z, pick, sight, sigma, cam: c.cam, T: c.T });
     let p = null;
     if (mode === 'raw' || !pick) p = z.raw;
     else if (mode === 'refined') {
-      const now = [...zs.values()].filter((x) => Math.abs(x.time - m.time) < 0.05 && x.pick).map((x) => x.pick);
-      p = now.length > 1 ? C.fusePoses(now) : pick;
+      const now = [...zs.values()].filter((x) => Math.abs(x.time - m.time) < 0.05 && x.pick && x.sight);
+      if (now.length > 1) {
+        const views = now.map((x) => C.sighting(x.cam, x.T, x.sight.obj, x.sight.img, x.sigma, x.time - m.time));
+        const start = C.fusePoses(now.map((x) => x.pick));
+        p = C.refineJoint(views, start, { vel: S.vel.get(key) }) || start;
+      } else p = pick;
+      trackVelocity(key, m.time, p);
     } else {
       let f = S.filters.get(key);
       if (!f) { f = new C.PoseFilter(C.MOTION[S.settings.motion]); S.filters.set(key, f); }
-      const r = f.update(m.time, others.length ? [pick] : z.cands); // with other cameras the choice is already made
+      // the chosen candidate only starts (or restarts) the track; after that the corners steer it
+      const r = sight ? f.updateCorners(m.time, [C.sighting(c.cam, c.T, sight.obj, sight.img, sigma, 0)], pick) : f.update(m.time, [pick]);
       p = r && r.pose;
     }
     const best = z.cands[0], cams = S.cams.filter((x) => { const q = zs.get(x.key); return q && m.time - q.time < 0.25; }).map((x) => x.n);
-    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen, cams });
+    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: p && p.views > 1 ? p.rms : best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen, cams });
     if (p) { out.set(key, p); S.fused.set(key, { pose: p, time: m.time }); }
   }
   // the reference frame: this frame's pose of the chosen track, or its last one within 0.25 s

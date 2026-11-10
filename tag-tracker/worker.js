@@ -92,11 +92,21 @@ function TagVision(cv, Core) {
   // ids not in it use defaultSize. Each tag comes back with OpenCV's pose (R, t, err) and, unless `raw`,
   // `cands`: that pose and its mirror image refined by Levenberg–Marquardt on SE(3), best fit first, each with
   // a covariance. Each rigid object in `bodies` gets the same, solved from all its visible tags at once.
-  function track(img, cam, sizes, defaultSize, bodies, raw) {
-    const tags = detectTags(img, cam, sizes, defaultSize);
+  //
+  // `img` is the whole picture, or a list of search windows [{img, x, y}] (each a grey Mat of part of the picture and
+  // where it sits in it): then only those are searched, and their corners are given in the whole picture's pixels.
+  // A tag that belongs to an object is refined only as part of it, unless `learn` (learning an object's shape needs each
+  // tag's own pose).
+  function track(img, cam, sizes, defaultSize, bodies, raw, learn) {
+    let tags;
+    if (Array.isArray(img)) {
+      tags = [];
+      for (const w of img) for (const t of detectTags(w.img, cam, sizes, defaultSize, w.x, w.y)) if (!tags.some((q) => q.id === t.id)) tags.push(t);
+    } else tags = detectTags(img, cam, sizes, defaultSize);
     const out = { tags, bodies: [] };
     if (raw) return out;
-    for (const t of tags) if (t.R) t.cands = Core.solveTag(cam, t.corners, t.size, t, { sigma: 'auto' }).slice(0, 2);
+    const member = new Set(learn ? [] : (bodies || []).flatMap((b) => b.members.map((m) => m.id)));
+    for (const t of tags) if (t.R && !member.has(t.id)) t.cands = Core.solveTag(cam, t.corners, t.size, t, { sigma: 'auto' }).slice(0, 2);
     for (const b of bodies || []) {
       if (!b.members.some((m) => tags.some((t) => t.id === m.id))) continue;
       const cands = Core.solveBody(cam, b, tags.filter((t) => t.R), { sigma: 'auto' }).slice(0, 2);
@@ -104,7 +114,8 @@ function TagVision(cv, Core) {
     }
     return out;
   }
-  function detectTags(img, cam, sizes, defaultSize) {
+  // (x0, y0): where `img` sits in the camera's picture, when it is a search window.
+  function detectTags(img, cam, sizes, defaultSize, x0, y0) {
     const corners = new cv.MatVector(), ids = new cv.Mat(), rej = new cv.MatVector();
     const out = [];
     try {
@@ -115,7 +126,7 @@ function TagVision(cv, Core) {
       for (let i = 0; i < ids.rows; i++) {
         const id = ids.intAt(i, 0), c = corners.get(i), cd = c.data32F;
         // AprilTag reports corners with pixel (0, 0) spanning 0 to 1; OpenCV's camera model puts its centre at 0.
-        for (let k = 0; k < 8; k++) cd[k] -= 0.5;
+        for (let k = 0; k < 8; k++) cd[k] += (k % 2 ? y0 || 0 : x0 || 0) - 0.5;
         const px = Array.from(cd);
         const s = (sizes && sizes[id]) || defaultSize, h = s / 2;
         // IPPE_SQUARE wants this order: top-left, top-right, bottom-right, bottom-left, with y up the tag.
@@ -271,8 +282,60 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
     return cv;
   }
 
+  // Only the search windows: the frame is drawn once and just the windows are read back and turned grey, each into
+  // its own Mat (freed by the caller).
+  // The grey pixels of a frame message: of each search window (m.rois), or of the whole picture. A VideoFrame (WebCodecs)
+  // is read directly, and only the parts needed: in a webcam's own YUV format the first plane is already grey (luma), so
+  // nothing is converted; RGB frames (the demo's canvases) are converted. Anything else, or an ImageBitmap from a
+  // browser without WebCodecs, goes through a canvas. Returns {parts: [{img, x, y, own}], w, h, whole, via}.
+  const LUMA = new Set(['I420', 'I420A', 'I422', 'I444', 'NV12']), RGB = { RGBA: [0, 1, 2], RGBX: [0, 1, 2], BGRA: [2, 1, 0], BGRX: [2, 1, 0] };
+  async function grey(m) {
+    const rois = m.mode !== 'calib' && m.rois && m.rois.length ? m.rois : null;
+    const f = m.frame;
+    if (f) {
+      const vr = f.visibleRect, W = vr.width, H = vr.height, fmt = f.format;
+      if (LUMA.has(fmt) || RGB[fmt]) {
+        try {
+          // chroma is sampled every second pixel, so a window starts and ends on even pixels
+          const even = (r) => { const x = r.x & ~1, y = r.y & ~1; return { x, y, w: Math.min(W & ~1, (r.x + r.w + 1) & ~1) - x, h: Math.min(H & ~1, (r.y + r.h + 1) & ~1) - y }; };
+          const list = rois ? rois.map(even) : [{ x: 0, y: 0, w: W, h: H }], parts = [];
+          for (const r of list) parts.push({ img: await greyRect(f, vr, r, fmt), x: r.x, y: r.y, own: true });
+          return { parts, w: W, h: H, whole: !rois, via: fmt };
+        } finally { f.close(); }
+      }
+    }
+    const pic = f || m.bitmap;
+    if (rois) { const win = windows(pic, rois); return { parts: win.parts.map((q) => Object.assign(q, { own: true })), w: win.w, h: win.h, whole: false, via: 'canvas' }; }
+    const px = pixels(pic);
+    return { parts: [{ img: V.setRGBA(px.rgba, px.w, px.h), x: 0, y: 0, own: false }], w: px.w, h: px.h, whole: true, via: 'canvas' };
+  }
+  async function greyRect(f, vr, r, fmt) {
+    const rect = { x: vr.x + r.x, y: vr.y + r.y, width: r.w, height: r.h };
+    const buf = new Uint8Array(f.allocationSize({ rect })), lay = await f.copyTo(buf, { rect });
+    const g = new self.cv.Mat(r.h, r.w, self.cv.CV_8UC1), o = g.data, off = lay[0].offset, st = lay[0].stride;
+    if (LUMA.has(fmt)) {
+      if (st === r.w) o.set(buf.subarray(off, off + r.w * r.h));
+      else for (let y = 0; y < r.h; y++) o.set(buf.subarray(off + y * st, off + y * st + r.w), y * r.w);
+    } else {
+      const [a, b, c] = RGB[fmt];
+      for (let y = 0, i = 0; y < r.h; y++) for (let x = 0, j = off + y * st; x < r.w; x++, j += 4, i++) o[i] = (buf[j + a] * 77 + buf[j + b] * 150 + buf[j + c] * 29) >> 8;
+    }
+    return g;
+  }
+  function windows(bitmap, rois) {
+    const w = bitmap.displayWidth || bitmap.width, h = bitmap.displayHeight || bitmap.height;
+    if (!canvas || canvas.width !== w || canvas.height !== h) { canvas = new OffscreenCanvas(w, h); ctx = canvas.getContext('2d', { willReadFrequently: true }); }
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const parts = rois.map((r) => {
+      const d = ctx.getImageData(r.x, r.y, r.w, r.h).data, g = new self.cv.Mat(r.h, r.w, self.cv.CV_8UC1), o = g.data;
+      for (let i = 0, j = 0; i < r.w * r.h; i++, j += 4) o[i] = (d[j] * 77 + d[j + 1] * 150 + d[j + 2] * 29) >> 8;
+      return { img: g, x: r.x, y: r.y };
+    });
+    return { parts, w, h };
+  }
   function pixels(bitmap) {
-    const w = bitmap.width, h = bitmap.height;
+    const w = bitmap.displayWidth || bitmap.width, h = bitmap.displayHeight || bitmap.height;
     if (!canvas || canvas.width !== w || canvas.height !== h) { canvas = new OffscreenCanvas(w, h); ctx = canvas.getContext('2d', { willReadFrequently: true }); }
     ctx.drawImage(bitmap, 0, 0);
     bitmap.close();
@@ -289,18 +352,22 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
         post({ type: 'ready', version: (cv.getBuildInformation().match(/Version control:\s*(\S+)/) || [])[1] || '', count: V.familySize(m.family) });
       } else if (!V) {
         if (m.bitmap) m.bitmap.close();
+        if (m.frame) m.frame.close();
       } else if (m.type === 'family') {
         V.setFamily(m.family, m.quality);
         post({ type: 'family', family: m.family, count: V.familySize(m.family) });
       } else if (m.type === 'frame') {
-        const t0 = performance.now(), px = pixels(m.bitmap), img = V.setRGBA(px.rgba, px.w, px.h);
-        if (m.mode === 'calib') {
-          const b = V.detectBoard(img), pose = m.square ? V.boardPose(b.ids, b.pts, m.cam, m.square) : null;
-          post({ type: 'board', src: m.src, seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, ids: b.ids, pts: b.pts, markers: b.markers, pose });
-        } else {
-          const r = V.track(img, m.cam, m.sizes, m.defaultSize, m.bodies, m.raw);
-          post({ type: 'tags', src: m.src, seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, tags: r.tags, bodies: r.bodies });
-        }
+        const t0 = performance.now(), src = await grey(m);
+        try {
+          if (m.mode === 'calib') {
+            const img = src.parts[0].img, b = V.detectBoard(img), pose = m.square ? V.boardPose(b.ids, b.pts, m.cam, m.square) : null;
+            post({ type: 'board', src: m.src, seq: m.seq, time: m.time, w: src.w, h: src.h, ms: performance.now() - t0, ids: b.ids, pts: b.pts, markers: b.markers, pose });
+          } else {
+            const r = V.track(src.whole ? src.parts[0].img : src.parts, m.cam, m.sizes, m.defaultSize, m.bodies, m.raw, m.learn);
+            const searched = src.whole ? 1 : src.parts.reduce((a, q) => a + q.img.rows * q.img.cols, 0) / (src.w * src.h);
+            post({ type: 'tags', src: m.src, seq: m.seq, time: m.time, w: src.w, h: src.h, ms: performance.now() - t0, tags: r.tags, bodies: r.bodies, rois: src.whole ? null : m.rois, searched });
+          }
+        } finally { for (const q of src.parts) if (q.own) q.img.delete(); }
       } else if (m.type === 'calibrate') {
         const c = V.calibrate(m.views, m.w, m.h, m.square);
         post({ type: 'calibrated', calib: c });
@@ -312,7 +379,7 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
         post({ type: 'tagImage', img: b, id: m.id, purpose: m.purpose }, [b.data.buffer]);
       }
     } catch (e) {
-      if (m.bitmap) try { m.bitmap.close(); } catch (_) { /* already closed */ }
+      for (const x of [m.bitmap, m.frame]) if (x) try { x.close(); } catch (_) { /* already closed */ }
       post({ type: 'error', of: m.type, src: m.src, seq: m.seq, text: String((e && e.message) || e) });
     }
   };

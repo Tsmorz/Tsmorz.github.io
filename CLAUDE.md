@@ -350,6 +350,15 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   others start once the first is ready, from the browser's cache). Each camera's frames go to an idle worker, up to its share
   of the pool in flight (`idleWorker`), so one camera is detected several frames at a time; a result overtaken by a later
   frame of the same camera is dropped (`doneSeq`). The first worker also calibrates and draws tags and boards.
+  Frames go to the workers as WebCodecs `VideoFrame`s (`HAS_VF`; an ImageBitmap where there are none), and the worker
+  reads only the pixels it searches with `copyTo` (`grey`, `greyRect`): a webcam's NV12/I420 luma plane is already grey,
+  so a 720p frame takes about 0.5 ms instead of ~9 ms through a canvas. Windows start and end on even pixels (chroma).
+- **Search windows** (Detector card, Search: Predicted | Whole picture; `searchPlan`, `TagCore.planSearch`): once tags are
+  found, a camera searches only where each should be next (its last corners moved on by their speed across the picture,
+  padded by 40% of its size plus half the move) and where tracks the other cameras see should appear in it; windows that
+  touch are merged, and more than half the picture means a full search. The whole picture is searched every `FULL_EVERY`
+  (10) frames to find new tags, and on the next frame when a predicted tag wasn't found (`expect`, `forceFull`). In the
+  demo a window-only frame takes ~4.5 ms against ~13 ms for a full one; the tile shows the share searched.
 - **Several cameras** (`S.cams`, each with its own tile, video, overlay and frame loop; results tagged with the camera's key as `src`). Camera 1 (the top bar's camera) is the frame of everything;
   "Add camera" adds more. **Placing the cameras** is Calibrate step 4: whenever two or more cameras see the whole board,
   held still, the board's pose in each (the worker's `boardPose`: IPPE, then `refinePose`) is captured as a rig view;
@@ -358,7 +367,16 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   (`rig`; device ids, or `demo:k`), and `placeCameras` re-expresses it from whichever camera is now first. A placed
   camera's measurements go into the rig frame (`toRig`, covariance turned too) and are fused per track: Filtered feeds
   every camera's frames to the one Kalman filter (it takes frames up to `lateBy` 0.1 s out of order), Refined fuses the
-  latest from each camera within 50 ms with `fusePoses` (information-weighted), Raw takes each camera's as it comes. Before
+  latest from each camera within 50 ms by one fit to all their corners, Raw takes each camera's as it comes. **Both use
+  the corners, not each camera's pose** ("tightly coupled", as in Neunert et al. 2016 and TagSLAM's tag projection
+  factors): `TagCore.sighting` (a camera's corners of a track, its lens, rig pose, corner noise and time offset);
+  `refineJoint` for Refined, Levenberg–Marquardt on one SE(3) pose against every sighting, Huber-weighted, each frame
+  moved to the newest one's time by the track's velocity (`trackVelocity`, from its last poses), since webcams aren't
+  synchronised; and `PoseFilter.updateCorners` for Filtered, an iterated error-state update in information form
+  (Gauss–Newton on the posterior, Bell and Cathey 1993), each camera's frame at its own time (a late one moved back by the
+  state's velocity), gated on the correction's size and the fit. Each sighting's noise is its own corner scatter plus a
+  model error in quadrature (`c.modelPx`: the camera's rig RMS, at least `MODEL_PX` 0.25 px), or the filter chases
+  the small disagreements every rig calibration leaves. Before
   that, `TagCore.chooseCand` picks between a face-on tag's two mirror-image poses (`plausible`: those that fit about as well
   as the best): the one the other cameras agree with, else the one nearest the track's last pose, so Refined doesn't flip
   frame to frame; with other cameras the filter gets only that choice. An unplaced
@@ -387,7 +405,9 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   (`CUBE`, `DEMO_HANDS`, `cubeMembers`: tags on the front, both sides and the top), added as rigid objects with their exact
   shape when the demo starts (`demoScene` gives every tag's pose); in Calibrate the
   scene is the board, holding 12 poses in turn (`demoBoard`, 60 mm squares). Step 4 then shows how far the solved rig is
-  from the demo's true layout (under a millimetre). Headless Chrome needs the GPU (`--use-angle=metal`) to run it at speed.
+  from the demo's true layout (under a millimetre). Demo frames reach the page ~20 ms after they are drawn, so compare a
+  pose against the scene at its frame time minus 20 ms (then the cube hands are within ~1 mm and 0.15° when filtered,
+  with the cameras placed). Headless Chrome needs the GPU (`--use-angle=metal`) to run it at speed.
 - **Tare orientation** makes the current orientation of every tag in view the identity: plotted poses become `R0ᵀR`
   (`TagCore.tared`, in the tag's own tared axes; positions unchanged). Tares live in `S.tare`, in memory only, and are
   cleared by Clear tare or a change of "Relative to"; the stored history is re-expressed at once (`retare`). The video
@@ -408,7 +428,8 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   "Compare with raw" draws the raw track dashed. All of it runs in the worker except the filter.
 - Rigid objects (`bodies` in storage): two or more tags fixed to one thing. "Learn shape" collects each tag's pose relative
   to the first (the origin) over 20 unambiguous frames and averages them on SO(3) × R³ (`meanPose`, outliers dropped);
-  then the worker solves one SE(3) pose from every visible corner (`solveBody`). Tags in an object are tracked only as it.
+  then the worker solves one SE(3) pose from every visible corner (`solveBody`, started from the two biggest-looking tags
+  and their mirrors). Tags in an object are tracked only as it, and refined on their own only while learning (`learn`).
 - **Stream** sends the poses on: after each detection, at most `rate` times a second, one message (`TagCore.streamMessage`,
   JSON lines or CSV under `STREAM_CSV_HEADER`) with the newest plotted pose of every track in view, so in the Track tab's
   frame and tare: key, name, metres, quaternion w, x, y, z, Unix time. **Serial/USB** goes through Web Serial; **UDP** goes
@@ -427,7 +448,9 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   section 6b finds all 40 corners on the screen board (turned too) and decodes the QR code back to the link.
 - `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
   against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating,
-  the mirror-image choice, the Stream messages, and (with python3) the UDP bridge end to end; with OpenCV.js installed
+  the mirror-image choice, the joint fit (against one camera and against fusing poses, its covariance by Monte Carlo,
+  unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, and (with
+  python3) the UDP bridge end to end; with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.
 

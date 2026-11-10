@@ -382,17 +382,20 @@
   }
   // A rigid object: several tags at known poses in the object's frame (members: {id, R, t, size}), solved as one
   // pose from every visible corner. Each visible tag (and its mirror) gives a starting guess.
+  // Starting guesses come from the two tags that look biggest in the picture (the best-measured), and their mirrors.
   function solveBody(c, body, dets, opts) {
-    const obj = [], img = [], starts = [];
+    const obj = [], img = [], seeds = [];
     for (const m of body.members) {
       const d = dets.find((x) => x.id === m.id);
       if (!d) continue;
-      const pts = tagCorners(m.size);
-      for (let k = 0; k < 4; k++) { obj.push(add(mulv(m.R, pts[k]), m.t)); img.push([d.corners[2 * k], d.corners[2 * k + 1]]); }
-      if (d.R) {
-        const inv = inverse({ R: m.R, t: m.t });
-        starts.push(compose(d, inv), compose(flipPose(d), inv));
-      }
+      const pts = tagCorners(m.size), q = d.corners;
+      for (let k = 0; k < 4; k++) { obj.push(add(mulv(m.R, pts[k]), m.t)); img.push([q[2 * k], q[2 * k + 1]]); }
+      if (d.R) seeds.push({ d, m, area: Math.abs((q[0] - q[4]) * (q[3] - q[7]) - (q[2] - q[6]) * (q[1] - q[5])) });
+    }
+    const starts = [];
+    for (const { d, m } of seeds.sort((a, b) => b.area - a.area).slice(0, 2)) {
+      const inv = inverse({ R: m.R, t: m.t });
+      starts.push(compose(d, inv), compose(flipPose(d), inv));
     }
     if (!starts.length) return [];
     const seen = new Set(dets.map((d) => d.id));
@@ -443,6 +446,109 @@
     else if (prev) score = (c) => near(c.R, [prev]);
     if (!score) return ok[0];
     return ok.reduce((a, c) => (score(c) < score(a) ? c : a));
+  }
+
+  // ---- one pose from every camera's corners ----
+  // The corners themselves, not each camera's own pose, are what the joint fit and the filter use ("tightly coupled",
+  // as in Neunert et al. 2016 and TagSLAM): a camera that sees a tag small or nearly face-on adds exactly as much as
+  // its corners say, and two views settle the mirror-image doubt that one view can't.
+  //
+  // One camera's sighting of a track: its lens (cam) and pose in the rig (T: camera → rig), the track's points in the
+  // track's own frame (obj) and where the camera saw them (img, pixels, as detected, so still distorted), the corner
+  // noise (sigma, px), and dt: this frame's time minus the time being solved for (cameras aren't synchronised).
+  function sighting(cam, T, obj, img, sigma, dt) {
+    const P = T || { R: I3, t: [0, 0, 0] };
+    return { cam, T: P, Rt: tr3(P.R), obj, obs: img.map((q) => undistort(cam, q[0], q[1])), sigma: Math.max(0.1, sigma || 0.5), dt: dt || 0 };
+  }
+  // The normal equations of every corner of every sighting, for the track at (R, t) in the rig frame, each sighting moved
+  // to its own time by `vel` ({v, w}: m/s and rad/s in the rig frame, t + v·dt and exp(w·dt)·R, the filter's motion model).
+  // Residuals are pixels on undistorted coordinates divided by each sighting's sigma (so whitened); the Jacobian is in
+  // (δp, δθ), t ← t + δp and R ← exp(δθ)·R. A Huber weight (k, in sigmas) keeps one bad corner from dragging the rest.
+  function jointSystem(views, R, t, vel, k) {
+    const H = zeros(6, 6), g = new Array(6).fill(0), per = [];
+    let cost = 0, n = 0, chi = 0;
+    for (const s of views) {
+      const moved = vel && s.dt, E = moved ? rodrigues(scale(vel.w || [0, 0, 0], s.dt)) : I3, tt = moved ? add(t, scale(vel.v || [0, 0, 0], s.dt)) : t;
+      const fx = s.cam.fx / s.sigma, fy = s.cam.fy / s.sigma;
+      let ss = 0;
+      for (let i = 0; i < s.obj.length; i++) {
+        const Ro = mulv(R, s.obj[i]), X = add(mulv(E, Ro), tt), Xc = mulv(s.Rt, sub(X, s.T.t));
+        if (Xc[2] <= 1e-6) return { cost: Infinity };
+        const iz = 1 / Xc[2], r = [fx * (Xc[0] * iz - s.obs[i][0]), fy * (Xc[1] * iz - s.obs[i][1])];
+        const e2 = r[0] * r[0] + r[1] * r[1], e = Math.sqrt(e2), w = e <= k ? 1 : k / e;
+        cost += e <= k ? e2 : 2 * k * e - k * k; ss += e2; chi += e2; n++;
+        // dr/dX = Jp·Rtᵀ; dX/dδp = I; dX/dδθ = −E·[R o]×
+        const Jp = [[fx * iz, 0, -fx * Xc[0] * iz * iz], [0, fy * iz, -fy * Xc[1] * iz * iz]];
+        const ERo = mul3(E, skew(Ro));
+        for (let a = 0; a < 2; a++) {
+          const JX = [0, 1, 2].map((j) => Jp[a][0] * s.Rt[j] + Jp[a][1] * s.Rt[3 + j] + Jp[a][2] * s.Rt[6 + j]);
+          const J = [JX[0], JX[1], JX[2], ...[0, 1, 2].map((j) => -(JX[0] * ERo[j] + JX[1] * ERo[3 + j] + JX[2] * ERo[6 + j]))];
+          for (let u = 0; u < 6; u++) { g[u] += w * J[u] * r[a]; for (let v = 0; v < 6; v++) H[u][v] += w * J[u] * J[v]; }
+        }
+      }
+      per.push(Math.sqrt(ss / Math.max(1, s.obj.length)) * s.sigma);
+    }
+    return { H, g, cost, chi, n, per };
+  }
+  // Levenberg–Marquardt for one pose against every sighting at once (a bundle adjustment with the cameras held where
+  // the rig put them). Returns the pose, its covariance in (δp, δθ) (inflated when the corners scatter more than their
+  // sigmas say), the RMS error in pixels overall and per sighting, and the number of iterations.
+  function refineJoint(views, pose, opts) {
+    const o = Object.assign({ iters: 15, k: 2.5, vel: null }, opts || {});
+    let R = pose.R.slice(), t = pose.t.slice(), sys = jointSystem(views, R, t, o.vel, o.k), lambda = 1e-3, it = 0;
+    for (; it < o.iters && isFinite(sys.cost); it++) {
+      let improved = false;
+      for (let tries = 0; tries < 8; tries++) {
+        const Ai = minv(sys.H.map((r, i) => r.map((x, j) => (i === j ? x * (1 + lambda) + 1e-9 : x))));
+        if (!Ai) { lambda *= 10; continue; }
+        const d = mv(Ai, sys.g).map((x) => -x), R2 = mul3(rodrigues(d.slice(3, 6)), R), t2 = add(t, d.slice(0, 3));
+        const s2 = jointSystem(views, R2, t2, o.vel, o.k);
+        if (s2.cost < sys.cost) {
+          improved = sys.cost - s2.cost > 1e-10 * (1 + sys.cost) && norm(d) > 1e-12;
+          R = R2; t = t2; sys = s2; lambda = Math.max(1e-9, lambda / 3);
+          break;
+        }
+        lambda *= 4;
+      }
+      if (!improved) break;
+    }
+    if (!isFinite(sys.cost)) return null;
+    const Hi = minv(sys.H), dof = Math.max(1, 2 * sys.n - 6), s2 = Math.max(1, sys.chi / dof);
+    return { R, t, cov: Hi ? sym(Hi.map((r) => r.map((x) => x * s2))) : null, rms: Math.sqrt((sys.chi / Math.max(1, sys.n)) * (views.reduce((a, v) => a + v.sigma * v.sigma, 0) / views.length)), perView: sys.per, iters: it, views: views.length };
+  }
+
+  // ---- where to look next ----
+  // Search windows for the detector from predicted corners: preds = [{pts: [[u, v], ...], pad}] in pixels. Each becomes
+  // its corners' bounding box grown by `pad`, kept inside the picture and at least `min` wide; windows that touch or
+  // nearly touch (within `join` px) are merged. Returns {rois: [{x, y, w, h}], frac} (frac: the share of the picture
+  // searched), or null when a full search is as cheap (the windows cover more than `most` of the picture) or there
+  // is nothing to look for.
+  function planSearch(preds, W, H, opts) {
+    const o = Object.assign({ min: 64, join: 24, most: 0.5 }, opts || {});
+    let boxes = [];
+    for (const p of preds) {
+      if (!p.pts.length) continue;
+      const xs = p.pts.map((q) => q[0]), ys = p.pts.map((q) => q[1]);
+      let x0 = Math.min(...xs) - p.pad, x1 = Math.max(...xs) + p.pad, y0 = Math.min(...ys) - p.pad, y1 = Math.max(...ys) + p.pad;
+      if (x1 - x0 < o.min) { const c = (x0 + x1) / 2; x0 = c - o.min / 2; x1 = c + o.min / 2; }
+      if (y1 - y0 < o.min) { const c = (y0 + y1) / 2; y0 = c - o.min / 2; y1 = c + o.min / 2; }
+      x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1));
+      if (x1 - x0 >= 8 && y1 - y0 >= 8) boxes.push([x0, y0, x1, y1]);
+    }
+    if (!boxes.length) return null;
+    for (let merged = true; merged;) {
+      merged = false;
+      outer: for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i], b = boxes[j];
+        if (a[0] - o.join <= b[2] && b[0] - o.join <= a[2] && a[1] - o.join <= b[3] && b[1] - o.join <= a[3]) {
+          boxes[i] = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+          boxes.splice(j, 1); merged = true; break outer;
+        }
+      }
+    }
+    const area = boxes.reduce((s, b) => s + (b[2] - b[0]) * (b[3] - b[1]), 0), frac = area / (W * H);
+    if (frac > o.most) return null;
+    return { rois: boxes.map((b) => ({ x: b[0], y: b[1], w: b[2] - b[0], h: b[3] - b[1] })), frac };
   }
 
   // ---- streaming ----
@@ -534,6 +640,56 @@
     this.miss = 0;
     this.correct(pr, inn);
     return { pose: this.pose(), chosen: pick, d2: inn.d2 };
+  };
+  // The same, but from one camera frame's corners (sightings with dt 0, at `time`) instead of a pose: an iterated
+  // error-state update, which is Gauss–Newton on the posterior (Bell and Cathey 1993), relinearising the projection
+  // about each new estimate. In information form, so its size is the state's (12), not the corners' (8 per tag):
+  //   e ← (P⁻¹ + JᵀWJ)⁻¹ (JᵀWJ·e − JᵀW·r),  e = x ⊟ prediction,  P⁺ = (P⁻¹ + JᵀWJ)⁻¹.
+  // A frame older than the state (another camera's, up to `lateBy`) is not pushed forward to the state's time as if
+  // it were current: its sightings carry the negative dt, and the state's velocity carries the pose back to it.
+  // `start` (a pose with a covariance) starts or restarts the track. Gating is on the size of the correction
+  // against the prediction's spread (eᵀP⁻¹e) and on the corners' fit afterwards.
+  PoseFilter.prototype.updateCorners = function (time, views, start, opts) {
+    const o = Object.assign({ iters: 5, k: 2.5, maxFit: 4 }, opts || {});
+    if (!views.length) return null;
+    const restart = () => { if (!start) return null; this.init(time, start); return { pose: this.pose(), d2: 0, restarted: true }; };
+    if (!this.x || time - this.x.time > this.o.maxGap || this.x.time - time > this.o.lateBy) return restart();
+    let pr, vs = views;
+    if (time < this.x.time) { // late: solve at the state's time, the sighting moved back by the state's own motion
+      pr = this.predict(this.x.time);
+      vs = views.map((v) => Object.assign({}, v, { dt: time - this.x.time }));
+    } else pr = this.predict(time);
+    const Pi = minv(pr.P);
+    if (!Pi) return restart();
+    const vel = { v: pr.v, w: pr.w }, idx = [0, 1, 2, 6, 7, 8];
+    let e = new Array(12).fill(0), x = pr, A = null, sys = null;
+    for (let it = 0; it < o.iters; it++) {
+      sys = jointSystem(vs, x.R, x.p, vel, o.k);
+      if (!isFinite(sys.cost)) return this.miss1(time, start);
+      A = Pi.map((r) => r.slice());
+      const He = new Array(12).fill(0);
+      for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) { A[idx[a]][idx[b]] += sys.H[a][b]; He[idx[a]] += sys.H[a][b] * e[idx[b]]; }
+      const Ai = minv(A);
+      if (!Ai) return this.miss1(time, start);
+      const rhs = He.slice();
+      for (let a = 0; a < 6; a++) rhs[idx[a]] -= sys.g[a];
+      const e2 = mv(Ai, rhs), step = Math.hypot(...e2.map((v, i) => v - e[i]));
+      e = e2;
+      x = { time: pr.time, p: add(pr.p, e.slice(0, 3)), v: add(pr.v, e.slice(3, 6)), R: mul3(rodrigues(e.slice(6, 9)), pr.R), w: add(pr.w, e.slice(9, 12)) };
+      A = Ai;
+      if (step < 1e-9) break;
+    }
+    const d2 = dot6(e, mv(Pi, e)), fit = Math.sqrt(jointSystem(vs, x.R, x.p, vel, o.k).chi / Math.max(1, 2 * sys.n));
+    if (d2 > this.o.gate || fit > o.maxFit) return this.miss1(time, start, d2);
+    this.miss = 0;
+    this.x = Object.assign(x, { P: sym(A) });
+    return { pose: this.pose(), d2, fit };
+  };
+  // A rejected frame: count it, and restart on `start` after maxMiss in a row.
+  PoseFilter.prototype.miss1 = function (time, start, d2) {
+    this.miss = (this.miss || 0) + 1;
+    if (this.miss >= this.o.maxMiss && start) { this.init(time, start); return { pose: this.pose(), d2: d2 || 0, restarted: true }; }
+    return { pose: null, d2: d2 || Infinity, rejected: true };
   };
   PoseFilter.prototype.pose = function () {
     const x = this.x;
@@ -810,6 +966,7 @@
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
     mirror: false, // show the camera picture mirrored left to right (display only: poses are never mirrored)
     flip: false, // show it upside down
+    search: 'predicted', // predicted: search only where the tags should be (the whole picture every 10th frame); whole: every frame
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
   // and/or flipped about the box's centre, as the CSS transform on the video does. Returns (x, y) -> [x, y].
@@ -835,6 +992,7 @@
     if (!['raw', 'refined', 'filtered'].includes(o.pose)) o.pose = DEFAULTS.pose;
     if (!MOTION[o.motion]) o.motion = DEFAULTS.motion;
     o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip;
+    if (!['predicted', 'whole'].includes(o.search)) o.search = DEFAULTS.search;
     return o;
   }
 
@@ -845,7 +1003,7 @@
     quatOf, quatNear, tared,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    toRig, fusePoses, plausible, chooseCand, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
+    toRig, fusePoses, plausible, chooseCand, sighting, jointSystem, refineJoint, planSearch, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
     PAPER, paperFor, printArea, maxTagSize, maxBoardSquare, STREAM_CSV_HEADER, streamMessage,
     DEFAULTS, clampSettings, boardFit, displayMap,
   };
