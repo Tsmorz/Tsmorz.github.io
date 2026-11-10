@@ -288,7 +288,11 @@ stopping where the glide path minus the margin meets the ground) and a route sea
 so a glide can curve round a hill. Ground beyond the sight ring is shown as a faint wash ("reachable, but out of sight").
 **A long glide gets coarser terrain, never a cut-off**: `chooseZoom` picks the most detailed zoom (13 down to 9) whose block
 holds the furthest possible glide, and the page steps down a zoom if a glide still reaches the block's edge. Long-press
-(right-click) a spot for the best route there. `script/test-glide` (`task check:glide`, in `check:fast`) guards the core,
+(right-click) a spot for the best route there. The cross-section is drawn on the map too (white casing, solid while the
+glider flies, dashed past where it lands, dots at the strip's distance marks; the route itself when one is shown), and the two
+share one cursor: scrubbing the strip moves a probe on the map (panning it into view), and hovering the map within 18 px of
+the trace moves the strip's cursor (`showCursor`; the strip is redrawn from a saved `ImageData`, not recomputed). A badge under
+the layers button shows the wind: an arrow the way it blows, its speed and where it comes from (`windBadge`). `script/test-glide` (`task check:glide`, in `check:fast`) guards the core,
 including the service worker in a mock.
 
 **No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
