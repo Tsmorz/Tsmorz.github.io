@@ -356,6 +356,13 @@ plot and a readout table. Tags, settings and calibrations (keyed by camera label
   then the worker solves one SE(3) pose from every visible corner (`solveBody`). Tags in an object are tracked only as it.
 - Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
   ninth tag is grey with its name. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
+- **The board on a screen**: `/tag-tracker/#board` is a shareable link that fills any screen with the ChArUco board (nothing
+  stored), for a tablet or second monitor. `TagCore.boardFit` picks whole device pixels per square with half a square of
+  white round it, turning the board a quarter when that's bigger; the worker draws it (`boardImage`), so the page waits for
+  OpenCV. It keeps the screen awake (Wake Lock), has a Full screen button, and its instructions fade after 5 s so nothing
+  covers the board. "Show on a screen" in Calibrate step 1 gives the link as a QR code, Copy, Share (Web Share) and a new
+  window. The QR code comes from `lib/qrcode-generator/` (1.4.4, MIT, vendored unchanged). With OpenCV.js installed, test
+  section 6b finds all 40 corners on the screen board (turned too) and decodes the QR code back to the link.
 - `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
   against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating;
   with OpenCV.js installed

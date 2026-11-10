@@ -4,11 +4,13 @@
 //   2. intrinsics: the field-of-view guess, rescaling a calibration, checking an imported one, projection
 //   3. history: trimming to the span, and axes every `every` seconds (with a tracking gap)
 //   4. the 3D plot's orbit camera, grid steps, calibration-view signatures and coverage, settings
+//   4b. the board on a screen: whole-pixel squares that fit with a margin, turned when that's bigger
 //   5. SE(3): logs and exps, LM pose refinement and its covariance (checked by Monte Carlo), the mirror-image
 //      ambiguity, rigid objects of several tags, rotation means, and the Kalman filter (smoothing, velocity,
 //      resolving flips by prediction, gating an outlier, restarting after a real jump)
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
+//      Also 6b: the board as the page shows it on a screen (turned too) is found, and the link's QR code decodes.
 //      To run it: npm i --no-save @techstark/opencv-js@4.12.0-release.1
 const path = require('path');
 const C = require(path.join(__dirname, '..', 'tag-tracker/tracker-core.js'));
@@ -107,6 +109,25 @@ console.log('4. plot, calibration views, settings');
   const st = C.clampSettings({ span: 0.05, every: 5, axisLen: 'x' });
   check(st.span === 0.1 && st.every === 0.1 && st.axisLen === C.DEFAULTS.axisLen, 'settings are clamped (span ≥ 0.1 s, axes no sparser than the span)');
   check(C.DEFAULTS.span === 1 && C.DEFAULTS.every === 0.1, 'defaults: 1 s of history, axes every 0.1 s');
+}
+
+console.log('4b. the board on a screen');
+{
+  const fits = (f, W, H) => f.w + f.px <= W && f.h + f.px <= H; // half a square of white on each side
+  let f = C.boardFit(2048, 1536, 9, 6, 0.5);
+  check(f.px === 204 && !f.rotate && f.w === 9 * 204 && f.h === 6 * 204 && fits(f, 2048, 1536), `iPad landscape (2048 × 1536): ${f.px} px squares, board ${f.w} × ${f.h}`);
+  f = C.boardFit(1536, 2048, 9, 6, 0.5);
+  check(f.px === 204 && f.rotate && f.w === 6 * 204 && f.h === 9 * 204 && fits(f, 1536, 2048), 'held upright it turns the board a quarter rather than shrink it');
+  f = C.boardFit(3840, 2160, 9, 6, 0.5);
+  check(f.px === 308 && !f.rotate && fits(f, 3840, 2160) && Number.isInteger(f.px), `a 4K monitor: ${f.px} px squares, whole pixels`);
+  let worst = Infinity;
+  for (let i = 0; i < 300; i++) {
+    const W = 200 + Math.floor(rnd() * 4000), H = 200 + Math.floor(rnd() * 4000), g = C.boardFit(W, H, 9, 6, 0.5);
+    if (!fits(g, W, H) || !Number.isInteger(g.px)) { worst = -1; break; }
+    worst = Math.min(worst, Math.max(C.boardFit(W, H, 9, 6, 0.5).px, 0));
+  }
+  check(worst >= 0, 'on 300 random screens it always fits with its margin, in whole pixels');
+  check(C.boardFit(5, 5, 9, 6, 0.5).px === 0, 'a screen too small for the board gives 0 (the page says so)');
 }
 
 console.log('5. SE(3)');
@@ -334,6 +355,32 @@ if (!cvPkg) {
   check(heap1 === heap0, `150 frames of detection don't grow the WebAssembly heap (${(heap0 / 1e6).toFixed(0)} MB)`);
   img.delete(); tm.delete(); pad.delete();
   check(V.familySize('APRILTAG_36h11') === 587 && V.familySize('APRILTAG_16h5') === 30, 'family sizes: 587 tags in 36h11, 30 in 16h5');
+
+  // 6b. The board on a screen (/tag-tracker/#board): the page draws boardImage(px) at the fitted size, turned a
+  // quarter clockwise when the screen is upright, on white. Every inner corner must still be found, at screen size
+  // and seen smaller by a camera. And the share panel's QR code (qrcode-generator, drawn module by module with a
+  // 4-module quiet zone, as the page's qrSvg does) must decode to the link.
+  console.log('6b. the board on a screen, and the link\'s QR code');
+  for (const [Wd, Hd] of [[2048, 1536], [1536, 2048]]) {
+    const f = C.boardFit(Wd, Hd, 9, 6, 0.5), g = toMat(V.boardImage(f.px)), r = new cv.Mat(), scr = new cv.Mat(), small = new cv.Mat();
+    if (f.rotate) cv.rotate(g, r, cv.ROTATE_90_CLOCKWISE); else g.copyTo(r);
+    cv.copyMakeBorder(r, scr, f.px, f.px, f.px, f.px, cv.BORDER_CONSTANT, new cv.Scalar(255));
+    cv.resize(scr, small, new cv.Size(Math.round(scr.cols * 0.3), Math.round(scr.rows * 0.3)), 0, 0, cv.INTER_AREA);
+    const a = V.detectBoard(scr).ids.length, b = V.detectBoard(small).ids.length;
+    check(a === 40 && b === 40, `${Wd} × ${Hd}${f.rotate ? ', turned' : ''}: all 40 inner corners found at screen size (${a}) and at 30% (${b})`);
+    [g, r, scr, small].forEach((m) => m.delete());
+  }
+  {
+    const qrcode = require(path.join(__dirname, '..', 'tag-tracker/lib/qrcode-generator/qrcode.js'));
+    const url = 'https://tsmorz.github.io/tag-tracker/#board', q = qrcode(0, 'M'); q.addData(url); q.make();
+    const n = q.getModuleCount(), z = 4, k = 6, s = (n + 2 * z) * k, qm = new cv.Mat(s, s, cv.CV_8UC1, new cv.Scalar(255));
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) {
+      for (let y = 0; y < k; y++) qm.data.fill(0, ((r + z) * k + y) * s + (c + z) * k, ((r + z) * k + y) * s + (c + z + 1) * k);
+    }
+    const det = new cv.QRCodeDetector(), pts = new cv.Mat(), st = new cv.Mat(), txt = det.detectAndDecode(qm, pts, st);
+    check(txt === url, `the QR code reads back as the link (${n} × ${n} modules): ${txt || 'nothing'}`);
+    [qm, pts, st].forEach((m) => m.delete()); det.delete();
+  }
   finish();
 })().catch((e) => { console.log('  FAIL ' + (e && e.stack || e)); failed = true; finish(); });
 

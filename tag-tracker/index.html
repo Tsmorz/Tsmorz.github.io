@@ -154,6 +154,25 @@ td.num,th.num{text-align:right}
 .scroll{overflow-x:auto}
 .bodies{padding:12px;display:flex;flex-direction:column;gap:8px}
 h3.sub{font-size:14px;font-weight:700;font-stretch:112%;margin:0}
+/* the board on a screen: the share panel, and the board itself on white whatever the theme */
+.share{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:flex-start;margin-top:10px;padding:12px;background:var(--well);border-left:3px solid var(--accent)}
+.share .qr{flex:none;background:#fff;padding:4px;border:1px solid var(--rule2);line-height:0}
+.share .qr svg{display:block;width:148px;height:148px}
+.share .sbody{flex:1 1 220px;min-width:0;display:grid;gap:8px}
+.share .sbody p{margin:0;font-size:13px;line-height:1.5}
+.share .input{width:100%;min-width:0}
+.share .credit{font-size:12px;color:var(--muted)}
+.board-view{position:fixed;inset:0;z-index:100;background:#fff;display:grid;place-items:center;overflow:hidden;cursor:none}
+.board-view[hidden]{display:none}
+.board-view canvas{display:block;image-rendering:pixelated}
+.bv-bar{position:fixed;left:12px;right:12px;bottom:12px;max-width:560px;margin:0 auto;padding:10px 12px;background:#fff;color:#1b1f22;
+  border:1px solid #1b1f22;display:grid;gap:8px;font-size:13px;line-height:1.5;cursor:auto;transition:opacity .3s}
+.bv-bar.gone{opacity:0;pointer-events:none}
+.bv-bar p{margin:0}
+.bv-bar .btn{color:#1b1f22}.bv-bar .btn.outline{border-color:#1b1f22}.bv-bar .btn.outline:hover:not(:disabled){background:#1b1f22;color:#fff}
+.bv-bar .btn.primary{background:#1b1f22;border-color:#1b1f22;color:#fff}
+html.bv-open,html.bv-open body{overflow:hidden}
+@media (prefers-reduced-motion:reduce){.bv-bar{transition:none}}
 .bform{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:12px;background:var(--well);border-left:3px solid var(--accent)}
 .pick{height:28px;border:1px solid var(--rule2);background:var(--field);padding:0 10px;font-size:13px;display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
 .pick[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:var(--panel)}
@@ -217,6 +236,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-screen" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="1"/><path d="M8 21h8M12 17v4"/></symbol>
   <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
@@ -367,12 +387,28 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       <div class="steps">
         <div class="step">
           <h3><span class="n">1</span>Get the board</h3>
-          <p>Print the board at 100% scale on flat, stiff paper, or show it full-screen on a tablet. Then measure one square with a ruler or calipers: measure across all 9 squares and divide by 9.</p>
+          <p>Print the board at 100% scale on flat, stiff paper, or show it on a tablet or a second monitor (flatter than paper; keep reflections off it). Then measure one square with a ruler or calipers: measure across all 9 squares and divide by 9.</p>
           <div class="row">
+            <button class="btn sm outline" id="screenBoard" aria-expanded="false" aria-controls="sharePanel"><svg class="i"><use href="#i-screen"/></svg>Show on a screen</button>
             <button class="btn sm outline" id="printBoard"><svg class="i"><use href="#i-print"/></svg>Print board</button>
             <button class="btn sm outline" id="pngBoard"><svg class="i"><use href="#i-down"/></svg>Board image</button>
             <span class="spacer"></span>
             <label class="field">Square <input id="square" class="input sm num mono" type="number" min="3" max="200" step="0.1"><span class="unit">mm</span></label>
+          </div>
+          <div class="share" id="sharePanel" hidden>
+            <div class="qr" id="shareQr"></div>
+            <div class="sbody">
+              <p>Open this link on the tablet or screen that will show the board: scan the code with its camera, or send the link. The board fills the screen and keeps it awake.</p>
+              <label class="sr" for="shareUrl">Link to the board</label>
+              <input id="shareUrl" class="input sm" type="text" readonly>
+              <div class="row">
+                <button class="btn sm outline" id="shareCopy">Copy link</button>
+                <button class="btn sm outline" id="shareSend" hidden>Share…</button>
+                <button class="btn sm outline" id="shareWin">Open in a new window</button>
+                <button class="btn sm" id="shareHere">Show here</button>
+              </div>
+              <p class="credit">QR code by qrcode-generator (MIT, Kazuhiko Arase).</p>
+            </div>
           </div>
         </div>
         <div class="step">
@@ -441,6 +477,13 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     </section>
   </div>
 </main>
+<div class="board-view" id="boardView" hidden>
+  <canvas id="boardCanvas" role="img" aria-label="ChArUco calibration board, 9 by 6 squares"></canvas>
+  <div class="bv-bar" id="bvBar">
+    <p id="bvMsg">Loading the board…</p>
+    <div class="row"><button class="btn sm primary" id="bvFull">Full screen</button><button class="btn sm outline" id="bvClose">Close</button></div>
+  </div>
+</div>
 <footer>
   <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face.</span>
   <span class="spacer"></span>
@@ -448,6 +491,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 </footer>
 
 <script src="tracker-core.js"></script>
+<script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
 (() => {
 'use strict';
@@ -682,10 +726,12 @@ function startWorker() {
   w.postMessage({ type: 'init', family: S.settings.family, quality: S.quality });
 }
 const pending = new Map(); // printing windows waiting for an image
+let workerReadyResolve = null;
+const workerReady = new Promise((res) => { workerReadyResolve = res; }); // requests sent before this are dropped by the worker
 function onWorker(m) {
   if (m.type === 'status') status(m.text, 'busy');
   else if (m.type === 'ready') {
-    S.ready = true; S.familyCount = m.count;
+    S.ready = true; S.familyCount = m.count; workerReadyResolve();
     status(S.running ? 'Detecting…' : 'Ready to start', S.running ? 'live' : '');
     $('emptyDemo').disabled = false;
   } else if (m.type === 'family') { S.familyCount = m.count; }
@@ -1541,6 +1587,86 @@ $('pngBoard').onclick = async () => {
   cv.toBlob((b) => download(b, 'charuco-9x6-5x5_100.png'));
 };
 
+// ---------------- the board on a screen: /tag-tracker/#board, a link to open on a tablet or second monitor ----------------
+const BOARD_HASH = '#board';
+const boardLink = () => location.origin + location.pathname + BOARD_HASH;
+const BV = { seq: 0, img: null, hideT: 0, resizeT: 0, lock: null };
+function qrSvg(text) {
+  if (typeof qrcode !== 'function') return '';
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  const n = q.getModuleCount(), z = 4, s = n + 2 * z;
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + z} ${r + z}h1v1h-1z`;
+  return `<svg viewBox="0 0 ${s} ${s}" shape-rendering="crispEdges" role="img" aria-label="QR code of the board link"><rect width="${s}" height="${s}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+$('screenBoard').onclick = () => {
+  const p = $('sharePanel'), open = p.hidden;
+  p.hidden = !open; $('screenBoard').setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  const url = boardLink();
+  $('shareUrl').value = url; $('shareQr').innerHTML = qrSvg(url); $('shareQr').hidden = !$('shareQr').innerHTML;
+  $('shareSend').hidden = !navigator.share;
+};
+$('shareUrl').onfocus = () => $('shareUrl').select();
+$('shareCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText(boardLink()); } catch (e) { $('shareUrl').select(); document.execCommand('copy'); }
+  $('shareCopy').textContent = 'Copied'; setTimeout(() => { $('shareCopy').textContent = 'Copy link'; }, 1500);
+};
+$('shareSend').onclick = () => navigator.share({ title: 'Calibration board', text: 'A ChArUco board to show full-screen while Tag Tracker calibrates a camera.', url: boardLink() }).catch(() => {});
+$('shareWin').onclick = () => { window.open(boardLink(), '_blank', 'noopener'); };
+$('shareHere').onclick = () => { location.hash = BOARD_HASH; };
+
+function bvBar(show) {
+  clearTimeout(BV.hideT); $('bvBar').classList.toggle('gone', !show);
+  if (show) BV.hideT = setTimeout(() => bvBar(false), 5000); // then nothing covers the board
+}
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !BV.lock) { BV.lock = await navigator.wakeLock.request('screen'); BV.lock.addEventListener('release', () => { BV.lock = null; }); }
+    if (!on && BV.lock) { const l = BV.lock; BV.lock = null; await l.release(); }
+  } catch (e) { /* not allowed here; the screen may dim on its own */ }
+}
+async function drawBoardView() {
+  const seq = ++BV.seq, dpr = window.devicePixelRatio || 1;
+  const f = C.boardFit(Math.round(innerWidth * dpr), Math.round(innerHeight * dpr), 9, 6, 0.5), cv = $('boardCanvas');
+  if (f.px < 8) { cv.width = cv.height = 0; $('bvMsg').textContent = 'This screen is too small to show the board. Use a tablet or a monitor.'; bvBar(true); return; }
+  if (!S.ready) $('bvMsg').textContent = 'Loading the board (OpenCV.js, about 10 MB the first time)…';
+  await workerReady;
+  if (!BV.img || BV.img.px !== f.px) BV.img = { px: f.px, img: await requestImage('boardImage', { px: f.px }) };
+  if (seq !== BV.seq || $('boardView').hidden) return; // resized or closed meanwhile
+  cv.width = f.w; cv.height = f.h; cv.style.width = f.w / dpr + 'px'; cv.style.height = f.h / dpr + 'px';
+  const c = cv.getContext('2d'), src = grayToCanvas(BV.img.img, 0);
+  c.imageSmoothingEnabled = false;
+  c.save(); if (f.rotate) { c.translate(f.w, 0); c.rotate(Math.PI / 2); } c.drawImage(src, 0, 0); c.restore();
+  $('bvMsg').innerHTML = `<b>Calibration board</b>, 9 × 6 squares. Measure across all 9 squares with a ruler, divide by 9, and enter it as the square size where you calibrate. ` +
+    'Brightness about two-thirds; tilt it so nothing reflects in it. Tap to show this again.';
+}
+function showBoardView() {
+  if (!$('boardView').hidden) return;
+  $('boardView').hidden = false; document.documentElement.classList.add('bv-open');
+  $('bvFull').hidden = !(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+  bvBar(true); keepAwake(true); drawBoardView();
+}
+function hideBoardView() {
+  if ($('boardView').hidden) return;
+  $('boardView').hidden = true; document.documentElement.classList.remove('bv-open'); BV.seq++;
+  keepAwake(false);
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  if (location.hash === BOARD_HASH) history.replaceState(null, '', location.pathname + location.search);
+}
+$('bvFull').onclick = () => {
+  const el = $('boardView'), go = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (go) Promise.resolve(go.call(el)).catch(() => {});
+  bvBar(false);
+};
+$('bvClose').onclick = hideBoardView;
+$('boardView').addEventListener('pointerdown', (e) => { if (!e.target.closest('.bv-bar')) bvBar(true); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('boardView').hidden && !document.fullscreenElement) hideBoardView(); });
+document.addEventListener('visibilitychange', () => { if (!$('boardView').hidden && document.visibilityState === 'visible') keepAwake(true); });
+window.addEventListener('resize', () => { if (!$('boardView').hidden) { clearTimeout(BV.resizeT); BV.resizeT = setTimeout(drawBoardView, 150); } });
+const routeHash = () => { if (location.hash === BOARD_HASH) showBoardView(); else hideBoardView(); };
+window.addEventListener('hashchange', routeHash);
+
 // ---------------- demo: a synthetic camera with three tags moving ----------------
 async function startDemo() {
   const W = 1280, H = 720, f = W / 2 / Math.tan((70 * Math.PI) / 360);
@@ -1579,6 +1705,7 @@ paintThemeBtn();
 renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
 listCameras();
 startWorker();
+routeHash(); // opened from a board link: show the board
 requestAnimationFrame(frame);
 window.addEventListener('resize', () => { if (S.last && S.mode === 'track') drawOverlay(S.last, S.lastOut || new Map()); });
 })();
