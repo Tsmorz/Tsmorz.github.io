@@ -1,0 +1,148 @@
+#!/usr/bin/env node
+// Check the maths behind /glide-reach/ (glide-reach/glide-core.js), in Node.
+//   1. still air on flat ground: every direction reaches (start height − margin) × L/D
+//   2. wind: downwind, upwind and crosswind ground glide ratios; tracks that can't be flown
+//   3. terrain: a ridge stops the glide where the path minus the margin meets it; a low ridge is cleared
+//   4. reachAt agrees with the rays
+//   5. map maths: pixel ↔ lon/lat round trip, metres per pixel, Terrarium decoding
+//   6. saved areas: the tile list per zoom, and deleting keeps tiles another area still uses
+//   7. the service worker (sw.js) in a mock: terrain from saved/recent caches offline, the recent cache capped,
+//      the page from cache offline or on a stalled network, street-map tiles left alone
+const path = require('path');
+const fs = require('fs');
+const vm = require('vm');
+const G = require(path.join(__dirname, '..', 'glide-reach/glide-core.js'));
+let failed = false;
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+function near(got, want, tol, label) { check(Math.abs(got - want) <= tol, `${label}: ${got.toFixed(2)} (wanted ${want} ± ${tol})`); }
+const E = 90 * 2, W = 270 * 2, N = 0; // ray index for 720 rays
+
+const base = { n: 720, h0: 220, margin: 20, Va: 10, GR: 15, windSpeed: 0, windFromDeg: 270, ds: 5, maxD: 20000 };
+const flat = () => 0;
+
+console.log('1. still air, flat ground');
+let R = G.castRays(base, flat);
+near(R.dmax[N], 3000, 5, 'north reach = 200 m × 15');
+near(R.dmax[E], 3000, 5, 'east reach');
+check([...R.kind].every(k => k === 0), 'every ray ends on the ground');
+near(R.grg[E], 15, 1e-6, 'ground glide ratio = L/D in still air');
+
+console.log('2. wind');
+R = G.castRays({ ...base, windSpeed: 5, windFromDeg: 270 }, flat); // from the west, blowing east
+near(R.dmax[E], 4500, 5, 'downwind: (10 + 5)/(10/15) × 200');
+near(R.dmax[W], 1500, 5, 'upwind: (10 − 5)/(10/15) × 200');
+near(R.dmax[N], Math.sqrt(75) / (10 / 15) * 200, 5, 'crosswind: crab angle costs ground speed');
+R = G.castRays({ ...base, windSpeed: 12, windFromDeg: 270 }, flat);
+check(R.kind[W] === 2 && R.dmax[W] === 0, 'wind faster than the glider: upwind is not flyable');
+check(R.kind[E] === 0 && R.dmax[E] > 6000, 'and downwind goes further');
+near(G.groundSpeed(Math.PI / 2, 10, 5, 0), Math.sqrt(75), 1e-9, 'groundSpeed: 5 m/s from the north on an east track');
+
+console.log('3. terrain');
+const ridge = h => (e) => (e > 1500 && e < 1700 ? h : 0);
+R = G.castRays(base, ridge(300));
+near(R.dmax[E], 1500, 5, 'a 300 m ridge 1.5 km east stops the glide at its face');
+near(R.dmax[W], 3000, 5, 'the other way is unaffected');
+R = G.castRays(base, ridge(100));
+near(R.dmax[E], 1500, 5, 'a 100 m ridge: path − margin is exactly 100 m there, so it stops');
+R = G.castRays(base, ridge(80));
+near(R.dmax[E], 3000, 5, 'an 80 m ridge is cleared');
+R = G.castRays({ ...base, maxD: 1000 }, (e, n) => (Math.hypot(e, n) > 800 ? NaN : 0));
+check(R.kind[E] === 1 && R.dmax[E] <= 800, 'running off the terrain data is flagged, not counted as a landing');
+
+console.log('4. reachAt');
+R = G.castRays(base, flat);
+check(G.reachAt(R, Math.PI / 2, 2000) > 0, '2 km east is reachable');
+check(!G.reachAt(R, Math.PI / 2, 3500), '3.5 km east is not');
+R = G.castRays(base, ridge(300));
+check(!G.reachAt(R, Math.PI / 2, 2500), 'behind the ridge is not');
+
+console.log('5. map maths');
+const [px, py] = G.lonLatToPx(-103.2498, 44.0877, 13);
+const [lo, la] = G.pxToLonLat(px, py, 13);
+near(lo, -103.2498, 1e-9, 'longitude round trip'); near(la, 44.0877, 1e-9, 'latitude round trip');
+check(Math.floor(px / 256) === 1746 && Math.floor(py / 256) === 2975, 'M Hill is z13 tile 1746/2975 (textbook formula: y = 2975.996)');
+near(G.mppAt(0, 13), 19.109, 0.001, 'metres per pixel at z13 on the equator');
+near(G.mppAt(44.0877, 13), 13.72, 0.01, 'and at 44° N');
+check(G.decodeTerrarium(128, 0, 0) === 0, 'Terrarium (128, 0, 0) is sea level');
+check(G.decodeTerrarium(132, 76, 128) === 1100.5, 'Terrarium (132, 76, 128) is 1100.5 m');
+
+console.log('6. saved areas');
+const t = G.areaTiles(44.0877, -103.2498, 13, 4, 10);
+const byZ = z => t.filter(k => k[0] === z).length;
+check(byZ(13) === 81, `9 × 9 tiles at z13 (${byZ(13)})`);
+check(byZ(12) >= 16 && byZ(12) <= 25 && byZ(11) >= 4 && byZ(11) <= 9 && byZ(10) >= 1 && byZ(10) <= 4, `lower zooms cover the same ground (${byZ(12)}, ${byZ(11)}, ${byZ(10)})`);
+check(new Set(t.map(k => k.join('/'))).size === t.length, 'no tile listed twice');
+const t13 = t.filter(k => k[0] === 13), xs = t13.map(k => k[1]), ys = t13.map(k => k[2]);
+check(Math.min(...xs) === 1742 && Math.max(...xs) === 1750 && Math.min(...ys) === 2971 && Math.max(...ys) === 2979, 'centred on the launch tile');
+const key = a => G.areaTiles(a[0], a[1], 13, 4, 10).map(k => k.join('/'));
+const a1 = key([44.0877, -103.2498]), a2 = key([44.10, -103.20]), a3 = key([47.49, 11.10]);
+const gone = G.tilesOnlyIn(a1, [a2, a3]);
+check(gone.length > 0 && gone.length < a1.length, `deleting one of two overlapping areas frees ${gone.length} of ${a1.length} tiles`);
+check(gone.every(k => !a2.includes(k)), 'and none the other area still uses');
+check(G.tilesOnlyIn(a3, [a1, a2]).length === a3.length, 'an area far away frees all its tiles');
+
+console.log('7. service worker');
+(async () => {
+  // Minimal Cache Storage, fetch and service-worker globals, enough for sw.js.
+  const stores = new Map();
+  const keyOf = r => (typeof r === 'string' ? new URL(r, 'https://tsmorz.github.io/glide-reach/sw.js').href : r.url);
+  const mkCache = () => { const m = new Map(); return {
+    match: async r => m.get(keyOf(r)), put: async (r, res) => { m.set(keyOf(r), res); },
+    delete: async r => m.delete(keyOf(r)), keys: async () => [...m.keys()].map(url => ({ url })), addAll: async urls => { for (const u of urls) m.set(keyOf(u), resp('shell:' + u)); }, size: () => m.size, _m: m }; };
+  const caches = { open: async n => { if (!stores.has(n)) stores.set(n, mkCache()); return stores.get(n); },
+    keys: async () => [...stores.keys()], delete: async n => stores.delete(n) };
+  function resp(body, ok = true) { return { ok, body, clone() { return resp(body, ok); } }; }
+  let net = 'up', calls = [];
+  const fetchMock = async req => { const u = keyOf(req); calls.push(u);
+    if (net === 'down') throw new TypeError('offline');
+    if (net === 'stall') return new Promise(() => {});
+    return resp('net:' + u); };
+  const handlers = {};
+  const ctx = { self: null, caches, fetch: fetchMock, URL, setTimeout, Promise, console,
+    location: new URL('https://tsmorz.github.io/glide-reach/sw.js') };
+  ctx.self = { addEventListener: (t, f) => { handlers[t] = f; }, skipWaiting: () => {}, clients: { claim: () => {} } };
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'glide-reach/sw.js'), 'utf8'), ctx);
+  const run = async (t, ev) => { let p; ev.waitUntil = x => { p = x; }; ev.respondWith = x => { p = x; }; handlers[t](ev); return p; };
+  const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
+
+  await run('install', {});
+  check((await caches.open('glide-shell-v1')).size() === 13, 'install caches the page, the core, the manifest, icons and Leaflet');
+  stores.set('glide-shell-v0', mkCache());
+  await run('activate', {});
+  check(!stores.has('glide-shell-v0'), 'activate drops an old version of the page');
+
+  const tile = n => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/13/1746/${n}.png`;
+  let r = await get(tile(1));
+  check(r.body === 'net:' + tile(1) && (await (await caches.open('glide-terrain-runtime')).match(tile(1))), 'a terrain tile seen online is kept');
+  net = 'down';
+  r = await get(tile(1));
+  check(r && r.body === 'net:' + tile(1), 'and served offline');
+  await (await caches.open('glide-terrain-saved')).put(tile(2), resp('saved'));
+  r = await get(tile(2));
+  check(r && r.body === 'saved', 'a tile from a saved area is served offline');
+  let threw = false; try { await get(tile(3)); } catch (e) { threw = true; }
+  check(threw, 'an unsaved tile offline fails (the page then says the area is not saved)');
+
+  net = 'up';
+  const rt = await caches.open('glide-terrain-runtime');
+  for (let i = 0; i < 640; i++) await get(tile(100 + i));
+  await new Promise(res => setTimeout(res, 50));
+  check(rt.size() <= 600 && !(await rt.match(tile(100))) && (await rt.match(tile(739))), `the recent-tile cache stays at 600, oldest dropped first (${rt.size()})`);
+
+  net = 'down';
+  r = await get('https://tsmorz.github.io/glide-reach/', 'navigate');
+  check(r && r.body.startsWith('shell:'), 'the page opens offline');
+  r = await get('https://tsmorz.github.io/glide-reach/?from=homescreen', 'navigate');
+  check(r && r.body.startsWith('shell:'), 'with a query string too');
+  net = 'stall';
+  const t0 = Date.now();
+  r = await get('https://tsmorz.github.io/glide-reach/lib/leaflet/leaflet.js');
+  check(r && r.body.startsWith('shell:') && Date.now() - t0 < 3500, `a stalled network falls back to the cached copy after ~3 s (${Date.now() - t0} ms)`);
+  net = 'up';
+  check(await get('https://tile.openstreetmap.org/13/1746/2975.png') === undefined, 'street-map tiles are not intercepted');
+  check(await get('https://tsmorz.github.io/recipes/', 'navigate') === undefined, 'nor the rest of the site');
+
+  if (failed) { console.log('\nFAILED'); process.exit(1); }
+  console.log('\nAll glide-reach checks passed.');
+})();
