@@ -214,7 +214,7 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .dlg fieldset{border:0;border-top:1px solid var(--rule);margin:0;padding:12px 0 0;display:flex;flex-direction:column;gap:10px;min-width:0}
 .dlg legend{font-weight:700;font-size:14px;font-stretch:112%;padding:0 8px 0 0}
 .dlg-f{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--rule2);flex-wrap:wrap}
-.dlg .hint.bad{color:var(--warn)}
+.dlg .hint.bad,#boardMsg.bad{color:var(--warn)}
 .pick .ord{font-weight:650;font-size:11.5px;color:var(--accent)}
 .brow{display:grid;grid-template-columns:auto minmax(90px,1fr) auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
 .brow:first-child{border-top:0}
@@ -468,6 +468,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button class="btn sm outline" id="addBoard"><svg class="i"><use href="#i-plus"/></svg>Connect a board</button>
         </div>
         <p class="hint" id="boardsHint">An nrf-controller board (XIAO nRF54LM20A Sense) fixed to a tag or an object sends its gyro and VQF orientation over Bluetooth, 208 times a second. Once it has learned how it sits, Filtered poses use it: steadier turns, and no mirror-image doubt even with one camera.</p>
+        <p class="hint" id="boardMsg" role="status" hidden></p>
         <div id="boardList"></div>
       </div>
       <div class="det">
@@ -3062,10 +3063,30 @@ function boardFuse(b, n) {
 // again a few times.
 function idOf(device) { const m = /([0-9A-F]{4})$/i.exec(device.name || ''); return m ? m[1].toUpperCase() : String(device.id).slice(0, 6); }
 async function addBoard() {
-  if (!HAS_BT) { boardNote('This browser has no Web Bluetooth. Use Chrome or Edge on a computer.'); return; }
+  if (!HAS_BT) {
+    boardNote(!window.isSecureContext ? `Bluetooth needs a secure page. Open https://tsmorz.github.io${location.pathname} (or localhost), not ${location.host}.`
+      : 'This browser has no Web Bluetooth. Use Chrome or Edge on a computer.');
+    return;
+  }
+  boardNote('Choose your board in the browser’s Bluetooth list. No list? Open this page in Chrome or Edge itself, not an app’s built-in browser.', false);
   let device;
-  try { device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: C.IMU.namePrefix }], optionalServices: [C.IMU.service] }); } catch (e) { return; } // closed the chooser
+  try { device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: C.IMU.namePrefix }], optionalServices: [C.IMU.service] }); } catch (e) {
+    boardNote(await btFailure(e));
+    return;
+  }
+  boardNote('');
   connectDevice(device);
+}
+// why the chooser didn't give a board: nothing to say if the visitor closed it, else what to do
+async function btFailure(e) {
+  const msg = ((e && e.message) || String(e)).replace(/\.$/, ''), name = e && e.name;
+  if (name === 'NotFoundError' && /cancel/i.test(msg)) return '';
+  let avail = null;
+  try { avail = await navigator.bluetooth.getAvailability(); } catch (_) { /* unknown */ }
+  if (name === 'SecurityError') return window.top !== window ? 'Bluetooth isn’t allowed inside this frame. Open the tag tracker in its own Chrome or Edge tab.' : `Bluetooth isn’t allowed here (${msg}).`;
+  if (/globally disabled|not supported|disabled/i.test(msg) || name === 'NotSupportedError') return `Bluetooth is turned off in this browser (${msg}). In Brave, turn on brave://flags/#brave-web-bluetooth-api; on Linux, chrome://flags/#enable-experimental-web-platform-features.`;
+  if (avail === false || /adapter/i.test(msg)) return 'No Bluetooth adapter is available. Is Bluetooth on? On a Mac, also allow your browser under System Settings › Privacy & Security › Bluetooth.';
+  return `Couldn’t open the Bluetooth chooser: ${msg}`;
 }
 async function connectDevice(device) {
   const id = idOf(device);
@@ -3108,7 +3129,8 @@ async function rememberBoards() {
     renderBoards();
   } catch (e) { /* not allowed here */ }
 }
-function boardNote(text) { $('boardsHint').hidden = false; $('boardsHint').textContent = text; }
+// a line under the Motion sensors heading for what Connect is doing or why it failed (bad: shown as a warning)
+function boardNote(text, bad = true) { const m = $('boardMsg'); m.textContent = text; m.hidden = !text; m.classList.toggle('bad', bad); }
 
 // the panel
 function renderBoards() {
