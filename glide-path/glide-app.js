@@ -89,6 +89,15 @@ function afterParams() {
   $('wdDial').classList.toggle('calm', !P.ws);
   $('windWords').textContent = P.ws ? `From the ${compass(P.wd, true)}, blowing ${compass((P.wd + 180) % 360, true)}.` : 'Calm.';
   const kc = document.getElementById('keyCurve'); if (kc) kc.hidden = !P.curve;
+  windBadge();
+}
+// the wind on the map: an arrow the way it blows (north is always up), its speed and where it comes from
+function windBadge() {
+  const box = document.getElementById('windMap'); if (!box) return;
+  box.classList.toggle('calm', !P.ws);
+  box.querySelector('.wind-arrow').style.transform = `rotate(${(P.wd + 180) % 360}deg)`;
+  box.querySelector('.wind-text').innerHTML = P.ws ? `<b>${U.v(P.ws)}</b> from ${compass(P.wd)}` : '<b>Calm</b>';
+  box.setAttribute('aria-label', P.ws ? `Wind ${U.v(P.ws)} from the ${compass(P.wd, true)}` : 'No wind');
 }
 
 // ---------- Terrain tiles: one decoder for the calculation and the shaded map ----------
@@ -206,6 +215,16 @@ base.addTo(map);
 map.on('baselayerchange', e => { base = e.layer; });
 L.control.layers({ 'Street map (online)': osm, 'Topo map (online)': topo, 'Shaded terrain (works offline)': shade }, null, { position: 'topright' }).addTo(map);
 L.control.scale({ imperial: true }).addTo(map);
+const Wind = L.Control.extend({ options: { position: 'topright' }, onAdd() {
+  const box = L.DomUtil.create('div', 'wind-box');
+  box.id = 'windMap'; box.setAttribute('role', 'img');
+  box.innerHTML = '<svg class="wind-arrow" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">' +
+    '<path d="M12 21V5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+    '<path d="M12 2.5 6.5 9.5h11z" fill="currentColor"/></svg><span class="wind-text"></span>';
+  L.DomEvent.disableClickPropagation(box);
+  return box;
+} });
+new Wind().addTo(map); windBadge();
 const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
   // a <details> so it folds away on a small screen, where it would cover the result
   const box = L.DomUtil.create('details', 'legend-box');
@@ -218,7 +237,7 @@ const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
     '<li><span class="key k-out"></span>Reachable, but out of sight</li>' +
     '<li><span class="key k-ring"></span>As far as you can see it</li>' +
     '<li><span class="key k-hit"></span>Straight glide hits a slope</li>' +
-    '<li><span class="key k-line"></span>Cross-section</li>';
+    '<li><span class="key k-line"></span>Cross-section (dots: its distance marks)</li>';
   L.DomEvent.disableClickPropagation(box);
   return box;
 } });
@@ -239,7 +258,13 @@ let overlay = null;
 const outline = L.polyline([], { color: C.line, weight: 1, opacity: .45, interactive: false }).addTo(map);
 const hitLines = L.polyline([], { color: C.hit, weight: 4, opacity: .95, interactive: false }).addTo(map);
 const ring = L.circle([0, 0], { radius: 1, color: C.ring, weight: 2, dashArray: '8 6', fill: false, interactive: false });
-const profLine = L.polyline([], { color: C.line, weight: 2, dashArray: '6 6', opacity: .85, interactive: false }).addTo(map);
+// the cross-section on the map: white casing, solid while the glider flies, dashed past where it meets the ground;
+// dots at the cross-section's distance marks, and a probe where the cursor is on either graphic
+const profCase = L.polyline([], { color: '#ffffff', weight: 6, opacity: .85, interactive: false }).addTo(map);
+const profPast = L.polyline([], { color: C.line, weight: 2, dashArray: '6 6', opacity: .85, interactive: false }).addTo(map);
+const profLine = L.polyline([], { color: C.line, weight: 3, opacity: .95, interactive: false }).addTo(map);
+const profTicks = L.layerGroup().addTo(map);
+const probe = L.circleMarker([0, 0], { radius: 8, color: '#ffffff', weight: 3, fillColor: C.line, fillOpacity: 1, interactive: false });
 const routeCase = L.polyline([], { color: '#ffffff', weight: 7, opacity: .9, interactive: false }).addTo(map);
 const routeLine = L.polyline([], { color: C.route, weight: 4, interactive: false }).addTo(map);
 const routeEnd = L.circleMarker([0, 0], { radius: 7, color: '#ffffff', weight: 2, fillColor: C.route, fillOpacity: 1, interactive: false });
@@ -442,7 +467,7 @@ function compute() {
 
 function clearResult() {
   R = null; Gres = null;
-  outline.setLatLngs([]); hitLines.setLatLngs([]); profLine.setLatLngs([]); ring.remove(); clearRoute(false);
+  outline.setLatLngs([]); hitLines.setLatLngs([]); clearTrace(); ring.remove(); clearRoute(false);
   if (overlay) { map.removeLayer(overlay); overlay = null; }
   $('stats').innerHTML = '';
   const c = $('profile'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
@@ -546,7 +571,6 @@ function refreshRoute() {
   const pts = cells.map(cellLatLng);
   routeCase.setLatLngs(pts); routeLine.setLatLngs(pts);
   routeEnd.setLatLng(pts[pts.length - 1]).addTo(map);
-  profLine.setLatLngs([]);
   $('profBack').hidden = false;
   drawProfile();
 }
@@ -567,7 +591,7 @@ function profileData() {
       ground.push(GRID.terr[c]); glide.push(Gres.alt[c]);
     });
     const last = route.cells[route.cells.length - 1], arrive = Gres.alt[last] - GRID.terr[last];
-    return { d, ground, glide, end: d.length - 1, hit: false, curve: true,
+    return { d, ground, glide, end: d.length - 1, hit: false, curve: true, lls: route.cells.map(cellLatLng),
              what: `Best route to the spot you picked: ${U.d(d[d.length - 1])} flown, arriving ${U.h(arrive)} above the ground.` };
   }
   const b = P.pb * Math.PI / 180;
@@ -577,11 +601,11 @@ function profileData() {
   const dEnd = p.d[p.end] || 0;
   const d = [], ground = [], glide = [];
   for (let k = 0; k < p.d.length && p.d[k] <= span; k++) { d.push(p.d[k]); ground.push(p.ground[k]); glide.push(p.glide[k]); }
-  profLine.setLatLngs(d.length ? [launch, enuToLatLng(Math.sin(b) * d[d.length - 1], Math.cos(b) * d[d.length - 1])] : []);
+  const lls = d.map(s => enuToLatLng(Math.sin(b) * s, Math.cos(b) * s));
   const what = p.kind === 2 ? `Straight toward ${P.pb}°: the wind is too strong to fly this way.`
     : `Straight toward ${P.pb}° (${compass(P.pb, true)}): ${p.kind === 0 ? 'meets the ground' : 'leaves the loaded terrain'} after ${U.d(dEnd)}` +
       (dEnd > P.vis ? `, but it's out of sight after ${U.d(P.vis)}.` : '.');
-  return { d, ground, glide, end: Math.min(p.end, d.length - 1), hit: p.kind === 0, curve: false, what };
+  return { d, ground, glide, end: Math.min(p.end, d.length - 1), hit: p.kind === 0, curve: false, lls, what };
 }
 
 function drawProfile() {
@@ -595,7 +619,7 @@ function drawProfile() {
   $('profWhat').textContent = p.what;
   const series = p.curve ? COL.curve : COL.straight;
   $('profKeyLine').style.borderTopColor = series; $('profKeyMargin').style.borderTopColor = series;
-  if (p.d.length < 2) { PROF = null; return; }
+  if (p.d.length < 2) { PROF = null; clearTrace(); return; }
   const dMax = p.d[p.d.length - 1];
   let lo = Infinity, hi = -Infinity;
   for (let k = 0; k < p.d.length; k++) { lo = Math.min(lo, p.ground[k]); hi = Math.max(hi, p.ground[k], p.glide[k] || -Infinity); }
@@ -617,7 +641,8 @@ function drawProfile() {
   const dStep = niceStep(dMax / dUnit / 5) * dUnit;
   c.textAlign = 'center'; c.textBaseline = 'alphabetic';
   const dLabel = d => isMetric ? (dUnit === 1000 ? `${+(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`) : (dUnit === G.MI ? `${+(d / G.MI).toFixed(1)} mi` : `${Math.round(d * G.FT)} ft`);
-  for (let d = 0; d <= dMax + 1; d += dStep) c.fillText(dLabel(d), X(d), Hc - 6);
+  const ticks = [];
+  for (let d = 0; d <= dMax + 1; d += dStep) { c.fillText(dLabel(d), X(d), Hc - 6); ticks.push(d); }
 
   // out of sight: shade the part of the strip beyond the sight distance
   if (!p.curve && P.vis < dMax) {
@@ -643,30 +668,80 @@ function drawProfile() {
     c.fillStyle = p.hit ? COL.hit : series; c.fill();
     c.lineWidth = 2; c.strokeStyle = COL.surface2; c.stroke();
   }
+  PROF.img = c.getImageData(0, 0, cv.width, cv.height); // the cursor is drawn over this, without redoing the glide
+  drawTrace(p, ticks);
+  if (cursorK !== null) showCursor(Math.min(cursorK, p.d.length - 1), cursorFrom);
 }
 function niceStep(raw) { const m = 10 ** Math.floor(Math.log10(raw)), f = raw / m; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * m; }
 
-// touch / hover read-out on the cross-section
-function profHover(e) {
-  const tip = $('profTip');
-  if (!PROF) { tip.hidden = true; return; }
-  const r = $('profile').getBoundingClientRect(), x = e.clientX - r.left;
-  if (x < PROF.L0 || x > PROF.Wc - PROF.R0) { tip.hidden = true; drawProfile(); return; }
-  const dq = (x - PROF.L0) / (PROF.Wc - PROF.L0 - PROF.R0) * PROF.dMax;
-  let k = 0; while (k < PROF.d.length - 1 && PROF.d[k + 1] < dq) k++;
-  drawProfile();
-  const c = $('profile').getContext('2d'), X = PROF.X(PROF.d[k]);
+// ---------- The cross-section on the map, and one cursor for both ----------
+function clearTrace() {
+  profCase.setLatLngs([]); profLine.setLatLngs([]); profPast.setLatLngs([]); profTicks.clearLayers(); hideCursor();
+}
+// the point on the trace at distance s, between the profile's points
+function llAt(p, s) {
+  let k = 0; while (k < p.d.length - 2 && p.d[k + 1] < s) k++;
+  const a = p.lls[k], b = p.lls[k + 1] || a, f = p.d[k + 1] > p.d[k] ? Math.min(1, Math.max(0, (s - p.d[k]) / (p.d[k + 1] - p.d[k]))) : 0;
+  return L.latLng(a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f);
+}
+function drawTrace(p, ticks) {
+  profTicks.clearLayers();
+  if (p.curve) { profCase.setLatLngs([]); profLine.setLatLngs([]); profPast.setLatLngs([]); } // the route line is the trace
+  else {
+    const flown = p.lls.slice(0, p.end + 1);
+    profCase.setLatLngs(p.lls); profLine.setLatLngs(flown); profPast.setLatLngs(p.lls.slice(p.end));
+  }
+  for (const s of ticks) if (s > 0) {
+    L.circleMarker(llAt(p, s), { radius: 3.5, color: C.line, weight: 1.5, fillColor: '#ffffff', fillOpacity: 1, interactive: false }).addTo(profTicks);
+  }
+}
+let cursorK = null, cursorFrom = null; // where the cursor is (a profile point) and which graphic put it there
+function showCursor(k, from) {
+  if (!PROF || !PROF.img) return;
+  cursorK = k; cursorFrom = from;
+  const cv = $('profile'), c = cv.getContext('2d'), X = PROF.X(PROF.d[k]);
+  c.putImageData(PROF.img, 0, 0);
   c.strokeStyle = COL.ink2; c.lineWidth = 1; c.beginPath(); c.moveTo(X + .5, PROF.T0); c.lineTo(X + .5, PROF.Hc - PROF.B0); c.stroke();
-  const g = PROF.ground[k], v = PROF.glide[k];
+  const g = PROF.ground[k], v = PROF.glide[k], tip = $('profTip');
   tip.innerHTML = `<b>${U.d(PROF.d[k])}</b> out<br>Ground ${U.h(g)}` + (v === v && k <= PROF.end ? `<br>Glider ${U.h(v)}, ${U.h(v - g)} above it` : '');
   tip.hidden = false;
-  const tw = tip.offsetWidth;
-  tip.style.left = Math.min(Math.max(4, x + 12), r.width - tw - 4) + 'px';
+  tip.style.left = Math.min(Math.max(4, X + 12), cv.clientWidth - tip.offsetWidth - 4) + 'px';
   tip.style.top = '10px';
+  probe.setLatLng(PROF.lls[k]); if (!map.hasLayer(probe)) probe.addTo(map);
+  // scrubbing the cross-section past the edge of the map pans it just enough to keep the probe in view
+  if (from === 'profile') map.panInside(PROF.lls[k], { padding: [36, 36], animate: false });
+}
+function hideCursor() {
+  cursorK = null; cursorFrom = null;
+  $('profTip').hidden = true; probe.remove();
+  if (PROF && PROF.img) $('profile').getContext('2d').putImageData(PROF.img, 0, 0);
+}
+// on the cross-section: the cursor follows the pointer (or finger), and the probe shows the same spot on the map
+function profHover(e) {
+  if (!PROF) return;
+  const r = $('profile').getBoundingClientRect(), x = e.clientX - r.left;
+  if (x < PROF.L0 || x > PROF.Wc - PROF.R0) { hideCursor(); return; }
+  const dq = (x - PROF.L0) / (PROF.Wc - PROF.L0 - PROF.R0) * PROF.dMax;
+  let k = 0; while (k < PROF.d.length - 1 && PROF.d[k + 1] < dq) k++;
+  if (k < PROF.d.length - 1 && dq - PROF.d[k] > PROF.d[k + 1] - dq) k++;
+  showCursor(k, 'profile');
 }
 $('profile').addEventListener('pointermove', profHover);
 $('profile').addEventListener('pointerdown', profHover);
-$('profile').addEventListener('pointerleave', e => { if (e.pointerType !== 'mouse') return; $('profTip').hidden = true; drawProfile(); });
+$('profile').addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideCursor(); });
+// on the map: a pointer within a few pixels of the trace moves the cursor on the cross-section too
+const NEAR_PX = 18;
+map.on('mousemove', e => {
+  if (!PROF || !PROF.lls) return;
+  let best = -1, bd = NEAR_PX * NEAR_PX;
+  for (let k = 0; k < PROF.lls.length; k++) {
+    const q = map.latLngToContainerPoint(PROF.lls[k]), dx = q.x - e.containerPoint.x, dy = q.y - e.containerPoint.y;
+    if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = k; }
+  }
+  if (best >= 0) showCursor(best, 'map');
+  else if (cursorFrom === 'map') hideCursor();
+});
+map.on('mouseout', () => { if (cursorFrom === 'map') hideCursor(); });
 
 // ---------- Saved areas ----------
 const areas = () => LS.get('areas', []);

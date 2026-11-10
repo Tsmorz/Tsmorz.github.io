@@ -105,7 +105,14 @@ button.link { background: none; border: 0; padding: 6px 4px; color: var(--accent
 .k-curve { background: repeating-linear-gradient(135deg, var(--s-curve) 0 3px, color-mix(in srgb, var(--s-curve) 55%, transparent) 3px 6px); }
 .k-steep { background: var(--steep); opacity: .55; }
 .k-hit { height: 4px; border-radius: 2px; background: var(--s-hit); }
-.k-line { height: 0; border-top: 2px dashed var(--ink); border-radius: 0; }
+.k-line { height: 0; border-top: 3px solid var(--ink); border-radius: 0; }
+/* the wind on the map: same light card as the key, since both base maps are light */
+.wind-box { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; min-height: 36px; background: rgba(255,255,255,.95);
+            color: #1d1f21; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 13px; white-space: nowrap; }
+.wind-box .wind-arrow { flex: none; color: #1f63b8; transition: transform .15s ease; }
+.wind-box.calm .wind-arrow { visibility: hidden; width: 0; }
+.wind-box b { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .wind-box .wind-arrow { transition: none; } }
 dl.stats { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 6px 0 0; font-size: 14px; }
 dl.stats dt { color: var(--ink-2); }
 dl.stats dd { margin: 0; text-align: right; font-weight: 600; }
