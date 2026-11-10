@@ -38,6 +38,24 @@
   // The angle of a rotation matrix, in radians.
   function angleOf(R) { return Math.acos(Math.max(-1, Math.min(1, (R[0] + R[4] + R[8] - 1) / 2))); }
 
+  // A rotation matrix as a unit quaternion [w, x, y, z] with w ≥ 0 (q and −q are the same turn). Shepperd's
+  // method: start from the largest of w, x, y, z so nothing divides by a small number.
+  function quatOf(R) {
+    const tr = R[0] + R[4] + R[8], c = [tr, R[0], R[4], R[8]], k = c.indexOf(Math.max(...c));
+    let q;
+    if (k === 0) { const s = 2 * Math.sqrt(1 + tr); q = [s / 4, (R[7] - R[5]) / s, (R[2] - R[6]) / s, (R[3] - R[1]) / s]; }
+    else if (k === 1) { const s = 2 * Math.sqrt(1 + R[0] - R[4] - R[8]); q = [(R[7] - R[5]) / s, s / 4, (R[1] + R[3]) / s, (R[2] + R[6]) / s]; }
+    else if (k === 2) { const s = 2 * Math.sqrt(1 - R[0] + R[4] - R[8]); q = [(R[2] - R[6]) / s, (R[1] + R[3]) / s, s / 4, (R[5] + R[7]) / s]; }
+    else { const s = 2 * Math.sqrt(1 - R[0] - R[4] + R[8]); q = [(R[3] - R[1]) / s, (R[2] + R[6]) / s, (R[5] + R[7]) / s, s / 4]; }
+    const n = Math.hypot(...q) * (q[0] < 0 ? -1 : 1);
+    return q.map((x) => x / n);
+  }
+  // The sign of q that is nearest `prev`, so a plotted quaternion doesn't jump between q and −q.
+  function quatNear(q, prev) { return prev && q[0] * prev[0] + q[1] * prev[1] + q[2] * prev[2] + q[3] * prev[3] < 0 ? q.map((x) => -x) : q; }
+  // Tare: the orientation measured from R0, in R0's own axes (R0ᵀR), so a pose that is still at R0 reads as the
+  // identity. Position is left alone. R0 null means no tare.
+  function tared(p, R0) { return R0 ? { R: mul3(tr3(R0), p.R), t: p.t } : p; }
+
   function compose(a, b) { return { R: mul3(a.R, b.R), t: add(mulv(a.R, b.t), a.t) }; }
   function inverse(p) { const Rt = tr3(p.R); return { R: Rt, t: mulv(Rt, p.t).map((x) => -x) }; }
   // Pose of `p` seen from `ref` (both given in the camera frame).
@@ -411,7 +429,7 @@
   // R ← exp(δθ)·R. qa and qw are the spectral densities of the random acceleration (m²/s³) and angular
   // acceleration (rad²/s³): bigger follows faster motion, smaller smooths more.
   function PoseFilter(opts) {
-    this.o = Object.assign({ qa: 4, qw: 40, gate: 40, maxGap: 0.5, floorP: 1e-6, floorR: 1e-5, maxMiss: 3 }, opts || {});
+    this.o = Object.assign({ qa: 4, qw: 40, gate: 40, maxGap: 0.5, lateBy: 0.1, floorP: 1e-6, floorR: 1e-5, maxMiss: 3 }, opts || {});
     this.x = null;
   }
   PoseFilter.prototype.reset = function () { this.x = null; this.miss = 0; };
@@ -463,7 +481,10 @@
   PoseFilter.prototype.update = function (time, cands) {
     if (!cands.length) return null;
     const best = cands[0];
-    if (!this.x || time - this.x.time > this.o.maxGap || time <= this.x.time) { this.init(time, best); return { pose: this.pose(), chosen: 0, d2: 0, restarted: true }; }
+    // Several cameras deliver frames slightly out of order: one up to `lateBy` seconds older than the state is taken
+    // as if at the state's time; anything older restarts the track.
+    if (!this.x || time - this.x.time > this.o.maxGap || this.x.time - time > this.o.lateBy) { this.init(time, best); return { pose: this.pose(), chosen: 0, d2: 0, restarted: true }; }
+    if (time < this.x.time) time = this.x.time;
     const pr = this.predict(time);
     let pick = -1, inn = null;
     cands.forEach((cnd, i) => {
@@ -491,6 +512,255 @@
   // Standard deviation of a position along a unit direction, from a 3×3 (or the top-left of a 6×6) covariance.
   function sigmaAlong(cov, d) { let s = 0; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) s += d[i] * cov[i][j] * d[j]; return Math.sqrt(Math.max(0, s)); }
 
+  // ---- several cameras: a rig ----
+  // A pose (with its covariance in (δp, δθ), R ← exp(δθ)·R) seen by a camera whose pose in the rig is T, moved into
+  // the rig's frame. Both halves of the error turn with T.R; other fields are kept.
+  function toRig(T, p) {
+    if (!T) return p;
+    const out = Object.assign({}, p, { R: mul3(T.R, p.R), t: add(mulv(T.R, p.t), T.t) });
+    if (p.cov) {
+      const A = zeros(6, 6);
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { A[i][j] = T.R[3 * i + j]; A[3 + i][3 + j] = T.R[3 * i + j]; }
+      out.cov = sym(mm(mm(A, p.cov), mT(A)));
+    }
+    return out;
+  }
+  // The same pose seen by several cameras at once ({R, t, cov}), combined by weighting each with its information
+  // (inverse covariance) on R³ × SO(3), iterated about the current mean. Returns the pose and its covariance.
+  function fusePoses(ps) {
+    if (ps.length === 1) return Object.assign({}, ps[0]);
+    const W = ps.map((p) => minv((p.cov || eye(6).map((r, i) => r.map((v) => v * (i < 3 ? 1e-4 : 1e-3)))).map((r, i) => r.map((v, j) => v + (i === j ? 1e-12 : 0)))));
+    let R = ps[0].R.slice(), t = ps[0].t.slice(), H = null;
+    for (let it = 0; it < 10; it++) {
+      H = zeros(6, 6); const b = new Array(6).fill(0);
+      ps.forEach((p, k) => {
+        if (!W[k]) return;
+        const y = sub(p.t, t).concat(so3Log(mul3(p.R, tr3(R)))), Wy = mv(W[k], y);
+        for (let i = 0; i < 6; i++) { b[i] += Wy[i]; for (let j = 0; j < 6; j++) H[i][j] += W[k][i][j]; }
+      });
+      const Hi = minv(H);
+      if (!Hi) break;
+      const d = mv(Hi, b);
+      t = add(t, d.slice(0, 3)); R = mul3(rodrigues(d.slice(3, 6)), R);
+      if (Math.hypot(...d) < 1e-12) break;
+    }
+    const cov = H && minv(H);
+    return { R, t, cov: cov ? sym(cov) : null, n: ps.length };
+  }
+
+  // Multi-camera calibration. Each view is one still pose of the calibration board seen by two or more cameras:
+  // { obs: [{ cam, obj: board points (m, board frame), pts: their pixels, pose: the board's pose in that camera }] }.
+  // cams[j] are the cameras' intrinsics. Camera 0 is the rig's frame. First each camera's pose is chained out from
+  // camera 0 through views they share (averaged over views), then every camera pose and every board pose is refined
+  // together by Levenberg–Marquardt on SE(3) to minimise the pixel error of every corner in every camera (a bundle
+  // adjustment with the board's shape known). A camera that shares no views, directly or through others, is
+  // left unplaced (null). Returns the poses (camera → rig), the RMS error overall and per camera, and view counts.
+  function calibrateRig(cams, views, opts) {
+    const o = Object.assign({ iters: 50 }, opts || {}), n = cams.length;
+    const T = new Array(n).fill(null);
+    T[0] = { R: I3.slice(), t: [0, 0, 0] };
+    for (let grew = true; grew;) {
+      grew = false;
+      for (let j = 1; j < n; j++) {
+        if (T[j]) continue;
+        const s = [];
+        for (const v of views) {
+          const oj = v.obs.find((x) => x.cam === j);
+          if (!oj) continue;
+          for (const oi of v.obs) if (oi.cam !== j && T[oi.cam]) s.push(compose(T[oi.cam], compose(oi.pose, inverse(oj.pose))));
+        }
+        if (s.length) { const mp = meanPose(s, 10, 0.1); T[j] = { R: mp.R, t: mp.t }; grew = true; }
+      }
+    }
+    // the views that reach the rig, each with its corners undistorted once, and a first board pose in the rig frame
+    const V = views.map((v) => ({ obs: v.obs.filter((x) => T[x.cam]) })).filter((v) => v.obs.length).map((v) => {
+      const s = v.obs.map((x) => compose(T[x.cam], x.pose)), B = s.length === 1 ? s[0] : meanPose(s, 180, 1e9);
+      return { B: { R: B.R, t: B.t }, obs: v.obs.map((x) => ({ cam: x.cam, obj: x.obj, uv: x.pts.map((p) => undistort(cams[x.cam], p[0], p[1])) })) };
+    });
+    const free = []; // camera index → parameter block (camera 0 is fixed)
+    let nb = 0;
+    for (let j = 1; j < n; j++) if (T[j]) free[j] = nb++;
+    const nc = nb, N = 6 * (nc + V.length);
+    // residuals in pixels (undistorted coordinates times the focal length), and the cost
+    const cost = (T, V) => {
+      let s = 0;
+      for (const v of V) for (const ob of v.obs) {
+        const c = cams[ob.cam], Tc = T[ob.cam], Rt = tr3(Tc.R);
+        for (let i = 0; i < ob.obj.length; i++) {
+          const w = add(mulv(v.B.R, ob.obj[i]), v.B.t), p = mulv(Rt, sub(w, Tc.t));
+          if (p[2] <= 1e-6) return Infinity;
+          const ex = c.fx * (p[0] / p[2] - ob.uv[i][0]), ey = c.fy * (p[1] / p[2] - ob.uv[i][1]);
+          s += ex * ex + ey * ey;
+        }
+      }
+      return s;
+    };
+    const linearise = (T, V) => {
+      const H = zeros(N, N), g = new Array(N).fill(0);
+      V.forEach((v, k) => {
+        const bk = 6 * (nc + k);
+        for (const ob of v.obs) {
+          const c = cams[ob.cam], Tc = T[ob.cam], Rt = tr3(Tc.R), cb = ob.cam ? 6 * free[ob.cam] : -1;
+          for (let i = 0; i < ob.obj.length; i++) {
+            const w = add(mulv(v.B.R, ob.obj[i]), v.B.t), p = mulv(Rt, sub(w, Tc.t)), iz = 1 / p[2];
+            const r = [c.fx * (p[0] * iz - ob.uv[i][0]), c.fy * (p[1] * iz - ob.uv[i][1])];
+            const Jp = [[c.fx * iz, 0, -c.fx * p[0] * iz * iz], [0, c.fy * iz, -c.fy * p[1] * iz * iz]];
+            // the board moved by exp(ξ): dw/dξ = [I, −[w]×]; the camera moved by exp(ξ): dp/dξ = Rᵀ[−I, [w]×]
+            const JR = mm(Jp, [Rt.slice(0, 3), Rt.slice(3, 6), Rt.slice(6, 9)]), Wx = skew(w);
+            const JW = JR.map((row) => [0, 1, 2].map((j) => -(row[0] * Wx[j] + row[1] * Wx[3 + j] + row[2] * Wx[6 + j])));
+            for (let a = 0; a < 2; a++) {
+              const Jb = JR[a].concat(JW[a]), cols = [], vals = [];
+              for (let q = 0; q < 6; q++) { cols.push(bk + q); vals.push(Jb[q]); }
+              if (cb >= 0) for (let q = 0; q < 6; q++) { cols.push(cb + q); vals.push(-Jb[q]); }
+              for (let x = 0; x < cols.length; x++) {
+                g[cols[x]] += vals[x] * r[a];
+                for (let y = 0; y < cols.length; y++) H[cols[x]][cols[y]] += vals[x] * vals[y];
+              }
+            }
+          }
+        }
+      });
+      return { H, g };
+    };
+    const step = (T, V, d) => {
+      const T2 = T.map((x, j) => {
+        if (!x || !j) return x;
+        const e = se3Exp(d.slice(6 * free[j], 6 * free[j] + 6));
+        return { R: mul3(e.R, x.R), t: add(mulv(e.R, x.t), e.t) };
+      });
+      const V2 = V.map((v, k) => {
+        const e = se3Exp(d.slice(6 * (nc + k), 6 * (nc + k) + 6));
+        return { obs: v.obs, B: { R: mul3(e.R, v.B.R), t: add(mulv(e.R, v.B.t), e.t) } };
+      });
+      return [T2, V2];
+    };
+    let cur = [T, V], e = cost(T, V), lambda = 1e-3, it = 0;
+    for (; it < o.iters && isFinite(e) && N; it++) {
+      const { H, g } = linearise(cur[0], cur[1]);
+      let improved = false;
+      for (let tries = 0; tries < 10; tries++) {
+        const A = H.map((r, i) => r.map((x, j) => (i === j ? x * (1 + lambda) + 1e-9 : x))), d = solveSym(A, g.map((x) => -x));
+        if (!d) { lambda *= 10; continue; }
+        const nxt = step(cur[0], cur[1], d), e2 = cost(nxt[0], nxt[1]);
+        if (e2 < e) { improved = (e - e2) > 1e-10 * (1 + e); cur = nxt; e = e2; lambda = Math.max(1e-9, lambda / 3); break; }
+        lambda *= 4;
+      }
+      if (!improved) break;
+    }
+    // errors per camera
+    const per = cams.map(() => ({ sq: 0, pts: 0, views: 0 }));
+    for (const v of cur[1]) for (const ob of v.obs) {
+      const c = cams[ob.cam], Tc = cur[0][ob.cam], Rt = tr3(Tc.R), q = per[ob.cam];
+      q.views++;
+      for (let i = 0; i < ob.obj.length; i++) {
+        const p = mulv(Rt, sub(add(mulv(v.B.R, ob.obj[i]), v.B.t), Tc.t));
+        q.sq += (c.fx * (p[0] / p[2] - ob.uv[i][0])) ** 2 + (c.fy * (p[1] / p[2] - ob.uv[i][1])) ** 2; q.pts++;
+      }
+    }
+    const pts = per.reduce((s, q) => s + q.pts, 0);
+    return {
+      poses: cur[0].map((x) => (x ? { R: x.R, t: x.t } : null)),
+      rms: pts ? Math.sqrt(e / pts) : NaN,
+      perCam: per.map((q) => ({ rms: q.pts ? Math.sqrt(q.sq / q.pts) : NaN, views: q.views, points: q.pts })),
+      views: cur[1].length, iters: it,
+    };
+  }
+  // Solve A x = b for a symmetric positive-definite A (Cholesky); null if it isn't.
+  function solveSym(A, b) {
+    const n = A.length, L = zeros(n, n);
+    for (let i = 0; i < n; i++) for (let j = 0; j <= i; j++) {
+      let s = A[i][j];
+      for (let k = 0; k < j; k++) s -= L[i][k] * L[j][k];
+      if (i === j) { if (!(s > 0)) return null; L[i][i] = Math.sqrt(s); } else L[i][j] = s / L[j][j];
+    }
+    const y = new Array(n), x = new Array(n);
+    for (let i = 0; i < n; i++) { let s = b[i]; for (let k = 0; k < i; k++) s -= L[i][k] * y[k]; y[i] = s / L[i][i]; }
+    for (let i = n - 1; i >= 0; i--) { let s = y[i]; for (let k = i + 1; k < n; k++) s -= L[k][i] * x[k]; x[i] = s / L[i][i]; }
+    return x;
+  }
+  // Each running camera's pose in the frame of the first one, from a saved rig ({keys, poses}: poses in the frame of
+  // whichever camera was first when it was solved). null for a camera the rig doesn't have, or for all but the
+  // first when the first isn't in it.
+  function placeCameras(rig, keys) {
+    const out = keys.map((k, i) => (i ? null : { R: I3.slice(), t: [0, 0, 0] }));
+    if (!rig || !keys.length) return out;
+    const at = (k) => { const i = rig.keys.indexOf(k); return i >= 0 && rig.poses[i] ? rig.poses[i] : null; };
+    const P0 = at(keys[0]);
+    if (!P0) return out;
+    const inv0 = inverse(P0);
+    return keys.map((k, i) => { if (!i) return out[0]; const P = at(k); return P ? compose(inv0, P) : null; });
+  }
+  // A camera looking from `pos` at `target`, upright (OpenCV axes: x right, y down, z forward; `down` is the world's
+  // down). Returns its pose, camera → world.
+  function lookAt(pos, target, down) {
+    const z = sub(target, pos), zn = scale(z, 1 / norm(z)), x = cross(down || [0, 1, 0], zn), xn = scale(x, 1 / norm(x)), y = cross(zn, xn);
+    return { R: [xn[0], y[0], zn[0], xn[1], y[1], zn[1], xn[2], y[2], zn[2]], t: pos.slice() };
+  }
+
+  // Camera tiles arranged like monitors in a display-settings panel: each tile as big as its picture in pixels, placed
+  // where its camera sits as seen from behind camera 1 (`pos`: [right, up] in metres, or null if not known), spread
+  // just enough that no two overlap. With fewer than two known positions, or two cameras in nearly the same place,
+  // tiles go in rows of two; cameras with no position follow the placed ones the same way. Returns
+  // {key, x, y, w, h} in picture pixels, the top-left of the whole arrangement at (0, 0).
+  function arrangeTiles(tiles, gap) {
+    const g = gap == null ? 40 : gap, placed = tiles.filter((t) => t.pos);
+    let k = 0;
+    for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+      const a = placed[i], b = placed[j], dx = Math.abs(a.pos[0] - b.pos[0]), dy = Math.abs(a.pos[1] - b.pos[1]);
+      const kx = dx > 0.01 ? ((a.w + b.w) / 2 + g) / dx : Infinity, ky = dy > 0.01 ? ((a.h + b.h) / 2 + g) / dy : Infinity;
+      k = Math.max(k, Math.min(kx, ky));
+    }
+    const spread = placed.length >= 2 && isFinite(k);
+    const out = spread ? placed.map((t) => ({ key: t.key, x: t.pos[0] * k - t.w / 2, y: -t.pos[1] * k - t.h / 2, w: t.w, h: t.h })) : [];
+    const rest = spread ? tiles.filter((t) => !t.pos) : tiles.slice();
+    let x0 = 0, y = 0;
+    if (out.length) { x0 = Math.min(...out.map((r) => r.x)); y = Math.max(...out.map((r) => r.y + r.h)) + g; }
+    for (let i = 0; i < rest.length; i += 2) {
+      const row = rest.slice(i, i + 2);
+      let x = x0;
+      for (const t of row) { out.push({ key: t.key, x, y, w: t.w, h: t.h }); x += t.w + g; }
+      y += Math.max(...row.map((t) => t.h)) + g;
+    }
+    const mx = Math.min(...out.map((r) => r.x)), my = Math.min(...out.map((r) => r.y));
+    return out.map((r) => Object.assign(r, { x: r.x - mx, y: r.y - my }));
+  }
+
+  // Tag IDs typed as a list: "3, 10-12 7" (commas or spaces; a range with -, – or ..). Returns the IDs in the order
+  // given without repeats, and the pieces that aren't IDs below `count` (the family's size). At most `limit` IDs.
+  function parseIdList(text, count, limit) {
+    const ids = [], bad = [], lim = limit || 200;
+    for (const part of String(text || '').split(/[\s,;]+/).filter(Boolean)) {
+      const m = part.match(/^(\d+)(?:(?:-|–|\.\.)(\d+))?$/);
+      if (!m) { bad.push(part); continue; }
+      const a = +m[1], b = m[2] === undefined ? a : +m[2];
+      if (b < a || b >= count) { bad.push(part); continue; }
+      for (let i = a; i <= b && ids.length < lim; i++) if (!ids.includes(i)) ids.push(i);
+    }
+    return { ids, bad };
+  }
+
+  // ---- paper ----
+  // The two sheets printers use: A4 (Europe and most of the world) and US Letter (the US, Canada, Mexico and a few
+  // others). Pages print with 12 mm margins; a page of tags keeps 30 mm for captions and the check bars below them.
+  const PAPER = { a4: { name: 'A4', w: 210, h: 297, css: 'A4' }, letter: { name: 'US Letter', w: 215.9, h: 279.4, css: 'letter' } };
+  const LETTER_REGIONS = ['US', 'CA', 'MX', 'PH', 'CL', 'CO', 'VE', 'GT', 'CR', 'PA', 'DO', 'PR', 'SV', 'NI', 'HN', 'BZ'];
+  const PRINT_MARGIN = 12, PRINT_FOOT = 30;
+  // The paper to start with for a browser language such as "en-US" or "de-DE".
+  function paperFor(lang) {
+    const m = String(lang || '').match(/[-_]([A-Za-z]{2})\b/);
+    return m && LETTER_REGIONS.includes(m[1].toUpperCase()) ? 'letter' : 'a4';
+  }
+  // What fits inside the margins, in mm, upright or turned (landscape).
+  function printArea(paper, landscape) {
+    const P = PAPER[paper] || PAPER.a4, w = P.w - 2 * PRINT_MARGIN, h = P.h - 2 * PRINT_MARGIN;
+    return landscape ? { w: h, h: w } : { w, h };
+  }
+  // The largest tag (its black square, mm) that prints at full size on this paper: with its white border of one cell
+  // (`cells` across the black square) it must fit an upright page above the captions.
+  function maxTagSize(paper, cells) { const a = printArea(paper, false); return Math.floor((Math.min(a.w, a.h - PRINT_FOOT) / (1 + 2 / cells)) * 10) / 10; }
+  // The largest square (mm) of the 9 × 6 board on its own landscape page, with its caption and check bars below.
+  function maxBoardSquare(paper) { const a = printArea(paper, true); return Math.floor(Math.min(a.w / 9, (a.h - PRINT_FOOT) / 6) * 10) / 10; }
+
   // ---- settings ----
   const DEFAULTS = {
     family: 'APRILTAG_36h11',
@@ -504,7 +774,15 @@
     pose: 'filtered', // what is plotted: raw (OpenCV's IPPE), refined (LM on SE(3)) or filtered (Kalman on SE(3))
     compare: false, // also draw the raw track, faint, to compare
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
+    mirror: false, // show the camera picture mirrored left to right (display only: poses are never mirrored)
+    flip: false, // show it upside down
   };
+  // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
+  // and/or flipped about the box's centre, as the CSS transform on the video does. Returns (x, y) -> [x, y].
+  function displayMap(W, H, vw, vh, mirror, flip) {
+    const s = Math.min(W / vw, H / vh), ox = (W - vw * s) / 2, oy = (H - vh * s) / 2;
+    return (x, y) => [mirror ? W - ox - x * s : ox + x * s, flip ? H - oy - y * s : oy + y * s];
+  }
   // The calibration board on a screen: the largest whole number of device pixels per square that fits a w × h screen
   // with `margin` squares of white round the board, turned a quarter if that makes the squares bigger (a tablet held
   // upright). Whole pixels keep every square edge sharp. Returns the pixels per square and the board's size on screen.
@@ -522,7 +800,7 @@
     if (o.every > o.span) o.every = o.span;
     if (!['raw', 'refined', 'filtered'].includes(o.pose)) o.pose = DEFAULTS.pose;
     if (!MOTION[o.motion]) o.motion = DEFAULTS.motion;
-    o.compare = !!o.compare;
+    o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip;
     return o;
   }
 
@@ -530,8 +808,11 @@
     mul3, tr3, mulv, add, sub, norm, rodrigues, angleOf, compose, inverse, relative, toView, inFrame, CAM_TO_VIEW, TAG_TO_VIEW,
     guessIntrinsics, scaleIntrinsics, checkCalibration, hfov, project, depthNoise,
     History, axisSamples, orbit, niceStep, viewSignature, signatureDistance, cornerMotion, coverage,
+    quatOf, quatNear, tared,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
-    DEFAULTS, clampSettings, boardFit,
+    toRig, fusePoses, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
+    PAPER, paperFor, printArea, maxTagSize, maxBoardSquare,
+    DEFAULTS, clampSettings, boardFit, displayMap,
   };
 });

@@ -4,6 +4,7 @@
 //
 // Tracking: OpenCV's ArUco detector with an AprilTag dictionary and AprilTag corner refinement, then one
 // solvePnP (IPPE_SQUARE) per tag with that tag's printed size.
+// Placing several cameras: the same board's pose in each camera (boardPose), solved together in TagCore.calibrateRig.
 // Calibration: a ChArUco board (5×5 ArUco markers, so its markers never clash with AprilTag ids) seen from
 // many angles, then calibrateCameraExtended with k3 held at 0, which webcam lenses don't need.
 (function (root, factory) {
@@ -170,6 +171,23 @@ function TagVision(cv, Core) {
     } finally { cc.delete(); ci.delete(); mc.delete(); mi.delete(); }
   }
 
+  // The board's pose in a camera with intrinsics `cam`, from its detected corners (squares of `square` m): OpenCV's
+  // IPPE for a plane, then Levenberg–Marquardt on SE(3). For placing several cameras. null under 6 corners.
+  function boardPose(ids, pts, cam, square) {
+    makeBoard();
+    if (ids.length < 6) return null;
+    const obj = ids.map((i) => [boardCorners[i][0] * square, boardCorners[i][1] * square, 0]);
+    const om = cv.matFromArray(obj.length, 1, cv.CV_32FC3, [].concat(...obj)), im = cv.matFromArray(pts.length, 1, cv.CV_32FC2, [].concat(...pts));
+    const { K, D } = camMats(cam), rvec = new cv.Mat(), tvec = new cv.Mat();
+    try {
+      let ok = false;
+      try { ok = cv.solvePnP(om, im, K, D, rvec, tvec, false, cv.SOLVEPNP_IPPE); } catch (e) { ok = false; }
+      if (!ok) return null;
+      const r = Core.refinePose(cam, obj, pts, { R: Core.rodrigues(Array.from(rvec.data64F)), t: Array.from(tvec.data64F) });
+      return isFinite(r.cost) ? { R: r.R, t: r.t, rms: r.rms, obj } : null;
+    } finally { [om, im, K, D, rvec, tvec].forEach((m) => m.delete()); }
+  }
+
   // The board as a grey image, `px` pixels per square, for printing or showing on a screen.
   function boardImage(px) {
     makeBoard();
@@ -223,7 +241,7 @@ function TagVision(cv, Core) {
     } finally { [ov, iv, K, D, rv, tv, sdI, sdE, pe].forEach((m) => m.delete()); }
   }
 
-  return { FAMILIES, BOARD, QUALITY, setFamily, setRGBA, setGray, detectTags, track, detectBoard, boardImage, tagImage, familySize, calibrate };
+  return { FAMILIES, BOARD, QUALITY, setFamily, setRGBA, setGray, detectTags, track, detectBoard, boardPose, boardImage, tagImage, familySize, calibrate };
 }
 TagVision.ready = ready;
 return TagVision;
@@ -277,11 +295,11 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
       } else if (m.type === 'frame') {
         const t0 = performance.now(), px = pixels(m.bitmap), img = V.setRGBA(px.rgba, px.w, px.h);
         if (m.mode === 'calib') {
-          const b = V.detectBoard(img);
-          post({ type: 'board', seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, ids: b.ids, pts: b.pts, markers: b.markers });
+          const b = V.detectBoard(img), pose = m.square ? V.boardPose(b.ids, b.pts, m.cam, m.square) : null;
+          post({ type: 'board', src: m.src, seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, ids: b.ids, pts: b.pts, markers: b.markers, pose });
         } else {
           const r = V.track(img, m.cam, m.sizes, m.defaultSize, m.bodies, m.raw);
-          post({ type: 'tags', seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, tags: r.tags, bodies: r.bodies });
+          post({ type: 'tags', src: m.src, seq: m.seq, time: m.time, w: px.w, h: px.h, ms: performance.now() - t0, tags: r.tags, bodies: r.bodies });
         }
       } else if (m.type === 'calibrate') {
         const c = V.calibrate(m.views, m.w, m.h, m.square);
@@ -295,7 +313,7 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
       }
     } catch (e) {
       if (m.bitmap) try { m.bitmap.close(); } catch (_) { /* already closed */ }
-      post({ type: 'error', of: m.type, seq: m.seq, text: String((e && e.message) || e) });
+      post({ type: 'error', of: m.type, src: m.src, seq: m.seq, text: String((e && e.message) || e) });
     }
   };
 })();
