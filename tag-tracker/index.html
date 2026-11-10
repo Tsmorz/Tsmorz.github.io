@@ -114,7 +114,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 
 /* video */
 .stage{position:relative;background:var(--stage);aspect-ratio:16/9;overflow:hidden;border-radius:0 0 3px 3px}
-.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .stage video{object-fit:contain;transform:scale(var(--sx,1),var(--sy,1))}
 /* the reticle: corner marks inside the picture, violet while detecting */
 .reticle{position:absolute;inset:10px;pointer-events:none;--rc:rgba(255,255,255,.35);background:
@@ -133,6 +133,32 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 .empty .note::before{content:none}
 .flash{position:absolute;inset:0;border:4px solid var(--good);opacity:0;pointer-events:none;transition:opacity .4s}
 .flash.on{opacity:1;transition:none}
+/* several cameras: views arranged like monitors in a display-settings panel (sizes and places set by JS) */
+.stages{position:relative;--sx:1;--sy:1}
+.stages:empty{display:none}
+.stages .stage{position:absolute;aspect-ratio:auto;border-radius:0;outline:none;container-type:inline-size}
+/* a small view keeps its number, its name and any warning; the rest is in the tooltip */
+@container (max-width:340px){.stage .tl .st.good{display:none}.stage .tl .nm{max-width:9ch}.stages .stage .vstats{display:none}}
+.stages.multi .stage{cursor:grab;box-shadow:0 0 0 1px var(--rule2)}
+.stages.multi .stage:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.stages .stage.dragging{cursor:grabbing;z-index:5;box-shadow:0 0 0 2px var(--accent)}
+.stage .tl{position:absolute;left:8px;top:8px;right:40px;z-index:3;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;font-size:12px;pointer-events:none}
+.stage .tl b,.stage .tl .nm,.stage .tl .st{background:rgba(12,14,17,.78);color:#fff;padding:2px 6px;line-height:16px;white-space:nowrap}
+.stage .tl b{background:var(--accent);color:var(--onAccent)}
+.stage .tl .nm{max-width:16ch;overflow:hidden;text-overflow:ellipsis}
+.stage .tl .st{color:#c3cbcf;font-weight:500}
+.stage .tl .st.warn{color:#f5b544}
+.stage .tbtn{position:absolute;right:8px;top:8px;z-index:3;width:24px;height:24px;padding:0;border:0;background:rgba(12,14,17,.78);color:#fff;display:grid;place-items:center}
+.stage .tbtn:hover{background:#000}
+@media (hover:hover){.stage .tbtn{opacity:0;transition:opacity .15s}.stage:hover .tbtn,.stage:focus-within .tbtn{opacity:1}}
+.stage .tbtn .i{width:14px;height:14px}
+.stage .rs{position:absolute;right:0;bottom:0;width:16px;height:16px;z-index:3;cursor:nwse-resize;display:none;
+  background:linear-gradient(135deg,transparent 50%,rgba(255,255,255,.75) 50% 60%,transparent 60% 70%,rgba(255,255,255,.75) 70% 80%,transparent 80%)}
+.stages.multi .stage .rs{display:block}
+.stages.multi .vstats{font-size:11px;gap:8px;left:6px;bottom:6px;padding:2px 6px}
+.stages.multi .reticle{inset:6px}
+.truth{color:var(--good);margin-top:2px}
+.rigt td{font-size:13px}
 .vstats{position:absolute;left:10px;bottom:10px;padding:3px 8px;background:rgba(0,0,0,.6);color:#e8eced;font-size:12px;display:flex;gap:14px}
 
 /* tables */
@@ -302,27 +328,28 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <div class="col">
     <section class="card" aria-labelledby="h-cam">
       <div class="card-h">
-        <h2 id="h-cam">Camera</h2>
-        <span id="calChip" class="badge warn" title="Camera model in use"><svg class="i"><use href="#i-alert"/></svg><span>Not calibrated</span></span>
+        <h2 id="h-cam">Cameras</h2>
+        <span id="addCamWrap" class="row" style="gap:6px" hidden><label class="sr" for="addCamSel">Camera to add</label><select id="addCamSel" class="select sm"></select><button class="btn sm outline" id="addCamBtn"><svg class="i"><use href="#i-plus"/></svg>Add camera</button></span>
         <div class="spacer"></div>
+        <span class="seg sm" role="radiogroup" aria-label="Arrangement of the views" id="arrangeWrap" hidden>
+          <button role="radio" data-arr="auto" aria-checked="true" title="Each view as big as its picture, placed where its camera sits once the cameras are placed (Calibrate, step 4)">Auto</button>
+          <button role="radio" data-arr="custom" aria-checked="false" title="Where you put them: drag a view to move it, its corner to resize it">Custom</button>
+        </span>
         <span class="seg sm" role="group" aria-label="Picture">
           <button type="button" id="mirrorBtn" aria-pressed="false" title="Mirror the picture left to right, like a mirror. Only the picture changes: poses stay true.">Mirror</button>
           <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture upside down, for a camera mounted that way. Only the picture changes: poses stay true.">Flip</button>
         </span>
         <span id="focusWrap" class="field" hidden><span id="focusLbl">Lock focus</span><button id="focusSw" class="switch" role="switch" aria-checked="false" aria-labelledby="focusLbl"></button></span>
       </div>
+      <div class="stages" id="stages"></div>
       <div class="stage" id="stage">
-        <video id="video" playsinline muted></video>
-        <canvas id="overlay" aria-hidden="true"></canvas>
         <div class="reticle" aria-hidden="true"></div>
-        <div class="flash" id="flash"></div>
-        <span class="vstats mono" id="vstats" hidden></span>
         <div class="empty" id="empty">
           <h3>Track AprilTags with your camera</h3>
-          <p>Pick a camera and press Start. Show a printed tag36h11 tag to the camera, give it a name, and watch its last second of motion in 3D.</p>
+          <p>Pick a camera and press Start. Show a printed tag36h11 tag to the camera, give it a name, and watch its last second of motion in 3D. Add more cameras to track from several sides.</p>
           <div class="row">
             <button class="btn primary" id="emptyStart"><svg class="i"><use href="#i-cam"/></svg>Start camera</button>
-            <button class="btn outline" id="emptyDemo">Try the demo</button>
+            <button class="btn outline" id="emptyDemo">Try the demo (3 cameras)</button>
           </div>
           <p class="note">Video is processed on this computer and never sent anywhere.</p>
         </div>
@@ -430,7 +457,8 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           </div>
         </div>
         <div class="step">
-          <h3><span class="n">2</span>Capture views</h3>
+          <h3><span class="n">2</span>Capture views of one lens</h3>
+          <div class="row" id="calibCamWrap" style="margin-bottom:10px" hidden><label class="field">Camera <select id="calibCamSel" class="select sm"></select></label></div>
           <p id="calibTip">Start the camera and hold the board in view.</p>
           <div class="row" style="gap:14px">
             <div class="cov" id="cov" aria-label="Parts of the frame covered by captured corners"></div>
@@ -456,6 +484,26 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
             <input type="file" id="importFile" accept="application/json,.json" hidden>
           </div>
           <div id="calibResult"></div>
+        </div>
+        <div class="step" id="rigStep">
+          <h3><span class="n">4</span>Place the cameras</h3>
+          <p id="rigTip"></p>
+          <div class="row" style="gap:14px;margin-bottom:10px">
+            <div class="row" style="flex:1;min-width:160px"><span class="mono" id="rigCount">0 / 12 views</span><div class="progress" aria-hidden="true"><i id="rigBar"></i></div></div>
+            <span class="field"><span id="rigAutoLbl">Auto-capture</span><button id="rigAutoSw" class="switch" role="switch" aria-checked="true" aria-labelledby="rigAutoLbl"></button></span>
+            <button class="btn sm outline" id="rigCapture" disabled>Capture now</button>
+            <button class="btn sm danger" id="rigClear" disabled>Clear</button>
+          </div>
+          <div class="scroll"><table class="rigt">
+            <thead><tr><th>Camera</th><th class="num" title="Views of the board this camera is in">Views</th><th title="From camera 1: x right, y away, z up">Position, turn</th><th class="num" title="RMS distance between its corners and where the solved rig puts them">Fit</th></tr></thead>
+            <tbody id="rigRows"></tbody>
+          </table></div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn sm primary" id="rigSolve" disabled>Place cameras</button>
+            <span class="spacer"></span>
+            <button class="btn sm danger" id="rigForget" disabled>Forget</button>
+          </div>
+          <div id="rigResult" style="margin-top:8px"></div>
         </div>
       </div>
     </section>
@@ -549,23 +597,26 @@ const S = {
   res: store.get('res', '1280x720'),
   camId: store.get('camId', ''),
   mode: 'track',
-  worker: null, ready: false, busy: false, seq: 0, familyCount: 587,
-  stream: null, track: null, running: false, demo: null,
-  cam: null, camKey: '',
+  worker: null, ready: false, familyCount: 587,
+  // the running cameras (see "cameras" below); the first is camera 1, whose frame the rig and the plot use
+  cams: [], running: false, demo: null, firstKey: null, calibCam: 0, calibFor: '',
+  // the rig: each camera's saved pose (by camera key); views of the board for placing cameras; fused poses per track
+  rig: store.get('rig', null), rigViews: [], lastRig: 0, rigAuto: true, rigFresh: null,
+  arrange: Object.assign({ mode: 'auto', tiles: {} }, store.get('arrange', {})),
+  fused: new Map(), zs: new Map(),
   // Tracks are keyed by tag id (a number) or 'b:<id>' for a rigid object. hist holds the plotted poses (in the
   // chosen frame), rawHist the raw ones for "Compare with raw", filters one PoseFilter per track, tracks the
   // latest camera-frame state per track, seen the last sighting of every tag id.
-  hist: new C.History(), rawHist: new C.History(), filters: new Map(), tracks: new Map(), seen: new Map(), last: null, lastBoard: null,
+  hist: new C.History(), rawHist: new C.History(), filters: new Map(), tracks: new Map(), seen: new Map(),
   bodies: store.get('bodies', []), // {id, name, members: [{id, R, t}] (first is the origin), spread}
   learn: null, // {id, name, ids, samples: {id: [poses]}} while an object's shape is being learned
-  views: [], still: 0, lastCapture: 0, auto: true, calibResult: null,
-  stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 },
+  views: [], lastCapture: 0, auto: true, calibResult: null,
   view: { ...VIEW0, dist: 2.6, target: [0, 1.0, 0], fitted: false },
   tplotTag: null, tplotMode: ['motion', 'position', 'quat'].includes(store.get('tplotMode')) ? store.get('tplotMode') : 'motion',
   // Tare: per track, the orientation (in the plotted frame) that reads as the identity; kept until cleared or the frame changes
   tare: new Map(),
 };
-const video = $('video'), overlay = $('overlay'), plot = $('plot'), tplot = $('tplot');
+const plot = $('plot'), tplot = $('tplot');
 
 // ---------------- theme ----------------
 function isDark() {
@@ -600,7 +651,7 @@ function slotOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? slotOf(b.m
 function colorOf(k) { const s = slotOf(k); return s >= 0 ? K.slots[s] : K.unknown; }
 function cssColorOf(k) { const s = slotOf(k); return s >= 0 ? `var(--s${s + 1})` : 'var(--unknown)'; }
 function nameOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? b.name || 'Object' : k; } const t = tagOf(k); return t && t.name ? t.name : '#' + k; }
-function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); }
+function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); S.fused.clear(); S.zs.clear(); }
 function sizeOf(id) { const t = tagOf(id); return t ? t.size : S.settings.tagSize; }
 function freeSlot() { for (let i = 0; i < SLOTS; i++) if (!S.tags.some((t) => t.slot === i)) return i; return -1; }
 function addTag(id, name) {
@@ -683,7 +734,7 @@ bindNum('hfov', () => S.settings.hfov, (v) => { S.settings.hfov = v; });
 function onSettings() {
   $('spanTxt').textContent = S.settings.span.toFixed(S.settings.span < 10 ? 1 : 0);
   $('span').value = S.settings.span; $('every').value = S.settings.every;
-  updateCam();
+  S.cams.forEach(updateCam);
 }
 $('family').value = S.settings.family;
 $('family').onchange = () => {
@@ -797,14 +848,18 @@ function onWorker(m) {
     status(S.running ? 'Detecting…' : 'Ready to start', S.running ? 'live' : '');
     $('emptyDemo').disabled = false;
   } else if (m.type === 'family') { S.familyCount = m.count; }
-  else if (m.type === 'tags') { S.busy = false; onTags(m); }
-  else if (m.type === 'board') { S.busy = false; onBoard(m); }
+  else if (m.type === 'tags' || m.type === 'board') {
+    const c = camOf(m.src);
+    if (!c) return;
+    c.busy = false;
+    if (m.type === 'tags') onTags(c, m); else onBoard(c, m);
+  }
   else if (m.type === 'calibrated') onCalibrated(m.calib);
   else if (m.type === 'boardImage' || m.type === 'tagImage') {
     const cb = pending.get(m.purpose);
     if (cb) { pending.delete(m.purpose); cb(m.img); }
   } else if (m.type === 'error') {
-    if (m.of === 'frame') { S.busy = false; return; }
+    if (m.of === 'frame') { const c = camOf(m.src); if (c) c.busy = false; return; }
     if (m.of === 'init') { status('Could not load the detector', 'bad'); showEmpty('The detector didn’t load', 'OpenCV.js (about 10 MB) is fetched from a CDN the first time. Check your connection and reload the page.'); }
     if (m.of === 'calibrate') { $('solveBtn').disabled = S.views.length < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate'; $('calibResult').innerHTML = `<div class="note warn"><svg class="i"><use href="#i-alert"/></svg><span>Calibration failed: ${escapeHtml(m.text)}</span></div>`; }
     console.warn('worker:', m.of, m.text);
@@ -815,14 +870,28 @@ function requestImage(type, args) {
   return new Promise((res) => { pending.set(purpose, res); S.worker.postMessage(Object.assign({ type, purpose }, args)); });
 }
 
-// ---------------- camera ----------------
+// ---------------- cameras ----------------
+// S.cams holds every running camera; the first is camera 1, whose frame is the rig's (and the plot's). Each:
+// { n, key (device id, or demo:k), label, demo (index or null), stream, track, video, overlay, el (its tile), cam (its
+//   intrinsics), lens, T (its pose in camera 1's frame from the saved rig, null if not placed), busy, seq, stats,
+//   last (its latest tags), local (its own poses), lastBoard, still }
+let devices = [];
+const camOf = (key) => S.cams.find((c) => c.key === key) || null;
 async function listCameras() {
   const sel = $('camSel');
-  let cams = [];
-  try { cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch (e) { cams = []; }
-  const cur = S.demo ? 'demo' : (S.camId || (cams[0] && cams[0].deviceId) || '');
-  sel.innerHTML = cams.map((c, i) => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || 'Camera ' + (i + 1))}</option>`).join('') + '<option value="demo">Demo (no camera)</option>';
+  try { devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch (e) { devices = []; }
+  const first = S.cams[0], cur = first ? (first.demo !== null ? 'demo' : first.key) : S.camId || (devices[0] && devices[0].deviceId) || '';
+  sel.innerHTML = devices.map((c, i) => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || 'Camera ' + (i + 1))}</option>`).join('') + '<option value="demo">Demo (3 cameras)</option>';
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : sel.options[0].value;
+  paintAddCam();
+}
+function deviceLabel(id) { const i = devices.findIndex((d) => d.deviceId === id); return i < 0 ? 'Camera' : devices[i].label || 'Camera ' + (i + 1); }
+// what can still be added: real cameras not running or, in the demo, demo cameras not running
+function paintAddCam() {
+  const opts = S.demo ? DEMO.cams.map((_, k) => k).filter((k) => !camOf('demo:' + k)).map((k) => ['demo:' + k, `Demo ${k + 1}`])
+    : devices.filter((d) => d.deviceId && !camOf(d.deviceId)).map((d) => [d.deviceId, deviceLabel(d.deviceId)]);
+  $('addCamWrap').hidden = !S.cams.length || !opts.length;
+  $('addCamSel').innerHTML = opts.map(([v, l]) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`).join('');
 }
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', listCameras);
 $('camSel').onchange = () => {
@@ -836,140 +905,294 @@ $('startBtn').onclick = () => (S.running ? stop() : start());
 $('emptyStart').onclick = () => { if ($('camSel').value === 'demo') $('camSel').value = S.camId || $('camSel').options[0].value; start(); };
 $('emptyDemo').onclick = () => { $('camSel').value = 'demo'; start(); };
 $('emptyDemo').disabled = true;
+$('addCamBtn').onclick = () => { const k = $('addCamSel').value; if (k) addCamera(k).catch(camError); };
 
 function showEmpty(title, text) {
+  $('stage').hidden = false;
   $('empty').hidden = false;
   $('empty').querySelector('h3').textContent = title;
   $('empty').querySelector('p').textContent = text;
 }
+// Start camera 1 from the top bar. Other real cameras that were running come back too (a new resolution, or a
+// different first camera, restarts them all); the demo starts its three cameras.
 async function start() {
-  stop(true);
-  const useDemo = $('camSel').value === 'demo';
+  const first = $('camSel').value, useDemo = first === 'demo';
   if (useDemo && !S.ready) { status('Demo starts once the detector loads', 'busy'); return; }
+  const others = useDemo || S.demo ? [] : S.cams.map((c) => c.key).filter((k) => k && k !== first);
+  stop(true);
   try {
-    let stream;
-    if (useDemo) stream = await startDemo();
+    if (useDemo) { await startDemo(); for (let k = 0; k < DEMO.cams.length; k++) await addCamera('demo:' + k); }
     else {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('This browser has no camera access here. Use Chrome or Edge over https.'), { name: 'NoAPI' });
-      const [w, h] = S.res.split('x').map(Number), id = $('camSel').value;
-      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: id ? { exact: id } : undefined, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
+      await addCamera(first);
+      for (const k of others) await addCamera(k).catch((e) => console.warn(e));
     }
-    S.stream = stream; S.track = stream.getVideoTracks()[0];
-    video.srcObject = stream;
-    await video.play();
-    S.running = true;
-    $('empty').hidden = true;
-    $('stage').classList.add('live');
-    $('startBtn').innerHTML = '<svg class="i"><use href="#i-stop"/></svg><span>Stop</span>';
-    $('startBtn').classList.remove('primary'); $('startBtn').classList.add('outline');
-    if (!useDemo) {
-      const st = S.track.getSettings();
-      if (st.deviceId) { S.camId = st.deviceId; store.set('camId', st.deviceId); }
-      await listCameras();
-    }
-    setupFocus();
-    updateCam();
     status(S.ready ? 'Detecting…' : 'Loading detector…', S.ready ? 'live' : 'busy');
-    S.stats = { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 };
-    loopFrames();
-  } catch (e) {
-    console.warn(e);
-    const msg = e.name === 'NotAllowedError' ? ['Camera access was blocked', 'Allow the camera for this site in the address bar, then press Start again.']
-      : e.name === 'NotFoundError' || e.name === 'OverconstrainedError' ? ['No camera found', 'Plug in a camera, or pick another one from the list. You can also try the demo.']
-      : e.name === 'NotReadableError' ? ['The camera is busy', 'Another app or tab is using it. Close that, then press Start again.']
-      : ['Couldn’t start the camera', e.message || String(e)];
-    showEmpty(msg[0], msg[1]);
-    status('Camera off', 'bad');
+  } catch (e) { stop(true); camError(e); }
+}
+function camError(e) {
+  console.warn(e);
+  const msg = e.name === 'NotAllowedError' ? ['Camera access was blocked', 'Allow the camera for this site in the address bar, then press Start again.']
+    : e.name === 'NotFoundError' || e.name === 'OverconstrainedError' ? ['No camera found', 'Plug in a camera, or pick another one from the list. You can also try the demo.']
+    : e.name === 'NotReadableError' ? ['The camera is busy', 'Another app or tab is using it. Close that, then try again.']
+    : ['Couldn’t start the camera', e.message || String(e)];
+  if (S.cams.length) status(msg[0], 'bad');
+  else { showEmpty(msg[0], msg[1]); status('Camera off', 'bad'); }
+}
+function makeTile(c) {
+  const el = document.createElement('div');
+  el.className = 'stage live'; el.tabIndex = 0;
+  el.innerHTML = `<video playsinline muted></video><canvas aria-hidden="true"></canvas><div class="reticle" aria-hidden="true"></div><div class="flash"></div>
+    <span class="tl"></span><button class="tbtn rm" title="Remove this camera"><svg class="i"><use href="#i-x"/></svg></button>
+    <span class="vstats mono" hidden></span><span class="rs" aria-hidden="true" title="Drag to resize"></span>`;
+  el.querySelector('.rm').onclick = () => removeCamera(c);
+  arrangeHandlers(c, el);
+  return el;
+}
+async function addCamera(key) {
+  if (camOf(key)) return;
+  const demo = key.startsWith('demo:') ? +key.slice(5) : null;
+  let stream;
+  if (demo !== null) stream = S.demo.streams[demo];
+  else {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('This browser has no camera access here. Use Chrome or Edge over https.'), { name: 'NoAPI' });
+    const [w, h] = S.res.split('x').map(Number);
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: key ? { exact: key } : undefined, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
   }
+  const c = { key, demo, stream, track: stream.getVideoTracks()[0], busy: false, seq: 0, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
+  if (demo === null) {
+    const st = c.track.getSettings();
+    if (st.deviceId) c.key = st.deviceId;
+    if (camOf(c.key)) { stream.getTracks().forEach((t) => t.stop()); return; } // the default camera, already running
+  }
+  c.el = makeTile(c); c.video = c.el.querySelector('video'); c.overlay = c.el.querySelector('canvas');
+  $('stages').appendChild(c.el);
+  c.video.srcObject = stream;
+  c.video.addEventListener('loadedmetadata', () => { updateCam(c); layoutTiles(); });
+  await c.video.play();
+  S.cams.push(c);
+  if (demo === null) {
+    if (S.cams.length === 1) { S.camId = c.key; store.set('camId', c.key); }
+    await listCameras(); // labels appear once the camera is allowed
+    c.label = deviceLabel(c.key);
+  } else c.label = `Demo ${demo + 1}`;
+  onCamsChanged();
+  loopFrames(c);
+}
+function removeCamera(c) {
+  if (S.cams.length === 1) { stop(); return; }
+  if (c.demo === null) c.stream.getTracks().forEach((t) => t.stop());
+  c.gone = true; c.video.srcObject = null; c.el.remove();
+  S.cams = S.cams.filter((x) => x !== c);
+  onCamsChanged();
+}
+// After cameras come or go: number them, place them from the saved rig, and lay out their tiles.
+function onCamsChanged() {
+  const first = S.cams.length ? S.cams[0].key : null;
+  S.cams.forEach((c, i) => { c.n = i + 1; });
+  S.running = S.cams.length > 0;
+  if (first !== S.firstKey) { S.firstKey = first; resetTracks(); S.tare.clear(); paintTare(); } // the rig's frame moved
+  placeCams();
+  $('stage').hidden = S.running;
+  $('stages').classList.toggle('multi', S.cams.length > 1);
+  $('arrangeWrap').hidden = S.cams.length < 2;
+  $('startBtn').innerHTML = S.running ? '<svg class="i"><use href="#i-stop"/></svg><span>Stop</span>' : '<svg class="i"><use href="#i-cam"/></svg><span>Start</span>';
+  $('startBtn').classList.toggle('primary', !S.running); $('startBtn').classList.toggle('outline', S.running);
+  if (S.running && $('camSel').value !== (S.demo ? 'demo' : first) && [...$('camSel').options].some((o) => o.value === first)) $('camSel').value = first;
+  for (const c of S.cams) updateCam(c);
+  if (S.calibCam >= S.cams.length) S.calibCam = 0;
+  paintAddCam(); setupFocus(); renderCalibCams(); renderCalib(); renderRig(); layoutTiles();
+}
+// Each camera's pose in camera 1's frame, from the saved rig. Changing it moves the fused tracks, so they restart.
+function placeCams() {
+  const T = C.placeCameras(S.rig, S.cams.map((c) => c.key));
+  S.cams.forEach((c, i) => { c.T = T[i]; });
+  S.cams.forEach(paintTile);
 }
 function stop(quiet) {
-  S.running = false;
-  $('stage').classList.remove('live');
-  if (S.stream) S.stream.getTracks().forEach((t) => t.stop());
-  S.stream = null; S.track = null; video.srcObject = null;
+  for (const c of S.cams) { if (c.demo === null) c.stream.getTracks().forEach((t) => t.stop()); c.gone = true; c.video.srcObject = null; c.el.remove(); }
+  S.cams = [];
   if (S.demo) { S.demo.stop(); S.demo = null; }
-  $('startBtn').innerHTML = '<svg class="i"><use href="#i-cam"/></svg><span>Start</span>';
-  $('startBtn').classList.add('primary'); $('startBtn').classList.remove('outline');
-  $('focusWrap').hidden = true; $('vstats').hidden = true;
-  if (!quiet) { showEmpty('Camera stopped', 'Press Start to carry on. Your tags, settings and calibration are kept in this browser.'); status(S.ready ? 'Ready to start' : 'Loading detector…', S.ready ? '' : 'busy'); }
-  clearOverlay();
+  onCamsChanged();
+  $('focusWrap').hidden = true;
+  if (!quiet) { showEmpty('Camera stopped', 'Press Start to carry on. Your tags, settings and calibrations are kept in this browser.'); status(S.ready ? 'Ready to start' : 'Loading detector…', S.ready ? '' : 'busy'); }
 }
-// Focus: a camera that refocuses changes its focal length, so locking it keeps a calibration valid.
-function setupFocus() {
-  const caps = S.track && S.track.getCapabilities ? S.track.getCapabilities() : {};
-  const ok = caps.focusMode && caps.focusMode.includes('manual') && caps.focusMode.includes('continuous');
-  $('focusWrap').hidden = !ok;
-  $('focusSw').setAttribute('aria-checked', 'false');
+// Focus: a camera that refocuses changes its focal length, so locking it keeps a calibration valid. The switch
+// locks every running camera that can.
+function focusCams() {
+  return S.cams.filter((c) => { const caps = c.track && c.track.getCapabilities ? c.track.getCapabilities() : {}; return caps.focusMode && caps.focusMode.includes('manual') && caps.focusMode.includes('continuous'); });
 }
+function setupFocus() { const n = focusCams().length; $('focusWrap').hidden = !n; if (!n) $('focusSw').setAttribute('aria-checked', 'false'); }
 $('focusSw').onclick = async () => {
   const on = $('focusSw').getAttribute('aria-checked') !== 'true';
-  try {
-    const cur = S.track.getSettings();
-    await S.track.applyConstraints({ advanced: [on ? { focusMode: 'manual', focusDistance: cur.focusDistance } : { focusMode: 'continuous' }] });
-    $('focusSw').setAttribute('aria-checked', String(on));
-  } catch (e) { console.warn(e); }
+  for (const c of focusCams()) {
+    try { const cur = c.track.getSettings(); await c.track.applyConstraints({ advanced: [on ? { focusMode: 'manual', focusDistance: cur.focusDistance } : { focusMode: 'continuous' }] }); } catch (e) { console.warn(e); }
+  }
+  $('focusSw').setAttribute('aria-checked', String(on));
 };
 
-// The camera model in use: this camera's calibration (rescaled if the resolution changed), else a guess.
-function updateCam() {
-  const w = video.videoWidth || 1280, h = video.videoHeight || 720;
-  let label = 'Demo';
-  if (!S.demo) { const o = $('camSel').selectedOptions[0]; label = o ? o.textContent : 'Camera'; }
-  S.camKey = label;
-  const saved = S.demo ? null : S.calibs[label];
+// A camera's model: its calibration (rescaled if the resolution changed), else a guess. Demo lenses are exact.
+function updateCam(c) {
+  const w = c.video.videoWidth || 1280, h = c.video.videoHeight || 720;
+  const saved = c.demo !== null ? null : S.calibs[c.label];
   const scaled = saved ? C.scaleIntrinsics(saved, w, h) : null;
-  S.cam = scaled || C.guessIntrinsics(w, h, S.demo ? 70 : S.settings.hfov);
-  const chip = $('calChip');
-  if (S.demo) {
-    chip.className = 'badge good';
-    chip.innerHTML = '<svg class="i"><use href="#i-check"/></svg><span>Demo camera</span>';
-    chip.title = 'A simulated 70° camera; its model is known exactly.';
-  } else if (scaled) {
-    chip.className = 'badge good';
-    chip.innerHTML = `<svg class="i"><use href="#i-check"/></svg><span>Calibrated${scaled.scaledFrom ? ' (scaled)' : ''}</span>`;
-    chip.title = `${saved.w}×${saved.h}, RMS ${saved.rms.toFixed(2)} px, ${C.hfov(scaled).toFixed(1)}° wide` + (scaled.scaledFrom ? '. Calibrated at another resolution with the same shape; recalibrate at this one for the best accuracy.' : '');
+  c.cam = c.demo !== null ? DEMO.intr : scaled || C.guessIntrinsics(w, h, S.settings.hfov);
+  if (c.demo !== null) { c.lens = ['good', 'simulated']; c.lensTitle = 'A simulated 70° camera; its lens is known exactly.'; }
+  else if (scaled) {
+    c.lens = ['good', scaled.scaledFrom ? 'calibrated, scaled' : 'calibrated'];
+    c.lensTitle = `${saved.w}×${saved.h}, RMS ${saved.rms.toFixed(2)} px, ${C.hfov(scaled).toFixed(1)}° wide` + (scaled.scaledFrom ? '. Calibrated at another resolution with the same shape; recalibrate at this one for the best accuracy.' : '');
   } else {
-    chip.className = 'badge warn';
-    chip.innerHTML = `<svg class="i"><use href="#i-alert"/></svg><span>${saved ? 'Calibration doesn’t fit' : 'Not calibrated'}</span>`;
-    chip.title = saved ? `The saved calibration is for ${saved.w}×${saved.h}, a different shape. Using a ${S.settings.hfov}° guess; recalibrate at ${w}×${h}.` : `Using a ${S.settings.hfov}° field-of-view guess. Distances can be off by 10% or more until you calibrate.`;
+    c.lens = ['warn', saved ? 'calibration doesn’t fit' : 'not calibrated'];
+    c.lensTitle = saved ? `The saved calibration is for ${saved.w}×${saved.h}, a different shape. Using a ${S.settings.hfov}° guess; recalibrate at ${w}×${h}.` : `Using a ${S.settings.hfov}° field-of-view guess. Distances can be off by 10% or more until you calibrate.`;
   }
-  $('fovField').hidden = !!scaled || !!S.demo;
-  $('calibFor').textContent = `${label}, ${w}×${h}`;
-  renderCalibStatus();
+  paintTile(c);
+  $('fovField').hidden = !S.cams.some((x) => x.lens[0] === 'warn');
+  if (c === S.cams[S.calibCam]) { $('calibFor').textContent = `${c.label}, ${w}×${h}`; renderCalibStatus(); }
+}
+function paintTile(c) {
+  if (!c.el || !c.lens) return;
+  const place = c.n === 1 ? null : c.T ? ['good', 'placed', 'Its position relative to camera 1 is known, so its tags are combined with the other cameras’.'] : ['warn', 'not placed', 'Place the cameras (Calibrate, step 4) to combine its tags with camera 1’s.'];
+  c.el.querySelector('.tl').innerHTML = `<b>${c.n}</b><span class="nm">${escapeHtml(c.label)}</span><span class="st ${c.lens[0]}" title="${escapeHtml(c.lensTitle)}">${c.lens[1]}</span>` +
+    (place ? `<span class="st ${place[0]}" title="${place[2]}">${place[1]}</span>` : '');
+  c.el.title = `Camera ${c.n}: ${c.label}. Lens ${c.lens[1]}${place ? ', ' + place[1] : ''}.` + (S.cams.length > 1 ? ' Drag to move this view, its corner to resize it.' : '');
+  c.el.setAttribute('aria-label', `Camera ${c.n}, ${c.label}, lens ${c.lens[1]}${place ? ', ' + place[1] : ''}. Arrow keys move this view, plus and minus resize it.`);
+  c.el.querySelector('.rm').setAttribute('aria-label', `Remove camera ${c.n}`);
 }
 
+// ---------------- arranging the camera views ----------------
+// The views sit in #stages like monitors in a display-settings panel, in "picture pixels" (each tile as big as its
+// camera's picture). Auto places each camera where the rig says it is, as seen from behind camera 1; until the
+// cameras are placed they go in rows. Drag a view to move it, or its corner to resize it, and the arrangement
+// turns Custom and is kept per camera. The whole arrangement is scaled to the card's width.
+const ARR_GAP = 40;
+function arrangement() {
+  const size = (c) => { const w = c.video.videoWidth || (c.cam && c.cam.w) || 1280, h = c.video.videoHeight || (c.cam && c.cam.h) || 720; return [w, h]; };
+  if (S.arrange.mode === 'auto' && $('stages').clientWidth < 500) {
+    // a phone: one view under another, full width
+    let y = 0;
+    return S.cams.map((c) => { const [w, h] = size(c), r = { key: c.key, x: 0, y, w: 1280, h: (1280 * h) / w }; y += r.h + ARR_GAP; return r; });
+  }
+  if (S.arrange.mode === 'auto') {
+    return C.arrangeTiles(S.cams.map((c) => {
+      const [w, h] = size(c), v = c.T ? C.toView(c.T).t : null;
+      return { key: c.key, w, h, pos: v ? [v[0], v[2]] : null };
+    }), ARR_GAP);
+  }
+  const out = [];
+  for (const c of S.cams) {
+    const [w, h] = size(c), r = S.arrange.tiles[c.key];
+    if (r) out.push({ key: c.key, x: r.x, y: r.y, w: r.w, h: (r.w * h) / w });
+  }
+  for (const c of S.cams) {
+    if (out.some((r) => r.key === c.key)) continue;
+    const [w, h] = size(c), right = out.length ? Math.max(...out.map((r) => r.x + r.w)) + ARR_GAP : 0, top = out.length ? Math.min(...out.map((r) => r.y)) : 0;
+    out.push({ key: c.key, x: right, y: top, w, h });
+  }
+  return out;
+}
+function layoutTiles() {
+  const box = $('stages');
+  if (!S.cams.length) { box.style.height = ''; return; }
+  const rects = arrangement(), x0 = Math.min(...rects.map((r) => r.x)), y0 = Math.min(...rects.map((r) => r.y));
+  const bw = Math.max(...rects.map((r) => r.x + r.w)) - x0, bh = Math.max(...rects.map((r) => r.y + r.h)) - y0;
+  const W = box.clientWidth || 600, maxH = W < 500 ? Infinity : Math.max(220, innerHeight * (S.cams.length > 1 ? 0.62 : 0.7));
+  const s = Math.min(W / bw, maxH / bh), ox = (W - bw * s) / 2;
+  box.style.height = Math.round(bh * s) + 'px';
+  for (const r of rects) {
+    const c = camOf(r.key);
+    if (!c) continue;
+    Object.assign(c.el.style, { left: ox + (r.x - x0) * s + 'px', top: (r.y - y0) * s + 'px', width: r.w * s + 'px', height: r.h * s + 'px' });
+  }
+  S.layout = { s, rects };
+  for (const c of S.cams) if (c.last && S.mode === 'track') drawOverlay(c); else if (c.lastBoard && S.mode === 'calib') drawBoard(c, c.lastBoard);
+}
+function paintArrange() { document.querySelectorAll('[data-arr]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.arr === S.arrange.mode))); }
+// Switch to Custom keeping the views where they are now.
+function toCustom() {
+  if (S.arrange.mode === 'custom') return;
+  for (const r of (S.layout && S.layout.rects) || []) S.arrange.tiles[r.key] = { x: r.x, y: r.y, w: r.w };
+  S.arrange.mode = 'custom'; store.set('arrange', S.arrange); paintArrange();
+}
+document.querySelectorAll('[data-arr]').forEach((b) => {
+  b.onclick = () => { if (b.dataset.arr === 'custom') toCustom(); else { S.arrange.mode = 'auto'; store.set('arrange', S.arrange); paintArrange(); } layoutTiles(); };
+});
+function arrangeHandlers(c, el) {
+  let drag = null;
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button') || S.cams.length < 2) return;
+    toCustom();
+    const r = S.arrange.tiles[c.key];
+    if (!r) return;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, r: Object.assign({}, r), resize: !!e.target.closest('.rs'), left: el.offsetLeft, top: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+    el.setPointerCapture(e.pointerId); el.classList.add('dragging');
+    e.preventDefault();
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    // while dragging, only this view moves, at the scale it started with; the arrangement refits on release
+    if (drag.resize) { const w = Math.max(120, drag.w + dx); el.style.width = w + 'px'; el.style.height = (w * drag.h) / drag.w + 'px'; }
+    else { el.style.left = drag.left + dx + 'px'; el.style.top = drag.top + dy + 'px'; }
+  });
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const s = (S.layout && S.layout.s) || 1, dx = (e.clientX - drag.x) / s, dy = (e.clientY - drag.y) / s;
+    const r = drag.resize ? { x: drag.r.x, y: drag.r.y, w: Math.max(120 / s, drag.r.w + dx) } : { x: drag.r.x + dx, y: drag.r.y + dy, w: drag.r.w };
+    S.arrange.tiles[c.key] = r; store.set('arrange', S.arrange);
+    drag = null; el.classList.remove('dragging');
+    layoutTiles();
+  };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  el.addEventListener('keydown', (e) => {
+    if (S.cams.length < 2 || e.target !== el) return;
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key], grow = { '+': 1.1, '=': 1.1, '-': 1 / 1.1 }[e.key];
+    if (!d && !grow) return;
+    toCustom();
+    const r = S.arrange.tiles[c.key];
+    if (!r) return;
+    if (d) { r.x += d[0] * 80; r.y += d[1] * 80; } else r.w *= grow;
+    store.set('arrange', S.arrange); layoutTiles(); e.preventDefault();
+  });
+}
+paintArrange();
+if ('ResizeObserver' in window) new ResizeObserver(() => layoutTiles()).observe($('stages'));
+
 // ---------------- frame loop ----------------
-function loopFrames() {
-  const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+// Each camera sends its newest frame to the one detector whenever its last one is done, so with several cameras
+// they take turns.
+function loopFrames(c) {
+  const v = c.video, hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
   let lastT = -1;
   const step = (now, meta) => {
-    if (!S.running) return;
-    if (hasRVFC) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
-    if (!hasRVFC) { if (video.currentTime === lastT) return; lastT = video.currentTime; }
-    S.stats.frames++;
-    if (video.videoWidth && (S.cam.w !== video.videoWidth || S.cam.h !== video.videoHeight)) updateCam();
-    if (!S.ready || S.busy || !video.videoWidth) return;
+    if (c.gone) return;
+    if (hasRVFC) v.requestVideoFrameCallback(step); else requestAnimationFrame(step);
+    if (!hasRVFC) { if (v.currentTime === lastT) return; lastT = v.currentTime; }
+    c.stats.frames++;
+    if (v.videoWidth && (c.cam.w !== v.videoWidth || c.cam.h !== v.videoHeight)) { updateCam(c); layoutTiles(); }
+    if (!S.ready || c.busy || !v.videoWidth) return;
     let time = meta && meta.captureTime ? meta.captureTime : performance.now();
     if (Math.abs(time - performance.now()) > 1000) time = performance.now();
-    S.busy = true;
-    createImageBitmap(video).then((bm) => {
+    c.busy = true;
+    createImageBitmap(v).then((bm) => {
+      if (c.gone) { bm.close(); return; }
       const sizes = sizesMap();
       const bodies = S.bodies.map((b) => ({ id: b.id, members: b.members.map((x) => ({ id: x.id, R: x.R, t: x.t, size: sizes[x.id] || S.settings.tagSize })) }));
-      S.worker.postMessage({ type: 'frame', bitmap: bm, seq: ++S.seq, time: time / 1000, mode: S.mode, cam: S.cam, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
-    }).catch(() => { S.busy = false; });
+      const square = S.mode === 'calib' ? (S.demo ? DEMO.square : S.square / 1000) : 0;
+      S.worker.postMessage({ type: 'frame', src: c.key, bitmap: bm, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
+    }).catch(() => { c.busy = false; });
   };
-  if (hasRVFC) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
+  if (hasRVFC) v.requestVideoFrameCallback(step); else requestAnimationFrame(step);
 }
-function tickStats(ms) {
-  const st = S.stats, now = performance.now();
+function tickStats(c, ms) {
+  const st = c.stats, now = performance.now();
   st.dets++; st.ms = st.ms ? st.ms * 0.9 + ms * 0.1 : ms;
-  if (now - st.t0 > 1000) {
-    st.fps = (st.frames * 1000) / (now - st.t0); st.dfps = (st.dets * 1000) / (now - st.t0);
-    st.frames = 0; st.dets = 0; st.t0 = now;
-    $('vstats').hidden = false;
-    $('vstats').innerHTML = `<span>${video.videoWidth}×${video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>`;
-    status(`${st.dfps.toFixed(0)} fps, ${st.ms.toFixed(0)} ms per frame`, 'live');
-  }
+  if (now - st.t0 < 1000) return;
+  st.fps = (st.frames * 1000) / (now - st.t0); st.dfps = (st.dets * 1000) / (now - st.t0);
+  st.frames = 0; st.dets = 0; st.t0 = now;
+  const vs = c.el.querySelector('.vstats'), many = S.cams.length > 1;
+  vs.hidden = false;
+  vs.innerHTML = many ? `<span>${st.dfps.toFixed(0)} fps</span><span>${st.ms.toFixed(0)} ms</span>`
+    : `<span>${c.video.videoWidth}×${c.video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>`;
+  if (c === S.cams[0]) status(many ? `${S.cams.length} cameras, ${S.cams.reduce((s, x) => s + x.stats.dfps, 0).toFixed(0)} frames a second` : `${st.dfps.toFixed(0)} fps, ${st.ms.toFixed(0)} ms per frame`, 'live');
 }
 
 // ---------------- tracking results ----------------
@@ -983,12 +1206,13 @@ function rawBody(b, tags) {
   }
   return null;
 }
-function onTags(m) {
-  tickStats(m.ms);
+function onTags(c, m) {
+  tickStats(c, m.ms);
   if (S.mode !== 'track') return;
-  const wall = performance.now() / 1000, mode = S.settings.pose, mem = memberIds();
-  S.last = m;
+  const wall = performance.now() / 1000, mem = memberIds();
+  c.last = m;
   for (const t of m.tags) S.seen.set(t.id, { time: m.time, wall, err: t.err });
+  // this camera's measurements, in its own frame
   const meas = new Map();
   for (const t of m.tags) {
     if (!t.R || mem.has(t.id)) continue;
@@ -1001,22 +1225,37 @@ function onTags(m) {
     const got = (m.bodies || []).find((x) => x.id === b.id);
     meas.set('b:' + b.id, { raw, cands: got ? got.cands : [], seen: got ? got.seen : 1 });
   }
-  const out = new Map();
-  for (const [key, z] of meas) {
+  c.local = new Map([...meas].map(([k, z]) => [k, z.cands[0] || z.raw]));
+  if (S.learn) learnStep(m);
+  if (c.T) fuse(c, m, meas, wall); // a camera that isn't placed only draws its own view
+  drawOverlay(c);
+}
+// A placed camera's measurements, moved into the rig's frame (camera 1's) and combined with the other cameras'.
+// Raw takes this camera's pose; Refined fuses the latest pose from every camera that saw the track within 50 ms;
+// Filtered feeds every camera's frames to the track's one Kalman filter as they arrive.
+function fuse(c, m, meas, wall) {
+  const mode = S.settings.pose, out = new Map(), rig = new Map();
+  for (const [key, z0] of meas) {
+    const z = { raw: C.toRig(c.T, z0.raw), cands: z0.cands.map((q) => C.toRig(c.T, q)), err: z0.err, size: z0.size, seen: z0.seen };
+    rig.set(key, z);
+    let zs = S.zs.get(key);
+    if (!zs) S.zs.set(key, (zs = new Map()));
+    zs.set(c.key, { time: m.time, z });
     let p = null;
     if (mode === 'raw' || !z.cands.length) p = z.raw;
-    else if (mode === 'refined') p = z.cands[0];
-    else {
+    else if (mode === 'refined') {
+      const now = [...zs.values()].filter((x) => Math.abs(x.time - m.time) < 0.05 && x.z.cands.length).map((x) => x.z.cands[0]);
+      p = now.length > 1 ? C.fusePoses(now) : z.cands[0];
+    } else {
       let f = S.filters.get(key);
       if (!f) { f = new C.PoseFilter(C.MOTION[S.settings.motion]); S.filters.set(key, f); }
       const r = f.update(m.time, z.cands);
       p = r && r.pose;
     }
-    const best = z.cands[0];
-    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen });
-    if (p) out.set(key, p);
+    const best = z.cands[0], cams = S.cams.filter((x) => { const q = zs.get(x.key); return q && m.time - q.time < 0.25; }).map((x) => x.n);
+    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen, cams });
+    if (p) { out.set(key, p); S.fused.set(key, { pose: p, time: m.time }); }
   }
-  if (S.learn) learnStep(m);
   // the reference frame: this frame's pose of the chosen track, or its last one within 0.25 s
   const refKey = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
   let ref = null, refRaw = null;
@@ -1027,82 +1266,109 @@ function onTags(m) {
   if (refKey === null || ref) {
     // the reference itself always sits at the origin, where the plot already draws it
     for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.tared(C.inFrame(p, ref), S.tare.get(key)));
-    if (S.settings.compare) for (const [key, z] of meas) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(C.inFrame(z.raw, refRaw), S.tare.get(key)));
+    if (S.settings.compare) for (const [key, z] of rig) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(C.inFrame(z.raw, refRaw), S.tare.get(key)));
   }
-  S.lastOut = out;
-  drawOverlay(m, out);
 }
 
-// ---------------- video overlay ----------------
-function clearOverlay() { const c = overlay.getContext('2d'); c.clearRect(0, 0, overlay.width, overlay.height); }
-// Map image pixels to the overlay canvas (the video is letterboxed with object-fit: contain).
+// ---------------- video overlays ----------------
+function clearOverlay(c) { const x = c.overlay.getContext('2d'); x.clearRect(0, 0, c.overlay.width, c.overlay.height); }
+function clearOverlays() { for (const c of S.cams) { clearOverlay(c); c.last = null; c.lastBoard = null; } }
+// Map a camera's image pixels to its overlay canvas (the video is letterboxed with object-fit: contain).
 // Mirror and Flip turn the video with CSS and these points with it; the text stays readable.
-function overlayMap() {
-  const r = overlay.getBoundingClientRect(), dpr = devicePixelRatio || 1;
-  const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
-  if (overlay.width !== W || overlay.height !== H) { overlay.width = W; overlay.height = H; }
-  const vw = video.videoWidth || 1, vh = video.videoHeight || 1;
-  return { s: Math.min(W / vw, H / vh), P: C.displayMap(W, H, vw, vh, S.settings.mirror, S.settings.flip), dpr, W, H };
+function overlayMap(c) {
+  const r = c.overlay.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
+  if (c.overlay.width !== W || c.overlay.height !== H) { c.overlay.width = W; c.overlay.height = H; }
+  const vw = c.video.videoWidth || 1, vh = c.video.videoHeight || 1;
+  return { s: Math.min(W / vw, H / vh), P: C.displayMap(W, H, vw, vh, S.settings.mirror, S.settings.flip), dpr, W, H, k: Math.min(1, Math.max(0.8, r.width / 560)) };
 }
 function paintPicture() {
-  $('stage').style.setProperty('--sx', S.settings.mirror ? -1 : 1);
-  $('stage').style.setProperty('--sy', S.settings.flip ? -1 : 1);
+  $('stages').style.setProperty('--sx', S.settings.mirror ? -1 : 1);
+  $('stages').style.setProperty('--sy', S.settings.flip ? -1 : 1);
   $('mirrorBtn').setAttribute('aria-pressed', String(S.settings.mirror));
   $('flipBtn').setAttribute('aria-pressed', String(S.settings.flip));
 }
 for (const k of ['mirror', 'flip']) $(k + 'Btn').onclick = () => {
   S.settings[k] = !S.settings[k]; store.set('settings', S.settings); paintPicture();
-  if (S.mode === 'track' && S.last) drawOverlay(S.last, S.lastOut || new Map()); else clearOverlay();
+  for (const c of S.cams) if (S.mode === 'track' && c.last) drawOverlay(c); else clearOverlay(c);
 };
 paintPicture();
-function drawOverlay(m, out) {
-  const c = overlay.getContext('2d'), M = overlayMap(), P = M.P;
-  c.clearRect(0, 0, M.W, M.H);
-  c.lineJoin = 'round';
+// One camera's view: an outline and the pose's axes on each tag it sees, a name plate, and each rigid object's axes.
+// A placed camera also draws, dashed, the tags it doesn't see itself but the other cameras do, where they would be.
+function drawOverlay(c) {
+  const m = c.last;
+  if (!m) return;
+  const ctx = c.overlay.getContext('2d'), M = overlayMap(c), P = M.P, cam = c.cam, u = M.dpr * M.k;
+  ctx.clearRect(0, 0, M.W, M.H);
+  ctx.lineJoin = 'round';
   const placed = [], mem = memberIds();
+  // a track's pose in this camera's frame: the fused pose moved back from the rig, or (not placed) its own
+  const inCam = (key) => {
+    if (c.T) { const f = S.fused.get(key); return f && Math.abs(f.time - m.time) < 0.25 ? C.compose(C.inverse(c.T), f.pose) : null; }
+    return c.local.get(key) || null;
+  };
   const axes = (pose, L) => {
-    const o = C.project(S.cam, pose.t);
+    const o = C.project(cam, pose.t);
     if (!o) return;
     for (const a of [[L, 0, 0, K.x], [0, L, 0, K.y], [0, 0, L, K.z]]) {
-      const e = C.project(S.cam, C.add(pose.t, C.mulv(pose.R, a)));
+      const e = C.project(cam, C.add(pose.t, C.mulv(pose.R, a)));
       if (!e) continue;
       const A = P(o[0], o[1]), B = P(e[0], e[1]);
-      c.strokeStyle = a[3]; c.lineWidth = 2.5 * M.dpr; c.beginPath(); c.moveTo(A[0], A[1]); c.lineTo(B[0], B[1]); c.stroke();
+      ctx.strokeStyle = a[3]; ctx.lineWidth = 2.5 * u; ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke();
     }
   };
   // a name plate: above the anchor point; below `below` if that's taken; then further up
+  const roomy = M.W / M.dpr >= 300;
   const plate = (txt, col, top, below) => {
-    c.font = `600 ${12 * M.dpr}px Archivo, system-ui, sans-serif`;
-    const tw = c.measureText(txt).width, pad = 6 * M.dpr, h = 20 * M.dpr, bw = tw + 2 * pad + 10 * M.dpr;
+    if (!roomy) return; // a small view: outlines and axes only; the names are in the table
+    ctx.font = `600 ${12 * u}px Archivo, system-ui, sans-serif`;
+    const tw = ctx.measureText(txt).width, pad = 6 * u, h = 20 * u, bw = tw + 2 * pad + 10 * u;
     const x = Math.max(2, Math.min(M.W - bw - 2, top[0] - tw / 2 - pad));
     const hits = (y) => placed.some((r) => x < r[0] + r[2] && r[0] < x + bw && y < r[1] + r[3] && r[1] < y + h);
-    let y = Math.max(2, top[1] - h - 8 * M.dpr);
-    if (hits(y)) { const yb = Math.min(M.H - h - 2, below + 8 * M.dpr); if (!hits(yb)) y = yb; else for (let k = 0; k < 5 && hits(y); k++) y = Math.max(2, y - h - 3 * M.dpr); }
+    let y = Math.max(2, top[1] - h - 8 * u);
+    if (hits(y)) { const yb = Math.min(M.H - h - 2, below + 8 * u); if (!hits(yb)) y = yb; else for (let k = 0; k < 5 && hits(y); k++) y = Math.max(2, y - h - 3 * u); }
     placed.push([x, y, bw, h]);
-    c.fillStyle = 'rgba(12,14,17,.78)'; roundRect(c, x, y, bw, h, 5 * M.dpr); c.fill();
-    c.fillStyle = col; roundRect(c, x + pad, y + h / 2 - 4 * M.dpr, 8 * M.dpr, 8 * M.dpr, 2 * M.dpr); c.fill();
-    c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(txt, x + pad + 12 * M.dpr, y + h / 2 + 0.5);
+    ctx.fillStyle = 'rgba(12,14,17,.78)'; roundRect(ctx, x, y, bw, h, 5 * u); ctx.fill();
+    ctx.fillStyle = col; roundRect(ctx, x + pad, y + h / 2 - 4 * u, 8 * u, 8 * u, 2 * u); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.fillText(txt, x + pad + 12 * u, y + h / 2 + 0.5);
   };
+  const quad = (pts, col, dashed) => {
+    ctx.lineWidth = 2 * u; ctx.strokeStyle = col; ctx.setLineDash(dashed ? [5 * u, 4 * u] : []);
+    ctx.beginPath(); pts.forEach((p, k) => (k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  const seenHere = new Set();
   for (const t of m.tags) {
     const inBody = mem.has(t.id), key = inBody ? 'b:' + S.bodies.find((b) => b.members.some((x) => x.id === t.id)).id : t.id;
-    const col = colorOf(key), q = t.corners;
-    c.lineWidth = 2 * M.dpr; c.strokeStyle = col;
-    c.beginPath();
-    for (let k = 0; k < 4; k++) { const p = P(q[2 * k], q[2 * k + 1]); k ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]); }
-    c.closePath(); c.stroke();
-    const p0 = P(q[0], q[1]); // first corner marked, so the tag's orientation is visible
-    c.fillStyle = col; c.beginPath(); c.arc(p0[0], p0[1], 3 * M.dpr, 0, 7); c.fill();
-    const pose = inBody ? null : out.get(t.id) || (t.R ? t : null);
+    seenHere.add(t.id);
+    const col = colorOf(key), q = t.corners, sp = [0, 1, 2, 3].map((k) => P(q[2 * k], q[2 * k + 1]));
+    quad(sp, col, false);
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sp[0][0], sp[0][1], 3 * u, 0, 7); ctx.fill(); // first corner: the tag's orientation
+    const pose = inBody ? null : inCam(t.id) || (t.R ? t : null);
     if (pose) axes(pose, Math.min(S.settings.axisLen, t.size));
-    const sp = [0, 1, 2, 3].map((k) => P(q[2 * k], q[2 * k + 1])), xs = sp.map((p) => p[0]), ys = sp.map((p) => p[1]);
+    const xs = sp.map((p) => p[0]), ys = sp.map((p) => p[1]);
     const txt = inBody ? (tagOf(t.id) && tagOf(t.id).name ? tagOf(t.id).name : '#' + t.id) : nameOf(t.id) + (pose ? `  ${(C.norm(pose.t) * 100).toFixed(1)} cm` : '');
     plate(txt, col, [(Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)], Math.max(...ys));
   }
+  // tracks the other cameras see and this one doesn't: dashed, where they would be in this picture
+  if (c.T && S.cams.length > 1) for (const [key] of S.fused) {
+    if (isBody(key) || seenHere.has(key) || mem.has(key)) continue;
+    const pose = inCam(key);
+    if (!pose) continue;
+    const img = C.tagCorners(sizeOf(key)).map((X) => C.project(cam, C.add(C.mulv(pose.R, X), pose.t)));
+    if (img.some((p) => !p || p[0] < 0 || p[1] < 0 || p[0] > cam.w || p[1] > cam.h)) continue;
+    const sp = img.map((p) => P(p[0], p[1])), xs = sp.map((p) => p[0]), ys = sp.map((p) => p[1]);
+    quad(sp, colorOf(key), true);
+    axes(pose, Math.min(S.settings.axisLen, sizeOf(key)));
+    plate(`${nameOf(key)}  other cameras`, colorOf(key), [(Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)], Math.max(...ys));
+  }
   // each rigid object: its axes at its origin, and its name
-  for (const [key, pose] of out) {
+  for (const key of c.T ? S.fused.keys() : c.local.keys()) {
     if (!isBody(key)) continue;
+    const pose = inCam(key);
+    if (!pose) continue;
     axes(pose, S.settings.axisLen);
-    const o = C.project(S.cam, pose.t);
+    const o = C.project(cam, pose.t);
     if (o) { const so = P(o[0], o[1]), d = 14 * M.s; plate(`${nameOf(key)}  ${(C.norm(pose.t) * 100).toFixed(1)} cm`, colorOf(key), [so[0], so[1] - d], so[1] + d); }
   }
 }
@@ -1249,12 +1515,20 @@ function draw3d() {
   c.fillText(`grid ${step >= 1 ? step + ' m' : +(step * 100).toFixed(1) + ' cm'}`, 10, h - 10);
   // origin: the camera, or the reference tag
   const L0 = Math.max(0.05, step * 0.6);
-  if (S.settings.frame === 'camera') {
-    const fx = S.cam ? Math.tan((C.hfov(S.cam) * Math.PI) / 360) : 0.7, fy = S.cam ? fx * S.cam.h / S.cam.w : 0.4, d = L0;
-    const corners = [[-fx * d, d, fy * d], [fx * d, d, fy * d], [fx * d, d, -fy * d], [-fx * d, d, -fy * d]];
-    for (let k = 0; k < 4; k++) { line([0, 0, 0], corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
-    label([0, 0, -0.02], 'Camera', K.text2, 6, 10);
-  } else {
+  // the cameras: each placed one as a small pyramid where the rig puts it (camera 1 alone before any start)
+  const camRef = S.settings.frame === 'camera' ? null : (S.tracks.get(parseKey(S.settings.frame)) || {}).pose || null;
+  if (S.settings.frame === 'camera' || camRef) {
+    const list = S.cams.length ? S.cams.filter((c) => c.T) : [{ n: 1, T: { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, cam: null }];
+    for (const cm of list) {
+      const a = cm.cam ? Math.tan((C.hfov(cm.cam) * Math.PI) / 360) : 0.7, b = cm.cam ? (a * cm.cam.h) / cm.cam.w : 0.4, d = L0;
+      const P = C.inFrame(cm.T, camRef), at = (q) => C.add(C.mulv(P.R, q), P.t);
+      const corners = [[-a, -b, 1], [a, -b, 1], [a, b, 1], [-a, b, 1]].map((q) => at(q.map((x) => x * d)));
+      for (let k = 0; k < 4; k++) { line(P.t, corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
+      line(corners[0], corners[1], K.text2, 2.5); // the top edge, so which way is up reads at a glance
+      label(at([0, b * d * 1.6, 0]), list.length > 1 ? `Camera ${cm.n}` : 'Camera', K.text2, 6, 10);
+    }
+  }
+  if (S.settings.frame !== 'camera') {
     // the reference: its tag, or each of its object's tags, turned upright as the plot shows it
     const rk = parseKey(S.settings.frame), b = isBody(rk) ? bodyOf(rk) : null;
     const parts = b ? b.members.map((m) => ({ R: m.R, t: m.t, size: sizeOf(m.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(rk) }];
@@ -1468,10 +1742,10 @@ function drawTable() {
     if (!s || !tr || t - s.time > 0.5) continue;
     const p = tr.pose || tr.raw, dir = C.mulv([1, 0, 0, 0, 1, 0, 0, 0, 1], p.t.map((x) => x / C.norm(p.t)));
     // ± along the line of sight, from the pose covariance (raw poses have none: a quick estimate instead)
-    const sd = tr.cov ? C.sigmaAlong(tr.cov, dir) : !isBody(key) && S.cam ? C.depthNoise(S.cam, tr.size || S.settings.tagSize, C.norm(p.t), 0.2) : NaN;
+    const sd = tr.cov ? C.sigmaAlong(tr.cov, dir) : !isBody(key) && S.cams[0] ? C.depthNoise(S.cams[0].cam, tr.size || S.settings.tagSize, C.norm(p.t), 0.2) : NaN;
     const speed = tr.v ? C.norm(tr.v) * 100 : NaN;
     const q = C.quatOf(s.R), cell = (v, d, g) => `<td class="num mono${g ? ' g' : ''}">${v.toFixed(d).replace(/^-(0\.0*)$/, '$1')}</td>`;
-    rows.push(`<tr data-key="${key}" aria-selected="${key === S.tplotTag}"><td><span style="display:inline-flex;align-items:center;gap:7px;white-space:nowrap"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}${S.tare.has(key) ? ' <span class="tared">tared</span>' : ''}</span></td>` +
+    rows.push(`<tr data-key="${key}" aria-selected="${key === S.tplotTag}"><td><span style="display:inline-flex;align-items:center;gap:7px;white-space:nowrap"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}${S.tare.has(key) ? ' <span class="tared">tared</span>' : ''}${S.cams.length > 1 && tr.cams && tr.cams.length ? ` <span class="tared" title="Seen by these cameras">cam ${tr.cams.join(', ')}</span>` : ''}</span></td>` +
       s.t.map((v, i) => cell(v * 100, 1, !i)).join('') + q.map((v, i) => cell(v, 3, !i)).join('') +
       `<td class="num mono g">${(C.norm(s.t) * 100).toFixed(1)}</td><td class="num mono">${isFinite(speed) ? speed.toFixed(0) : '—'}</td><td class="num mono">${isFinite(tr.rms) ? tr.rms.toFixed(2) + ' px' : '—'}</td><td class="num mono">${isFinite(sd) ? (sd * 1000).toFixed(1) + ' mm' : '—'}</td></tr>`);
   }
@@ -1485,7 +1759,7 @@ function fmtAgo(s) { return s < 60 ? `${s.toFixed(0)} s` : s < 3600 ? `${(s / 60
 // ---------------- render loop ----------------
 function frame() {
   if (S.mode === 'track') { draw3d(); drawTplot(); drawTable(); }
-  if (S.running && S.last && performance.now() / 1000 - S.last.time > 0.5 && S.mode === 'track') { clearOverlay(); S.last = null; }
+  if (S.mode === 'track') for (const c of S.cams) if (c.last && performance.now() / 1000 - c.last.time > 0.5) { clearOverlay(c); c.last = null; }
   requestAnimationFrame(frame);
 }
 
@@ -1504,7 +1778,7 @@ function setMode(m) {
     document.querySelector('main').appendChild($('calibCard'));
     renderCalib();
   } else document.querySelector('.col').appendChild($('calibCard'));
-  clearOverlay(); S.lastBoard = null;
+  clearOverlays(); renderRig();
 }
 $('tab-track').onclick = () => setMode('track');
 $('tab-calib').onclick = () => setMode('calib');
@@ -1515,59 +1789,80 @@ const mq = matchMedia('(max-width:1000px)');
 mq.addEventListener('change', () => setMode(S.mode));
 
 // ---------------- calibration ----------------
+// Steps 2 and 3 calibrate one camera's lens (S.calibCam, picked in step 2); step 4 places the cameras.
+const calibCam = () => S.cams[S.calibCam] || null;
+const calibKey = () => (calibCam() ? calibCam().label : '');
 $('square').value = S.square;
 $('square').onchange = () => { const v = +$('square').value; if (v >= 3 && v <= 200) { S.square = v; store.set('square', v); } else $('square').value = S.square; };
 $('autoSw').onclick = () => { S.auto = !S.auto; $('autoSw').setAttribute('aria-checked', String(S.auto)); };
-$('captureBtn').onclick = () => { if (S.lastBoard && S.lastBoard.ids.length >= 6) capture(S.lastBoard); };
+$('captureBtn').onclick = () => { const c = calibCam(); if (c && c.lastBoard && c.lastBoard.ids.length >= 6) capture(c, c.lastBoard); };
 $('clearViews').onclick = () => { S.views = []; renderCalib(); };
 $('solveBtn').onclick = () => {
   if (S.views.length < MIN_VIEWS) return;
   $('solveBtn').disabled = true; $('solveBtn').textContent = 'Solving…';
   const v0 = S.views[0];
+  S.calibFor = calibKey();
   S.worker.postMessage({ type: 'calibrate', views: S.views.map((v) => ({ ids: v.ids, pts: v.pts })), w: v0.w, h: v0.h, square: S.square / 1000 });
 };
-function onBoard(m) {
-  tickStats(m.ms);
+function renderCalibCams() {
+  const sel = $('calibCamSel');
+  sel.innerHTML = S.cams.map((c, i) => `<option value="${i}">Camera ${c.n}: ${escapeHtml(c.label)}</option>`).join('');
+  sel.value = String(S.calibCam);
+  $('calibCamWrap').hidden = S.cams.length < 2;
+  const c = calibCam();
+  $('calibFor').textContent = c ? `${c.label}, ${c.video.videoWidth || c.cam.w}×${c.video.videoHeight || c.cam.h}` : '';
+}
+$('calibCamSel').onchange = () => { S.calibCam = +$('calibCamSel').value; S.views = []; S.calibResult = null; for (const c of S.cams) clearOverlay(c); renderCalibCams(); renderCalib(); };
+function onBoard(c, m) {
+  tickStats(c, m.ms);
   if (S.mode !== 'calib') return;
-  const prev = S.lastBoard;
-  S.lastBoard = m;
-  const motion = C.cornerMotion(prev, m);
-  S.still = m.ids.length >= 6 && motion < 0.8 ? S.still + 1 : 0;
-  $('captureBtn').disabled = m.ids.length < 6 || !!S.demo;
+  const prev = c.lastBoard;
+  m.wall = performance.now() / 1000;
+  c.lastBoard = m;
+  c.still = m.ids.length >= 6 && C.cornerMotion(prev, m) < 0.8 ? c.still + 1 : 0;
+  if (c === calibCam()) lensStep(c, m);
+  rigStep();
+  drawBoard(c, m);
+}
+// Step 2 for the camera being calibrated: auto-capture still, new views of the board.
+function lensStep(c, m) {
+  $('captureBtn').disabled = m.ids.length < 6 || c.demo !== null;
   let tip;
-  if (S.demo) tip = 'Calibration needs a real camera: the demo has no lens to measure.';
+  if (c.demo !== null) tip = 'The demo cameras’ lenses are known exactly, so there is nothing to calibrate here. Place them in step 4.';
   else if (m.ids.length < 6) tip = 'Hold the whole board in view, flat and well lit.';
   else {
     const sig = C.viewSignature(m.pts, m.w, m.h), dmin = Math.min(Infinity, ...S.views.map((v) => C.signatureDistance(v.sig, sig)));
     const novel = dmin > 0.12, nowMs = performance.now();
-    if (S.auto && novel && S.still >= 3 && nowMs - S.lastCapture > 700) capture(m, sig);
-    tip = !novel ? 'Already have this view: tilt the board or move it towards an uncovered part of the frame.' : S.still < 3 ? 'Hold still…' : 'Good view.';
+    if (S.auto && novel && c.still >= 3 && nowMs - S.lastCapture > 700) capture(c, m, sig);
+    tip = !novel ? 'Already have this view: tilt the board or move it towards an uncovered part of the frame.' : c.still < 3 ? 'Hold still…' : 'Good view.';
     if (S.views.length >= 4 && novel) {
       const cov = C.coverage(S.views.map((v) => v.pts), m.w, m.h, 6, 4);
       if (cov.fraction < 0.6) tip += ' Reach the edges and corners of the frame too.';
     }
   }
   $('calibTip').textContent = tip;
-  drawBoard(m);
 }
-function capture(m, sig) {
-  if (S.demo) return;
+function flash(c) { const f = c.el.querySelector('.flash'); f.classList.add('on'); setTimeout(() => f.classList.remove('on'), 60); }
+function capture(c, m, sig) {
+  if (c.demo !== null) return;
   if (S.views.length && (S.views[0].w !== m.w || S.views[0].h !== m.h)) S.views = [];
   S.views.push({ ids: m.ids.slice(), pts: m.pts.map((p) => p.slice()), w: m.w, h: m.h, sig: sig || C.viewSignature(m.pts, m.w, m.h) });
-  S.lastCapture = performance.now(); S.still = 0;
-  const f = $('flash'); f.classList.add('on'); setTimeout(() => f.classList.remove('on'), 60);
+  S.lastCapture = performance.now(); c.still = 0;
+  flash(c);
   renderCalib();
 }
-function drawBoard(m) {
-  const c = overlay.getContext('2d'), M = overlayMap(), P = (p) => M.P(p[0], p[1]);
-  c.clearRect(0, 0, M.W, M.H);
-  // captured corners so far, faint: what the frame coverage looks like
-  c.fillStyle = 'rgba(76,194,122,.55)';
-  for (const v of S.views) for (const p of v.pts) { const q = P(p); c.fillRect(q[0] - 1.5 * M.dpr, q[1] - 1.5 * M.dpr, 3 * M.dpr, 3 * M.dpr); }
-  c.strokeStyle = 'rgba(255,255,255,.45)'; c.lineWidth = 1 * M.dpr;
-  for (const mk of m.markers) { c.beginPath(); for (let k = 0; k < 4; k++) { const q = P([mk[2 * k], mk[2 * k + 1]]); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); } c.closePath(); c.stroke(); }
+function drawBoard(c, m) {
+  const ctx = c.overlay.getContext('2d'), M = overlayMap(c), P = (p) => M.P(p[0], p[1]), u = M.dpr * M.k;
+  ctx.clearRect(0, 0, M.W, M.H);
+  // the lens views captured so far, faint: what the frame coverage looks like
+  if (c === calibCam()) {
+    ctx.fillStyle = 'rgba(76,194,122,.55)';
+    for (const v of S.views) for (const p of v.pts) { const q = P(p); ctx.fillRect(q[0] - 1.5 * u, q[1] - 1.5 * u, 3 * u, 3 * u); }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 1 * u;
+  for (const mk of m.markers) { ctx.beginPath(); for (let k = 0; k < 4; k++) { const q = P([mk[2 * k], mk[2 * k + 1]]); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); } ctx.closePath(); ctx.stroke(); }
   const ok = m.ids.length >= 6;
-  for (const p of m.pts) { const q = P(p); c.fillStyle = ok ? K.accent : '#f59e0b'; c.strokeStyle = '#fff'; c.lineWidth = 1.5 * M.dpr; c.beginPath(); c.arc(q[0], q[1], 3.5 * M.dpr, 0, 7); c.fill(); c.stroke(); }
+  for (const p of m.pts) { const q = P(p); ctx.fillStyle = ok ? K.accent : '#f59e0b'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * u; ctx.beginPath(); ctx.arc(q[0], q[1], 3.5 * u, 0, 7); ctx.fill(); ctx.stroke(); }
 }
 function renderCalib() {
   const n = S.views.length;
@@ -1581,16 +1876,17 @@ function renderCalib() {
   const list = $('viewList');
   list.innerHTML = S.views.map((v, i) => `<span class="chip"><span class="mono">${i + 1}</span><span class="muted">${v.ids.length} corners</span><button aria-label="Remove view ${i + 1}" data-i="${i}" style="background:none;color:var(--muted)">×</button></span>`).join('');
   list.querySelectorAll('button').forEach((b) => { b.onclick = () => { S.views.splice(+b.dataset.i, 1); renderCalib(); }; });
+  if (!S.cams.length) $('calibTip').textContent = 'Start the camera and hold the board in view.';
   renderCalibStatus();
 }
 function renderCalibStatus() {
-  const saved = S.calibs[S.camKey], out = $('calibResult');
+  const saved = S.calibs[calibKey()], out = $('calibResult');
   $('exportBtn').disabled = !saved; $('forgetBtn').disabled = !saved;
   if (!out) return;
-  const c = S.calibResult || saved;
+  const c = (S.calibResult && S.calibResult.camera === calibKey() && S.calibResult) || saved;
   if (!c) { out.innerHTML = '<p class="hint">Until this camera is calibrated, distances use a field-of-view guess and can be off by 10% or more.</p>'; return; }
   const q = c.rms < 0.5 ? ['good', 'i-check', 'Good'] : c.rms < 1 ? ['warn', 'i-alert', 'Usable'] : ['bad', 'i-alert', 'Poor'];
-  const fresh = S.calibResult && S.calibResult !== saved;
+  const fresh = S.calibResult && S.calibResult === c && c.date && Date.now() - Date.parse(c.date) < 6e5;
   out.innerHTML = `<div class="row" style="margin-bottom:8px"><span class="badge ${q[0]}"><svg class="i"><use href="#${q[1]}"/></svg>${q[2]}</span><span class="mono">RMS ${c.rms.toFixed(3)} px</span><span class="muted small">${fresh ? 'New and saved' : 'Saved'}: ${c.w}×${c.h}${c.views ? ', from ' + c.views + ' views' : ''}</span></div>
     <dl class="kv mono">
       <dt>focal</dt><dd>fx ${c.fx.toFixed(1)}, fy ${c.fy.toFixed(1)} px${c.sd ? ` (± ${c.sd.fx.toFixed(1)})` : ''}</dd>
@@ -1601,33 +1897,108 @@ function renderCalibStatus() {
     ${c.rms >= 0.5 ? '<p class="hint" style="margin-top:8px">Under 0.5 px is good. To improve: lock focus, light the board evenly, keep it flat and still, and add views tilted 30–45° and near the frame corners.</p>' : ''}`;
 }
 function onCalibrated(c) {
+  const key = S.calibFor || calibKey();
   c.date = new Date().toISOString();
-  c.camera = S.camKey;
-  S.calibs[S.camKey] = c; store.set('calibs', S.calibs);
+  c.camera = key;
+  S.calibs[key] = c; store.set('calibs', S.calibs);
   S.calibResult = c;
   resetTracks();
-  updateCam(); renderCalib();
+  S.cams.forEach(updateCam); renderCalib();
 }
-$('forgetBtn').onclick = () => { if (!confirm(`Forget the calibration for “${S.camKey}”?`)) return; delete S.calibs[S.camKey]; store.set('calibs', S.calibs); S.calibResult = null; updateCam(); renderCalib(); };
+$('forgetBtn').onclick = () => { const k = calibKey(); if (!confirm(`Forget the calibration for “${k}”?`)) return; delete S.calibs[k]; store.set('calibs', S.calibs); S.calibResult = null; S.cams.forEach(updateCam); renderCalib(); };
 $('exportBtn').onclick = () => {
-  const c = S.calibs[S.camKey]; if (!c) return;
+  const c = S.calibs[calibKey()]; if (!c) return;
   const blob = new Blob([JSON.stringify(Object.assign({ format: 'tag-tracker-calibration/1' }, c), null, 2)], { type: 'application/json' });
-  download(blob, `calibration-${slug(S.camKey)}-${c.w}x${c.h}.json`);
+  download(blob, `calibration-${slug(calibKey())}-${c.w}x${c.h}.json`);
 };
 $('importBtn').onclick = () => $('importFile').click();
 $('importFile').onchange = async () => {
   const f = $('importFile').files[0]; $('importFile').value = '';
-  if (!f) return;
+  if (!f || !calibCam()) return;
   try {
     const c = JSON.parse(await f.text()), err = C.checkCalibration(c);
     if (err) throw new Error(err);
     c.rms = typeof c.rms === 'number' ? c.rms : 0;
-    S.calibs[S.camKey] = c; store.set('calibs', S.calibs); S.calibResult = null; resetTracks(); updateCam(); renderCalib();
+    S.calibs[calibKey()] = c; store.set('calibs', S.calibs); S.calibResult = null; resetTracks(); S.cams.forEach(updateCam); renderCalib();
   } catch (e) { $('calibResult').innerHTML = `<div class="note warn"><svg class="i"><use href="#i-alert"/></svg><span>That file isn’t a calibration (${escapeHtml(e.message)}).</span></div>`; }
 };
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'camera'; }
 function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
 
+// ---------------- placing the cameras (step 4) ----------------
+// A rig view is one still pose of the board seen whole by two or more cameras at once: each camera's corners and
+// its own estimate of the board's pose. calibrateRig solves every camera's pose relative to camera 1 from all of
+// them together. Views are kept by camera key, so a camera can be removed and added back.
+const RIG_MIN = 4, RIG_TARGET = 12;
+$('rigAutoSw').onclick = () => { S.rigAuto = !S.rigAuto; $('rigAutoSw').setAttribute('aria-checked', String(S.rigAuto)); };
+$('rigClear').onclick = () => { S.rigViews = []; renderRig(); };
+$('rigForget').onclick = () => { if (!confirm('Forget where the cameras are?')) return; S.rig = null; S.rigFresh = null; store.set('rig', null); placeCams(); resetTracks(); renderRig(); layoutTiles(); };
+// the cameras that see the whole board now, held still
+function rigReady() {
+  const now = performance.now() / 1000;
+  return S.cams.filter((x) => x.lastBoard && x.lastBoard.pose && x.lastBoard.ids.length >= 6 && now - x.lastBoard.wall < 0.3 && x.still >= 3);
+}
+function rigStep() {
+  if (S.cams.length < 2) return;
+  const ready = rigReady(), now = performance.now() / 1000;
+  $('rigCapture').disabled = ready.length < 2;
+  if (!S.rigAuto || ready.length < 2 || now - S.lastRig < 1) return;
+  // new: the board somewhere else (10 cm or 10°) for at least one of these cameras than in every earlier view
+  const novel = ready.some((x) => S.rigViews.every((v) => {
+    const o = v.obs.find((q) => q.key === x.key), p = x.lastBoard.pose;
+    return !o || C.norm(C.sub(o.pose.t, p.t)) > 0.1 || C.angleOf(C.mul3(C.tr3(o.pose.R), p.R)) > 0.17;
+  }));
+  if (novel) captureRig(ready);
+}
+function captureRig(ready) {
+  S.rigViews.push({ obs: ready.map((x) => ({ key: x.key, obj: x.lastBoard.pose.obj, pts: x.lastBoard.pts.map((p) => p.slice()), pose: { R: x.lastBoard.pose.R, t: x.lastBoard.pose.t } })) });
+  S.lastRig = performance.now() / 1000;
+  for (const x of ready) { x.still = 0; flash(x); }
+  renderRig();
+}
+$('rigCapture').onclick = () => { const r = rigReady(); if (r.length >= 2) captureRig(r); };
+$('rigSolve').onclick = () => {
+  const keys = S.cams.map((c) => c.key);
+  const views = S.rigViews.map((v) => ({ obs: v.obs.filter((o) => keys.includes(o.key)).map((o) => ({ cam: keys.indexOf(o.key), obj: o.obj, pts: o.pts, pose: o.pose })) })).filter((v) => v.obs.length >= 2);
+  const r = C.calibrateRig(S.cams.map((c) => c.cam), views);
+  S.rig = { keys, labels: S.cams.map((c) => c.label), poses: r.poses, rms: r.rms, perCam: r.perCam, views: r.views, date: new Date().toISOString() };
+  S.rigFresh = S.rig;
+  store.set('rig', S.rig);
+  placeCams(); resetTracks(); renderRig(); layoutTiles();
+};
+// The demo knows where its cameras really are: how far the solved rig is from that.
+function demoTruth(c) {
+  const c0 = S.cams[0];
+  if (!S.demo || c.demo === null || c0.demo === null) return null;
+  return C.compose(C.inverse(DEMO.cams[c0.demo]), DEMO.cams[c.demo]);
+}
+function renderRig() {
+  const many = S.cams.length > 1, n = S.rigViews.length;
+  $('rigCount').textContent = `${n} / ${RIG_TARGET} views`;
+  $('rigBar').style.width = Math.min(100, (100 * n) / RIG_TARGET) + '%';
+  $('rigSolve').disabled = !many || n < RIG_MIN;
+  $('rigSolve').title = n < RIG_MIN ? `Capture at least ${RIG_MIN} views (${RIG_TARGET} is better)` : '';
+  $('rigClear').disabled = !n; $('rigForget').disabled = !S.rig;
+  $('rigCapture').disabled = true;
+  $('rigTip').textContent = !many ? 'Run two or more cameras (Add camera, above the views) to place them relative to each other.'
+    : `Hold the board still where at least two cameras see all of it, until their views flash; then move it somewhere new and hold again. ${S.demo ? 'In the demo the board moves and holds by itself.' : 'Calibrate each lens first (steps 2 and 3) for the best result.'}`;
+  // per camera: the views it is in, and where the rig puts it
+  const fmt = (v) => (v >= 0 ? '+' : '−') + Math.abs(v * 100).toFixed(1);
+  const rows = S.cams.map((c) => {
+    const inViews = S.rigViews.filter((v) => v.obs.some((o) => o.key === c.key)).length;
+    const i = S.rig ? S.rig.keys.indexOf(c.key) : -1, pc = i >= 0 && S.rig.perCam ? S.rig.perCam[i] : null;
+    let where = c.n === 1 ? '<span class="muted">the origin</span>' : '<span class="muted">not placed</span>';
+    if (c.n > 1 && c.T) {
+      const v = C.toView(c.T).t, truth = demoTruth(c);
+      where = `<span class="mono">${fmt(v[0])}, ${fmt(v[1])}, ${fmt(v[2])}</span> <span class="muted">cm, turned</span> <span class="mono">${(C.angleOf(c.T.R) * 180 / Math.PI).toFixed(1)}°</span>` +
+        (truth ? `<div class="small truth">Demo truth: off by ${(C.norm(C.sub(c.T.t, truth.t)) * 1000).toFixed(1)} mm and ${(C.angleOf(C.mul3(C.tr3(truth.R), c.T.R)) * 180 / Math.PI).toFixed(2)}°</div>` : '');
+    }
+    return `<tr><td><b>${c.n}</b> ${escapeHtml(c.label)}</td><td class="num mono">${inViews}</td><td>${where}</td><td class="num mono">${pc && isFinite(pc.rms) ? pc.rms.toFixed(2) + ' px' : '—'}</td></tr>`;
+  }).join('');
+  $('rigRows').innerHTML = rows || '<tr><td colspan="4" class="muted">No cameras running.</td></tr>';
+  const r = S.rig;
+  $('rigResult').innerHTML = r ? `<div class="row"><span class="badge ${r.rms < 0.5 ? 'good' : r.rms < 1 ? 'warn' : 'bad'}"><svg class="i"><use href="#${r.rms < 1 ? 'i-check' : 'i-alert'}"/></svg>${r.rms < 0.5 ? 'Good' : r.rms < 1 ? 'Usable' : 'Poor'}</span><span class="mono">RMS ${r.rms.toFixed(3)} px</span><span class="muted small">${S.rigFresh === r ? 'New and saved' : 'Saved'}: ${r.keys.length} cameras from ${r.views} views</span></div>` : '';
+}
 // ---------------- printing ----------------
 function grayToCanvas(img, quiet) {
   const q = quiet || 0, cv = document.createElement('canvas');
@@ -1751,47 +2122,164 @@ window.addEventListener('resize', () => { if (!$('boardView').hidden) { clearTim
 const routeHash = () => { if (location.hash === BOARD_HASH) showBoardView(); else hideBoardView(); };
 window.addEventListener('hashchange', routeHash);
 
-// ---------------- demo: a synthetic camera with three tags moving ----------------
+// ---------------- demo: three simulated cameras round one scene ----------------
+// The scene (three tags moving, or while calibrating the board, moving and holding still) is rendered with WebGL in
+// true perspective from each camera's pose and lens, so each camera sees it from its own side and the detector,
+// the fusion and the camera placement all run on real pictures. World frame = camera 1's. Lenses: the 70° guess.
+const DEMO = (() => {
+  const W = 1280, H = 720, center = [0, 0.05, 1.35];
+  return {
+    W, H, center, square: 0.06, // the board's squares, m (bigger than a printed one, as on a large screen)
+    audience: [0, -0.1, 0.35], // what the tags and board turn towards, so all three cameras see them
+    intr: C.guessIntrinsics(W, H, 70),
+    cams: [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, C.lookAt([-0.8, -0.25, 0.45], center), C.lookAt([0.75, -0.4, 0.55], center)],
+  };
+})();
+// A frame at p whose z points at `at` (a tag's face looks along +z; the board's −z), upright, then rolled and tilted.
+function facing(p, at, roll, tilt, away) {
+  const z0 = C.sub(at, p), z = C.mulv([1, 0, 0, 0, 1, 0, 0, 0, 1], z0.map((x) => (x / C.norm(z0)) * (away ? -1 : 1)));
+  const up = away ? [0, 1, 0] : [0, -1, 0], d = up[0] * z[0] + up[1] * z[1] + up[2] * z[2];
+  const y0 = C.sub(up, z.map((x) => x * d)), y = y0.map((x) => x / C.norm(y0));
+  const x = [y[1] * z[2] - y[2] * z[1], y[2] * z[0] - y[0] * z[2], y[0] * z[1] - y[1] * z[0]];
+  const F = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+  return C.mul3(F, C.mul3(C.rodrigues([0, 0, roll || 0]), C.rodrigues([0, tilt || 0, 0])));
+}
+function demoTags(t) {
+  const A = DEMO.audience, pose = (p, roll, tilt) => ({ R: facing(p, A, roll, tilt), t: p });
+  return [
+    { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0) },
+    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.5 * Math.sin(1.1 * t)) },
+    { id: 1, ...pose([0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.4 * Math.cos(0.9 * t)) },
+  ];
+}
+// The board while calibrating: it holds each of 12 poses for 1.5 s and moves between them in 0.7 s.
+const BOARD_KEYS = Array.from({ length: 12 }, (_, k) => ({
+  p: C.add(DEMO.center, [0.22 * Math.sin(k * 2.4), 0.13 * Math.cos(k * 1.7), -0.1 + 0.18 * Math.sin(k * 1.3)]),
+  roll: 0.3 * Math.sin(k * 0.9), tilt: 0.35 * Math.cos(k * 1.9), pitch: 0.3 * Math.sin(k * 2.9),
+}));
+function demoBoard(t) {
+  const hold = 1.5, move = 0.7, per = hold + move, k = Math.floor(t / per) % BOARD_KEYS.length, f = t % per;
+  const a = BOARD_KEYS[k], b = BOARD_KEYS[(k + 1) % BOARD_KEYS.length];
+  const s = f < hold ? 0 : ((x) => x * x * (3 - 2 * x))((f - hold) / move), mix = (u, v) => u + (v - u) * s;
+  const p = a.p.map((x, i) => mix(x, b.p[i]));
+  const R = C.mul3(facing(p, DEMO.audience, mix(a.roll, b.roll), mix(a.tilt, b.tilt), true), C.rodrigues([mix(a.pitch, b.pitch), 0, 0]));
+  const sq = DEMO.square;
+  return { R, t: C.sub(p, C.mulv(R, [4.5 * sq, 3 * sq, 0])) };
+}
+// One WebGL canvas renders each camera's view in turn; each is copied to that camera's own canvas, whose stream is
+// the camera.
+function demoRenderer(W, H) {
+  const glc = document.createElement('canvas'); glc.width = W; glc.height = H;
+  const gl = glc.getContext('webgl2', { antialias: true, preserveDrawingBuffer: true });
+  if (!gl) throw new Error('The demo needs WebGL 2.');
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, `#version 300 es
+    in vec4 a_pos; in vec2 a_uv; uniform mat4 u_m; out vec2 v_uv;
+    void main() { gl_Position = u_m * a_pos; v_uv = a_uv; }`));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `#version 300 es
+    precision mediump float; in vec2 v_uv; uniform sampler2D u_tex; uniform int u_bg; out vec4 o;
+    void main() {
+      if (u_bg == 1) o = vec4(mix(vec3(0.604, 0.639, 0.678), vec3(0.435, 0.467, 0.502), v_uv.y), 1.0);
+      else o = gl_FrontFacing ? texture(u_tex, v_uv) : vec4(0.85, 0.85, 0.83, 1.0); // the back of the paper
+    }`));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  gl.frontFace(gl.CW); // corners go top-left, top-right, bottom-right: clockwise on screen when seen from the front
+  const buf = gl.createBuffer(), aPos = gl.getAttribLocation(prog, 'a_pos'), aUv = gl.getAttribLocation(prog, 'a_uv');
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 4, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(aUv); gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 24, 16);
+  const uM = gl.getUniformLocation(prog, 'u_m'), uBg = gl.getUniformLocation(prog, 'u_bg');
+  const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+  const texture = (canvas) => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+    return t;
+  };
+  // world → clip for a camera (pose: camera → world) with OpenCV intrinsics; pixel centres at whole numbers
+  const matrix = (pose, c) => {
+    const n = 0.05, f = 20, Rt = C.tr3(pose.R), tt = C.mulv(Rt, pose.t).map((x) => -x);
+    const P = [[(2 * c.fx) / W, 0, (2 * (c.cx + 0.5)) / W - 1, 0], [0, (-2 * c.fy) / H, 1 - (2 * (c.cy + 0.5)) / H, 0], [0, 0, (f + n) / (f - n), (-2 * f * n) / (f - n)], [0, 0, 1, 0]];
+    const V = [[Rt[0], Rt[1], Rt[2], tt[0]], [Rt[3], Rt[4], Rt[5], tt[1]], [Rt[6], Rt[7], Rt[8], tt[2]], [0, 0, 0, 1]];
+    const out = new Float32Array(16);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += P[i][k] * V[k][j]; out[j * 4 + i] = s; }
+    return out;
+  };
+  const draw = (verts, mode) => { gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STREAM_DRAW); gl.drawArrays(mode, 0, verts.length / 6); };
+  // quads: {tex, corners: 4 world points (top-left, top-right, bottom-right, bottom-left of the texture)}
+  const render = (pose, c, quads) => {
+    gl.viewport(0, 0, W, H);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.disable(gl.DEPTH_TEST);
+    gl.uniform1i(uBg, 1); gl.uniformMatrix4fv(uM, false, new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+    draw([-1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1, -1, 0, 1, 1, 1, -1, 1, 0, 1, 0, 0, 1, -1, 0, 1, 1, 1, -1, -1, 0, 1, 0, 1], gl.TRIANGLES);
+    gl.enable(gl.DEPTH_TEST);
+    gl.uniform1i(uBg, 0); gl.uniformMatrix4fv(uM, false, matrix(pose, c));
+    for (const q of quads) {
+      gl.bindTexture(gl.TEXTURE_2D, q.tex);
+      const v = (i, u, w) => [...q.corners[i], 1, u, w];
+      draw([...v(0, 0, 0), ...v(1, 1, 0), ...v(2, 1, 1), ...v(0, 0, 0), ...v(2, 1, 1), ...v(3, 0, 1)], gl.TRIANGLES);
+    }
+  };
+  return { canvas: glc, texture, render };
+}
 async function startDemo() {
-  const W = 1280, H = 720, f = W / 2 / Math.tan((70 * Math.PI) / 360);
   const ids = [0, 1, 2], names = ['Left hand', 'Right hand', 'Body'];
   ids.forEach((id, i) => { if (!tagOf(id)) { S.tags.push({ id, name: names[i], size: 0.08, slot: freeSlot() }); } });
   saveTags(); renderTags(); refreshFrameSel();
-  const imgs = await Promise.all(ids.map((id) => requestImage('tagImage', { family: S.settings.family, id, px: FAMILY_CELLS[S.settings.family] * 30 })));
-  const tiles = imgs.map((im) => grayToCanvas(im, 30));
-  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-  const c = cv.getContext('2d');
-  let run = true, t0 = performance.now();
-  // place a tag of side s (m) at camera-frame position p, turned by roll, with a fore-shortening tilt
-  const place = (tile, s, p, roll, tilt) => {
-    const k = f / p[2], side = s * k * tile.width / (tile.width - 60);
-    c.save(); c.translate(W / 2 - 0.5 + p[0] * k, H / 2 - 0.5 + p[1] * k); c.rotate(roll); c.scale(Math.cos(tilt), 1);
-    c.drawImage(tile, -side / 2, -side / 2, side, side); c.restore();
+  const quiet = 30, cells = FAMILY_CELLS[S.settings.family];
+  const imgs = await Promise.all(ids.map((id) => requestImage('tagImage', { family: S.settings.family, id, px: cells * 30 })));
+  const boardImg = await requestImage('boardImage', { px: 80 });
+  const gl = demoRenderer(DEMO.W, DEMO.H);
+  const tagTex = new Map(ids.map((id, i) => [id, gl.texture(grayToCanvas(imgs[i], quiet))]));
+  const boardTex = gl.texture(grayToCanvas(boardImg, 40)); // half a square of white round it
+  const outs = DEMO.cams.map(() => { const cv = document.createElement('canvas'); cv.width = DEMO.W; cv.height = DEMO.H; return cv; });
+  let run = true;
+  const t0 = performance.now();
+  const sceneQuads = (t) => {
+    if (S.mode === 'calib') {
+      const B = demoBoard(t), sq = DEMO.square, m = sq / 2;
+      const P = (x, y) => C.add(C.mulv(B.R, [x, y, 0]), B.t);
+      return [{ tex: boardTex, corners: [P(-m, -m), P(9 * sq + m, -m), P(9 * sq + m, 6 * sq + m), P(-m, 6 * sq + m)] }];
+    }
+    return demoTags(t).map((g) => {
+      const im = imgs[ids.indexOf(g.id)], h = (sizeOf(g.id) / 2) * (im.w + 2 * quiet) / im.w;
+      return { tex: tagTex.get(g.id), corners: [[-h, h], [h, h], [h, -h], [-h, -h]].map(([x, y]) => C.add(C.mulv(g.R, [x, y, 0]), g.t)) };
+    });
   };
-  const draw = () => {
+  let lastDraw = 0;
+  const frameAll = (now) => {
     if (!run) return;
-    const t = (performance.now() - t0) / 1000;
-    const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#9aa3ad'); g.addColorStop(1, '#6f7780');
-    c.fillStyle = g; c.fillRect(0, 0, W, H);
-    place(tiles[2], 0.08, [0, 0.08, 1.6], 0.02 * Math.sin(t), 0);
-    place(tiles[0], 0.08, [-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.5 * Math.sin(1.1 * t));
-    place(tiles[1], 0.08, [0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.4 * Math.cos(0.9 * t));
-    requestAnimationFrame(draw);
+    requestAnimationFrame(frameAll);
+    if (now - lastDraw < 30) return; // 30 frames a second is all the streams carry
+    lastDraw = now;
+    const quads = sceneQuads((performance.now() - t0) / 1000);
+    DEMO.cams.forEach((pose, k) => { // every camera, even one taken out, so adding it back finds frames waiting
+      gl.render(pose, DEMO.intr, quads);
+      outs[k].getContext('2d').drawImage(gl.canvas, 0, 0);
+    });
   };
-  draw();
-  const stream = cv.captureStream(30);
-  S.demo = { stop() { run = false; } };
-  return stream;
+  frameAll(performance.now() + 100);
+  S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; } };
 }
 
 // ---------------- boot ----------------
 paintThemeBtn();
+renderCalibCams(); renderRig();
 renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
 listCameras();
 startWorker();
 routeHash(); // opened from a board link: show the board
 requestAnimationFrame(frame);
-window.addEventListener('resize', () => { if (S.last && S.mode === 'track') drawOverlay(S.last, S.lastOut || new Map()); });
+window.addEventListener('resize', () => layoutTiles());
 })();
 </script>
 </body>

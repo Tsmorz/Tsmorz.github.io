@@ -333,7 +333,7 @@ only for warnings (never an orange accent on the dark greys: it reads as a certa
 (1 px rule, 4 px corners, no shadows); viewfinder corner marks only on the video (`.reticle`, violet while detecting); flat ink-outlined
 keys that invert when chosen; one typeface, Archivo, its width axis wide for the name and titles. Keep it that way: no rounded
 cards, pills, middle-dot strings or monospace labels.
-It tracks AprilTags from a webcam (or a built-in Demo camera) in Chrome/Edge: the visitor names each tag ID and enters its
+It tracks AprilTags from one or more webcams (or a built-in three-camera Demo) in Chrome/Edge: the visitor names each tag ID and enters its
 printed size, calibrates the camera with a printed ChArUco board, and sees the last `History` seconds of each tag in 3D
 (axes drawn every `Axes every` seconds, defaults 1 s and 0.1 s), relative to the camera or to a chosen tag, plus an x/y/z
 plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
@@ -344,6 +344,27 @@ overlay, whose labels stay readable); detection, poses and the 3D plot always us
   Now is one panel: the readout table (position in cm, orientation as a unit quaternion w, x, y, z from `TagCore.quatOf`,
   distance, speed, corner fit, ± depth; click a row to plot it) over the time plot (Motion, Position or Quaternion; the
   quaternion keeps its sign continuous with `quatNear`).
+- **Several cameras** (`S.cams`, each with its own tile, video, overlay and frame loop; one shared worker that they take
+  turns on, results tagged with the camera's key as `src`). Camera 1 (the top bar's camera) is the frame of everything;
+  "Add camera" adds more. **Placing the cameras** is Calibrate step 4: whenever two or more cameras see the whole board,
+  held still, the board's pose in each (the worker's `boardPose`: IPPE, then `refinePose`) is captured as a rig view;
+  `TagCore.calibrateRig` chains first poses out from camera 1 through shared views, then refines every camera pose and
+  every board pose together (a bundle adjustment of all corners in all cameras). The rig is saved by camera key
+  (`rig`; device ids, or `demo:k`), and `placeCameras` re-expresses it from whichever camera is now first. A placed
+  camera's measurements go into the rig frame (`toRig`, covariance turned too) and are fused per track: Filtered feeds
+  every camera's frames to the one Kalman filter (it takes frames up to `lateBy` 0.1 s out of order), Refined fuses the
+  latest from each camera with `fusePoses` (information-weighted), Raw takes each camera's as it comes. An unplaced
+  camera only draws its own view. A placed camera also draws, dashed, the tags only the other cameras see.
+  The table says which cameras see each track; the 3D plot draws every placed camera. Lens calibration (steps 2–3) picks
+  its camera in step 2.
+- **Arranging the views** like monitors in display settings (`arrangement()`, `layoutTiles()`): Auto sizes each tile by
+  its picture's pixels and places it where its camera sits, as seen from behind camera 1 (`TagCore.arrangeTiles`, spread
+  just enough not to overlap; unplaced cameras in rows of two; one column under 500 px). Dragging a view (or its corner,
+  or arrow keys and +/−) makes it Custom, kept per camera key in `arrange`. Small views drop their name plates.
+- **The demo** is three cameras round one scene (`DEMO`), rendered with WebGL in true perspective from each camera's
+  pose and the exact 70° lens (`demoRenderer`), so detection, fusion and placing run on real pictures; in Calibrate the
+  scene is the board, holding 12 poses in turn (`demoBoard`, 60 mm squares). Step 4 then shows how far the solved rig is
+  from the demo's true layout (under a millimetre). Headless Chrome needs the GPU (`--use-angle=metal`) to run it at speed.
 - **Tare orientation** makes the current orientation of every tag in view the identity: plotted poses become `R0ᵀR`
   (`TagCore.tared`, in the tag's own tared axes; positions unchanged). Tares live in `S.tare`, in memory only, and are
   cleared by Clear tare or a change of "Relative to"; the stored history is re-expressed at once (`retare`). The video
