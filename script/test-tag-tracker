@@ -109,6 +109,26 @@ console.log('4. plot, calibration views, settings');
   const st = C.clampSettings({ span: 0.05, every: 5, axisLen: 'x' });
   check(st.span === 0.1 && st.every === 0.1 && st.axisLen === C.DEFAULTS.axisLen, 'settings are clamped (span ≥ 0.1 s, axes no sparser than the span)');
   check(C.DEFAULTS.span === 1 && C.DEFAULTS.every === 0.1, 'defaults: 1 s of history, axes every 0.1 s');
+  // quaternions: identity, a quarter turn about each axis, and a round trip through many random rotations
+  const qnear = (a, b) => a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
+  const h = Math.SQRT1_2;
+  check(qnear(C.quatOf([1, 0, 0, 0, 1, 0, 0, 0, 1]), [1, 0, 0, 0]), 'quaternion of the identity is (1, 0, 0, 0)');
+  check(qnear(C.quatOf(C.rodrigues([Math.PI / 2, 0, 0])), [h, h, 0, 0]) && qnear(C.quatOf(C.rodrigues([0, Math.PI / 2, 0])), [h, 0, h, 0]) && qnear(C.quatOf(C.rodrigues([0, 0, Math.PI / 2])), [h, 0, 0, h]),
+    'a quarter turn about x, y or z is (√½, √½ along that axis)');
+  check(qnear(C.quatOf(C.rodrigues([Math.PI, 0, 0])), [0, 1, 0, 0]), 'a half turn: w = 0');
+  let qworst = 0;
+  for (let i = 0; i < 500; i++) {
+    const r = [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5].map((x) => x * 6.2), th = C.norm(r);
+    const q = C.quatOf(C.rodrigues(r)), sgn = Math.cos(th / 2) < 0 ? -1 : 1;
+    const want = [Math.cos(th / 2), ...r.map((x) => (x / th) * Math.sin(th / 2))].map((x) => x * sgn);
+    qworst = Math.max(qworst, ...q.map((x, j) => Math.abs(x - want[j])));
+  }
+  check(qworst < 1e-9, `quaternion from a rotation matrix matches the axis–angle formula (worst ${qworst.toExponential(1)})`);
+  check(qnear(C.quatNear([0.1, -0.9, 0.3, 0.3], [-0.1, 0.9, -0.3, -0.3]), [-0.1, 0.9, -0.3, -0.3]) && qnear(C.quatNear([1, 0, 0, 0], null), [1, 0, 0, 0]), 'a plotted quaternion keeps the sign nearest the last one');
+  const R0 = C.rodrigues([0.3, -0.7, 1.1]), turn = C.rodrigues([0, 0, 0.4]);
+  check(qnear(C.quatOf(C.tared({ R: R0, t: [1, 2, 3] }, R0).R), [1, 0, 0, 0]) && C.tared({ R: R0, t: [1, 2, 3] }, R0).t[2] === 3, 'tare: the orientation it was tared at reads as the identity; position is untouched');
+  check(qnear(C.quatOf(C.tared({ R: C.mul3(R0, turn), t: [0, 0, 0] }, R0).R), C.quatOf(turn)), 'tare: a turn after taring reads as that turn, in the tag’s own axes');
+  check(C.tared({ R: R0, t: [0, 0, 0] }, null).R === R0, 'no tare leaves the pose as it is');
   check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true, 'mirror and flip are booleans, off by default');
   // a 1280 × 720 picture in a 1000 × 1000 box: 1000 × 562.5, letterboxed 218.75 px top and bottom
   const near = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;

@@ -38,6 +38,24 @@
   // The angle of a rotation matrix, in radians.
   function angleOf(R) { return Math.acos(Math.max(-1, Math.min(1, (R[0] + R[4] + R[8] - 1) / 2))); }
 
+  // A rotation matrix as a unit quaternion [w, x, y, z] with w ≥ 0 (q and −q are the same turn). Shepperd's
+  // method: start from the largest of w, x, y, z so nothing divides by a small number.
+  function quatOf(R) {
+    const tr = R[0] + R[4] + R[8], c = [tr, R[0], R[4], R[8]], k = c.indexOf(Math.max(...c));
+    let q;
+    if (k === 0) { const s = 2 * Math.sqrt(1 + tr); q = [s / 4, (R[7] - R[5]) / s, (R[2] - R[6]) / s, (R[3] - R[1]) / s]; }
+    else if (k === 1) { const s = 2 * Math.sqrt(1 + R[0] - R[4] - R[8]); q = [(R[7] - R[5]) / s, s / 4, (R[1] + R[3]) / s, (R[2] + R[6]) / s]; }
+    else if (k === 2) { const s = 2 * Math.sqrt(1 - R[0] + R[4] - R[8]); q = [(R[2] - R[6]) / s, (R[1] + R[3]) / s, s / 4, (R[5] + R[7]) / s]; }
+    else { const s = 2 * Math.sqrt(1 - R[0] - R[4] + R[8]); q = [(R[3] - R[1]) / s, (R[2] + R[6]) / s, (R[5] + R[7]) / s, s / 4]; }
+    const n = Math.hypot(...q) * (q[0] < 0 ? -1 : 1);
+    return q.map((x) => x / n);
+  }
+  // The sign of q that is nearest `prev`, so a plotted quaternion doesn't jump between q and −q.
+  function quatNear(q, prev) { return prev && q[0] * prev[0] + q[1] * prev[1] + q[2] * prev[2] + q[3] * prev[3] < 0 ? q.map((x) => -x) : q; }
+  // Tare: the orientation measured from R0, in R0's own axes (R0ᵀR), so a pose that is still at R0 reads as the
+  // identity. Position is left alone. R0 null means no tare.
+  function tared(p, R0) { return R0 ? { R: mul3(tr3(R0), p.R), t: p.t } : p; }
+
   function compose(a, b) { return { R: mul3(a.R, b.R), t: add(mulv(a.R, b.t), a.t) }; }
   function inverse(p) { const Rt = tr3(p.R); return { R: Rt, t: mulv(Rt, p.t).map((x) => -x) }; }
   // Pose of `p` seen from `ref` (both given in the camera frame).
@@ -538,6 +556,7 @@
     mul3, tr3, mulv, add, sub, norm, rodrigues, angleOf, compose, inverse, relative, toView, inFrame, CAM_TO_VIEW, TAG_TO_VIEW,
     guessIntrinsics, scaleIntrinsics, checkCalibration, hfov, project, depthNoise,
     History, axisSamples, orbit, niceStep, viewSignature, signatureDistance, cornerMotion, coverage,
+    quatOf, quatNear, tared,
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
     DEFAULTS, clampSettings, boardFit, displayMap,

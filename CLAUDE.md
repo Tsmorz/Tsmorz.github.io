@@ -339,6 +339,15 @@ printed size, calibrates the camera with a printed ChArUco board, and sees the l
 plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
 Mirror and Flip on the Camera card turn only the picture (a CSS transform on the video, and `TagCore.displayMap` for the
 overlay, whose labels stay readable); detection, poses and the 3D plot always use the camera's true image.
+- Layout: on a wide screen the right column (the 3D plot, then the **Now** panel) is sticky and fills the window, so nothing
+  in it needs scrolling; the 3D plot takes the height that is left, and it has Fit and Reset view (back to `VIEW0`, then fit).
+  Now is one panel: the readout table (position in cm, orientation as a unit quaternion w, x, y, z from `TagCore.quatOf`,
+  distance, speed, corner fit, ± depth; click a row to plot it) over the time plot (Motion, Position or Quaternion; the
+  quaternion keeps its sign continuous with `quatNear`).
+- **Tare orientation** makes the current orientation of every tag in view the identity: plotted poses become `R0ᵀR`
+  (`TagCore.tared`, in the tag's own tared axes; positions unchanged). Tares live in `S.tare`, in memory only, and are
+  cleared by Clear tare or a change of "Relative to"; the stored history is re-expressed at once (`retare`). The video
+  overlay always shows true poses.
 
 - `index.html`: the UI. `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
   camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);

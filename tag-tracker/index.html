@@ -188,13 +188,36 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .plot3d{position:relative;height:clamp(320px,52vh,620px);margin:0 4px 4px}
 .plot3d canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
 .plot3d canvas:active{cursor:grabbing}
-.plot3d .fit{position:absolute;right:10px;top:10px;z-index:2;background:var(--panel)}
+.plot3d .vbtns{position:absolute;right:10px;top:10px;z-index:2;display:flex;gap:6px}
+.plot3d .vbtns .btn{background:var(--panel)}
 .plot3d .help{position:absolute;right:10px;bottom:8px;font-size:12px;color:var(--muted);pointer-events:none;display:flex;gap:14px}
 .plot3d .legend{position:absolute;left:10px;top:10px;display:flex;flex-direction:column;gap:5px;padding:8px 10px;background:var(--panel);font-size:13px;pointer-events:none;max-width:45%;border-left:2px solid var(--ink)}
 .legend .li{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .legend .axes{display:flex;gap:10px;color:var(--ink2);margin-top:2px}
 .ax{display:inline-flex;align-items:center;gap:5px}.ax i{width:14px;height:3px;display:inline-block}
-.tplot{position:relative;height:170px;margin:0 4px 4px}
+.tplot{position:relative;height:140px;margin:0 4px 4px}
+/* the Now panel: the readout table (click a row to plot it), then the time plot */
+.nowt{max-height:150px;overflow:auto;border-bottom:1px solid var(--rule);margin-bottom:6px}
+.nowt th,.nowt td{padding:4px 5px}
+.nowt th:first-child,.nowt td:first-child{padding-left:10px}
+.nowt td{font-size:13px;white-space:nowrap}
+.nowt th.grp{text-align:center;border-bottom:1px solid var(--rule2);padding-bottom:2px}
+.nowt .g{border-left:1px solid var(--rule)}
+.nowt tbody tr[data-key]{cursor:pointer}
+.nowt tbody tr[data-key]:hover td{background:var(--well)}
+.nowt tbody tr[aria-selected=true] td{background:var(--well)}
+.nowt tbody tr[aria-selected=true] td:first-child{box-shadow:inset 3px 0 0 var(--ink)}
+.nowt .tared{font-size:11.5px;color:var(--muted);font-weight:550}
+/* on a wide screen the 3D plot and the Now panel fill the window beside the camera, with no scrolling */
+@media (min-width:1001px){
+  /* never shorter than its contents, so on a short window the cards push down instead of overlapping */
+  #view-track{position:sticky;top:82px;align-self:start;height:calc(100vh - 104px);min-height:min-content}
+  #view-track .card3d{flex:1 1 auto;display:flex;flex-direction:column}
+  #view-track .card3d .card-h{flex:none}
+  #view-track .plot3d{flex:1 1 auto;height:auto;min-height:200px}
+  #view-track #nowCard{flex:none}
+}
+@media (min-width:1001px) and (max-height:820px){#view-track .plot3d{min-height:160px}.tplot{height:110px}.nowt{max-height:120px}}
 .tplot canvas{position:absolute;inset:0;width:100%;height:100%}
 .tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--ink);box-shadow:var(--sh);padding:7px 10px;font-size:13px;min-width:130px;z-index:5}
 .tip .r{display:flex;align-items:center;gap:6px;justify-content:space-between}
@@ -246,6 +269,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
   <symbol id="i-tag" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><rect x="7" y="7" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="13" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="7" width="4" height="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8M3 3v5h5"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
 </svg>
 
@@ -375,16 +399,6 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       </div>
     </section>
 
-    <section class="card" id="nowCard" aria-labelledby="h-now">
-      <div class="card-h"><h2 id="h-now">Now</h2><span class="small muted" id="frameNote"></span></div>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>Tag</th><th class="num">x</th><th class="num">y</th><th class="num">z</th><th class="num">Distance</th><th class="num" title="From the Kalman filter, in cm/s">Speed</th><th class="num" title="RMS distance between the detected corners and the fitted pose, in pixels">Corner fit</th><th class="num" title="One standard deviation along the line of sight, from the pose's covariance">± depth</th></tr></thead>
-          <tbody id="nowRows"><tr><td colspan="8" class="muted">Nothing tracked yet.</td></tr></tbody>
-        </table>
-      </div>
-    </section>
-
     <!-- Calibrate mode: the steps -->
     <section class="card" id="calibCard" role="tabpanel" aria-labelledby="h-calib" hidden>
       <div class="card-h"><h2 id="h-calib">Calibrate this camera</h2><div class="spacer"></div><span class="small muted" id="calibFor"></span></div>
@@ -448,7 +462,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   </div>
 
   <div class="col" id="view-track" role="tabpanel" aria-labelledby="tab-track">
-    <section class="card" aria-labelledby="h-3d">
+    <section class="card card3d" aria-labelledby="h-3d">
       <div class="card-h">
         <h2 id="h-3d">Last <span id="spanTxt">1.0</span> s</h2>
         <div class="toolbar">
@@ -459,23 +473,37 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         </div>
       </div>
       <div class="plot3d">
-        <button class="btn sm outline fit" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
-        <canvas id="plot" tabindex="0" role="img" aria-label="3D plot of each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit."></canvas>
+        <div class="vbtns">
+          <button class="btn sm outline" id="resetViewBtn" title="Back to the starting angle, fitted to the tags (or press R)"><svg class="i"><use href="#i-reset"/></svg>Reset view</button>
+          <button class="btn sm outline" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
+        </div>
+        <canvas id="plot" tabindex="0" role="img" aria-label="3D plot of each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view."></canvas>
         <div class="legend" id="legend3d"></div>
         <div class="help hide-sm"><span>Drag to orbit</span><span>Shift-drag to pan</span><span>Scroll to zoom</span></div>
       </div>
     </section>
-    <section class="card" aria-labelledby="h-xyz">
+    <section class="card" id="nowCard" aria-labelledby="h-now">
       <div class="card-h">
-        <h2 id="h-xyz">Position over time</h2>
-        <label class="sr" for="tplotTag">Tag</label>
-        <select id="tplotTag" class="select sm"></select>
-        <span class="seg sm" role="radiogroup" aria-label="Show">
+        <h2 id="h-now">Now</h2>
+        <label class="sr" for="tplotTag">Tag to plot</label>
+        <select id="tplotTag" class="select sm" title="The tag plotted below (or click its row)"></select>
+        <span class="seg sm" role="radiogroup" aria-label="Plot">
           <button role="radio" data-tp="motion" aria-checked="true" title="Each coordinate minus its mean over the history, so small motions fill the plot">Motion</button>
           <button role="radio" data-tp="position" aria-checked="false" title="The coordinates themselves">Position</button>
+          <button role="radio" data-tp="quat" aria-checked="false" title="The orientation as a unit quaternion (w, x, y, z)">Quaternion</button>
         </span>
         <div class="spacer"></div>
-        <span class="legend-inline toolbar small" aria-hidden="true"><span class="ax"><i style="background:var(--x)"></i>x</span><span class="ax"><i style="background:var(--y)"></i>y</span><span class="ax"><i style="background:var(--z)"></i>z</span></span>
+        <button class="btn sm" id="untareBtn" hidden title="Show every orientation as measured again">Clear tare</button>
+        <button class="btn sm outline" id="tareBtn" title="Make the orientation of every tag in view the identity, (1, 0, 0, 0). Later turns are measured from there, in the tag's own axes. Positions don't change.">Tare orientation</button>
+      </div>
+      <div class="nowt">
+        <table>
+          <thead>
+            <tr><th rowspan="2">Tag</th><th class="grp g" colspan="3">Position, cm</th><th class="grp g" colspan="4" title="The orientation as a unit quaternion, w + xi + yj + zk, in the frame of the plot">Orientation, quaternion</th><th class="num g" rowspan="2">Distance</th><th class="num" rowspan="2" title="From the Kalman filter, in cm/s">Speed</th><th class="num" rowspan="2" title="RMS distance between the detected corners and the fitted pose, in pixels">Corner fit</th><th class="num" rowspan="2" title="One standard deviation along the line of sight, from the pose's covariance">± depth</th></tr>
+            <tr><th class="num g">x</th><th class="num">y</th><th class="num">z</th><th class="num g">w</th><th class="num">x</th><th class="num">y</th><th class="num">z</th></tr>
+          </thead>
+          <tbody id="nowRows"><tr><td colspan="12" class="muted">Nothing tracked yet.</td></tr></tbody>
+        </table>
       </div>
       <div class="tplot" id="tplotWrap"><canvas id="tplot" role="img" aria-label="x, y and z of the chosen tag over the history, in centimetres"></canvas><div class="tip" id="tip" hidden></div></div>
     </section>
@@ -489,7 +517,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   </div>
 </div>
 <footer>
-  <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face.</span>
+  <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face. Orientations are unit quaternions (w, x, y, z) in the same frame.</span>
   <span class="spacer"></span>
   <a href="/projects/">tsmorz.github.io</a>
 </footer>
@@ -511,6 +539,7 @@ const store = {
 };
 
 // ---------------- state ----------------
+const VIEW0 = { yaw: -0.65, pitch: 0.42 }; // the 3D plot's starting angle, and where Reset view goes back to
 const S = {
   settings: C.clampSettings(store.get('settings', {})),
   tags: store.get('tags', []), // {id, name, size (m), slot}
@@ -531,8 +560,10 @@ const S = {
   learn: null, // {id, name, ids, samples: {id: [poses]}} while an object's shape is being learned
   views: [], still: 0, lastCapture: 0, auto: true, calibResult: null,
   stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 },
-  view: { yaw: -0.65, pitch: 0.42, dist: 2.6, target: [0, 1.0, 0], fitted: false },
-  tplotTag: null, tplotMode: store.get('tplotMode', 'motion'),
+  view: { ...VIEW0, dist: 2.6, target: [0, 1.0, 0], fitted: false },
+  tplotTag: null, tplotMode: ['motion', 'position', 'quat'].includes(store.get('tplotMode')) ? store.get('tplotMode') : 'motion',
+  // Tare: per track, the orientation (in the plotted frame) that reads as the identity; kept until cleared or the frame changes
+  tare: new Map(),
 };
 const video = $('video'), overlay = $('overlay'), plot = $('plot'), tplot = $('tplot');
 
@@ -688,9 +719,24 @@ function refreshFrameSel() {
     + S.tags.filter((t) => !mem.has(t.id)).map((t) => `<option value="${t.id}">${escapeHtml(nameOf(t.id))} (#${t.id})</option>`).join('');
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : 'camera';
   if (sel.value !== cur) { S.settings.frame = sel.value; store.set('settings', S.settings); }
-  $('frameNote').textContent = sel.value === 'camera' ? 'Relative to the camera' : 'Relative to ' + nameOf(parseKey(sel.value));
 }
-function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.view.fitted = false; refreshFrameSel(); }
+function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.tare.clear(); paintTare(); S.view.fitted = false; refreshFrameSel(); }
+// ---------------- tare ----------------
+// Re-express a track's stored history under a new tare (null: none), so the trail and the plot change at once.
+function retare(key, R0) {
+  const old = S.tare.get(key);
+  for (const h of [S.hist, S.rawHist]) for (const s of h.get(key)) s.R = C.tared({ R: old ? C.mul3(old, s.R) : s.R, t: s.t }, R0).R;
+  if (R0) S.tare.set(key, R0); else S.tare.delete(key);
+}
+function inView() { const t = performance.now() / 1000; return S.hist.ids().filter((k) => { const s = S.hist.latest(k); return s && t - s.time < 0.5; }); }
+function tareNow() {
+  for (const key of inView()) { const s = S.hist.latest(key), old = S.tare.get(key); retare(key, old ? C.mul3(old, s.R) : s.R.slice()); }
+  paintTare(); lastTable = 0;
+}
+function clearTare() { for (const key of [...S.tare.keys()]) retare(key, null); paintTare(); lastTable = 0; }
+function paintTare() { $('untareBtn').hidden = !S.tare.size; }
+$('tareBtn').onclick = tareNow;
+$('untareBtn').onclick = clearTare;
 $('frameSel').onchange = () => setFrame($('frameSel').value);
 // the tracks a visitor can pick: objects, and tags that aren't part of one
 function trackKeys() {
@@ -709,7 +755,19 @@ function refreshTplotSel() {
 }
 document.querySelectorAll('[data-tp]').forEach((b) => {
   b.setAttribute('aria-checked', String(b.dataset.tp === S.tplotMode));
-  b.onclick = () => { S.tplotMode = b.dataset.tp; store.set('tplotMode', S.tplotMode); document.querySelectorAll('[data-tp]').forEach((x) => x.setAttribute('aria-checked', String(x === b))); };
+  b.onclick = () => { S.tplotMode = b.dataset.tp; store.set('tplotMode', S.tplotMode); document.querySelectorAll('[data-tp]').forEach((x) => x.setAttribute('aria-checked', String(x === b))); paintTplotMode(); };
+});
+function paintTplotMode() {
+  const q = S.tplotMode === 'quat';
+  tplot.setAttribute('aria-label', q ? 'The chosen tag’s orientation over the history, as a unit quaternion w, x, y, z' : 'x, y and z of the chosen tag over the history, in centimetres');
+}
+paintTplotMode();
+// click a row of the Now table to plot that track
+$('nowRows').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-key]');
+  if (!tr) return;
+  S.tplotTag = parseKey(tr.dataset.key); refreshTplotSel();
+  $('nowRows').querySelectorAll('tr[data-key]').forEach((r) => r.setAttribute('aria-selected', String(r === tr)));
 });
 $('tplotTag').onchange = () => { S.tplotTag = parseKey($('tplotTag').value); };
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
@@ -968,8 +1026,8 @@ function onTags(m) {
   }
   if (refKey === null || ref) {
     // the reference itself always sits at the origin, where the plot already draws it
-    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.inFrame(p, ref));
-    if (S.settings.compare) for (const [key, z] of meas) if (key !== refKey) S.rawHist.push(key, m.time, C.inFrame(z.raw, refRaw));
+    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.tared(C.inFrame(p, ref), S.tare.get(key)));
+    if (S.settings.compare) for (const [key, z] of meas) if (key !== refKey) S.rawHist.push(key, m.time, C.tared(C.inFrame(z.raw, refRaw), S.tare.get(key)));
   }
   S.lastOut = out;
   drawOverlay(m, out);
@@ -1171,6 +1229,8 @@ function fitView() {
   S.view.fitted = true;
 }
 $('fitBtn').onclick = fitView;
+function resetView() { Object.assign(S.view, VIEW0); fitView(); }
+$('resetViewBtn').onclick = resetView;
 function draw3d() {
   const { c, w, h } = sizeCanvas(plot);
   c.clearRect(0, 0, w, h);
@@ -1299,7 +1359,7 @@ function draw3d() {
     if (k === 'ArrowLeft') V.yaw += 0.1; else if (k === 'ArrowRight') V.yaw -= 0.1;
     else if (k === 'ArrowUp') V.pitch = Math.min(1.5, V.pitch + 0.1); else if (k === 'ArrowDown') V.pitch = Math.max(-1.5, V.pitch - 0.1);
     else if (k === '+' || k === '=') V.dist *= 0.9; else if (k === '-') V.dist /= 0.9;
-    else if (k === 'f' || k === 'F') fitView(); else return;
+    else if (k === 'f' || k === 'F') fitView(); else if (k === 'r' || k === 'R') resetView(); else return;
     e.preventDefault();
   });
   function pan(dx, dy) {
@@ -1320,14 +1380,19 @@ function drawTplot() {
   const L = 50, R = 74, T = 28, B = 24, pw = w - L - R, ph = h - T - B;
   if (pw < 40 || ph < 30) return;
   // Motion: each coordinate minus its mean over the window, so a 1 cm wobble isn't flattened by a 1 m depth.
-  const motion = S.tplotMode === 'motion', mean = [0, 0, 0];
+  // Quaternion: w, x, y, z of the orientation, each sample's sign kept nearest the one before so the lines don't jump.
+  const motion = S.tplotMode === 'motion', quat = S.tplotMode === 'quat', mean = [0, 0, 0];
   if (motion && a.length) for (let i = 0; i < 3; i++) mean[i] = a.reduce((m, s) => m + s.t[i], 0) / a.length;
-  const val = (s, i) => (s.t[i] - mean[i]) * 100;
-  let lo = Infinity, hi = -Infinity;
-  for (const s of a) for (let i = 0; i < 3; i++) { lo = Math.min(lo, val(s, i)); hi = Math.max(hi, val(s, i)); }
-  if (!isFinite(lo)) { lo = -10; hi = 10; }
-  if (hi - lo < 2) { const m = (hi + lo) / 2; lo = m - 1; hi = m + 1; }
-  const stp = C.niceStep(hi - lo, 4); lo = Math.floor(lo / stp) * stp; hi = Math.ceil(hi / stp) * stp;
+  let qprev = null;
+  const qs = quat ? a.map((s) => (qprev = C.quatNear(C.quatOf(s.R), qprev))) : null;
+  const n = quat ? 4 : 3, val = (k, i) => (quat ? qs[k][i] : (a[k].t[i] - mean[i]) * 100);
+  let lo = Infinity, hi = -Infinity, stp;
+  if (quat) { lo = -1; hi = 1; stp = ph < 80 ? 1 : 0.5; } else {
+    for (let k = 0; k < a.length; k++) for (let i = 0; i < 3; i++) { lo = Math.min(lo, val(k, i)); hi = Math.max(hi, val(k, i)); }
+    if (!isFinite(lo)) { lo = -10; hi = 10; }
+    if (hi - lo < 2) { const m = (hi + lo) / 2; lo = m - 1; hi = m + 1; }
+    stp = C.niceStep(hi - lo, Math.max(2, Math.min(4, Math.floor(ph / 30)))); lo = Math.floor(lo / stp) * stp; hi = Math.ceil(hi / stp) * stp;
+  }
   const X = (t) => L + pw * (1 - (now - t) / span), Y = (v) => T + ph * (1 - (v - lo) / (hi - lo));
   c.font = '11px Archivo, sans-serif'; c.textBaseline = 'middle'; c.fillStyle = K.muted;
   for (let v = lo; v <= hi + 1e-9; v += stp) {
@@ -1338,25 +1403,26 @@ function drawTplot() {
   c.textAlign = 'center'; c.textBaseline = 'top';
   const ts = C.niceStep(span, 5);
   for (let s = 0; s <= span + 1e-9; s += ts) c.fillText(s === 0 ? 'now' : `−${+s.toFixed(3)} s`, L + pw * (1 - s / span), T + ph + 6);
-  c.textAlign = 'right'; c.textBaseline = 'alphabetic'; c.fillText(motion ? 'Δ cm' : 'cm', L - 6, T - 14);
-  const cols = [K.x, K.y, K.z], names = ['x', 'y', 'z'];
+  c.textAlign = 'right'; c.textBaseline = 'alphabetic'; c.fillText(quat ? 'q' : motion ? 'Δ cm' : 'cm', L - 6, T - 14);
+  const cols = quat ? [K.text2, K.x, K.y, K.z] : [K.x, K.y, K.z], names = quat ? ['w', 'x', 'y', 'z'] : ['x', 'y', 'z'];
+  const cssCols = names.map((nm, i) => (quat && !i ? 'var(--ink2)' : `var(--${nm})`)), fmt = (v) => (quat ? v.toFixed(3) : v.toFixed(1));
   c.lineWidth = 2; c.lineJoin = 'round'; c.lineCap = 'round';
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < n; i++) {
     c.strokeStyle = cols[i]; c.beginPath();
     let pen = false;
     for (let k = 0; k < a.length; k++) {
       if (k && a[k].time - a[k - 1].time > 0.25) pen = false;
-      const x = X(a[k].time), y = Y(val(a[k], i));
+      const x = X(a[k].time), y = Y(val(k, i));
       pen ? c.lineTo(x, y) : c.moveTo(x, y); pen = true;
     }
     c.stroke();
   }
   // direct labels at the newest point, pushed apart so they don't overlap
   if (a.length) {
-    const s = a[a.length - 1], ys = [0, 1, 2].map((i) => ({ i, y: Y(val(s, i)) })).sort((p, q) => p.y - q.y);
-    for (let k = 1; k < 3; k++) if (ys[k].y - ys[k - 1].y < 13) ys[k].y = ys[k - 1].y + 13;
+    const kl = a.length - 1, ys = [...Array(n).keys()].map((i) => ({ i, y: Y(val(kl, i)) })).sort((p, q) => p.y - q.y);
+    for (let k = 1; k < n; k++) if (ys[k].y - ys[k - 1].y < 13) ys[k].y = ys[k - 1].y + 13;
     c.textAlign = 'left'; c.textBaseline = 'middle'; c.font = '600 11px Archivo, system-ui, sans-serif';
-    for (const p of ys) { c.fillStyle = cols[p.i]; c.fillText(names[p.i], L + pw + 6, p.y); c.fillStyle = K.text2; c.font = '11px Archivo, sans-serif'; c.fillText((motion ? (val(s, p.i) >= 0 ? '+' : '') : '') + val(s, p.i).toFixed(1), L + pw + 16, p.y); c.font = '600 11px Archivo, system-ui, sans-serif'; }
+    for (const p of ys) { c.fillStyle = cols[p.i]; c.fillText(names[p.i], L + pw + 6, p.y); c.fillStyle = K.text2; c.font = '11px Archivo, sans-serif'; c.fillText((motion ? (val(kl, p.i) >= 0 ? '+' : '') : '') + fmt(val(kl, p.i)), L + pw + 16, p.y); c.font = '600 11px Archivo, system-ui, sans-serif'; }
   } else {
     c.fillStyle = K.muted; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '12px Archivo, system-ui, sans-serif';
     c.fillText(id === null ? 'Pick a tag' : `${nameOf(id)} isn’t in view`, L + pw / 2, T + ph / 2);
@@ -1365,14 +1431,14 @@ function drawTplot() {
   const tip = $('tip');
   if (hoverX !== null && a.length && hoverX >= L && hoverX <= L + pw) {
     const tt = now - span * (1 - (hoverX - L) / pw);
-    let best = a[0];
-    for (const s of a) if (Math.abs(s.time - tt) < Math.abs(best.time - tt)) best = s;
-    const x = X(best.time);
+    let bk = 0;
+    for (let k = 0; k < a.length; k++) if (Math.abs(a[k].time - tt) < Math.abs(a[bk].time - tt)) bk = k;
+    const best = a[bk], x = X(best.time);
     c.strokeStyle = K.axis; c.lineWidth = 1; c.beginPath(); c.moveTo(Math.round(x) + 0.5, T); c.lineTo(Math.round(x) + 0.5, T + ph); c.stroke();
-    for (let i = 0; i < 3; i++) { c.fillStyle = cols[i]; c.strokeStyle = K.surface; c.lineWidth = 2; c.beginPath(); c.arc(x, Y(val(best, i)), 4, 0, 7); c.fill(); c.stroke(); }
+    for (let i = 0; i < n; i++) { c.fillStyle = cols[i]; c.strokeStyle = K.surface; c.lineWidth = 2; c.beginPath(); c.arc(x, Y(val(bk, i)), 4, 0, 7); c.fill(); c.stroke(); }
     tip.hidden = false;
     tip.innerHTML = `<div class="small muted" style="margin-bottom:3px">${escapeHtml(nameOf(id))}, ${(now - best.time).toFixed(2)} s ago</div>` +
-      [0, 1, 2].map((i) => `<div class="r"><span><i class="sw" style="background:var(--${names[i]});width:8px;height:8px"></i>${names[i]}</span><span class="mono">${(best.t[i] * 100).toFixed(2)} cm</span></div>`).join('') + (motion ? `<div class="small muted" style="margin-top:3px">Plotted as change from the mean</div>` : '');
+      names.map((nm, i) => `<div class="r"><span><i class="sw" style="background:${cssCols[i]};width:8px;height:8px"></i>${nm}</span><span class="mono">${quat ? qs[bk][i].toFixed(3) : (best.t[i] * 100).toFixed(2) + ' cm'}</span></div>`).join('') + (motion ? `<div class="small muted" style="margin-top:3px">Plotted as change from the mean</div>` : '');
     const tw = tip.offsetWidth;
     tip.style.left = (x + 12 + tw > w ? x - tw - 12 : x + 12) + 'px'; tip.style.top = T + 'px';
   } else tip.hidden = true;
@@ -1404,11 +1470,13 @@ function drawTable() {
     // ± along the line of sight, from the pose covariance (raw poses have none: a quick estimate instead)
     const sd = tr.cov ? C.sigmaAlong(tr.cov, dir) : !isBody(key) && S.cam ? C.depthNoise(S.cam, tr.size || S.settings.tagSize, C.norm(p.t), 0.2) : NaN;
     const speed = tr.v ? C.norm(tr.v) * 100 : NaN;
-    rows.push(`<tr><td><span style="display:inline-flex;align-items:center;gap:7px"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}</span></td>` +
-      s.t.map((v) => `<td class="num mono">${(v * 100).toFixed(1)}</td>`).join('') +
-      `<td class="num mono">${(C.norm(s.t) * 100).toFixed(1)}</td><td class="num mono">${isFinite(speed) ? speed.toFixed(0) : '—'}</td><td class="num mono">${isFinite(tr.rms) ? tr.rms.toFixed(2) + ' px' : '—'}</td><td class="num mono">${isFinite(sd) ? (sd * 1000).toFixed(1) + ' mm' : '—'}</td></tr>`);
+    const q = C.quatOf(s.R), cell = (v, d, g) => `<td class="num mono${g ? ' g' : ''}">${v.toFixed(d).replace(/^-(0\.0*)$/, '$1')}</td>`;
+    rows.push(`<tr data-key="${key}" aria-selected="${key === S.tplotTag}"><td><span style="display:inline-flex;align-items:center;gap:7px;white-space:nowrap"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}${S.tare.has(key) ? ' <span class="tared">tared</span>' : ''}</span></td>` +
+      s.t.map((v, i) => cell(v * 100, 1, !i)).join('') + q.map((v, i) => cell(v, 3, !i)).join('') +
+      `<td class="num mono g">${(C.norm(s.t) * 100).toFixed(1)}</td><td class="num mono">${isFinite(speed) ? speed.toFixed(0) : '—'}</td><td class="num mono">${isFinite(tr.rms) ? tr.rms.toFixed(2) + ' px' : '—'}</td><td class="num mono">${isFinite(sd) ? (sd * 1000).toFixed(1) + ' mm' : '—'}</td></tr>`);
   }
-  $('nowRows').innerHTML = rows.length ? rows.join('') : `<tr><td colspan="8" class="muted">${S.running ? 'No tags in view.' : 'Nothing tracked yet.'}</td></tr>`;
+  $('tareBtn').disabled = !rows.length;
+  $('nowRows').innerHTML = rows.length ? rows.join('') : `<tr><td colspan="12" class="muted">${S.running ? 'No tags in view.' : 'Nothing tracked yet.'}</td></tr>`;
   renderUnknown();
   refreshTplotSel();
 }
