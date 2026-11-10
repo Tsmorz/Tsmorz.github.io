@@ -2,7 +2,10 @@
 //   groundSpeed   ground speed along a straight track in steady wind
 //   castRays      march rays out from the launch until the glide path (minus a margin) meets the terrain
 //   reachAt       is a point (bearing, distance) inside the reachable set?
+//   glideAlong    one straight glide's height and the ground under it, for the cross-section
 //   reachGrid     the same question by any route over a grid, so a glide can curve round a hill; routeTo walks it back
+//   RULES, ruleFor   height limits for model gliders (US, EU) and a guess of which applies where
+//   Units         metric and imperial read-outs
 //   lonLatToPx / pxToLonLat / mppAt   Web Mercator pixels at a zoom
 //   decodeTerrarium   one Terrarium RGB pixel to metres
 //   chooseZoom    the terrain zoom that fits the whole possible glide
@@ -31,7 +34,9 @@
   }
 
   // Cast o.n rays. elevAt(eastM, northM) gives terrain height or NaN outside the data.
-  // o: { n, h0 (start altitude, m), margin, Va, GR, windSpeed, windFromDeg, ds (step, m), maxD }
+  // o: { n, h0 (start altitude, m), margin, Va, GR, windSpeed, windFromDeg, ds (step, m), maxD, ceilAgl? }
+  // ceilAgl: a height limit above the ground (the US 400 ft rule). Over low ground the glider has to lose the
+  // extra height (spoilers, S-turns), so its height is capped at ground + ceilAgl as it goes.
   // kind per ray: 0 = met the terrain, 1 = ran off the data, 2 = track not flyable in this wind
   function castRays(o, elevAt) {
     const n = o.n, sink = o.Va / o.GR;
@@ -42,17 +47,41 @@
       if (vg <= 0) { kind[i] = 2; continue; }
       const g = vg / sink; grg[i] = g;
       const ux = Math.sin(brg), uy = Math.cos(brg);
-      let last = 0, k = 1;
+      let last = 0, k = 1, h = o.h0;
+      const dh = o.ds / g, ceil = o.ceilAgl;
       for (let d = o.ds; d <= o.maxD; d += o.ds) {
-        const h = o.h0 - d / g;
+        h -= dh;
         const t = elevAt(ux * d, uy * d);
         if (t !== t) { k = 1; break; }
         if (h - o.margin <= t) { k = 0; break; }
+        if (ceil !== undefined && h > t + ceil) h = t + ceil;
         last = d;
       }
       dmax[i] = last; kind[i] = k;
     }
     return { dmax, kind, grg, n };
+  }
+
+  // One straight glide along bearing brg (rad), step by step: distance, ground and glider height until it meets the
+  // ground (or the data ends), then the ground on for `extra` metres more. Same rules as castRays.
+  function glideAlong(o, elevAt, brg, extra = 0) {
+    const vg = groundSpeed(brg, o.Va, o.windSpeed, o.windFromDeg * D2R), ux = Math.sin(brg), uy = Math.cos(brg);
+    const d = [0], ground = [elevAt(0, 0)], glide = [o.h0];
+    if (vg <= 0) return { d, ground, glide, end: 0, kind: 2, g: 0 };
+    const g = vg / (o.Va / o.GR), dh = o.ds / g;
+    let h = o.h0, kind = 1, end = 0, stopAt = Infinity;
+    for (let s = o.ds; s <= o.maxD && s <= stopAt; s += o.ds) {
+      const t = elevAt(ux * s, uy * s);
+      if (t !== t) break;
+      d.push(s); ground.push(t);
+      if (stopAt === Infinity) {
+        h -= dh;
+        if (h - o.margin <= t) { kind = 0; glide.push(NaN); stopAt = s + extra; continue; }
+        if (o.ceilAgl !== undefined && h > t + o.ceilAgl) h = t + o.ceilAgl;
+        glide.push(h); end = d.length - 1;
+      } else glide.push(NaN);
+    }
+    return { d, ground, glide, end, kind, g };
   }
 
   // Ground glide ratio if the point is reachable, else 0. Takes the shorter of the two neighbouring rays.
@@ -101,7 +130,8 @@
   // is its length over the ground glide ratio in that direction, so wind is included; a step is allowed only if the
   // glider stays `margin` above the end cell and the cells it cuts between. Turns cost nothing extra here: for a model
   // glider a 180° turn loses a few metres, well inside a sensible margin.
-  //   o: { cell (m), si, sj (start column and row; rows run south), h0, margin, Va, GR, windSpeed, windFromDeg }
+  //   o: { cell (m), si, sj (start column and row; rows run south), h0, margin, Va, GR, windSpeed, windFromDeg,
+  //        ceilAgl? (height limit above the ground, as in castRays), maxR? (metres from the start the route must stay within) }
   //   terr: Float32Array W×H of ground heights (NaN = no data, treated as a wall)
   // Returns alt (−Infinity where unreachable), parent (the previous cell on the best route, −1 at the start or
   // unreachable) and edge (true if a reachable cell touches the border, so the reach is cut short there).
@@ -117,7 +147,7 @@
       return { dx, dy, loss: vg > 0 ? Math.hypot(dx, dy) * o.cell * sink / vg : Infinity, mids };
     }).filter(m => m.loss < Infinity);
     let edge = false;
-    const s = o.sj * W + o.si;
+    const s = o.sj * W + o.si, ceil = o.ceilAgl, r2 = o.maxR !== undefined ? (o.maxR / o.cell) ** 2 : Infinity;
     if (o.si < 0 || o.sj < 0 || o.si >= W || o.sj >= H || !(o.h0 >= terr[s])) return { alt, parent, edge };
     // binary max-heap of (cell, height), lazy deletion
     let cap = 1 << 16, hi = new Int32Array(cap), hk = new Float32Array(cap), n = 0;
@@ -149,8 +179,13 @@
       for (const m of moves) {
         const nx = x + m.dx, ny = y + m.dy;
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const j = ny * W + nx, h2 = Math.fround(h - m.loss); // compare in float32, as stored
-        if (done[j] || h2 <= alt[j] || !(h2 - o.margin >= terr[j])) continue;
+        if ((nx - o.si) ** 2 + (ny - o.sj) ** 2 > r2) continue;
+        const j = ny * W + nx;
+        let h2 = h - m.loss;
+        if (done[j] || !(h2 - o.margin >= terr[j])) continue;
+        if (ceil !== undefined && h2 > terr[j] + ceil) h2 = terr[j] + ceil;
+        h2 = Math.fround(h2); // compare in float32, as stored
+        if (h2 <= alt[j]) continue;
         let ok = true;
         for (const [mx, my] of m.mids) if (!(h - m.loss / 2 - o.margin >= terr[(y + my) * W + x + mx])) { ok = false; break; }
         if (!ok) continue;
@@ -168,6 +203,39 @@
     return out.reverse();
   }
 
+  // Height rules for model gliders. faa: 49 USC 44809, at most 400 ft above the ground in uncontrolled airspace.
+  // eu: Regulation (EU) 2019/947 UAS.OPEN.010, an unmanned sailplane under 10 kg may go past 120 m above the ground but never
+  // more than 120 m above the pilot. euGround: the general EU rule, 120 m from the closest point of the ground.
+  const RULES = {
+    faa: { ceilAgl: 121.92, launchCap: 121.92 },
+    eu: { pilotCap: 120, launchCap: 120 },
+    euGround: { ceilAgl: 120, launchCap: 120 },
+    none: {}
+  };
+  // A rough guess from position: North America gets the FAA rule, Europe the EU slope-glider rule, elsewhere none.
+  function ruleFor(lat, lon) {
+    if (lat > 14 && lat < 72 && lon > -170 && lon < -50) return 'faa';
+    if (lat > 34 && lat < 72 && lon > -25 && lon < 45) return 'eu';
+    return 'none';
+  }
+
+  const FT = 3.28084, MPH = 2.23694, MI = 1609.344;
+  // Read-outs in metric or imperial. Heights in m or ft; distances in m/km or ft/mi; speeds in m/s or mph; areas in km² or mi².
+  const Units = {
+    metric: {
+      h: m => `${Math.round(m)} m`,
+      d: m => m >= 10000 ? `${(m / 1000).toFixed(0)} km` : m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`,
+      v: ms => `${+ms.toFixed(1)} m/s`,
+      a: km2 => `${km2.toFixed(1)} km²`
+    },
+    imperial: {
+      h: m => `${Math.round(m * FT)} ft`,
+      d: m => m >= 16 * MI ? `${(m / MI).toFixed(0)} mi` : m >= 0.2 * MI ? `${(m / MI).toFixed(1)} mi` : `${Math.round(m * FT)} ft`,
+      v: ms => `${Math.round(ms * MPH)} mph`,
+      a: km2 => `${(km2 / 2.589988).toFixed(1)} mi²`
+    }
+  };
+
   // Keys in `area` that no area in `others` also uses.
   function tilesOnlyIn(area, others) {
     const keep = new Set();
@@ -175,5 +243,5 @@
     return area.filter(k => !keep.has(k));
   }
 
-  return { groundSpeed, castRays, reachAt, reachGrid, routeTo, chooseZoom, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, TS, D2R };
+  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, RULES, ruleFor, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, TS, D2R };
 });
