@@ -276,9 +276,9 @@ test runs (kept in IndexedDB, compared as overlays, exported as CSV, log or a Ma
 cursors and an ESP-IDF/Zephyr device-clock time axis. It has a Demo stream and opens saved logs, so it works without a board.
 The same file is also published as a Claude artifact; edit it here and copy it there, not the other way round.
 
-### Glide Reach (`/glide-reach/`)
+### Glide Path (`/glide-path/`)
 
-`glide-reach/` is a self-contained page like the serial plotter (no front matter, its own look, outside the layouts):
+`glide-path/` is a self-contained page like the serial plotter (no front matter, its own look, outside the layouts):
 `index.html` is markup only, `glide.css` the styles, `glide-app.js` the page, `glide-core.js` the maths (no DOM) and
 `glide-worker.js` the route search. Pick a launch point and set glide ratio, airspeed, launch height, wind, a terrain margin,
 the steepest slope you would land on and **how far away you can still see the glider**. It loads a 7 × 7 block of Terrarium
@@ -291,12 +291,9 @@ holds the furthest possible glide, and the page steps down a zoom if a glide sti
 (right-click) a spot for the best route there. `script/test-glide` (`task check:glide`, in `check:fast`) guards the core,
 including the service worker in a mock.
 
-**Height rules** are a US / EU switch (`RULES`, `ruleFor` in the core picks one from the launch's position until the visitor
-taps the other). US (FAA, 49 USC 44809): at most 400 ft above the ground, so the glide is capped at ground + 121.92 m as it
-goes (`ceilAgl` in `castRays`, `glideAlong` and `reachGrid`): over low ground the glider has to shed height, which shortens
-the reach. EU (2019/947 UAS.OPEN.010, sailplanes under 10 kg): never more than 120 m above the pilot, so only the launch height
-is capped. The cross-section draws the limit as a dotted line. **Units** are metric or imperial (`Units` in the core; `SPEC`
-in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
+**No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
+rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or
+imperial (`Units` in the core; `SPEC` in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
 
 **Redraws stay cheap**: the reach is painted straight into a canvas that Leaflet positions like an image (`CanvasOverlay`,
 no PNG encode), each grid cell's ray and distance are cached until the launch or the terrain changes (`geometry()`), and theme
@@ -315,10 +312,14 @@ has its own light/dark switch.
 It works offline. `sw.js` keeps the page and every terrain tile it has fetched (a capped `glide-terrain-runtime` cache), and
 "Save this area" stores 9 × 9 zoom-13 tiles round the launch plus 7 × 7 at each of zooms 12 to 9 (277 tiles) in
 `glide-terrain-saved`, which only the page deletes from (a tile shared by two saved areas stays until both are gone). Saved areas
-are listed in `localStorage` (`glide-reach-areas`). **Street maps are never stored for offline use**: OpenStreetMap's tile policy
+are listed in `localStorage` (`glide-reach-areas`; every key keeps the old `glide-reach-` prefix so nothing saved is lost). **Street maps are never stored for offline use**: OpenStreetMap's tile policy
 forbids "save area" features, so offline the page switches to a hillshade it draws from the saved terrain. Leaflet is vendored in
-`glide-reach/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in `sw.js`
+`glide-path/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in `sw.js`
 whenever `SHELL_FILES` changes (it lists every file of the page). The service worker also registers on `localhost`, so `script/serve` exercises it.
+
+The page was **Glide Reach at `/glide-reach/`** until 2026-11-10. `glide-reach/index.html` redirects to `/glide-path/`
+(keeping query and hash), and `glide-reach/sw.js` replaces the service worker browsers installed there: it unregisters
+itself and moves open tabs to the new address, deleting no caches (the terrain caches are shared). Leave both in place.
 
 ### The tag tracker (`/tag-tracker/`)
 

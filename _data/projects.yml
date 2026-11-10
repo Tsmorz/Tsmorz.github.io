@@ -4,7 +4,7 @@
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
 
-- name: Glide Reach
+- name: Glide Path
   blurb: >-
     Where can an RC glider still land from here? Pick a launch point, set the glide ratio
     and wind, and the page works out every spot the glider can reach over real terrain,
@@ -16,7 +16,7 @@
   on_cv: false
   links:
     - label: Open the tool
-      url: /glide-reach/
+      url: /glide-path/
 
 - name: Serial Plotter
   blurb: >-

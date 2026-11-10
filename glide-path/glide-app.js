@@ -1,4 +1,4 @@
-// Glide Reach: the page. The maths is in glide-core.js (no DOM); the route search runs in glide-worker.js.
+// Glide Path: the page. The maths is in glide-core.js (no DOM); the route search runs in glide-worker.js.
 'use strict';
 const G = GlideCore;
 const TS = 256, RT = 3;                   // compute on a 7 × 7 block of terrain tiles round the launch
@@ -59,7 +59,6 @@ for (const k of Object.keys(SPEC)) P[k] = saved[k] != null ? saved[k] : SPEC[k].
 P.wd = saved.wd != null ? saved.wd : 270;
 P.pb = saved.pb != null ? saved.pb : 180;
 P.curve = saved.curve !== false;
-P.rule = saved.rule || null; // null: follow the location
 $('curve').checked = P.curve;
 
 const factor = k => units === 'imperial' ? SPEC[k].k : 1; // metric value × factor = what the slider shows
@@ -86,20 +85,7 @@ document.querySelectorAll('[data-units]').forEach(b => b.onclick = () => {
   setSliders(); for (const k of Object.keys(SPEC)) P[k] = +$(k).value / factor(k); save(); afterParams(); if (launch) placeStatus(); schedule('all');
 });
 
-// ---------- Height rules (US / EU switch) ----------
-// US or EU: the visitor's choice, else picked from the launch's position (outside Europe, the stricter US rule)
-const rule = () => P.rule || (launch && G.ruleFor(launch.lat, launch.lng) === 'eu' ? 'eu' : 'faa');
-const effAgl = () => Math.min(P.agl, G.RULES[rule()].launchCap ?? Infinity);
-document.querySelectorAll('[data-rule]').forEach(b => b.onclick = () => { P.rule = b.dataset.rule; save(); afterParams(); schedule('all'); });
 function afterParams() {
-  const r = rule();
-  document.querySelectorAll('[data-rule]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.rule === r)));
-  const capped = P.agl > G.RULES[r].launchCap;
-  const auto = P.rule ? '' : ' Picked from where you are; tap the other to switch.';
-  $('ruleNote').innerHTML = (r === 'faa'
-    ? `At most ${U.h(121.92)} above the ground below it, so over low ground the glider has to lose height; the reach shown does.`
-    : `A slope glider under 10 kg may go past ${U.h(120)} above the ground, but never more than ${U.h(120)} above you.`) + auto +
-    (capped ? ` <span class="warn">Your launch height is over the limit, so the glider starts at ${U.h(G.RULES[r].launchCap)}.</span>` : '');
   $('wdDial').classList.toggle('calm', !P.ws);
   $('windWords').textContent = P.ws ? `From the ${compass(P.wd, true)}, blowing ${compass((P.wd + 180) % 360, true)}.` : 'Calm.';
   const kc = document.getElementById('keyCurve'); if (kc) kc.hidden = !P.curve;
@@ -349,14 +335,13 @@ function send(run) {
   worker.postMessage({ run, id: ++runId, gridId });
 }
 function postGrid() { if (worker) worker.postMessage({ grid: { id: gridId, terr: GRID.terr.slice(), W: GRID.GW } }); }
-const ruleOpts = () => { const r = G.RULES[rule()]; return r.ceilAgl !== undefined ? { ceilAgl: r.ceilAgl } : {}; };
-function runKey() { return [lpx, lpy, effAgl(), P.mg, P.va, P.gr, P.ws, P.wd, P.vis, rule(), gridId].join(); }
+function runKey() { return [lpx, lpy, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, P.vis, gridId].join(); }
 function runGrid() {
   if (!P.curve || !GRID) { Gres = null; drawOverlay(); return; }
   const key = runKey();
   if (Gres && Gres.key === key && Gres.gridId === gridId) return;
-  send({ key, cell: 2 * M.mpp, si: Math.floor((lpx - M.x0) / 2), sj: Math.floor((lpy - M.y0) / 2), h0: groundAtLaunch + effAgl(),
-         margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd, maxR: P.vis, ...ruleOpts() });
+  send({ key, cell: 2 * M.mpp, si: Math.floor((lpx - M.x0) / 2), sj: Math.floor((lpy - M.y0) / 2), h0: groundAtLaunch + P.agl,
+         margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd, maxR: P.vis });
 }
 function onGrid() {
   drawOverlay();
@@ -424,7 +409,7 @@ function checkZoom() {
   zoomTimer = setTimeout(async () => {
     if (!M || loading || groundAtLaunch !== groundAtLaunch) return;
     const lat = launch.lat;
-    const range = Math.max(0, groundAtLaunch + effAgl() - P.mg - M.minT) * P.gr * (P.va + P.ws) / P.va;
+    const range = Math.max(0, groundAtLaunch + P.agl - P.mg - M.minT) * P.gr * (P.va + P.ws) / P.va;
     let want = G.chooseZoom(range, lat, RT, Z_MAX, Z_MIN);
     const edge = (R && R.kind.some(k => k === 1)) || (Gres && Gres.edge);
     if (edge && want >= M.z && M.z > Z_MIN) want = M.z - 1; // lower ground just outside the block
@@ -439,15 +424,15 @@ const elevAtENU = (e, n) => sample(lpx + e / M.mpp - M.x0, lpy - n / M.mpp - M.y
 const pxLatLng = (x, y) => { const [lo, la] = G.pxToLonLat(x, y, M.z); return L.latLng(la, lo); };
 const enuToLatLng = (e, n) => pxLatLng(lpx + e / M.mpp, lpy - n / M.mpp);
 const cellLatLng = i => { const GW = GRID.GW; return pxLatLng(M.x0 + 2 * (i % GW) + 1, M.y0 + 2 * Math.floor(i / GW) + 1); };
-const glideOpts = () => ({ n: 720, h0: groundAtLaunch + effAgl(), margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd,
-                           ds: M.mpp / 2, maxD: M.W * M.mpp, ...ruleOpts() });
+const glideOpts = () => ({ n: 720, h0: groundAtLaunch + P.agl, margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd,
+                           ds: M.mpp / 2, maxD: M.W * M.mpp });
 
 function compute() {
   if (!M || !launch) return;
   if (groundAtLaunch !== groundAtLaunch) { clearResult(); return; }
   const t0 = performance.now();
   R = G.castRays(glideOpts(), elevAtENU);
-  R.h0 = groundAtLaunch + effAgl(); R.ms = performance.now() - t0;
+  R.h0 = groundAtLaunch + P.agl; R.ms = performance.now() - t0;
   ring.setRadius(P.vis); if (!map.hasLayer(ring)) ring.addTo(map);
   drawOverlay();
   drawProfile();
@@ -529,16 +514,14 @@ function drawOverlay() {
   }
   lastOverlayMs = performance.now() - t0;
 
-  const r = rule(), capped = P.agl > G.RULES[r].launchCap;
   const rows = [
-    ['Glider starts at', `${U.h(R.h0)} above sea level${capped ? ' (held to the limit)' : ''}`],
+    ['Glider starts at', `${U.h(R.h0)} above sea level`],
     ['Farthest straight glide', `${U.d(maxD)} toward ${compass(maxB * 180 / Math.PI)}`],
     ['Landable ground in sight', U.a(landA)],
   ];
   if (P.curve) rows.push(['Gained by curving round hills', useG ? `+${U.a(curveLandA)}` : 'working…']);
   if (outA > 0) rows.push(['Reachable but out of sight', U.a(outA)]);
   rows.push(['Directions where a slope stops the glide in sight', `${Math.round(100 * steepHits / n)}%`]);
-  rows.push(['Height limit', r === 'faa' ? `US: ${U.h(121.92)} above the ground` : `EU: ${U.h(120)} above you`]);
   rows.push(['Terrain detail', `${U.h(mpp)} per point${M.z < Z_MAX ? ' (coarser, for a long glide)' : ''}`]);
   $('stats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
 }
@@ -577,7 +560,6 @@ $('profBack').onclick = () => clearRoute(true);
 // ---------- Cross-section ----------
 let PROF = null; // what's drawn, for the touch / hover read-out
 function profileData() {
-  const r = G.RULES[rule()];
   if (route && route.cells && route.cells.length > 1) {
     const GW = GRID.GW, cell = 2 * M.mpp, d = [0], ground = [], glide = [];
     route.cells.forEach((c, k) => {
@@ -585,7 +567,7 @@ function profileData() {
       ground.push(GRID.terr[c]); glide.push(Gres.alt[c]);
     });
     const last = route.cells[route.cells.length - 1], arrive = Gres.alt[last] - GRID.terr[last];
-    return { d, ground, glide, end: d.length - 1, hit: false, curve: true, rule: r,
+    return { d, ground, glide, end: d.length - 1, hit: false, curve: true,
              what: `Best route to the spot you picked: ${U.d(d[d.length - 1])} flown, arriving ${U.h(arrive)} above the ground.` };
   }
   const b = P.pb * Math.PI / 180;
@@ -599,7 +581,7 @@ function profileData() {
   const what = p.kind === 2 ? `Straight toward ${P.pb}°: the wind is too strong to fly this way.`
     : `Straight toward ${P.pb}° (${compass(P.pb, true)}): ${p.kind === 0 ? 'meets the ground' : 'leaves the loaded terrain'} after ${U.d(dEnd)}` +
       (dEnd > P.vis ? `, but it's out of sight after ${U.d(P.vis)}.` : '.');
-  return { d, ground, glide, end: Math.min(p.end, d.length - 1), hit: p.kind === 0, curve: false, rule: r, what };
+  return { d, ground, glide, end: Math.min(p.end, d.length - 1), hit: p.kind === 0, curve: false, what };
 }
 
 function drawProfile() {
@@ -618,10 +600,6 @@ function drawProfile() {
   let lo = Infinity, hi = -Infinity;
   for (let k = 0; k < p.d.length; k++) { lo = Math.min(lo, p.ground[k]); hi = Math.max(hi, p.ground[k], p.glide[k] || -Infinity); }
   hi = Math.max(hi, R.h0);
-  // the height limit: a line following the ground (US) or a level line 120 m above the launch (EU slope glider)
-  const lim = p.rule.ceilAgl !== undefined ? k => p.ground[k] + p.rule.ceilAgl : p.rule.pilotCap !== undefined ? () => groundAtLaunch + p.rule.pilotCap : null;
-  const showLim = lim && (p.rule.pilotCap !== undefined || p.d.some((_, k) => lim(k) < hi + 60));
-  $('profKeyLim').hidden = !showLim;
   const pad = (hi - lo) * 0.1 + 5; lo -= pad; hi += pad;
   const L0 = 52, B0 = 22, T0 = 8, R0 = 14, isMetric = units === 'metric', hk = isMetric ? 1 : G.FT;
   const X = d => L0 + (d / dMax) * (Wc - L0 - R0), Y = h => T0 + (1 - (h - lo) / (hi - lo)) * (Hc - T0 - B0);
@@ -651,10 +629,6 @@ function drawProfile() {
   for (let k = 0; k < p.d.length; k++) c.lineTo(X(p.d[k]), Y(p.ground[k]));
   c.lineTo(X(dMax), Hc - B0); c.closePath();
   c.fillStyle = COL.terrain; c.fill(); c.strokeStyle = COL.terrainEdge; c.lineWidth = 1.5; c.stroke();
-  if (showLim) {
-    c.beginPath(); for (let k = 0; k < p.d.length; k++) { const yy = Y(lim(k)); k ? c.lineTo(X(p.d[k]), yy) : c.moveTo(X(p.d[k]), yy); }
-    c.setLineDash([2, 4]); c.strokeStyle = COL.warn; c.lineWidth = 2; c.stroke(); c.setLineDash([]);
-  }
   // glider − margin (dashed, faint), then the glider (solid)
   const line = (off, color, width, dash) => {
     c.beginPath(); let on = false;

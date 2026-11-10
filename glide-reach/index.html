@@ -1,121 +1,15 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Glide Reach: where can the glider still land?</title>
-<meta name="description" content="Pick a launch point, set the glide ratio and wind, and see where an RC glider can reach and land, round the terrain in the way, in sight and under the height limit. Works offline once an area is saved.">
-<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="lib/leaflet/leaflet.css">
-<link rel="stylesheet" href="glide.css">
-<script>try { const t = localStorage.getItem('theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+<title>Glide Path has moved</title>
+<link rel="canonical" href="/glide-path/">
+<meta http-equiv="refresh" content="0; url=/glide-path/">
+<script>location.replace("/glide-path/" + location.search + location.hash);</script>
+<style>body { font: 15px/1.5 system-ui, sans-serif; margin: 40px 16px; background: #f6f6f3; color: #1d1f21; } @media (prefers-color-scheme: dark) { body { background: #16171a; color: #e8e6e1; } a { color: #7fb2ef; } }</style>
 </head>
 <body>
-<div id="app">
-  <header id="head">
-    <div class="title">
-      <h1>Glide Reach</h1>
-      <span id="net" class="chip off" role="status" hidden>Offline</span>
-      <div class="seg" role="group" aria-label="Units">
-        <button type="button" data-units="metric" aria-pressed="true">m</button>
-        <button type="button" data-units="imperial" aria-pressed="false">ft</button>
-      </div>
-      <button id="theme" class="icon-btn" type="button" aria-label="Switch light or dark" title="Switch light or dark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
-      </button>
-    </div>
-    <p class="lede">Where can the glider still land from here, with the hills in the way? <a href="/">tsmorz.github.io</a></p>
-    <div id="status" class="status" role="status" aria-live="polite">Loading…</div>
-  </header>
-
-  <div id="map" role="application" aria-label="Map. Tap to move the launch; long-press or right-click a spot for the best route there."></div>
-
-  <section id="prof" aria-labelledby="prof-h">
-    <div class="prof-head">
-      <h2 id="prof-h">Cross-section</h2>
-      <span id="profWhat" class="prof-what"></span>
-      <button id="profBack" class="link" type="button" hidden>Back to the bearing</button>
-      <div class="prof-keys" aria-hidden="true">
-        <span><i id="profKeyLine"></i>Glider</span><span><i id="profKeyMargin" class="m"></i>Glider − margin</span><span><i class="t"></i>Ground</span><span id="profKeyLim" hidden><i class="lim"></i>Height limit</span>
-      </div>
-    </div>
-    <div class="prof-body">
-      <canvas id="profile" role="img" aria-label="Height of the glider and the ground along the cross-section"></canvas>
-      <div id="profTip" class="tip" hidden></div>
-    </div>
-    <div class="prof-side">
-      <div id="pbDial" class="dial" aria-label="Cross-section bearing"></div>
-      <div class="dial-cap">Bearing</div>
-    </div>
-  </section>
-
-  <aside id="panel">
-    <section class="group" aria-labelledby="g-launch">
-      <h2 id="g-launch">Launch</h2>
-      <div class="btns">
-        <button id="btnGeo" class="btn primary" type="button">Use my location</button>
-        <button id="btnMHill" class="btn" type="button">Example: M Hill, Rapid City</button>
-      </div>
-      <p class="hint">Or tap the map, or drag the pin. Long-press (right-click) any spot to see the best route there.</p>
-    </section>
-
-    <section class="group" aria-labelledby="g-glider">
-      <h2 id="g-glider">Glider</h2>
-      <div class="row"><label for="gr">Glide ratio <output id="v_gr" for="gr"></output></label><input id="gr" type="range"></div>
-      <div class="row"><label for="va">Best-glide airspeed <output id="v_va" for="va"></output></label><input id="va" type="range"></div>
-      <div class="row"><label for="agl">Launch height above you <output id="v_agl" for="agl"></output></label><input id="agl" type="range"></div>
-    </section>
-
-    <section class="group" aria-labelledby="g-wind">
-      <h2 id="g-wind">Wind</h2>
-      <div class="wind">
-        <div class="row" style="margin:0"><label for="ws">Speed <output id="v_ws" for="ws"></output></label><input id="ws" type="range">
-          <p id="windWords" class="hint"></p></div>
-        <div><div id="wdDial" class="dial" aria-label="Wind direction (where it blows from)"></div><div class="dial-cap">From</div></div>
-      </div>
-    </section>
-
-    <section class="group" aria-labelledby="g-rules">
-      <h2 id="g-rules">Rules and margins</h2>
-      <div class="row"><span class="lab" id="ruleLab">Height limit</span>
-        <div id="ruleSeg" class="seg wide" role="group" aria-labelledby="ruleLab">
-          <button type="button" data-rule="faa" aria-pressed="false">US (FAA)</button>
-          <button type="button" data-rule="eu" aria-pressed="false">EU</button>
-        </div>
-        <p id="ruleNote" class="rule-note"></p></div>
-      <div class="row"><label for="vis">How far away you can still see it <output id="v_vis" for="vis"></output></label><input id="vis" type="range">
-        <p class="hint">You have to keep it in sight. About 500–800 m for a 2 m glider, less for a small one.</p></div>
-      <div class="row"><label for="mg">Clearance over terrain <output id="v_mg" for="mg"></output></label><input id="mg" type="range"></div>
-      <div class="row"><label for="sl">Steepest ground you'd land on <output id="v_sl" for="sl"></output></label><input id="sl" type="range"></div>
-      <label class="switch"><input id="curve" type="checkbox" checked> Let the glide curve round hills</label>
-    </section>
-
-    <section class="group" aria-labelledby="g-result">
-      <h2 id="g-result">What you can reach</h2>
-      <dl id="stats" class="stats"></dl>
-    </section>
-
-    <section class="group" aria-labelledby="g-offline">
-      <h2 id="g-offline">Offline areas</h2>
-      <p class="hint">Save the terrain round the launch while you have signal. The reach, the cross-section and a shaded terrain map then work with no connection.</p>
-      <div class="row"><input id="areaName" type="text" placeholder="Name, e.g. M Hill" aria-label="Name for this area (optional)"></div>
-      <div class="btns"><button id="btnSave" class="btn" type="button">Save this area</button></div>
-      <div id="saveStatus" class="status" role="status" aria-live="polite"></div>
-      <ul id="areas"></ul>
-      <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
-      <p id="storage" class="hint"></p>
-    </section>
-
-    <p class="note">Glides at best L/D in steady wind, checked against the terrain every few metres; curving routes are searched on a grid. No lift, sink or turn losses, and "landable" only looks at slope, not trees, buildings or water. The height rules are a summary, not legal advice: check your local rules and airspace before you fly. For planning, not for safety.
-      Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (USGS, SRTM and others). Street map © OpenStreetMap contributors, online only. <a href="https://github.com/Tsmorz/Tsmorz.github.io/tree/main/glide-reach">Source</a></p>
-  </aside>
-</div>
-<script src="lib/leaflet/leaflet.js"></script>
-<script src="glide-core.js"></script>
-<script src="glide-app.js"></script>
+<p>Glide Reach is now Glide Path, at <a href="/glide-path/">/glide-path/</a>.</p>
 </body>
 </html>

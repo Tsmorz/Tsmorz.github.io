@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Check the maths behind /glide-reach/ (glide-reach/glide-core.js), in Node.
+// Check the maths behind /glide-path/ (glide-path/glide-core.js), in Node.
 //   1. still air on flat ground: every direction reaches (start height − margin) × L/D
 //   2. wind: downwind, upwind and crosswind ground glide ratios; tracks that can't be flown
 //   3. terrain: a ridge stops the glide where the path minus the margin meets it; a low ridge is cleared
@@ -8,10 +8,11 @@
 //   6. saved areas: the tile list per zoom, and deleting keeps tiles another area still uses
 //   7. the service worker (sw.js) in a mock: terrain from saved/recent caches offline, the recent cache capped,
 //      the page from cache offline or on a stalled network, street-map tiles left alone
+//   8. the old address: /glide-reach/ redirects, and its sw.js retires the old service worker
 const path = require('path');
 const fs = require('fs');
 const vm = require('vm');
-const G = require(path.join(__dirname, '..', 'glide-reach/glide-core.js'));
+const G = require(path.join(__dirname, '..', 'glide-path/glide-core.js'));
 let failed = false;
 function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
 function near(got, want, tol, label) { check(Math.abs(got - want) <= tol, `${label}: ${got.toFixed(2)} (wanted ${want} ± ${tol})`); }
@@ -95,32 +96,28 @@ console.log('4b. route search round terrain (reachGrid)');
   check(ms < 5000, `a full page-sized grid (896 × 896, all reachable) runs in ${ms} ms`);
 }
 
-console.log('4c. height limits, line of sight, rules and units');
+console.log('4c. no height limit, line of sight and units');
 {
   // a 100 m plateau that drops to a plain 200 m east of the launch; launch 120 m above the plateau
   const plateau = (e) => (e < 200 ? 100 : 0);
   const o = { ...base, h0: 220, maxD: 6000 };
   let R = G.castRays(o, plateau);
-  near(R.dmax[E], 3000, 5, 'no limit: 200 m of height × 15 = 3 km east');
-  R = G.castRays({ ...o, ceilAgl: 121.92 }, plateau);
-  const capped = 200 + (121.92 - 20) * 15 - (100 - 0) * 0; // over the plain the glider is held at 122 m above the ground
-  check(R.dmax[E] < 2000 && Math.abs(R.dmax[E] - (200 + (121.92 - 20) * 15 - 15 * 0)) < 120,
-    `FAA 400 ft limit: the glider has to lose height over the plain, so the reach drops to ${R.dmax[E].toFixed(0)} m (about ${capped.toFixed(0)})`);
-  near(G.castRays({ ...o, ceilAgl: 121.92 }, plateau).dmax[W], G.castRays(o, plateau).dmax[W], 5, 'over the plateau, where it stays under the limit, nothing changes');
-  const prof = G.glideAlong({ ...o, ceilAgl: 121.92 }, plateau, Math.PI / 2, 300);
-  const over = prof.glide.some((h, k) => h === h && h - prof.ground[k] > 121.92 + 0.01 && prof.d[k] > 0);
-  check(!over && prof.kind === 0 && Math.abs(prof.d[prof.end] - R.dmax[E]) <= 5, 'glideAlong agrees with the rays and never goes over the limit');
+  near(R.dmax[E], 3000, 5, 'no height limit: 200 m of height × 15 = 3 km east, over the plain too');
+  const prof = G.glideAlong(o, plateau, Math.PI / 2, 300);
+  const high = Math.max(...prof.glide.map((h, k) => (h === h ? h - prof.ground[k] : 0)));
+  check(high > 200 && prof.kind === 0 && Math.abs(prof.d[prof.end] - R.dmax[E]) <= 5,
+    `glideAlong agrees with the rays and keeps its height over low ground (${high.toFixed(0)} m above it, no cap)`);
   const W2 = 500, c = 250, cell = 20, terr = new Float32Array(W2 * W2);
   for (let j = 0; j < W2; j++) for (let i = 0; i < W2; i++) terr[j * W2 + i] = plateau((i - c) * cell);
   const run = extra => G.reachGrid({ cell, si: c, sj: c, h0: 220, margin: 20, Va: 10, GR: 15, windSpeed: 0, windFromDeg: 0, ...extra }, terr, W2, W2);
   const reachE = r => { let i = c; while (i + 1 < W2 && r.alt[c * W2 + i + 1] > -Infinity) i++; return (i - c) * cell; };
-  const gFree = reachE(run({})), gCap = reachE(run({ ceilAgl: 121.92 }));
-  check(Math.abs(gFree - 3000) <= 60 && Math.abs(gCap - R.dmax[E]) <= 80, `the route search agrees: ${gFree} m free, ${gCap} m under the limit`);
+  const gFree = reachE(run({}));
+  check(Math.abs(gFree - 3000) <= 60, `the route search agrees: ${gFree} m east`);
   const rs = run({ maxR: 600 });
   let farthest = 0; for (let i = 0; i < W2 * W2; i++) if (rs.alt[i] > -Infinity) farthest = Math.max(farthest, Math.hypot(i % W2 - c, Math.floor(i / W2) - c) * cell);
   check(farthest <= 600 && farthest > 560, `staying in sight (600 m): nothing past ${farthest.toFixed(0)} m`);
-  check(G.ruleFor(44.09, -103.25) === 'faa' && G.ruleFor(48.14, 11.58) === 'eu' && G.ruleFor(-33.9, 151.2) === 'none', 'rules by place: Rapid City FAA, Munich EU, Sydney none');
-  check(G.Units.imperial.h(121.92) === '400 ft' && G.Units.metric.h(121.92) === '122 m', '400 ft limit reads 400 ft or 122 m');
+  check(G.RULES === undefined && G.ruleFor === undefined, 'the height rules are gone from the core');
+  check(G.Units.imperial.h(121.92) === '400 ft' && G.Units.metric.h(121.92) === '122 m', 'heights: 121.92 m reads 400 ft or 122 m');
   check(G.Units.imperial.d(3500) === '2.2 mi' && G.Units.imperial.d(200) === '656 ft' && G.Units.metric.d(3500) === '3.5 km', 'distances: 3.5 km = 2.2 mi, 200 m = 656 ft');
   check(G.Units.imperial.v(10) === '22 mph' && G.Units.metric.v(10) === '10 m/s', 'speeds: 10 m/s = 22 mph');
   check(G.Units.imperial.a(2.589988) === '1.0 mi²', 'areas: 2.59 km² = 1 mi²');
@@ -158,7 +155,7 @@ console.log('7. service worker');
 (async () => {
   // Minimal Cache Storage, fetch and service-worker globals, enough for sw.js.
   const stores = new Map();
-  const keyOf = r => (typeof r === 'string' ? new URL(r, 'https://tsmorz.github.io/glide-reach/sw.js').href : r.url);
+  const keyOf = r => (typeof r === 'string' ? new URL(r, 'https://tsmorz.github.io/glide-path/sw.js').href : r.url);
   const mkCache = () => { const m = new Map(); return {
     match: async r => m.get(keyOf(r)), put: async (r, res) => { m.set(keyOf(r), res); },
     delete: async r => m.delete(keyOf(r)), keys: async () => [...m.keys()].map(url => ({ url })), addAll: async urls => { for (const u of urls) m.set(keyOf(u), resp('shell:' + u)); }, size: () => m.size, _m: m }; };
@@ -172,15 +169,15 @@ console.log('7. service worker');
     return resp('net:' + u); };
   const handlers = {};
   const ctx = { self: null, caches, fetch: fetchMock, URL, setTimeout, Promise, console,
-    location: new URL('https://tsmorz.github.io/glide-reach/sw.js') };
+    location: new URL('https://tsmorz.github.io/glide-path/sw.js') };
   ctx.self = { addEventListener: (t, f) => { handlers[t] = f; }, skipWaiting: () => {}, clients: { claim: () => {} } };
   vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'glide-reach/sw.js'), 'utf8'), ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'glide-path/sw.js'), 'utf8'), ctx);
   const run = async (t, ev) => { let p; ev.waitUntil = x => { p = x; }; ev.respondWith = x => { p = x; }; handlers[t](ev); return p; };
   const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
 
   await run('install', {});
-  check((await caches.open('glide-shell-v3')).size() === 16, 'install caches the page, its script and styles, the core, the worker, the manifest, icons and Leaflet');
+  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 16, 'install caches the page, its script and styles, the core, the worker, the manifest, icons and Leaflet');
   stores.set('glide-shell-v0', mkCache());
   await run('activate', {});
   check(!stores.has('glide-shell-v0'), 'activate drops an old version of the page');
@@ -204,18 +201,41 @@ console.log('7. service worker');
   check(rt.size() <= 600 && !(await rt.match(tile(100))) && (await rt.match(tile(739))), `the recent-tile cache stays at 600, oldest dropped first (${rt.size()})`);
 
   net = 'down';
-  r = await get('https://tsmorz.github.io/glide-reach/', 'navigate');
+  r = await get('https://tsmorz.github.io/glide-path/', 'navigate');
   check(r && r.body.startsWith('shell:'), 'the page opens offline');
-  r = await get('https://tsmorz.github.io/glide-reach/?from=homescreen', 'navigate');
+  r = await get('https://tsmorz.github.io/glide-path/?from=homescreen', 'navigate');
   check(r && r.body.startsWith('shell:'), 'with a query string too');
   net = 'stall';
   const t0 = Date.now();
-  r = await get('https://tsmorz.github.io/glide-reach/lib/leaflet/leaflet.js');
+  r = await get('https://tsmorz.github.io/glide-path/lib/leaflet/leaflet.js');
   check(r && r.body.startsWith('shell:') && Date.now() - t0 < 3500, `a stalled network falls back to the cached copy after ~3 s (${Date.now() - t0} ms)`);
   net = 'up';
   check(await get('https://tile.openstreetmap.org/13/1746/2975.png') === undefined, 'street-map tiles are not intercepted');
   check(await get('https://tsmorz.github.io/recipes/', 'navigate') === undefined, 'nor the rest of the site');
 
+  console.log('8. the old address (/glide-reach/)');
+  {
+    // its sw.js replaces the service worker installed there before the move: it unregisters, sends open tabs to
+    // /glide-path/ and deletes no caches (the terrain is shared with the new page)
+    const h = {}, went = [];
+    let unreg = 0, deleted = 0;
+    const tabs = [{ url: 'https://tsmorz.github.io/glide-reach/?lat=44.1#map', navigate: async u => { went.push(u); } }];
+    const c2 = { URL, Promise, console,
+      caches: { delete: async () => { deleted++; }, keys: async () => ['glide-terrain-saved'] },
+      self: { addEventListener: (ty, f) => { h[ty] = f; }, skipWaiting: () => {},
+              registration: { unregister: async () => { unreg++; return true; } },
+              clients: { matchAll: async () => tabs, claim: async () => {} } } };
+    vm.createContext(c2);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'glide-reach/sw.js'), 'utf8'), c2);
+    let p; h.install({ waitUntil: x => { p = x; } }); await p;
+    p = null; h.activate({ waitUntil: x => { p = x; } }); await p;
+    check(unreg === 1, 'the old service worker unregisters itself');
+    check(went.length === 1 && went[0] === 'https://tsmorz.github.io/glide-path/?lat=44.1#map', `and sends open tabs to the new address (${went[0]})`);
+    check(deleted === 0 && !h.fetch, 'without deleting caches or answering requests');
+    const redirect = fs.readFileSync(path.join(__dirname, '..', 'glide-reach/index.html'), 'utf8');
+    check(redirect.includes('location.replace("/glide-path/" + location.search + location.hash)'), 'its index.html redirects, keeping query and hash');
+  }
+
   if (failed) { console.log('\nFAILED'); process.exit(1); }
-  console.log('\nAll glide-reach checks passed.');
+  console.log('\nAll glide-path checks passed.');
 })();
