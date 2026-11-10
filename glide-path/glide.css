@@ -1,4 +1,4 @@
-/* Glide Reach styles. Tokens first; data colours are the validated colour-blind-safe set (see CLAUDE.md). */
+/* Glide Path styles. Tokens first; data colours are the validated colour-blind-safe set (see CLAUDE.md). */
 :root {
   color-scheme: light;
   --surface: #fcfcfb; --surface-2: #f3f2ee; --line: #e0dfd9; --line-2: #cfcdc5;
@@ -159,18 +159,14 @@ dl.stats .gain { color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (forced-colors: active) { .key, .prof-keys i { forced-color-adjust: none; } }
 
-/* Units switch (m / ft) and the rules picker */
+/* Units switch (m / ft) */
 .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
 .seg button { min-width: 44px; min-height: 40px; padding: 0 10px; border: 0; background: transparent; cursor: pointer; font-weight: 600; color: var(--ink-2); }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .title .seg { margin-left: auto; flex: none; }
 .title { flex-wrap: wrap; row-gap: 8px; }
 .title .icon-btn { margin-left: 0; }
-.seg.wide { display: flex; margin-top: 6px; }
-.seg.wide button { flex: 1; min-height: 44px; }
-.rule-note { font-size: 13.5px; color: var(--ink-2); margin: 6px 0 0; }
 
 /* Map key additions */
 .k-out { background: rgba(110,108,100,.2); border: 1px solid #d3d1c9; }
 .k-ring { height: 0; border-top: 2px dashed #1f63b8; border-radius: 0; }
-.prof-keys i.lim { border-top: 2px dotted var(--warn); }

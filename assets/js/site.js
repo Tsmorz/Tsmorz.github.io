@@ -27,6 +27,7 @@ Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (m
   if (!btn) return;
   function set(open) { menu.classList.toggle('open', open); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
   function shut(on) { menu.classList.toggle('shut', on); }
+  menu.navOpen = function (open) { if (open) shut(false); set(open); }; // the phone menu: unfold the current section, or fold
   try { if (sessionStorage.getItem('navShut') === String(index)) { shut(true); sessionStorage.removeItem('navShut'); } } catch (e) {}
   btn.addEventListener('click', function (e) { e.stopPropagation(); shut(false); set(!menu.classList.contains('open')); });
   menu.addEventListener('mouseleave', function () { shut(false); });
@@ -44,13 +45,21 @@ Array.prototype.forEach.call(document.querySelectorAll('.nav-menu'), function (m
 (function () {
   var nav = document.querySelector('.nav'), btn = nav && nav.querySelector('.nav-burger');
   if (!btn) return;
-  function set(open) { nav.classList.toggle('menu-open', open); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+  function set(open) {
+    // the panel's height stops at the bottom of the screen, below the bar
+    if (open) nav.style.setProperty('--nav-h', Math.round(nav.closest('.site-header').getBoundingClientRect().bottom) + 'px');
+    // opening unfolds the section holding the current page; closing folds them all, so none is left open on a desktop
+    Array.prototype.forEach.call(nav.querySelectorAll('.nav-menu'), function (m) {
+      if (m.navOpen) m.navOpen(open && !!m.querySelector('[aria-current="page"]'));
+    });
+    nav.classList.toggle('menu-open', open); btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
   btn.addEventListener('click', function (e) { e.stopPropagation(); set(!nav.classList.contains('menu-open')); });
   document.addEventListener('click', function (e) { if (!nav.contains(e.target)) set(false); });
   // a link that only changes the hash (a recipe on /recipes/) doesn't reload the page, so close the panel by hand
   nav.querySelector('.nav-links').addEventListener('click', function (e) { if (e.target.closest('a')) set(false); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && nav.classList.contains('menu-open')) { set(false); btn.focus(); } });
-  window.addEventListener('resize', function () { if (window.innerWidth > 820) set(false); });
+  window.addEventListener('resize', function () { if (window.innerWidth > 820 && nav.classList.contains('menu-open')) set(false); });
 })();
 
 // Hero field — math symbols that spring back to a home point, pushed by the cursor.

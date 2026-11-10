@@ -4,7 +4,7 @@
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
 
-- name: Glide Reach
+- name: Glide Path
   blurb: >-
     Where can an RC glider still land from here? Pick a launch point, set the glide ratio
     and wind, and the page works out every spot the glider can reach over real terrain,
@@ -16,7 +16,7 @@
   on_cv: false
   links:
     - label: Open the tool
-      url: /glide-reach/
+      url: /glide-path/
 
 - name: Serial Plotter
   blurb: >-
@@ -30,6 +30,19 @@
   links:
     - label: Open the tool
       url: /serial-plotter/
+
+- name: Tag Tracker
+  blurb: >-
+    Tracks AprilTags with any webcam, in the browser. Name each tag, calibrate the camera
+    with a printed board, and watch the last second of every tag's position and orientation
+    in 3D, relative to the camera or to another tag. Nothing leaves your computer.
+  year: "2026"
+  tags: [JavaScript, Computer Vision, OpenCV]
+  featured: true
+  on_cv: false
+  links:
+    - label: Open the tool
+      url: /tag-tracker/
 
 - name: Double Pendulum
   blurb: >-

@@ -910,21 +910,32 @@ main:not(:has(> .hero))::before {
   .nav-burger:hover, .nav-burger[aria-expanded="true"] { color: var(--text); background: var(--bg-soft); }
   .nav-burger .nb-close, .nav-burger[aria-expanded="true"] .nb-open { display: none; }
   .nav-burger[aria-expanded="true"] .nb-close { display: block; }
+  /* the panel never runs off the screen: it stops at the bottom (--nav-h is the bar's height, set by site.js on open)
+     and scrolls inside itself, without dragging the page along */
   .nav-links {
     display: none; position: absolute; left: 0; right: 0; top: 100%; z-index: 60;
     flex-direction: column; gap: .15rem; padding: .6rem 1rem 1rem;
+    max-height: calc(100vh - var(--nav-h, 3.5rem)); max-height: calc(100dvh - var(--nav-h, 3.5rem));
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
     background: var(--bg); border-bottom: 1px solid var(--border-strong); box-shadow: var(--shadow-lift);
   }
   .nav.menu-open .nav-links { display: flex; }
   .nav-home { display: block; }
   .nav-links a { padding: .7rem .6rem; font-size: .95rem; }
-  /* the Controls Lab pages sit inline under their parent; no caret or hover popup */
-  .nav-menu { display: block; }
-  .nav-menu-btn { display: none; }
-  .nav-menu-list, .nav-menu.shut .nav-menu-list {
-    display: block; position: static; min-width: 0; margin: .1rem 0 0 .9rem; padding: 0 0 0 .6rem;
-    border: 0; border-left: 1px solid var(--border-strong); box-shadow: none; background: none;
+  /* Labs and Recipes fold: the link goes to the page, the caret beside it opens its list in place. One open at a
+     time, and the one holding the current page opens with the panel. Hover and focus don't open them here. */
+  .nav-menu { display: grid; grid-template-columns: 1fr auto; align-items: center; }
+  .nav-menu > a { padding-right: .6rem; }
+  .nav-menu-btn { width: 44px; height: 44px; padding: 0; }
+  .nav-menu-btn:hover { background: var(--bg-soft); }
+  .nav-menu-list, .nav-menu.shut .nav-menu-list,
+  .nav-menu:hover .nav-menu-list, .nav-menu:focus-within .nav-menu-list {
+    display: none; grid-column: 1 / -1; position: static; min-width: 0; margin: .1rem 0 .3rem .9rem; padding: 0 0 0 .6rem;
+    border: 0; border-left: 1px solid var(--border-strong); border-radius: 0; box-shadow: none; background: none;
   }
+  .nav-menu.open .nav-menu-list { display: block; }
+  .nav-menu:hover .nav-menu-btn svg { transform: none; }
+  .nav-menu.open .nav-menu-btn svg { transform: rotate(180deg); }
   .nav-menu-list::before { display: none; }
 }
 

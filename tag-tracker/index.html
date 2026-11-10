@@ -1,0 +1,1586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tag Tracker: AprilTag pose in the browser</title>
+<meta name="description" content="Track AprilTags with your webcam, in the browser: name each tag, calibrate the camera, and see the last second of each tag's position and orientation in 3D.">
+<link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" rel="stylesheet">
+<style>
+/* Tag Tracker: an instrument for a vision bench. Cool anodised greys, ink, and one Kapton-amber for what is live or
+   what you press. Panels are plain outlined boxes with no shadows; the video alone carries viewfinder corner marks
+   (the reticle), amber while detecting. One typeface, Archivo, whose width axis does the work: wide for the name and panel titles,
+   normal for reading, tabular figures for numbers.
+   Tokens: light on bare :root, dark for the OS setting unless the toggle says light, and dark when the toggle says so. */
+:root{--font:Archivo,"Helvetica Neue",Arial,sans-serif;color-scheme:light;
+--page:#dde1e3;--panel:#f4f6f6;--well:#e8ecee;--field:#ffffff;--ink:#1b1f22;--ink2:#465056;--muted:#5f696f;--rule:#cdd3d6;--rule2:#b4bcc1;
+--tick:#1b1f22;--accent:#e09b1a;--onAccent:#1b1f22;--accentInk:#875700;--accentWash:rgba(224,155,26,.16);--ring:rgba(224,155,26,.55);
+--stage:#15191b;--grid:#e2e7e9;--axis:#b4bcc1;
+--good:#2b7a4b;--goodWash:rgba(43,122,75,.12);--crit:#b3261e;--critWash:rgba(179,38,30,.08);--warn:#875700;--warnWash:rgba(224,155,26,.16);
+--x:#d9483b;--y:#14a37f;--z:#4a5fd9;--unknown:#8b939a;
+--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--s5:#e87ba4;--s6:#008300;--s7:#6250d6;--s8:#e34948;--sh:0 10px 28px rgba(27,31,34,.18)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;
+--page:#1f2427;--panel:#2a3034;--well:#232a2e;--field:#20262a;--ink:#e8eced;--ink2:#b5bec3;--muted:#99a3a9;--rule:#3a4247;--rule2:#4b555b;
+--tick:#c9d1d5;--accent:#f2b13a;--onAccent:#1b1f22;--accentInk:#f2b13a;--accentWash:rgba(242,177,58,.16);--ring:rgba(242,177,58,.6);
+--stage:#111416;--grid:#343c41;--axis:#4b555b;
+--good:#62c08d;--goodWash:rgba(98,192,141,.14);--crit:#f08a80;--critWash:rgba(240,138,128,.1);--warn:#f2b13a;--warnWash:rgba(242,177,58,.14);
+--x:#e5604f;--y:#1aa883;--z:#5b7fe8;--unknown:#7d878d;
+--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;--sh:0 12px 32px rgba(0,0,0,.45)}}
+:root[data-theme=dark]{color-scheme:dark;
+--page:#1f2427;--panel:#2a3034;--well:#232a2e;--field:#20262a;--ink:#e8eced;--ink2:#b5bec3;--muted:#99a3a9;--rule:#3a4247;--rule2:#4b555b;
+--tick:#c9d1d5;--accent:#f2b13a;--onAccent:#1b1f22;--accentInk:#f2b13a;--accentWash:rgba(242,177,58,.16);--ring:rgba(242,177,58,.6);
+--stage:#111416;--grid:#343c41;--axis:#4b555b;
+--good:#62c08d;--goodWash:rgba(98,192,141,.14);--crit:#f08a80;--critWash:rgba(240,138,128,.1);--warn:#f2b13a;--warnWash:rgba(242,177,58,.14);
+--x:#e5604f;--y:#1aa883;--z:#5b7fe8;--unknown:#7d878d;
+--s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--s5:#d55181;--s6:#008300;--s7:#9085e9;--s8:#e66767;--sh:0 12px 32px rgba(0,0,0,.45)}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font:14px/1.5 var(--font);font-stretch:100%;background:var(--page);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:disabled{cursor:not-allowed;opacity:.45}
+:focus-visible{outline:2px solid var(--accent)!important;outline-offset:2px}
+a{color:var(--ink);text-decoration-color:var(--accent);text-decoration-thickness:2px;text-underline-offset:3px}
+.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:square;stroke-linejoin:miter}
+.mono{font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.muted{color:var(--muted)}.small{font-size:12.5px}
+.spacer{flex:1}
+[hidden]{display:none!important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* controls: flat keys on an instrument. Outlined in ink; pressed or chosen ones invert. */
+.btn{height:32px;padding:0 12px;border:1px solid transparent;background:transparent;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;color:var(--ink2);font-weight:550;text-decoration:none}
+.btn:hover:not(:disabled){color:var(--ink);background:var(--well)}
+.btn.outline{border-color:var(--ink);color:var(--ink);background:transparent}
+.btn.outline:hover:not(:disabled){background:var(--ink);color:var(--panel)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--onAccent);font-weight:650}
+.btn.primary:hover:not(:disabled){background:var(--accent);color:var(--onAccent);box-shadow:inset 0 0 0 2px var(--onAccent)}
+.btn.sm{height:28px;padding:0 10px;font-size:13px}
+.btn.sq{width:32px;padding:0}.btn.sm.sq{width:28px}
+.btn.danger:hover:not(:disabled){color:var(--crit);background:var(--critWash)}
+.seg{display:inline-flex;border:1px solid var(--ink);border-radius:2px}
+.seg button{border:0;background:none;height:28px;padding:0 11px;color:var(--ink2);font-weight:550;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--rule2)}
+.seg button:hover{color:var(--ink);background:var(--well)}
+.seg button[aria-selected=true],.seg button[aria-pressed=true],.seg button[aria-checked=true]{background:var(--ink);color:var(--panel)}
+.seg.sm button{height:26px;padding:0 9px;font-size:13px}
+/* a square latching toggle: empty when off, amber with a check when on */
+.switch{border:1px solid var(--ink);background:transparent;width:18px;height:18px;border-radius:2px;position:relative;padding:0;flex:none}
+.switch[aria-checked=true]{background:var(--accent);border-color:var(--accent)}
+.switch[aria-checked=true]::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid var(--onAccent);border-width:0 2px 2px 0;transform:rotate(45deg)}
+.input,.select{height:32px;border:1px solid var(--rule2);background:var(--field);border-radius:2px;padding:0 10px;min-width:0}
+.select{padding-right:6px}
+.input:focus,.select:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px var(--ring)}
+.input:hover,.select:hover{border-color:var(--ink2)}
+.input.sm,.select.sm{height:28px;font-size:13px;padding:0 8px}
+.num{width:72px;text-align:right}
+.field{display:inline-flex;align-items:center;gap:7px;color:var(--ink2);font-size:13px;white-space:nowrap}
+.field .unit{color:var(--muted)}
+
+/* top bar: sits on the page, no panel of its own */
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;padding:0 18px;height:60px;background:var(--page);border-bottom:2px solid var(--ink)}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;white-space:nowrap}
+.brand .bt{font-size:19px;font-weight:800;font-stretch:125%;letter-spacing:-.01em}
+.logo{width:26px;height:26px;display:grid;place-items:center;color:var(--ink)}
+.logo svg{width:26px;height:26px}
+.tabs{display:flex;gap:18px;align-self:stretch}
+.tabs button{border:0;background:none;padding:0;font-weight:600;font-stretch:110%;font-size:14.5px;color:var(--muted);border-bottom:4px solid transparent;margin-bottom:-2px}
+.tabs button:hover{color:var(--ink)}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.cam{display:flex;align-items:center;gap:6px;min-width:0}
+.cam .select{max-width:230px}
+.pill{display:inline-flex;align-items:center;gap:8px;height:28px;color:var(--ink2);font-size:13px;white-space:nowrap}
+.pill .dot{width:9px;height:9px;background:var(--muted);flex:none}
+.pill.live .dot{background:var(--good)}
+.pill.busy .dot{background:var(--accent);animation:blink 1s steps(2,start) infinite}
+.pill.bad{color:var(--crit)}.pill.bad .dot{background:var(--crit)}
+@keyframes blink{to{visibility:hidden}}
+
+/* layout */
+main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;padding:22px 18px;max-width:1680px;margin:0 auto}
+.col{display:flex;flex-direction:column;gap:22px;min-width:0}
+/* a panel: a plain outlined box */
+.card{min-width:0;background:var(--panel);border:1px solid var(--rule2);border-radius:4px;padding:4px}
+.card-h{display:flex;align-items:center;gap:10px 12px;padding:10px 12px 8px;flex-wrap:wrap;min-height:48px}
+.card-h h2{font-size:16px;font-weight:700;font-stretch:118%;margin:0 6px 0 0;letter-spacing:-.005em}
+.card-b{padding:10px 12px}
+@media (min-width:1001px){main.calib{grid-template-columns:minmax(0,1.6fr) minmax(320px,1fr)}}
+@media (max-width:1000px){main{grid-template-columns:minmax(0,1fr)}.cam .select{max-width:150px}.hide-sm{display:none!important}}
+@media (max-width:640px){.topbar{flex-wrap:wrap;height:auto;padding:10px 12px;row-gap:10px;column-gap:12px}.brand .bt{font-size:16px}.logo,.logo svg{width:22px;height:22px}.tabs{gap:12px}.tabs button{font-size:14px}.tabs{align-self:auto}.tabs button{padding:6px 0}#themeBtn{order:2}.brk{flex-basis:100%;height:0;order:3}.cam{order:4;flex:1 1 auto}.cam .select{flex:1;max-width:none}#status{order:5}main{padding:14px 10px;gap:16px}}
+.brk{display:none}@media (max-width:640px){.brk{display:block}}
+
+/* video */
+.stage{position:relative;background:var(--stage);aspect-ratio:16/9;overflow:hidden;border-radius:0 0 3px 3px}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.stage video{object-fit:contain}
+/* the reticle: corner marks inside the picture, amber while detecting */
+.reticle{position:absolute;inset:10px;pointer-events:none;--rc:rgba(255,255,255,.35);background:
+  linear-gradient(var(--rc) 0 0) left top/22px 2px,linear-gradient(var(--rc) 0 0) left top/2px 22px,
+  linear-gradient(var(--rc) 0 0) right top/22px 2px,linear-gradient(var(--rc) 0 0) right top/2px 22px,
+  linear-gradient(var(--rc) 0 0) left bottom/22px 2px,linear-gradient(var(--rc) 0 0) left bottom/2px 22px,
+  linear-gradient(var(--rc) 0 0) right bottom/22px 2px,linear-gradient(var(--rc) 0 0) right bottom/2px 22px;background-repeat:no-repeat}
+.stage.live .reticle{--rc:var(--accent)}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:14px;padding:28px 30px;color:#c3cbcf}
+.empty h3{margin:0;font-size:24px;line-height:1.15;color:#fff;font-weight:750;font-stretch:120%;max-width:22ch}
+.empty p{margin:0;max-width:52ch;line-height:1.55}
+.empty .row{display:flex;gap:10px;flex-wrap:wrap}
+.empty .btn.outline{color:#fff;border-color:rgba(255,255,255,.7)}
+.empty .btn.outline:hover{background:#fff;color:var(--stage)}
+.empty .note{font-size:12.5px;color:#9aa5ab;background:none;padding:0;border:0}
+.empty .note::before{content:none}
+.flash{position:absolute;inset:0;border:4px solid var(--good);opacity:0;pointer-events:none;transition:opacity .4s}
+.flash.on{opacity:1;transition:none}
+.vstats{position:absolute;left:10px;bottom:10px;padding:3px 8px;background:rgba(0,0,0,.6);color:#e8eced;font-size:12px;display:flex;gap:14px}
+
+/* tables */
+table{border-collapse:collapse;width:100%}
+th{font-weight:550;color:var(--muted);font-size:12.5px;text-align:left;padding:6px 10px;border-bottom:1px solid var(--ink);white-space:nowrap}
+td{padding:6px 10px;border-bottom:1px solid var(--rule);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right}
+.sw{width:12px;height:12px;display:inline-block;vertical-align:-1px;flex:none}
+.tagname{width:100%;min-width:90px}
+.seen{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;white-space:nowrap}
+.seen .dot{width:7px;height:7px;background:var(--rule2)}
+.seen.on{color:var(--good)}.seen.on .dot{background:var(--good)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 4px 0 9px;border:1px dashed var(--ink2);font-size:13px;color:var(--ink2)}
+.chip button{height:20px;border:0;background:var(--ink);color:var(--panel);font-weight:600;font-size:12px;padding:0 8px}
+.hint{color:var(--muted);font-size:13px;line-height:1.55;margin:0;max-width:70ch}
+.det{display:flex;gap:12px 18px;flex-wrap:wrap;align-items:center;padding:12px;margin-top:6px;background:var(--well)}
+.scroll{overflow-x:auto}
+.bodies{padding:12px;display:flex;flex-direction:column;gap:8px}
+h3.sub{font-size:14px;font-weight:700;font-stretch:112%;margin:0}
+.bform{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:12px;background:var(--well);border-left:3px solid var(--accent)}
+.pick{height:28px;border:1px solid var(--rule2);background:var(--field);padding:0 10px;font-size:13px;display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
+.pick[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:var(--panel)}
+.pick .ord{font-weight:650;font-size:11.5px;color:var(--accent)}
+.brow{display:grid;grid-template-columns:auto minmax(90px,1fr) auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
+.brow:first-child{border-top:0}
+.brow .meta{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12.5px;color:var(--muted)}
+.mtag{font-size:12px;font-weight:600;padding:1px 6px;border:1px solid var(--rule2);color:var(--ink2)}
+.learn{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.learn .lrow{display:flex;align-items:center;gap:8px}.learn .lrow .mono{width:42px}
+
+/* plots */
+.plot3d{position:relative;height:clamp(320px,52vh,620px);margin:0 4px 4px}
+.plot3d canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+.plot3d canvas:active{cursor:grabbing}
+.plot3d .fit{position:absolute;right:10px;top:10px;z-index:2;background:var(--panel)}
+.plot3d .help{position:absolute;right:10px;bottom:8px;font-size:12px;color:var(--muted);pointer-events:none;display:flex;gap:14px}
+.plot3d .legend{position:absolute;left:10px;top:10px;display:flex;flex-direction:column;gap:5px;padding:8px 10px;background:var(--panel);font-size:13px;pointer-events:none;max-width:45%;border-left:2px solid var(--ink)}
+.legend .li{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend .axes{display:flex;gap:10px;color:var(--ink2);margin-top:2px}
+.ax{display:inline-flex;align-items:center;gap:5px}.ax i{width:14px;height:3px;display:inline-block}
+.tplot{position:relative;height:170px;margin:0 4px 4px}
+.tplot canvas{position:absolute;inset:0;width:100%;height:100%}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--ink);box-shadow:var(--sh);padding:7px 10px;font-size:13px;min-width:130px;z-index:5}
+.tip .r{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.tip .r span:first-child{display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
+.toolbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+
+/* calibration */
+.steps{display:flex;flex-direction:column}
+.step{padding:14px 12px 18px;border-top:1px solid var(--rule)}
+.step:first-child{border-top:0}
+.step h3{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:15px;font-weight:700;font-stretch:112%}
+.step h3 .n{font-size:22px;font-weight:800;font-stretch:125%;color:var(--accentInk);line-height:1}
+.step p{margin:0 0 12px;color:var(--ink2);line-height:1.55;max-width:68ch}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cov{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;width:150px;aspect-ratio:16/9;padding:2px;background:var(--rule2)}
+.cov i{background:var(--panel)}
+.cov i.on{background:var(--good)}
+.progress{height:6px;background:var(--rule);overflow:hidden;flex:1;min-width:80px}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:13px}
+.kv dt{color:var(--muted)}.kv dd{margin:0}
+.badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;font-size:13px;font-weight:600}
+.badge.good{background:var(--goodWash);color:var(--good)}.badge.warn{background:var(--warnWash);color:var(--warn)}.badge.bad{background:var(--critWash);color:var(--crit)}
+.badge .i{width:14px;height:14px}
+.note{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;background:var(--warnWash);color:var(--ink);font-size:13px;line-height:1.5;border-left:3px solid var(--accent)}
+.note .i{color:var(--warn);margin-top:1px}
+.views{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.views .chip{border-style:solid;border-color:var(--rule2)}
+footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (forced-colors:active){.sw,.ax i{forced-color-adjust:none}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><rect x="7" y="7" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="13" width="4" height="4" fill="currentColor" stroke="none"/><rect x="13" y="7" width="4" height="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="brand" href="/projects/" title="Back to tsmorz.github.io projects">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="currentColor"/><g fill="var(--page)"><rect x="1" y="1" width="2" height="1"/><rect x="4" y="1" width="1" height="2"/><rect x="6" y="1" width="1" height="1"/><rect x="2" y="3" width="1" height="2"/><rect x="5" y="3" width="2" height="1"/><rect x="1" y="5" width="1" height="2"/><rect x="3" y="5" width="2" height="1"/><rect x="6" y="5" width="1" height="2"/><rect x="4" y="6" width="1" height="1"/></g></svg></span><span class="bt">Tag Tracker</span>
+  </a>
+  <div class="tabs" role="tablist" aria-label="Mode">
+    <button role="tab" id="tab-track" aria-selected="true" aria-controls="view-track">Track</button>
+    <button role="tab" id="tab-calib" aria-selected="false" aria-controls="calibCard">Calibrate</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="brk"></div>
+  <div class="cam">
+    <label class="sr" for="camSel">Camera</label>
+    <select id="camSel" class="select" title="Camera"></select>
+    <label class="sr" for="resSel">Resolution</label>
+    <select id="resSel" class="select hide-sm" title="Resolution">
+      <option value="640x480">640 × 480</option>
+      <option value="1280x720" selected>1280 × 720</option>
+      <option value="1920x1080">1920 × 1080</option>
+    </select>
+    <button id="startBtn" class="btn primary"><svg class="i"><use href="#i-cam"/></svg><span>Start</span></button>
+  </div>
+  <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
+  <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
+</header>
+
+<main>
+  <div class="col">
+    <section class="card" aria-labelledby="h-cam">
+      <div class="card-h">
+        <h2 id="h-cam">Camera</h2>
+        <span id="calChip" class="badge warn" title="Camera model in use"><svg class="i"><use href="#i-alert"/></svg><span>Not calibrated</span></span>
+        <div class="spacer"></div>
+        <span id="focusWrap" class="field" hidden><span id="focusLbl">Lock focus</span><button id="focusSw" class="switch" role="switch" aria-checked="false" aria-labelledby="focusLbl"></button></span>
+      </div>
+      <div class="stage" id="stage">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay" aria-hidden="true"></canvas>
+        <div class="reticle" aria-hidden="true"></div>
+        <div class="flash" id="flash"></div>
+        <span class="vstats mono" id="vstats" hidden></span>
+        <div class="empty" id="empty">
+          <h3>Track AprilTags with your camera</h3>
+          <p>Pick a camera and press Start. Show a printed tag36h11 tag to the camera, give it a name, and watch its last second of motion in 3D.</p>
+          <div class="row">
+            <button class="btn primary" id="emptyStart"><svg class="i"><use href="#i-cam"/></svg>Start camera</button>
+            <button class="btn outline" id="emptyDemo">Try the demo</button>
+          </div>
+          <p class="note">Video is processed on this computer and never sent anywhere.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Track mode: the tag list -->
+    <section class="card" id="tagsCard" aria-labelledby="h-tags">
+      <div class="card-h">
+        <h2 id="h-tags">Tags</h2>
+        <label class="sr" for="family">Tag family</label>
+        <select id="family" class="select sm" title="Tag family">
+          <option value="APRILTAG_36h11">tag36h11</option>
+          <option value="APRILTAG_25h9">tag25h9</option>
+          <option value="APRILTAG_16h5">tag16h5</option>
+          <option value="APRILTAG_36h10">tag36h10</option>
+        </select>
+        <div class="spacer"></div>
+        <form id="addForm" class="row" style="gap:6px" novalidate>
+          <label class="sr" for="addId">Tag ID to add</label>
+          <input id="addId" class="input sm num mono" type="number" min="0" step="1" placeholder="ID" inputmode="numeric">
+          <button class="btn sm outline" type="submit"><svg class="i"><use href="#i-plus"/></svg>Add tag</button>
+        </form>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th style="width:28px"><span class="sr">Colour</span></th><th>ID</th><th>Name</th><th class="num">Size</th><th>Status</th><th><span class="sr">Actions</span></th></tr></thead>
+          <tbody id="tagRows"></tbody>
+        </table>
+      </div>
+      <div class="card-b" id="tagsFoot">
+        <p class="hint" id="noTags">No tags yet. Show one to the camera and it will appear here to name, or add one by its ID.</p>
+        <div class="chips" id="unknown" hidden><span class="small muted">Seen, not named:</span></div>
+      </div>
+      <div class="bodies" aria-labelledby="h-bodies">
+        <div class="row">
+          <h3 class="sub" id="h-bodies">Rigid objects</h3>
+          <span class="spacer"></span>
+          <button class="btn sm outline" id="newBody"><svg class="i"><use href="#i-plus"/></svg>New object</button>
+        </div>
+        <p class="hint" id="bodiesHint">Fix two or more tags to one object, at different angles, and it is tracked as one pose from all their corners: steadier, and free of the mirror-image flips a single flat tag can have.</p>
+        <form id="bodyForm" class="bform" hidden novalidate>
+          <label class="field">Name <input id="bodyName" class="input sm" maxlength="40" placeholder="e.g. Right hand"></label>
+          <div class="field" style="flex-wrap:wrap;white-space:normal"><span id="bodyPickLbl">Tags</span><span class="chips" id="bodyPick" role="group" aria-labelledby="bodyPickLbl"></span></div>
+          <p class="hint" style="width:100%">The first tag you pick is the object's origin. Then hold the object so that tag and each of the others are in view together, and turn it slowly while it learns how the tags sit.</p>
+          <div class="row"><button class="btn sm primary" id="bodyCreate" type="submit" disabled>Learn shape</button><button class="btn sm" id="bodyCancel" type="button">Cancel</button></div>
+        </form>
+        <div id="bodyList"></div>
+      </div>
+      <div class="det">
+        <span class="field">Detector
+          <span class="seg sm" role="radiogroup" aria-label="Detector">
+            <button role="radio" data-q="precise" aria-checked="true" title="Full-resolution corners, about 0.1 px">Precise</button>
+            <button role="radio" data-q="fast" aria-checked="false" title="Half-resolution search, about 3× faster">Fast</button>
+          </span>
+        </span>
+        <span class="field">Pose
+          <span class="seg sm" role="radiogroup" aria-label="Pose">
+            <button role="radio" data-pose="raw" aria-checked="false" title="OpenCV's IPPE pose of each tag, frame by frame">Raw</button>
+            <button role="radio" data-pose="refined" aria-checked="false" title="Refined by Levenberg–Marquardt on SE(3), frame by frame">Refined</button>
+            <button role="radio" data-pose="filtered" aria-checked="true" title="Refined, then a Kalman filter on SE(3) with a constant-velocity model">Filtered</button>
+          </span>
+        </span>
+        <span class="field" id="motionField">Motion
+          <span class="seg sm" role="radiogroup" aria-label="Filter tuning">
+            <button role="radio" data-motion="smooth" aria-checked="false" title="Smoothest; lags on sudden moves">Smooth</button>
+            <button role="radio" data-motion="balanced" aria-checked="true">Balanced</button>
+            <button role="radio" data-motion="responsive" aria-checked="false" title="Least lag; less smoothing">Responsive</button>
+          </span>
+        </span>
+        <span class="field"><span id="cmpLbl">Compare with raw</span><button id="cmpSw" class="switch" role="switch" aria-checked="false" aria-labelledby="cmpLbl"></button></span>
+        <label class="field">Unlisted tags <input id="defSize" class="input sm num mono" type="number" min="5" max="2000" step="1"><span class="unit">mm</span></label>
+        <label class="field" id="fovField">Field of view <input id="hfov" class="input sm num mono" type="number" min="20" max="170" step="1"><span class="unit">° (until calibrated)</span></label>
+      </div>
+    </section>
+
+    <section class="card" id="nowCard" aria-labelledby="h-now">
+      <div class="card-h"><h2 id="h-now">Now</h2><span class="small muted" id="frameNote"></span></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Tag</th><th class="num">x</th><th class="num">y</th><th class="num">z</th><th class="num">Distance</th><th class="num" title="From the Kalman filter, in cm/s">Speed</th><th class="num" title="RMS distance between the detected corners and the fitted pose, in pixels">Corner fit</th><th class="num" title="One standard deviation along the line of sight, from the pose's covariance">± depth</th></tr></thead>
+          <tbody id="nowRows"><tr><td colspan="8" class="muted">Nothing tracked yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Calibrate mode: the steps -->
+    <section class="card" id="calibCard" role="tabpanel" aria-labelledby="h-calib" hidden>
+      <div class="card-h"><h2 id="h-calib">Calibrate this camera</h2><div class="spacer"></div><span class="small muted" id="calibFor"></span></div>
+      <div class="steps">
+        <div class="step">
+          <h3><span class="n">1</span>Get the board</h3>
+          <p>Print the board at 100% scale on flat, stiff paper, or show it full-screen on a tablet. Then measure one square with a ruler or calipers: measure across all 9 squares and divide by 9.</p>
+          <div class="row">
+            <button class="btn sm outline" id="printBoard"><svg class="i"><use href="#i-print"/></svg>Print board</button>
+            <button class="btn sm outline" id="pngBoard"><svg class="i"><use href="#i-down"/></svg>Board image</button>
+            <span class="spacer"></span>
+            <label class="field">Square <input id="square" class="input sm num mono" type="number" min="3" max="200" step="0.1"><span class="unit">mm</span></label>
+          </div>
+        </div>
+        <div class="step">
+          <h3><span class="n">2</span>Capture views</h3>
+          <p id="calibTip">Start the camera and hold the board in view.</p>
+          <div class="row" style="gap:14px">
+            <div class="cov" id="cov" aria-label="Parts of the frame covered by captured corners"></div>
+            <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:8px">
+              <div class="row"><span class="mono" id="viewCount">0 / 15 views</span><div class="progress" aria-hidden="true"><i id="viewBar"></i></div></div>
+              <div class="row">
+                <span class="field"><span id="autoLbl">Auto-capture</span><button id="autoSw" class="switch" role="switch" aria-checked="true" aria-labelledby="autoLbl"></button></span>
+                <button class="btn sm outline" id="captureBtn" disabled>Capture now</button>
+                <button class="btn sm danger" id="clearViews" disabled>Clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="views" id="viewList"></div>
+        </div>
+        <div class="step">
+          <h3><span class="n">3</span>Solve</h3>
+          <div class="row" style="margin-bottom:10px">
+            <button class="btn sm primary" id="solveBtn" disabled>Calibrate</button>
+            <span class="spacer"></span>
+            <button class="btn sm" id="importBtn"><svg class="i"><use href="#i-up"/></svg>Import</button>
+            <button class="btn sm" id="exportBtn" disabled><svg class="i"><use href="#i-down"/></svg>Export</button>
+            <button class="btn sm danger" id="forgetBtn" disabled>Forget</button>
+            <input type="file" id="importFile" accept="application/json,.json" hidden>
+          </div>
+          <div id="calibResult"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="col" id="view-track" role="tabpanel" aria-labelledby="tab-track">
+    <section class="card" aria-labelledby="h-3d">
+      <div class="card-h">
+        <h2 id="h-3d">Last <span id="spanTxt">1.0</span> s</h2>
+        <div class="toolbar">
+          <label class="field">History <input id="span" class="input sm num mono" type="number" min="0.1" max="30" step="0.1"><span class="unit">s</span></label>
+          <label class="field">Axes every <input id="every" class="input sm num mono" type="number" min="0.01" max="10" step="0.01"><span class="unit">s</span></label>
+          <label class="field">Axis length <input id="axisLen" class="input sm num mono" type="number" min="0.1" max="200" step="0.5"><span class="unit">cm</span></label>
+          <label class="field">Relative to <select id="frameSel" class="select sm"></select></label>
+        </div>
+      </div>
+      <div class="plot3d">
+        <button class="btn sm outline fit" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
+        <canvas id="plot" tabindex="0" role="img" aria-label="3D plot of each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit."></canvas>
+        <div class="legend" id="legend3d"></div>
+        <div class="help hide-sm"><span>Drag to orbit</span><span>Shift-drag to pan</span><span>Scroll to zoom</span></div>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="h-xyz">
+      <div class="card-h">
+        <h2 id="h-xyz">Position over time</h2>
+        <label class="sr" for="tplotTag">Tag</label>
+        <select id="tplotTag" class="select sm"></select>
+        <span class="seg sm" role="radiogroup" aria-label="Show">
+          <button role="radio" data-tp="motion" aria-checked="true" title="Each coordinate minus its mean over the history, so small motions fill the plot">Motion</button>
+          <button role="radio" data-tp="position" aria-checked="false" title="The coordinates themselves">Position</button>
+        </span>
+        <div class="spacer"></div>
+        <span class="legend-inline toolbar small" aria-hidden="true"><span class="ax"><i style="background:var(--x)"></i>x</span><span class="ax"><i style="background:var(--y)"></i>y</span><span class="ax"><i style="background:var(--z)"></i>z</span></span>
+      </div>
+      <div class="tplot" id="tplotWrap"><canvas id="tplot" role="img" aria-label="x, y and z of the chosen tag over the history, in centimetres"></canvas><div class="tip" id="tip" hidden></div></div>
+    </section>
+  </div>
+</main>
+<footer>
+  <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face.</span>
+  <span class="spacer"></span>
+  <a href="/projects/">tsmorz.github.io</a>
+</footer>
+
+<script src="tracker-core.js"></script>
+<script>
+(() => {
+'use strict';
+const C = window.TagCore;
+const $ = (id) => document.getElementById(id);
+const SLOTS = 8;
+const FAMILY_LABEL = { APRILTAG_36h11: 'tag36h11', APRILTAG_25h9: 'tag25h9', APRILTAG_16h5: 'tag16h5', APRILTAG_36h10: 'tag36h10' };
+const FAMILY_CELLS = { APRILTAG_36h11: 8, APRILTAG_25h9: 7, APRILTAG_16h5: 6, APRILTAG_36h10: 8 }; // black square, in bits
+const TARGET_VIEWS = 15, MIN_VIEWS = 6;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('tag-tracker:' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('tag-tracker:' + k, JSON.stringify(v)); } catch (e) { /* private mode: keep in memory */ } },
+};
+
+// ---------------- state ----------------
+const S = {
+  settings: C.clampSettings(store.get('settings', {})),
+  tags: store.get('tags', []), // {id, name, size (m), slot}
+  calibs: store.get('calibs', {}), // camera label -> calibration (labels survive reloads; device ids may not)
+  square: store.get('square', 25),
+  quality: store.get('quality', 'precise'),
+  res: store.get('res', '1280x720'),
+  camId: store.get('camId', ''),
+  mode: 'track',
+  worker: null, ready: false, busy: false, seq: 0, familyCount: 587,
+  stream: null, track: null, running: false, demo: null,
+  cam: null, camKey: '',
+  // Tracks are keyed by tag id (a number) or 'b:<id>' for a rigid object. hist holds the plotted poses (in the
+  // chosen frame), rawHist the raw ones for "Compare with raw", filters one PoseFilter per track, tracks the
+  // latest camera-frame state per track, seen the last sighting of every tag id.
+  hist: new C.History(), rawHist: new C.History(), filters: new Map(), tracks: new Map(), seen: new Map(), last: null, lastBoard: null,
+  bodies: store.get('bodies', []), // {id, name, members: [{id, R, t}] (first is the origin), spread}
+  learn: null, // {id, name, ids, samples: {id: [poses]}} while an object's shape is being learned
+  views: [], still: 0, lastCapture: 0, auto: true, calibResult: null,
+  stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 },
+  view: { yaw: -0.65, pitch: 0.42, dist: 2.6, target: [0, 1.0, 0], fitted: false },
+  tplotTag: null, tplotMode: store.get('tplotMode', 'motion'),
+};
+const video = $('video'), overlay = $('overlay'), plot = $('plot'), tplot = $('tplot');
+
+// ---------------- theme ----------------
+function isDark() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+}
+function paintThemeBtn() {
+  const d = isDark();
+  $('themeBtn').innerHTML = `<svg class="i"><use href="#i-${d ? 'sun' : 'moon'}"/></svg>`;
+  $('themeBtn').setAttribute('aria-label', d ? 'Switch to light theme' : 'Switch to dark theme');
+  readColors();
+}
+(() => { const t = store.get('theme', null); if (t) document.documentElement.dataset.theme = t; })();
+$('themeBtn').onclick = () => { const t = isDark() ? 'light' : 'dark'; document.documentElement.dataset.theme = t; store.set('theme', t); paintThemeBtn(); };
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintThemeBtn);
+let K = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement), g = (n) => cs.getPropertyValue('--' + n).trim();
+  K = { text: g('ink'), text2: g('ink2'), muted: g('muted'), grid: g('grid'), axis: g('axis'), surface: g('panel'), border: g('rule2'),
+    x: g('x'), y: g('y'), z: g('z'), unknown: g('unknown'), accent: g('accent'), good: g('good'), slots: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => g('s' + i)) };
+}
+
+// ---------------- tags and objects ----------------
+// A track key is a tag id (number) or 'b:<id>' for a rigid object, which takes its origin tag's colour.
+const isBody = (k) => typeof k === 'string' && k.startsWith('b:');
+const bodyOf = (k) => S.bodies.find((b) => 'b:' + b.id === k || b.id === k) || null;
+const keySort = (a, b) => (isBody(a) - isBody(b)) || String(a).localeCompare(String(b), undefined, { numeric: true });
+const parseKey = (v) => (v === '' || v === null || v === undefined ? null : v.startsWith('b:') ? v : +v);
+function memberIds() { const m = new Set(); for (const b of S.bodies) for (const x of b.members) m.add(x.id); return m; }
+function tagOf(id) { return S.tags.find((t) => t.id === id) || null; }
+function slotOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? slotOf(b.members[0].id) : -1; } const t = tagOf(k); return t ? t.slot : -1; }
+function colorOf(k) { const s = slotOf(k); return s >= 0 ? K.slots[s] : K.unknown; }
+function cssColorOf(k) { const s = slotOf(k); return s >= 0 ? `var(--s${s + 1})` : 'var(--unknown)'; }
+function nameOf(k) { if (isBody(k)) { const b = bodyOf(k); return b ? b.name || 'Object' : k; } const t = tagOf(k); return t && t.name ? t.name : '#' + k; }
+function resetTracks() { S.hist.clear(); S.rawHist.clear(); S.filters.clear(); S.tracks.clear(); }
+function sizeOf(id) { const t = tagOf(id); return t ? t.size : S.settings.tagSize; }
+function freeSlot() { for (let i = 0; i < SLOTS; i++) if (!S.tags.some((t) => t.slot === i)) return i; return -1; }
+function addTag(id, name) {
+  if (!(Number.isInteger(id) && id >= 0 && id < S.familyCount) || tagOf(id)) return;
+  S.tags.push({ id, name: name || '', size: S.settings.tagSize, slot: freeSlot() });
+  saveTags(); renderTags(); refreshFrameSel(); refreshTplotSel();
+}
+function saveTags() { store.set('tags', S.tags); }
+function sizesMap() { const m = {}; for (const t of S.tags) m[t.id] = t.size; return m; }
+
+function renderTags() {
+  const tb = $('tagRows');
+  tb.textContent = '';
+  for (const t of S.tags) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><span class="sw" style="background:${cssColorOf(t.id)}" title="${t.slot < 0 ? 'Only 8 colours: this tag is drawn grey, with its name' : ''}"></span></td>
+      <td class="mono">${t.id}</td>
+      <td><label class="sr" for="tn${t.id}">Name of tag ${t.id}</label><input id="tn${t.id}" class="input sm tagname" maxlength="40" placeholder="Name, e.g. Left hand"></td>
+      <td class="num"><span class="field"><label class="sr" for="ts${t.id}">Black square size of tag ${t.id}, mm</label><input id="ts${t.id}" class="input sm num mono" type="number" min="5" max="2000" step="0.5"><span class="unit">mm</span></span></td>
+      <td><span class="seen" id="seen${t.id}"><span class="dot"></span><span>Not seen</span></span>${S.bodies.filter((b) => b.members.some((x) => x.id === t.id)).map((b) => `<div class="small muted">in ${escapeHtml(b.name || 'Object')}</div>`).join('')}</td>
+      <td style="white-space:nowrap"><button class="btn sm sq" title="Print this tag" aria-label="Print tag ${t.id}"><svg class="i"><use href="#i-print"/></svg></button><button class="btn sm sq danger" title="Remove" aria-label="Remove tag ${t.id}"><svg class="i"><use href="#i-x"/></svg></button></td>`;
+    const [nm, sz] = tr.querySelectorAll('input'), [pr, rm] = tr.querySelectorAll('button');
+    nm.value = t.name; sz.value = +(t.size * 1000).toFixed(1);
+    nm.oninput = () => { t.name = nm.value.trim(); saveTags(); refreshFrameSel(); refreshTplotSel(); };
+    sz.onchange = () => { const v = +sz.value; if (v >= 5 && v <= 2000) { t.size = v / 1000; saveTags(); resetTracks(); } else sz.value = +(t.size * 1000).toFixed(1); };
+    pr.onclick = () => printTag(t.id, t.size);
+    rm.onclick = () => {
+      const inBodies = S.bodies.filter((b) => b.members.some((x) => x.id === t.id));
+      if (inBodies.length && !confirm(`Tag ${t.id} is part of ${inBodies.map((b) => '“' + (b.name || 'Object') + '”').join(', ')}. Remove the tag and ${inBodies.length > 1 ? 'those objects' : 'that object'}?`)) return;
+      S.bodies = S.bodies.filter((b) => !inBodies.includes(b)); saveBodies();
+      S.tags = S.tags.filter((x) => x !== t); saveTags(); renderTags(); renderBodies(); refreshFrameSel(); refreshTplotSel();
+      if (S.settings.frame === String(t.id) || inBodies.some((b) => S.settings.frame === 'b:' + b.id)) setFrame('camera');
+      resetTracks();
+    };
+    tb.appendChild(tr);
+  }
+  $('noTags').hidden = S.tags.length > 0;
+}
+function renderUnknown() {
+  const box = $('unknown'), now = performance.now() / 1000;
+  const ids = [...S.seen.entries()].filter(([id, s]) => !tagOf(id) && now - s.wall < 3).map(([id]) => id).sort((a, b) => a - b);
+  const key = ids.join();
+  if (box.dataset.key === key) return;
+  box.dataset.key = key;
+  box.querySelectorAll('.chip').forEach((c) => c.remove());
+  for (const id of ids) {
+    const c = document.createElement('span');
+    c.className = 'chip';
+    c.innerHTML = `<span class="mono">#${id}</span><button aria-label="Add tag ${id}">Add</button>`;
+    c.querySelector('button').onclick = () => { addTag(id); setTimeout(() => { const el = $('tn' + id); if (el) el.focus(); }, 0); };
+    box.appendChild(c);
+  }
+  box.hidden = !ids.length;
+}
+$('addForm').onsubmit = (e) => {
+  e.preventDefault();
+  const inp = $('addId'), id = Number(inp.value);
+  inp.max = S.familyCount - 1;
+  if (inp.value === '' || !Number.isInteger(id) || id < 0 || id >= S.familyCount) {
+    inp.setCustomValidity(`Enter a whole number from 0 to ${S.familyCount - 1} (${FAMILY_LABEL[S.settings.family]} has ${S.familyCount} tags).`);
+    inp.reportValidity(); return;
+  }
+  inp.setCustomValidity(''); inp.value = '';
+  if (!tagOf(id)) addTag(id);
+  setTimeout(() => { const el = $('tn' + id); if (el) el.focus(); }, 0);
+};
+$('addId').oninput = () => $('addId').setCustomValidity('');
+
+// ---------------- settings inputs ----------------
+function bindNum(id, get, set, scale) {
+  const el = $(id);
+  el.value = +(get() * (scale || 1)).toFixed(3);
+  el.onchange = () => { set(+el.value / (scale || 1)); S.settings = C.clampSettings(S.settings); store.set('settings', S.settings); el.value = +(get() * (scale || 1)).toFixed(3); onSettings(); };
+}
+bindNum('span', () => S.settings.span, (v) => { S.settings.span = v; });
+bindNum('every', () => S.settings.every, (v) => { S.settings.every = v; });
+bindNum('axisLen', () => S.settings.axisLen, (v) => { S.settings.axisLen = v; }, 100);
+bindNum('defSize', () => S.settings.tagSize, (v) => { S.settings.tagSize = v; }, 1000);
+bindNum('hfov', () => S.settings.hfov, (v) => { S.settings.hfov = v; });
+function onSettings() {
+  $('spanTxt').textContent = S.settings.span.toFixed(S.settings.span < 10 ? 1 : 0);
+  $('span').value = S.settings.span; $('every').value = S.settings.every;
+  updateCam();
+}
+$('family').value = S.settings.family;
+$('family').onchange = () => {
+  S.settings.family = $('family').value; store.set('settings', S.settings);
+  resetTracks(); S.seen.clear();
+  if (S.ready) S.worker.postMessage({ type: 'family', family: S.settings.family, quality: S.quality });
+};
+function radios(attr, get, set) {
+  const all = document.querySelectorAll(`[data-${attr}]`), paint = () => all.forEach((x) => x.setAttribute('aria-checked', String(x.dataset[attr] === get())));
+  all.forEach((b) => { b.onclick = () => { set(b.dataset[attr]); paint(); }; });
+  paint();
+}
+radios('pose', () => S.settings.pose, (v) => { S.settings.pose = v; store.set('settings', S.settings); resetTracks(); paintPoseUi(); renderBodies(); });
+radios('motion', () => S.settings.motion, (v) => { S.settings.motion = v; store.set('settings', S.settings); S.filters.clear(); });
+function paintPoseUi() {
+  $('motionField').hidden = S.settings.pose !== 'filtered';
+  $('cmpSw').setAttribute('aria-checked', String(S.settings.compare));
+  $('cmpSw').disabled = S.settings.pose === 'raw';
+}
+$('cmpSw').onclick = () => { S.settings.compare = !S.settings.compare; store.set('settings', S.settings); S.rawHist.clear(); paintPoseUi(); };
+document.querySelectorAll('[data-q]').forEach((b) => {
+  b.setAttribute('aria-checked', String(b.dataset.q === S.quality));
+  b.onclick = () => {
+    S.quality = b.dataset.q; store.set('quality', S.quality);
+    document.querySelectorAll('[data-q]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+    if (S.ready) S.worker.postMessage({ type: 'family', family: S.settings.family, quality: S.quality });
+  };
+});
+function refreshFrameSel() {
+  const sel = $('frameSel'), cur = S.settings.frame, mem = memberIds();
+  sel.innerHTML = '<option value="camera">Camera</option>'
+    + S.bodies.map((b) => `<option value="b:${b.id}">${escapeHtml(nameOf('b:' + b.id))} (object)</option>`).join('')
+    + S.tags.filter((t) => !mem.has(t.id)).map((t) => `<option value="${t.id}">${escapeHtml(nameOf(t.id))} (#${t.id})</option>`).join('');
+  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : 'camera';
+  if (sel.value !== cur) { S.settings.frame = sel.value; store.set('settings', S.settings); }
+  $('frameNote').textContent = sel.value === 'camera' ? 'Relative to the camera' : 'Relative to ' + nameOf(parseKey(sel.value));
+}
+function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.view.fitted = false; refreshFrameSel(); }
+$('frameSel').onchange = () => setFrame($('frameSel').value);
+// the tracks a visitor can pick: objects, and tags that aren't part of one
+function trackKeys() {
+  const mem = memberIds();
+  return [...new Set([...S.bodies.map((b) => 'b:' + b.id), ...S.tags.map((t) => t.id).filter((id) => !mem.has(id)), ...S.hist.ids()])].sort(keySort);
+}
+function refreshTplotSel() {
+  const sel = $('tplotTag'), cur = S.tplotTag, list = trackKeys();
+  const key = list.map((k) => k + ':' + nameOf(k)).join('|');
+  if (sel.dataset.key !== key) {
+    sel.dataset.key = key;
+    sel.innerHTML = list.length ? list.map((k) => `<option value="${k}">${escapeHtml(nameOf(k))}${isBody(k) ? '' : tagOf(k) && tagOf(k).name ? ' (#' + k + ')' : ''}</option>`).join('') : '<option value="">No tags</option>';
+  }
+  if (cur !== null && list.includes(cur)) sel.value = String(cur);
+  else if (list.length) { S.tplotTag = list[0]; sel.value = String(list[0]); }
+}
+document.querySelectorAll('[data-tp]').forEach((b) => {
+  b.setAttribute('aria-checked', String(b.dataset.tp === S.tplotMode));
+  b.onclick = () => { S.tplotMode = b.dataset.tp; store.set('tplotMode', S.tplotMode); document.querySelectorAll('[data-tp]').forEach((x) => x.setAttribute('aria-checked', String(x === b))); };
+});
+$('tplotTag').onchange = () => { S.tplotTag = parseKey($('tplotTag').value); };
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+
+// ---------------- status ----------------
+function status(text, kind) {
+  $('statusText').textContent = text;
+  $('status').className = 'pill ' + (kind || '');
+}
+
+// ---------------- worker ----------------
+function startWorker() {
+  const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
+  const w = new Worker(base + 'worker.js');
+  S.worker = w;
+  w.onmessage = (ev) => onWorker(ev.data);
+  w.onerror = (e) => { status('Detector failed to start', 'bad'); console.error(e); };
+  w.postMessage({ type: 'init', family: S.settings.family, quality: S.quality });
+}
+const pending = new Map(); // printing windows waiting for an image
+function onWorker(m) {
+  if (m.type === 'status') status(m.text, 'busy');
+  else if (m.type === 'ready') {
+    S.ready = true; S.familyCount = m.count;
+    status(S.running ? 'Detecting…' : 'Ready to start', S.running ? 'live' : '');
+    $('emptyDemo').disabled = false;
+  } else if (m.type === 'family') { S.familyCount = m.count; }
+  else if (m.type === 'tags') { S.busy = false; onTags(m); }
+  else if (m.type === 'board') { S.busy = false; onBoard(m); }
+  else if (m.type === 'calibrated') onCalibrated(m.calib);
+  else if (m.type === 'boardImage' || m.type === 'tagImage') {
+    const cb = pending.get(m.purpose);
+    if (cb) { pending.delete(m.purpose); cb(m.img); }
+  } else if (m.type === 'error') {
+    if (m.of === 'frame') { S.busy = false; return; }
+    if (m.of === 'init') { status('Could not load the detector', 'bad'); showEmpty('The detector didn’t load', 'OpenCV.js (about 10 MB) is fetched from a CDN the first time. Check your connection and reload the page.'); }
+    if (m.of === 'calibrate') { $('solveBtn').disabled = S.views.length < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate'; $('calibResult').innerHTML = `<div class="note"><svg class="i"><use href="#i-alert"/></svg><span>Calibration failed: ${escapeHtml(m.text)}</span></div>`; }
+    console.warn('worker:', m.of, m.text);
+  }
+}
+function requestImage(type, args) {
+  const purpose = type + ':' + Math.random();
+  return new Promise((res) => { pending.set(purpose, res); S.worker.postMessage(Object.assign({ type, purpose }, args)); });
+}
+
+// ---------------- camera ----------------
+async function listCameras() {
+  const sel = $('camSel');
+  let cams = [];
+  try { cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput'); } catch (e) { cams = []; }
+  const cur = S.demo ? 'demo' : (S.camId || (cams[0] && cams[0].deviceId) || '');
+  sel.innerHTML = cams.map((c, i) => `<option value="${escapeHtml(c.deviceId)}">${escapeHtml(c.label || 'Camera ' + (i + 1))}</option>`).join('') + '<option value="demo">Demo (no camera)</option>';
+  sel.value = [...sel.options].some((o) => o.value === cur) ? cur : sel.options[0].value;
+}
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', listCameras);
+$('camSel').onchange = () => {
+  const v = $('camSel').value;
+  if (v !== 'demo') { S.camId = v; store.set('camId', v); }
+  if (S.running) start();
+};
+$('resSel').value = S.res;
+$('resSel').onchange = () => { S.res = $('resSel').value; store.set('res', S.res); if (S.running && !S.demo) start(); };
+$('startBtn').onclick = () => (S.running ? stop() : start());
+$('emptyStart').onclick = () => { if ($('camSel').value === 'demo') $('camSel').value = S.camId || $('camSel').options[0].value; start(); };
+$('emptyDemo').onclick = () => { $('camSel').value = 'demo'; start(); };
+$('emptyDemo').disabled = true;
+
+function showEmpty(title, text) {
+  $('empty').hidden = false;
+  $('empty').querySelector('h3').textContent = title;
+  $('empty').querySelector('p').textContent = text;
+}
+async function start() {
+  stop(true);
+  const useDemo = $('camSel').value === 'demo';
+  if (useDemo && !S.ready) { status('Demo starts once the detector loads', 'busy'); return; }
+  try {
+    let stream;
+    if (useDemo) stream = await startDemo();
+    else {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('This browser has no camera access here. Use Chrome or Edge over https.'), { name: 'NoAPI' });
+      const [w, h] = S.res.split('x').map(Number), id = $('camSel').value;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: id ? { exact: id } : undefined, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
+    }
+    S.stream = stream; S.track = stream.getVideoTracks()[0];
+    video.srcObject = stream;
+    await video.play();
+    S.running = true;
+    $('empty').hidden = true;
+    $('stage').classList.add('live');
+    $('startBtn').innerHTML = '<svg class="i"><use href="#i-stop"/></svg><span>Stop</span>';
+    $('startBtn').classList.remove('primary'); $('startBtn').classList.add('outline');
+    if (!useDemo) {
+      const st = S.track.getSettings();
+      if (st.deviceId) { S.camId = st.deviceId; store.set('camId', st.deviceId); }
+      await listCameras();
+    }
+    setupFocus();
+    updateCam();
+    status(S.ready ? 'Detecting…' : 'Loading detector…', S.ready ? 'live' : 'busy');
+    S.stats = { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 };
+    loopFrames();
+  } catch (e) {
+    console.warn(e);
+    const msg = e.name === 'NotAllowedError' ? ['Camera access was blocked', 'Allow the camera for this site in the address bar, then press Start again.']
+      : e.name === 'NotFoundError' || e.name === 'OverconstrainedError' ? ['No camera found', 'Plug in a camera, or pick another one from the list. You can also try the demo.']
+      : e.name === 'NotReadableError' ? ['The camera is busy', 'Another app or tab is using it. Close that, then press Start again.']
+      : ['Couldn’t start the camera', e.message || String(e)];
+    showEmpty(msg[0], msg[1]);
+    status('Camera off', 'bad');
+  }
+}
+function stop(quiet) {
+  S.running = false;
+  $('stage').classList.remove('live');
+  if (S.stream) S.stream.getTracks().forEach((t) => t.stop());
+  S.stream = null; S.track = null; video.srcObject = null;
+  if (S.demo) { S.demo.stop(); S.demo = null; }
+  $('startBtn').innerHTML = '<svg class="i"><use href="#i-cam"/></svg><span>Start</span>';
+  $('startBtn').classList.add('primary'); $('startBtn').classList.remove('outline');
+  $('focusWrap').hidden = true; $('vstats').hidden = true;
+  if (!quiet) { showEmpty('Camera stopped', 'Press Start to carry on. Your tags, settings and calibration are kept in this browser.'); status(S.ready ? 'Ready to start' : 'Loading detector…', S.ready ? '' : 'busy'); }
+  clearOverlay();
+}
+// Focus: a camera that refocuses changes its focal length, so locking it keeps a calibration valid.
+function setupFocus() {
+  const caps = S.track && S.track.getCapabilities ? S.track.getCapabilities() : {};
+  const ok = caps.focusMode && caps.focusMode.includes('manual') && caps.focusMode.includes('continuous');
+  $('focusWrap').hidden = !ok;
+  $('focusSw').setAttribute('aria-checked', 'false');
+}
+$('focusSw').onclick = async () => {
+  const on = $('focusSw').getAttribute('aria-checked') !== 'true';
+  try {
+    const cur = S.track.getSettings();
+    await S.track.applyConstraints({ advanced: [on ? { focusMode: 'manual', focusDistance: cur.focusDistance } : { focusMode: 'continuous' }] });
+    $('focusSw').setAttribute('aria-checked', String(on));
+  } catch (e) { console.warn(e); }
+};
+
+// The camera model in use: this camera's calibration (rescaled if the resolution changed), else a guess.
+function updateCam() {
+  const w = video.videoWidth || 1280, h = video.videoHeight || 720;
+  let label = 'Demo';
+  if (!S.demo) { const o = $('camSel').selectedOptions[0]; label = o ? o.textContent : 'Camera'; }
+  S.camKey = label;
+  const saved = S.demo ? null : S.calibs[label];
+  const scaled = saved ? C.scaleIntrinsics(saved, w, h) : null;
+  S.cam = scaled || C.guessIntrinsics(w, h, S.demo ? 70 : S.settings.hfov);
+  const chip = $('calChip');
+  if (S.demo) {
+    chip.className = 'badge good';
+    chip.innerHTML = '<svg class="i"><use href="#i-check"/></svg><span>Demo camera</span>';
+    chip.title = 'A simulated 70° camera; its model is known exactly.';
+  } else if (scaled) {
+    chip.className = 'badge good';
+    chip.innerHTML = `<svg class="i"><use href="#i-check"/></svg><span>Calibrated${scaled.scaledFrom ? ' (scaled)' : ''}</span>`;
+    chip.title = `${saved.w}×${saved.h}, RMS ${saved.rms.toFixed(2)} px, ${C.hfov(scaled).toFixed(1)}° wide` + (scaled.scaledFrom ? '. Calibrated at another resolution with the same shape; recalibrate at this one for the best accuracy.' : '');
+  } else {
+    chip.className = 'badge warn';
+    chip.innerHTML = `<svg class="i"><use href="#i-alert"/></svg><span>${saved ? 'Calibration doesn’t fit' : 'Not calibrated'}</span>`;
+    chip.title = saved ? `The saved calibration is for ${saved.w}×${saved.h}, a different shape. Using a ${S.settings.hfov}° guess; recalibrate at ${w}×${h}.` : `Using a ${S.settings.hfov}° field-of-view guess. Distances can be off by 10% or more until you calibrate.`;
+  }
+  $('fovField').hidden = !!scaled || !!S.demo;
+  $('calibFor').textContent = `${label}, ${w}×${h}`;
+  renderCalibStatus();
+}
+
+// ---------------- frame loop ----------------
+function loopFrames() {
+  const hasRVFC = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+  let lastT = -1;
+  const step = (now, meta) => {
+    if (!S.running) return;
+    if (hasRVFC) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
+    if (!hasRVFC) { if (video.currentTime === lastT) return; lastT = video.currentTime; }
+    S.stats.frames++;
+    if (video.videoWidth && (S.cam.w !== video.videoWidth || S.cam.h !== video.videoHeight)) updateCam();
+    if (!S.ready || S.busy || !video.videoWidth) return;
+    let time = meta && meta.captureTime ? meta.captureTime : performance.now();
+    if (Math.abs(time - performance.now()) > 1000) time = performance.now();
+    S.busy = true;
+    createImageBitmap(video).then((bm) => {
+      const sizes = sizesMap();
+      const bodies = S.bodies.map((b) => ({ id: b.id, members: b.members.map((x) => ({ id: x.id, R: x.R, t: x.t, size: sizes[x.id] || S.settings.tagSize })) }));
+      S.worker.postMessage({ type: 'frame', bitmap: bm, seq: ++S.seq, time: time / 1000, mode: S.mode, cam: S.cam, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn }, [bm]);
+    }).catch(() => { S.busy = false; });
+  };
+  if (hasRVFC) video.requestVideoFrameCallback(step); else requestAnimationFrame(step);
+}
+function tickStats(ms) {
+  const st = S.stats, now = performance.now();
+  st.dets++; st.ms = st.ms ? st.ms * 0.9 + ms * 0.1 : ms;
+  if (now - st.t0 > 1000) {
+    st.fps = (st.frames * 1000) / (now - st.t0); st.dfps = (st.dets * 1000) / (now - st.t0);
+    st.frames = 0; st.dets = 0; st.t0 = now;
+    $('vstats').hidden = false;
+    $('vstats').innerHTML = `<span>${video.videoWidth}×${video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>`;
+    status(`${st.dfps.toFixed(0)} fps, ${st.ms.toFixed(0)} ms per frame`, 'live');
+  }
+}
+
+// ---------------- tracking results ----------------
+// For each track this frame: the raw pose (OpenCV's IPPE for a tag; for an object, its first visible tag's raw
+// pose moved to the object's origin) and the refined candidates from the worker. The pose that is plotted is the
+// raw one, the best refined one, or the Kalman filter's, which also settles the mirror-image doubt by prediction.
+function rawBody(b, tags) {
+  for (const m of b.members) {
+    const t = tags.find((x) => x.id === m.id && x.R);
+    if (t) return C.compose(t, C.inverse(m));
+  }
+  return null;
+}
+function onTags(m) {
+  tickStats(m.ms);
+  if (S.mode !== 'track') return;
+  const wall = performance.now() / 1000, mode = S.settings.pose, mem = memberIds();
+  S.last = m;
+  for (const t of m.tags) S.seen.set(t.id, { time: m.time, wall, err: t.err });
+  const meas = new Map();
+  for (const t of m.tags) {
+    if (!t.R || mem.has(t.id)) continue;
+    if (!S.settings.showUnknown && !tagOf(t.id)) continue;
+    meas.set(t.id, { raw: { R: t.R, t: t.t }, cands: t.cands || [], err: t.err, size: t.size });
+  }
+  for (const b of S.bodies) {
+    const raw = rawBody(b, m.tags);
+    if (!raw) continue;
+    const got = (m.bodies || []).find((x) => x.id === b.id);
+    meas.set('b:' + b.id, { raw, cands: got ? got.cands : [], seen: got ? got.seen : 1 });
+  }
+  const out = new Map();
+  for (const [key, z] of meas) {
+    let p = null;
+    if (mode === 'raw' || !z.cands.length) p = z.raw;
+    else if (mode === 'refined') p = z.cands[0];
+    else {
+      let f = S.filters.get(key);
+      if (!f) { f = new C.PoseFilter(C.MOTION[S.settings.motion]); S.filters.set(key, f); }
+      const r = f.update(m.time, z.cands);
+      p = r && r.pose;
+    }
+    const best = z.cands[0];
+    S.tracks.set(key, { time: m.time, wall, pose: p, raw: z.raw, rms: best ? best.rms : z.err, cov: (p && p.cov) || (best && best.cov) || null, v: p && p.v, size: z.size, seen: z.seen });
+    if (p) out.set(key, p);
+  }
+  if (S.learn) learnStep(m);
+  // the reference frame: this frame's pose of the chosen track, or its last one within 0.25 s
+  const refKey = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
+  let ref = null, refRaw = null;
+  if (refKey !== null) {
+    const tr = S.tracks.get(refKey);
+    if (tr && m.time - tr.time < 0.25) { ref = tr.pose; refRaw = tr.raw; }
+  }
+  if (refKey === null || ref) {
+    // the reference itself always sits at the origin, where the plot already draws it
+    for (const [key, p] of out) if (key !== refKey) S.hist.push(key, m.time, C.inFrame(p, ref));
+    if (S.settings.compare) for (const [key, z] of meas) if (key !== refKey) S.rawHist.push(key, m.time, C.inFrame(z.raw, refRaw));
+  }
+  S.lastOut = out;
+  drawOverlay(m, out);
+}
+
+// ---------------- video overlay ----------------
+function clearOverlay() { const c = overlay.getContext('2d'); c.clearRect(0, 0, overlay.width, overlay.height); }
+// Map image pixels to the overlay canvas (the video is letterboxed with object-fit: contain).
+function overlayMap() {
+  const r = overlay.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (overlay.width !== W || overlay.height !== H) { overlay.width = W; overlay.height = H; }
+  const vw = video.videoWidth || 1, vh = video.videoHeight || 1, s = Math.min(W / vw, H / vh);
+  return { s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2, dpr, W, H };
+}
+function drawOverlay(m, out) {
+  const c = overlay.getContext('2d'), M = overlayMap(), P = (x, y) => [M.ox + x * M.s, M.oy + y * M.s];
+  c.clearRect(0, 0, M.W, M.H);
+  c.lineJoin = 'round';
+  const placed = [], mem = memberIds();
+  const axes = (pose, L) => {
+    const o = C.project(S.cam, pose.t);
+    if (!o) return;
+    for (const a of [[L, 0, 0, K.x], [0, L, 0, K.y], [0, 0, L, K.z]]) {
+      const e = C.project(S.cam, C.add(pose.t, C.mulv(pose.R, a)));
+      if (!e) continue;
+      const A = P(o[0], o[1]), B = P(e[0], e[1]);
+      c.strokeStyle = a[3]; c.lineWidth = 2.5 * M.dpr; c.beginPath(); c.moveTo(A[0], A[1]); c.lineTo(B[0], B[1]); c.stroke();
+    }
+  };
+  // a name plate: above the anchor point; below `below` if that's taken; then further up
+  const plate = (txt, col, top, below) => {
+    c.font = `600 ${12 * M.dpr}px Archivo, system-ui, sans-serif`;
+    const tw = c.measureText(txt).width, pad = 6 * M.dpr, h = 20 * M.dpr, bw = tw + 2 * pad + 10 * M.dpr;
+    const x = Math.max(2, Math.min(M.W - bw - 2, top[0] - tw / 2 - pad));
+    const hits = (y) => placed.some((r) => x < r[0] + r[2] && r[0] < x + bw && y < r[1] + r[3] && r[1] < y + h);
+    let y = Math.max(2, top[1] - h - 8 * M.dpr);
+    if (hits(y)) { const yb = Math.min(M.H - h - 2, below + 8 * M.dpr); if (!hits(yb)) y = yb; else for (let k = 0; k < 5 && hits(y); k++) y = Math.max(2, y - h - 3 * M.dpr); }
+    placed.push([x, y, bw, h]);
+    c.fillStyle = 'rgba(12,14,17,.78)'; roundRect(c, x, y, bw, h, 5 * M.dpr); c.fill();
+    c.fillStyle = col; roundRect(c, x + pad, y + h / 2 - 4 * M.dpr, 8 * M.dpr, 8 * M.dpr, 2 * M.dpr); c.fill();
+    c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(txt, x + pad + 12 * M.dpr, y + h / 2 + 0.5);
+  };
+  for (const t of m.tags) {
+    const inBody = mem.has(t.id), key = inBody ? 'b:' + S.bodies.find((b) => b.members.some((x) => x.id === t.id)).id : t.id;
+    const col = colorOf(key), q = t.corners;
+    c.lineWidth = 2 * M.dpr; c.strokeStyle = col;
+    c.beginPath();
+    for (let k = 0; k < 4; k++) { const p = P(q[2 * k], q[2 * k + 1]); k ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]); }
+    c.closePath(); c.stroke();
+    const p0 = P(q[0], q[1]); // first corner marked, so the tag's orientation is visible
+    c.fillStyle = col; c.beginPath(); c.arc(p0[0], p0[1], 3 * M.dpr, 0, 7); c.fill();
+    const pose = inBody ? null : out.get(t.id) || (t.R ? t : null);
+    if (pose) axes(pose, Math.min(S.settings.axisLen, t.size));
+    const xs = [q[0], q[2], q[4], q[6]], ys = [q[1], q[3], q[5], q[7]];
+    const txt = inBody ? (tagOf(t.id) && tagOf(t.id).name ? tagOf(t.id).name : '#' + t.id) : nameOf(t.id) + (pose ? `  ${(C.norm(pose.t) * 100).toFixed(1)} cm` : '');
+    plate(txt, col, P((Math.min(...xs) + Math.max(...xs)) / 2, Math.min(...ys)), P(0, Math.max(...ys))[1]);
+  }
+  // each rigid object: its axes at its origin, and its name
+  for (const [key, pose] of out) {
+    if (!isBody(key)) continue;
+    axes(pose, S.settings.axisLen);
+    const o = C.project(S.cam, pose.t);
+    if (o) plate(`${nameOf(key)}  ${(C.norm(pose.t) * 100).toFixed(1)} cm`, colorOf(key), P(o[0], o[1] - 14), P(o[0], o[1] + 14)[1]);
+  }
+}
+function roundRect(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+
+// ---------------- rigid objects ----------------
+function saveBodies() { store.set('bodies', S.bodies); }
+const LEARN_N = 20;
+function renderBodies() {
+  const list = $('bodyList');
+  list.textContent = '';
+  for (const b of S.bodies) {
+    const key = 'b:' + b.id, row = document.createElement('div');
+    row.className = 'brow';
+    row.innerHTML = `<span class="sw" style="background:${cssColorOf(key)}"></span>
+      <label class="sr" for="bn${b.id}">Name of object</label><input id="bn${b.id}" class="input sm" maxlength="40">
+      <span class="seen" id="bseen${b.id}"><span class="dot"></span><span>Not seen</span></span>
+      <span style="white-space:nowrap"><button class="btn sm" data-a="relearn" title="Learn the shape again">Relearn</button><button class="btn sm sq danger" data-a="rm" aria-label="Remove object ${escapeHtml(b.name || '')}" title="Remove"><svg class="i"><use href="#i-x"/></svg></button></span>
+      <div class="meta">${b.members.map((x, i) => `<span class="mtag">#${x.id}${i ? '' : ' origin'}</span>`).join('')}${b.spread ? `<span title="How much the learned tag positions scattered">spread ${(b.spread.m * 1000).toFixed(1)} mm, ${b.spread.deg.toFixed(1)}°</span>` : ''}</div>`;
+    const nm = row.querySelector('input');
+    nm.value = b.name || '';
+    nm.oninput = () => { b.name = nm.value.trim(); saveBodies(); refreshFrameSel(); refreshTplotSel(); };
+    row.querySelector('[data-a=rm]').onclick = () => {
+      S.bodies = S.bodies.filter((x) => x !== b); saveBodies();
+      if (S.settings.frame === key) setFrame('camera');
+      resetTracks(); renderBodies(); renderTags(); refreshFrameSel(); refreshTplotSel();
+    };
+    row.querySelector('[data-a=relearn]').onclick = () => startLearn(b.id, b.name, b.members.map((x) => x.id));
+    list.appendChild(row);
+  }
+  if (S.learn) {
+    const L = S.learn, row = document.createElement('div');
+    row.className = 'brow';
+    row.innerHTML = `<span class="sw" style="background:${cssColorOf(L.ids[0])}"></span><strong>${escapeHtml(L.name || 'New object')}</strong><span class="seen on"><span class="dot"></span><span>Learning</span></span><button class="btn sm" data-a="cancel">Cancel</button>
+      <div class="learn" aria-live="polite">${L.ids.slice(1).map((id) => `<div class="lrow"><span class="mono">#${id}</span><div class="progress"><i style="width:${Math.min(100, (100 * L.samples[id].length) / LEARN_N)}%"></i></div><span class="mono muted">${L.samples[id].length}/${LEARN_N}</span></div>`).join('')}
+      <span class="muted">${S.settings.pose === 'raw' ? 'Learning needs Refined or Filtered poses.' : `Keep #${L.ids[0]} in view with each of the others, and turn the object slowly. Frames where a tag could be read two ways are skipped.`}</span></div>`;
+    row.querySelector('[data-a=cancel]').onclick = () => { S.learn = null; renderBodies(); };
+    list.appendChild(row);
+  }
+  $('bodiesHint').hidden = S.bodies.length > 0 || !!S.learn;
+}
+function startLearn(id, name, ids) {
+  S.learn = { id, name, ids, samples: Object.fromEntries(ids.slice(1).map((x) => [x, []])) };
+  $('bodyForm').hidden = true;
+  renderBodies();
+}
+// A frame counts for a tag only when its pose is unambiguous: one candidate, or the other fits clearly worse.
+const unambiguous = (t) => t && t.cands && t.cands.length && (t.cands.length === 1 || t.cands[1].rms > 2 * t.cands[0].rms + 0.3) && t.cands[0].rms < 1.5;
+function learnStep(m) {
+  const L = S.learn, a = m.tags.find((t) => t.id === L.ids[0]);
+  if (!unambiguous(a)) return;
+  let changed = false;
+  for (const id of L.ids.slice(1)) {
+    const t = m.tags.find((x) => x.id === id);
+    if (!unambiguous(t) || L.samples[id].length >= LEARN_N) continue;
+    L.samples[id].push(C.relative(a.cands[0], t.cands[0]));
+    changed = true;
+  }
+  if (!changed) return;
+  if (L.ids.slice(1).every((id) => L.samples[id].length >= LEARN_N)) {
+    const members = [{ id: L.ids[0], R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }];
+    let sm = 0, sd = 0;
+    for (const id of L.ids.slice(1)) {
+      const mp = C.meanPose(L.samples[id], 5, 0.01);
+      members.push({ id, R: mp.R, t: mp.t });
+      sm = Math.max(sm, mp.spread.m); sd = Math.max(sd, mp.spread.deg);
+    }
+    const b = { id: L.id || String(Date.now().toString(36)), name: L.name || 'Object', members, spread: { m: sm, deg: sd } };
+    const i = S.bodies.findIndex((x) => x.id === b.id);
+    if (i >= 0) S.bodies[i] = b; else S.bodies.push(b);
+    S.learn = null;
+    saveBodies(); resetTracks(); renderTags(); refreshFrameSel(); refreshTplotSel();
+  }
+  renderBodies();
+}
+$('newBody').onclick = () => {
+  const f = $('bodyForm');
+  f.hidden = !f.hidden;
+  if (f.hidden) return;
+  $('bodyName').value = `Object ${S.bodies.length + 1}`;
+  const pick = $('bodyPick'), chosen = [];
+  pick.textContent = '';
+  const mem = memberIds();
+  for (const t of S.tags.filter((x) => !mem.has(x.id))) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pick'; b.setAttribute('aria-pressed', 'false');
+    b.innerHTML = `<span class="sw" style="background:${cssColorOf(t.id)}"></span>#${t.id}${t.name ? ' ' + escapeHtml(t.name) : ''}<span class="ord"></span>`;
+    b.onclick = () => {
+      const i = chosen.indexOf(t.id);
+      if (i >= 0) chosen.splice(i, 1); else chosen.push(t.id);
+      pick.querySelectorAll('.pick').forEach((x) => { const id = +x.dataset.id, k = chosen.indexOf(id); x.setAttribute('aria-pressed', String(k >= 0)); x.querySelector('.ord').textContent = k === 0 ? 'origin' : k > 0 ? String(k + 1) : ''; });
+      $('bodyCreate').disabled = chosen.length < 2;
+    };
+    b.dataset.id = t.id;
+    pick.appendChild(b);
+  }
+  if (!pick.children.length) pick.innerHTML = '<span class="small muted">Add at least two tags first.</span>';
+  $('bodyCreate').disabled = true;
+  f.onsubmit = (e) => { e.preventDefault(); if (chosen.length >= 2) startLearn(null, $('bodyName').value.trim(), chosen.slice()); };
+  $('bodyName').focus();
+};
+$('bodyCancel').onclick = () => { $('bodyForm').hidden = true; };
+
+// ---------------- 3D plot ----------------
+function sizeCanvas(cv) {
+  const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { c, w: r.width, h: r.height };
+}
+function alpha(col, a) {
+  if (col.startsWith('#') && col.length === 7) return col + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+  return col;
+}
+function fitView() {
+  const pts = [];
+  for (const id of S.hist.ids()) for (const s of S.hist.get(id)) pts.push(s.t);
+  if (!pts.length) { S.view = Object.assign(S.view, { target: S.settings.frame === 'camera' ? [0, 1, 0] : [0, -0.5, 0], dist: 2.6 }); return; }
+  pts.push([0, 0, 0]);
+  const lo = [0, 1, 2].map((i) => Math.min(...pts.map((p) => p[i]))), hi = [0, 1, 2].map((i) => Math.max(...pts.map((p) => p[i])));
+  S.view.target = lo.map((v, i) => (v + hi[i]) / 2);
+  S.view.dist = Math.max(0.4, 1.25 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]));
+  S.view.fitted = true;
+}
+$('fitBtn').onclick = fitView;
+function draw3d() {
+  const { c, w, h } = sizeCanvas(plot);
+  c.clearRect(0, 0, w, h);
+  const V = S.view, o = C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w, h });
+  const line = (a, b, col, lw) => { const p = o.project(a), q = o.project(b); if (!p || !q) return; c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); };
+  const label = (P, txt, col, dx, dy, weight) => { const p = o.project(P); if (!p) return; c.fillStyle = col; c.font = `${weight || 500} 12px Archivo, system-ui, sans-serif`; c.textBaseline = 'middle'; c.fillText(txt, p[0] + (dx || 0), p[1] + (dy || 0)); };
+  // ground grid in the z = 0 plane, around the target
+  const step = C.niceStep(V.dist * 1.2, 8), n = 6;
+  const gx = Math.round(V.target[0] / step) * step, gy = Math.round(V.target[1] / step) * step;
+  c.lineCap = 'round';
+  for (let i = -n; i <= n; i++) {
+    line([gx + i * step, gy - n * step, 0], [gx + i * step, gy + n * step, 0], K.grid, 1);
+    line([gx - n * step, gy + i * step, 0], [gx + n * step, gy + i * step, 0], K.grid, 1);
+  }
+  c.fillStyle = K.muted; c.font = '11px Archivo, sans-serif'; c.textBaseline = 'alphabetic';
+  c.fillText(`grid ${step >= 1 ? step + ' m' : +(step * 100).toFixed(1) + ' cm'}`, 10, h - 10);
+  // origin: the camera, or the reference tag
+  const L0 = Math.max(0.05, step * 0.6);
+  if (S.settings.frame === 'camera') {
+    const fx = S.cam ? Math.tan((C.hfov(S.cam) * Math.PI) / 360) : 0.7, fy = S.cam ? fx * S.cam.h / S.cam.w : 0.4, d = L0;
+    const corners = [[-fx * d, d, fy * d], [fx * d, d, fy * d], [fx * d, d, -fy * d], [-fx * d, d, -fy * d]];
+    for (let k = 0; k < 4; k++) { line([0, 0, 0], corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
+    label([0, 0, -0.02], 'Camera', K.text2, 6, 10);
+  } else {
+    // the reference: its tag, or each of its object's tags, turned upright as the plot shows it
+    const rk = parseKey(S.settings.frame), b = isBody(rk) ? bodyOf(rk) : null;
+    const parts = b ? b.members.map((m) => ({ R: m.R, t: m.t, size: sizeOf(m.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(rk) }];
+    for (const pt of parts) {
+      const sq = C.tagCorners(pt.size).map((q) => C.mulv(C.TAG_TO_VIEW, C.add(C.mulv(pt.R, q), pt.t)));
+      for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(rk), 2);
+    }
+  }
+  line([0, 0, 0], [L0, 0, 0], alpha(K.x, 0.55), 1.5); line([0, 0, 0], [0, L0, 0], alpha(K.y, 0.55), 1.5); line([0, 0, 0], [0, 0, L0], alpha(K.z, 0.55), 1.5);
+  label([L0, 0, 0], 'x', K.muted, 4); label([0, L0, 0], 'y', K.muted, 4); label([0, 0, L0], 'z', K.muted, 4);
+
+  const now = performance.now() / 1000, span = S.settings.span, every = S.settings.every;
+  S.hist.trim(now, span); S.rawHist.trim(now, span);
+  const legend = [], placed = [];
+  // raw tracks, faint and dashed, to compare
+  if (S.settings.compare && S.settings.pose !== 'raw') {
+    c.setLineDash([4, 4]);
+    for (const id of S.rawHist.ids()) {
+      const a = S.rawHist.get(id);
+      for (let k = 1; k < a.length; k++) if (a[k].time - a[k - 1].time <= 0.25) line(a[k - 1].t, a[k].t, alpha(K.muted, 0.75), 1.5);
+    }
+    c.setLineDash([]);
+  }
+  for (const id of S.hist.ids().sort(keySort)) {
+    const a = S.hist.get(id), col = colorOf(id);
+    // trail, fading with age
+    for (let k = 1; k < a.length; k++) {
+      const age = (now - a[k].time) / span;
+      if (a[k].time - a[k - 1].time > 0.25) continue; // don't join across a gap
+      line(a[k - 1].t, a[k].t, alpha(col, 0.2 + 0.8 * (1 - age)), 2);
+    }
+    // axes every `every` seconds, on a fixed time grid so they ride along the trail
+    const grid = Math.floor(now / every) * every;
+    const axs = C.axisSamples(a, grid, span, every), Lx = S.settings.axisLen;
+    for (const s of axs) {
+      const fade = 0.25 + 0.75 * (1 - (now - s.time) / span);
+      const ex = C.add(s.t, C.mulv(s.R, [Lx, 0, 0])), ey = C.add(s.t, C.mulv(s.R, [0, Lx, 0])), ez = C.add(s.t, C.mulv(s.R, [0, 0, Lx]));
+      line(s.t, ex, alpha(K.x, fade), 2); line(s.t, ey, alpha(K.y, fade), 2); line(s.t, ez, alpha(K.z, fade), 2);
+    }
+    // newest: the tag's outline, axis letters and its name
+    const s = a[a.length - 1];
+    if (now - s.time < 0.3) {
+      // the tag's square, or each of an object's tags where they sit on it
+      const parts = isBody(id) ? bodyOf(id).members.map((m) => ({ R: m.R, t: m.t, size: sizeOf(m.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(id) }];
+      for (const pt of parts) {
+        const sq = C.tagCorners(pt.size).map((q) => C.add(s.t, C.mulv(s.R, C.add(C.mulv(pt.R, q), pt.t))));
+        for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], col, 2);
+      }
+      label(C.add(s.t, C.mulv(s.R, [Lx, 0, 0])), 'x', K.x, 3, 0, 600);
+      label(C.add(s.t, C.mulv(s.R, [0, Lx, 0])), 'y', K.y, 3, 0, 600);
+      label(C.add(s.t, C.mulv(s.R, [0, 0, Lx])), 'z', K.z, 3, 0, 600);
+      const p = o.project(s.t);
+      if (p) {
+        c.font = '600 12px Archivo, system-ui, sans-serif';
+        const txt = nameOf(id), tw = c.measureText(txt).width, bw = tw + 22, bh = 20;
+        let x = p[0] + 10, y = p[1] - 22;
+        // nudge down past labels already drawn, so names never sit on top of each other
+        for (let k = 0; k < 6 && placed.some((r) => x < r[0] + r[2] && r[0] < x + bw && y < r[1] + r[3] && r[1] < y + bh); k++) y += bh + 2;
+        placed.push([x, y, bw, bh]);
+        if (y !== p[1] - 22) { c.strokeStyle = alpha(K.muted, 0.6); c.lineWidth = 1; c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(x, y + bh / 2); c.stroke(); }
+        c.fillStyle = alpha(K.surface, 0.88); roundRect(c, x, y, bw, bh, 5); c.fill();
+        c.fillStyle = col; roundRect(c, x + 6, y + 6, 8, 8, 2); c.fill();
+        c.fillStyle = K.text; c.textBaseline = 'middle'; c.fillText(txt, x + 18, y + bh / 2 + 0.5);
+      }
+    }
+    legend.push(id);
+  }
+  // legend (identity never by colour alone)
+  const lg = $('legend3d'), key = legend.map((id) => id + nameOf(id)).join('|') + '|' + S.settings.frame;
+  if (lg.dataset.key !== key) {
+    lg.dataset.key = key;
+    lg.innerHTML = (legend.length ? legend.map((id) => `<span class="li"><span class="sw" style="background:${cssColorOf(id)}"></span>${escapeHtml(nameOf(id))}</span>`).join('') : '<span class="li muted">No tags in view</span>')
+      + '<span class="axes"><span class="ax"><i style="background:var(--x)"></i>x</span><span class="ax"><i style="background:var(--y)"></i>y</span><span class="ax"><i style="background:var(--z)"></i>z</span></span>';
+  }
+  if (!S.view.fitted && legend.length) fitView();
+}
+// orbit, pan, zoom
+(() => {
+  const pts = new Map();
+  let pinch = 0;
+  plot.addEventListener('pointerdown', (e) => { plot.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
+  plot.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    const prev = pts.get(e.pointerId), dx = e.clientX - prev[0], dy = e.clientY - prev[1];
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    const V = S.view;
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch) V.dist = Math.min(50, Math.max(0.1, V.dist * pinch / d));
+      pinch = d; return;
+    }
+    if (e.shiftKey || e.buttons === 4 || e.buttons === 2) pan(dx, dy);
+    else { V.yaw -= dx * 0.008; V.pitch = Math.max(-1.5, Math.min(1.5, V.pitch + dy * 0.008)); }
+  });
+  const up = (e) => { pts.delete(e.pointerId); pinch = 0; };
+  plot.addEventListener('pointerup', up); plot.addEventListener('pointercancel', up);
+  plot.addEventListener('contextmenu', (e) => e.preventDefault());
+  plot.addEventListener('wheel', (e) => { e.preventDefault(); S.view.dist = Math.min(50, Math.max(0.1, S.view.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
+  plot.addEventListener('dblclick', fitView);
+  plot.addEventListener('keydown', (e) => {
+    const V = S.view, k = e.key;
+    if (k === 'ArrowLeft') V.yaw += 0.1; else if (k === 'ArrowRight') V.yaw -= 0.1;
+    else if (k === 'ArrowUp') V.pitch = Math.min(1.5, V.pitch + 0.1); else if (k === 'ArrowDown') V.pitch = Math.max(-1.5, V.pitch - 0.1);
+    else if (k === '+' || k === '=') V.dist *= 0.9; else if (k === '-') V.dist /= 0.9;
+    else if (k === 'f' || k === 'F') fitView(); else return;
+    e.preventDefault();
+  });
+  function pan(dx, dy) {
+    const V = S.view, r = plot.getBoundingClientRect(), k = (2 * V.dist * Math.tan((45 * Math.PI) / 360)) / r.height;
+    const o = C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w: r.width, h: r.height });
+    V.target = C.add(V.target, C.add(o.right.map((x) => -x * dx * k), o.up.map((x) => x * dy * k)));
+  }
+})();
+
+// ---------------- time plot ----------------
+let hoverX = null;
+tplot.addEventListener('pointermove', (e) => { const r = tplot.getBoundingClientRect(); hoverX = e.clientX - r.left; });
+tplot.addEventListener('pointerleave', () => { hoverX = null; $('tip').hidden = true; });
+function drawTplot() {
+  const { c, w, h } = sizeCanvas(tplot);
+  c.clearRect(0, 0, w, h);
+  const id = S.tplotTag, a = id === null ? [] : S.hist.get(id), now = performance.now() / 1000, span = S.settings.span;
+  const L = 50, R = 74, T = 28, B = 24, pw = w - L - R, ph = h - T - B;
+  if (pw < 40 || ph < 30) return;
+  // Motion: each coordinate minus its mean over the window, so a 1 cm wobble isn't flattened by a 1 m depth.
+  const motion = S.tplotMode === 'motion', mean = [0, 0, 0];
+  if (motion && a.length) for (let i = 0; i < 3; i++) mean[i] = a.reduce((m, s) => m + s.t[i], 0) / a.length;
+  const val = (s, i) => (s.t[i] - mean[i]) * 100;
+  let lo = Infinity, hi = -Infinity;
+  for (const s of a) for (let i = 0; i < 3; i++) { lo = Math.min(lo, val(s, i)); hi = Math.max(hi, val(s, i)); }
+  if (!isFinite(lo)) { lo = -10; hi = 10; }
+  if (hi - lo < 2) { const m = (hi + lo) / 2; lo = m - 1; hi = m + 1; }
+  const stp = C.niceStep(hi - lo, 4); lo = Math.floor(lo / stp) * stp; hi = Math.ceil(hi / stp) * stp;
+  const X = (t) => L + pw * (1 - (now - t) / span), Y = (v) => T + ph * (1 - (v - lo) / (hi - lo));
+  c.font = '11px Archivo, sans-serif'; c.textBaseline = 'middle'; c.fillStyle = K.muted;
+  for (let v = lo; v <= hi + 1e-9; v += stp) {
+    c.strokeStyle = Math.abs(v) < 1e-9 ? K.axis : K.grid; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(L, Math.round(Y(v)) + 0.5); c.lineTo(L + pw, Math.round(Y(v)) + 0.5); c.stroke();
+    const t = (+v.toFixed(6)).toString(); c.textAlign = 'right'; c.fillText(t, L - 6, Y(v));
+  }
+  c.textAlign = 'center'; c.textBaseline = 'top';
+  const ts = C.niceStep(span, 5);
+  for (let s = 0; s <= span + 1e-9; s += ts) c.fillText(s === 0 ? 'now' : `−${+s.toFixed(3)} s`, L + pw * (1 - s / span), T + ph + 6);
+  c.textAlign = 'right'; c.textBaseline = 'alphabetic'; c.fillText(motion ? 'Δ cm' : 'cm', L - 6, T - 14);
+  const cols = [K.x, K.y, K.z], names = ['x', 'y', 'z'];
+  c.lineWidth = 2; c.lineJoin = 'round'; c.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    c.strokeStyle = cols[i]; c.beginPath();
+    let pen = false;
+    for (let k = 0; k < a.length; k++) {
+      if (k && a[k].time - a[k - 1].time > 0.25) pen = false;
+      const x = X(a[k].time), y = Y(val(a[k], i));
+      pen ? c.lineTo(x, y) : c.moveTo(x, y); pen = true;
+    }
+    c.stroke();
+  }
+  // direct labels at the newest point, pushed apart so they don't overlap
+  if (a.length) {
+    const s = a[a.length - 1], ys = [0, 1, 2].map((i) => ({ i, y: Y(val(s, i)) })).sort((p, q) => p.y - q.y);
+    for (let k = 1; k < 3; k++) if (ys[k].y - ys[k - 1].y < 13) ys[k].y = ys[k - 1].y + 13;
+    c.textAlign = 'left'; c.textBaseline = 'middle'; c.font = '600 11px Archivo, system-ui, sans-serif';
+    for (const p of ys) { c.fillStyle = cols[p.i]; c.fillText(names[p.i], L + pw + 6, p.y); c.fillStyle = K.text2; c.font = '11px Archivo, sans-serif'; c.fillText((motion ? (val(s, p.i) >= 0 ? '+' : '') : '') + val(s, p.i).toFixed(1), L + pw + 16, p.y); c.font = '600 11px Archivo, system-ui, sans-serif'; }
+  } else {
+    c.fillStyle = K.muted; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '12px Archivo, system-ui, sans-serif';
+    c.fillText(id === null ? 'Pick a tag' : `${nameOf(id)} isn’t in view`, L + pw / 2, T + ph / 2);
+  }
+  // hover: crosshair and a tooltip at the nearest sample
+  const tip = $('tip');
+  if (hoverX !== null && a.length && hoverX >= L && hoverX <= L + pw) {
+    const tt = now - span * (1 - (hoverX - L) / pw);
+    let best = a[0];
+    for (const s of a) if (Math.abs(s.time - tt) < Math.abs(best.time - tt)) best = s;
+    const x = X(best.time);
+    c.strokeStyle = K.axis; c.lineWidth = 1; c.beginPath(); c.moveTo(Math.round(x) + 0.5, T); c.lineTo(Math.round(x) + 0.5, T + ph); c.stroke();
+    for (let i = 0; i < 3; i++) { c.fillStyle = cols[i]; c.strokeStyle = K.surface; c.lineWidth = 2; c.beginPath(); c.arc(x, Y(val(best, i)), 4, 0, 7); c.fill(); c.stroke(); }
+    tip.hidden = false;
+    tip.innerHTML = `<div class="small muted" style="margin-bottom:3px">${escapeHtml(nameOf(id))}, ${(now - best.time).toFixed(2)} s ago</div>` +
+      [0, 1, 2].map((i) => `<div class="r"><span><i class="sw" style="background:var(--${names[i]});width:8px;height:8px"></i>${names[i]}</span><span class="mono">${(best.t[i] * 100).toFixed(2)} cm</span></div>`).join('') + (motion ? `<div class="small muted" style="margin-top:3px">Plotted as change from the mean</div>` : '');
+    const tw = tip.offsetWidth;
+    tip.style.left = (x + 12 + tw > w ? x - tw - 12 : x + 12) + 'px'; tip.style.top = T + 'px';
+  } else tip.hidden = true;
+}
+
+// ---------------- readout table ----------------
+let lastTable = 0;
+function drawTable() {
+  const now = performance.now();
+  if (now - lastTable < 150) return;
+  lastTable = now;
+  const t = now / 1000, rows = [];
+  for (const tg of S.tags) {
+    const seen = S.seen.get(tg.id), fresh = seen && t - seen.wall < 0.3, el = $('seen' + tg.id);
+    if (!el) continue;
+    el.classList.toggle('on', !!fresh);
+    el.lastElementChild.textContent = fresh ? 'Tracking' : seen ? `Seen ${fmtAgo(t - seen.wall)} ago` : 'Not seen';
+  }
+  for (const b of S.bodies) {
+    const tr = S.tracks.get('b:' + b.id), fresh = tr && t - tr.wall < 0.3, el = $('bseen' + b.id);
+    if (!el) continue;
+    el.classList.toggle('on', !!fresh);
+    el.lastElementChild.textContent = fresh ? `Tracking with ${tr.seen} of ${b.members.length} tags` : tr ? `Seen ${fmtAgo(t - tr.wall)} ago` : 'Not seen';
+  }
+  for (const key of trackKeys()) {
+    const s = S.hist.latest(key), tr = S.tracks.get(key);
+    if (!s || !tr || t - s.time > 0.5) continue;
+    const p = tr.pose || tr.raw, dir = C.mulv([1, 0, 0, 0, 1, 0, 0, 0, 1], p.t.map((x) => x / C.norm(p.t)));
+    // ± along the line of sight, from the pose covariance (raw poses have none: a quick estimate instead)
+    const sd = tr.cov ? C.sigmaAlong(tr.cov, dir) : !isBody(key) && S.cam ? C.depthNoise(S.cam, tr.size || S.settings.tagSize, C.norm(p.t), 0.2) : NaN;
+    const speed = tr.v ? C.norm(tr.v) * 100 : NaN;
+    rows.push(`<tr><td><span style="display:inline-flex;align-items:center;gap:7px"><span class="sw" style="background:${cssColorOf(key)}"></span>${escapeHtml(nameOf(key))}</span></td>` +
+      s.t.map((v) => `<td class="num mono">${(v * 100).toFixed(1)}</td>`).join('') +
+      `<td class="num mono">${(C.norm(s.t) * 100).toFixed(1)}</td><td class="num mono">${isFinite(speed) ? speed.toFixed(0) : '—'}</td><td class="num mono">${isFinite(tr.rms) ? tr.rms.toFixed(2) + ' px' : '—'}</td><td class="num mono">${isFinite(sd) ? (sd * 1000).toFixed(1) + ' mm' : '—'}</td></tr>`);
+  }
+  $('nowRows').innerHTML = rows.length ? rows.join('') : `<tr><td colspan="8" class="muted">${S.running ? 'No tags in view.' : 'Nothing tracked yet.'}</td></tr>`;
+  renderUnknown();
+  refreshTplotSel();
+}
+function fmtAgo(s) { return s < 60 ? `${s.toFixed(0)} s` : s < 3600 ? `${(s / 60).toFixed(0)} min` : `${(s / 3600).toFixed(0)} h`; }
+
+// ---------------- render loop ----------------
+function frame() {
+  if (S.mode === 'track') { draw3d(); drawTplot(); drawTable(); }
+  if (S.running && S.last && performance.now() / 1000 - S.last.time > 0.5 && S.mode === 'track') { clearOverlay(); S.last = null; }
+  requestAnimationFrame(frame);
+}
+
+// ---------------- modes ----------------
+function setMode(m) {
+  S.mode = m;
+  $('tab-track').setAttribute('aria-selected', String(m === 'track'));
+  $('tab-calib').setAttribute('aria-selected', String(m === 'calib'));
+  $('view-track').hidden = m !== 'track';
+  $('tagsCard').hidden = m !== 'track';
+  $('nowCard').hidden = m !== 'track';
+  $('calibCard').hidden = m !== 'calib';
+  document.querySelector('main').classList.toggle('calib', m === 'calib');
+  if (m === 'calib') {
+    // the steps sit in the right-hand column
+    document.querySelector('main').appendChild($('calibCard'));
+    renderCalib();
+  } else document.querySelector('.col').appendChild($('calibCard'));
+  clearOverlay(); S.lastBoard = null;
+}
+$('tab-track').onclick = () => setMode('track');
+$('tab-calib').onclick = () => setMode('calib');
+[$('tab-track'), $('tab-calib')].forEach((b) => b.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { const other = b.id === 'tab-track' ? $('tab-calib') : $('tab-track'); other.click(); other.focus(); }
+}));
+const mq = matchMedia('(max-width:1000px)');
+mq.addEventListener('change', () => setMode(S.mode));
+
+// ---------------- calibration ----------------
+$('square').value = S.square;
+$('square').onchange = () => { const v = +$('square').value; if (v >= 3 && v <= 200) { S.square = v; store.set('square', v); } else $('square').value = S.square; };
+$('autoSw').onclick = () => { S.auto = !S.auto; $('autoSw').setAttribute('aria-checked', String(S.auto)); };
+$('captureBtn').onclick = () => { if (S.lastBoard && S.lastBoard.ids.length >= 6) capture(S.lastBoard); };
+$('clearViews').onclick = () => { S.views = []; renderCalib(); };
+$('solveBtn').onclick = () => {
+  if (S.views.length < MIN_VIEWS) return;
+  $('solveBtn').disabled = true; $('solveBtn').textContent = 'Solving…';
+  const v0 = S.views[0];
+  S.worker.postMessage({ type: 'calibrate', views: S.views.map((v) => ({ ids: v.ids, pts: v.pts })), w: v0.w, h: v0.h, square: S.square / 1000 });
+};
+function onBoard(m) {
+  tickStats(m.ms);
+  if (S.mode !== 'calib') return;
+  const prev = S.lastBoard;
+  S.lastBoard = m;
+  const motion = C.cornerMotion(prev, m);
+  S.still = m.ids.length >= 6 && motion < 0.8 ? S.still + 1 : 0;
+  $('captureBtn').disabled = m.ids.length < 6 || !!S.demo;
+  let tip;
+  if (S.demo) tip = 'Calibration needs a real camera: the demo has no lens to measure.';
+  else if (m.ids.length < 6) tip = 'Hold the whole board in view, flat and well lit.';
+  else {
+    const sig = C.viewSignature(m.pts, m.w, m.h), dmin = Math.min(Infinity, ...S.views.map((v) => C.signatureDistance(v.sig, sig)));
+    const novel = dmin > 0.12, nowMs = performance.now();
+    if (S.auto && novel && S.still >= 3 && nowMs - S.lastCapture > 700) capture(m, sig);
+    tip = !novel ? 'Already have this view: tilt the board or move it towards an uncovered part of the frame.' : S.still < 3 ? 'Hold still…' : 'Good view.';
+    if (S.views.length >= 4 && novel) {
+      const cov = C.coverage(S.views.map((v) => v.pts), m.w, m.h, 6, 4);
+      if (cov.fraction < 0.6) tip += ' Reach the edges and corners of the frame too.';
+    }
+  }
+  $('calibTip').textContent = tip;
+  drawBoard(m);
+}
+function capture(m, sig) {
+  if (S.demo) return;
+  if (S.views.length && (S.views[0].w !== m.w || S.views[0].h !== m.h)) S.views = [];
+  S.views.push({ ids: m.ids.slice(), pts: m.pts.map((p) => p.slice()), w: m.w, h: m.h, sig: sig || C.viewSignature(m.pts, m.w, m.h) });
+  S.lastCapture = performance.now(); S.still = 0;
+  const f = $('flash'); f.classList.add('on'); setTimeout(() => f.classList.remove('on'), 60);
+  renderCalib();
+}
+function drawBoard(m) {
+  const c = overlay.getContext('2d'), M = overlayMap(), P = (p) => [M.ox + p[0] * M.s, M.oy + p[1] * M.s];
+  c.clearRect(0, 0, M.W, M.H);
+  // captured corners so far, faint: what the frame coverage looks like
+  c.fillStyle = 'rgba(76,194,122,.55)';
+  for (const v of S.views) for (const p of v.pts) { const q = P(p); c.fillRect(q[0] - 1.5 * M.dpr, q[1] - 1.5 * M.dpr, 3 * M.dpr, 3 * M.dpr); }
+  c.strokeStyle = 'rgba(255,255,255,.45)'; c.lineWidth = 1 * M.dpr;
+  for (const mk of m.markers) { c.beginPath(); for (let k = 0; k < 4; k++) { const q = P([mk[2 * k], mk[2 * k + 1]]); k ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]); } c.closePath(); c.stroke(); }
+  const ok = m.ids.length >= 6;
+  for (const p of m.pts) { const q = P(p); c.fillStyle = ok ? K.accent : '#f59e0b'; c.strokeStyle = '#fff'; c.lineWidth = 1.5 * M.dpr; c.beginPath(); c.arc(q[0], q[1], 3.5 * M.dpr, 0, 7); c.fill(); c.stroke(); }
+}
+function renderCalib() {
+  const n = S.views.length;
+  $('viewCount').textContent = `${n} / ${TARGET_VIEWS} views`;
+  $('viewBar').style.width = Math.min(100, (100 * n) / TARGET_VIEWS) + '%';
+  $('solveBtn').disabled = n < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate';
+  $('solveBtn').title = n < MIN_VIEWS ? `Capture at least ${MIN_VIEWS} views (${TARGET_VIEWS} is better)` : '';
+  $('clearViews').disabled = !n;
+  const cov = n ? C.coverage(S.views.map((v) => v.pts), S.views[0].w, S.views[0].h, 6, 4) : { cells: new Uint8Array(24) };
+  $('cov').innerHTML = [...cov.cells].map((x) => `<i class="${x ? 'on' : ''}"></i>`).join('');
+  const list = $('viewList');
+  list.innerHTML = S.views.map((v, i) => `<span class="chip"><span class="mono">${i + 1}</span><span class="muted">${v.ids.length} corners</span><button aria-label="Remove view ${i + 1}" data-i="${i}" style="background:none;color:var(--muted)">×</button></span>`).join('');
+  list.querySelectorAll('button').forEach((b) => { b.onclick = () => { S.views.splice(+b.dataset.i, 1); renderCalib(); }; });
+  renderCalibStatus();
+}
+function renderCalibStatus() {
+  const saved = S.calibs[S.camKey], out = $('calibResult');
+  $('exportBtn').disabled = !saved; $('forgetBtn').disabled = !saved;
+  if (!out) return;
+  const c = S.calibResult || saved;
+  if (!c) { out.innerHTML = '<p class="hint">Until this camera is calibrated, distances use a field-of-view guess and can be off by 10% or more.</p>'; return; }
+  const q = c.rms < 0.5 ? ['good', 'i-check', 'Good'] : c.rms < 1 ? ['warn', 'i-alert', 'Usable'] : ['bad', 'i-alert', 'Poor'];
+  const fresh = S.calibResult && S.calibResult !== saved;
+  out.innerHTML = `<div class="row" style="margin-bottom:8px"><span class="badge ${q[0]}"><svg class="i"><use href="#${q[1]}"/></svg>${q[2]}</span><span class="mono">RMS ${c.rms.toFixed(3)} px</span><span class="muted small">${fresh ? 'New and saved' : 'Saved'}: ${c.w}×${c.h}${c.views ? ', from ' + c.views + ' views' : ''}</span></div>
+    <dl class="kv mono">
+      <dt>focal</dt><dd>fx ${c.fx.toFixed(1)}, fy ${c.fy.toFixed(1)} px${c.sd ? ` (± ${c.sd.fx.toFixed(1)})` : ''}</dd>
+      <dt>centre</dt><dd>${c.cx.toFixed(1)}, ${c.cy.toFixed(1)} px</dd>
+      <dt>field of view</dt><dd>${C.hfov(c).toFixed(1)}° wide</dd>
+      <dt>distortion</dt><dd>k1 ${c.dist[0].toFixed(4)}, k2 ${c.dist[1].toFixed(4)}, p1 ${c.dist[2].toFixed(4)}, p2 ${c.dist[3].toFixed(4)}</dd>
+    </dl>
+    ${c.rms >= 0.5 ? '<p class="hint" style="margin-top:8px">Under 0.5 px is good. To improve: lock focus, light the board evenly, keep it flat and still, and add views tilted 30–45° and near the frame corners.</p>' : ''}`;
+}
+function onCalibrated(c) {
+  c.date = new Date().toISOString();
+  c.camera = S.camKey;
+  S.calibs[S.camKey] = c; store.set('calibs', S.calibs);
+  S.calibResult = c;
+  resetTracks();
+  updateCam(); renderCalib();
+}
+$('forgetBtn').onclick = () => { if (!confirm(`Forget the calibration for “${S.camKey}”?`)) return; delete S.calibs[S.camKey]; store.set('calibs', S.calibs); S.calibResult = null; updateCam(); renderCalib(); };
+$('exportBtn').onclick = () => {
+  const c = S.calibs[S.camKey]; if (!c) return;
+  const blob = new Blob([JSON.stringify(Object.assign({ format: 'tag-tracker-calibration/1' }, c), null, 2)], { type: 'application/json' });
+  download(blob, `calibration-${slug(S.camKey)}-${c.w}x${c.h}.json`);
+};
+$('importBtn').onclick = () => $('importFile').click();
+$('importFile').onchange = async () => {
+  const f = $('importFile').files[0]; $('importFile').value = '';
+  if (!f) return;
+  try {
+    const c = JSON.parse(await f.text()), err = C.checkCalibration(c);
+    if (err) throw new Error(err);
+    c.rms = typeof c.rms === 'number' ? c.rms : 0;
+    S.calibs[S.camKey] = c; store.set('calibs', S.calibs); S.calibResult = null; resetTracks(); updateCam(); renderCalib();
+  } catch (e) { $('calibResult').innerHTML = `<div class="note"><svg class="i"><use href="#i-alert"/></svg><span>That file isn’t a calibration (${escapeHtml(e.message)}).</span></div>`; }
+};
+function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'camera'; }
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+
+// ---------------- printing ----------------
+function grayToCanvas(img, quiet) {
+  const q = quiet || 0, cv = document.createElement('canvas');
+  cv.width = img.w + 2 * q; cv.height = img.h + 2 * q;
+  const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+  const id = c.createImageData(img.w, img.h);
+  for (let i = 0; i < img.w * img.h; i++) { const v = img.data[i]; id.data[4 * i] = v; id.data[4 * i + 1] = v; id.data[4 * i + 2] = v; id.data[4 * i + 3] = 255; }
+  c.putImageData(id, q, q);
+  return cv;
+}
+function printPage(win, title, body) {
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    @page{margin:12mm}body{font:12px/1.5 system-ui,sans-serif;color:#111;margin:0;display:flex;flex-direction:column;align-items:center;gap:6mm;padding-top:4mm}
+    img{image-rendering:pixelated;display:block}.cap{text-align:center;max-width:180mm}.rule{height:0;border-top:.4mm solid #111;width:50mm;position:relative}
+    .rule::before,.rule::after{content:"";position:absolute;top:-1.6mm;height:3mm;border-left:.4mm solid #111}.rule::before{left:0}.rule::after{right:0}
+    @media screen{body{background:#eee;padding:20px}.sheet{background:#fff;padding:10mm;box-shadow:0 2px 12px rgba(0,0,0,.15)}}</style></head>
+    <body>${body}<script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+  win.document.close();
+}
+async function printTag(id, size) {
+  const win = window.open('', '_blank');
+  if (!win) { alert('Allow pop-ups for this site to print tags.'); return; }
+  win.document.write('<p style="font:14px system-ui;padding:20px">Making the tag…</p>');
+  const fam = S.settings.family, cells = FAMILY_CELLS[fam], px = cells * 40;
+  const img = await requestImage('tagImage', { family: fam, id, px });
+  const cv = grayToCanvas(img, 40), mm = size * 1000, quiet = mm / cells;
+  printPage(win, `${FAMILY_LABEL[fam]} ${id}`, `<div class="sheet"><img src="${cv.toDataURL()}" style="width:${(mm + 2 * quiet).toFixed(2)}mm;height:${(mm + 2 * quiet).toFixed(2)}mm" alt="${FAMILY_LABEL[fam]} tag ${id}"></div>
+    <div class="cap"><b>${escapeHtml(nameOf(id))}</b>: ${FAMILY_LABEL[fam]} ID ${id}, black square ${mm.toFixed(1)} mm<br>Print at 100% (turn off “fit to page”). Check: the bar below should measure 50 mm, and the black square ${mm.toFixed(1)} mm. If not, enter the measured size in Tag Tracker.</div><div class="rule"></div>`);
+}
+$('printBoard').onclick = async () => {
+  const win = window.open('', '_blank');
+  if (!win) { alert('Allow pop-ups for this site to print the board.'); return; }
+  win.document.write('<p style="font:14px system-ui;padding:20px">Making the board…</p>');
+  const img = await requestImage('boardImage', { px: 100 }), cv = grayToCanvas(img, 0), sq = S.square;
+  printPage(win, 'Calibration board 9×6', `<style>@page{size:landscape}</style><div class="sheet"><img src="${cv.toDataURL()}" style="width:${(9 * sq).toFixed(1)}mm;height:${(6 * sq).toFixed(1)}mm" alt="ChArUco calibration board"></div>
+    <div class="cap">ChArUco board, 9 × 6 squares of ${sq} mm, DICT_5X5_100. Print at 100% on stiff paper (or glue it to card) and keep it flat. Measure the squares and enter the size in Tag Tracker. The bar below should be 50 mm.</div><div class="rule"></div>`);
+};
+$('pngBoard').onclick = async () => {
+  const img = await requestImage('boardImage', { px: 160 }), cv = grayToCanvas(img, 80);
+  cv.toBlob((b) => download(b, 'charuco-9x6-5x5_100.png'));
+};
+
+// ---------------- demo: a synthetic camera with three tags moving ----------------
+async function startDemo() {
+  const W = 1280, H = 720, f = W / 2 / Math.tan((70 * Math.PI) / 360);
+  const ids = [0, 1, 2], names = ['Left hand', 'Right hand', 'Body'];
+  ids.forEach((id, i) => { if (!tagOf(id)) { S.tags.push({ id, name: names[i], size: 0.08, slot: freeSlot() }); } });
+  saveTags(); renderTags(); refreshFrameSel();
+  const imgs = await Promise.all(ids.map((id) => requestImage('tagImage', { family: S.settings.family, id, px: FAMILY_CELLS[S.settings.family] * 30 })));
+  const tiles = imgs.map((im) => grayToCanvas(im, 30));
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  let run = true, t0 = performance.now();
+  // place a tag of side s (m) at camera-frame position p, turned by roll, with a fore-shortening tilt
+  const place = (tile, s, p, roll, tilt) => {
+    const k = f / p[2], side = s * k * tile.width / (tile.width - 60);
+    c.save(); c.translate(W / 2 - 0.5 + p[0] * k, H / 2 - 0.5 + p[1] * k); c.rotate(roll); c.scale(Math.cos(tilt), 1);
+    c.drawImage(tile, -side / 2, -side / 2, side, side); c.restore();
+  };
+  const draw = () => {
+    if (!run) return;
+    const t = (performance.now() - t0) / 1000;
+    const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#9aa3ad'); g.addColorStop(1, '#6f7780');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    place(tiles[2], 0.08, [0, 0.08, 1.6], 0.02 * Math.sin(t), 0);
+    place(tiles[0], 0.08, [-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.5 * Math.sin(1.1 * t));
+    place(tiles[1], 0.08, [0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.4 * Math.cos(0.9 * t));
+    requestAnimationFrame(draw);
+  };
+  draw();
+  const stream = cv.captureStream(30);
+  S.demo = { stop() { run = false; } };
+  return stream;
+}
+
+// ---------------- boot ----------------
+paintThemeBtn();
+renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
+listCameras();
+startWorker();
+requestAnimationFrame(frame);
+window.addEventListener('resize', () => { if (S.last && S.mode === 'track') drawOverlay(S.last, S.lastOut || new Map()); });
+})();
+</script>
+</body>
+</html>

@@ -61,7 +61,7 @@ assets/js/embedded/      /embedded/ (embedded.md): embedded-core.js (no DOM) and
 assets/img/vision/       the /vision/ photos: three CC0 Commons photos at 640 × 480, credited on vision.md; add new ones only once approved
 assets/models/           swingup-tqc.{json,bin} from n-cartpole; the fixture is test-only
 controls/swingup/real/   /controls/swingup/real/: browser firmware installer (esp-web-tools, pinned to an exact version); manifest, image pieces, the model (`n-cartpole-model.ncpm`) and its own `manifest-model.json` (an "Install model" button that writes it to the `model` partition) come from `task fw-installer -- fw-vX.Y.Z [--model <.ncpm>]` in `../n-cartpole`, never hand-edit; `script/test-installer` checks them
-script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-embedded, test-fit, test-recipes, test-glide, train-verify-net
+script/                  serve, check, test-data, test-installer, test-swingup, test-lab, test-vision, test-embedded, test-fit, test-recipes, test-glide, test-tag-tracker, train-verify-net
 ```
 
 ### Conventions
@@ -276,9 +276,9 @@ test runs (kept in IndexedDB, compared as overlays, exported as CSV, log or a Ma
 cursors and an ESP-IDF/Zephyr device-clock time axis. It has a Demo stream and opens saved logs, so it works without a board.
 The same file is also published as a Claude artifact; edit it here and copy it there, not the other way round.
 
-### Glide Reach (`/glide-reach/`)
+### Glide Path (`/glide-path/`)
 
-`glide-reach/` is a self-contained page like the serial plotter (no front matter, its own look, outside the layouts):
+`glide-path/` is a self-contained page like the serial plotter (no front matter, its own look, outside the layouts):
 `index.html` is markup only, `glide.css` the styles, `glide-app.js` the page, `glide-core.js` the maths (no DOM) and
 `glide-worker.js` the route search. Pick a launch point and set glide ratio, airspeed, launch height, wind, a terrain margin,
 the steepest slope you would land on and **how far away you can still see the glider**. It loads a 7 × 7 block of Terrarium
@@ -291,12 +291,9 @@ holds the furthest possible glide, and the page steps down a zoom if a glide sti
 (right-click) a spot for the best route there. `script/test-glide` (`task check:glide`, in `check:fast`) guards the core,
 including the service worker in a mock.
 
-**Height rules** are a US / EU switch (`RULES`, `ruleFor` in the core picks one from the launch's position until the visitor
-taps the other). US (FAA, 49 USC 44809): at most 400 ft above the ground, so the glide is capped at ground + 121.92 m as it
-goes (`ceilAgl` in `castRays`, `glideAlong` and `reachGrid`): over low ground the glider has to shed height, which shortens
-the reach. EU (2019/947 UAS.OPEN.010, sailplanes under 10 kg): never more than 120 m above the pilot, so only the launch height
-is capped. The cross-section draws the limit as a dotted line. **Units** are metric or imperial (`Units` in the core; `SPEC`
-in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
+**No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
+rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or
+imperial (`Units` in the core; `SPEC` in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
 
 **Redraws stay cheap**: the reach is painted straight into a canvas that Leaflet positions like an image (`CanvasOverlay`,
 no PNG encode), each grid cell's ray and distance are cached until the launch or the terrain changes (`geometry()`), and theme
@@ -315,10 +312,50 @@ has its own light/dark switch.
 It works offline. `sw.js` keeps the page and every terrain tile it has fetched (a capped `glide-terrain-runtime` cache), and
 "Save this area" stores 9 × 9 zoom-13 tiles round the launch plus 7 × 7 at each of zooms 12 to 9 (277 tiles) in
 `glide-terrain-saved`, which only the page deletes from (a tile shared by two saved areas stays until both are gone). Saved areas
-are listed in `localStorage` (`glide-reach-areas`). **Street maps are never stored for offline use**: OpenStreetMap's tile policy
+are listed in `localStorage` (`glide-reach-areas`; every key keeps the old `glide-reach-` prefix so nothing saved is lost). **Street maps are never stored for offline use**: OpenStreetMap's tile policy
 forbids "save area" features, so offline the page switches to a hillshade it draws from the saved terrain. Leaflet is vendored in
-`glide-reach/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in `sw.js`
+`glide-path/lib/leaflet/` (1.9.4, source-map comment stripped) so the page loads with no network; bump `VERSION` in `sw.js`
 whenever `SHELL_FILES` changes (it lists every file of the page). The service worker also registers on `localhost`, so `script/serve` exercises it.
+
+The page was **Glide Reach at `/glide-reach/`** until 2026-11-10. `glide-reach/index.html` redirects to `/glide-path/`
+(keeping query and hash), and `glide-reach/sw.js` replaces the service worker browsers installed there: it unregisters
+itself and moves open tabs to the new address, deleting no caches (the terrain caches are shared). Leave both in place.
+
+### The tag tracker (`/tag-tracker/`)
+
+`tag-tracker/` is a self-contained tool page (no front matter, so Jekyll copies it as-is) with its own look: an instrument on a
+vision bench. Cool anodised greys and ink with one Kapton amber (`--accent`) for what is live or pressed; panels are plain outlined boxes
+(1 px rule, 4 px corners, no shadows); viewfinder corner marks only on the video (`.reticle`, amber while detecting); flat ink-outlined
+keys that invert when chosen; one typeface, Archivo, its width axis wide for the name and titles. Keep it that way: no rounded
+cards, pills, middle-dot strings or monospace labels.
+It tracks AprilTags from a webcam (or a built-in Demo camera) in Chrome/Edge: the visitor names each tag ID and enters its
+printed size, calibrates the camera with a printed ChArUco board, and sees the last `History` seconds of each tag in 3D
+(axes drawn every `Axes every` seconds, defaults 1 s and 0.1 s), relative to the camera or to a chosen tag, plus an x/y/z
+plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
+
+- `index.html`: the UI. `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
+  camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
+  its `TagVision` factory also runs in Node.
+- OpenCV.js is **pinned** (`@techstark/opencv-js@4.12.0-release.1`, jsDelivr then unpkg) and loaded by the worker; it is
+  not vendored. Tags use OpenCV's ArUco detector with an AprilTag dictionary and AprilTag corner refinement, shifted by
+  half a pixel to OpenCV's pixel-centre convention; the board uses DICT_5X5_100 so it never clashes with tag IDs.
+- Pose (the "Pose" control): **Raw** is OpenCV's IPPE pose per tag. **Refined** runs `TagCore.refinePose`, Levenberg–Marquardt
+  on SE(3) with left perturbations `T ← exp(ξ^)·T`, from that pose and from its mirror image (`flipPose`: a flat tag seen
+  nearly face-on has two poses that fit), keeping both as candidates with covariances (corner noise from the fit, 0.15 to 3 px).
+  **Filtered** adds `PoseFilter`, an error-state Kalman filter on SE(3) with a constant-velocity model (state p, v, R, ω;
+  `R ← exp(δθ)·R`); among candidates that fit about as well as the best it takes the one nearest the prediction, which
+  settles the mirror-image doubt, and it gates outliers (restarting after 3 in a row). `MOTION` holds the three tunings.
+  "Compare with raw" draws the raw track dashed. All of it runs in the worker except the filter.
+- Rigid objects (`bodies` in storage): two or more tags fixed to one thing. "Learn shape" collects each tag's pose relative
+  to the first (the origin) over 20 unambiguous frames and averages them on SO(3) × R³ (`meanPose`, outliers dropped);
+  then the worker solves one SE(3) pose from every visible corner (`solveBody`). Tags in an object are tracked only as it.
+- Colours: tags take the eight validated categorical slots in a fixed order and keep their slot (`slot` in storage); a
+  ninth tag is grey with its name. x/y/z are `--x/--y/--z`, chosen to pass the colour-vision checks, and always labelled.
+- `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
+  against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating;
+  with OpenCV.js installed
+  (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
+  that calibration recovers the camera and poses come back within millimetres.
 
 ## When editing, don't
 

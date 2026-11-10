@@ -1,6 +1,6 @@
 {
-  "name": "Glide Reach",
-  "short_name": "Glide Reach",
+  "name": "Glide Path",
+  "short_name": "Glide Path",
   "description": "Where can an RC glider still land from here? Terrain, wind and glide ratio; works offline in saved areas.",
   "start_url": "./",
   "scope": "./",
