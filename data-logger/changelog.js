@@ -8,6 +8,17 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-10-talk",
+    date: "2026-11-10",
+    title: "Talk to a board and see what it heard",
+    items: [
+      "Microphone has a Talk button: press it, speak to the selected board, and press Stop (or wait 30 s). The board sends what its microphone heard, and the words appear under the button, newest first, with Copy and Clear.",
+      "The words are worked out on this computer by Whisper (English), so the audio goes nowhere else. The speech model downloads the first time you use Talk and the browser keeps it.",
+      "While you talk, the board's live data pause, as they did for background audio. Talk waits while the page is recording.",
+      "Voice commands are gone from the page: Settings › Voice (Listening, Upload model, what a board heard) and the Keyword clips dialog. A board keeps the voice settings it had.",
+    ],
+  },
+  {
     id: "2026-11-03-board-list",
     date: "2026-11-03",
     title: "A board list that starts empty",

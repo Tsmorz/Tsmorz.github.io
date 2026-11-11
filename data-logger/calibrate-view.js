@@ -307,7 +307,7 @@ export function renderCalibrate() {
   const mouseOn = mode === "gyro" && board?.mouse?.enabled;
   const text = blocked || note?.text || (mouseOn ? "Its mouse is on, so the cursor will move as it turns: switch it off in Settings › Mouse first." : "") || summary(board);
   $("cal-status").textContent = text;
-  $("cal-status").className = `voice-status ${blocked || note?.bad ? "bad-text" : ""}`;
+  $("cal-status").className = `dialog-status ${blocked || note?.bad ? "bad-text" : ""}`;
 }
 
 function summary(board) {

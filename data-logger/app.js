@@ -10,7 +10,7 @@ import { clockRoleChanges } from "./clock-roles.js";
 import { syncBoard } from "./settings-sync.js";
 import { calibrateDialogOpen, describeCalibration, initCalibrate, renderCalibrate } from "./calibrate-view.js";
 import { FACE_TOLERANCE_DEG } from "./imu-calibration.js";
-import { initVoice, renderVoice, renderVoiceSettings, voiceDialogOpen } from "./voice-view.js";
+import { initSpeech, renderSpeech } from "./speech-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
@@ -118,7 +118,7 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
-const drawerDialogOpen = () => $("fw-dialog").open || $("panel-dialog").open || voiceDialogOpen();
+const drawerDialogOpen = () => $("fw-dialog").open || $("panel-dialog").open;
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !drawerDialogOpen()) setSettingsOpen(false);
 });
@@ -276,7 +276,7 @@ mainEl.addEventListener("pointerdown", (event) => {
 });
 mainEl.addEventListener("click", (event) => {
   const panel = event.target.closest(ENLARGEABLE);
-  if (!panel || !panelPress || event.target.closest("button, .info-pop")) return;
+  if (!panel || !panelPress || event.target.closest("button, .info-pop, .transcript")) return;
   if (Math.hypot(event.clientX - panelPress.x, event.clientY - panelPress.y) <= CLICK_SLOP_PX) enlargePanel(panel);
 });
 mainEl.addEventListener("keydown", (event) => {
@@ -1305,9 +1305,8 @@ function renderBoards() {
   renderMotionWake();
   renderThermometer();
   renderImuCalibration();
-  renderVoiceSettings();
   if (calibrateDialogOpen()) renderCalibrate();
-  if (voiceDialogOpen()) renderVoice();
+  renderSpeech();
 }
 setInterval(renderBoards, 250);
 
@@ -2824,7 +2823,6 @@ function openFirmwareDialog() {
 $("fw-open").addEventListener("click", openFirmwareDialog);
 $("fw-close").addEventListener("click", () => $("fw-dialog").close());
 closeOnBackdropClick($("fw-dialog"));
-closeOnBackdropClick($("voice-dialog"));
 closeOnBackdropClick($("cal-dialog"));
 
 // The dialog's Bluetooth / USB cable toggle.
@@ -3255,7 +3253,7 @@ $("latency-copy").addEventListener("click", async () => {
 // (replay-view.js). Boards stay connected and recordings carry on underneath.
 initReplay({ getColors: () => colors });
 initCalibrate({ getBoard: () => selected, drawPose, drawBoardPicture, setStatus });
-initVoice({ getBoard: () => selected, getBoards: () => [...boards.values()], isRecording: () => recorder.active, getColors: () => colors });
+initSpeech({ getBoard: () => selected, isRecording: () => recorder.active });
 initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
   if (show) $("panel-dialog").close(); // a session dropped on the page opens Replay from over it

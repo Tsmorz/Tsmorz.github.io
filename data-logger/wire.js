@@ -432,7 +432,7 @@ export function decodeLogChunk(view) {
 
 /**
  * Asks the board to record its microphone until encodeClipRelease() and send it back as clip
- * `clipId`, or with `overUsb`, to offer it in its USB mailbox (mailbox.js) instead. Older firmware
+ * `clipId`, or with `overUsb`, to offer it in its USB mailbox instead (the page no longer asks for clips). Older firmware
  * refuses both.
  */
 export function encodeClipHold(clipId, { overUsb = false } = {}) {

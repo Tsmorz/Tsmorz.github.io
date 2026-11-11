@@ -10,11 +10,6 @@ const SYNCED = [
   },
   { label: "IMU ranges", read: (board) => board.imuRanges, write: (board, ranges) => board.setImuRanges(ranges), blockable: true },
   { label: "wake on motion", read: (board) => board.motionWake, write: (board, enabled) => board.setMotionWake(enabled) },
-  {
-    label: "voice listening",
-    read: (board) => board.voice?.listening,
-    write: (board, listening) => board.setVoiceSettings({ ...board.voice, listening }),
-  },
 ];
 
 const known = (value) => value !== undefined && value !== null;
