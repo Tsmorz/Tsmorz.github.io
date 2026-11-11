@@ -758,7 +758,7 @@
       <label>Source and pointer <select id="clock-source" disabled title="The board whose clock the others follow. It alone can be the pointer"></select></label>
     </div>
     <ul class="clock-boards" id="clock-boards"></ul>
-    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond.</p><p>The source is also the pointer: only it can move the cursor and hear “toggle cursor”. A board connected on its own becomes the source by itself, with its mouse still off until you turn it on.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
+    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond.</p><p>The source is also the pointer: only it can move the cursor. A board connected on its own becomes the source by itself, with its mouse still off until you turn it on.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
   </section>
   <section>
     <h2>Sleep <span class="muted">saved on the board</span></h2>

@@ -5,7 +5,7 @@
 // they come but not shown.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_COMMAND, KEYWORD_SERVICE, KEYWORD_SETTINGS,
+  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, AUDIO_COMMAND, AUDIO_SERVICE, AUDIO_STREAM,
   LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET, TELEMETRY_IMU_CALIBRATION,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
@@ -210,7 +210,7 @@ export class Board extends EventTarget {
     await this.connectClock(control, subscribe);
 
     await this.connectLog(server, subscribe);
-    await this.connectKeyword(server, subscribe);
+    await this.connectAudio(server, subscribe);
     await this.connectSmp(server);
 
     try {
@@ -412,15 +412,13 @@ export class Board extends EventTarget {
     this.onLogStatus(await this.chars.logStatus.readValue());
   }
 
-  // The microphone stream lives on the keyword service. Firmware from before it has none, or no
-  // audio stream yet (it came with the voice settings characteristic); the rest still works.
-  async connectKeyword(server, subscribe) {
-    let service;
+  // The microphone stream (Talk). Firmware from before it has no audio service, or no stream on
+  // it yet; the rest still works.
+  async connectAudio(server, subscribe) {
     try {
-      service = await server.getPrimaryService(KEYWORD_SERVICE);
-      this.chars.keywordCommand = await service.getCharacteristic(KEYWORD_COMMAND);
-      await service.getCharacteristic(KEYWORD_SETTINGS);
-      await subscribe(service, KEYWORD_AUDIO, (view) => this.onAudioChunk(view));
+      const service = await server.getPrimaryService(AUDIO_SERVICE);
+      this.chars.audioCommand = await service.getCharacteristic(AUDIO_COMMAND);
+      await subscribe(service, AUDIO_STREAM, (view) => this.onAudioChunk(view));
     } catch {
       return;
     }
@@ -438,7 +436,7 @@ export class Board extends EventTarget {
     const streamId = Math.floor(Math.random() * 0x10000);
     this.audioStream = { streamId, onChunk, decode };
     try {
-      await this.write(this.chars.keywordCommand, encodeStreamStart(streamId));
+      await this.write(this.chars.audioCommand, encodeStreamStart(streamId));
     } catch (error) {
       this.audioStream = null;
       throw error;
@@ -449,7 +447,7 @@ export class Board extends EventTarget {
     if (!this.audioStream) return;
     this.audioStream = null;
     try {
-      if (this.connected) await this.write(this.chars.keywordCommand, encodeStreamStop());
+      if (this.connected) await this.write(this.chars.audioCommand, encodeStreamStop());
     } finally {
       // The board paused its live streams while it sent audio; don't count the pause as lost data.
       this.lastSeq = this.lastWindow = this.lastEventSeq = null;

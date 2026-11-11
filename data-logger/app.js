@@ -16,7 +16,7 @@ import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
   formatReading, ledDisplayColor, levelFraction, loudestIndex, meterFraction, peakOf, peakToDbfs, pickRange, recentPeak,
 } from "./signal.js";
-import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, KEYWORD_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE, UNCALIBRATED, encodeTemperatureOffset } from "./wire.js";
+import { ACCEL_RANGES_G, DATA_SERVICE, GYRO_RANGES_DPS, AUDIO_SERVICE, LOG_SERVICE, TELEMETRY_SERVICE, UNCALIBRATED, encodeTemperatureOffset } from "./wire.js";
 import { SMP_SERVICE, parseMcubootImage } from "./smp.js";
 import { Dap, Nrf54lm20a, PROBE_FILTER, openProbe } from "./swd.js";
 import { flashOverUsb, readImageFile, signingKeyCheck } from "./usbflash.js";
@@ -1381,7 +1381,7 @@ async function addBoard() {
     device = await navigator.bluetooth.requestDevice({
       filters: [only ? { name: boardName(only) } : { namePrefix: "nrf-controller" }],
       // Chrome only lets the page reach the services named here (firmware-consistency test).
-      optionalServices: [DATA_SERVICE, TELEMETRY_SERVICE, LOG_SERVICE, KEYWORD_SERVICE, SMP_SERVICE, "device_information"],
+      optionalServices: [DATA_SERVICE, TELEMETRY_SERVICE, LOG_SERVICE, AUDIO_SERVICE, SMP_SERVICE, "device_information"],
     });
   } catch (error) {
     askForPairing(false);
@@ -1586,7 +1586,7 @@ renderNotify();
 
 // ---- reconnecting -------------------------------------------------------------------------
 // A board that drops out (out of range, a radio hiccup, or asleep: the page can't always tell, as
-// a board also sleeps by itself on a voice command, a low battery or NFC idling) is tried again
+// a board also sleeps by itself on a low battery or NFC idling) is tried again
 // for as long as the page is open, so it's back once it's woken or in range; one disconnected with
 // ✕, or whose reconnecting ✕ stopped, isn't. Boards from before a reload aren't: the page starts
 // with an empty list. After RECONNECT_WINDOW_MS the attempts slow down. Chrome needs no click to reconnect a
