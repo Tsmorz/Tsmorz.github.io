@@ -10,7 +10,9 @@ import { clockRoleChanges } from "./clock-roles.js";
 import { syncBoard } from "./settings-sync.js";
 import { calibrateDialogOpen, describeCalibration, initCalibrate, renderCalibrate } from "./calibrate-view.js";
 import { FACE_TOLERANCE_DEG } from "./imu-calibration.js";
-import { initSpeech, renderSpeech } from "./speech-view.js";
+import { initSpeech, pushToTalk, renderSpeech } from "./speech-view.js";
+import { actuatorDialogOpen, initActuators, renderActuatorSummary, renderActuators } from "./actuator-view.js";
+import { initJoystick, joystickDialogOpen, renderJoystick, renderJoystickKey } from "./joystick-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
@@ -118,7 +120,7 @@ function setSettingsOpen(open) {
 $("settings").addEventListener("click", () => setSettingsOpen($("settings-drawer").hidden));
 $("settings-close").addEventListener("click", () => setSettingsOpen(false));
 window.addEventListener("resize", () => !$("settings-drawer").hidden && setSettingsOpen(true));
-const drawerDialogOpen = () => $("fw-dialog").open || $("panel-dialog").open;
+const drawerDialogOpen = () => $("fw-dialog").open || $("panel-dialog").open || $("act-dialog").open || $("joy-dialog").open;
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("settings-drawer").hidden && !drawerDialogOpen()) setSettingsOpen(false);
 });
@@ -1306,6 +1308,10 @@ function renderBoards() {
   renderThermometer();
   renderImuCalibration();
   if (calibrateDialogOpen()) renderCalibrate();
+  renderActuatorSummary();
+  if (actuatorDialogOpen()) renderActuators();
+  renderJoystickKey();
+  if (joystickDialogOpen()) renderJoystick();
   renderSpeech();
 }
 setInterval(renderBoards, 250);
@@ -1451,6 +1457,8 @@ async function connectDevice(device, onStatus = setStatus) {
   });
   board.addEventListener("change", () => watchAlerts(board));
   board.addEventListener("press", renderBoards);
+  // The joystick pressed in: push to talk, on that board.
+  board.addEventListener("key", ({ detail }) => detail.key === "stick" && pushToTalk(board, detail.pressed));
   board.addEventListener("disconnected", () => onDisconnected(board));
   boards.set(device.id, board);
   try {
@@ -2490,7 +2498,9 @@ function renderMouse() {
   $("mouse-status").textContent = !pointer
     ? "Turn the mouse on to make this board the pointer: it becomes the clock source, the only board that can be."
     : settings.enabled
-    ? "Turn the board to move the cursor; USER is the left button. Pair it as a mouse to use it."
+    ? selected?.hasActuators // firmware that points with the joystick
+      ? "The joystick moves the cursor, Left and Right click, Up and Down scroll. Pair it as a mouse to use it."
+      : "Turn the board to move the cursor; USER is the left button. Pair it as a mouse to use it."
     : "This board sends no mouse reports. Its data still streams and records.";
 }
 
@@ -2824,6 +2834,8 @@ $("fw-open").addEventListener("click", openFirmwareDialog);
 $("fw-close").addEventListener("click", () => $("fw-dialog").close());
 closeOnBackdropClick($("fw-dialog"));
 closeOnBackdropClick($("cal-dialog"));
+closeOnBackdropClick($("act-dialog"));
+closeOnBackdropClick($("joy-dialog"));
 
 // The dialog's Bluetooth / USB cable toggle.
 const firmwareRoute = () => $("fw-route").querySelector("input:checked").value;
@@ -3254,6 +3266,8 @@ $("latency-copy").addEventListener("click", async () => {
 initReplay({ getColors: () => colors });
 initCalibrate({ getBoard: () => selected, drawPose, drawBoardPicture, setStatus });
 initSpeech({ getBoard: () => selected, isRecording: () => recorder.active });
+initActuators({ getBoard: () => selected });
+initJoystick({ getBoard: () => selected });
 initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
   if (show) $("panel-dialog").close(); // a session dropped on the page opens Replay from over it

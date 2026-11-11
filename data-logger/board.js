@@ -8,7 +8,8 @@ import {
   DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, AUDIO_COMMAND, AUDIO_SERVICE, AUDIO_STREAM,
   LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET, TELEMETRY_IMU_CALIBRATION,
-  TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
+  TELEMETRY_ACTUATORS, TELEMETRY_JOYSTICK, TELEMETRY_SERVICE, decodeActuatorStatus, encodeActuatorCommand, keyFromEvent,
+  decodeJoystickTuning, encodeJoystickTuning, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
   decodeAudioChunk, decodeClockPair, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset, decodeImuCalibration, encodeImuCalibration,
   encodeClockRole, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
@@ -98,6 +99,9 @@ export class Board extends EventTarget {
     this.motionWake = null; // whether moving the board wakes it from sleep, if this firmware can
     this.clock = null; // { role, state, sourceBoard } of the radio clock sync, if this firmware has it
     this.clockPairs = 0; // radio clock pairs received this connection
+    this.actuators = null; // the actuators' and inputs' status (wire.js), if this firmware has them
+    this.actuatorsWatched = false; // whether its status notifications are on (watchActuators())
+    this.joystickTuning = null; // { deadzonePercent, slowGain, fastGain } (wire.js), if this firmware has the joystick mouse
     // Each clock source's times wrap too, on its own clock: one unwrapper per source board.
     this.sourceUnwraps = continueFrom?.sourceUnwraps ?? new Map();
     this.seen = new Set();
@@ -208,6 +212,8 @@ export class Board extends EventTarget {
     await this.connectTemperatureOffset(control);
     await this.connectImuCalibration(control);
     await this.connectClock(control, subscribe);
+    await this.connectActuators(control);
+    await this.connectJoystickTuning(control);
 
     await this.connectLog(server, subscribe);
     await this.connectAudio(server, subscribe);
@@ -339,6 +345,67 @@ export class Board extends EventTarget {
       return;
     }
     this.imuCalibration = decodeImuCalibration(await this.chars.imuCalibration.readValue());
+  }
+
+  async connectActuators(control) {
+    try {
+      this.chars.actuators = await control.getCharacteristic(TELEMETRY_ACTUATORS);
+    } catch {
+      return;
+    }
+    this.listen(this.chars.actuators, (event) => this.onActuators(event.target.value));
+    this.actuatorsWatched = false;
+    this.onActuators(await this.chars.actuators.readValue());
+  }
+
+  onActuators(view) {
+    const status = decodeActuatorStatus(view);
+    if (!status) return;
+    this.actuators = status;
+    this.dispatchEvent(new Event("actuators"));
+  }
+
+  /** Whether this firmware drives the controller's actuators (the Actuators dialog). */
+  get hasActuators() {
+    return Boolean(this.chars.actuators && this.actuators);
+  }
+
+  /**
+   * Turns the actuators' 20 Hz status on or off. Only while the Actuators dialog is open: the link
+   * carries the live streams too.
+   */
+  async watchActuators(on) {
+    if (!this.hasActuators || this.actuatorsWatched === on || !this.connected) return;
+    this.actuatorsWatched = on;
+    await this.queue(() => (on ? this.chars.actuators.startNotifications() : this.chars.actuators.stopNotifications()));
+  }
+
+  async connectJoystickTuning(control) {
+    try {
+      this.chars.joystick = await control.getCharacteristic(TELEMETRY_JOYSTICK);
+    } catch {
+      return;
+    }
+    this.joystickTuning = decodeJoystickTuning(await this.chars.joystick.readValue());
+  }
+
+  /** Saves the joystick's curve on the board (used from its next report), then reads it back. */
+  async setJoystickTuning(tuning) {
+    const bytes = encodeJoystickTuning(tuning);
+    if (!this.chars.joystick) throw new Error("this board's firmware has no joystick curve: update it");
+    if (!bytes) throw new Error("the board won't take that curve");
+    await this.write(this.chars.joystick, bytes);
+    this.joystickTuning = decodeJoystickTuning(await this.queue(() => this.chars.joystick.readValue()));
+    this.changed();
+    return this.joystickTuning;
+  }
+
+  /** Sends a test command ({ command, id, level, value }, wire.js's ACTUATOR_COMMANDS). */
+  actuatorCommand(command) {
+    const bytes = encodeActuatorCommand(command);
+    if (!this.hasActuators) throw new Error("this board's firmware has no actuators: update it");
+    if (!bytes) throw new Error("the board won't take that");
+    return this.write(this.chars.actuators, bytes);
   }
 
   /** Saves a calibration on the board (applied from its next sample on), then reads it back. */
@@ -725,6 +792,10 @@ export class Board extends EventTarget {
 
     if (event.type === "temperature") {
       this.temperatureC = temperatureFromEvent(event.peak);
+    } else if (event.type === "key_press" || event.type === "key_release") {
+      // The wired buttons; the joystick's press is push to talk (speech-view.js).
+      const detail = { key: keyFromEvent(event.peak), pressed: event.type === "key_press" };
+      this.dispatchEvent(new CustomEvent("key", { detail }));
     } else if (event.type === "press" || event.type === "release") {
       this.userPressed = event.type === "press";
       if (this.userPressed) {

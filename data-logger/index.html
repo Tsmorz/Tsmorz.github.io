@@ -155,9 +155,11 @@
 
   /* Info keys: a circled i beside a heading that opens its longer explanation in a popover, so
      the panels keep their room for plots (app.js places it under the key). */
-  button.info { display: inline-grid; place-items: center; flex: none; align-self: center; width: 18px; height: 18px; margin: -3px 0; padding: 0;
+  button.info { position: relative; display: inline-block; flex: none; align-self: center; width: 18px; height: 18px; margin: -3px 0; padding: 0;
                 border: 0; border-radius: 50%; background: none; box-shadow: none; color: var(--muted); }
-  button.info::before { content: ""; width: 14px; height: 14px; background: currentColor;
+  /* Pinned to the key's centre: grid centring inside a <button> put the glyph's left edge at the
+     centre in Chrome, so the focus ring (drawn round the key) never sat round the glyph. */
+  button.info::before { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; background: currentColor;
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.9' fill='none' stroke='black' stroke-width='1.4'/%3E%3Cpath d='M8 7.3v4.2' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='4.9' r='1' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
             mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.9' fill='none' stroke='black' stroke-width='1.4'/%3E%3Cpath d='M8 7.3v4.2' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='4.9' r='1' fill='black'/%3E%3C/svg%3E") center / contain no-repeat; }
   button.info:hover:not(:disabled), button.info.open { background: none; color: var(--signal-ink); }
@@ -412,6 +414,37 @@
   .dialog-status.bad-text { color: var(--bad); }
   /* Calibrate the IMU: the pose view large beside the steps. */
   #cal-dialog { width: min(900px, calc(100vw - 32px)); }
+  #act-dialog { width: min(900px, calc(100vw - 32px)); }
+  .act-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .act-card { border: 1px solid var(--line-strong); border-radius: 3px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .act-card h3 { margin: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; display: flex; gap: 8px; align-items: baseline; }
+  .act-card h3 .hint { text-transform: none; letter-spacing: 0; }
+  .act-card .row { align-items: center; flex-wrap: wrap; }
+  .act-card p { margin: 0; }
+  .act-card label { display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 0; }
+  .act-card select, .act-card input[type="range"] { flex: 1; min-width: 0; }
+  .act-card input[type="number"] { width: 5em; }
+  .act-card output { min-width: 4.5em; }
+  .act-plot { height: 80px; background: var(--screen); border-radius: 2px; box-shadow: inset 0 0 0 1px var(--screen-rim); }
+  .act-plot canvas { display: block; width: 100%; height: 100%; }
+  .act-inputs { display: flex; gap: 14px; align-items: center; }
+  .act-stick { position: relative; flex: none; width: 92px; height: 92px; border-radius: 50%; background: var(--screen); box-shadow: inset 0 0 0 1px var(--screen-rim); }
+  .act-stick i { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--signal); }
+  .act-keys { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+  .act-keys li { padding: 2px 8px; border-radius: 2px; font: 12px var(--mono); background: var(--lamp-off); color: var(--text-2); }
+  .act-keys li.on { background: var(--pressed-bg); color: var(--pressed-ink); box-shadow: 0 0 6px var(--pressed-glow); }
+  .act-foot { justify-content: space-between; align-items: center; margin-top: 12px; }
+  .act-foot .good-text { color: var(--good); }
+  @media (max-width: 720px) { .act-grid { grid-template-columns: minmax(0, 1fr); } }
+  #joy-dialog { width: min(760px, calc(100vw - 32px)); }
+  .joy-deck { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .joy-plot { height: 240px; }
+  .joy-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .joy-side p { margin: 0; }
+  .joy-side label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .joy-side input[type="range"] { flex: 1; min-width: 0; }
+  .joy-side output { min-width: 6.5em; text-align: right; }
+  @media (max-width: 720px) { .joy-deck { grid-template-columns: minmax(0, 1fr); } }
   .cal-deck { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; margin-top: 12px; }
   .plot.pose.cal-pose { flex: none; height: auto; min-height: 400px; }
   .cal-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -722,7 +755,7 @@
   <section>
     <h2>Sync <span class="muted">to every connected board</span></h2>
     <div class="row">
-      <button id="settings-sync" disabled title="Copies this board's mouse speed, IMU ranges and wake on motion to every connected board. Each keeps its own mouse on or off and its clock role.">Sync all boards</button>
+      <button id="settings-sync" disabled title="Copies this board's mouse speed, joystick curve, IMU ranges and wake on motion to every connected board. Each keeps its own mouse on or off and its clock role.">Sync all boards</button>
       <span class="muted" id="settings-sync-status"></span>
     </div>
   </section>
@@ -732,6 +765,7 @@
       <button id="mouse-toggle" type="button" role="switch" aria-checked="false" disabled title="Connect a board to switch its mouse on or off">Enabled</button>
       <label>Speed <input type="range" id="mouse-speed" min="10" max="300" step="10" value="100" disabled>
         <span class="num" id="mouse-speed-value">100%</span></label>
+      <button id="joy-open" type="button" disabled title="The joystick's dead zone and gains, with the curve they make">Joystick curve…</button>
     </div>
     <p class="hint" id="mouse-status">Switch the mouse off on boards you are only recording, so they don't move your cursor.</p>
   </section>
@@ -750,7 +784,15 @@
       <button id="imu-cal-clear" type="button" disabled>Clear</button>
     </div>
     <p class="hint" id="imu-cal-status">Connect a board to calibrate it.</p>
-    <div class="info-pop" id="imu-cal-info" popover><p>Each board's accelerometer reads a few tens of mg off and its gyroscope a percent or so, which tilts the orientation by up to 2° and stretches every turn. Calibrating measures this board's offsets and gains, about ten minutes in all, and the board corrects every sample before VQF, the mouse, these plots and a gateway see it.</p><p>Recordings keep the raw counts, so <code>imu.csv</code> stays as the sensor read it; its quaternions are the corrected ones, and <code>session.json</code> lists the calibration with each board.</p><p>Gains differ a little between ranges: calibrate at the ranges you record with.</p></div>
+    <div class="info-pop" id="imu-cal-info" popover><p>Each board's accelerometer reads a few tens of mg off and its gyroscope a percent or so, which tilts the orientation by up to 2° and stretches every turn. Calibrating measures this board's offsets and gains, about ten minutes in all, and the board corrects every sample before VQF, these plots and a gateway see it.</p><p>Recordings keep the raw counts, so <code>imu.csv</code> stays as the sensor read it; its quaternions are the corrected ones, and <code>session.json</code> lists the calibration with each board.</p><p>Gains differ a little between ranges: calibrate at the ranges you record with.</p></div>
+  </section>
+  <section>
+    <h2>Actuators <span class="muted">test by hand</span><button type="button" class="info" popovertarget="act-info" aria-label="About the actuators"></button></h2>
+    <div class="row">
+      <button id="act-open" type="button" disabled title="Play the TacHammer, the ERM and the servo, and watch the joystick and buttons">Test…</button>
+    </div>
+    <p class="hint" id="act-summary">Connect a board to test its actuators.</p>
+    <div class="info-pop" id="act-info" popover><p>A controller board drives a TacHammer through an I2S amp, a pancake vibration motor through a DRV2605L, and a feedback servo, and reads a joystick and four buttons. Test plays each one's library of waveforms by hand and shows what comes back.</p><p>The board finds out at start-up which parts answer. A bare board still lists what its firmware can drive, and the parts' readouts stay empty.</p></div>
   </section>
   <section>
     <h2>Clock sync <span class="muted">radio, saved on the boards</span><button type="button" class="info" popovertarget="clock-info" aria-label="About radio clock sync"></button></h2>
@@ -911,6 +953,77 @@
         </div>
       </div>
     </div>
+  </div>
+</dialog>
+
+<dialog id="joy-dialog" aria-labelledby="joy-title">
+  <div class="dialog-head"><h2 id="joy-title">Joystick curve <span class="muted" id="joy-board"></span><button type="button" class="info" popovertarget="joy-help" aria-label="How the curve works"></button></h2>
+    <button type="button" id="joy-close" aria-label="Close">✕</button></div>
+  <div class="dialog-body">
+    <div class="info-pop" id="joy-help" popover>
+      <p>How fast the cursor moves for how far the stick is pushed. Inside the dead zone it doesn't move at all, which keeps a stick that doesn't quite rest at its centre from creeping the cursor.</p>
+      <p>Past it, the speed is the slow gain times the push plus the fast gain times the push cubed. The slow gain sets fine control near the centre, the fast gain how quickly a full push crosses the screen. A full push moves the two together, in counts a second (a count is about a pixel at normal tracking speed), times the mouse speed.</p>
+      <p>Each change is saved on the board when you let go of a slider, so you can try it on the cursor straight away. The dot shows the stick's push roughly: the board learns its stick's centre and reach for itself.</p>
+    </div>
+    <div class="joy-deck">
+      <div class="act-plot joy-plot"><canvas id="joy-plot" aria-label="Cursor speed against how far the stick is pushed"></canvas></div>
+      <div class="joy-side">
+        <label>Dead zone <input type="range" id="joy-deadzone" min="0" step="1"><output class="readout" id="joy-deadzone-out"></output></label>
+        <label>Slow gain <input type="range" id="joy-slow" min="0" step="50"><output class="readout" id="joy-slow-out"></output></label>
+        <label>Fast gain <input type="range" id="joy-fast" min="0" step="50"><output class="readout" id="joy-fast-out"></output></label>
+        <p class="readout" id="joy-summary"></p>
+        <div class="row"><button id="joy-defaults" type="button">Defaults</button></div>
+      </div>
+    </div>
+    <p class="dialog-status" id="joy-status" role="status" aria-live="polite"></p>
+  </div>
+</dialog>
+
+<dialog id="act-dialog" aria-labelledby="act-title">
+  <div class="dialog-head"><h2 id="act-title">Actuators <span class="muted" id="act-board"></span><button type="button" class="info" popovertarget="act-help" aria-label="How to test the actuators"></button></h2>
+    <button type="button" id="act-close" aria-label="Close">✕</button></div>
+  <div class="dialog-body">
+    <div class="info-pop" id="act-help" popover>
+      <p>Start the TacHammer at a low level: it hits its end stops hard. Pulses (click, knock, heartbeat) are felt as taps, sines as a buzz.</p>
+      <p>The ERM's presets are effects from TI's ROM library A. Any effect number 1-123 plays too, and Rumble runs the motor at a steady level for a set time.</p>
+      <p>The servo follows the slider while you drag it. Its plot shows the command (blue) against the position its feedback wire reports (orange) over the last 10 s. Spring first measures how the feedback moves, then holds the centre and gives way when you push it.</p>
+      <p>Closing this dialog stops everything, and the servo goes limp.</p>
+    </div>
+    <div class="act-grid">
+      <section class="act-card">
+        <h3>TacHammer</h3>
+        <label>Waveform <select id="act-tac-wave"></select></label>
+        <label>Level <input type="range" id="act-tac-level" min="1" max="100" value="30"><output class="readout" id="act-tac-level-out"></output></label>
+        <div class="row"><button class="primary" id="act-tac-play" type="button" disabled>Play</button><span class="hint" id="act-tac-note"></span></div>
+      </section>
+      <section class="act-card">
+        <h3>ERM <span class="hint" id="act-erm-note"></span></h3>
+        <div class="row"><label>Preset <select id="act-erm-preset"></select></label><button id="act-erm-play" type="button" disabled>Play</button></div>
+        <div class="row"><label>Effect <input type="number" id="act-erm-effect" value="47"></label><button id="act-erm-effect-play" type="button" disabled>Play</button></div>
+        <div class="row"><label>Rumble <input type="range" id="act-erm-level" min="1" max="100" value="60"><output class="readout" id="act-erm-level-out"></output></label>
+          <label><input type="number" id="act-erm-ms" value="500" step="10"> ms</label><button id="act-erm-rumble" type="button" disabled>Rumble</button></div>
+      </section>
+      <section class="act-card">
+        <h3>Servo</h3>
+        <div class="row"><label>Pulse <input type="range" id="act-servo-pulse" step="10" disabled><output class="readout" id="act-servo-pulse-out"></output></label><button id="act-servo-center" type="button">Centre</button></div>
+        <div class="row"><label>Motion <select id="act-servo-pattern"></select></label><label>Size <input type="range" id="act-servo-amp" min="1" max="100" value="40"><output class="readout" id="act-servo-amp-out"></output></label></div>
+        <div class="row"><button id="act-servo-run" type="button" disabled>Run</button><button id="act-servo-release" type="button" disabled>Release</button></div>
+        <div class="act-plot"><canvas id="act-servo-plot" aria-label="The servo's command and its measured position over the last 10 seconds"></canvas></div>
+        <p class="readout" id="act-servo-readout"></p>
+      </section>
+      <section class="act-card">
+        <h3>Inputs</h3>
+        <div class="act-inputs">
+          <div class="act-stick" id="act-stick" aria-label="Where the joystick is"><i></i></div>
+          <div>
+            <ul class="act-keys" id="act-keys" aria-label="Buttons held"></ul>
+            <p class="readout" id="act-stick-mv"></p>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="row act-foot"><span class="readout" id="act-rail"></span><button id="act-stop" type="button" disabled>Stop all</button></div>
+    <p class="dialog-status" id="act-status" role="status" aria-live="polite"></p>
   </div>
 </dialog>
 
