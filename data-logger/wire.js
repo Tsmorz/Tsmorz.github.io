@@ -1,6 +1,7 @@
 // Wire formats shared with the firmware (src/sysid_wire.h for the recorded data streams,
 // src/dashboard_wire.h for the control service). Pure functions only, no DOM or Bluetooth, so
 // tests/dashboard/wire.test.mjs can run them in Node. Everything on the wire is little-endian.
+import { ERM_PRESETS, ERM_ROM_EFFECT_MAX, KEYS, RUMBLE_MS, SERVO_PATTERNS, SERVO_PULSE_US, TACHAMMER_WAVEFORMS } from "./actuators.js";
 
 // Control service: LED, mouse settings, latency (DASHBOARD_PROTOCOL_VERSION in dashboard_wire.h).
 export const PROTOCOL_VERSION = 2;
@@ -18,6 +19,8 @@ export const TELEMETRY_MOTION_WAKE = "6f524c01-0009-4a3c-9d21-1122334455aa";
 export const TELEMETRY_CLOCK = "6f524c01-000a-4a3c-9d21-1122334455aa";
 export const TELEMETRY_TEMPERATURE_OFFSET = "6f524c01-000b-4a3c-9d21-1122334455aa";
 export const TELEMETRY_IMU_CALIBRATION = "6f524c01-000c-4a3c-9d21-1122334455aa";
+export const TELEMETRY_ACTUATORS = "6f524c01-000d-4a3c-9d21-1122334455aa";
+export const TELEMETRY_JOYSTICK = "6f524c01-000e-4a3c-9d21-1122334455aa";
 export const DATA_SERVICE = "6f524c03-0001-4a3c-9d21-1122334455aa";
 export const DATA_IMU = "6f524c03-0002-4a3c-9d21-1122334455aa";
 export const DATA_ENVELOPE = "6f524c03-0003-4a3c-9d21-1122334455aa";
@@ -62,7 +65,12 @@ const BOARD_INFO_BYTES = 20;
 const Q14 = 16384;
 
 // enum sysid_event_type in sysid_wire.h.
-export const EVENT_TYPES = { 1: "sync", 2: "press", 3: "release", 4: "temperature", 5: "tap", 6: "double_tap", 7: "keyword" };
+export const EVENT_TYPES = {
+  1: "sync", 2: "press", 3: "release", 4: "temperature", 5: "tap", 6: "double_tap", 7: "keyword", 8: "key_press", 9: "key_release",
+};
+
+/** A key event's key ("up", "down", "left", "right", "stick"), from its peak (enum sysid_key). */
+export const keyFromEvent = (peak) => KEYS[peak] ?? "unknown";
 const CLOCK_PAIR_BYTES = 15;
 
 /** A temperature event's value in degrees C: the IMU's raw OUT_TEMP count, signed, 256 per degree from 25. */
@@ -441,4 +449,105 @@ export function crc32(bytes) {
   let c = 0xffffffff;
   for (const byte of bytes) c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
+}
+
+// The Actuators dialog's test commands and the board's status (struct dashboard_actuator_command /
+// dashboard_actuator_status, dashboard_wire.h).
+export const ACTUATOR_COMMANDS = {
+  stopAll: 1, tachammerPlay: 2, ermPreset: 3, ermEffect: 4, ermRumble: 5, servoPattern: 6, servoPulse: 7, servoRelease: 8,
+};
+export const ACTUATOR_STATUS_BYTES = 15;
+
+const inList = (list, id) => list.some((entry) => entry.id === id);
+const isLevel = (level) => Number.isInteger(level) && level >= 1 && level <= 100;
+const within = (value, low, high) => Number.isInteger(value) && value >= low && value <= high;
+
+/** Whether the firmware would take a command (dashboard_decode_actuator_command()). */
+function actuatorCommandValid({ command, id, level, value }) {
+  const c = ACTUATOR_COMMANDS;
+  switch (command) {
+    case c.stopAll:
+    case c.servoRelease:
+      return true;
+    case c.tachammerPlay:
+      return inList(TACHAMMER_WAVEFORMS, id) && isLevel(level);
+    case c.ermPreset:
+      return inList(ERM_PRESETS, id);
+    case c.ermEffect:
+      return within(value, 1, ERM_ROM_EFFECT_MAX);
+    case c.ermRumble:
+      return isLevel(level) && within(value, RUMBLE_MS.min, RUMBLE_MS.max);
+    case c.servoPattern:
+      return inList(SERVO_PATTERNS, id) && isLevel(level);
+    case c.servoPulse:
+      return within(value, SERVO_PULSE_US.min, SERVO_PULSE_US.max);
+    default:
+      return false;
+  }
+}
+
+/** Encodes a command ({ command, id, level, value }, unused fields 0) as the firmware expects; null for one it refuses. */
+export function encodeActuatorCommand({ command, id = 0, level = 0, value = 0 }) {
+  if (!actuatorCommandValid({ command, id, level, value })) return null;
+  const bytes = new Uint8Array(6);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, PROTOCOL_VERSION);
+  view.setUint8(1, command);
+  view.setUint8(2, id);
+  view.setUint8(3, level);
+  view.setUint16(4, value, true);
+  return bytes;
+}
+
+/** Decodes the board's actuator status, or null if it is not one. */
+export function decodeActuatorStatus(view) {
+  if (view.byteLength !== ACTUATOR_STATUS_BYTES || view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  const flags = view.getUint8(1);
+  const pulse = view.getUint16(5, true);
+  return {
+    railOn: Boolean(flags & 0x01),
+    tachammerReady: Boolean(flags & 0x02),
+    ermReady: Boolean(flags & 0x04),
+    servoReady: Boolean(flags & 0x08),
+    analogReady: Boolean(flags & 0x10),
+    ermPlaying: Boolean(flags & 0x20),
+    tachammerWaveform: view.getUint8(2) || null,
+    servoPattern: view.getUint8(3) || null,
+    keys: view.getUint8(4),
+    servoPulseUs: pulse || null,
+    servoFeedbackMv: view.getUint16(7, true),
+    servoRailMv: view.getUint16(9, true),
+    joystickXMv: view.getUint16(11, true),
+    joystickYMv: view.getUint16(13, true),
+  };
+}
+
+// The joystick's response curve (struct dashboard_joystick_tuning, dashboard_wire.h; joystick_mouse.h):
+// a dead zone (% of the stick's reach), then slowGain * d + fastGain * d³ counts a second.
+export const JOYSTICK_LIMITS = { deadzoneMaxPercent: 40, gainMax: 5000 }; // JOYSTICK_DEADZONE_MAX_PERCENT, JOYSTICK_GAIN_MAX
+export const JOYSTICK_DEFAULT = Object.freeze({ deadzonePercent: 8, slowGain: 450, fastGain: 1050 }); // JOYSTICK_*_DEFAULT
+
+/** Whether the firmware would take a curve (joystick_tuning_valid()). */
+export function joystickTuningValid({ deadzonePercent, slowGain, fastGain }) {
+  const within = (value, max) => Number.isInteger(value) && value >= 0 && value <= max;
+  return within(deadzonePercent, JOYSTICK_LIMITS.deadzoneMaxPercent) && within(slowGain, JOYSTICK_LIMITS.gainMax) &&
+    within(fastGain, JOYSTICK_LIMITS.gainMax) && slowGain + fastGain > 0;
+}
+
+/** Encodes a curve as dashboard_decode_joystick_tuning() expects; null for one it refuses. */
+export function encodeJoystickTuning(tuning) {
+  if (!joystickTuningValid(tuning)) return null;
+  const bytes = new Uint8Array(6);
+  const view = new DataView(bytes.buffer);
+  view.setUint8(0, PROTOCOL_VERSION);
+  view.setUint8(1, tuning.deadzonePercent);
+  view.setUint16(2, tuning.slowGain, true);
+  view.setUint16(4, tuning.fastGain, true);
+  return bytes;
+}
+
+/** Decodes the board's curve, or null if it is not one. */
+export function decodeJoystickTuning(view) {
+  if (view.byteLength !== 6 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  return { deadzonePercent: view.getUint8(1), slowGain: view.getUint16(2, true), fastGain: view.getUint16(4, true) };
 }

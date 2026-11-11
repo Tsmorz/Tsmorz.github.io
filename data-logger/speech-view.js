@@ -1,5 +1,6 @@
 // Talk, under Microphone: press it, speak to the selected board, press Stop (or wait 30 s), and
-// what the board heard is written below. The board streams its mic to the page (its live streams
+// what the board heard is written below. Holding a board's joystick in does the same, with that
+// board, for as long as it is held (pushToTalk()). The board streams its mic to the page (its live streams
 // pause meanwhile, as for any audio stream), and Whisper turns the take into text on this computer
 // (speech-worker.js). speech.js has the pure parts.
 import { decodeAdpcm } from "./adpcm.js";
@@ -54,8 +55,7 @@ function transcribe(audio) {
 }
 
 // ---- a take -------------------------------------------------------------------------------
-async function startTake() {
-  const board = getBoard();
+async function startTake(board = getBoard(), { held = false } = {}) {
   if (!board?.connected) return say("Connect a board first.", true);
   if (!board.canStreamAudio) return say(`${board.displayName}'s firmware can't stream its microphone: update it.`, true);
   if (isRecording()) return say("Stop the recording first: while the board sends audio, its live data pause.", true);
@@ -74,7 +74,7 @@ async function startTake() {
       if (fresh.track.samples >= MAX_TAKE_S * fresh.rateHz) stopTake();
     }, (adpcm, state) => decodeAdpcm(adpcm, state));
     fresh.timer = setInterval(render, 250);
-    say(`Speak to ${board.displayName}, then press Stop.`);
+    say(held ? `Speak to ${board.displayName}, then let go of its stick.` : `Speak to ${board.displayName}, then press Stop.`);
   } catch (error) {
     if (take === fresh) take = null;
     say(`${board.displayName} wouldn't send its microphone: ${error.message}.`, true);
@@ -159,6 +159,27 @@ export function renderSpeech() {
   $("transcript-copy").hidden = $("transcript-clear").hidden = lines.length === 0;
 }
 const render = renderSpeech;
+
+/**
+ * A board's joystick pressed in (pressed) or let go: push to talk. The take starts on that board
+ * and ends on its release; a take already running on another board is left alone.
+ */
+export function pushToTalk(board, pressed) {
+  if (pressed && !take && !starting) return void startTake(board, { held: true });
+  if (!pressed && take?.board === board) {
+    if (starting) {
+      // Released before the stream answered: stop as soon as it has.
+      const waiting = take;
+      const check = setInterval(() => {
+        if (starting) return;
+        clearInterval(check);
+        if (take === waiting) stopTake();
+      }, 50);
+      return;
+    }
+    stopTake();
+  }
+}
 
 export function initSpeech(options) {
   ({ getBoard, isRecording } = options);

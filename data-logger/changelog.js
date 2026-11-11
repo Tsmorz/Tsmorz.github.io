@@ -8,6 +8,27 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-10-info-keys",
+    date: "2026-11-10",
+    title: "Info keys' ring sits round the ⓘ",
+    items: ["The ring that marks an ⓘ key selected from the keyboard is now centred on it."],
+  },
+  {
+    id: "2026-11-10-controller-parts",
+    date: "2026-11-10",
+    firmware: "next",
+    title: "Joystick mouse, scroll buttons, push to talk and an Actuators test",
+    items: [
+      "The mouse follows a joystick wired to the board instead of the board's own tilting. Up and Down buttons scroll the page, and Left and Right are the mouse's buttons. USER still clicks too.",
+      "Settings › Mouse › Joystick curve… sets the stick's dead zone and how fast the cursor goes for a small push and a full one, drawn as a curve with the stick's position on it. Each board keeps its own, and Sync all boards copies it.",
+      "On a Mac, forget the board in Bluetooth settings and pair it again once after updating, or it won't scroll.",
+      "Holding the joystick in is push to talk: Talk starts with that board and stops when you let go.",
+      "Settings › Actuators › Test… plays a TacHammer, a vibration motor and a servo by hand, from a library of waveforms for each, and shows the servo's position, the joystick and the buttons as they move. Closing it stops everything.",
+      "Recordings note each button's presses and releases.",
+      "Boards charge their battery faster: 500 mA, the most any USB port gives.",
+    ],
+  },
+  {
     id: "2026-11-10-talk",
     date: "2026-11-10",
     title: "Talk to a board and see what it heard",
