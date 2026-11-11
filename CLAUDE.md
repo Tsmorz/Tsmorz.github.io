@@ -334,19 +334,24 @@ only for warnings (never an orange accent on the dark greys: it reads as a certa
 keys that invert when chosen; one typeface, Archivo, its width axis wide for the name and titles. Keep it that way: no rounded
 cards, pills, middle-dot strings or monospace labels.
 It tracks AprilTags from one or more webcams (or a built-in three-camera Demo) in Chrome/Edge: the visitor names each tag ID and enters its
-printed size, calibrates the camera with a printed ChArUco board, and sees the last `History` seconds of each tag in 3D
-(axes drawn every `Axes every` seconds, defaults 1 s and 0.1 s), relative to the camera or to a chosen tag, plus an x/y/z
-plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
+printed size, calibrates the camera with a printed ChArUco board, and sees in 3D either a **robot** the tags drive (below) or
+the last `History` seconds of each tag (Show: Robot | Tags on the Tracking card; axes drawn every `Axes every` seconds,
+defaults 1 s and 0.1 s), relative to the camera or to a chosen tag, plus an x/y/z plot and a readout table. Tags, settings and calibrations (keyed by camera label) live in `localStorage`.
 **View** on the Camera card is In person (the camera's own view: as someone facing you sees you) or Mirror (as in a
 mirror), and it is the data's as well as the picture's: in Mirror view every plotted, tabled and streamed pose is
 `TagCore.mirrorPose` of the true one (x → −x in the plotted frame, R → M·R·M with M = diag(−1, 1, 1), so still a rotation;
 quaternions become (w, x, −y, −z)), applied in `shown()` after the frame and before the tare; switching re-expresses the
 history and tares in place. The picture turns with a CSS transform and the overlay with `TagCore.displayMap`, its labels
-kept readable. Detection, fusion and calibration always use the true image. Flip (upside down) is the picture's only.
-Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is what the detector looks for (`calib`: the board;
+kept readable. Detection, fusion and calibration always use the true image. Flip (half a turn, for a camera mounted upside
+down: both axes reversed, so `displayMap` gets mirror XOR flip) is the picture's only. The 3D view starts (`view0()`) from
+behind the person looking at the camera in In person view and facing them in Mirror view (switching turns it by π), so either
+way their right is on the screen's right; it is turned 1 rad to the side so the robot's arms show past its body.
+Four tabs: Track, Calibrate, Stream and **Settings** (what is set once: the robot's roles and lengths, the detector and pose
+options, the Tags view's History / Axes every / Axis length, the default paper, and the setup guide switch). `S.tab` is the tab shown; `S.mode` is what the detector looks for (`calib`: the board;
 `track`: tags, on Track and Stream alike). The page's icon (`favicon.svg`, and the logo) is the real tag36h11 #0.
 - Layout: on a wide screen the right column (the 3D plot, then the **Now** panel) is sticky and fills the window, so nothing
-  in it needs scrolling; the 3D plot takes the height that is left, and it has Fit and Reset view (back to `VIEW0`, then fit).
+  in it needs scrolling; the 3D plot takes the height that is left, and it has Calibrate robot, Fit, Reset view (back to
+  `view0()`, then fit) and Full screen (the element's own, else a `.plot3d.full` class filling the window, as on an iPhone).
   Now is one panel: the readout table (position in cm, orientation as a unit quaternion w, x, y, z from `TagCore.quatOf`,
   distance, speed, corner fit, ± depth; click a row to plot it) over the time plot (Motion, Position or Quaternion; the
   quaternion keeps its sign continuous with `quatNear`).
@@ -417,6 +422,27 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   cleared by Clear tare or a change of "Relative to"; the stored history is re-expressed at once (`retare`). The video
   overlay always shows true poses.
 
+- **The robot** (`robot-core.js`, RobotCore, no DOM; Show: Robot, the default): a humanoid with two 7-joint arms (spherical
+  shoulder, elbow, spherical wrist; the right arm the left one's mirror image). The chest follows the Body track and each wrist
+  the track on its side. Roles are Settings → Robot (Auto: the track named Body/Chest/Torso is the body, else with three the
+  highest; the others are arms, each taking the side of the chest it is on when calibrated). One track draws one arm on a mount,
+  two draw both arms on a shoulder bar, a body adds the torso and head; only tracks seen since load (or the last frame change)
+  count, and a track out of view holds its last pose, faded. `RobotCore.ik` is analytic: the elbow lies on a circle about the
+  shoulder-wrist line, 120 swivel angles are scored and the best refined, preferring the elbow below the hand and out to the
+  side, then low, with soft joint limits and steadiness against the last elbow position (`PREFER`; the elbow switch in
+  Settings turns the preference off). A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
+  robot** (key C on the plot, voice "calibrate robot") is a tare for the robot: `RobotCore.calibrate` takes the start pose (arms
+  at the sides, forearms forward, palms in: `HOME`) from the tags now, keeping each wrist tag's turn to the home hand and
+  its shift to the home wrist in the chest's frame, so a turned wrist turns the hand in place. Until then the robot stands in
+  `HOME` wherever the tags are; the demo calibrates itself once it sees all three. The calibration is in memory only, cleared
+  by a frame change, a new camera 1, Mirror, or a new track. It reads the plotted poses with the tare taken off, so taring
+  never moves it; in Mirror view it is the visitor's reflection. Each tag is drawn riding on the robot (on the chest, on the
+  back of its wrist); joint angles show in a corner. The demo's hands are named for the body's sides (its right hand is on
+  the cameras' left).
+- **Setup guide** (`#setupDlg`): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera
+  or the demo; how many tags (one arm, two arms, body and two arms) with their IDs and sizes, which become tags named Body,
+  Left wrist and Right wrist and the robot's roles (applied by Next, Print or the phone link, never by closing); the lens
+  (optional); the start pose.
 - `index.html`: the UI. `speech-worker.js`: speech to text (above). `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
   camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
   its `TagVision` factory also runs in Node.
@@ -472,7 +498,7 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   into text with Whisper tiny.en through Transformers.js (**pinned**, `@huggingface/transformers@4.3.2`, jsDelivr then
   unpkg; WebGPU where there is one, else WebAssembly), on the computer. The model downloads on first use only. A whole
   utterance that is a command (`TagCore.voiceCommand`, `VOICE_COMMANDS`: the tabs, start/stop recording, tare, clear tare,
-  fit, reset view) runs it (`VOICE_ACTIONS`); anything else, or "Note ...", is a note (`tidySpeech`, `insertSpeech`).
+  calibrate robot, fit, reset view) runs it (`VOICE_ACTIONS`); anything else, or "Note ...", is a note (`tidySpeech`, `insertSpeech`).
 - **The board on a screen**: `/tag-tracker/#board` is a shareable link that fills any screen with the ChArUco board (nothing
   stored), for a tablet or second monitor. `TagCore.boardFit` picks whole device pixels per square with half a square of
   white round it, turning the board a quarter when that's bigger; the worker draws it (`boardImage`), so the page waits for
@@ -480,10 +506,18 @@ Three tabs: Track, Calibrate and Stream. `S.tab` is the tab shown; `S.mode` is w
   covers the board. "Show on a screen" in Calibrate step 1 gives the link as a QR code, Copy, Share (Web Share) and a new
   window. The QR code comes from `lib/qrcode-generator/` (1.4.4, MIT, vendored unchanged). With OpenCV.js installed, test
   section 6b finds all 40 corners on the screen board (turned too) and decodes the QR code back to the link.
+- **Tags on a phone**: `/tag-tracker/#tags=2:Body,0:Left%20wrist` (IDs, each with an optional name; `&f=` for a family other
+  than tag36h11) shows the tags one at a time on the same overlay as the board, as big as the screen allows in whole pixels
+  per cell (`TagCore.tagFit`, a cell and a half of white round it), with the name and number under it; tap the sides, swipe
+  or use the arrow keys for the next. "Show on a phone" on the Tags card (all your tags), each tag row's phone button (that
+  one) and the setup guide give the link as a QR code (`fillShare`, the same panel as the board's). Screens don't show true
+  millimetres, so the instructions say to measure the black square and enter it.
 - `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance
   against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating,
   the mirror-image choice, the joint fit (against one camera and against fusing poses, its covariance by Monte Carlo,
-  unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, the recording exports, notes, voice commands and the voice gate, and (with
+  unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, the recording exports, notes, voice commands and the voice gate,
+  the robot (section 5h: the home pose, IK against FK on random poses, elbows out and low, steady joints, out of reach,
+  calibration with one, two or three tags and in Mirror view, `tagFit`, its settings), and (with
   python3) the UDP bridge end to end; the motion sensors (their bytes, clock mapping, lining up, the filter with and
   without them); with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks

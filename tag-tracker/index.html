@@ -200,6 +200,9 @@ h3.sub{font-size:14px;font-weight:700;font-stretch:112%;margin:0}
 .bv-bar p{margin:0}
 .bv-bar .btn{color:#1b1f22}.bv-bar .btn.outline{border-color:#1b1f22}.bv-bar .btn.outline:hover:not(:disabled){background:#1b1f22;color:#fff}
 .bv-bar .btn.primary{background:#1b1f22;border-color:#1b1f22;color:#fff}
+.bv-cap{position:fixed;left:0;right:0;bottom:8px;text-align:center;color:#1b1f22;font-size:15px;font-weight:600;pointer-events:none}
+.bv-nav{position:fixed;top:50%;transform:translateY(-50%);width:40px;height:96px;padding:0;border:0;background:none;color:#b4bcc1;font-size:30px;line-height:1;cursor:pointer}
+.bv-nav.prev{left:0}.bv-nav.next{right:0}
 html.bv-open,html.bv-open body{overflow:hidden}
 @media (prefers-reduced-motion:reduce){.bv-bar{transition:none}}
 .bform{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;padding:12px;background:var(--well);border-left:3px solid var(--accent)}
@@ -230,7 +233,7 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .plot3d canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
 .plot3d canvas:active{cursor:grabbing}
 .plot3d .vbtns{position:absolute;right:10px;top:10px;z-index:2;display:flex;gap:6px}
-.plot3d .vbtns .btn{background:var(--panel)}
+.plot3d .vbtns .btn{background:var(--panel)}.plot3d .vbtns .btn.primary{background:var(--accent)}
 .plot3d .help{position:absolute;right:10px;bottom:8px;font-size:12px;color:var(--muted);pointer-events:none;display:flex;gap:14px}
 .plot3d .legend{position:absolute;left:10px;top:10px;display:flex;flex-direction:column;gap:5px;padding:8px 10px;background:var(--panel);font-size:13px;pointer-events:none;max-width:45%;border-left:2px solid var(--ink)}
 .legend .li{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -264,6 +267,29 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .tip .r{display:flex;align-items:center;gap:6px;justify-content:space-between}
 .tip .r span:first-child{display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}
 .toolbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+/* the robot: a prompt over the plot, and its joint angles */
+.plot3d .rhint{position:absolute;left:50%;bottom:34px;transform:translateX(-50%);z-index:2;max-width:min(460px,calc(100% - 24px));padding:8px 12px;background:var(--panel);border:1px solid var(--ink);font-size:13px;line-height:1.45;text-align:center}
+.plot3d .rhint.warn{border-color:var(--warn)}
+.plot3d .joints{position:absolute;left:10px;bottom:28px;z-index:1;padding:6px 8px;background:var(--panel);border-left:2px solid var(--ink);font-size:12px;pointer-events:none}
+.joints table{width:auto}.joints th,.joints td{padding:1px 6px;border:0;font-size:12px}.joints th{border-bottom:1px solid var(--rule2)}
+.joints td.num{min-width:44px}.joints .far{color:var(--warn);font-weight:600}
+/* full screen: the browser's own, or (where an element can't go full screen, as on an iPhone) the window */
+.plot3d:fullscreen{margin:0;background:var(--panel)}
+.plot3d:-webkit-full-screen{margin:0;background:var(--panel);width:100%;height:100%}
+.plot3d.full{position:fixed;inset:0;z-index:100;margin:0;height:auto!important;background:var(--panel)}
+html.p3-full,html.p3-full body{overflow:hidden}
+html.p3-full #view-track{z-index:101} /* sticky makes its own stacking context: lift it over the top bar */
+/* settings: groups of fields */
+.sgrid{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center}
+.sgrid+.sgrid{margin-top:12px}
+.lens .num{width:64px}
+/* the setup guide */
+.setup .sstep{display:flex;flex-direction:column;gap:10px}
+.setup .sstep h3{margin:4px 0 0;font-size:15px;font-weight:700;font-stretch:112%}
+.setup .sstep p{margin:0;line-height:1.55;color:var(--ink2)}
+.setup .roles{display:grid;grid-template-columns:auto auto auto;gap:8px 12px;align-items:center;justify-content:start}
+.setup .pose{display:block;width:100%;max-width:300px;height:auto;color:var(--ink);margin:0 auto}
+.setup .dots{display:flex;gap:6px}.setup .dots i{width:18px;height:3px;background:var(--rule2)}.setup .dots i.on{background:var(--accent)}
 
 /* calibration */
 .steps{display:flex;flex-direction:column}
@@ -335,6 +361,9 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
   <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/></symbol>
+  <symbol id="i-unfull" viewBox="0 0 24 24"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></symbol>
 </svg>
 
 <header class="topbar">
@@ -345,6 +374,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <button role="tab" id="tab-track" aria-selected="true" aria-controls="view-track">Track</button>
     <button role="tab" id="tab-calib" aria-selected="false" aria-controls="calibCard">Calibrate</button>
     <button role="tab" id="tab-stream" aria-selected="false" aria-controls="streamCard">Stream</button>
+    <button role="tab" id="tab-settings" aria-selected="false" aria-controls="settingsCard">Settings</button>
   </div>
   <div class="spacer"></div>
   <div class="brk"></div>
@@ -360,7 +390,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <button id="startBtn" class="btn primary"><svg class="i"><use href="#i-cam"/></svg><span>Start</span></button>
   </div>
   <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
-  <button id="voiceBtn" class="btn sq mic" aria-pressed="false" aria-label="Voice" title="Voice (or press V): say a tab’s name, “Start recording”, “Stop recording”, “Tare” or “Fit”; anything else becomes a note"><svg class="i"><use href="#i-mic"/></svg></button>
+  <button id="voiceBtn" class="btn sq mic" aria-pressed="false" aria-label="Voice" title="Voice (or press V): say a tab’s name, “Start recording”, “Stop recording”, “Tare”, “Calibrate robot” or “Fit”; anything else becomes a note"><svg class="i"><use href="#i-mic"/></svg></button>
   <button id="printBtn" class="btn" title="Print AprilTags and the calibration board" aria-haspopup="dialog"><svg class="i"><use href="#i-print"/></svg><span>Print</span></button>
   <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
 </header>
@@ -377,11 +407,11 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button role="radio" data-arr="custom" aria-checked="false" title="Where you put them: drag a view to move it, its corner to resize it">Custom</button>
         </span>
         <span class="seg sm" role="radiogroup" aria-label="View">
-          <button role="radio" data-view="person" aria-checked="true" title="As someone facing you sees you: raise your right hand and it rises on the left of the screen. Plots and data are the camera's own.">In person</button>
-          <button role="radio" data-view="mirror" aria-checked="false" title="As in a mirror: raise your right hand and it rises on the right. The picture, the plots and the data (x, and orientations) are all mirrored.">Mirror</button>
+          <button role="radio" data-view="person" aria-checked="true" title="As someone facing you sees you: raise your right hand and it rises on the left of the picture. Plots and data are the camera's own, and the 3D view starts behind you.">In person</button>
+          <button role="radio" data-view="mirror" aria-checked="false" title="As in a mirror: raise your right hand and it rises on the right. The picture, the plots and the data (x, and orientations) are all mirrored, and the 3D view starts facing you.">Mirror</button>
         </span>
         <span class="seg sm" role="group" aria-label="Picture">
-          <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture upside down, for a camera mounted that way. Only the picture changes.">Flip</button>
+          <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture half a turn, for a camera mounted upside down. Only the picture changes.">Flip</button>
         </span>
         <span id="focusWrap" class="field" hidden><span id="focusLbl">Lock focus</span><button id="focusSw" class="switch" role="switch" aria-checked="false" aria-labelledby="focusLbl"></button></span>
       </div>
@@ -414,7 +444,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       <div class="rec-b">
         <div class="row"><label class="sub" for="notes" style="font-weight:700">Notes</label><span class="spacer"></span><button class="btn sm outline mic" id="dictBtn" aria-pressed="false" title="Speak a note (or press V)"><svg class="i"><use href="#i-mic"/></svg><span>Dictate</span></button></div>
         <textarea id="notes" class="input" spellcheck="true" placeholder="One line per note. While recording, each line starts with the time you began it."></textarea>
-        <p class="hint">Press V and speak. “Track”, “Calibrate”, “Stream”, “Start recording”, “Stop recording”, “Tare”, “Clear tare”, “Fit” and “Reset view” are commands; anything else is a note. Speech stays on this computer; the model downloads once (40 MB, or 120 MB on the graphics card).</p>
+        <p class="hint">Press V and speak. “Track”, “Calibrate”, “Stream”, “Settings”, “Start recording”, “Stop recording”, “Tare”, “Clear tare”, “Calibrate robot”, “Fit” and “Reset view” are commands; anything else is a note. Speech stays on this computer; the model downloads once (40 MB, or 120 MB on the graphics card).</p>
       </div>
     </section>
 
@@ -435,6 +465,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <input id="addId" class="input sm num mono" type="number" min="0" step="1" placeholder="ID" inputmode="numeric">
           <button class="btn sm outline" type="submit"><svg class="i"><use href="#i-plus"/></svg>Add tag</button>
         </form>
+        <button class="btn sm outline" id="tagsPhone" type="button" aria-expanded="false" aria-controls="tagShare" title="Show your tags on a phone or tablet: scan a code, and the phone's screen shows each tag in turn"><svg class="i"><use href="#i-phone"/></svg>Show on a phone</button>
       </div>
       <div class="scroll">
         <table>
@@ -445,6 +476,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       <div class="card-b" id="tagsFoot">
         <p class="hint" id="noTags">No tags yet. Show one to the camera and it will appear here to name, or add one by its ID.</p>
         <div class="chips" id="unknown" hidden><span class="small muted">Seen, not named:</span></div>
+        <div class="share" id="tagShare" hidden></div>
       </div>
       <div class="bodies" aria-labelledby="h-bodies">
         <div class="row">
@@ -470,37 +502,6 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         <p class="hint" id="boardsHint">An nrf-controller board (XIAO nRF54LM20A Sense) fixed to a tag or an object sends its gyro and VQF orientation over Bluetooth, 208 times a second. Once it has learned how it sits, Filtered poses use it: steadier turns, and no mirror-image doubt even with one camera.</p>
         <p class="hint" id="boardMsg" role="status" hidden></p>
         <div id="boardList"></div>
-      </div>
-      <div class="det">
-        <span class="field">Detector
-          <span class="seg sm" role="radiogroup" aria-label="Detector">
-            <button role="radio" data-q="precise" aria-checked="true" title="Full-resolution corners, about 0.1 px">Precise</button>
-            <button role="radio" data-q="fast" aria-checked="false" title="Half-resolution search, about 3× faster">Fast</button>
-          </span>
-        </span>
-        <span class="field">Search
-          <span class="seg sm" role="radiogroup" aria-label="Search">
-            <button role="radio" data-search="predicted" aria-checked="true" title="Once tags are found, search only where they should be next; the whole picture every 10th frame, and whenever one isn't where it should be">Predicted</button>
-            <button role="radio" data-search="whole" aria-checked="false" title="Search the whole picture every frame">Whole picture</button>
-          </span>
-        </span>
-        <span class="field">Pose
-          <span class="seg sm" role="radiogroup" aria-label="Pose">
-            <button role="radio" data-pose="raw" aria-checked="false" title="OpenCV's IPPE pose of each tag, frame by frame">Raw</button>
-            <button role="radio" data-pose="refined" aria-checked="false" title="Refined by Levenberg–Marquardt on SE(3), frame by frame">Refined</button>
-            <button role="radio" data-pose="filtered" aria-checked="true" title="Refined, then a Kalman filter on SE(3) with a constant-velocity model">Filtered</button>
-          </span>
-        </span>
-        <span class="field" id="motionField">Motion
-          <span class="seg sm" role="radiogroup" aria-label="Filter tuning">
-            <button role="radio" data-motion="smooth" aria-checked="false" title="Smoothest; lags on sudden moves">Smooth</button>
-            <button role="radio" data-motion="balanced" aria-checked="true">Balanced</button>
-            <button role="radio" data-motion="responsive" aria-checked="false" title="Least lag; less smoothing">Responsive</button>
-          </span>
-        </span>
-        <span class="field"><span id="cmpLbl">Compare with raw</span><button id="cmpSw" class="switch" role="switch" aria-checked="false" aria-labelledby="cmpLbl"></button></span>
-        <label class="field">Unlisted tags <input id="defSize" class="input sm num mono" type="number" min="5" max="2000" step="1"><span class="unit">mm</span></label>
-        <label class="field" id="fovField">Field of view <input id="hfov" class="input sm num mono" type="number" min="20" max="170" step="1"><span class="unit">° (until calibrated)</span></label>
       </div>
     </section>
 
@@ -592,19 +593,25 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       <div class="card-h">
         <h2 id="h-3d">Tracking</h2>
         <div class="toolbar">
-          <label class="field">History <input id="span" class="input sm num mono" type="number" min="0.1" max="30" step="0.1"><span class="unit">s</span></label>
-          <label class="field">Axes every <input id="every" class="input sm num mono" type="number" min="0.01" max="10" step="0.01"><span class="unit">s</span></label>
-          <label class="field">Axis length <input id="axisLen" class="input sm num mono" type="number" min="0.1" max="200" step="0.5"><span class="unit">cm</span></label>
+          <span class="seg sm" role="radiogroup" aria-label="Show">
+            <button role="radio" data-show3d="robot" aria-checked="true" title="A robot whose arms follow the wrist tags and whose body follows the chest tag">Robot</button>
+            <button role="radio" data-show3d="tags" aria-checked="false" title="Each tag's trail and axes over the last few seconds">Tags</button>
+          </span>
           <label class="field">Relative to <select id="frameSel" class="select sm"></select></label>
         </div>
       </div>
       <div class="plot3d">
         <div class="vbtns">
+          <button class="btn sm primary" id="robotCalBtn" title="Stand in the start pose (arms at your sides, forearms forward, palms in), then press this (or C) to line the robot up with you">Calibrate robot</button>
+          <button class="btn sm" id="robotClearBtn" hidden title="Forget the robot's calibration: it stands in its start pose again">Clear</button>
           <button class="btn sm outline" id="resetViewBtn" title="Back to the starting angle, fitted to the tags (or press R)"><svg class="i"><use href="#i-reset"/></svg>Reset view</button>
           <button class="btn sm outline" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
+          <button class="btn sm outline sq" id="fullBtn" aria-label="Full screen" title="Full screen (Esc to leave)"><svg class="i"><use href="#i-full"/></svg></button>
         </div>
-        <canvas id="plot" tabindex="0" role="img" aria-label="3D plot of each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view."></canvas>
+        <canvas id="plot" tabindex="0" role="img" aria-label="3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view, C to calibrate the robot."></canvas>
         <div class="legend" id="legend3d"></div>
+        <div class="joints" id="joints" hidden></div>
+        <div class="rhint" id="robotHint" role="status" hidden></div>
         <div class="help hide-sm"><span>Drag to orbit</span><span>Shift-drag to pan</span><span>Scroll to zoom</span></div>
       </div>
     </section>
@@ -678,6 +685,93 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       </div>
     </div>
   </section>
+  <!-- Settings: what you set once, kept on this computer -->
+  <section class="card" id="settingsCard" role="tabpanel" aria-labelledby="h-settings" hidden>
+    <div class="card-h"><h2 id="h-settings">Settings</h2><div class="spacer"></div><span class="small muted">Kept in this browser.</span></div>
+    <div class="steps">
+      <div class="step">
+        <h3>Robot</h3>
+        <p>Which track drives what. Auto takes the tag or object named Body (or Chest) as the body, and the others as the arms, each on the side of the body it is on.</p>
+        <div class="sgrid">
+          <label class="field">Body <select id="roleBody" class="select sm"></select></label>
+          <label class="field">Left arm <select id="roleLeft" class="select sm"></select></label>
+          <label class="field">Right arm <select id="roleRight" class="select sm"></select></label>
+        </div>
+        <div class="sgrid lens">
+          <label class="field">Upper arm <input id="lenUpper" class="input sm num mono" type="number" min="5" max="100" step="0.5"><span class="unit">cm</span></label>
+          <label class="field">Forearm <input id="lenFore" class="input sm num mono" type="number" min="5" max="100" step="0.5"><span class="unit">cm</span></label>
+          <label class="field" title="From the middle of the chest to each shoulder">Shoulders apart <input id="lenHalf" class="input sm num mono" type="number" min="5" max="100" step="0.5"><span class="unit">cm, each side</span></label>
+          <label class="field" title="How far the shoulders sit above the chest tag">Shoulders above the tag <input id="lenUp" class="input sm num mono" type="number" min="0" max="100" step="0.5"><span class="unit">cm</span></label>
+          <button class="btn sm" id="lenReset" type="button">Default lengths</button>
+        </div>
+        <div class="sgrid">
+          <span class="field"><span id="elbowLbl">Elbows out and below the hands</span><button id="elbowSw" class="switch" role="switch" aria-checked="true" aria-labelledby="elbowLbl" title="An arm with 7 joints can reach a hand pose with its elbow anywhere round a circle. On: the elbow sits out to the side and below the hand where it can. Off: it stays where it was."></button></span>
+          <span class="field"><span id="jointsLbl">Show joint angles</span><button id="jointsSw" class="switch" role="switch" aria-checked="true" aria-labelledby="jointsLbl"></button></span>
+        </div>
+      </div>
+      <div class="step">
+        <h3>Detection and pose</h3>
+        <div class="sgrid">
+          <span class="field">Detector
+            <span class="seg sm" role="radiogroup" aria-label="Detector">
+              <button role="radio" data-q="precise" aria-checked="true" title="Full-resolution corners, about 0.1 px">Precise</button>
+              <button role="radio" data-q="fast" aria-checked="false" title="Half-resolution search, about 3× faster">Fast</button>
+            </span>
+          </span>
+          <span class="field">Search
+            <span class="seg sm" role="radiogroup" aria-label="Search">
+              <button role="radio" data-search="predicted" aria-checked="true" title="Once tags are found, search only where they should be next; the whole picture every 10th frame, and whenever one isn't where it should be">Predicted</button>
+              <button role="radio" data-search="whole" aria-checked="false" title="Search the whole picture every frame">Whole picture</button>
+            </span>
+          </span>
+          <span class="field">Pose
+            <span class="seg sm" role="radiogroup" aria-label="Pose">
+              <button role="radio" data-pose="raw" aria-checked="false" title="OpenCV's IPPE pose of each tag, frame by frame">Raw</button>
+              <button role="radio" data-pose="refined" aria-checked="false" title="Refined by Levenberg–Marquardt on SE(3), frame by frame">Refined</button>
+              <button role="radio" data-pose="filtered" aria-checked="true" title="Refined, then a Kalman filter on SE(3) with a constant-velocity model">Filtered</button>
+            </span>
+          </span>
+          <span class="field" id="motionField">Motion
+            <span class="seg sm" role="radiogroup" aria-label="Filter tuning">
+              <button role="radio" data-motion="smooth" aria-checked="false" title="Smoothest; lags on sudden moves">Smooth</button>
+              <button role="radio" data-motion="balanced" aria-checked="true">Balanced</button>
+              <button role="radio" data-motion="responsive" aria-checked="false" title="Least lag; less smoothing">Responsive</button>
+            </span>
+          </span>
+          <span class="field"><span id="cmpLbl">Compare with raw</span><button id="cmpSw" class="switch" role="switch" aria-checked="false" aria-labelledby="cmpLbl"></button></span>
+          <label class="field">Unlisted tags <input id="defSize" class="input sm num mono" type="number" min="5" max="2000" step="1"><span class="unit">mm</span></label>
+          <label class="field" id="fovField">Field of view <input id="hfov" class="input sm num mono" type="number" min="20" max="170" step="1"><span class="unit">° (until calibrated)</span></label>
+        </div>
+      </div>
+      <div class="step">
+        <h3>Tags view</h3>
+        <p>How much of each tag's motion the 3D view shows when it shows tags rather than the robot.</p>
+        <div class="sgrid">
+          <label class="field">History <input id="span" class="input sm num mono" type="number" min="0.1" max="30" step="0.1"><span class="unit">s</span></label>
+          <label class="field">Axes every <input id="every" class="input sm num mono" type="number" min="0.01" max="10" step="0.01"><span class="unit">s</span></label>
+          <label class="field">Axis length <input id="axisLen" class="input sm num mono" type="number" min="0.1" max="200" step="0.5"><span class="unit">cm</span></label>
+        </div>
+      </div>
+      <div class="step">
+        <h3>Printing</h3>
+        <div class="sgrid">
+          <span class="field">Paper
+            <span class="seg sm" role="radiogroup" aria-label="Paper">
+              <button type="button" role="radio" data-paper="a4" aria-checked="false" title="210 × 297 mm: Europe and most of the world">A4</button>
+              <button type="button" role="radio" data-paper="letter" aria-checked="false" title="8.5 × 11 in: the US, Canada, Mexico">US Letter</button>
+            </span>
+          </span>
+        </div>
+      </div>
+      <div class="step">
+        <h3>Setup guide</h3>
+        <div class="sgrid">
+          <span class="field"><span id="setupLbl">Show the setup guide when the page opens</span><button id="setupSw" class="switch" role="switch" aria-checked="true" aria-labelledby="setupLbl"></button></span>
+          <button class="btn sm outline" id="setupOpen" type="button">Open the setup guide</button>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
   <form method="dialog" id="printForm" novalidate>
@@ -714,8 +808,65 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     <div class="dlg-f"><span class="small muted" id="printSummary"></span><span class="spacer"></span><button type="button" class="btn sm" data-close>Cancel</button><button class="btn sm primary" id="printGo">Print</button></div>
   </form>
 </dialog>
+<dialog class="dlg setup" id="setupDlg" aria-labelledby="h-setup">
+  <form method="dialog" id="setupForm" novalidate>
+    <div class="dlg-h"><h2 id="h-setup">Set up</h2><span class="dots" id="setupDots" aria-hidden="true"><i></i><i></i><i></i><i></i></span><button type="button" class="btn sm sq" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="dlg-b">
+      <div class="sstep" data-step="0">
+        <h3>1. A camera</h3>
+        <p>Tag Tracker finds AprilTags in your camera's picture and works out where each one is in 3D. Up to three tags drive a robot: one on your chest and one on each wrist. Video stays on this computer.</p>
+        <div class="row"><button type="button" class="btn sm primary" id="setupStart"><svg class="i"><use href="#i-cam"/></svg>Start camera</button><button type="button" class="btn sm outline" id="setupDemo">Try the demo instead</button></div>
+        <span class="field">View
+          <span class="seg sm" role="radiogroup" aria-label="View">
+            <button type="button" role="radio" data-view="person" aria-checked="true" title="As someone facing you sees you. The 3D view starts behind you, so the robot moves the way you do.">In person</button>
+            <button type="button" role="radio" data-view="mirror" aria-checked="false" title="As in a mirror. The 3D view starts facing you, and the robot is your reflection.">Mirror</button>
+          </span>
+        </span>
+      </div>
+      <div class="sstep" data-step="1" hidden>
+        <h3>2. Your tags</h3>
+        <p>How many tags? One drives one arm, two drive both arms, and a third on your chest adds the body. Use tag36h11 tags: print them, or show them on a phone.</p>
+        <span class="seg sm" role="radiogroup" aria-label="How many tags">
+          <button type="button" role="radio" data-setn="1" aria-checked="false">One arm</button>
+          <button type="button" role="radio" data-setn="2" aria-checked="false">Two arms</button>
+          <button type="button" role="radio" data-setn="3" aria-checked="true">Body and two arms</button>
+        </span>
+        <div class="roles" id="setupRoles"></div>
+        <p class="hint">Size is the black square. On a phone, measure it on the screen and enter that.</p>
+        <div class="row"><button type="button" class="btn sm outline" id="setupPhone" aria-expanded="false"><svg class="i"><use href="#i-phone"/></svg>Show on a phone</button><button type="button" class="btn sm outline" id="setupPrint"><svg class="i"><use href="#i-print"/></svg>Print</button></div>
+        <div class="share" id="setupShare" hidden></div>
+      </div>
+      <div class="sstep" data-step="2" hidden>
+        <h3>3. The lens (optional)</h3>
+        <p>Distances are a guess until the camera is calibrated: show it a printed or on-screen board from a dozen angles and it learns its lens. A minute's work, and kept for next time. You can skip this and come back to the Calibrate tab later.</p>
+        <div class="row"><button type="button" class="btn sm outline" id="setupCalib">Calibrate the camera now</button></div>
+      </div>
+      <div class="sstep" data-step="3" hidden>
+        <h3>4. The start pose</h3>
+        <svg class="pose" viewBox="0 0 300 160" role="img" aria-label="The start pose, from the front and from the side: arms hanging at your sides, elbows bent so the forearms point forward, a tag on the chest and one on each wrist" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="75" cy="20" r="10"/><path d="M53 38h44M60 38l3 50h24l3-50M53 38l-2 40M97 38l2 40M67 88l-3 50M83 88l3 50"/>
+          <circle cx="51" cy="82" r="4"/><circle cx="99" cy="82" r="4"/>
+          <rect x="70" y="47" width="10" height="10" fill="currentColor" stroke="none"/>
+          <circle cx="215" cy="20" r="10"/><path d="M215 31v57M219 38v36h38M215 88l-4 50M215 88l4 50"/>
+          <rect x="219" y="46" width="5" height="10" fill="currentColor" stroke="none"/><rect x="246" y="66" width="8" height="5" fill="currentColor" stroke="none"/>
+          <g fill="currentColor" stroke="none" font-family="Archivo, sans-serif" font-size="12" text-anchor="middle"><text x="75" y="156">Front</text><text x="225" y="156">Side</text></g>
+        </svg>
+        <p>Face the camera with your arms at your sides, elbows bent so your forearms point forward, palms facing each other. Hold still and press <b>Calibrate robot</b> above the 3D view (or press C, or say “calibrate robot”). From then on the robot follows you; press it again whenever it drifts.</p>
+      </div>
+    </div>
+    <div class="dlg-f">
+      <span class="field"><span id="setupShowLbl">Show this when the page opens</span><button type="button" id="setupShowSw" class="switch" role="switch" aria-checked="true" aria-labelledby="setupShowLbl"></button></span>
+      <span class="spacer"></span>
+      <button type="button" class="btn sm" id="setupBack">Back</button>
+      <button type="button" class="btn sm primary" id="setupNext">Next</button>
+    </div>
+  </form>
+</dialog>
 <div class="board-view" id="boardView" hidden>
   <canvas id="boardCanvas" role="img" aria-label="ChArUco calibration board, 9 by 6 squares"></canvas>
+  <div class="bv-cap" id="bvCap" hidden></div>
+  <button class="bv-nav prev" id="bvPrev" type="button" aria-label="Previous tag" hidden>‹</button>
+  <button class="bv-nav next" id="bvNext" type="button" aria-label="Next tag" hidden>›</button>
   <div class="bv-bar" id="bvBar">
     <p id="bvMsg">Loading the board…</p>
     <div class="row"><button class="btn sm primary" id="bvFull">Full screen</button><button class="btn sm outline" id="bvClose">Close</button></div>
@@ -729,6 +880,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 </footer>
 
 <script src="tracker-core.js"></script>
+<script src="robot-core.js"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
 (() => {
@@ -745,7 +897,11 @@ const store = {
 };
 
 // ---------------- state ----------------
-const VIEW0 = { yaw: -0.65, pitch: 0.42 }; // the 3D plot's starting angle, and where Reset view goes back to
+// The 3D view's starting angle, and where Reset view goes back to: from behind you, looking at the camera (In person),
+// or facing you, like a mirror (Mirror view). Either way your right is on the screen's right.
+// Turned a little to the side (by 1 rad), so a robot's arms show past its body.
+const VIEW0 = { yaw: Math.PI - 1, pitch: 0.45 };
+const view0 = () => ({ yaw: S.settings.mirror ? -1 : Math.PI - 1, pitch: VIEW0.pitch });
 const S = {
   settings: C.clampSettings(store.get('settings', {})),
   tags: store.get('tags', []), // {id, name, size (m), slot}
@@ -776,6 +932,7 @@ const S = {
   // Tare: per track, the orientation (in the plotted frame) that reads as the identity; kept until cleared or the frame changes
   tare: new Map(),
 };
+Object.assign(S.view, view0());
 const plot = $('plot'), tplot = $('tplot');
 
 // ---------------- theme ----------------
@@ -796,7 +953,7 @@ let K = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement), g = (n) => cs.getPropertyValue('--' + n).trim();
   K = { text: g('ink'), text2: g('ink2'), muted: g('muted'), grid: g('grid'), axis: g('axis'), surface: g('panel'), border: g('rule2'),
-    x: g('x'), y: g('y'), z: g('z'), unknown: g('unknown'), accent: g('accent'), good: g('good'), slots: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => g('s' + i)) };
+    x: g('x'), y: g('y'), z: g('z'), unknown: g('unknown'), accent: g('accent'), good: g('good'), warn: g('warn'), well: g('well'), rule: g('rule'), slots: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => g('s' + i)) };
 }
 
 // ---------------- tags and objects ----------------
@@ -832,8 +989,9 @@ function renderTags() {
       <td><label class="sr" for="tn${t.id}">Name of tag ${t.id}</label><input id="tn${t.id}" class="input sm tagname" maxlength="40" placeholder="Name, e.g. Left hand"></td>
       <td class="num"><span class="field"><label class="sr" for="ts${t.id}">Black square size of tag ${t.id}, mm</label><input id="ts${t.id}" class="input sm num mono" type="number" min="5" max="2000" step="0.5"><span class="unit">mm</span></span></td>
       <td><span class="seen" id="seen${t.id}"><span class="dot"></span><span>Not seen</span></span>${S.bodies.filter((b) => b.members.some((x) => x.id === t.id)).map((b) => `<div class="small muted">in ${escapeHtml(b.name || 'Object')}</div>`).join('')}</td>
-      <td style="white-space:nowrap"><button class="btn sm sq" title="Print this tag" aria-label="Print tag ${t.id}"><svg class="i"><use href="#i-print"/></svg></button><button class="btn sm sq danger" title="Remove" aria-label="Remove tag ${t.id}"><svg class="i"><use href="#i-x"/></svg></button></td>`;
-    const [nm, sz] = tr.querySelectorAll('input'), [pr, rm] = tr.querySelectorAll('button');
+      <td style="white-space:nowrap"><button class="btn sm sq" title="Show this tag on a phone" aria-label="Show tag ${t.id} on a phone"><svg class="i"><use href="#i-phone"/></svg></button><button class="btn sm sq" title="Print this tag" aria-label="Print tag ${t.id}"><svg class="i"><use href="#i-print"/></svg></button><button class="btn sm sq danger" title="Remove" aria-label="Remove tag ${t.id}"><svg class="i"><use href="#i-x"/></svg></button></td>`;
+    const [nm, sz] = tr.querySelectorAll('input'), [ph, pr, rm] = tr.querySelectorAll('button');
+    ph.onclick = () => showTagShare([{ id: t.id, name: t.name }]);
     nm.value = t.name; sz.value = +(t.size * 1000).toFixed(1);
     nm.oninput = () => { t.name = nm.value.trim(); saveTags(); refreshFrameSel(); refreshTplotSel(); };
     sz.onchange = () => { const v = +sz.value; if (v >= 5 && v <= 2000) { t.size = v / 1000; saveTags(); resetTracks(); } else sz.value = +(t.size * 1000).toFixed(1); };
@@ -937,7 +1095,7 @@ function refreshFrameSel() {
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : 'camera';
   if (sel.value !== cur) { S.settings.frame = sel.value; store.set('settings', S.settings); }
 }
-function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.tare.clear(); paintTare(); S.view.fitted = false; refreshFrameSel(); refreshTplotSel(); }
+function setFrame(v) { S.settings.frame = v; store.set('settings', S.settings); resetTracks(); S.tare.clear(); paintTare(); robotReset(); S.view.fitted = false; refreshFrameSel(); refreshTplotSel(); }
 // ---------------- tare ----------------
 // Re-express a track's stored history under a new tare (null: none), so the trail and the plot change at once.
 function retare(key, R0) {
@@ -1208,7 +1366,7 @@ function onCamsChanged() {
   const first = S.cams.length ? S.cams[0].key : null;
   S.cams.forEach((c, i) => { c.n = i + 1; });
   S.running = S.cams.length > 0;
-  if (first !== S.firstKey) { S.firstKey = first; resetTracks(); S.tare.clear(); paintTare(); } // the rig's frame moved
+  if (first !== S.firstKey) { S.firstKey = first; resetTracks(); S.tare.clear(); paintTare(); robotReset(); } // the rig's frame moved
   placeCams();
   $('stage').hidden = S.running;
   $('stages').classList.toggle('multi', S.cams.length > 1);
@@ -1592,16 +1750,18 @@ function fuse(c, m, meas, wall) {
 function clearOverlay(c) { const x = c.overlay.getContext('2d'); x.clearRect(0, 0, c.overlay.width, c.overlay.height); }
 function clearOverlays() { for (const c of S.cams) { clearOverlay(c); c.last = null; c.lastBoard = null; } }
 // Map a camera's image pixels to its overlay canvas (the video is letterboxed with object-fit: contain).
-// Mirror and Flip turn the video with CSS and these points with it; the text stays readable.
+// Mirror and Flip turn the video with CSS and these points with it; the text stays readable. Flip is half a turn,
+// so it reverses left and right as well as top and bottom.
 function overlayMap(c) {
   const r = c.overlay.getBoundingClientRect(), dpr = devicePixelRatio || 1;
   const W = Math.max(1, Math.round(r.width * dpr)), H = Math.max(1, Math.round(r.height * dpr));
   if (c.overlay.width !== W || c.overlay.height !== H) { c.overlay.width = W; c.overlay.height = H; }
   const vw = c.video.videoWidth || 1, vh = c.video.videoHeight || 1;
-  return { s: Math.min(W / vw, H / vh), P: C.displayMap(W, H, vw, vh, S.settings.mirror, S.settings.flip), dpr, W, H, k: Math.min(1, Math.max(0.8, r.width / 560)) };
+  return { s: Math.min(W / vw, H / vh), P: C.displayMap(W, H, vw, vh, S.settings.mirror !== S.settings.flip, S.settings.flip), dpr, W, H, k: Math.min(1, Math.max(0.8, r.width / 560)) };
 }
 function paintPicture() {
-  $('stages').style.setProperty('--sx', S.settings.mirror ? -1 : 1);
+  // Flip turns the picture half a turn: left-right and top-bottom both (with Mirror, top-bottom only)
+  $('stages').style.setProperty('--sx', S.settings.mirror !== S.settings.flip ? -1 : 1);
   $('stages').style.setProperty('--sy', S.settings.flip ? -1 : 1);
   document.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-checked', String((b.dataset.view === 'mirror') === S.settings.mirror)));
   $('flipBtn').setAttribute('aria-pressed', String(S.settings.flip));
@@ -1617,7 +1777,8 @@ document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => {
   for (const h of [S.hist, S.rawHist]) for (const id of h.ids()) for (const smp of h.get(id)) { const q = C.mirrorPose(smp); smp.R = q.R; smp.t = q.t; }
   for (const [k, R0] of S.tare) S.tare.set(k, C.mirrorR(R0));
   S.view.target = [-S.view.target[0], S.view.target[1], S.view.target[2]];
-  lastTable = 0; paintPicture(); redrawOverlays();
+  S.view.yaw += Math.PI; // the view turns round with the data: behind you in person, facing you in a mirror
+  robotReset(); lastTable = 0; paintPicture(); redrawOverlays();
 });
 $('flipBtn').onclick = () => { S.settings.flip = !S.settings.flip; store.set('settings', S.settings); paintPicture(); redrawOverlays(); };
 paintPicture();
@@ -1813,6 +1974,14 @@ function alpha(col, a) {
   return col;
 }
 function fitView() {
+  if (S.settings.show3d === 'robot' && RB.pts.length) {
+    // the robot: fitted to its own points, without the camera, so it fills the view
+    const lo = [0, 1, 2].map((i) => Math.min(...RB.pts.map((p) => p[i]))), hi = [0, 1, 2].map((i) => Math.max(...RB.pts.map((p) => p[i])));
+    S.view.target = lo.map((v, i) => (v + hi[i]) / 2);
+    S.view.dist = Math.max(0.6, 1.6 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]));
+    S.view.fitted = true;
+    return;
+  }
   const pts = [];
   for (const id of S.hist.ids()) for (const s of S.hist.get(id)) pts.push(s.t);
   if (!pts.length) { S.view = Object.assign(S.view, { target: S.settings.frame === 'camera' ? [0, 1, 0] : [0, -0.5, 0], dist: 2.6 }); return; }
@@ -1823,7 +1992,7 @@ function fitView() {
   S.view.fitted = true;
 }
 $('fitBtn').onclick = fitView;
-function resetView() { Object.assign(S.view, VIEW0); fitView(); }
+function resetView() { Object.assign(S.view, view0()); fitView(); }
 $('resetViewBtn').onclick = resetView;
 // The cameras stand still, but a reference tag's pose wobbles with its noise (a degree at 1.5 m moves a camera by
 // 3 cm), so the cameras are drawn from the reference's mean pose over the last half second.
@@ -1881,6 +2050,8 @@ function draw3d() {
 
   const now = performance.now() / 1000, span = S.settings.span, every = S.settings.every;
   S.hist.trim(now, span); S.rawHist.trim(now, span);
+  if (S.settings.show3d === 'robot') { drawRobot(c, o, h, now); return; }
+  $('joints').hidden = true; $('robotHint').hidden = true;
   const legend = [], placed = [];
   // raw tracks, faint and dashed, to compare
   if (S.settings.compare && S.settings.pose !== 'raw') {
@@ -1981,6 +2152,303 @@ function draw3d() {
     V.target = C.add(V.target, C.add(o.right.map((x) => -x * dx * k), o.up.map((x) => x * dy * k)));
   }
 })();
+
+// ---------------- the robot ----------------
+// The 3D view's robot (RobotCore): its chest follows the Body track and each arm's wrist the track on that side, the
+// joint angles found by inverse kinematics. Until Calibrate robot is pressed it stands in its start pose (arms at the
+// sides, forearms forward, palms in) wherever the tags are; pressing it fixes how each tag sits on the robot, as a
+// tare does. It reads the plotted poses (the chosen frame, Mirror view) with any tare taken off, so taring never moves it.
+const RCORE = window.RobotCore;
+const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), scene: null, pts: [], msg: '', msgWarn: false, msgT: 0, hintT: 0, jointsT: 0, autoDone: false, fitSig: '' };
+function robotReset() { RB.cal = null; RB.last.clear(); RB.seen.clear(); RB.prev.clear(); RB.autoDone = false; RB.fitSig = ''; paintRobotBtns(); }
+const refKeyNow = () => (S.settings.frame === 'camera' ? null : parseKey(S.settings.frame));
+// the newest plotted pose of every track, untared; a track out of view keeps its last one
+function robotTake() {
+  for (const k of S.hist.ids()) {
+    const s = S.hist.latest(k), old = RB.last.get(k);
+    if (!s || (old && old.time === s.time)) continue;
+    const R0 = S.tare.get(k);
+    RB.last.set(k, { time: s.time, R: R0 ? C.mul3(R0, s.R) : s.R, t: s.t });
+    RB.seen.add(k);
+  }
+}
+// Which track is the body and which the arms: Settings, or Auto. Auto's body is the one named Body, Chest or Torso
+// (else, with three tracks, the highest); its arms are the others, each taking the side of the body it is on when
+// calibrated (side null). Only tracks seen since the page opened (or the frame changed) count.
+function robotRoles() {
+  const r = S.settings.robot, ref = refKeyNow(), keys = trackKeys().filter((k) => k !== ref && RB.seen.has(k));
+  const pick = (v) => (v === 'auto' || v === 'none' ? null : keys.find((k) => String(k) === v) ?? null);
+  let body = r.body === 'none' ? null : r.body === 'auto' ? keys.find((k) => /\b(body|chest|torso)\b/i.test(nameOf(k))) ?? null : pick(r.body);
+  const sides = [[r.left, 1], [r.right, -1]], used = new Set();
+  if (body !== null) used.add(body);
+  const arms = [];
+  for (const [v, side] of sides) { const k = pick(v); if (k !== null && !used.has(k)) { arms.push({ key: k, side }); used.add(k); } }
+  const auto = sides.filter(([v]) => v === 'auto').map(([, side]) => side);
+  let rest = keys.filter((k) => !used.has(k));
+  if (r.body === 'auto' && body === null && rest.length >= 3 && auto.length === 2) {
+    body = rest.reduce((a, b) => (RB.last.get(b).t[2] > RB.last.get(a).t[2] ? b : a));
+    rest = rest.filter((k) => k !== body);
+  }
+  rest.slice(0, auto.length).forEach((k) => arms.push({ key: k, side: auto.length === 2 ? null : auto[0] }));
+  return { body, arms };
+}
+const robotSig = () => [...RB.seen].sort(keySort).join(',') + '|' + ['body', 'left', 'right'].map((k) => S.settings.robot[k]).join(',') + '|' + S.settings.frame;
+// where camera 1 is in the plotted frame, if known (the robot faces it when there is no body tag)
+function cameraInPlot() {
+  if (S.settings.frame === 'camera') return [0, 0, 0];
+  const ref = steadyRef(), c1 = S.cams[0];
+  return ref ? shown(c1 && c1.T ? c1.T : { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }, ref).t : null;
+}
+function robotCalibrate(roles, m) {
+  const body = roles.body !== null ? RB.last.get(roles.body) : null;
+  const arms = roles.arms.map((a) => ({ key: a.key, pose: RB.last.get(a.key), side: a.side }));
+  // one arm and no body: the side its name says ("left" or "right"; else the right), swapped in Mirror view
+  if (!body && arms.length === 1 && arms[0].side === null) arms[0].side = (/\bleft\b/i.test(nameOf(arms[0].key)) ? 1 : -1) * (S.settings.mirror ? -1 : 1);
+  return RCORE.calibrate(m, { body, arms }, { toward: cameraInPlot() });
+}
+function robotSay(text, warn) { RB.msg = text; RB.msgWarn = !!warn; RB.msgT = performance.now() + 5000; RB.hintT = 0; }
+function calibrateRobot(quiet) {
+  robotTake();
+  const now = performance.now() / 1000, roles = robotRoles();
+  if (!roles.arms.length && roles.body === null) { robotSay('Show your tags to the camera first.', true); return 'No tags in view'; }
+  const missing = [roles.body, ...roles.arms.map((a) => a.key)].filter((k) => k !== null && !(now - RB.last.get(k).time < 0.5));
+  if (missing.length) {
+    robotSay(`${missing.map(nameOf).join(' and ')} ${missing.length > 1 ? 'aren’t' : 'isn’t'} in view. Hold still with every tag in view, then calibrate.`, true);
+    return 'Not every tag is in view';
+  }
+  RB.cal = { cal: robotCalibrate(roles, RCORE.model(S.settings.robot)), roles, sig: robotSig() };
+  RB.prev.clear(); paintRobotBtns();
+  if (!quiet) robotSay('Calibrated. The robot follows you now; calibrate again whenever it drifts.');
+  return 'Robot calibrated';
+}
+function clearRobotCal() { RB.cal = null; RB.prev.clear(); paintRobotBtns(); }
+function paintRobotBtns() {
+  const on = S.settings.show3d === 'robot';
+  $('robotCalBtn').hidden = !on; $('robotClearBtn').hidden = !on || !RB.cal;
+  $('robotCalBtn').classList.toggle('primary', !RB.cal); $('robotCalBtn').classList.toggle('outline', !!RB.cal);
+  $('robotCalBtn').textContent = RB.cal ? 'Calibrate again' : 'Calibrate robot';
+}
+$('robotCalBtn').onclick = () => calibrateRobot();
+$('robotClearBtn').onclick = clearRobotCal;
+plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey && S.settings.show3d === 'robot') { e.preventDefault(); calibrateRobot(); } });
+
+// The robot this frame: the chest's pose and each arm's joint angles. With no tracks yet it is a preview, standing
+// in its start pose a little way in front of the camera.
+function robotUpdate(now) {
+  robotTake();
+  const sig = robotSig();
+  if (RB.cal && RB.cal.sig !== sig) clearRobotCal(); // a new track, or new roles: calibrate again
+  const roles = RB.cal ? RB.cal.roles : robotRoles(), m = RCORE.model(S.settings.robot);
+  const fresh = (k) => k !== null && RB.last.has(k) && now - RB.last.get(k).time < 0.5;
+  const preview = roles.body === null && !roles.arms.length;
+  // the demo lines the robot up by itself, once, as soon as it sees the body and both hands
+  if (S.demo && !RB.cal && !RB.autoDone && roles.body !== null && roles.arms.length === 2 && [roles.body, ...roles.arms.map((a) => a.key)].every(fresh)) {
+    RB.autoDone = true; calibrateRobot(true);
+    return robotUpdate(now);
+  }
+  let cal = RB.cal && RB.cal.cal;
+  if (!cal && preview) {
+    const at = S.settings.frame === 'camera' ? [0, 1.6, 0] : [0, -0.6, 0];
+    cal = { chest: { R: RCORE.upright(S.settings.frame === 'camera' ? [0, -1, 0] : [0, 1, 0]), t: at }, bodyOffset: null, arms: [] };
+  } else if (!cal) cal = robotCalibrate(roles, m);
+  const poses = { body: roles.body !== null ? RB.last.get(roles.body) : null, arms: {} };
+  for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
+  const tg = RCORE.targets(cal, poses), prefer = S.settings.robot.elbows ? undefined : false;
+  const arms = tg.arms.map((a) => {
+    const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev : null, { prefer });
+    RB.prev.set(a.key, { q: s.q, elbow: s.elbow, side: a.side });
+    return { key: a.key, side: a.side, q: s.q, reach: s.reach, gap: s.gap, live: fresh(a.key) };
+  });
+  // a preview, or a body with one arm, shows the missing arms hanging in the start pose
+  const withBody = preview || roles.body !== null;
+  if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) arms.push({ key: null, side, q: RCORE.HOME, reach: true, gap: 0, live: false, idle: true });
+  RB.scene = { m, chest: tg.chest, body: withBody, bodyKey: roles.body, bodyLive: preview || fresh(roles.body), arms, preview, roles };
+  const fitSig = (preview ? 'p' : '') + [roles.body, ...roles.arms.map((a) => a.key)].join(',');
+  if (fitSig !== RB.fitSig) { RB.fitSig = fitSig; S.view.fitted = false; }
+}
+
+// Drawn as outlined solids, painted far to near: capsules for the links, balls for the joints, a box for the torso.
+function drawRobot(c, o, h, now) {
+  robotUpdate(now);
+  const sc = RB.scene, m = sc.m, ch = sc.chest, P = (p) => RCORE.place(ch, p), f = h / 2 / Math.tan((45 * Math.PI) / 360);
+  const items = [], pts = [];
+  const ink = K.text, fill = K.surface, well = K.well;
+  const seg = (a, b, r, fc, sc2, al) => {
+    const p = o.project(a), q = o.project(b);
+    pts.push(a, b);
+    if (!p || !q) return;
+    const z = (p[2] + q[2]) / 2, wpx = Math.max(2, (2 * r * f) / z);
+    items.push({ z, draw() { c.globalAlpha = al; c.lineCap = 'round'; c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.strokeStyle = sc2; c.lineWidth = wpx + 3; c.stroke(); c.strokeStyle = fc; c.lineWidth = wpx; c.stroke(); } });
+  };
+  const ball = (a, r, fc, sc2, al) => {
+    const p = o.project(a);
+    pts.push(a);
+    if (!p) return;
+    items.push({ z: p[2] - r, draw() { c.globalAlpha = al; c.beginPath(); c.arc(p[0], p[1], Math.max(2.5, (r * f) / p[2]), 0, 7); c.fillStyle = fc; c.fill(); c.strokeStyle = sc2; c.lineWidth = 1.5; c.stroke(); } });
+  };
+  const face = (quad, fc, al) => {
+    const q = quad.map((a) => o.project(a));
+    pts.push(...quad);
+    if (q.some((x) => !x)) return;
+    // only the faces turned towards the eye (screen-space winding)
+    const area = (q[1][0] - q[0][0]) * (q[2][1] - q[0][1]) - (q[1][1] - q[0][1]) * (q[2][0] - q[0][0]);
+    if (area >= 0) return;
+    items.push({ z: q.reduce((s, x) => s + x[2], 0) / 4 + 0.05, draw() { c.globalAlpha = al; c.beginPath(); q.forEach((x, i) => (i ? c.lineTo(x[0], x[1]) : c.moveTo(x[0], x[1]))); c.closePath(); c.fillStyle = fc; c.fill(); c.strokeStyle = ink; c.lineWidth = 1.5; c.lineJoin = 'round'; c.stroke(); } });
+  };
+  const bodyAl = sc.bodyLive ? 1 : 0.45;
+  if (sc.body) {
+    // torso: a box behind the chest tag, from the hips to the shoulders; then the neck, the head and its visor
+    const x0 = -0.01, x1 = -(2 * m.back + 0.06), y = Math.max(0.06, m.half - 0.035), z1 = m.up + 0.03, z0 = m.up - 0.52;
+    const V = (x, yy, z) => P([x, yy, z]);
+    const box = [
+      [V(x0, -y, z0), V(x0, y, z0), V(x0, y, z1), V(x0, -y, z1)], [V(x1, y, z0), V(x1, -y, z0), V(x1, -y, z1), V(x1, y, z1)],
+      [V(x1, -y, z0), V(x0, -y, z0), V(x0, -y, z1), V(x1, -y, z1)], [V(x0, y, z0), V(x1, y, z0), V(x1, y, z1), V(x0, y, z1)],
+      [V(x0, -y, z1), V(x0, y, z1), V(x1, y, z1), V(x1, -y, z1)], [V(x1, -y, z0), V(x1, y, z0), V(x0, y, z0), V(x0, -y, z0)],
+    ];
+    box.forEach((q, i) => face(q, i === 0 ? fill : well, bodyAl));
+    const hx = -m.back, head = P([hx, 0, m.up + 0.17]);
+    seg(P([hx, 0, z1 - 0.01]), head, 0.035, fill, ink, bodyAl);
+    ball(head, 0.085, fill, ink, bodyAl);
+    seg(P([hx + 0.075, -0.035, m.up + 0.18]), P([hx + 0.075, 0.035, m.up + 0.18]), 0.014, ink, ink, bodyAl);
+    seg(P([-m.back, -m.half, m.up]), P([-m.back, m.half, m.up]), 0.035, well, ink, bodyAl);
+  } else if (sc.arms.length === 2) {
+    // two arms and no body: a bar between the shoulders on a small mount
+    seg(P([-m.back, -m.half, m.up]), P([-m.back, m.half, m.up]), 0.035, well, ink, 1);
+    ball(P([-m.back, 0, m.up]), 0.055, well, ink, 1);
+  } else if (sc.arms.length === 1) {
+    const sd = sc.arms[0].side;
+    seg(P([-m.back, sd * m.half, m.up]), P([-m.back, sd * (m.half - 0.12), m.up]), 0.04, well, ink, 1);
+    ball(P([-m.back, sd * (m.half - 0.12), m.up]), 0.06, well, ink, 1);
+  }
+  for (const a of sc.arms) {
+    const k = RCORE.fk(m, a.side, a.q), al = sc.preview ? 1 : a.idle ? 0.3 : a.live ? 1 : 0.45, H = k.R;
+    const far = !a.reach, armInk = far ? K.warn : ink;
+    ball(P(k.shoulder), 0.05, well, ink, al);
+    seg(P(k.shoulder), P(k.elbow), 0.04, fill, armInk, al);
+    ball(P(k.elbow), 0.042, well, ink, al);
+    seg(P(k.elbow), P(k.wrist), 0.035, fill, armInk, al);
+    ball(P(k.wrist), 0.036, a.live && !a.idle ? K.accent : well, ink, al);
+    // the gripper: a palm bar across the hand, two fingers along it, and a dot on the palm's side
+    const fd = [-H[2], -H[5], -H[8]], up = [H[0], H[3], H[6]], pn = [-a.side * H[1], -a.side * H[4], -a.side * H[7]];
+    const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(up.map((x) => x * v), pn.map((x) => x * (w || 0))))));
+    seg(at(0.025, -0.035), at(0.025, 0.035), 0.02, well, ink, al);
+    seg(at(0.035, 0.03), at(m.hand, 0.02), 0.011, fill, ink, al);
+    seg(at(0.035, -0.03), at(m.hand, -0.02), 0.011, fill, ink, al);
+    ball(at(0.035, 0, 0.022), 0.01, K.accent, K.accent, al);
+  }
+  items.sort((p, q) => q.z - p.z);
+  for (const it of items) it.draw();
+  c.globalAlpha = 1;
+  // each tag riding on the robot, turned as it is, in its colour: the chest tag on the chest (where the chest is put),
+  // each wrist tag on the back of its wrist, a little out from it
+  const line = (a, b, col, lw) => { const p = o.project(a), q = o.project(b); if (!p || !q) return; c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); };
+  const rides = [];
+  if (sc.bodyKey !== null && sc.bodyKey !== undefined) rides.push([sc.bodyKey, null]);
+  for (const a of sc.arms) if (a.key !== null && a.key !== undefined) rides.push([a.key, P(RCORE.fk(m, a.side, a.q).wrist)]);
+  for (const [key, at] of rides) {
+    const g = RB.last.get(key);
+    if (!g) continue;
+    const s = at ? { R: g.R, t: C.add(at, C.mulv(g.R, [0, 0, 0.045])) } : g;
+    c.globalAlpha = now - g.time < 0.5 ? 1 : 0.45;
+    const parts = isBody(key) ? bodyOf(key).members.map((mm) => ({ R: mm.R, t: mm.t, size: sizeOf(mm.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(key) }];
+    for (const pt of parts) {
+      const sq = C.tagCorners(pt.size).map((q) => C.add(s.t, C.mulv(s.R, C.add(C.mulv(pt.R, q), pt.t))));
+      for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(key), 2);
+    }
+  }
+  c.globalAlpha = 1;
+  RB.pts = pts;
+  if (!S.view.fitted) fitView();
+  paintRobotText(now);
+}
+// the legend (which track drives what), the joint angles and the prompt under the robot
+function paintRobotText(now) {
+  const sc = RB.scene, lg = $('legend3d'), sideName = (sd) => (sd === 1 ? 'Left arm' : 'Right arm');
+  const rows = [];
+  if (sc.bodyKey !== null && sc.bodyKey !== undefined) rows.push(['Body', sc.bodyKey]);
+  for (const a of sc.arms) if (a.key !== null && a.key !== undefined) rows.push([sideName(a.side), a.key]);
+  const key = 'robot|' + rows.map((r) => r.join(':') + nameOf(r[1])).join('|');
+  if (lg.dataset.key !== key) {
+    lg.dataset.key = key;
+    lg.innerHTML = rows.length ? rows.map(([role, k]) => `<span class="li"><span class="sw" style="background:${cssColorOf(k)}"></span>${role}: ${escapeHtml(nameOf(k))}</span>`).join('') : '<span class="li muted">No tags yet</span>';
+  }
+  const pnow = performance.now();
+  if (pnow - RB.jointsT > 200) {
+    RB.jointsT = pnow;
+    const arms = sc.arms.filter((a) => a.key !== null && a.key !== undefined).sort((a, b) => b.side - a.side), jt = $('joints');
+    jt.hidden = !S.settings.robot.joints || !arms.length;
+    if (!jt.hidden) {
+      const D = 180 / Math.PI;
+      jt.innerHTML = `<table><thead><tr><th>Joint, °</th>${arms.map((a) => `<th class="num">${a.side === 1 ? 'Left' : 'Right'}</th>`).join('')}</tr></thead><tbody>` +
+        RCORE.JOINTS.map((j, i) => `<tr><td>${j.name}</td>${arms.map((a) => `<td class="num mono">${(a.q[i] * D).toFixed(0)}</td>`).join('')}</tr>`).join('') + '</tbody></table>' +
+        arms.filter((a) => !a.reach).map((a) => `<div class="far">${a.side === 1 ? 'Left' : 'Right'} hand ${(a.gap * 100).toFixed(0)} cm out of reach</div>`).join('');
+    }
+  }
+  if (pnow - RB.hintT > 250) {
+    RB.hintT = pnow;
+    const el = $('robotHint'), msg = pnow < RB.msgT ? RB.msg : '';
+    let text = msg;
+    if (!text && S.running) text = sc.preview ? 'Show a tag to the camera: one drives an arm, two drive both arms, and a third on your chest adds the body.' : !RB.cal ? 'Face the camera with your arms at your sides, forearms forward and palms in. Then press Calibrate robot (or C).' : '';
+    el.hidden = !text; el.textContent = text; el.classList.toggle('warn', !!msg && RB.msgWarn);
+  }
+}
+radios('show3d', () => S.settings.show3d, (v) => { S.settings.show3d = v; store.set('settings', S.settings); $('legend3d').dataset.key = ''; S.view.fitted = false; paintRobotBtns(); });
+paintRobotBtns();
+
+// ---------------- full screen ----------------
+// The 3D view alone, full screen: the browser's own where an element can go full screen, else filling the window.
+const P3 = document.querySelector('.plot3d');
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+function isFull() { return fsEl() === P3 || P3.classList.contains('full'); }
+function paintFull() {
+  const on = isFull();
+  document.documentElement.classList.toggle('p3-full', on);
+  $('fullBtn').innerHTML = `<svg class="i"><use href="#i-${on ? 'unfull' : 'full'}"/></svg>`;
+  $('fullBtn').setAttribute('aria-label', on ? 'Leave full screen' : 'Full screen');
+  $('fullBtn').title = on ? 'Leave full screen (Esc)' : 'Full screen (Esc to leave)';
+}
+function setFull(on) {
+  if (on === isFull()) return;
+  if (!on) {
+    if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    P3.classList.remove('full'); paintFull(); return;
+  }
+  const go = P3.requestFullscreen || P3.webkitRequestFullscreen, fallback = () => { P3.classList.add('full'); paintFull(); };
+  if (go) { try { Promise.resolve(go.call(P3)).catch(fallback); } catch (e) { fallback(); } } else fallback();
+  plot.focus();
+}
+$('fullBtn').onclick = () => setFull(!isFull());
+document.addEventListener('fullscreenchange', paintFull);
+document.addEventListener('webkitfullscreenchange', paintFull);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && P3.classList.contains('full')) setFull(false); });
+
+// ---------------- settings: the robot ----------------
+function saveSettings() { S.settings = C.clampSettings(S.settings); store.set('settings', S.settings); }
+// the role pickers list Auto, None and every track
+function renderSettings() {
+  const r = S.settings.robot, ref = refKeyNow(), keys = trackKeys().filter((k) => k !== ref);
+  for (const [id, k] of [['roleBody', 'body'], ['roleLeft', 'left'], ['roleRight', 'right']]) {
+    const sel = $(id), opts = [['auto', 'Auto'], ['none', 'None'], ...keys.map((x) => [String(x), nameOf(x) + (isBody(x) ? ' (object)' : ` (#${x})`)])];
+    if (r[k] !== 'auto' && r[k] !== 'none' && !opts.some((o) => o[0] === r[k])) opts.push([r[k], `${r[k]} (not listed)`]);
+    sel.innerHTML = opts.map(([v, t]) => `<option value="${escapeHtml(v)}">${escapeHtml(t)}</option>`).join('');
+    sel.value = r[k];
+  }
+  const m = RCORE.model(r);
+  for (const [id, k] of [['lenUpper', 'upper'], ['lenFore', 'fore'], ['lenHalf', 'half'], ['lenUp', 'up']]) $(id).value = +(m[k] * 100).toFixed(1);
+  $('elbowSw').setAttribute('aria-checked', String(r.elbows));
+  $('jointsSw').setAttribute('aria-checked', String(r.joints));
+  $('setupSw').setAttribute('aria-checked', String(S.settings.setup));
+  paintPaper();
+}
+for (const [id, k] of [['roleBody', 'body'], ['roleLeft', 'left'], ['roleRight', 'right']]) $(id).onchange = () => { S.settings.robot[k] = $(id).value; saveSettings(); clearRobotCal(); };
+for (const [id, k] of [['lenUpper', 'upper'], ['lenFore', 'fore'], ['lenHalf', 'half'], ['lenUp', 'up']]) {
+  $(id).onchange = () => { const v = +$(id).value; if (isFinite(v) && $(id).value !== '') S.settings.robot[k] = v / 100; saveSettings(); clearRobotCal(); renderSettings(); };
+}
+$('lenReset').onclick = () => { for (const k of ['back', 'half', 'up', 'upper', 'fore']) delete S.settings.robot[k]; saveSettings(); clearRobotCal(); renderSettings(); };
+$('elbowSw').onclick = () => { S.settings.robot.elbows = !S.settings.robot.elbows; saveSettings(); RB.prev.clear(); renderSettings(); };
+$('jointsSw').onclick = () => { S.settings.robot.joints = !S.settings.robot.joints; saveSettings(); RB.jointsT = 0; renderSettings(); };
+$('setupSw').onclick = () => { S.settings.setup = !S.settings.setup; saveSettings(); renderSettings(); paintSetupSw(); };
+$('setupOpen').onclick = () => openSetup(0);
 
 // ---------------- time plot ----------------
 let hoverX = null;
@@ -2111,12 +2579,15 @@ function frame() {
 function setMode(m) {
   S.tab = m; S.mode = m === 'calib' ? 'calib' : 'track';
   for (const t of TABS) $('tab-' + t).setAttribute('aria-selected', String(m === t));
+  if (m !== 'track') setFull(false);
   $('view-track').hidden = m !== 'track';
   $('tagsCard').hidden = m === 'calib';
   $('nowCard').hidden = m !== 'track';
   $('calibCard').hidden = m !== 'calib';
   $('streamCard').hidden = m !== 'stream';
-  $('recCard').hidden = m === 'calib';
+  $('settingsCard').hidden = m !== 'settings';
+  $('recCard').hidden = m === 'calib' || m === 'settings';
+  if (m === 'settings') renderSettings();
   document.querySelector('main').classList.toggle('calib', m === 'calib');
   if (m === 'calib') {
     // the steps sit in the right-hand column
@@ -2125,7 +2596,7 @@ function setMode(m) {
   } else document.querySelector('.col').appendChild($('calibCard'));
   clearOverlays(); renderRig();
 }
-const TABS = ['track', 'calib', 'stream'];
+const TABS = ['track', 'calib', 'stream', 'settings'];
 TABS.forEach((t, i) => {
   const b = $('tab-' + t);
   b.onclick = () => setMode(t);
@@ -2479,14 +2950,30 @@ $('pngBoard').onclick = async () => {
 // ---------------- the board on a screen: /tag-tracker/#board, a link to open on a tablet or second monitor ----------------
 const BOARD_HASH = '#board';
 const boardLink = () => location.origin + location.pathname + BOARD_HASH;
-const BV = { seq: 0, img: null, hideT: 0, resizeT: 0, lock: null };
-function qrSvg(text) {
+const BV = { seq: 0, img: null, hideT: 0, resizeT: 0, lock: null, mode: 'board', tags: null, ti: 0, down: null };
+const linkFor = (hash) => location.origin + location.pathname + hash;
+// Tags on a screen: /tag-tracker/#tags=2:Body,0:Left%20wrist lists tag IDs, each with an optional name, shown one at a
+// time as big as the screen allows (&f= picks a family other than tag36h11).
+function parseTagsHash(h) {
+  const m = /^#tags=([^&]*)(?:&f=([A-Za-z0-9_]+))?$/.exec(h || '');
+  if (!m) return null;
+  const list = [];
+  for (const part of m[1].split(',')) {
+    const i = part.indexOf(':'), a = i < 0 ? part : part.slice(0, i), id = Number(a);
+    let name = '';
+    try { name = i < 0 ? '' : decodeURIComponent(part.slice(i + 1)).slice(0, 40); } catch (e) { /* a mangled name: none */ }
+    if (a !== '' && Number.isInteger(id) && id >= 0 && id < 2500) list.push({ id, name });
+  }
+  return list.length ? { list, family: m[2] && FAMILY_CELLS[m[2]] ? m[2] : null } : null;
+}
+const tagsHash = (list) => '#tags=' + list.map((t) => t.id + (t.name ? ':' + encodeURIComponent(t.name) : '')).join(',') + (S.settings.family !== 'APRILTAG_36h11' ? '&f=' + S.settings.family : '');
+function qrSvg(text, aria) {
   if (typeof qrcode !== 'function') return '';
   const q = qrcode(0, 'M'); q.addData(text); q.make();
   const n = q.getModuleCount(), z = 4, s = n + 2 * z;
   let d = '';
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + z} ${r + z}h1v1h-1z`;
-  return `<svg viewBox="0 0 ${s} ${s}" shape-rendering="crispEdges" role="img" aria-label="QR code of the board link"><rect width="${s}" height="${s}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+  return `<svg viewBox="0 0 ${s} ${s}" shape-rendering="crispEdges" role="img" aria-label="${escapeHtml(aria || 'QR code of the board link')}"><rect width="${s}" height="${s}" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
 $('screenBoard').onclick = () => {
   const p = $('sharePanel'), open = p.hidden;
@@ -2504,6 +2991,34 @@ $('shareCopy').onclick = async () => {
 $('shareSend').onclick = () => navigator.share({ title: 'Calibration board', text: 'A ChArUco board to show full-screen while Tag Tracker calibrates a camera.', url: boardLink() }).catch(() => {});
 $('shareWin').onclick = () => { window.open(boardLink(), '_blank', 'noopener'); };
 $('shareHere').onclick = () => { location.hash = BOARD_HASH; };
+// A share panel for any link: its QR code, the link, Copy, Share…, a new window, and Show here.
+function fillShare(box, url, o) {
+  box.innerHTML = `<div class="qr">${qrSvg(url, o.aria)}</div><div class="sbody"><p>${o.blurb}</p><label class="sr" for="${box.id}Url">Link</label><input id="${box.id}Url" class="input sm" type="text" readonly>` +
+    `<div class="row"><button type="button" class="btn sm outline" data-a="copy">Copy link</button><button type="button" class="btn sm outline" data-a="send"${navigator.share ? '' : ' hidden'}>Share…</button>` +
+    '<button type="button" class="btn sm outline" data-a="win">Open in a new window</button><button type="button" class="btn sm" data-a="here">Show here</button></div><p class="credit">QR code by qrcode-generator (MIT, Kazuhiko Arase).</p></div>';
+  const inp = box.querySelector('input'), q = box.querySelector('.qr');
+  inp.value = url; inp.onfocus = () => inp.select(); q.hidden = !q.innerHTML;
+  box.querySelector('[data-a=copy]').onclick = async (e) => {
+    try { await navigator.clipboard.writeText(url); } catch (err) { inp.select(); document.execCommand('copy'); }
+    e.target.textContent = 'Copied'; setTimeout(() => { e.target.textContent = 'Copy link'; }, 1500);
+  };
+  box.querySelector('[data-a=send]').onclick = () => navigator.share({ title: o.title, text: o.text, url }).catch(() => {});
+  box.querySelector('[data-a=win]').onclick = () => window.open(url, '_blank', 'noopener');
+  box.querySelector('[data-a=here]').onclick = () => { if ($('setupDlg').open) $('setupDlg').close(); location.hash = url.slice(url.indexOf('#')); };
+  box.hidden = false;
+}
+function shareTagsTo(box, list) {
+  if (!list.length) { box.innerHTML = '<p class="hint">Add a tag first: by its ID, or show one to the camera.</p>'; box.hidden = false; return; }
+  fillShare(box, linkFor(tagsHash(list)), {
+    aria: 'QR code of the link to your tags', title: 'AprilTags', text: 'AprilTags to show on a phone while Tag Tracker tracks them.',
+    blurb: `Open this on your phone: scan the code with its camera, or send the link. Its screen shows ${list.length > 1 ? `the ${list.length} tags one at a time (tap the sides for the next)` : 'the tag'}, as big as it can, and stays awake. Measure the black square on the screen and enter that as the tag's size.`,
+  });
+}
+function showTagShare(list) { shareTagsTo($('tagShare'), list); $('tagsPhone').setAttribute('aria-expanded', 'true'); }
+$('tagsPhone').onclick = () => {
+  if (!$('tagShare').hidden) { $('tagShare').hidden = true; $('tagsPhone').setAttribute('aria-expanded', 'false'); return; }
+  showTagShare(S.tags.map((t) => ({ id: t.id, name: t.name })));
+};
 
 function bvBar(show) {
   clearTimeout(BV.hideT); $('bvBar').classList.toggle('gone', !show);
@@ -2515,6 +3030,26 @@ async function keepAwake(on) {
     if (!on && BV.lock) { const l = BV.lock; BV.lock = null; await l.release(); }
   } catch (e) { /* not allowed here; the screen may dim on its own */ }
 }
+// one tag on the screen, whole pixels per cell, a cell of white round it, its name and number under it
+async function drawTagView() {
+  const seq = ++BV.seq, dpr = window.devicePixelRatio || 1, T = BV.tags, t = T.list[BV.ti], fam = T.family || S.settings.family, cells = FAMILY_CELLS[fam];
+  // a cell and a half of white round it, so the arrows at the screen's edges stay clear of the tag's quiet zone
+  const f = C.tagFit(Math.round(innerWidth * dpr), Math.round((innerHeight - 64) * dpr), cells, 1.5), cv = $('boardCanvas');
+  $('bvCap').textContent = `${t.name ? t.name + ', ' : ''}#${t.id}${T.list.length > 1 ? ` (${BV.ti + 1} of ${T.list.length})` : ''}`;
+  if (f.px < 4) { cv.width = cv.height = 0; $('bvMsg').textContent = 'This screen is too small to show the tag.'; bvBar(true); return; }
+  if (!S.ready) $('bvMsg').textContent = 'Loading the tags (OpenCV.js, about 10 MB the first time)…';
+  await workerReady;
+  const img = await requestImage('tagImage', { family: fam, id: t.id, px: f.size });
+  if (seq !== BV.seq || $('boardView').hidden) return; // moved on, resized or closed meanwhile
+  cv.width = f.size; cv.height = f.size; cv.style.width = f.size / dpr + 'px'; cv.style.height = f.size / dpr + 'px';
+  const c = cv.getContext('2d');
+  c.imageSmoothingEnabled = false; c.drawImage(grayToCanvas(img, 0), 0, 0);
+  cv.setAttribute('aria-label', `AprilTag ${t.id}, ${FAMILY_LABEL[fam]}`);
+  $('bvMsg').innerHTML = `<b>${escapeHtml(t.name || 'Tag')} #${t.id}</b>, ${FAMILY_LABEL[fam]}. Measure the black square on this screen and enter it as the tag's size in Tag Tracker. Turn the brightness up and tilt the phone so nothing reflects in it. ` +
+    (T.list.length > 1 ? 'Tap the sides (or swipe) for the other tags; tap the middle to show this again.' : 'Tap to show this again.');
+}
+function stepTag(d) { if (BV.mode !== 'tags') return; const n = BV.tags.list.length; BV.ti = (BV.ti + d + n) % n; drawScreen(); }
+const drawScreen = () => (BV.mode === 'tags' ? drawTagView() : drawBoardView());
 async function drawBoardView() {
   const seq = ++BV.seq, dpr = window.devicePixelRatio || 1;
   const f = C.boardFit(Math.round(innerWidth * dpr), Math.round(innerHeight * dpr), 9, 6, 0.5), cv = $('boardCanvas');
@@ -2527,21 +3062,26 @@ async function drawBoardView() {
   const c = cv.getContext('2d'), src = grayToCanvas(BV.img.img, 0);
   c.imageSmoothingEnabled = false;
   c.save(); if (f.rotate) { c.translate(f.w, 0); c.rotate(Math.PI / 2); } c.drawImage(src, 0, 0); c.restore();
+  cv.setAttribute('aria-label', 'ChArUco calibration board, 9 by 6 squares');
   $('bvMsg').innerHTML = `<b>Calibration board</b>, 9 × 6 squares. Measure across all 9 squares with a ruler, divide by 9, and enter it as the square size where you calibrate. ` +
     'Brightness about two-thirds; tilt it so nothing reflects in it. Tap to show this again.';
 }
-function showBoardView() {
-  if (!$('boardView').hidden) return;
+function showBoardView(mode) {
+  BV.mode = mode || 'board';
+  const tags = BV.mode === 'tags';
+  $('bvCap').hidden = !tags; $('bvPrev').hidden = $('bvNext').hidden = !tags || BV.tags.list.length < 2;
+  if (!$('boardView').hidden) { drawScreen(); return; }
+  if ($('setupDlg').open) $('setupDlg').close();
   $('boardView').hidden = false; document.documentElement.classList.add('bv-open');
   $('bvFull').hidden = !(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
-  bvBar(true); keepAwake(true); drawBoardView();
+  bvBar(true); keepAwake(true); drawScreen();
 }
 function hideBoardView() {
   if ($('boardView').hidden) return;
   $('boardView').hidden = true; document.documentElement.classList.remove('bv-open'); BV.seq++;
   keepAwake(false);
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  if (location.hash === BOARD_HASH) history.replaceState(null, '', location.pathname + location.search);
+  if (location.hash === BOARD_HASH || parseTagsHash(location.hash)) history.replaceState(null, '', location.pathname + location.search);
 }
 $('bvFull').onclick = () => {
   const el = $('boardView'), go = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -2549,11 +3089,33 @@ $('bvFull').onclick = () => {
   bvBar(false);
 };
 $('bvClose').onclick = hideBoardView;
-$('boardView').addEventListener('pointerdown', (e) => { if (!e.target.closest('.bv-bar')) bvBar(true); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('boardView').hidden && !document.fullscreenElement) hideBoardView(); });
+// a tap shows the instructions again; with several tags, a tap on either side (or a swipe) shows the next one
+$('boardView').addEventListener('pointerdown', (e) => { BV.down = e.target.closest('.bv-bar, .bv-nav') ? null : [e.clientX, e.clientY]; });
+$('boardView').addEventListener('pointerup', (e) => {
+  if (!BV.down) return;
+  const dx = e.clientX - BV.down[0]; BV.down = null;
+  if (BV.mode === 'tags' && BV.tags.list.length > 1) {
+    if (Math.abs(dx) > 60) return stepTag(dx < 0 ? 1 : -1);
+    const x = e.clientX / innerWidth;
+    if (x < 0.25) return stepTag(-1);
+    if (x > 0.75) return stepTag(1);
+  }
+  bvBar(true);
+});
+$('bvPrev').onclick = () => stepTag(-1);
+$('bvNext').onclick = () => stepTag(1);
+document.addEventListener('keydown', (e) => {
+  if ($('boardView').hidden) return;
+  if (e.key === 'Escape' && !document.fullscreenElement) hideBoardView();
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); stepTag(e.key === 'ArrowLeft' ? -1 : 1); }
+});
 document.addEventListener('visibilitychange', () => { if (!$('boardView').hidden && document.visibilityState === 'visible') keepAwake(true); });
-window.addEventListener('resize', () => { if (!$('boardView').hidden) { clearTimeout(BV.resizeT); BV.resizeT = setTimeout(drawBoardView, 150); } });
-const routeHash = () => { if (location.hash === BOARD_HASH) showBoardView(); else hideBoardView(); };
+window.addEventListener('resize', () => { if (!$('boardView').hidden) { clearTimeout(BV.resizeT); BV.resizeT = setTimeout(drawScreen, 150); } });
+const routeHash = () => {
+  const t = parseTagsHash(location.hash);
+  if (location.hash === BOARD_HASH) showBoardView('board');
+  else if (t) { BV.tags = t; BV.ti = 0; showBoardView('tags'); } else hideBoardView();
+};
 window.addEventListener('hashchange', routeHash);
 
 // ---------------- stream: the poses, sent on over serial or UDP ----------------
@@ -2813,6 +3375,8 @@ const VOICE_ACTIONS = {
   untare: () => { clearTare(); return 'Tare cleared'; },
   fit: () => { if (S.tab !== 'track') setMode('track'); fitView(); return 'View fitted'; },
   reset: () => { if (S.tab !== 'track') setMode('track'); resetView(); return 'View reset'; },
+  robot: () => { if (S.tab !== 'track') setMode('track'); if (S.settings.show3d !== 'robot') document.querySelector('[data-show3d="robot"]').click(); return calibrateRobot(); },
+  settings: () => { setMode('settings'); return 'Settings tab'; },
 };
 function voiceSay(state, text, hold) {
   const el = $('voice');
@@ -3266,8 +3830,9 @@ function demoTags(t) {
 // Each hand's cube: the front tag is the origin (x right, y up, z out of its face); the others sit on the left, right
 // and top faces, upright as seen from the front (the top one from the front, looking down).
 const CUBE = 0.1, DEMO_HANDS = [
-  { id: 'demo-left', name: 'Left hand', ids: [0, 3, 4, 5] },
-  { id: 'demo-right', name: 'Right hand', ids: [1, 6, 7, 8] },
+  // named for the side of the body each is on: the body faces the cameras, so its right hand is on their left
+  { id: 'demo-left', name: 'Right hand', ids: [0, 3, 4, 5] },
+  { id: 'demo-right', name: 'Left hand', ids: [1, 6, 7, 8] },
 ];
 function cubeMembers(ids) {
   const e = CUBE / 2;
@@ -3367,11 +3932,17 @@ function demoRenderer(W, H) {
   return { canvas: glc, texture, render };
 }
 async function startDemo() {
-  const ids = [0, 1, 2, 3, 4, 5, 6, 7, 8], names = ['Left hand, front', 'Right hand, front', 'Body', 'Left hand, left side', 'Left hand, right side', 'Left hand, top', 'Right hand, left side', 'Right hand, right side', 'Right hand, top'];
+  const ids = [0, 1, 2, 3, 4, 5, 6, 7, 8], names = ['Right hand, front', 'Left hand, front', 'Body', 'Right hand, left side', 'Right hand, right side', 'Right hand, top', 'Left hand, left side', 'Left hand, right side', 'Left hand, top'];
+  // the demo's names before its hands were named for the body's sides: renamed if still as the demo left them
+  const swap = (n) => n.replace(/^(Left|Right) hand/, (x, sd) => (sd === 'Left' ? 'Right' : 'Left') + ' hand');
   // the side and top tags are only ever seen as part of their hand, so they don't take a colour of their own
-  ids.forEach((id, i) => { if (!tagOf(id)) { S.tags.push({ id, name: names[i], size: 0.08, slot: i < 3 ? freeSlot() : -1 }); } });
-  for (const h of DEMO_HANDS) if (!S.bodies.some((b) => b.members.some((x) => h.ids.includes(x.id)))) S.bodies.push({ id: h.id, name: h.name, members: cubeMembers(h.ids) });
-  saveTags(); saveBodies(); resetTracks(); renderTags(); renderBodies(); refreshFrameSel(); refreshTplotSel();
+  ids.forEach((id, i) => { const t = tagOf(id); if (!t) S.tags.push({ id, name: names[i], size: 0.08, slot: i < 3 ? freeSlot() : -1 }); else if (t.name === swap(names[i]) && i !== 2) t.name = names[i]; });
+  for (const h of DEMO_HANDS) {
+    const b = S.bodies.find((x) => x.id === h.id);
+    if (b && b.name === swap(h.name)) b.name = h.name;
+    if (!S.bodies.some((x) => x.members.some((m) => h.ids.includes(m.id)))) S.bodies.push({ id: h.id, name: h.name, members: cubeMembers(h.ids) });
+  }
+  saveTags(); saveBodies(); resetTracks(); robotReset(); renderTags(); renderBodies(); refreshFrameSel(); refreshTplotSel();
   const quiet = 30, cells = FAMILY_CELLS[S.settings.family];
   const imgs = await Promise.all(ids.map((id) => requestImage('tagImage', { family: S.settings.family, id, px: cells * 30 })));
   const boardImg = await requestImage('boardImage', { px: 80 });
@@ -3409,6 +3980,81 @@ async function startDemo() {
   S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; stopSims(); } };
 }
 
+// ---------------- the setup guide ----------------
+// Four short steps on first visit (and from Settings): a camera, your tags (how many, their IDs and sizes, printed or on
+// a phone), the lens, and the start pose. "Show this when the page opens" is settings.setup.
+const SETUP = { step: 0, n: 3, vals: null };
+const SETUP_ROLES = [{ k: 'body', name: 'Body', id: 0 }, { k: 'left', name: 'Left wrist', id: 1 }, { k: 'right', name: 'Right wrist', id: 2 }];
+const setupRoles = () => SETUP_ROLES.slice(3 - SETUP.n);
+function setupDefaults() {
+  // what is set already: the robot's roles if they are tags, else tags named for the role, else 0, 1, 2
+  const r = S.settings.robot, vals = {};
+  for (const role of SETUP_ROLES) {
+    const set = /^\d+$/.test(r[role.k]) ? tagOf(+r[role.k]) : null, named = S.tags.find((t) => t.name.toLowerCase() === role.name.toLowerCase()), t = set || named;
+    vals[role.k] = { id: t ? t.id : role.id, size: +((t ? t.size : S.settings.tagSize) * 1000).toFixed(1) };
+  }
+  SETUP.n = r.body === 'none' ? (r.left === 'none' ? 1 : 2) : 3;
+  return vals;
+}
+function renderSetupRoles() {
+  const box = $('setupRoles');
+  box.innerHTML = setupRoles().map((role) => `<span>${role.name}</span><label class="field">ID <input class="input sm num mono" type="number" min="0" step="1" data-sr="${role.k}" data-f="id"></label>` +
+    `<label class="field">Size <input class="input sm num mono" type="number" min="5" max="2000" step="0.5" data-sr="${role.k}" data-f="size"><span class="unit">mm</span></label>`).join('');
+  box.querySelectorAll('input').forEach((inp) => {
+    inp.value = SETUP.vals[inp.dataset.sr][inp.dataset.f];
+    inp.onchange = () => { const v = +inp.value; if (inp.value !== '' && isFinite(v)) SETUP.vals[inp.dataset.sr][inp.dataset.f] = v; $('setupShare').hidden = true; };
+  });
+  document.querySelectorAll('[data-setn]').forEach((b) => b.setAttribute('aria-checked', String(+b.dataset.setn === SETUP.n)));
+}
+document.querySelectorAll('[data-setn]').forEach((b) => { b.onclick = () => { SETUP.n = +b.dataset.setn; renderSetupRoles(); $('setupShare').hidden = true; }; });
+// the chosen tags into the tag list (named for their roles) and the robot's roles
+function applySetupTags() {
+  const list = [], r = S.settings.robot;
+  for (const role of setupRoles()) {
+    const v = SETUP.vals[role.k];
+    if (!(Number.isInteger(v.id) && v.id >= 0 && v.id < S.familyCount)) continue;
+    if (!tagOf(v.id)) addTag(v.id, role.name);
+    const t = tagOf(v.id);
+    t.name = role.name;
+    if (v.size >= 5 && v.size <= 2000) t.size = v.size / 1000;
+    list.push({ id: v.id, name: role.name });
+  }
+  r.body = SETUP.n === 3 && list.length ? String(SETUP.vals.body.id) : 'none';
+  r.left = SETUP.n >= 2 ? String(SETUP.vals.left.id) : 'none';
+  r.right = String(SETUP.vals.right.id);
+  saveSettings(); saveTags(); renderTags(); refreshFrameSel(); refreshTplotSel(); clearRobotCal(); resetTracks();
+  return list;
+}
+$('setupPhone').onclick = () => {
+  const box = $('setupShare');
+  if (!box.hidden) { box.hidden = true; $('setupPhone').setAttribute('aria-expanded', 'false'); return; }
+  shareTagsTo(box, applySetupTags()); $('setupPhone').setAttribute('aria-expanded', 'true');
+};
+$('setupPrint').onclick = () => { const ids = applySetupTags().map((t) => t.id); openPrintDlg({ tags: ids, board: false }); };
+$('setupStart').onclick = () => { $('emptyStart').click(); goSetup(1); };
+$('setupDemo').onclick = () => { $('emptyDemo').click(); $('setupDlg').close(); };
+$('setupCalib').onclick = () => { $('setupDlg').close(); setMode('calib'); };
+function goSetup(step) {
+  if (SETUP.step === 1 && step > 1) applySetupTags();
+  SETUP.step = Math.max(0, Math.min(3, step));
+  document.querySelectorAll('#setupDlg [data-step]').forEach((el) => { el.hidden = +el.dataset.step !== SETUP.step; });
+  $('setupDots').querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i <= SETUP.step));
+  $('setupBack').hidden = SETUP.step === 0;
+  $('setupNext').textContent = SETUP.step === 3 ? 'Done' : 'Next';
+  if (SETUP.step === 1) renderSetupRoles();
+}
+function openSetup(step) {
+  SETUP.vals = setupDefaults(); SETUP.step = -1; $('setupShare').hidden = true;
+  goSetup(step || 0); paintSetupSw();
+  if (!$('setupDlg').open) $('setupDlg').showModal();
+}
+function paintSetupSw() { $('setupShowSw').setAttribute('aria-checked', String(S.settings.setup)); $('setupSw').setAttribute('aria-checked', String(S.settings.setup)); }
+$('setupShowSw').onclick = () => { S.settings.setup = !S.settings.setup; saveSettings(); paintSetupSw(); };
+$('setupBack').onclick = () => goSetup(SETUP.step - 1);
+$('setupNext').onclick = () => { if (SETUP.step === 3) { goSetup(3); $('setupDlg').close(); setMode('track'); } else goSetup(SETUP.step + 1); };
+$('setupDlg').querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => $('setupDlg').close(); });
+$('setupDlg').addEventListener('close', () => { SETUP.step = 0; }); // closing keeps what is set: only Next, Print and the phone link apply the tags
+
 // ---------------- boot ----------------
 rememberBoards();
 paintThemeBtn();
@@ -3416,7 +4062,9 @@ renderCalibCams(); renderRig();
 renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
 listCameras();
 startWorker();
-routeHash(); // opened from a board link: show the board
+paintPaper(); paintSetupSw();
+routeHash(); // opened from a board or tags link: show it
+if (S.settings.setup && $('boardView').hidden) openSetup(0); // first visit (until turned off): the setup guide
 requestAnimationFrame(frame);
 window.addEventListener('resize', () => layoutTiles());
 })();

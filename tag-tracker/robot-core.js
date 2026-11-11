@@ -1,0 +1,243 @@
+// RobotCore: the robot behind /tag-tracker/'s 3D view, with no DOM, so script/test-tag-tracker can run it in Node.
+// A humanoid with two 7-joint arms. A tag on the chest carries the body; a tag at each wrist is where that arm's
+// gripper should be, and inverse kinematics finds the joint angles.
+//
+// Frames: the chest's x points forward, y to its left and z up, with its origin at the chest tag. Poses are {R, t}
+// as in TagCore (R a row-major 3x3 rotation, t in metres). `side` is +1 for the left arm and -1 for the right; the
+// right arm is the left one's mirror image through the chest's x-z plane, so the same angles give mirrored poses.
+//
+// Each arm is a sphere-revolute-sphere chain:
+//   shoulder  R_upper = Ry(-q1) Rx(side q2) Rz(side q3)   flex forward, out to the side, turn the upper arm
+//   elbow     R_fore  = R_upper Ry(-q4)                    bend, 0 = straight
+//   wrist     R_hand  = R_fore Rz(side q5) Rx(side q6) Ry(q7)  turn the forearm, bend the wrist, tilt it
+// With every angle zero the arm hangs straight down. The upper arm runs along its frame's -z, and so does the forearm.
+// The hand's -z points along the fingers, and the palm faces -side·y. In HOME the elbows are bent 90°, so the
+// forearms point forward and the palms face inward.
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'));
+  else root.RobotCore = factory(root.TagCore);
+})(typeof self !== 'undefined' ? self : this, function (C) {
+  'use strict';
+  const { mul3, tr3, mulv, add, sub, norm, compose, inverse } = C;
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+  const unit = (a) => scale(a, 1 / norm(a));
+  const Rx = (a) => { const c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, c, -s, 0, s, c]; };
+  const Ry = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, 0, s, 0, 1, 0, -s, 0, c]; };
+  const Rz = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, -s, 0, s, c, 0, 0, 0, 1]; };
+  const cols = (x, y, z) => [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+  const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+  const DEG = Math.PI / 180, TAU = 2 * Math.PI;
+
+  // Lengths in metres. A shoulder sits `back` behind, `half` to the side of and `up` above the chest tag. `hand`
+  // (wrist to fingertips) is only drawn.
+  const MODEL = { back: 0.06, half: 0.18, up: 0.12, upper: 0.3, fore: 0.27, hand: 0.09 };
+  // Joint limits, roughly a person's.
+  const JOINTS = [
+    { name: 'Shoulder forward', lo: -60 * DEG, hi: 190 * DEG },
+    { name: 'Shoulder out', lo: -50 * DEG, hi: 95 * DEG },
+    { name: 'Upper arm turn', lo: -100 * DEG, hi: 100 * DEG },
+    { name: 'Elbow', lo: 0, hi: 150 * DEG },
+    { name: 'Forearm turn', lo: -120 * DEG, hi: 120 * DEG },
+    { name: 'Wrist bend', lo: -80 * DEG, hi: 80 * DEG },
+    { name: 'Wrist tilt', lo: -50 * DEG, hi: 50 * DEG },
+  ];
+  // Arms at the sides, forearms forward, palms in.
+  const HOME = [0, 0, 0, 90 * DEG, 0, 0, 0];
+
+  function model(o) {
+    const m = Object.assign({}, MODEL);
+    for (const k of Object.keys(MODEL)) {
+      const x = Number(o && o[k]);
+      if (o && o[k] != null && isFinite(x)) m[k] = clamp(x, k === 'upper' || k === 'fore' ? 0.05 : 0, 2);
+    }
+    return m;
+  }
+  const shoulderOf = (m, side) => [-m.back, side * m.half, m.up];
+
+  // Forward kinematics: the joints' positions and the link frames, in the chest frame.
+  function fk(m, side, q) {
+    const sh = shoulderOf(m, side);
+    const Ru = mul3(mul3(Ry(-q[0]), Rx(side * q[1])), Rz(side * q[2]));
+    const elbow = add(sh, mulv(Ru, [0, 0, -m.upper]));
+    const Rf = mul3(Ru, Ry(-q[3]));
+    const wrist = add(elbow, mulv(Rf, [0, 0, -m.fore]));
+    const R = mul3(mul3(mul3(Rf, Rz(side * q[4])), Rx(side * q[5])), Ry(q[6]));
+    return { shoulder: sh, elbow, wrist, Ru, Rf, R, t: wrist };
+  }
+
+  // x + 2πk inside [lo, hi] if there is one (the one nearest ref), else the one nearest ref.
+  function wrapInto(x, lo, hi, ref) {
+    let best = null, bestIn = false;
+    for (let k = -2; k <= 2; k++) {
+      const y = x + k * TAU, inside = y >= lo - 1e-12 && y <= hi + 1e-12;
+      if (best === null || (inside && !bestIn) || (inside === bestIn && Math.abs(y - ref) < Math.abs(best - ref))) { best = y; bestIn = inside; }
+    }
+    return best;
+  }
+  const excess = (q) => { let e = 0; for (let i = 0; i < 7; i++) { const j = JOINTS[i], x = Math.max(0, q[i] - j.hi, j.lo - q[i]); e += x * x; } return e; };
+  // Both Euler solutions of B = Ry(a) Rx(b) Rz(c) and of A = Rz(a) Rx(b) Ry(c).
+  function eulerYXZ(B) {
+    const b = Math.asin(clamp(-B[5], -1, 1)), a = Math.atan2(B[2], B[8]), c = Math.atan2(B[3], B[4]);
+    return [[a, b, c], [a + Math.PI, Math.PI - b, c + Math.PI]];
+  }
+  function eulerZXY(A) {
+    const b = Math.asin(clamp(A[7], -1, 1)), a = Math.atan2(-A[1], A[4]), c = Math.atan2(-A[6], A[8]);
+    return [[a, b, c], [a + Math.PI, Math.PI - b, c + Math.PI]];
+  }
+
+  // The shoulder and wrist angles once the upper arm's frame is known: of the two solutions of each, the one inside
+  // the limits, then the one nearest `prev`.
+  function anglesFrom(side, Ru, q4, Rhand, prev) {
+    const ref = prev || HOME, pick = (sols, map, idx) => {
+      let best = null, bestCost = Infinity;
+      for (const s of sols) {
+        const v = map(s).map((x, k) => { const J = JOINTS[idx[k]]; return wrapInto(x, J.lo, J.hi, ref[idx[k]]); });
+        let cost = 0;
+        for (let k = 0; k < 3; k++) {
+          const J = JOINTS[idx[k]], ex = Math.max(0, v[k] - J.hi, J.lo - v[k]), d = v[k] - ref[idx[k]];
+          cost += 1e3 * ex * ex + 1e-3 * d * d;
+        }
+        if (cost < bestCost) { bestCost = cost; best = v; }
+      }
+      return best;
+    };
+    const sh = pick(eulerYXZ(Ru), (s) => [-s[0], side * s[1], side * s[2]], [0, 1, 2]);
+    const Rf = mul3(Ru, Ry(-q4));
+    const wr = pick(eulerZXY(mul3(tr3(Rf), Rhand)), (s) => [side * s[0], side * s[1], s[2]], [4, 5, 6]);
+    return [sh[0], sh[1], sh[2], q4, wr[0], wr[1], wr[2]];
+  }
+
+  // What the spare degree of freedom prefers, by default: elbows below the hands and out to the side, then as low as
+  // they go. Weights per m² (elbow position) and rad² (limits).
+  const PREFER = { low: 100, out: 100, sink: 0.01, limits: 1000, steady: 2 };
+
+  // Inverse kinematics for one arm. target = the wrist pose in the chest frame. The elbow lies on a circle about the
+  // shoulder-wrist line, and ψ is the angle round it (0 = its lowest point). 120 angles are scored, then the best is
+  // refined. `prev` is the last solution ({q, elbow}), which keeps the elbow from jumping between equally good
+  // places and picks the wrist solution nearest the last one. A target out of reach puts the wrist as near as it
+  // goes, on the line to it (reach false, gap = how far short, m).
+  // opts: { prefer: false } keeps only the limits and steadiness (no elbow preference), or weights to override.
+  function ik(m, side, target, prev, opts) {
+    const o = opts || {}, W = Object.assign({}, PREFER, o.prefer === false ? { low: 0, out: 0, sink: 0 } : o.prefer || {});
+    const sh = shoulderOf(m, side), L1 = m.upper, L2 = m.fore;
+    const D = sub(target.t, sh), dist = norm(D);
+    const n = dist > 1e-9 ? scale(D, 1 / dist) : [0, 0, -1];
+    const dmax = L1 + L2, dmin = Math.sqrt(L1 * L1 + L2 * L2 + 2 * L1 * L2 * Math.cos(JOINTS[3].hi));
+    const d = clamp(dist, dmin, dmax), gap = dist - d, wrist = add(sh, scale(n, d));
+    const cb = clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1), sb = Math.sqrt(1 - cb * cb);
+    const q4 = Math.acos(clamp((d * d - L1 * L1 - L2 * L2) / (2 * L1 * L2), -1, 1));
+    // u: down, square to the line (out to the side if the line is near vertical); v completes the circle's plane
+    let u = sub([0, 0, -1], scale(n, -n[2]));
+    if (norm(u) < 0.05) u = sub([0, side, 0], scale(n, n[1] * side));
+    u = unit(u);
+    const v = cross(n, u), prevQ = prev && prev.q, prevE = prev && prev.elbow;
+    const at = (psi) => {
+      const w = add(scale(u, Math.cos(psi)), scale(v, Math.sin(psi)));
+      const elbow = add(sh, add(scale(n, L1 * cb), scale(w, L1 * sb)));
+      const dU = add(scale(n, cb), scale(w, sb)), xU = sub(scale(n, sb), scale(w, cb)), zU = scale(dU, -1);
+      const Ru = cols(xU, cross(zU, xU), zU);
+      const q = anglesFrom(side, Ru, q4, target.R, prevQ);
+      const low = Math.max(0, elbow[2] - wrist[2]), out = Math.max(0, -side * (elbow[1] - sh[1]));
+      let cost = W.low * low * low + W.out * out * out + W.sink * (elbow[2] - sh[2]) + W.limits * excess(q);
+      if (prevE) { const e = sub(elbow, prevE); cost += W.steady * dot(e, e); }
+      return { q, psi, elbow, cost };
+    };
+    const K = 120;
+    let best = null;
+    for (let k = 0; k < K; k++) { const s = at((k * TAU) / K - Math.PI); if (!best || s.cost < best.cost) best = s; }
+    // golden-section search on the bracket round the best sample
+    let a = best.psi - TAU / K, b = best.psi + TAU / K;
+    const g = (Math.sqrt(5) - 1) / 2;
+    let x1 = b - g * (b - a), x2 = a + g * (b - a), f1 = at(x1), f2 = at(x2);
+    for (let it = 0; it < 40; it++) {
+      if (f1.cost < f2.cost) { b = x2; x2 = x1; f2 = f1; x1 = b - g * (b - a); f1 = at(x1); }
+      else { a = x1; x1 = x2; f1 = f2; x2 = a + g * (b - a); f2 = at(x2); }
+    }
+    for (const s of [f1, f2]) if (s.cost <= best.cost) best = s;
+    return { q: best.q, psi: best.psi, elbow: best.elbow, wrist, reach: Math.abs(gap) < 1e-9, gap, limits: Math.sqrt(excess(best.q)) };
+  }
+
+  // ---- putting the robot on the tags ----
+  // The chest frame from its forward direction, kept upright (z up).
+  function upright(f) {
+    let h = [f[0], f[1], 0];
+    if (norm(h) < 1e-6) h = [0, -1, 0];
+    h = unit(h);
+    return cols(h, cross([0, 0, 1], h), [0, 0, 1]);
+  }
+  const horiz = (a) => { const h = [a[0], a[1], 0], l = norm(h); return l > 1e-6 ? scale(h, 1 / l) : null; };
+
+  // The calibration, from one moment in the start pose (arms at the sides, forearms forward, palms in).
+  // input: { body: {R, t} | null, arms: [{key, pose: {R, t}, side: +1 | -1 | null}] }, poses in the plotted frame
+  // (z up). opts.toward: where the camera is in that frame, if known (the robot faces it when there's no body tag).
+  // With a body tag the chest follows that tag; a tag on the chest has its z out of the chest, y up and x to the
+  // wearer's left, and the chest is made upright at this moment. Without one the chest stays where it is put now:
+  // facing the camera (or square to the line between the two wrists), with the home wrists on the tags.
+  // An arm with no side given takes the side of the chest it is on. Each arm keeps the turn from its tag to the home
+  // hand, and the shift from the tag to the home wrist in the chest's frame, so a turned wrist turns the hand in place.
+  function calibrate(m, input, opts) {
+    const o = opts || {}, arms = (input.arms || []).filter((a) => a && a.pose);
+    let chest, bodyOffset = null;
+    if (input.body) {
+      const Rb = input.body.R;
+      let f = horiz([Rb[2], Rb[5], Rb[8]]);
+      if (!f) f = horiz(scale([Rb[1], Rb[4], Rb[7]], -1)) || [0, -1, 0];
+      chest = { R: upright(f), t: input.body.t.slice() };
+      bodyOffset = compose(inverse(input.body), chest);
+    } else {
+      const mid = arms.length ? scale(arms.reduce((s, a) => add(s, a.pose.t), [0, 0, 0]), 1 / arms.length) : [0, 0, 0];
+      let f = (o.toward && horiz(sub(o.toward, mid))) || [0, -1, 0];
+      if (arms.length === 2) {
+        const across = horiz(sub(arms[0].pose.t, arms[1].pose.t));
+        if (across) { const f2 = unit(cross([0, 0, 1], across)); f = dot(f2, f) >= 0 ? f2 : scale(f2, -1); }
+      }
+      chest = { R: upright(f), t: [0, 0, 0] };
+    }
+    // sides: given, else by which side of the chest the wrist is on (two unsided arms take one side each)
+    const yOf = (a) => dot(sub(a.pose.t, chest.t), [chest.R[1], chest.R[4], chest.R[7]]);
+    const sides = arms.map((a) => (a.side === 1 || a.side === -1 ? a.side : null));
+    const free = arms.map((a, i) => i).filter((i) => sides[i] === null);
+    if (free.length === 2 && sides.every((s) => s === null)) {
+      const [i, j] = free, left = yOf(arms[i]) >= yOf(arms[j]) ? i : j;
+      sides[left] = 1; sides[left === i ? j : i] = -1;
+    } else for (const i of free) {
+      const taken = sides.find((s, k) => k !== i && s !== null);
+      sides[i] = taken ? -taken : input.body ? (yOf(arms[i]) >= 0 ? 1 : -1) : -1;
+    }
+    if (!input.body) {
+      // put the chest where the home wrists land on the tags
+      let t = [0, 0, 0];
+      arms.forEach((a, i) => { t = add(t, sub(a.pose.t, mulv(chest.R, fk(m, sides[i], HOME).t))); });
+      chest.t = arms.length ? scale(t, 1 / arms.length) : [0, 0, 0];
+    }
+    return {
+      chest, bodyOffset,
+      arms: arms.map((a, i) => {
+        const home = fk(m, sides[i], HOME), Rc = mul3(chest.R, home.R);
+        const tagC = mulv(tr3(chest.R), sub(a.pose.t, chest.t));
+        return { key: a.key, side: sides[i], Roff: mul3(tr3(a.pose.R), Rc), shift: sub(home.t, tagC) };
+      }),
+    };
+  }
+
+  // The chest's pose now (plotted frame) and each arm's wrist target in the chest frame, from the current poses:
+  // { body: pose | null, arms: { [key]: pose } }. A missing arm pose gives a null target.
+  function targets(cal, poses) {
+    const chest = cal.bodyOffset && poses.body ? compose(poses.body, cal.bodyOffset) : cal.chest;
+    const Rt = tr3(chest.R);
+    return {
+      chest,
+      arms: cal.arms.map((a) => {
+        const p = poses.arms && poses.arms[a.key];
+        return { key: a.key, side: a.side, target: p ? { R: mul3(Rt, mul3(p.R, a.Roff)), t: add(mulv(Rt, sub(p.t, chest.t)), a.shift) } : null };
+      }),
+    };
+  }
+
+  // A chest-frame point in the plotted frame.
+  const place = (chest, p) => add(mulv(chest.R, p), chest.t);
+
+  return { MODEL, JOINTS, HOME, PREFER, model, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz };
+});

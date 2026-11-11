@@ -810,6 +810,8 @@
     untare: ['clear tare', 'clear tear', 'clear the tare', 'untare', 'clear orientation'],
     fit: ['fit', 'fit view', 'fit the view', 'zoom to fit'],
     reset: ['reset view', 'reset the view'],
+    robot: ['calibrate robot', 'calibrate the robot', 'zero robot', 'zero the robot'],
+    settings: ['settings', 'setting', 'preferences'],
   };
   const VOICE_LOOKUP = new Map();
   for (const [cmd, phrases] of Object.entries(VOICE_COMMANDS)) for (const p of phrases) VOICE_LOOKUP.set(p, cmd);
@@ -1284,6 +1286,11 @@
     mirror: false, // Mirror view: the picture, the plots and the data mirrored left to right, as in a mirror (else In person)
     flip: false, // show the picture upside down, for a camera mounted that way (the picture only)
     search: 'predicted', // predicted: search only where the tags should be (the whole picture every 10th frame); whole: every frame
+    show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
+    // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
+    // RobotCore.MODEL), whether the elbows prefer to sit out and below the hands, and whether the joint angles show.
+    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, joints: true },
+    setup: true, // show the Setup guide when the page opens
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
   // and/or flipped about the box's centre, as the CSS transform on the video does. Returns (x, y) -> [x, y].
@@ -1301,6 +1308,13 @@
     return { px, rotate, w: (rotate ? rows : cols) * px, h: (rotate ? cols : rows) * px };
   }
 
+  // One tag on a screen: the largest whole number of device pixels per cell (a tag is `cells` cells across, its black
+  // border included) with `margin` cells of white round it. Returns the pixels per cell and the tag's size on screen.
+  function tagFit(w, h, cells, margin) {
+    const m = margin == null ? 1 : margin, px = Math.max(0, Math.floor(Math.min(w, h) / (cells + 2 * m)));
+    return { px, size: cells * px };
+  }
+
   function clampSettings(s) {
     const o = Object.assign({}, DEFAULTS, s || {});
     const num = (k, lo, hi) => { const x = Number(o[k]); o[k] = isFinite(x) ? Math.min(hi, Math.max(lo, x)) : DEFAULTS[k]; };
@@ -1310,6 +1324,15 @@
     if (!MOTION[o.motion]) o.motion = DEFAULTS.motion;
     o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip;
     if (!['predicted', 'whole'].includes(o.search)) o.search = DEFAULTS.search;
+    if (!['robot', 'tags'].includes(o.show3d)) o.show3d = DEFAULTS.show3d;
+    const r = Object.assign({}, DEFAULTS.robot, o.robot && typeof o.robot === 'object' ? o.robot : {});
+    for (const k of ['body', 'left', 'right']) r[k] = typeof r[k] === 'string' && r[k] ? r[k] : 'auto';
+    r.elbows = !!r.elbows; r.joints = !!r.joints;
+    for (const k of ['back', 'half', 'up', 'upper', 'fore']) {
+      const x = Number(r[k]);
+      if (r[k] == null || !isFinite(x)) delete r[k]; else r[k] = Math.min(1, Math.max(k === 'back' || k === 'up' ? 0 : 0.05, x));
+    }
+    o.robot = r; o.setup = o.setup !== false;
     return o;
   }
 
@@ -1324,6 +1347,6 @@
     IMU, decodeBoardInfo, decodeImuBatch, encodeImuBatch, encodeBoardInfo, rotOfQuat, BoardClock, nearestRotation, lineUp, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
     PAPER, paperFor, printArea, maxTagSize, maxBoardSquare, STREAM_CSV_HEADER, streamMessage,
     fmtStamp, parseNotes, RECORDING_CSV_HEADER, recordingJson, recordingCsv, tidySpeech, insertSpeech, VOICE_COMMANDS, voiceCommand, VoiceGate,
-    DEFAULTS, clampSettings, boardFit, displayMap,
+    DEFAULTS, clampSettings, boardFit, tagFit, displayMap,
   };
 });
