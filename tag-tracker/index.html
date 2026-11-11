@@ -2830,6 +2830,8 @@ function speechWorker() {
   const fail = (msg) => { V.failed = msg; for (const f of V.pending.values()) f({ error: msg }); V.pending.clear(); };
   V.worker.onmessage = ({ data: d }) => {
     if (d.type === 'progress') {
+      if (d.file === undefined) V.sawTotal = true; // overall progress: once it comes, the per-file figures would make it jump
+      else if (V.sawTotal) return;
       V.progress = d.value;
       if (!V.ready && $('voice').dataset.state === 'processing') voiceSay('processing', `Downloading the speech model, ${Math.round(d.value)}% (only the first time)…`);
     } else if (d.type === 'ready') V.ready = true;
