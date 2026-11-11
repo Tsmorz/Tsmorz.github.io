@@ -19,6 +19,8 @@
 //      voice gate that ends an utterance after a pause
 //   5g. motion sensors (nrf-controller boards): their bytes, their clocks on the page's, how a board sits on its
 //      object (with mirror-image outliers), and the filter with a gyro and VQF's tilt against without
+//   5h. the robot: home pose, IK against FK, elbows out and low, steady joints, out of reach, calibration with one,
+//      two or three tags (and in Mirror view); one tag on a phone's screen; the robot's settings and voice commands
 //   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
@@ -652,6 +654,93 @@ console.log('5g. motion sensors');
   check(fa < 2 && fa < fb / 3, `a face-on tag one camera can't settle: ${fa.toFixed(2)}° RMS with the sensor's tilt, ${fb.toFixed(2)}° without`);
   const f = new C.PoseFilter(C.MOTION.balanced); f.init(0, moving(0));
   check(f.updateRate(0.6, [0, 0, 0], 0.02) === null, 'a motion sensor alone never keeps a track alive (nothing half a second after the last camera frame)');
+}
+
+console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a screen; its settings');
+{
+  const RC = require(path.join(__dirname, '..', 'tag-tracker/robot-core.js'));
+  const m = RC.model(), D = Math.PI / 180, N = 2000;
+  const rotErr = (A, B) => C.norm(C.so3Log(C.mul3(C.tr3(A), B)));
+  const randQ = () => RC.JOINTS.map((j) => j.lo + (j.hi - j.lo) * rnd());
+  const palm = (f, side) => [-side * f.R[1], -side * f.R[4], -side * f.R[7]], fingers = (f) => [-f.R[2], -f.R[5], -f.R[8]];
+  const L = RC.fk(m, 1, RC.HOME), Rt = RC.fk(m, -1, RC.HOME);
+  check(near(C.sub(L.elbow, L.shoulder), [0, 0, -m.upper], 1e-12) && near(C.sub(L.wrist, L.elbow), [m.fore, 0, 0], 1e-12) && near(fingers(L), [1, 0, 0], 1e-12), 'home: the upper arm hangs straight down, the forearm and fingers point forward');
+  check(near(palm(L, 1), [0, -1, 0], 1e-12) && near(palm(Rt, -1), [0, 1, 0], 1e-12) && near(Rt.wrist, [L.wrist[0], -L.wrist[1], L.wrist[2]], 1e-12), 'the palms face inward, and the right arm is the left one\'s mirror image');
+  const h = RC.ik(m, 1, L, null);
+  check(near(h.q, RC.HOME, 1e-6) && h.reach, 'the home wrist pose solves back to the home angles');
+
+  let worstP = 0, worstR = 0, over1 = 0, over5 = 0;
+  for (let k = 0; k < N; k++) {
+    const side = k % 2 ? 1 : -1, T = RC.fk(m, side, randQ()), s = RC.ik(m, side, T, null), F = RC.fk(m, side, s.q);
+    worstP = Math.max(worstP, C.norm(C.sub(F.t, T.t))); worstR = Math.max(worstR, rotErr(F.R, T.R));
+    if (s.limits > D) over1++;
+    if (s.limits > 5 * D) over5++;
+  }
+  check(worstP < 1e-9 && worstR < 1e-7, `IK then FK lands on the wrist pose (${N} random reachable poses): within ${worstP.toExponential(1)} m and ${worstR.toExponential(1)} rad`);
+  check(over1 <= N * 0.005 && over5 <= N * 0.002, `... with every joint within its limits but for ${over1} poses beyond 1° (${over5} beyond 5°)`);
+
+  // the spare degree of freedom: where an elbow can sit below the hand and out to the side, it does
+  let nPref = 0, worstLow = 0, worstOut = 0;
+  for (let k = 0; k < N; k++) {
+    const side = k % 2 ? 1 : -1, T = RC.fk(m, side, randQ());
+    if (T.elbow[2] > T.wrist[2] || side * (T.elbow[1] - T.shoulder[1]) < 0) continue;
+    const s = RC.ik(m, side, T, null);
+    if (s.limits > 1e-3) continue;
+    nPref++; worstLow = Math.max(worstLow, s.elbow[2] - s.wrist[2]); worstOut = Math.max(worstOut, -side * (s.elbow[1] - T.shoulder[1]));
+  }
+  check(nPref > 200 && worstLow < 0.01 && worstOut < 0.01, `elbows stay below the hands and out to the side wherever they can (${nPref} poses; at worst ${(worstLow * 100).toFixed(2)} cm above, ${(worstOut * 100).toFixed(2)} cm in)`);
+  const front = { R: L.R, t: [0.3, 0.05, 0.12] }, pref = RC.ik(m, 1, front, null), free = RC.ik(m, 1, front, { q: RC.HOME, elbow: [0.1, -0.1, 0.4] }, { prefer: false });
+  check(pref.elbow[2] <= pref.wrist[2] + 1e-6 && pref.elbow[1] >= L.shoulder[1] - 1e-6 && (free.elbow[2] > free.wrist[2] || free.elbow[1] < L.shoulder[1]), 'hands together in front of the chest: the elbows drop out to the sides (with the preference off they stay up and in where they were)');
+
+  // steadiness along a smooth path
+  const qa = [40 * D, 20 * D, 10 * D, 70 * D, 10 * D, 10 * D, 0], qb = [110 * D, 40 * D, -30 * D, 40 * D, -40 * D, 20 * D, 20 * D];
+  let prev = null, worstStep = 0, worstE = 0;
+  for (let i = 0; i <= 300; i++) {
+    const f = i / 300, s = RC.ik(m, 1, RC.fk(m, 1, qa.map((x, j) => x + (qb[j] - x) * f)), prev);
+    if (prev) { worstStep = Math.max(worstStep, ...s.q.map((x, j) => Math.abs(x - prev.q[j]))); worstE = Math.max(worstE, C.norm(C.sub(s.elbow, prev.elbow))); }
+    prev = s;
+  }
+  check(worstStep < 3 * D && worstE < 0.01, `a smooth wrist path gives smooth joints: at most ${(worstStep / D).toFixed(2)}° and ${(worstE * 1000).toFixed(1)} mm of elbow per step`);
+
+  // out of reach
+  const far = { R: L.R, t: C.add(L.shoulder, [0.5, 0.2, 0.3]) }, fs = RC.ik(m, 1, far, null), Ff = RC.fk(m, 1, fs.q);
+  const dist = C.norm(C.sub(far.t, L.shoulder)), along = C.add(L.shoulder, C.sub(far.t, L.shoulder).map((x) => (x * (m.upper + m.fore)) / dist));
+  check(!fs.reach && Math.abs(fs.gap - (dist - m.upper - m.fore)) < 1e-12 && near(Ff.t, along, 1e-9) && rotErr(Ff.R, far.R) < 1e-7, 'a wrist out of reach: the arm points straight at it, says how far short it is, and still turns the hand');
+
+  // calibration. A person 1.6 m from the camera, facing it (the plotted frame: x right, y away, z up), so their
+  // left is +x. Their wrist tags sit a little off the robot's home wrists, turned any way.
+  const body = { R: [1, 0, 0, 0, 0, -1, 0, 1, 0], t: [0, 1.6, 0] };
+  const chest0 = { R: RC.upright([0, -1, 0]), t: body.t };
+  const tagAt = (side, off) => ({ R: C.rodrigues([rnd() * 3 - 1.5, rnd() * 3 - 1.5, rnd() * 3 - 1.5]), t: C.add(RC.place(chest0, RC.fk(m, side, RC.HOME).t), off) });
+  const lt = tagAt(1, [0.02, -0.03, 0.01]), rt = tagAt(-1, [-0.01, 0.02, 0.03]);
+  const solve = (cal, poses) => RC.targets(cal, poses).arms.map((a) => ({ key: a.key, side: a.side, s: RC.ik(m, a.side, a.target, null) }));
+  let cal = RC.calibrate(m, { body, arms: [{ key: 'R', pose: rt }, { key: 'L', pose: lt }] });
+  let got = solve(cal, { body, arms: { L: lt, R: rt } });
+  check(got.find((a) => a.key === 'L').side === 1 && got.find((a) => a.key === 'R').side === -1 && got.every((a) => near(a.s.q, RC.HOME, 1e-6)), 'calibrating in the start pose: each wrist tag drives the arm on its side, and both arms are at home');
+  const G = { R: C.rodrigues([0.2, -0.4, 0.9]), t: [0.3, -0.2, 0.5] }, g = (p) => C.compose(G, p);
+  const moved = solve(cal, { body: g(body), arms: { L: g(lt), R: g(rt) } });
+  check(moved.every((a) => near(a.s.q, RC.HOME, 1e-6)), 'walking and turning the whole person moves the robot, not its joints');
+  const spin = { R: C.mul3(lt.R, C.rodrigues([0, 0.8, 0])), t: lt.t }, tg = RC.targets(cal, { body, arms: { L: spin, R: rt } }).arms[1].target;
+  check(near(tg.t, RC.fk(m, 1, RC.HOME).t, 1e-12) && Math.abs(C.angleOf(C.mul3(C.tr3(RC.fk(m, 1, RC.HOME).R), tg.R)) - 0.8) < 1e-9, 'turning a wrist turns the hand in place (no swing from where the tag sits)');
+  const reach = RC.targets(cal, { body, arms: { L: { R: lt.R, t: C.add(lt.t, [0, -0.1, 0.05]) }, R: rt } }).arms[1].target;
+  check(near(C.sub(reach.t, RC.fk(m, 1, RC.HOME).t), [0.1, 0, 0.05], 1e-12), 'a wrist moved 10 cm toward the camera and 5 cm up: the hand moves 10 cm forward and 5 cm up');
+  // no body tag: the chest faces the camera, put so the home wrists land on the tags
+  cal = RC.calibrate(m, { body: null, arms: [{ key: 'L', pose: lt }, { key: 'R', pose: rt }] }, { toward: [0, 0, 0] });
+  got = solve(cal, { body: null, arms: { L: lt, R: rt } });
+  check(got.every((a) => near(a.s.q, RC.HOME, 0.05)) && got.find((a) => a.key === 'L').side === 1 && cal.chest.R[1] > 0.99, 'two wrist tags and no body: two arms, facing the camera, near home');
+  cal = RC.calibrate(m, { body: null, arms: [{ key: 'R', pose: rt, side: -1 }] }, { toward: [0, 0, 0] });
+  got = solve(cal, { body: null, arms: { R: rt } });
+  check(got.length === 1 && got[0].side === -1 && near(got[0].s.q, RC.HOME, 1e-6), 'one wrist tag: one arm, exactly at home');
+  cal = RC.calibrate(m, { body: C.mirrorPose(body), arms: [{ key: 'L', pose: C.mirrorPose(lt) }, { key: 'R', pose: C.mirrorPose(rt) }] });
+  check(cal.arms.find((a) => a.key === 'L').side === -1, 'in Mirror view the robot is your reflection: your left wrist drives its right arm');
+
+  // a tag on a phone's screen, and the settings
+  const tf = C.tagFit(1170, 2532, 8, 1);
+  check(tf.px === 117 && tf.size === 936 && C.tagFit(9, 9, 8, 1).px === 0, 'one tag on a screen: whole pixels per cell, a cell of white round it');
+  const st = C.clampSettings({ show3d: 'x', robot: { body: '', left: 'b:hand', upper: 5, back: -1, elbows: 0 } });
+  check(st.show3d === 'robot' && st.robot.body === 'auto' && st.robot.left === 'b:hand' && st.robot.upper === 1 && st.robot.back === 0 && st.robot.elbows === false && st.robot.joints === true && st.setup === true && C.clampSettings({ setup: false }).setup === false, 'robot settings: roles, lengths clamped, switches, and the setup guide on unless turned off');
+  const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
+  check(cmd('Calibrate robot.') === 'robot' && cmd('Calibrate.') === 'calib' && cmd('Open settings.') === 'settings', '"calibrate robot" is not "calibrate", and "settings" opens the tab');
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
