@@ -219,7 +219,7 @@ export function tagName(epochSeconds) {
  * dashboard share a session tag (the start time, in epoch seconds); one started with the USER
  * button has tag 0 and becomes a session of its own. Returns [{ name, boards: [{ board, session }] }].
  *
- * A recording started on the board itself (a voice command, tag 0) shares no tag, but boards
+ * A recording started on the board itself (by voice, on firmware from before 2026-11-10: tag 0) shares no tag, but boards
  * following one radio clock source still line up: each such recording's start is placed on the
  * source's clock from its first clock pair, and starts within BOARD_STARTED_WINDOW_US of each
  * other are one session. Without clock pairs it stays a session of its own.

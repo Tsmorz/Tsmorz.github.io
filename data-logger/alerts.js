@@ -48,7 +48,7 @@ export class AlertWatch {
     if (was === null || was === log.state) return [];
     if (log.state === "full") return [this.alert("flash", "flash full", "Its recording stopped: upload and erase to record again.")];
     if (log.state === "error") return [this.alert("flash", "flash recorder error", `Its recording stopped (error ${log.error}).`)];
-    if (was === "recording" && log.state === "idle") return [this.alert("flash", "flash recording stopped", "Stopped on the board (a voice command, or it went to sleep).")];
+    if (was === "recording" && log.state === "idle") return [this.alert("flash", "flash recording stopped", "Stopped on the board: it went to sleep.")];
     return [];
   }
 

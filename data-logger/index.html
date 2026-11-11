@@ -342,7 +342,7 @@
   .h2-key + .h2-key { margin-left: 0; }
 
   /* Settings and Replay keys, lit while their drawer or view is open. */
-  #settings, #mouse-toggle, #motion-wake, #voice-listen, #notify, #replay-key, #whats-new-key { display: inline-flex; align-items: center; gap: 6px; }
+  #settings, #mouse-toggle, #motion-wake, #notify, #replay-key, #whats-new-key { display: inline-flex; align-items: center; gap: 6px; }
   /* What's new: the key's lamp lights while there's something this browser hasn't seen. */
   #whats-new-key::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
   #whats-new-key.unseen::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
@@ -357,8 +357,8 @@
   .whats-new-list .fw-note { margin: 4px 0 0; font: 11.5px var(--mono); color: var(--text-2); }
   #settings[aria-expanded="true"], #replay-key[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-ink); box-shadow: inset 0 -1px 0 var(--key-shadow), 0 0 8px var(--pressed-glow); }
   /* Mouse switch: a lamp that lights while the selected board sends mouse reports. */
-  #mouse-toggle::before, #motion-wake::before, #voice-listen::before, #notify::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
-  #mouse-toggle[aria-checked="true"]::before, #motion-wake[aria-checked="true"]::before, #voice-listen[aria-checked="true"]::before, #notify[aria-checked="true"]::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  #mouse-toggle::before, #motion-wake::before, #notify::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  #mouse-toggle[aria-checked="true"]::before, #motion-wake[aria-checked="true"]::before, #notify[aria-checked="true"]::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
   /* Each connected board's radio clock: its name, then what it is doing. */
   .clock-boards { list-style: none; margin: 8px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
   .clock-boards li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
@@ -399,9 +399,17 @@
   .fw-targets .state { font: 11.5px var(--mono); color: var(--text-2); text-align: right; font-variant-numeric: tabular-nums; }
   .fw-targets li.failed .state { color: var(--bad); }
   #fw-empty { margin: 12px 0 0; font-size: 12.5px; }
-  /* Keyword clips dialog: the setup in one strip, the word and its key, how far you've got, and the
-     last take under them. It fits a laptop window without scrolling. */
-  #voice-dialog { width: min(880px, calc(100vw - 32px)); }
+  /* Speech to text under Microphone: the Talk key, then what was heard, newest first. */
+  #talk { min-width: 92px; font-variant-numeric: tabular-nums; }
+  #talk.recording { background: var(--bad); border-color: var(--bad); color: #fff; }
+  #talk-status { margin: 6px 0 0; }
+  .transcript { list-style: none; margin: 6px 0 0; padding: 0; max-height: 80px; overflow-y: auto; font-size: 13px; line-height: 18px; }
+  main .transcript { cursor: text; }
+  .transcript li { display: flex; gap: 10px; padding: 4px 0; border-top: 1px dashed var(--line-strong); overflow-wrap: anywhere; }
+  .transcript .when { flex: none; font: 11.5px/18px var(--mono); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  /* A dialog's status line, under its steps. */
+  .dialog-status { margin: 8px 0 0; min-height: 36px; font-size: 13px; line-height: 18px; color: var(--text-2); }
+  .dialog-status.bad-text { color: var(--bad); }
   /* Calibrate the IMU: the pose view large beside the steps. */
   #cal-dialog { width: min(900px, calc(100vw - 32px)); }
   .cal-deck { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; margin-top: 12px; }
@@ -426,59 +434,9 @@
     .plot.pose.cal-pose { min-height: 280px; }
     .cal-faces { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
-  .voice-setup { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed var(--line-strong); }
-  .voice-step { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12.5px; }
-  .voice-step .lamp { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 1px var(--line-strong); }
-  .voice-step.done .lamp { background: var(--good); }
-  .voice-step-name { font: 650 10.5px var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); }
-  .voice-step-value { font: 11.5px var(--mono); color: var(--text-2); max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .voice-step button { padding: 2px 8px 3px; }
-  .voice-step.bad .voice-step-value { color: var(--bad); }
-  .voice-background { margin-top: 8px; }
-  .voice-deck { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; }
-  .voice-prompt { min-width: 0; }
-  .voice-say-label, .voice-progress-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0; min-height: 22px;
                                            font: 650 10.5px var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; color: var(--text-2); }
-  .voice-say-label .num, .voice-progress-head #voice-progress-text { font: 11.5px var(--mono); letter-spacing: 0; text-transform: none; }
-  .voice-progress-head label { display: inline-flex; align-items: center; gap: 6px; }
-  .voice-progress-head input { width: 56px; padding: 1px 4px; font: 11.5px var(--mono); }
-  .voice-say { margin: 2px 0 0; font: 700 44px/1.1 var(--sans); font-stretch: 105%; overflow-wrap: anywhere; }
-  .voice-way { margin: 2px 0 10px; font-size: 13.5px; color: var(--text-2); min-height: 19px; }
-  button.voice-key { display: block; width: 100%; padding: 15px 12px 16px; font-size: 15px; touch-action: none; user-select: none; }
-  button.voice-key:disabled { color: var(--text-2); }
-  button.voice-key.recording { background: var(--bad); border-color: var(--bad); color: #fff; box-shadow: inset 0 1px 0 rgba(0, 0, 0, .3); transform: translateY(1px); }
-  .voice-gauges { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 9px; font: 650 9.5px var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
-  .voice-gauges .bar { height: 8px; }
-  .voice-level > i { background: repeating-linear-gradient(90deg, var(--good) 0 5px, transparent 5px 7px); }
-  .voice-status { margin: 8px 0 0; min-height: 36px; font-size: 13px; line-height: 18px; color: var(--text-2); }
-  .voice-status.bad-text { color: var(--bad); }
-  .voice-status.next-step { color: var(--signal-ink); font-weight: 600; }
-  .voice-progress { min-width: 0; }
-  .voice-words { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; margin-top: 4px; }
-  .voice-words button { position: relative; display: flex; justify-content: space-between; gap: 4px; padding: 3px 6px 4px; overflow: hidden; font: 11px/1.3 var(--mono); letter-spacing: 0;
                         box-shadow: none; background: linear-gradient(90deg, var(--pressed-bg) var(--filled, 0%), transparent var(--filled, 0%)); }
-  .voice-words button:only-child { grid-column: 1 / -1; }
-  .voice-words button:hover:not(:disabled) { background: linear-gradient(90deg, var(--pressed-bg) var(--filled, 0%), var(--inset) var(--filled, 0%)); }
-  .voice-words button:active:not(:disabled) { transform: none; box-shadow: none; }
-  .voice-words button[aria-current="true"] { outline: 2px solid var(--signal); outline-offset: -2px; font-weight: 500; }
-  .voice-words button.finished { color: var(--good); }
-  .voice-words .count { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .voice-words button.finished .count { color: inherit; }
-  .voice-last-take { margin: 10px 0 0; display: flex; justify-content: space-between; gap: 12px; }
-  .plot.wave.voice-wave { position: relative; height: 84px; margin-top: 4px; }
-  .voice-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; font-size: 12.5px; color: var(--screen-muted); pointer-events: none; }
-  .voice-empty span { padding: 0 8px; background: var(--screen); }
-  #voice-wave { touch-action: none; }
-  .voice-actions { margin-top: 8px; }
-  .voice-actions-gap { flex: 1; }
   kbd { display: inline-block; min-width: 16px; margin-left: 4px; padding: 0 3px; border: 1px solid var(--line-strong); border-radius: 2px; font: 10px/14px var(--mono); text-align: center; color: var(--text-2); }
-  #voice-bg-record.recording { background: var(--bad); border-color: var(--bad); color: #fff; }
-  @media (max-width: 720px) { .voice-deck { grid-template-columns: minmax(0, 1fr); } .voice-say { font-size: 34px; } }
-  /* Settings › Voice: the board's model, which actions it obeys (by its phrases), what it heard lately. */
-  .voice-model { margin: 8px 0 0; font: 11.5px var(--mono); color: var(--text-2); overflow-wrap: anywhere; }
-  /* The words dialog: one row per phrase, what it does, and the folder its clips go in. */
-  .voice-heard { list-style: none; margin: 6px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
-  .voice-heard li { display: flex; justify-content: space-between; gap: 12px; }
   #fw-status { font-size: 12.5px; }
   #usb-bootloader { margin: 10px 0 0; overflow-wrap: anywhere; }
   #usb-firmware, #usb-key { margin: 4px 0 0; overflow-wrap: anywhere; }
@@ -689,8 +647,17 @@
       <div class="tooltip" id="spectrum-tip" hidden></div>
     </div>
     <div class="x-axis"><span>−4 s</span><span>−2 s</span><span>now</span></div>
+    <div class="plot-head speech-head"><span>Speech to text <span class="muted">on this computer</span></span></div>
+    <div class="row speech-row">
+      <button id="talk" type="button" aria-pressed="false" disabled>Talk</button>
+      <button id="transcript-copy" type="button" hidden>Copy</button>
+      <button id="transcript-clear" type="button" hidden>Clear</button>
+    </div>
+    <p class="status-line muted" id="talk-status" role="status" aria-live="polite"></p>
+    <ol class="transcript" id="transcript" aria-label="What the board heard, newest first"></ol>
     <div class="info-pop" id="mic-info" popover>
       <p>The level is the loudest sample in each millisecond, which a recording on this computer keeps (the boards' flash doesn't). The spectrum is for watching only (not recorded): brighter is louder.</p>
+      <p>Talk sends the board's microphone to this page, up to 30 s at a time; its live data pause meanwhile. Whisper (tiny.en, English) turns it into text on this computer: the audio goes nowhere else. The speech model downloads the first time and the browser keeps it.</p>
     </div>
   </section>
 
@@ -755,7 +722,7 @@
   <section>
     <h2>Sync <span class="muted">to every connected board</span></h2>
     <div class="row">
-      <button id="settings-sync" disabled title="Copies this board's mouse speed, IMU ranges, wake on motion and voice listening to every connected board. Each keeps its own mouse on or off and its clock role.">Sync all boards</button>
+      <button id="settings-sync" disabled title="Copies this board's mouse speed, IMU ranges and wake on motion to every connected board. Each keeps its own mouse on or off and its clock role.">Sync all boards</button>
       <span class="muted" id="settings-sync-status"></span>
     </div>
   </section>
@@ -788,10 +755,10 @@
   <section>
     <h2>Clock sync <span class="muted">radio, saved on the boards</span><button type="button" class="info" popovertarget="clock-info" aria-label="About radio clock sync"></button></h2>
     <div class="row">
-      <label>Source and pointer <select id="clock-source" disabled title="The board whose clock the others follow. It alone can be the pointer and hear voice commands"></select></label>
+      <label>Source and pointer <select id="clock-source" disabled title="The board whose clock the others follow. It alone can be the pointer"></select></label>
     </div>
     <ul class="clock-boards" id="clock-boards"></ul>
-    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond.</p><p>The source is also the pointer: only it can move the cursor and hear “toggle cursor”. A board connected on its own becomes the source by itself, with its mouse still off until you turn it on.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
+    <div class="info-pop" id="clock-info" popover><p>One board broadcasts its clock over Bluetooth and every other board records, about once a second, what time it was on both. <code>task align</code> then lines the boards up on the source's clock to about a microsecond.</p><p>The source is also the pointer: only it can move the cursor. A board connected on its own becomes the source by itself, with its mouse still off until you turn it on.</p><p>Each board remembers its role, so a flash recording after a restart still syncs. With no source, the others only listen in short bursts.</p></div>
   </section>
   <section>
     <h2>Sleep <span class="muted">saved on the board</span></h2>
@@ -826,20 +793,6 @@
       <button id="led-off">Off</button>
     </div>
     <div class="info-pop" id="lights-info" popover><p>Overrides the status LED (blue advertising, green connected) until the next connect or disconnect.</p></div>
-  </section>
-  <section>
-    <h2>Voice <span class="muted">saved on the board</span><button type="button" class="info" popovertarget="voice-info" aria-label="About voice commands"></button></h2>
-    <div class="row">
-      <button id="voice-listen" type="button" role="switch" aria-checked="false" disabled>Listening</button>
-      <button id="voice-model-upload" disabled title="A .voice file from task training:export, to every connected board">Upload model…</button>
-      <button id="voice-model-remove" disabled title="Erase this board's model: it stops listening">Remove</button>
-      <input type="file" id="voice-model-file" accept=".voice" hidden aria-label="Voice model">
-    </div>
-    <p class="voice-model" id="voice-model"></p>
-    <p class="hint" id="voice-settings-status">Connect a board to set up its voice commands.</p>
-    <ul class="voice-heard" id="voice-heard"></ul>
-    <div class="row"><button id="voice-open">Clips and background audio…</button></div>
-    <div class="info-pop" id="voice-info" popover><p>Only the clock source listens for voice commands, so the others can record undisturbed. Record clips and background audio under Clips and background audio, train and export (<code>docs/voice-commands.md</code>), then Upload model: an upload, not a firmware update. It goes to every connected board, so any of them can become the source.</p><p>Every command heard is recorded as an event, so false triggers show in the data.</p></div>
   </section>
   <section>
     <h2>Firmware<button type="button" class="info" popovertarget="firmware-info" aria-label="About firmware updates"></button></h2>
@@ -914,60 +867,6 @@
   </div>
 </dialog>
 
-<dialog id="voice-dialog" aria-labelledby="voice-title">
-  <div class="dialog-head"><h2 id="voice-title">Keyword clips <span class="muted" id="voice-board"></span><button type="button" class="info" popovertarget="voice-help" aria-label="How recording clips works"></button></h2>
-    <button type="button" id="voice-close" aria-label="Close" title="Close (Q)">✕</button></div>
-  <div class="dialog-body">
-    <div class="info-pop" id="voice-help" popover>
-      <p>Hold Enter, say the word once, and let go. Every connected board saves its own clip of just that, with room noise around it so the file stays 2 s for training.</p>
-      <p>Follow the line under the word: clips that differ in speed, loudness and distance are what make a model work. Record in at least two sittings, since a word's latest takes are held back to test it.</p>
-      <p>The waveform shows the whole take, what you held highlighted and a moment either side dimmed. If a word got cut off or a bump got in, drag the highlight's edges, then Keep section.</p>
-      <p>Keys: arrows move between the buttons and choose a word, Enter records on a word, the record key or anywhere else, but presses Play, Redo and the other buttons when you're on them, P plays, Backspace redoes, Q closes this window.</p>
-      <p>Over Bluetooth a board's live streams pause while it sends. With a USB cable a clip takes under a second and they carry on. Afterwards a cabled board can't sleep until it loses all power.</p>
-    </div>
-    <div class="voice-setup">
-      <div class="voice-step" id="voice-step-folder"><span class="lamp"></span><span class="voice-step-name">Folder</span>
-        <span class="voice-step-value" id="voice-folder"></span><button id="voice-pick-folder" title="data/keywords/ in the repo: training reads it from there">Choose…</button></div>
-      <div class="voice-step" id="voice-step-speaker"><span class="lamp"></span><label for="voice-speaker" class="voice-step-name">Your name</label>
-        <input type="text" id="voice-speaker" size="9" placeholder="required" autocomplete="off" title="Goes in each clip's file name, so training can score each voice"></div>
-      <div class="voice-step" id="voice-step-link"><span class="lamp"></span><span class="voice-step-name">Link</span>
-        <span class="voice-step-value" id="voice-usb-status"></span>
-        <button id="voice-usb" title="With a board plugged into this computer, its clips come through its USB programmer (XIAO nRF54LM20A CMSIS-DAP) in under a second. Add one cable per board. Close OpenOCD or pyOCD first. Afterwards the board can't sleep until it loses all power.">Add USB…</button>
-        <button id="voice-usb-off" hidden>Use Bluetooth</button></div>
-    </div>
-    <div id="voice-takes">
-      <div class="voice-deck">
-        <div class="voice-prompt">
-          <p class="voice-say-label"><span>Say</span><span class="num" id="voice-does"></span></p>
-          <p class="voice-say" id="voice-say"></p>
-          <p class="voice-way" id="voice-way"></p>
-          <button class="primary voice-key" id="voice-capture" disabled><span id="voice-capture-text">Hold Enter to record</span></button>
-          <div class="voice-gauges">
-            <span>Time</span><div class="bar" id="voice-bar" role="progressbar" aria-label="Time left in this take" aria-valuemin="0" aria-valuemax="100"><i></i></div>
-            <span>Level</span><div class="bar voice-level" id="voice-level" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100"><i></i></div>
-          </div>
-          <p class="voice-status" id="voice-status" role="status" aria-live="polite"></p>
-        </div>
-        <div class="voice-progress">
-          <p class="voice-progress-head"><span id="voice-progress-text"></span><label>Target <input type="number" id="voice-target" min="1" max="500" title="Clips of each word to aim for"></label></p>
-          <div class="voice-words" id="voice-words"></div>
-          <div class="row voice-background"><button id="voice-bg-record" title="Leave it running while you talk, play music or work as usual, for as long as you like. Training learns what to ignore from it, and counts false triggers on what it hasn't heard. Just don't say the spelling words.">Record background audio</button><span class="readout" id="voice-bg-count"></span></div>
-          <p class="voice-status" id="voice-bg-status" role="status" aria-live="polite"></p>
-        </div>
-      </div>
-      <div class="plot-head voice-last-take"><span id="voice-last-take"></span><span class="readout" id="voice-levels"></span></div>
-      <div class="plot wave voice-wave"><canvas id="voice-wave" aria-label="The last take's waveform, with what's saved highlighted" title="The highlight is what's saved. Drag its edges or across the waveform to change it, then Keep section. Scroll to zoom, even mid-drag; scroll sideways to move along."></canvas><p class="voice-empty" id="voice-empty"><span>Hold Space, say the word, let go. Your take shows up here.</span></p></div>
-      <div class="row voice-actions">
-        <button id="voice-play" disabled>Play <kbd>P</kbd></button>
-        <button id="voice-discard" disabled title="Removes every board's clip of this saying, and asks for the word again">Redo <kbd>⌫</kbd></button>
-        <span class="voice-actions-gap"></span>
-        <button id="voice-keep" disabled title="Saves the highlighted section of every board's take of this saying. Room noise fills the rest, so each file stays 2 s for training.">Keep section</button>
-        <button id="voice-restore" hidden title="Goes back to what you held">Undo keep</button>
-      </div>
-    </div>
-  </div>
-</dialog>
-
 <dialog id="cal-dialog" aria-labelledby="cal-title">
   <div class="dialog-head"><h2 id="cal-title">Calibrate the IMU <span class="muted" id="cal-board"></span><button type="button" class="info" popovertarget="cal-help" aria-label="How calibrating works"></button></h2>
     <button type="button" id="cal-close" aria-label="Close">✕</button></div>
@@ -1005,7 +904,7 @@
             <p class="readout" id="cal-gains"></p>
           </div>
         </div>
-        <p class="voice-status" id="cal-status" role="status" aria-live="polite"></p>
+        <p class="dialog-status" id="cal-status" role="status" aria-live="polite"></p>
         <div class="row">
           <button class="primary" id="cal-save" disabled>Save to the board</button>
           <button id="cal-restart">Start over</button>

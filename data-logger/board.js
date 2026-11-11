@@ -5,19 +5,16 @@
 // they come but not shown.
 import { SmpClient, updateFirmware, verifyUpdate } from "./dfu.js";
 import {
-  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, KEYWORD_AUDIO, KEYWORD_CLIP, KEYWORD_COMMAND, KEYWORD_MODEL, KEYWORD_SERVICE, KEYWORD_SETTINGS,
-  KEYWORD_VOCABULARY, LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
+  DATA_CLOCK, DATA_ENVELOPE, DATA_EVENTS, DATA_IMU, DATA_INFO, DATA_SERVICE, DATA_SPECTRUM, AUDIO_COMMAND, AUDIO_SERVICE, AUDIO_STREAM,
+  LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET, TELEMETRY_IMU_CALIBRATION,
   TELEMETRY_SERVICE, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
-  decodeAudioChunk, decodeClipChunk, decodeClockPair, decodeKeywordEvent, decodeKeywordSettings, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset, decodeImuCalibration, encodeImuCalibration,
-  encodeClipHold, encodeClipRelease, encodeClockRole, encodeKeywordSettings, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
+  decodeAudioChunk, decodeClockPair, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset, decodeImuCalibration, encodeImuCalibration,
+  encodeClockRole, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
-  MODEL_CHUNK_BYTES, decodeModelStatus, decodeVocabulary, encodeModelBegin, encodeModelCancel, encodeModelChunk, encodeModelCommit, encodeModelRemove,
 } from "./wire.js";
-import { ClipAssembler } from "./clips.js";
 import { applyCalibration } from "./imu-calibration.js";
-import { samplesFromBytes, takeFromMailbox } from "./mailbox.js";
 import { RateMeter } from "./rate-meter.js";
 import { TimeUnwrapper, restartedSince } from "./recording.js";
 import { SMP_CHARACTERISTIC, SMP_SERVICE } from "./smp.js";
@@ -32,8 +29,6 @@ const hostNow = () => performance.timeOrigin + performance.now();
 // A notification's DataView, kept to be handled later.
 const copyView = (view) => new DataView(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
 
-// The refusal doesn't say why: a board busy with something else and one too old both fail the write.
-const clipRefused = (cause) => new Error("it couldn't start recording. It may be busy: try again. If it keeps refusing, restart it, or update its firmware", { cause });
 // How long connect() waits for an IMU batch to tell whether the board restarted (see `continuing`).
 const CONTINUITY_WAIT_MS = 2000;
 
@@ -87,14 +82,8 @@ export class Board extends EventTarget {
     this.battery = null;
     this.led = null; // the color the board's LED shows, if this firmware reports it
     this.download = null;
-    this.clip = null; // the keyword clip being captured, if any
-    this.canCaptureClips = false; // whether this firmware has the keyword service
-    this.voice = null; // { listening, obeyed, hasModel, takesModels }, if this firmware has voice settings
-    this.voiceHeard = []; // the latest keyword events: { action, outcome, hostMs }
-    this.voiceModel = null; // the model's status (decodeModelStatus), if this firmware takes uploaded models
-    this.vocabulary = null; // { name, commands: [{ action, phrase }] } of the loaded model
-    this.modelWaiter = null; // resolves with the status once an upload or removal has finished
-    this.audioStream = null; // the background-audio stream running, if any
+    this.canStreamAudio = false; // whether this firmware streams its microphone (startAudioStream())
+    this.audioStream = null; // the audio stream running, if any
     this.smp = null; // the firmware update client, if this firmware can be updated over Bluetooth
     this.hasSpectrum = false; // whether this firmware sends the mic's spectrum
     this.spectrumWanted = false; // whether the page shows it (wantSpectrum())
@@ -221,7 +210,7 @@ export class Board extends EventTarget {
     await this.connectClock(control, subscribe);
 
     await this.connectLog(server, subscribe);
-    await this.connectKeyword(server, subscribe);
+    await this.connectAudio(server, subscribe);
     await this.connectSmp(server);
 
     try {
@@ -423,107 +412,17 @@ export class Board extends EventTarget {
     this.onLogStatus(await this.chars.logStatus.readValue());
   }
 
-  // Firmware from before voice commands has no keyword service; the rest still works.
-  async connectKeyword(server, subscribe) {
-    let service;
+  // The microphone stream (Talk). Firmware from before it has no audio service, or no stream on
+  // it yet; the rest still works.
+  async connectAudio(server, subscribe) {
     try {
-      service = await server.getPrimaryService(KEYWORD_SERVICE);
+      const service = await server.getPrimaryService(AUDIO_SERVICE);
+      this.chars.audioCommand = await service.getCharacteristic(AUDIO_COMMAND);
+      await subscribe(service, AUDIO_STREAM, (view) => this.onAudioChunk(view));
     } catch {
       return;
     }
-    this.chars.keywordCommand = await service.getCharacteristic(KEYWORD_COMMAND);
-    await subscribe(service, KEYWORD_CLIP, (view) => this.onClipChunk(view));
-    this.canCaptureClips = true;
-    try {
-      this.chars.voiceSettings = await service.getCharacteristic(KEYWORD_SETTINGS);
-      this.voice = decodeKeywordSettings(await this.chars.voiceSettings.readValue());
-      await subscribe(service, KEYWORD_AUDIO, (view) => this.onAudioChunk(view));
-    } catch {
-      /* firmware from before voice settings and background audio */
-    }
-    try {
-      this.chars.voiceModel = await subscribe(service, KEYWORD_MODEL, (view) => this.onModelStatus(view));
-      this.chars.vocabulary = await service.getCharacteristic(KEYWORD_VOCABULARY);
-    } catch {
-      return; /* firmware from before uploadable models (or built without them) */
-    }
-    this.onModelStatus(await this.chars.voiceModel.readValue());
-    await this.readVocabulary();
-  }
-
-  onModelStatus(view) {
-    const status = decodeModelStatus(view);
-    if (!status) return;
-    this.voiceModel = status;
-    if (["ready", "none", "failed"].includes(status.state)) this.modelWaiter?.resolve(status);
-    this.changed();
-  }
-
-  async readVocabulary() {
-    this.vocabulary = decodeVocabulary(await this.queue(() => this.chars.vocabulary.readValue()));
-    if (this.voice) this.voice = decodeKeywordSettings(await this.queue(() => this.chars.voiceSettings.readValue()));
-    this.changed();
-  }
-
-  /** The model's status once it settles (ready, none or failed), or a rejection after `ms`. */
-  waitForModel(ms) {
-    this.modelWaiter?.reject(new Error("superseded"));
-    const waiter = {};
-    const promise = new Promise((resolve, reject) => Object.assign(waiter, { resolve, reject }));
-    const timer = setTimeout(() => waiter.reject(new Error("the board didn't say how it went")), ms);
-    this.modelWaiter = waiter;
-    return promise.finally(() => {
-      clearTimeout(timer);
-      if (this.modelWaiter === waiter) this.modelWaiter = null;
-    });
-  }
-
-  /**
-   * Uploads a voice model package (voicepkg.js checked it) to the board, which stops listening
-   * meanwhile, checks it, runs it and saves it. Resolves with the board's status once it is
-   * listening with it; rejects with why not, the board having gone back to its previous model.
-   * onProgress(fraction) follows the transfer. One link-layer packet per write: ~5 s for 48 KB.
-   */
-  async uploadVoiceModel(bytes, onProgress) {
-    if (!this.chars.voiceModel) throw new Error("this board's firmware can't take voice models: update it");
-    if (this.voiceModel && bytes.length > this.voiceModel.maxBytes) {
-      throw new Error(`too big for this board's firmware (${bytes.length} of ${this.voiceModel.maxBytes} bytes)`);
-    }
-    await this.write(this.chars.keywordCommand, encodeModelBegin(bytes.length));
-    try {
-      for (let offset = 0; offset < bytes.length; offset += MODEL_CHUNK_BYTES) {
-        await this.write(this.chars.keywordCommand, encodeModelChunk(offset, bytes.subarray(offset, offset + MODEL_CHUNK_BYTES)));
-        onProgress?.(Math.min(1, (offset + MODEL_CHUNK_BYTES) / bytes.length));
-      }
-    } catch (error) {
-      if (this.connected) await this.write(this.chars.keywordCommand, encodeModelCancel()).catch(() => {});
-      throw error;
-    }
-    // Waiting before the commit: the board's answer can come before the write's.
-    const settled = this.waitForModel(30000);
-    await this.write(this.chars.keywordCommand, encodeModelCommit());
-    const status = await settled;
-    await this.readVocabulary();
-    if (status.result !== "ok" || status.state !== "ready") throw new Error(modelResultText(status));
-    return status;
-  }
-
-  /** Erases the board's voice model: it stops listening. */
-  async removeVoiceModel() {
-    if (!this.chars.voiceModel) throw new Error("this board's firmware has no voice model to remove");
-    const settled = this.waitForModel(15000);
-    await this.write(this.chars.keywordCommand, encodeModelRemove());
-    await settled;
-    await this.readVocabulary();
-  }
-
-  /** Sets whether the board listens and which commands it obeys (saved on it); reads them back. */
-  async setVoiceSettings(settings) {
-    if (!this.chars.voiceSettings) throw new Error("this board's firmware has no voice settings: update it");
-    await this.write(this.chars.voiceSettings, encodeKeywordSettings(settings));
-    this.voice = decodeKeywordSettings(await this.queue(() => this.chars.voiceSettings.readValue()));
-    this.changed();
-    return this.voice;
+    this.canStreamAudio = true;
   }
 
   /**
@@ -532,12 +431,12 @@ export class Board extends EventTarget {
    * firstSample counts from the stream's start, so a gap shows a lost chunk.
    */
   async startAudioStream(onChunk, decode) {
-    if (!this.chars.voiceSettings) throw new Error("this board's firmware can't stream audio: update it");
+    if (!this.canStreamAudio) throw new Error("this board's firmware can't stream audio: update it");
     if (this.audioStream) throw new Error("already streaming");
     const streamId = Math.floor(Math.random() * 0x10000);
     this.audioStream = { streamId, onChunk, decode };
     try {
-      await this.write(this.chars.keywordCommand, encodeStreamStart(streamId));
+      await this.write(this.chars.audioCommand, encodeStreamStart(streamId));
     } catch (error) {
       this.audioStream = null;
       throw error;
@@ -548,7 +447,7 @@ export class Board extends EventTarget {
     if (!this.audioStream) return;
     this.audioStream = null;
     try {
-      if (this.connected) await this.write(this.chars.keywordCommand, encodeStreamStop());
+      if (this.connected) await this.write(this.chars.audioCommand, encodeStreamStop());
     } finally {
       // The board paused its live streams while it sent audio; don't count the pause as lost data.
       this.lastSeq = this.lastWindow = this.lastEventSeq = null;
@@ -694,9 +593,7 @@ export class Board extends EventTarget {
     this.listeners = [];
     this.recording = null;
     this.download?.reject(new Error("disconnected"));
-    this.modelWaiter?.reject(new Error("disconnected"));
-    this.clip?.reject(new Error("disconnected"));
-    this.audioStream?.onChunk(null); // tells the recorder the stream ended
+    this.audioStream?.onChunk(null); // tells the listener the stream ended
     this.audioStream = null;
     this.smp?.close(new Error("disconnected"));
     this.dispatchEvent(new Event("disconnected"));
@@ -828,9 +725,6 @@ export class Board extends EventTarget {
 
     if (event.type === "temperature") {
       this.temperatureC = temperatureFromEvent(event.peak);
-    } else if (event.type === "keyword") {
-      this.voiceHeard.unshift({ ...decodeKeywordEvent(event.peak), hostMs });
-      this.voiceHeard.length = Math.min(this.voiceHeard.length, 8);
     } else if (event.type === "press" || event.type === "release") {
       this.userPressed = event.type === "press";
       if (this.userPressed) {
@@ -926,71 +820,6 @@ export class Board extends EventTarget {
     }
   }
 
-  // ---- keyword clips ------------------------------------------------------------------------
-  onClipChunk(view) {
-    const chunk = decodeClipChunk(view);
-    const clip = this.clip;
-    if (!chunk || chunk.clipId !== clip?.assembler?.clipId) return; // none asked for, or an earlier one's
-    if (clip.assembler.add(chunk)) clip.finish();
-    else clip.onProgress?.(clip.assembler.progress);
-  }
-
-  /**
-   * Records the board's microphone until releaseClip() (its LED shows magenta meanwhile) and
-   * resolves with the samples, at the board info's micRateHz: a moment either side of the hold
-   * (clip-view.js's heldSection()), 2 s at most. `onCapturing` is called once the board has started,
-   * `onProgress` with the fraction sent: ~2.5 s more a second of clip to a Mac, with the live streams
-   * paused. With `usb` (this board's attached Nrf54lm20a, swd.js), the page reads the clip through
-   * the board's USB probe instead (mailbox.js): under a second, and the live streams carry on.
-   */
-  async captureClip({ onCapturing, onProgress, usb = null } = {}) {
-    if (!this.canCaptureClips) throw new Error("this board's firmware can't capture clips: update it");
-    if (this.clip) throw new Error("already capturing a clip");
-    this.clipId = ((this.clipId ?? Math.floor(Math.random() * 0x10000)) + 1) & 0xffff;
-    if (usb) return this.captureClipOverUsb(this.clipId, usb, { onCapturing, onProgress });
-    const assembler = new ClipAssembler(this.clipId);
-    const done = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("the clip didn't arrive")), 20000);
-      this.clip = {
-        assembler, onProgress,
-        finish: () => (clearTimeout(timer), resolve(assembler.samples)),
-        reject: (error) => (clearTimeout(timer), reject(error)),
-      };
-    });
-    try {
-      // A refusal (busy, or the board uploading its flash) ends the capture with the write's error.
-      const asked = performance.now();
-      await this.write(this.chars.keywordCommand, encodeClipHold(this.clipId))
-        .then(() => onCapturing?.((performance.now() - asked) / 2), (error) => this.clip.reject(clipRefused(error)));
-      return await done;
-    } finally {
-      this.clip = null;
-      // The board pauses its live streams while it sends a clip; don't count the pause as lost data.
-      this.lastSeq = this.lastWindow = this.lastEventSeq = null;
-      this.rateMeter.reset();
-    }
-  }
-
-  /** Ends the clip captureClip() is recording. Writes go in order, so this may follow it at once. */
-  async releaseClip() {
-    await this.write(this.chars.keywordCommand, encodeClipRelease()).catch(() => {}); // it stops at 2 s anyway
-  }
-
-  async captureClipOverUsb(clipId, chip, { onCapturing, onProgress }) {
-    // One at a time, as over Bluetooth. A disconnect doesn't end it: the clip comes by USB.
-    this.clip = { assembler: null, reject: () => {} };
-    try {
-      const asked = performance.now();
-      await this.write(this.chars.keywordCommand, encodeClipHold(clipId, { overUsb: true })).catch((error) => {
-        throw clipRefused(error);
-      });
-      onCapturing?.((performance.now() - asked) / 2);
-      return samplesFromBytes(await takeFromMailbox(chip, clipId, { onProgress }));
-    } finally {
-      this.clip = null;
-    }
-  }
-
   /** Called once a second: updates the sample rate and the rate/loss checks. */
   tick() {
     this.rateHz = Math.round(this.rateMeter.tick(performance.now()));
@@ -1023,22 +852,4 @@ export class Board extends EventTarget {
 function push(trace, point) {
   trace.push(point);
   if (trace.length > TRACE_POINTS) trace.shift();
-}
-
-/** Why the board refused a model, or what went wrong with one, in words. */
-export function modelResultText({ state, result }) {
-  const reasons = {
-    "other features": "it was trained on other features than this firmware computes: retrain it",
-    "other format": "its format is newer than this firmware reads: update the firmware",
-    "bad labels": "its phrases or actions don't make sense to this firmware",
-    "bad settings": "its decision-rule settings are out of range",
-    corrupt: "it arrived damaged",
-    truncated: "it arrived incomplete",
-    "too big": "it's too big for this firmware",
-    "model refused": "this firmware can't run it (an operator it lacks, or too little memory): the board's log names which",
-    "not saved": "the board runs it, but couldn't save it to flash: it lasts until the board restarts",
-    interrupted: "the upload stopped part way",
-  };
-  if (result === "ok") return state === "ready" ? "listening" : `the board's model is ${state}`;
-  return reasons[result] ?? result;
 }
