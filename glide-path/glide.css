@@ -106,6 +106,7 @@ button.link { background: none; border: 0; padding: 6px 4px; color: var(--accent
 .k-steep { background: var(--steep); opacity: .55; }
 .k-hit { height: 4px; border-radius: 2px; background: var(--s-hit); }
 .k-line { height: 0; border-top: 3px solid var(--ink); border-radius: 0; }
+.k-contour { height: 0; border-top: 2px solid rgb(122,82,40); border-radius: 0; }
 /* the wind on the map: same light card as the key, since both base maps are light */
 .wind-box { display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; min-height: 36px; background: rgba(255,255,255,.95);
             color: #1d1f21; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 13px; white-space: nowrap; }

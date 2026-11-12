@@ -10,6 +10,7 @@
 //   chooseZoom    the terrain zoom that fits the whole possible glide
 //   areaTiles     the terrain tiles a saved area needs, per zoom
 //   tilesOnlyIn   which saved tiles can go when an area is deleted (ones no other area uses)
+//   contours / contourStep   contour lines of a height grid (marching squares), and their spacing per zoom
 (function (root, factory) {
   const core = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = core;
@@ -214,6 +215,56 @@
     }
   };
 
+  // Contour spacing for a map zoom, in metres: [interval, index] where every index-th line is drawn thicker.
+  // Metric 200/100/50/20/10 m, imperial 500/250/200/80/40 ft, from zoom 10 and below to zoom 14 and above.
+  const STEP = { metric: [200, 100, 50, 20, 10], imperial: [500, 250, 200, 80, 40] };
+  function contourStep(z, units) {
+    const i = Math.max(0, Math.min(4, Math.round(z) - 10));
+    return units === 'imperial' ? [STEP.imperial[i] / FT, 5] : [STEP.metric[i], 5];
+  }
+
+  // Contour lines of a w × h height grid (row-major; a value is a pixel's centre, at integer coordinates), every `step`
+  // metres. The grid is smoothed 3 × 3 first (edges clamped), so 30 m terrain doesn't draw saw teeth; marching squares
+  // then runs on every cell between four centres, saddles split by the cell's mean. A cell touching a NaN draws nothing.
+  // Returns { minor, major }: flat [x1, y1, x2, y2, ...] in grid coordinates; major holds every `index`-th level.
+  // A window cut from a bigger grid draws the same lines, except within 2 px of the window's edge.
+  function contours(g, w, h, step, index = 5) {
+    const s = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let t = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const r = Math.min(h - 1, Math.max(0, y + dy)) * w;
+        for (let dx = -1; dx <= 1; dx++) t += g[r + Math.min(w - 1, Math.max(0, x + dx))];
+      }
+      s[y * w + x] = t / 9; // NaN anywhere stays NaN
+    }
+    const minor = [], major = [];
+    const cut = (a, b, L) => (L - a) / (b - a);
+    for (let y = 0; y < h - 1; y++) for (let x = 0; x < w - 1; x++) {
+      const a = s[y * w + x], b = s[y * w + x + 1], c = s[(y + 1) * w + x + 1], d = s[(y + 1) * w + x];
+      const lo = Math.min(a, b, c, d), hi = Math.max(a, b, c, d);
+      if (!(hi > lo)) continue; // flat, or NaN
+      for (let k = Math.floor(lo / step) + 1, kEnd = Math.floor(hi / step); k <= kEnd; k++) {
+        const L = k * step;
+        if (L <= lo) continue; // floor rounding at an exact multiple
+        const out = k % index === 0 ? major : minor;
+        // crossings on the edges: top a→b, right b→c, bottom d→c, left a→d
+        const T = (a >= L) !== (b >= L) ? [x + cut(a, b, L), y] : null;
+        const R = (b >= L) !== (c >= L) ? [x + 1, y + cut(b, c, L)] : null;
+        const B = (d >= L) !== (c >= L) ? [x + cut(d, c, L), y + 1] : null;
+        const Lf = (a >= L) !== (d >= L) ? [x, y + cut(a, d, L)] : null;
+        const pts = [T, R, B, Lf].filter(Boolean);
+        if (pts.length === 2) out.push(pts[0][0], pts[0][1], pts[1][0], pts[1][1]);
+        else if (pts.length === 4) { // saddle: a and c on one side; join round whichever corners the centre agrees with
+          const centreUp = (a + b + c + d) / 4 >= L;
+          if (centreUp === (a >= L)) out.push(T[0], T[1], R[0], R[1], B[0], B[1], Lf[0], Lf[1]);
+          else out.push(T[0], T[1], Lf[0], Lf[1], R[0], R[1], B[0], B[1]);
+        }
+      }
+    }
+    return { minor, major };
+  }
+
   // Keys in `area` that no area in `others` also uses.
   function tilesOnlyIn(area, others) {
     const keep = new Set();
@@ -221,5 +272,5 @@
     return area.filter(k => !keep.has(k));
   }
 
-  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, TS, D2R };
+  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, TS, D2R };
 });

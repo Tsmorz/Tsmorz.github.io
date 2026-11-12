@@ -295,6 +295,16 @@ the trace moves the strip's cursor (`showCursor`; the strip is redrawn from a sa
 the layers button shows the wind: an arrow the way it blows, its speed and where it comes from (`windBadge`). `script/test-glide` (`task check:glide`, in `check:fast`) guards the core,
 including the service worker in a mock.
 
+**Base maps and contours**: Street, Topo, Satellite (Esri World Imagery, online only, never stored: it shows what the ground
+is, a field or a forest, which slope alone can't) and the offline hillshade; the choice is kept as `base` (not when going
+offline swaps in the hillshade). Over Satellite the reach wash is drawn at 60% so the ground shows through. **Contour lines**
+are an overlay drawn by the page from the same Terrarium tiles (`Contours` grid layer, `terrWindow`; `GlideCore.contours`:
+3 × 3 smoothing, then marching squares, saddles split by the cell's mean), so they work offline and over any base: light with a
+dark edge over imagery, brown over the light maps. Each tile contours a window with a 2 px margin, so lines meet across tile
+edges; above zoom 13 it contours the part of the zoom-13 tile under it and draws it sharp. Spacing is `contourStep` (by zoom
+and units; every 5th line thick), shown in the Key. They come on with Satellite the first time; after that `contours` keeps the
+choice. Google's imagery is not an option: its terms forbid it beside a non-Google map and need a billed API key.
+
 **No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
 rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or
 imperial (`Units` in the core; `SPEC` in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
