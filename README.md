@@ -72,5 +72,8 @@ See [CLAUDE.md](CLAUDE.md) for the full field reference, conventions and archite
 
 ## License
 
-Site content © Tony Smoragiewicz. The original theme this site grew out
-of, `jekyll-theme-minimal`, is CC0; see [LICENSE](LICENSE).
+© Tony Smoragiewicz. All rights reserved: the code, writing and images here may not be
+reused without permission. Third-party code keeps its own license: Leaflet
+([BSD-2-Clause](glide-path/lib/leaflet/LICENSE)) and qrcode-generator
+([MIT](tag-tracker/lib/qrcode-generator/LICENSE)). The photos on /vision/ are CC0 from
+Wikimedia Commons, credited on that page.

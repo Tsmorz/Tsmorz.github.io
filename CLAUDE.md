@@ -371,7 +371,9 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   (10) frames to find new tags, and on the next frame when a predicted tag wasn't found (`expect`, `forceFull`). In the
   demo a window-only frame takes ~4.5 ms against ~13 ms for a full one; the tile shows the share searched.
 - **Several cameras** (`S.cams`, each with its own tile, video, overlay and frame loop; results tagged with the camera's key as `src`). Camera 1 (the top bar's camera) is the frame of everything;
-  "Add camera" adds more. **Placing the cameras** is Calibrate step 4: whenever two or more cameras see the whole board,
+  "Add camera" adds more. The full-screen button beside Blur puts every camera view full screen (`#camsBox`,
+  `setCamsFull`; the browser's own, else a `.full` class filling the window), arranged as on the page and as big as the screen
+  allows, with a leave button in its corner (or Esc). **Placing the cameras** is Calibrate step 4: whenever two or more cameras see the whole board,
   held still, the board's pose in each (the worker's `boardPose`: IPPE, then `refinePose`) is captured as a rig view;
   `TagCore.calibrateRig` chains first poses out from camera 1 through shared views, then refines every camera pose and
   every board pose together (a bundle adjustment of all corners in all cameras). The rig is saved by camera key
@@ -427,12 +429,17 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
 - **The robot** (`robot-core.js`, RobotCore, no DOM; Show: Robot, the default): a humanoid with two 7-joint arms (spherical
   shoulder, elbow, spherical wrist; the right arm the left one's mirror image). The chest follows the Body track and each wrist
   the track on its side. Roles are Settings → Robot (Auto: the track named Body/Chest/Torso is the body, else with three the
-  highest; the others are arms, each taking the side of the chest it is on when calibrated). One track draws one arm on a mount,
+  highest; the others are arms, each taking the side of the chest it is on when calibrated; a role set to a tag that is part of
+  an object is that object). **The demo ignores the saved roles** (`robotSet`): tag 2 is its chest and the hand cubes its arms,
+  whatever the setup guide chose, whose default IDs (Body 2, Left wrist 1, Right wrist 0) match the demo's. One track draws one arm on a mount,
   two draw both arms on a shoulder bar, a body adds the torso and head; only tracks seen since load (or the last frame change)
   count, and a track out of view holds its last pose, faded. `RobotCore.ik` is analytic: the elbow lies on a circle about the
   shoulder-wrist line, 120 swivel angles are scored and the best refined, preferring the elbow below the hand and out to the
-  side, then low, with soft joint limits and steadiness against the last elbow position (`PREFER`; the elbow switch in
-  Settings turns the preference off). A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
+  side, then low, with soft joint limits and steadiness against the last elbow position and joint angles (`PREFER`; the elbow switch in
+  Settings turns the preference off). Following a previous solution (`prev.psi`), the elbow searches only within `swing` (6°)
+  of where it was and heads for a much better place elsewhere 6° at a time, so a straight arm (where the upper arm's turn
+  trades freely against the forearm's) or a joint limit never makes it jump. The demo's hand motions start mid-swing, so
+  the start pose it calibrates from keeps them within reach (out of reach ~1% of the time). A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
   robot** (key C on the plot, voice "calibrate robot") is a tare for the robot: `RobotCore.calibrate` takes the start pose (arms
   at the sides, forearms forward, palms in: `HOME`) from the tags now, keeping each wrist tag's turn to the home hand and
   its shift to the home wrist in the chest's frame, so a turned wrist turns the hand in place. Until then the robot stands in
@@ -544,3 +551,4 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
 - Reintroduce theme boilerplate (`_sass/`, a gemspec, `docs/`, bundled font files).
 - Hardcode a project into a page's HTML.
 - Add a JS dependency for something 20 lines of vanilla JS already does in `site.js`.
+- Add a LICENSE: the site is all rights reserved on purpose (README, "License"). Vendored libraries keep their own.

@@ -136,6 +136,14 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 .flash.on{opacity:1;transition:none}
 /* several cameras: views arranged like monitors in a display-settings panel (sizes and places set by JS) */
 .stages{position:relative;--sx:1;--sy:1}
+/* the camera views full screen: the browser's own, else filling the window (.full, as on an iPhone) */
+.camsbox{position:relative}
+.camsbox.full{position:fixed;inset:0;z-index:100}
+.camsbox.full,.camsbox:fullscreen{background:var(--stage)}
+.camsbox.full .stages,.camsbox:fullscreen .stages{position:absolute;inset:0;height:auto!important}
+#camsExit{position:absolute;top:12px;right:12px;z-index:8;background:rgba(12,14,17,.78);color:#fff;border-color:rgba(255,255,255,.5)}
+#camsExit:hover{background:#000}
+html.cams-full,html.cams-full body{overflow:hidden}
 .stages:empty{display:none}
 .stages .stage{position:absolute;aspect-ratio:auto;border-radius:0;outline:none;container-type:inline-size}
 /* a small view keeps its number, its name and any warning; the rest is in the tooltip */
@@ -422,9 +430,13 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture half a turn, for a camera mounted upside down. Only the picture changes.">Flip</button>
         </span>
         <span class="field"><span id="blurLbl">Blur</span><button id="blurSw" class="switch" role="switch" aria-checked="false" aria-labelledby="blurLbl" title="Blur the picture on this screen, so people's faces and the room don't show (for working in public). Tags are still found in the sharp picture, and their outlines stay sharp."></button></span>
+        <button class="btn sm outline sq" id="camsFullBtn" hidden aria-label="Camera views full screen" title="The camera views full screen (Esc to leave)"><svg class="i"><use href="#i-full"/></svg></button>
         <span id="focusWrap" class="field" hidden><span id="focusLbl">Lock focus</span><button id="focusSw" class="switch" role="switch" aria-checked="false" aria-labelledby="focusLbl"></button></span>
       </div>
-      <div class="stages" id="stages"></div>
+      <div class="camsbox" id="camsBox">
+        <div class="stages" id="stages"></div>
+        <button class="btn sm outline sq" id="camsExit" hidden aria-label="Leave full screen" title="Leave full screen (Esc)"><svg class="i"><use href="#i-unfull"/></svg></button>
+      </div>
       <div class="stage" id="stage">
         <div class="reticle" aria-hidden="true"></div>
         <div class="empty" id="empty">
@@ -1255,6 +1267,7 @@ function paintAddCam() {
   const opts = S.demo ? DEMO.cams.map((_, k) => k).filter((k) => !camOf('demo:' + k)).map((k) => ['demo:' + k, nameFor('demo:' + k, `Demo ${k + 1}`)])
     : devices.filter((d) => d.deviceId && !camOf(d.deviceId)).map((d) => [d.deviceId, nameFor(d.deviceId, deviceLabel(d.deviceId))]);
   $('addCamWrap').hidden = !S.cams.length || !opts.length;
+  $('camsFullBtn').hidden = !S.cams.length;
   $('addCamSel').innerHTML = opts.map(([v, l]) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`).join('');
 }
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', listCameras);
@@ -1409,6 +1422,8 @@ function stop(quiet) {
   for (const c of S.cams) { if (c.demo === null) c.stream.getTracks().forEach((t) => t.stop()); c.gone = true; c.video.srcObject = null; c.el.remove(); }
   S.cams = [];
   if (S.demo) { S.demo.stop(); S.demo = null; }
+  const cb = $('camsBox'); cb.classList.remove('full'); document.documentElement.classList.remove('cams-full'); $('camsExit').hidden = true;
+  if (document.fullscreenElement === cb) document.exitFullscreen();
   onCamsChanged();
   $('focusWrap').hidden = true;
   if (!quiet) { showEmpty('Camera stopped', 'Press Start to carry on. Your tags, settings and calibrations are kept in this browser.'); status(S.ready ? 'Ready to start' : 'Loading detector…', S.ready ? '' : 'busy'); }
@@ -1492,13 +1507,13 @@ function layoutTiles() {
   if (!S.cams.length) { box.style.height = ''; return; }
   const rects = arrangement(), x0 = Math.min(...rects.map((r) => r.x)), y0 = Math.min(...rects.map((r) => r.y));
   const bw = Math.max(...rects.map((r) => r.x + r.w)) - x0, bh = Math.max(...rects.map((r) => r.y + r.h)) - y0;
-  const W = box.clientWidth || 600, maxH = W < 500 ? Infinity : Math.max(220, innerHeight * (S.cams.length > 1 ? 0.62 : 0.7));
-  const s = Math.min(W / bw, maxH / bh), ox = (W - bw * s) / 2;
-  box.style.height = Math.round(bh * s) + 'px';
+  const full = camsFull(), W = box.clientWidth || 600, maxH = full ? box.clientHeight || innerHeight : W < 500 ? Infinity : Math.max(220, innerHeight * (S.cams.length > 1 ? 0.62 : 0.7));
+  const s = Math.min(W / bw, maxH / bh), ox = (W - bw * s) / 2, oy = full ? (maxH - bh * s) / 2 : 0;
+  box.style.height = Math.round(bh * s) + 'px'; // full screen overrides it in CSS
   for (const r of rects) {
     const c = camOf(r.key);
     if (!c) continue;
-    Object.assign(c.el.style, { left: ox + (r.x - x0) * s + 'px', top: (r.y - y0) * s + 'px', width: r.w * s + 'px', height: r.h * s + 'px' });
+    Object.assign(c.el.style, { left: ox + (r.x - x0) * s + 'px', top: oy + (r.y - y0) * s + 'px', width: r.w * s + 'px', height: r.h * s + 'px' });
   }
   S.layout = { s, rects };
   for (const c of S.cams) if (c.last && S.mode === 'track') drawOverlay(c); else if (c.lastBoard && S.mode === 'calib') drawBoard(c, c.lastBoard);
@@ -2179,10 +2194,20 @@ function robotTake() {
 }
 // Which track is the body and which the arms: Settings, or Auto. Auto's body is the one named Body, Chest or Torso
 // (else, with three tracks, the highest); its arms are the others, each taking the side of the body it is on when
-// calibrated (side null). Only tracks seen since the page opened (or the frame changed) count.
+// calibrated (side null). Only tracks seen since the page opened (or the frame changed) count. A role set to a tag that
+// is part of an object is that object. The demo's scene is fixed, so it always has its own roles (tag 2 is the chest and
+// the hand cubes are the arms), whatever the setup guide or Settings chose for real tags.
+const robotSet = () => (S.demo ? { ...S.settings.robot, body: '2', left: 'auto', right: 'auto' } : S.settings.robot);
+function roleTrack(v, keys) {
+  if (v === 'auto' || v === 'none') return null;
+  const k = keys.find((x) => String(x) === v);
+  if (k !== undefined) return k;
+  const obj = /^\d+$/.test(v) ? S.bodies.find((b) => b.members.some((m) => m.id === +v)) : null;
+  return obj && keys.includes('b:' + obj.id) ? 'b:' + obj.id : null;
+}
 function robotRoles() {
-  const r = S.settings.robot, ref = refKeyNow(), keys = trackKeys().filter((k) => k !== ref && RB.seen.has(k));
-  const pick = (v) => (v === 'auto' || v === 'none' ? null : keys.find((k) => String(k) === v) ?? null);
+  const r = robotSet(), ref = refKeyNow(), keys = trackKeys().filter((k) => k !== ref && RB.seen.has(k));
+  const pick = (v) => roleTrack(v, keys);
   let body = r.body === 'none' ? null : r.body === 'auto' ? keys.find((k) => /\b(body|chest|torso)\b/i.test(nameOf(k))) ?? null : pick(r.body);
   const sides = [[r.left, 1], [r.right, -1]], used = new Set();
   if (body !== null) used.add(body);
@@ -2197,7 +2222,7 @@ function robotRoles() {
   rest.slice(0, auto.length).forEach((k) => arms.push({ key: k, side: auto.length === 2 ? null : auto[0] }));
   return { body, arms };
 }
-const robotSig = () => [...RB.seen].sort(keySort).join(',') + '|' + ['body', 'left', 'right'].map((k) => S.settings.robot[k]).join(',') + '|' + S.settings.frame;
+const robotSig = () => [...RB.seen].sort(keySort).join(',') + '|' + ['body', 'left', 'right'].map((k) => robotSet()[k]).join(',') + '|' + S.settings.frame;
 // where camera 1 is in the plotted frame, if known (the robot faces it when there is no body tag)
 function cameraInPlot() {
   if (S.settings.frame === 'camera') return [0, 0, 0];
@@ -2263,7 +2288,7 @@ function robotUpdate(now) {
   const tg = RCORE.targets(cal, poses), prefer = S.settings.robot.elbows ? undefined : false;
   const arms = tg.arms.map((a) => {
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev : null, { prefer });
-    RB.prev.set(a.key, { q: s.q, elbow: s.elbow, side: a.side });
+    RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, side: a.side });
     return { key: a.key, side: a.side, q: s.q, reach: s.reach, gap: s.gap, live: fresh(a.key) };
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
@@ -2457,6 +2482,30 @@ $('fullBtn').onclick = () => setFull(!isFull());
 document.addEventListener('fullscreenchange', paintFull);
 document.addEventListener('webkitfullscreenchange', paintFull);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && P3.classList.contains('full')) setFull(false); });
+// The camera views full screen, the same way: every view, arranged as on the page, as big as the screen allows.
+const CB = $('camsBox');
+function camsFull() { return fsEl() === CB || CB.classList.contains('full'); }
+function paintCamsFull() {
+  const on = camsFull();
+  document.documentElement.classList.toggle('cams-full', on);
+  $('camsExit').hidden = !on;
+  $('camsFullBtn').hidden = !S.cams.length;
+  layoutTiles();
+}
+function setCamsFull(on) {
+  if (on === camsFull()) return;
+  if (!on) {
+    if (fsEl() === CB) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    CB.classList.remove('full'); paintCamsFull(); return;
+  }
+  const go = CB.requestFullscreen || CB.webkitRequestFullscreen, fallback = () => { CB.classList.add('full'); paintCamsFull(); };
+  if (go) { try { Promise.resolve(go.call(CB)).catch(fallback); } catch (e) { fallback(); } } else fallback();
+}
+$('camsFullBtn').onclick = () => setCamsFull(true);
+$('camsExit').onclick = () => setCamsFull(false);
+document.addEventListener('fullscreenchange', paintCamsFull);
+document.addEventListener('webkitfullscreenchange', paintCamsFull);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && CB.classList.contains('full')) setCamsFull(false); });
 
 // ---------------- settings: the robot ----------------
 function saveSettings() { S.settings = C.clampSettings(S.settings); store.set('settings', S.settings); }
@@ -3867,12 +3916,14 @@ function facing(p, at, roll, tilt, away) {
 }
 // The scene: a body tag, and two hands, each a 10 cm cube with a tag on its front (0, 1), sides and top. The poses
 // are of each tag (and of each hand's front tag, which is its object's origin).
+// Every motion starts from the middle of its swing (sines), so the robot, which takes its start pose from the first
+// moment it sees all three, has the hands' whole range within reach either way.
 function demoTags(t) {
   const A = DEMO.audience, pose = (p, roll, tilt, pitch) => ({ R: C.mul3(facing(p, A, roll, tilt), C.rodrigues([pitch || 0, 0, 0])), t: p });
   return [
     { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.45, 0.25) }, // turned a little, as a tag on a chest would be
-    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.9 * Math.sin(0.6 * t), 0.35 + 0.3 * Math.sin(0.7 * t)) },
-    { id: 1, ...pose([0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.9 * Math.cos(0.5 * t), 0.35 + 0.3 * Math.cos(0.8 * t)) },
+    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.15 * Math.sin(0.9 * t)], 0.45 * Math.sin(0.8 * t), 0.6 * Math.sin(0.6 * t), 0.35 + 0.25 * Math.sin(0.7 * t)) },
+    { id: 1, ...pose([0.35 + 0.15 * Math.sin(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t), 1.3 + 0.17 * Math.sin(0.7 * t)], -0.4 + 0.4 * Math.sin(1.2 * t), 0.6 * Math.sin(0.5 * t), 0.35 + 0.25 * Math.sin(0.8 * t)) },
   ];
 }
 // Each hand's cube: the front tag is the origin (x right, y up, z out of its face); the others sit on the left, right
@@ -4032,7 +4083,8 @@ async function startDemo() {
 // Four short steps on first visit (and from Settings): a camera, your tags (how many, their IDs and sizes, printed or on
 // a phone), the lens, and the start pose. "Show this when the page opens" is settings.setup.
 const SETUP = { step: 0, n: 3, vals: null };
-const SETUP_ROLES = [{ k: 'body', name: 'Body', id: 0 }, { k: 'left', name: 'Left wrist', id: 1 }, { k: 'right', name: 'Right wrist', id: 2 }];
+// the default IDs are the demo's: its chest is tag 2, its left hand's front tag 1 and its right hand's 0
+const SETUP_ROLES = [{ k: 'body', name: 'Body', id: 2 }, { k: 'left', name: 'Left wrist', id: 1 }, { k: 'right', name: 'Right wrist', id: 0 }];
 const setupRoles = () => SETUP_ROLES.slice(3 - SETUP.n);
 function setupDefaults() {
   // what is set already: the robot's roles if they are tags, else tags named for the role, else 0, 1, 2

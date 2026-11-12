@@ -702,6 +702,23 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   }
   check(worstStep < 3 * D && worstE < 0.01, `a smooth wrist path gives smooth joints: at most ${(worstStep / D).toFixed(2)}° and ${(worstE * 1000).toFixed(1)} mm of elbow per step`);
 
+  // ... and through full stretch: a hand that goes out of reach and back while it turns (the demo's hands do), where
+  // the upper arm's turn and the forearm's trade freely and a joint limit can make a far swivel better; the elbow swings
+  // there two steps' worth (12°) at a time at most, never jumping (it jumped 115° before)
+  {
+    let pv = null, worst = 0, outN = 0;
+    for (let i = 0; i <= 400; i++) {
+      const f = i / 400, a = 2 * Math.PI * f, r = 0.5 + 0.12 * Math.sin(a);
+      const dir = C.mulv(C.rodrigues([0, 0.6 * Math.sin(a), 0.4 * Math.cos(a)]), [0.6, 0.2, -0.77]);
+      const T = { R: C.mul3(L.R, C.rodrigues([0.5 * Math.sin(2 * a), 0.3 * Math.cos(a), 0])), t: C.add(L.shoulder, dir.map((x) => (x * r) / C.norm(dir))) };
+      const s = RC.ik(m, 1, T, pv);
+      if (!s.reach) outN++;
+      if (pv) worst = Math.max(worst, ...s.q.map((x, j) => Math.abs(Math.atan2(Math.sin(x - pv.q[j]), Math.cos(x - pv.q[j])))));
+      pv = s;
+    }
+    check(outN > 40 && worst < 12 * D, `a hand out of reach and back while it turns: no joint jumps (at most ${(worst / D).toFixed(2)}° per step; ${outN} of 401 steps out of reach)`);
+  }
+
   // out of reach
   const far = { R: L.R, t: C.add(L.shoulder, [0.5, 0.2, 0.3]) }, fs = RC.ik(m, 1, far, null), Ff = RC.fk(m, 1, fs.q);
   const dist = C.norm(C.sub(far.t, L.shoulder)), along = C.add(L.shoulder, C.sub(far.t, L.shoulder).map((x) => (x * (m.upper + m.fore)) / dist));
