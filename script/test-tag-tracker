@@ -739,6 +739,19 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   check(tf.px === 117 && tf.size === 936 && C.tagFit(9, 9, 8, 1).px === 0, 'one tag on a screen: whole pixels per cell, a cell of white round it');
   const st = C.clampSettings({ show3d: 'x', robot: { body: '', left: 'b:hand', upper: 5, back: -1, elbows: 0 } });
   check(st.show3d === 'robot' && st.robot.body === 'auto' && st.robot.left === 'b:hand' && st.robot.upper === 1 && st.robot.back === 0 && st.robot.elbows === false && st.robot.joints === true && st.setup === true && C.clampSettings({ setup: false }).setup === false, 'robot settings: roles, lengths clamped, switches, and the setup guide on unless turned off');
+  // the shaded robot's meshes (robot-gl.js): every surface sound, for the default lengths and for a small person
+  const RGL = require(path.join(__dirname, '..', 'tag-tracker/robot-gl.js'));
+  let parts = 0, verts = 0, bad = 0;
+  for (const lens of [{}, { upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }]) {
+    const M = RGL.meshes(RC.model(lens)), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
+    for (const p of all) {
+      const { pos, nrm, idx } = p.mesh, n = pos.length / 3;
+      parts++; verts += n;
+      if (n > 65535 || [...idx].some((i) => i >= n)) bad++;
+      for (let i = 0; i < n; i++) if (![pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]].every(isFinite) || Math.abs(Math.hypot(nrm[3 * i], nrm[3 * i + 1], nrm[3 * i + 2]) - 1) > 1e-4) { bad++; break; }
+    }
+  }
+  check(bad === 0 && parts > 90, `the shaded robot's ${parts} meshes (${verts} vertices, two sets of lengths): finite points, unit normals, 16-bit indices in range`);
   const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
   check(cmd('Calibrate robot.') === 'robot' && cmd('Calibrate.') === 'calib' && cmd('Open settings.') === 'settings', '"calibrate robot" is not "calibrate", and "settings" opens the tab');
 }

@@ -1,0 +1,321 @@
+// RobotGL: draws the tag tracker's robot with WebGL: smooth curved shells, lit by a key light, a fill light and the sky,
+// with specular highlights and a rim, two-tone panels and violet lights. A generic design (pearl shells, graphite joints,
+// a dark visor, a floating base), modelled on no one's robot.
+//
+// The meshes are built here from the robot's lengths (RobotCore.model), each in the frame it rides in: the chest's, or an
+// arm's upper-arm, forearm or hand frame (RobotCore.fk), so a frame only needs its pose to be drawn. The camera is the 3D
+// plot's own (TagCore.orbit), so the robot lines up exactly with the grid and the cameras drawn on the 2D canvas under it.
+// meshes() has no DOM, so script/test-tag-tracker checks it in Node; create() needs a canvas.
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./robot-core.js'));
+  else root.RobotGL = factory(root.TagCore, root.RobotCore);
+})(typeof self !== 'undefined' ? self : this, function (C, RC) {
+  'use strict';
+  const TAU = 2 * Math.PI;
+  const sp = (w, e) => Math.sign(w) * Math.pow(Math.abs(w), e); // signed power, for superellipses
+  const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const cap = (x, k) => { const d = 1 - Math.min(1, Math.max(0, x) / k); return Math.sqrt(Math.max(0, 1 - d * d)); }; // a quarter circle
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const unit = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return l > 1e-12 ? [a[0] / l, a[1] / l, a[2] / l] : null; };
+
+  // ---- meshes ----
+  // A parametric surface: fn(u, v) for u, v in [0, 1] gives a point; nu × nv quads. Normals come from the surface's
+  // derivatives, turned to face out(p) (roughly outward), which also stands in where the derivatives vanish (a pole).
+  function surface(fn, nu, nv, out) {
+    const n = (nu + 1) * (nv + 1), pos = new Float32Array(3 * n), nrm = new Float32Array(3 * n), idx = new Uint16Array(6 * nu * nv);
+    const e = 1e-4;
+    let k = 0;
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++, k++) {
+      const u = i / nu, v = j / nv, p = fn(u, v);
+      const du = sub(fn(Math.min(1, u + e), v), fn(Math.max(0, u - e), v)), dv = sub(fn(u, Math.min(1, v + e)), fn(u, Math.max(0, v - e)));
+      const o = out(p);
+      let nn = unit(cross(du, dv)) || unit(o) || [0, 0, 1];
+      if (dot(nn, o) < 0) nn = [-nn[0], -nn[1], -nn[2]];
+      pos.set(p, 3 * k); nrm.set(nn, 3 * k);
+    }
+    k = 0;
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
+      idx.set([a, b, d, a, d, c], k); k += 6;
+    }
+    return { pos, nrm, idx };
+  }
+  // A rounded box or blob: half sizes a, exponents e1 (top to bottom) and e2 (round it); below 1 is squarer. u and v may
+  // be limited to part of it (for a visor or a dome): angles from θ0 to θ1 round z (0 = +x), φ0 to φ1 up from the middle.
+  function blob(c, a, e1, e2, o) {
+    const r = Object.assign({ t0: -Math.PI, t1: Math.PI, p0: -Math.PI / 2, p1: Math.PI / 2, nu: 40, nv: 24, s: 1 }, o || {});
+    return surface((u, v) => {
+      const th = r.t0 + (r.t1 - r.t0) * u, ph = r.p0 + (r.p1 - r.p0) * v, cp = sp(Math.cos(ph), e1);
+      return [c[0] + r.s * a[0] * cp * sp(Math.cos(th), e2), c[1] + r.s * a[1] * cp * sp(Math.sin(th), e2), c[2] + r.s * a[2] * sp(Math.sin(ph), e1)];
+    }, r.nu, r.nv, (p) => sub(p, c));
+  }
+  // A surface of revolution about the z axis (or the y axis), through `at`, from z0 to z1, with radius r(s), s in [0, 1]
+  // along it. The ends round off over `k` of its length, so it closes.
+  function lathe(at, z0, z1, r, o) {
+    const q = Object.assign({ k0: 0.15, k1: 0.15, nu: 32, nv: 28, axis: 'z' }, o || {});
+    const map = q.axis === 'y' ? (x, y, z) => [at[0] + x, at[1] + z, at[2] - y] : (x, y, z) => [at[0] + x, at[1] + y, at[2] + z];
+    const zl = Math.min(z0, z1), zh = Math.max(z0, z1);
+    return surface((u, v) => {
+      const th = TAU * u, rr = r(v) * cap(v, q.k0) * cap(1 - v, q.k1), z = z0 + (z1 - z0) * v;
+      return map(rr * Math.cos(th), rr * Math.sin(th), z);
+    }, q.nu, q.nv, (p) => {
+      const l = sub(p, at), ax = q.axis === 'y' ? l[1] : l[2], m = Math.min(zh, Math.max(zl, ax)) * 0.85;
+      return q.axis === 'y' ? [l[0], ax - m, l[2]] : [l[0], l[1], ax - m];
+    });
+  }
+  function torus(c, R, r, o) {
+    const q = Object.assign({ nu: 40, nv: 12 }, o || {});
+    return surface((u, v) => { const a = TAU * u, b = TAU * v, w = R + r * Math.cos(b); return [c[0] + w * Math.cos(a), c[1] + w * Math.sin(a), c[2] + r * Math.sin(b)]; },
+      q.nu, q.nv, (p) => { const d = sub(p, c), l = Math.hypot(d[0], d[1]) || 1; return [d[0] - (R * d[0]) / l, d[1] - (R * d[1]) / l, d[2]]; });
+  }
+  // The torso: a loft of rounded rectangles, narrow at the waist and wide at the chest, deeper at the chest, domed over
+  // the shoulders. Its sides follow the shoulders, its front sits just behind the chest tag. v in [0, 1] from the bottom.
+  function torsoShape(m) {
+    const cx = -m.back - 0.012, z0 = m.up - 0.38, z1 = m.up + 0.075, rb = 0.03, rt = 0.07, a = 0.2;
+    const wyTop = Math.max(0.09, m.half - 0.03);
+    const widths = (z) => {
+      const t = (z - z0) / (z1 - z0);
+      return { wy: 0.115 + (wyTop - 0.115) * smooth(0.12, 0.72, t), wx: 0.052 + 0.02 * smooth(0.2, 0.68, t), pec: 0.014 * Math.exp(-(((t - 0.66) / 0.16) ** 2)) };
+    };
+    const fn = (u, v, s) => {
+      let z, k;
+      if (v < a) { const al = (v / a) * (Math.PI / 2); z = z0 + rb * (1 - Math.cos(al)); k = Math.sin(al); }
+      else if (v > 1 - a) { const al = ((1 - v) / a) * (Math.PI / 2); z = z1 - rt * (1 - Math.cos(al)); k = Math.sin(al); }
+      else { z = z0 + rb + ((z1 - rt - z0 - rb) * (v - a)) / (1 - 2 * a); k = 1; }
+      const th = (u * 2 - 1) * Math.PI, c = Math.cos(th), w = widths(z), g = s || 1;
+      return [cx + g * (w.wx * k * sp(c, 0.6) + w.pec * k * Math.max(0, c) ** 2), g * w.wy * k * sp(Math.sin(th), 0.6), z];
+    };
+    const front = (z) => { const w = widths(z); return cx + w.wx + w.pec; };
+    return { fn, front, z0, z1, cx, wyTop };
+  }
+  const part = (mesh, mat, extra) => Object.assign({ mesh, mat }, extra || {});
+
+  // Every mesh of the robot for the lengths m, grouped by the frame each rides in.
+  function meshes(m) {
+    const T = torsoShape(m), hx = -m.back + 0.012, hz = m.up + 0.215, out = {};
+    const tOut = (p) => [p[0] - T.cx, p[1], p[2] - Math.min(T.z1 - 0.08, Math.max(T.z0 + 0.04, p[2]))];
+    const band = (v0, v1, s) => surface((u, v) => T.fn(u, v0 + (v1 - v0) * v, s), 48, 3, tOut);
+    const stripZ = -0.085, sx = T.front(stripZ);
+    // chest frame: the torso, its collar and light, the waist, hips and the floating base, the neck and head
+    out.body = [
+      part(surface((u, v) => T.fn(u, v), 56, 44, tOut), 'shell'),
+      part(band(0.775, 0.82, 1.012), 'dark'),
+      part(band(0.205, 0.235, 1.012), 'dark'),
+      part(blob([sx - 0.004, 0, stripZ], [0.006, 0.055, 0.007], 0.6, 0.3, { nu: 24, nv: 10 }), 'light'),
+      part(blob([T.cx, 0, T.z0 - 0.012], [0.062, 0.1, 0.03], 0.55, 0.85), 'dark'),
+      part(blob([T.cx, 0, T.z0 - 0.052], [0.058, 0.092, 0.028], 0.55, 0.85), 'dark'),
+      part(blob([T.cx, 0, T.z0 - 0.115], [0.082, 0.128, 0.052], 0.5, 0.55), 'shell'),
+      part(blob([T.cx, 0.128, T.z0 - 0.115], [0.034, 0.012, 0.034], 1, 1, { nu: 24, nv: 14 }), 'dark'),
+      part(blob([T.cx, -0.128, T.z0 - 0.115], [0.034, 0.012, 0.034], 1, 1, { nu: 24, nv: 14 }), 'dark'),
+      part(torus([T.cx, 0, T.z0 - 0.2], 0.085, 0.015), 'dark'),
+      part(blob([T.cx, 0, T.z0 - 0.2], [0.07, 0.07, 0.004], 1, 1, { nu: 32, nv: 8 }), 'light'),
+      part(lathe([-m.back, 0, 0], m.up + 0.02, m.up + 0.13, (s) => 0.031 + 0.004 * Math.cos(6 * Math.PI * s), { k0: 0.01, k1: 0.01 }), 'dark'),
+      part(blob([hx, 0, hz], [0.1, 0.088, 0.118], 0.75, 0.8, { nu: 48, nv: 32 }), 'shell'),
+      part(blob([hx, 0, hz], [0.1, 0.088, 0.118], 0.75, 0.8, { s: 1.035, t0: -1.05, t1: 1.05, p0: -0.3, p1: 0.36, nu: 36, nv: 14 }), 'visor'),
+      part(blob([hx, 0, hz], [0.1, 0.088, 0.118], 0.75, 0.8, { s: 1.045, t0: -0.82, t1: 0.82, p0: 0.03, p1: 0.085, nu: 30, nv: 3 }), 'light'),
+      part(blob([hx - 0.012, 0.091, hz], [0.034, 0.014, 0.034], 1, 1, { nu: 24, nv: 14 }), 'dark'),
+      part(blob([hx - 0.012, -0.091, hz], [0.034, 0.014, 0.034], 1, 1, { nu: 24, nv: 14 }), 'dark'),
+      part(blob([hx - 0.02, 0, hz + 0.105], [0.06, 0.012, 0.022], 0.7, 0.5, { nu: 24, nv: 12 }), 'dark'),
+    ];
+    // two arms and no body: a bar between the shoulders on a hub; one arm: a mount behind its shoulder
+    out.bar = [
+      part(lathe([-m.back, 0, m.up], -m.half, m.half, () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
+      part(blob([-m.back, 0, m.up], [0.065, 0.065, 0.065], 0.9, 0.9), 'shell'),
+      part(torus([-m.back, 0, m.up - 0.01], 0.064, 0.006), 'light'),
+    ];
+    out.mount = {};
+    for (const sd of [1, -1]) out.mount[sd] = [
+      part(lathe([-m.back, 0, m.up], sd * m.half, sd * (m.half - 0.14), () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
+      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.07, 0.025, 0.07], 0.9, 0.6), 'shell'),
+      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.05, 0.03, 0.05], 0.9, 0.9, { nu: 24, nv: 12 }), 'light'),
+    ];
+    // an arm: the upper arm's frame (origin at the shoulder, the arm along -z), the forearm's (origin at the elbow) and
+    // the hand's (origin at the wrist, fingers along -z, the jaws apart along x, the palm towards -side·y)
+    const L1 = m.upper, L2 = m.fore, fl = Math.max(0.03, m.hand - 0.075);
+    out.upper = [
+      part(blob([0, 0, 0], [0.05, 0.05, 0.05], 1, 1, { nu: 28, nv: 18 }), 'dark'),
+      part(blob([0, 0, 0.008], [0.074, 0.074, 0.07], 0.9, 1, { p0: -0.32, nu: 40, nv: 18 }), 'shell'),
+      part(torus([0, 0, -0.012], 0.068, 0.008, { nu: 40, nv: 8 }), 'dark'),
+      part(lathe([0, 0, 0], -0.035, -(L1 - 0.05), (s) => 0.043 + 0.009 * Math.sin(Math.PI * Math.min(1, s / 0.75)) - 0.006 * s, { k0: 0.12, k1: 0.1 }), 'shell'),
+      part(lathe([0, 0, 0], -(L1 - 0.085), -(L1 + 0.01), () => 0.037, { k0: 0.2, k1: 0.3 }), 'dark'),
+      part(blob([0, 0, -L1], [0.036, 0.05, 0.036], 1, 0.75, { nu: 28, nv: 16 }), 'dark'),
+    ];
+    out.fore = [
+      part(lathe([0, 0, 0], -0.03, -(L2 - 0.06), (s) => 0.041 + 0.008 * Math.sin(Math.PI * Math.min(1, s / 0.5)) - 0.012 * s, { k0: 0.1, k1: 0.08 }), 'shell'),
+      part(lathe([0, 0, 0], -(L2 - 0.075), -(L2 - 0.004), () => 0.033, { k0: 0.2, k1: 0.25 }), 'dark'),
+    ];
+    out.foreLight = [part(torus([0, 0, -(L2 - 0.072)], 0.034, 0.0045, { nu: 36, nv: 8 }), 'light')];
+    out.hand = {};
+    for (const sd of [1, -1]) out.hand[sd] = [
+      part(blob([0, 0, 0], [0.03, 0.03, 0.03], 1, 1, { nu: 24, nv: 14 }), 'dark'),
+      part(blob([0, 0, -0.038], [0.04, 0.027, 0.034], 0.45, 0.45), 'dark'),
+      part(blob([0.029, 0, -(0.07 + fl / 2)], [0.009, 0.018, fl / 2 + 0.006], 0.45, 0.45, { nu: 24, nv: 16 }), 'shell'),
+      part(blob([-0.029, 0, -(0.07 + fl / 2)], [0.009, 0.018, fl / 2 + 0.006], 0.45, 0.45, { nu: 24, nv: 16 }), 'shell'),
+      part(blob([0.019, 0, -(0.072 + fl * 0.6)], [0.003, 0.013, fl * 0.38], 0.5, 0.5, { nu: 12, nv: 8 }), 'dark'),
+      part(blob([-0.019, 0, -(0.072 + fl * 0.6)], [0.003, 0.013, fl * 0.38], 0.5, 0.5, { nu: 12, nv: 8 }), 'dark'),
+      part(blob([0, -sd * 0.027, -0.038], [0.016, 0.003, 0.016], 1, 1, { nu: 20, nv: 6 }), 'light'),
+    ];
+    // a tag, 1 unit across, facing +z: white margin, a border in the tag's colour, black inside, a few white cells
+    const sq = (h, z) => surface((u, v) => [(u - 0.5) * 2 * h, (v - 0.5) * 2 * h, z], 1, 1, () => [0, 0, 1]);
+    const cells = [[-0.18, 0.18], [0.06, 0.18], [0.18, -0.06], [-0.06, -0.18], [0.18, 0.18], [-0.18, -0.06]];
+    out.tag = { paper: sq(0.5, 0), border: sq(0.46, 0.02), ink: sq(0.36, 0.04), cells: cells.map(([x, y]) => surface((u, v) => [x + (u - 0.5) * 0.12, y + (v - 0.5) * 0.12, 0.06], 1, 1, () => [0, 0, 1])) };
+    out.headTop = hz + 0.125; out.baseBottom = T.z0 - 0.22; out.chestFront = T.front(0); out.torso = T;
+    return out;
+  }
+
+  // ---- drawing ----
+  const VS = `attribute vec3 aPos; attribute vec3 aNrm;
+uniform mat4 uPV, uModel; uniform mat3 uRot; varying vec3 vN, vW;
+void main() { vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz; vN = uRot * aNrm; gl_Position = uPV * w; }`;
+  const FS = `precision mediump float;
+varying vec3 vN, vW;
+uniform vec3 uEye, uKey, uFill, uBase, uRimCol, uFadeTo, uSky, uGround;
+uniform float uSpec, uShine, uRim, uEmit, uFade;
+void main() {
+  vec3 N = normalize(vN), V = normalize(uEye - vW);
+  if (dot(N, V) < 0.0) N = -N;
+  float hemi = 0.5 + 0.5 * N.z, nv = max(dot(N, V), 0.0);
+  vec3 amb = mix(uGround, uSky, hemi);
+  float dk = max(dot(N, uKey), 0.0), df = max(dot(N, uFill), 0.0);
+  vec3 H = normalize(uKey + V);
+  float spec = pow(max(dot(N, H), 0.0), uShine) * uSpec * smoothstep(0.0, 0.15, dk);
+  float fres = pow(1.0 - nv, 3.0);
+  vec3 col = uBase * (amb + dk * vec3(1.0, 0.96, 0.9) * 1.05 + df * vec3(0.55, 0.62, 0.8) * 0.3) + spec * (1.0 + fres);
+  col = mix(col, uRimCol, fres * uRim);
+  col = mix(col, uBase * (0.85 + 0.35 * nv), uEmit);
+  col = mix(col, uFadeTo, uFade);
+  gl_FragColor = vec4(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+}`;
+  // sRGB hex (#rgb or #rrggbb) to linear RGB
+  function lin(hex, dflt) {
+    let h = String(hex || '').trim().replace('#', '');
+    if (h.length === 3) h = h.split('').map((x) => x + x).join('');
+    if (!/^[0-9a-f]{6}$/i.test(h)) return dflt || [0.5, 0.5, 0.5];
+    return [0, 2, 4].map((i) => Math.pow(parseInt(h.slice(i, i + 2), 16) / 255, 2.2));
+  }
+  const MAT = {
+    shell: { base: lin('#e4e7eb'), spec: 0.35, shine: 42, rim: 1 },
+    dark: { base: lin('#30353c'), spec: 0.5, shine: 70, rim: 1 },
+    visor: { base: lin('#0b0d14'), spec: 1.1, shine: 160, rim: 1.4 },
+  };
+  // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
+  function model4(p, s) {
+    const R = p.R, k = s || 1;
+    return new Float32Array([R[0] * k, R[3] * k, R[6] * k, 0, R[1] * k, R[4] * k, R[7] * k, 0, R[2] * k, R[5] * k, R[8] * k, 0, p.t[0], p.t[1], p.t[2], 1]);
+  }
+  const rot3 = (R) => new Float32Array([R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]]);
+
+  function create(canvas) {
+    const gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, depth: true });
+    if (!gl) return null;
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    const U = {};
+    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade']) U[n] = gl.getUniformLocation(prog, n);
+    const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm');
+    const self = { lost: false };
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); self.lost = true; });
+    let built = null, builtKey = '';
+    const upload = (m) => {
+      const b = gl.createBuffer(), n = gl.createBuffer(), i = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, m.pos, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, m.nrm, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
+      return { b, n, i, count: m.idx.length, src: m };
+    };
+    const free = (g) => { for (const x of [g.b, g.n, g.i]) gl.deleteBuffer(x); };
+    function build(m) {
+      const key = JSON.stringify(m);
+      if (key === builtKey) return built;
+      if (built) for (const g of built.gpu) free(g);
+      const M = meshes(m), gpu = [];
+      const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
+      built = {
+        M, gpu, body: up(M.body), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
+        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) },
+        tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
+      };
+      built.gpu.push(built.tag.paper, built.tag.border, built.tag.ink, ...built.tag.cells);
+      builtKey = key;
+      return built;
+    }
+    function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
+    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach}], body, mount ('bar',
+    // 1, -1 or null), tags: [{R, t, size, color, parts: [{R, t, size}]}], fadeBody, theme: {accent, warn, bg, dark} }
+    self.draw = function (o) {
+      const dpr = o.dpr || 1, W = Math.max(1, Math.round(o.w * dpr)), H = Math.max(1, Math.round(o.h * dpr));
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+      clear();
+      const B = build(o.m), cam = o.cam, f = o.h / 2 / Math.tan((o.fov * Math.PI) / 360), n = 0.03, F = 200, A = (F + n) / (F - n), Bz = (-2 * F * n) / (F - n);
+      const e = cam.eye, r = cam.right, u = cam.up, w = cam.fwd, row = (v, s) => [v[0] * s, v[1] * s, v[2] * s, -dot(v, e) * s];
+      const r0 = row(r, (2 * f) / o.w), r1 = row(u, (2 * f) / o.h), r3 = row(w, 1), r2 = r3.map((x, i) => A * x + (i === 3 ? Bz : 0));
+      const PV = new Float32Array(16);
+      for (let c = 0; c < 4; c++) { PV[c * 4] = r0[c]; PV[c * 4 + 1] = r1[c]; PV[c * 4 + 2] = r2[c]; PV[c * 4 + 3] = r3[c]; }
+      gl.useProgram(prog); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
+      gl.uniformMatrix4fv(U.uPV, false, PV);
+      gl.uniform3fv(U.uEye, e);
+      const toward = (a, b, c) => unit([r[0] * a + u[0] * b - w[0] * c, r[1] * a + u[1] * b - w[1] * c, r[2] * a + u[2] * b - w[2] * c]);
+      gl.uniform3fv(U.uKey, toward(-0.5, 0.75, 0.45)); gl.uniform3fv(U.uFill, toward(0.85, 0.05, 0.3));
+      // the lights: the site's violet, saturated and bright in either theme (its dark-theme accent is too pale to glow)
+      const T = o.theme, dark = !!T.dark, accent = lin(T.accent, [0.3, 0.25, 0.8]), glow = dark ? lin('#9d8cff') : accent.map((x) => Math.min(1, x * 1.35)), warn = lin(T.warn, [0.9, 0.6, 0.1]), bg = lin(T.bg, dark ? [0.02, 0.025, 0.03] : [0.9, 0.92, 0.92]);
+      gl.uniform3fv(U.uSky, dark ? [0.34, 0.36, 0.42] : [0.42, 0.44, 0.48]); gl.uniform3fv(U.uGround, dark ? [0.1, 0.1, 0.12] : [0.2, 0.19, 0.2]);
+      gl.uniform3fv(U.uFadeTo, bg);
+      const rimLight = dark ? lin('#d9d4ff') : lin('#55606a');
+      const setMat = (mat, fade, tint) => {
+        if (mat === 'light') { gl.uniform3fv(U.uBase, tint || glow); gl.uniform1f(U.uEmit, 1); gl.uniform1f(U.uSpec, 0); gl.uniform1f(U.uShine, 1); gl.uniform1f(U.uRim, 0); }
+        else {
+          const M = MAT[mat];
+          gl.uniform3fv(U.uBase, tint ? M.base.map((x, i) => x * 0.55 + tint[i] * 0.45) : M.base);
+          gl.uniform1f(U.uEmit, 0); gl.uniform1f(U.uSpec, M.spec); gl.uniform1f(U.uShine, M.shine); gl.uniform1f(U.uRim, (dark ? 0.42 : 0.32) * M.rim);
+        }
+        gl.uniform3fv(U.uRimCol, rimLight); gl.uniform1f(U.uFade, fade || 0);
+      };
+      const flat = (col, fade) => { gl.uniform3fv(U.uBase, col); gl.uniform1f(U.uEmit, 1); gl.uniform1f(U.uSpec, 0); gl.uniform1f(U.uRim, 0); gl.uniform1f(U.uFade, fade || 0); };
+      const drawG = (g, pose, s) => {
+        gl.uniformMatrix4fv(U.uModel, false, model4(pose, s)); gl.uniformMatrix3fv(U.uRot, false, rot3(pose.R));
+        gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+      };
+      const drawList = (list, pose, fade, opts) => { for (const p of list) { if (opts && opts.noLight && p.mat === 'light') continue; setMat(p.mat, fade, opts && p.mat !== 'light' && p.mat !== 'visor' ? opts.tint : null); drawG(p.g, pose); } };
+      const ch = o.chest, at = (R, t) => ({ R: C.mul3(ch.R, R), t: RC.place(ch, t) });
+      const pts = [];
+      const keep = (p) => pts.push(RC.place(ch, p));
+      if (o.body) {
+        drawList(B.body, ch, o.fadeBody || 0, o.fadeBody ? { noLight: false } : null);
+        const Tm = B.M.torso;
+        for (const p of [[Tm.cx, Tm.wyTop, Tm.z1], [Tm.cx, -Tm.wyTop, Tm.z1], [Tm.cx, 0, B.M.headTop], [Tm.cx, 0.13, B.M.baseBottom], [Tm.cx, -0.13, B.M.baseBottom], [B.M.chestFront, 0, 0]]) keep(p);
+      } else if (o.mount === 'bar') drawList(B.bar, ch, 0);
+      else if (o.mount === 1 || o.mount === -1) drawList(B.mount[o.mount], ch, 0);
+      for (const a of o.arms) {
+        const k = RC.fk(o.m, a.side, a.q), fade = a.idle ? 0.62 : a.live ? 0 : 0.45;
+        drawList(B.upper, at(k.Ru, k.shoulder), fade);
+        drawList(B.fore, at(k.Rf, k.elbow), fade);
+        // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
+        if (!a.reach || (a.live && !a.idle)) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
+        drawList(B.hand[a.side], at(k.R, k.wrist), fade);
+        keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
+      }
+      // the tags, riding on the robot
+      for (const tg of o.tags || []) {
+        const col = lin(tg.color, [0.5, 0.5, 0.5]), fade = tg.fade || 0;
+        for (const p of tg.parts) {
+          const pose = { R: C.mul3(tg.R, p.R), t: C.add(tg.t, C.mulv(tg.R, p.t)) }, s = p.size * 1.25; // the white margin round the black square
+          flat([1, 1, 1], fade); drawG(B.tag.paper, pose, s);
+          flat(col, fade); drawG(B.tag.border, pose, s);
+          flat([0.01, 0.01, 0.012], fade); drawG(B.tag.ink, pose, s);
+          flat([0.95, 0.95, 0.95], fade); for (const g of B.tag.cells) drawG(g, pose, s);
+        }
+      }
+      return pts;
+    };
+    self.clear = clear;
+    return self;
+  }
+
+  return { meshes, create, lin };
+});

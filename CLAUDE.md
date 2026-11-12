@@ -439,9 +439,15 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   `HOME` wherever the tags are; the demo calibrates itself once it sees all three. The calibration is in memory only, cleared
   by a frame change, a new camera 1, or a new track. It reads the plotted poses with the tare taken off, so taring
   never moves it, and Mirror never changes it. Each tag is drawn riding on the robot (on the chest, on the
-  back of its wrist); joint angles show in a corner. The demo's hands are named for the body's sides (its right hand is on
+  back of its wrist); joint angles show in a corner. **It is drawn shaded with WebGL** (`robot-gl.js`, RobotGL) on
+  `#plotGL`, a canvas over the plot's own (pointer events off), with the plot's camera (`TagCore.orbit`) so it lines up with
+  the grid: curved meshes (lofted torso, lathed limbs, superellipsoid head, visor, hands, a floating base) built from the
+  robot's lengths in the frame each rides in, lit by a key, a fill and the sky with specular highlights and a rim, pearl
+  shells, graphite joints and violet lights (the wrist light turns amber while that hand is out of reach). A generic design;
+  keep it looking like no company's robot. `meshes()` has no DOM and test section 5h checks it. Where there is no WebGL
+  (or the context is lost) the robot is drawn flat on the plot canvas (`drawRobotFlat`). The demo's hands are named for the body's sides (its right hand is on
   the cameras' left).
-- **Setup guide** (`#setupDlg`): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera
+- **Setup guide** (`#setupDlg`, the book icon in the top bar, which stays there): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera
   or the demo; how many tags (one arm, two arms, body and two arms) with their IDs and sizes, which become tags named Body,
   Left wrist and Right wrist and the robot's roles (applied by Next, Print or the phone link, never by closing); the lens
   (optional); the start pose.
@@ -512,7 +518,8 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   than tag36h11) shows the tags one at a time on the same overlay as the board, as big as the screen allows in whole pixels
   per cell (`TagCore.tagFit`, a cell and a half of white round it), with the name and number under it; tap the sides, swipe
   or use the arrow keys for the next. "Show on a phone" on the Tags card (all your tags), each tag row's phone button (that
-  one) and the setup guide give the link as a QR code (`fillShare`, the same panel as the board's), scrolled into view; on a
+  one) and the setup guide give the link as a QR code (`fillShare`, the same panel as the board's; from the Tags card it pops
+  up in `#shareDlg`, in the guide it opens inside it); on a
   phone or tablet itself (`onPhone()`: a coarse pointer and a screen under 900 px) they open the tags right there instead. Screens don't show true
   millimetres, so the instructions say to measure the black square and enter it.
 - `script/test-tag-tracker` (`task check:tag-tracker`, in `check:fast`) checks TagCore, including the refinement's covariance

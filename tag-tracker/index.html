@@ -233,6 +233,7 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .plot3d{position:relative;height:clamp(320px,52vh,620px);margin:0 4px 4px}
 .plot3d canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
 .plot3d canvas:active{cursor:grabbing}
+.plot3d #plotGL{pointer-events:none} /* the shaded robot, over the grid; the plot canvas under it takes the pointer */
 .plot3d .vbtns{position:absolute;right:10px;top:10px;z-index:2;display:flex;gap:6px}
 .plot3d .vbtns .btn{background:var(--panel)}.plot3d .vbtns .btn.primary{background:var(--accent)}
 .plot3d .help{position:absolute;right:10px;bottom:8px;font-size:12px;color:var(--muted);pointer-events:none;display:flex;gap:14px}
@@ -371,6 +372,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></symbol>
   <symbol id="i-full" viewBox="0 0 24 24"><path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/></symbol>
   <symbol id="i-unfull" viewBox="0 0 24 24"><path d="M9 3v6H3M21 9h-6V3M15 21v-6h6M3 15h6v6"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/><path d="M9 7h7M9 11h5"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
   <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></symbol>
 </svg>
@@ -399,6 +401,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
   <button id="voiceBtn" class="btn mic" aria-pressed="false" title="Voice (or press V): speak a command, such as “Calibrate robot”, “Start recording”, “Tare” or “Fit”, or anything else to add it as a note. Speech is turned into text on this computer."><svg class="i"><use href="#i-mic"/></svg><span>Voice</span></button>
   <button id="printBtn" class="btn" title="Print AprilTags and the calibration board" aria-haspopup="dialog"><svg class="i"><use href="#i-print"/></svg><span>Print</span></button>
+  <button id="helpBtn" class="btn sq" aria-label="Setup guide" aria-haspopup="dialog" title="Setup guide: the camera, your tags, the lens and the robot's start pose"><svg class="i"><use href="#i-book"/></svg></button>
   <button id="settingsBtn" class="btn sq" aria-label="Settings" aria-haspopup="dialog" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
   <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
 </header>
@@ -471,7 +474,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <input id="addId" class="input sm num mono" type="number" min="0" step="1" placeholder="ID" inputmode="numeric">
           <button class="btn sm outline" type="submit"><svg class="i"><use href="#i-plus"/></svg>Add tag</button>
         </form>
-        <button class="btn sm outline" id="tagsPhone" type="button" aria-expanded="false" aria-controls="tagShare" title="Show your tags on a phone or tablet: scan a code, and the phone's screen shows each tag in turn"><svg class="i"><use href="#i-phone"/></svg>Show on a phone</button>
+        <button class="btn sm outline" id="tagsPhone" type="button" aria-haspopup="dialog" title="Show your tags on a phone or tablet: scan a code, and the phone's screen shows each tag in turn"><svg class="i"><use href="#i-phone"/></svg>Show on a phone</button>
       </div>
       <div class="scroll">
         <table>
@@ -482,7 +485,6 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
       <div class="card-b" id="tagsFoot">
         <p class="hint" id="noTags">No tags yet. Show one to the camera and it will appear here to name, or add one by its ID.</p>
         <div class="chips" id="unknown" hidden><span class="small muted">Seen, not named:</span></div>
-        <div class="share" id="tagShare" hidden></div>
       </div>
       <div class="bodies" aria-labelledby="h-bodies">
         <div class="row">
@@ -660,6 +662,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button class="btn sm outline sq" id="fullBtn" aria-label="Full screen" title="Full screen (Esc to leave)"><svg class="i"><use href="#i-full"/></svg></button>
         </div>
         <canvas id="plot" tabindex="0" role="img" aria-label="3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view, C to calibrate the robot."></canvas>
+        <canvas id="plotGL" aria-hidden="true" hidden></canvas>
         <div class="legend" id="legend3d"></div>
         <div class="joints" id="joints" hidden></div>
         <div class="rhint" id="robotHint" role="status" hidden></div>
@@ -817,6 +820,10 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     </div>
   </div>
 </dialog>
+<dialog class="dlg" id="shareDlg" aria-labelledby="h-share">
+  <div class="dlg-h"><h2 id="h-share">Show on a phone</h2><button type="button" class="btn sm sq" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="dlg-b"><div class="share" id="tagShare"></div></div>
+</dialog>
 <dialog class="dlg setup" id="setupDlg" aria-labelledby="h-setup">
   <form method="dialog" id="setupForm" novalidate>
     <div class="dlg-h"><h2 id="h-setup">Set up</h2><span class="dots" id="setupDots" aria-hidden="true"><i></i><i></i><i></i><i></i></span><button type="button" class="btn sm sq" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
@@ -884,6 +891,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 
 <script src="tracker-core.js"></script>
 <script src="robot-core.js"></script>
+<script src="robot-gl.js"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
 (() => {
@@ -2044,8 +2052,8 @@ function draw3d() {
 
   const now = performance.now() / 1000, span = S.settings.span, every = S.settings.every;
   S.hist.trim(now, span); S.rawHist.trim(now, span);
-  if (S.settings.show3d === 'robot') { drawRobot(c, o, h, now); return; }
-  $('joints').hidden = true; $('robotHint').hidden = true;
+  if (S.settings.show3d === 'robot') { drawRobot(c, o, w, h, now); return; }
+  $('joints').hidden = true; $('robotHint').hidden = true; $('plotGL').hidden = true;
   const legend = [], placed = [];
   // raw tracks, faint and dashed, to compare
   if (S.settings.compare && S.settings.pose !== 'raw') {
@@ -2261,9 +2269,48 @@ function robotUpdate(now) {
   if (fitSig !== RB.fitSig) { RB.fitSig = fitSig; S.view.fitted = false; }
 }
 
-// Drawn as outlined solids, painted far to near: capsules for the links, balls for the joints, a box for the torso.
-function drawRobot(c, o, h, now) {
+// The robot is drawn shaded with WebGL (robot-gl.js) on a canvas over the grid; where there is no WebGL (or it is lost),
+// flat on the plot's own canvas instead.
+let RGL; // made on first use; null: no WebGL
+function robotGL() {
+  if (RGL === undefined) { try { RGL = window.RobotGL ? RobotGL.create($('plotGL')) : null; } catch (e) { RGL = null; } }
+  if (RGL && RGL.lost) RGL = null;
+  return RGL;
+}
+function drawRobot(c, o, w, h, now) {
   robotUpdate(now);
+  const gl = robotGL();
+  $('plotGL').hidden = !gl;
+  if (gl) drawRobotGL(gl, o, w, h, now); else drawRobotFlat(c, o, h, now);
+  if (!S.view.fitted) fitView();
+  paintRobotText(now);
+}
+// Each tag riding on the robot, turned as it is: the chest tag on the chest (where the chest is put), each wrist tag on
+// the back of its wrist, a little out from it. Returns [{key, R, t, fresh, parts}], parts each {R, t, size} in the tag's frame.
+function robotTags(now) {
+  const sc = RB.scene, m = sc.m, out = [];
+  const rides = [];
+  if (sc.bodyKey !== null && sc.bodyKey !== undefined) rides.push([sc.bodyKey, null]);
+  for (const a of sc.arms) if (a.key !== null && a.key !== undefined) rides.push([a.key, RCORE.place(sc.chest, RCORE.fk(m, a.side, a.q).wrist)]);
+  for (const [key, at] of rides) {
+    const g = RB.last.get(key);
+    if (!g) continue;
+    const parts = isBody(key) ? bodyOf(key).members.map((mm) => ({ R: mm.R, t: mm.t, size: sizeOf(mm.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(key) }];
+    out.push({ key, R: g.R, t: C.add(at || g.t, C.mulv(g.R, [0, 0, at ? 0.045 : 0.012])), fresh: now - g.time < 0.5, parts });
+  }
+  return out;
+}
+function drawRobotGL(gl, o, w, h, now) {
+  const sc = RB.scene;
+  RB.pts = gl.draw({
+    w, h, dpr: devicePixelRatio || 1, cam: o, fov: 45, chest: sc.chest, m: sc.m, arms: sc.arms, body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
+    mount: sc.body ? null : sc.arms.length === 2 ? 'bar' : sc.arms.length === 1 ? sc.arms[0].side : null,
+    tags: robotTags(now).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
+    theme: { accent: K.accent, warn: K.warn, bg: K.surface, dark: isDark() },
+  });
+}
+// Drawn flat: outlined solids, painted far to near: capsules for the links, balls for the joints, a box for the torso.
+function drawRobotFlat(c, o, h, now) {
   const sc = RB.scene, m = sc.m, ch = sc.chest, P = (p) => RCORE.place(ch, p), f = h / 2 / Math.tan((45 * Math.PI) / 360);
   const items = [], pts = [];
   const ink = K.text, fill = K.surface, well = K.well;
@@ -2333,27 +2380,17 @@ function drawRobot(c, o, h, now) {
   items.sort((p, q) => q.z - p.z);
   for (const it of items) it.draw();
   c.globalAlpha = 1;
-  // each tag riding on the robot, turned as it is, in its colour: the chest tag on the chest (where the chest is put),
-  // each wrist tag on the back of its wrist, a little out from it
+  // each tag riding on the robot, in its colour
   const line = (a, b, col, lw) => { const p = o.project(a), q = o.project(b); if (!p || !q) return; c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); };
-  const rides = [];
-  if (sc.bodyKey !== null && sc.bodyKey !== undefined) rides.push([sc.bodyKey, null]);
-  for (const a of sc.arms) if (a.key !== null && a.key !== undefined) rides.push([a.key, P(RCORE.fk(m, a.side, a.q).wrist)]);
-  for (const [key, at] of rides) {
-    const g = RB.last.get(key);
-    if (!g) continue;
-    const s = at ? { R: g.R, t: C.add(at, C.mulv(g.R, [0, 0, 0.045])) } : g;
-    c.globalAlpha = now - g.time < 0.5 ? 1 : 0.45;
-    const parts = isBody(key) ? bodyOf(key).members.map((mm) => ({ R: mm.R, t: mm.t, size: sizeOf(mm.id) })) : [{ R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], size: sizeOf(key) }];
-    for (const pt of parts) {
-      const sq = C.tagCorners(pt.size).map((q) => C.add(s.t, C.mulv(s.R, C.add(C.mulv(pt.R, q), pt.t))));
-      for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(key), 2);
+  for (const tg of robotTags(now)) {
+    c.globalAlpha = tg.fresh ? 1 : 0.45;
+    for (const pt of tg.parts) {
+      const sq = C.tagCorners(pt.size).map((q) => C.add(tg.t, C.mulv(tg.R, C.add(C.mulv(pt.R, q), pt.t))));
+      for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(tg.key), 2);
     }
   }
   c.globalAlpha = 1;
   RB.pts = pts;
-  if (!S.view.fitted) fitView();
-  paintRobotText(now);
 }
 // the legend (which track drives what), the joint angles and the prompt under the robot
 function paintRobotText(now) {
@@ -2445,6 +2482,7 @@ $('setupSw').onclick = () => { S.settings.setup = !S.settings.setup; saveSetting
 $('setupOpen').onclick = () => { $('settingsDlg').close(); openSetup(0); };
 function openSettings() { if ($('settingsDlg').open) return; renderSettings(); $('settingsDlg').showModal(); }
 $('settingsBtn').onclick = openSettings;
+$('helpBtn').onclick = () => openSetup(0);
 $('settingsClose').onclick = () => $('settingsDlg').close();
 // a click on the scrim (the dialog itself, outside its contents) closes it
 $('settingsDlg').addEventListener('click', (e) => { if (e.target === $('settingsDlg')) $('settingsDlg').close(); });
@@ -3001,7 +3039,7 @@ function fillShare(box, url, o) {
   };
   box.querySelector('[data-a=send]').onclick = () => navigator.share({ title: o.title, text: o.text, url }).catch(() => {});
   box.querySelector('[data-a=win]').onclick = () => window.open(url, '_blank', 'noopener');
-  box.querySelector('[data-a=here]').onclick = () => { if ($('setupDlg').open) $('setupDlg').close(); location.hash = url.slice(url.indexOf('#')); };
+  box.querySelector('[data-a=here]').onclick = () => { for (const d of ['setupDlg', 'shareDlg']) if ($(d).open) $(d).close(); location.hash = url.slice(url.indexOf('#')); };
   box.hidden = false;
 }
 function shareTagsTo(box, list) {
@@ -3016,13 +3054,13 @@ function shareTagsTo(box, list) {
 const onPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 900;
 function showTagShare(list) {
   if (list.length && onPhone()) { location.hash = tagsHash(list); return; }
-  shareTagsTo($('tagShare'), list); $('tagsPhone').setAttribute('aria-expanded', 'true');
-  $('tagShare').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  shareTagsTo($('tagShare'), list);
+  $('h-share').textContent = list.length === 1 ? `Show ${list[0].name || 'tag #' + list[0].id} on a phone` : 'Show your tags on a phone';
+  if (!$('shareDlg').open) $('shareDlg').showModal();
 }
-$('tagsPhone').onclick = () => {
-  if (!$('tagShare').hidden) { $('tagShare').hidden = true; $('tagsPhone').setAttribute('aria-expanded', 'false'); return; }
-  showTagShare(S.tags.map((t) => ({ id: t.id, name: t.name })));
-};
+$('tagsPhone').onclick = () => showTagShare(S.tags.map((t) => ({ id: t.id, name: t.name })));
+$('shareDlg').querySelector('[data-close]').onclick = () => $('shareDlg').close();
+$('shareDlg').addEventListener('click', (e) => { if (e.target === $('shareDlg')) $('shareDlg').close(); }); // the backdrop
 
 function bvBar(show) {
   clearTimeout(BV.hideT); $('bvBar').classList.toggle('gone', !show);
