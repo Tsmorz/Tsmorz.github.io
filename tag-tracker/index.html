@@ -280,9 +280,8 @@ html.bv-open,html.bv-open body{overflow:hidden}
 /* the robot: a prompt over the plot, and its joint angles */
 .plot3d .rhint{position:absolute;left:50%;bottom:34px;transform:translateX(-50%);z-index:2;max-width:min(460px,calc(100% - 24px));padding:8px 12px;background:var(--panel);border:1px solid var(--ink);font-size:13px;line-height:1.45;text-align:center}
 .plot3d .rhint.warn{border-color:var(--warn)}
-.plot3d .joints{position:absolute;left:10px;bottom:28px;z-index:1;padding:6px 8px;background:var(--panel);border-left:2px solid var(--ink);font-size:12px;pointer-events:none}
-.joints table{width:auto}.joints th,.joints td{padding:1px 6px;border:0;font-size:12px}.joints th{border-bottom:1px solid var(--rule2)}
-.joints td.num{min-width:44px}.joints .far{color:var(--warn);font-weight:600}
+.nowt .far{color:var(--warn);font-weight:600;padding:4px 10px;font-size:13px}
+#jointsNow{max-height:none}#jointsNow th,#jointsNow td{padding-top:2px;padding-bottom:2px}
 /* full screen: the browser's own, or (where an element can't go full screen, as on an iPhone) the window */
 .plot3d:fullscreen{margin:0;background:var(--panel)}
 .plot3d:-webkit-full-screen{margin:0;background:var(--panel);width:100%;height:100%}
@@ -662,8 +661,8 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
             <button role="radio" data-show3d="robot" aria-checked="true" title="A robot whose arms follow the wrist tags and whose body follows the chest tag">Robot</button>
             <button role="radio" data-show3d="tags" aria-checked="false" title="Each tag's trail and axes over the last few seconds">Tags</button>
           </span>
-          <label class="field" id="lookField" title="How the robot looks: the same arms and joints in each">Look <select id="robotLook" class="select sm">
-            <option value="machine">Machine</option><option value="pearl">Pearl</option><option value="companion">Companion</option><option value="hologram">Hologram</option>
+          <label class="field" id="scaleField" title="Teleoperation: the robot's arms move this many times as far as your hands do, from the start pose (below 1 for fine work, above 1 to reach further). The hands still turn exactly as yours do, and the body isn't scaled.">Motion × <select id="robotScale" class="select sm">
+            <option value="0.25">0.25</option><option value="0.5">0.5</option><option value="0.75">0.75</option><option value="1">1</option><option value="1.5">1.5</option><option value="2">2</option><option value="3">3</option>
           </select></label>
           <label class="field">Relative to <select id="frameSel" class="select sm"></select></label>
         </div>
@@ -672,14 +671,13 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         <div class="vbtns">
           <button class="btn sm primary" id="robotCalBtn" title="Stand in the start pose (arms at your sides, forearms forward, palms in), then press this (or C) to line the robot up with you">Calibrate robot</button>
           <button class="btn sm" id="robotClearBtn" hidden title="Forget the robot's calibration: it stands in its start pose again">Clear</button>
-          <button class="btn sm outline" id="resetViewBtn" title="Back to the starting angle, fitted to the tags (or press R)"><svg class="i"><use href="#i-reset"/></svg>Reset view</button>
+          <button class="btn sm outline" id="resetViewBtn" title="Look from camera 1, at the robot or the tags (or press R)"><svg class="i"><use href="#i-reset"/></svg>Reset view</button>
           <button class="btn sm outline" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
           <button class="btn sm outline sq" id="fullBtn" aria-label="Full screen" title="Full screen (Esc to leave)"><svg class="i"><use href="#i-full"/></svg></button>
         </div>
         <canvas id="plot" tabindex="0" role="img" aria-label="3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view, C to calibrate the robot."></canvas>
         <canvas id="plotGL" aria-hidden="true" hidden></canvas>
         <div class="legend" id="legend3d"></div>
-        <div class="joints" id="joints" hidden></div>
         <div class="rhint" id="robotHint" role="status" hidden></div>
         <div class="help hide-sm"><span>Drag to orbit</span><span>Shift-drag to pan</span><span>Scroll to zoom</span></div>
       </div>
@@ -689,16 +687,20 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         <h2 id="h-now">Now</h2>
         <label class="sr" for="tplotTag">Tag to plot</label>
         <select id="tplotTag" class="select sm" title="The tag plotted below (or click its row)"></select>
+        <label class="sr" for="jointArm">Arm to plot</label>
+        <select id="jointArm" class="select sm" hidden title="The arm whose joints are plotted below"></select>
         <span class="seg sm" role="radiogroup" aria-label="Plot">
-          <button role="radio" data-tp="motion" aria-checked="true" title="Each coordinate minus its mean over the history, so small motions fill the plot">Motion</button>
-          <button role="radio" data-tp="position" aria-checked="false" title="The coordinates themselves">Position</button>
-          <button role="radio" data-tp="quat" aria-checked="false" title="The orientation as a unit quaternion (w, x, y, z)">Quaternion</button>
+          <button role="radio" data-tp="quat" aria-checked="false" title="The orientation as a unit quaternion (w, x, y, z)">Orientation</button>
+          <button role="radio" data-tp="position" aria-checked="false" title="The position, x, y and z">Position</button>
+          <button role="radio" data-tp="velocity" aria-checked="true" title="How fast it moves along x, y and z, in cm/s">Velocity</button>
+          <button role="radio" data-tp="joints" aria-checked="false" id="tpJoints" hidden title="The robot's joint angles, both arms, and the chosen arm's over time">Joint angles</button>
         </span>
         <div class="spacer"></div>
         <button class="btn sm" id="untareBtn" hidden title="Show every orientation as measured again">Clear tare</button>
         <button class="btn sm outline" id="tareBtn" title="Make the orientation of every tag in view the identity, (1, 0, 0, 0). Later turns are measured from there, in the tag's own axes. Positions don't change.">Tare orientation</button>
       </div>
-      <div class="nowt">
+      <div class="nowt" id="jointsNow" hidden></div>
+      <div class="nowt" id="tagsNow">
         <table>
           <thead>
             <tr><th rowspan="2">Tag</th><th class="grp g" colspan="3">Position, cm</th><th class="grp g" colspan="4" title="The orientation as a unit quaternion, w + xi + yj + zk, in the frame of the plot">Orientation, quaternion</th><th class="num g" rowspan="2">Distance</th><th class="num" rowspan="2" title="From the Kalman filter, in cm/s">Speed</th><th class="num" rowspan="2" title="RMS distance between the detected corners and the fitted pose, in pixels">Corner fit</th><th class="num" rowspan="2" title="One standard deviation along the line of sight, from the pose's covariance">± depth</th></tr>
@@ -768,7 +770,6 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         </div>
         <div class="sgrid">
           <span class="field"><span id="elbowLbl">Elbows out and below the hands</span><button id="elbowSw" class="switch" role="switch" aria-checked="true" aria-labelledby="elbowLbl" title="An arm with 7 joints can reach a hand pose with its elbow anywhere round a circle. On: the elbow sits out to the side and below the hand where it can. Off: it stays where it was."></button></span>
-          <span class="field"><span id="jointsLbl">Show joint angles</span><button id="jointsSw" class="switch" role="switch" aria-checked="true" aria-labelledby="jointsLbl"></button></span>
         </div>
       </div>
       <div class="step">
@@ -952,8 +953,9 @@ const S = {
   bodies: store.get('bodies', []), // {id, name, members: [{id, R, t}] (first is the origin), spread}
   learn: null, // {id, name, ids, samples: {id: [poses]}} while an object's shape is being learned
   views: [], lastCapture: 0, auto: true, calibResult: null,
-  view: { ...VIEW0, dist: 2.6, target: [0, 1.0, 0], fitted: false },
-  tplotTag: null, tplotMode: ['motion', 'position', 'quat'].includes(store.get('tplotMode')) ? store.get('tplotMode') : 'motion',
+  view: { ...VIEW0, dist: 2.6, target: [0, 1.0, 0], fitted: false, fromCam: true }, // fromCam: the first fit looks from camera 1, as Reset view does
+  tplotTag: null, tplotMode: ['quat', 'position', 'velocity', 'joints'].includes(store.get('tplotMode')) ? store.get('tplotMode') : 'velocity', // (Motion, the old default, is now Velocity)
+  jointSide: 1, // the arm the Joint angles plot shows
   // Tare: per track, the orientation (in the plotted frame) that reads as the identity; kept until cleared or the frame changes
   tare: new Map(),
 };
@@ -1157,13 +1159,26 @@ function refreshTplotSel() {
 }
 document.querySelectorAll('[data-tp]').forEach((b) => {
   b.setAttribute('aria-checked', String(b.dataset.tp === S.tplotMode));
-  b.onclick = () => { S.tplotMode = b.dataset.tp; store.set('tplotMode', S.tplotMode); document.querySelectorAll('[data-tp]').forEach((x) => x.setAttribute('aria-checked', String(x === b))); paintTplotMode(); };
+  b.onclick = () => { S.tplotMode = b.dataset.tp; store.set('tplotMode', S.tplotMode); RB.jointsT = 0; paintTplotMode(); };
 });
+// The arms the robot has now (with a track), left first; Joint angles is offered only while it has one.
+const robotArms = () => (S.settings.show3d === 'robot' && RB.scene ? RB.scene.arms.filter((a) => a.key !== null && a.key !== undefined).sort((a, b) => b.side - a.side) : []);
+const tpMode = () => (S.tplotMode === 'joints' && !robotArms().length ? 'velocity' : S.tplotMode);
 function paintTplotMode() {
-  const q = S.tplotMode === 'quat';
-  tplot.setAttribute('aria-label', q ? 'The chosen tag’s orientation over the history, as a unit quaternion w, x, y, z' : 'x, y and z of the chosen tag over the history, in centimetres');
+  const mode = tpMode(), arms = robotArms();
+  $('tpJoints').hidden = !arms.length;
+  document.querySelectorAll('[data-tp]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.tp === mode)));
+  const j = mode === 'joints';
+  $('tplotTag').hidden = j; $('jointArm').hidden = !j; $('jointsNow').hidden = !j; $('tagsNow').hidden = j;
+  if (j) {
+    if (!arms.some((a) => a.side === S.jointSide)) S.jointSide = arms[0].side;
+    const opts = arms.map((a) => `<option value="${a.side}">${a.side === 1 ? 'Left' : 'Right'} arm</option>`).join('');
+    if ($('jointArm').dataset.key !== opts) { $('jointArm').dataset.key = opts; $('jointArm').innerHTML = opts; }
+    $('jointArm').value = String(S.jointSide);
+  }
+  tplot.setAttribute('aria-label', { quat: 'The chosen tag’s orientation over the history, as a unit quaternion w, x, y, z', position: 'x, y and z of the chosen tag over the history, in centimetres', velocity: 'The chosen tag’s velocity along x, y and z over the history, in cm/s', joints: 'The chosen arm’s seven joint angles over the history, in degrees' }[mode]);
 }
-paintTplotMode();
+$('jointArm').onchange = () => { S.jointSide = +$('jointArm').value; };
 // click a row of the Now table to plot that track
 $('nowRows').addEventListener('click', (e) => {
   const tr = e.target.closest('tr[data-key]');
@@ -2012,8 +2027,14 @@ function fitView() {
   S.view.fitted = true;
 }
 $('fitBtn').onclick = fitView;
-function resetView() { Object.assign(S.view, view0()); fitView(); }
+// Reset view: from camera 1's position, looking at what is plotted (or, where camera 1 isn't known, the start angle)
+function resetView() {
+  Object.assign(S.view, view0()); fitView();
+  const cam = cameraInPlot(), d = cam && C.sub(cam, S.view.target), r = d ? C.norm(d) : 0;
+  if (r > 0.05) Object.assign(S.view, { yaw: Math.atan2(d[0], -d[1]), pitch: Math.asin(Math.max(-1, Math.min(1, d[2] / r))), dist: r });
+}
 $('resetViewBtn').onclick = resetView;
+function autoFit() { if (S.view.fromCam && RB.pts.length + S.hist.ids().length) { S.view.fromCam = false; resetView(); } else fitView(); }
 // The cameras stand still, but a reference tag's pose wobbles with its noise (a degree at 1.5 m moves a camera by
 // 3 cm), so the cameras are drawn from the reference's mean pose over the last half second.
 function steadyRef() {
@@ -2049,6 +2070,7 @@ function draw3d() {
     for (const cm of list) {
       const a = cm.cam ? Math.tan((C.hfov(cm.cam) * Math.PI) / 360) : 0.7, b = cm.cam ? (a * cm.cam.h) / cm.cam.w : 0.4, d = L0;
       const P = shown(cm.T, camRef), at = (q) => C.add(C.mulv(P.R, q), P.t);
+      if (C.norm(C.sub(P.t, o.eye)) < Math.max(0.15, 3 * d)) continue; // looking from this camera (Reset view): it would only be in the way
       const corners = [[-a, -b, 1], [a, -b, 1], [a, b, 1], [-a, b, 1]].map((q) => at(q.map((x) => x * d)));
       for (let k = 0; k < 4; k++) { line(P.t, corners[k], K.axis, 1.5); line(corners[k], corners[(k + 1) % 4], K.axis, 1.5); }
       line(corners[0], corners[1], K.text2, 2.5); // the top edge, so which way is up reads at a glance
@@ -2065,13 +2087,15 @@ function draw3d() {
       for (let k = 0; k < 4; k++) line(sq[k], sq[(k + 1) % 4], colorOf(rk), 2);
     }
   }
-  line([0, 0, 0], [L0, 0, 0], alpha(K.x, 0.55), 1.5); line([0, 0, 0], [0, L0, 0], alpha(K.y, 0.55), 1.5); line([0, 0, 0], [0, 0, L0], alpha(K.z, 0.55), 1.5);
-  label([L0, 0, 0], 'x', K.muted, 4); label([0, L0, 0], 'y', K.muted, 4); label([0, 0, L0], 'z', K.muted, 4);
+  if (C.norm(o.eye) > Math.max(0.15, 3 * L0)) { // (not when looking from the origin, camera 1's place)
+    line([0, 0, 0], [L0, 0, 0], alpha(K.x, 0.55), 1.5); line([0, 0, 0], [0, L0, 0], alpha(K.y, 0.55), 1.5); line([0, 0, 0], [0, 0, L0], alpha(K.z, 0.55), 1.5);
+    label([L0, 0, 0], 'x', K.muted, 4); label([0, L0, 0], 'y', K.muted, 4); label([0, 0, L0], 'z', K.muted, 4);
+  }
 
   const now = performance.now() / 1000, span = S.settings.span, every = S.settings.every;
   S.hist.trim(now, span); S.rawHist.trim(now, span);
   if (S.settings.show3d === 'robot') { drawRobot(c, o, w, h, now); return; }
-  $('joints').hidden = true; $('robotHint').hidden = true; $('plotGL').hidden = true;
+  $('robotHint').hidden = true; $('plotGL').hidden = true;
   const legend = [], placed = [];
   // raw tracks, faint and dashed, to compare
   if (S.settings.compare && S.settings.pose !== 'raw') {
@@ -2133,7 +2157,7 @@ function draw3d() {
     lg.innerHTML = (legend.length ? legend.map((id) => `<span class="li"><span class="sw" style="background:${cssColorOf(id)}"></span>${escapeHtml(nameOf(id))}</span>`).join('') : '<span class="li muted">No tags in view</span>')
       + '<span class="axes"><span class="ax"><i style="background:var(--x)"></i>x</span><span class="ax"><i style="background:var(--y)"></i>y</span><span class="ax"><i style="background:var(--z)"></i>z</span></span>';
   }
-  if (!S.view.fitted && legend.length) fitView();
+  if (!S.view.fitted && legend.length) autoFit();
 }
 // orbit, pan, zoom
 (() => {
@@ -2179,8 +2203,8 @@ function draw3d() {
 // sides, forearms forward, palms in) wherever the tags are; pressing it fixes how each tag sits on the robot, as a
 // tare does. It reads the plotted poses (in the chosen frame) with any tare taken off, so taring never moves it.
 const RCORE = window.RobotCore;
-const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), scene: null, pts: [], msg: '', msgWarn: false, msgT: 0, hintT: 0, jointsT: 0, autoDone: false, fitSig: '' };
-function robotReset() { RB.cal = null; RB.last.clear(); RB.seen.clear(); RB.prev.clear(); RB.autoDone = false; RB.fitSig = ''; paintRobotBtns(); }
+const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist: new Map(), scene: null, pts: [], msg: '', msgWarn: false, msgT: 0, hintT: 0, jointsT: 0, autoDone: false, fitSig: '' };
+function robotReset() { RB.cal = null; RB.last.clear(); RB.seen.clear(); RB.prev.clear(); RB.jhist.clear(); RB.autoDone = false; RB.fitSig = ''; paintRobotBtns(); }
 const refKeyNow = () => (S.settings.frame === 'camera' ? null : parseKey(S.settings.frame));
 // the newest plotted pose of every track, untared; a track out of view keeps its last one
 function robotTake() {
@@ -2254,13 +2278,19 @@ function calibrateRobot(quiet) {
 function clearRobotCal() { RB.cal = null; RB.prev.clear(); paintRobotBtns(); }
 function paintRobotBtns() {
   const on = S.settings.show3d === 'robot';
-  $('robotCalBtn').hidden = !on; $('robotClearBtn').hidden = !on || !RB.cal; $('lookField').hidden = !on;
+  $('robotCalBtn').hidden = !on; $('robotClearBtn').hidden = !on || !RB.cal; $('scaleField').hidden = !on;
   $('robotCalBtn').classList.toggle('primary', !RB.cal); $('robotCalBtn').classList.toggle('outline', !!RB.cal);
   $('robotCalBtn').textContent = RB.cal ? 'Calibrate again' : 'Calibrate robot';
 }
 $('robotCalBtn').onclick = () => calibrateRobot();
-$('robotLook').value = S.settings.robot.look;
-$('robotLook').onchange = () => { S.settings.robot.look = $('robotLook').value; saveSettings(); S.view.fitted = false; };
+// the motion scale: any saved value is offered, even one not in the list
+function paintScale() {
+  const v = S.settings.robot.scale, sel = $('robotScale');
+  if (![...sel.options].some((x) => +x.value === v)) sel.add(new Option(String(v), String(v)));
+  sel.value = [...sel.options].find((x) => +x.value === v).value;
+}
+paintScale();
+$('robotScale').onchange = () => { S.settings.robot.scale = +$('robotScale').value; saveSettings(); RB.prev.clear(); };
 $('robotClearBtn').onclick = clearRobotCal;
 plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey && S.settings.show3d === 'robot') { e.preventDefault(); calibrateRobot(); } });
 
@@ -2273,8 +2303,8 @@ function robotUpdate(now) {
   const roles = RB.cal ? RB.cal.roles : robotRoles(), m = RCORE.model(S.settings.robot);
   const fresh = (k) => k !== null && RB.last.has(k) && now - RB.last.get(k).time < 0.5;
   const preview = roles.body === null && !roles.arms.length;
-  // the demo lines the robot up by itself, once, as soon as it sees the body and both hands
-  if (S.demo && !RB.cal && !RB.autoDone && roles.body !== null && roles.arms.length === 2 && [roles.body, ...roles.arms.map((a) => a.key)].every(fresh)) {
+  // the demo lines the robot up by itself, once, when it sees the body and both hands while they rest in the start pose
+  if (S.demo && S.demo.atHome() && !RB.cal && !RB.autoDone && roles.body !== null && roles.arms.length === 2 && [roles.body, ...roles.arms.map((a) => a.key)].every(fresh)) {
     RB.autoDone = true; calibrateRobot(true);
     return robotUpdate(now);
   }
@@ -2285,10 +2315,13 @@ function robotUpdate(now) {
   } else if (!cal) cal = robotCalibrate(roles, m);
   const poses = { body: roles.body !== null ? RB.last.get(roles.body) : null, arms: {} };
   for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
-  const tg = RCORE.targets(cal, poses), prefer = S.settings.robot.elbows ? undefined : false;
+  const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
   const arms = tg.arms.map((a) => {
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev : null, { prefer });
     RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, side: a.side });
+    // each new pose's joint angles, for the Joint angles plot (the arm's side kept, so a recalibration that swaps sides shows)
+    const ts = RB.last.get(a.key).time, h = RB.jhist.get(a.key) || [];
+    if (!h.length || h[h.length - 1].time !== ts) { h.push({ time: ts, q: s.q.slice(), side: a.side }); while (h.length && h[0].time < ts - S.settings.span - 1) h.shift(); RB.jhist.set(a.key, h); }
     return { key: a.key, side: a.side, q: s.q, reach: s.reach, gap: s.gap, live: fresh(a.key) };
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
@@ -2312,7 +2345,7 @@ function drawRobot(c, o, w, h, now) {
   const gl = robotGL();
   $('plotGL').hidden = !gl;
   if (gl) drawRobotGL(gl, o, w, h, now); else drawRobotFlat(c, o, h, now);
-  if (!S.view.fitted) fitView();
+  if (!S.view.fitted) autoFit();
   paintRobotText(now);
 }
 // Each tag riding on the robot, turned as it is: the chest tag on the chest (where the chest is put), each wrist tag on
@@ -2333,7 +2366,7 @@ function robotTags(now) {
 function drawRobotGL(gl, o, w, h, now) {
   const sc = RB.scene;
   RB.pts = gl.draw({
-    w, h, dpr: devicePixelRatio || 1, cam: o, fov: 45, style: S.settings.robot.look, time: now, chest: sc.chest, m: sc.m, arms: sc.arms, body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
+    w, h, dpr: devicePixelRatio || 1, cam: o, fov: 45, chest: sc.chest, m: sc.m, arms: sc.arms, body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
     mount: sc.body ? null : sc.arms.length === 2 ? 'bar' : sc.arms.length === 1 ? sc.arms[0].side : null,
     tags: robotTags(now).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
     theme: { accent: K.accent, warn: K.warn, bg: K.surface, dark: isDark() },
@@ -2436,12 +2469,12 @@ function paintRobotText(now) {
   const pnow = performance.now();
   if (pnow - RB.jointsT > 200) {
     RB.jointsT = pnow;
-    const arms = sc.arms.filter((a) => a.key !== null && a.key !== undefined).sort((a, b) => b.side - a.side), jt = $('joints');
-    jt.hidden = !S.settings.robot.joints || !arms.length;
-    if (!jt.hidden) {
-      const D = 180 / Math.PI;
-      jt.innerHTML = `<table><thead><tr><th>Joint, °</th>${arms.map((a) => `<th class="num">${a.side === 1 ? 'Left' : 'Right'}</th>`).join('')}</tr></thead><tbody>` +
-        RCORE.JOINTS.map((j, i) => `<tr><td>${j.name}</td>${arms.map((a) => `<td class="num mono">${(a.q[i] * D).toFixed(0)}</td>`).join('')}</tr>`).join('') + '</tbody></table>' +
+    paintTplotMode(); // the Joint angles tab comes and goes with the arms
+    const arms = robotArms(), jt = $('jointsNow');
+    if (tpMode() === 'joints') {
+      const D = 180 / Math.PI, lim = (j) => `${(j.lo * D).toFixed(0)} to ${(j.hi * D).toFixed(0)}`;
+      jt.innerHTML = `<table><thead><tr><th>Joint</th>${arms.map((a) => `<th class="num g">${a.side === 1 ? 'Left' : 'Right'}, °</th>`).join('')}<th class="num g">Range, °</th></tr></thead><tbody>` +
+        RCORE.JOINTS.map((j, i) => `<tr><td><span style="display:inline-flex;align-items:center;gap:7px"><span class="sw" style="background:var(--s${i + 1})"></span>${j.name}</span></td>${arms.map((a) => `<td class="num mono g">${(a.q[i] * D).toFixed(0)}</td>`).join('')}<td class="num mono g muted">${lim(j)}</td></tr>`).join('') + '</tbody></table>' +
         arms.filter((a) => !a.reach).map((a) => `<div class="far">${a.side === 1 ? 'Left' : 'Right'} hand ${(a.gap * 100).toFixed(0)} cm out of reach</div>`).join('');
     }
   }
@@ -2455,6 +2488,7 @@ function paintRobotText(now) {
 }
 radios('show3d', () => S.settings.show3d, (v) => { S.settings.show3d = v; store.set('settings', S.settings); $('legend3d').dataset.key = ''; S.view.fitted = false; paintRobotBtns(); });
 paintRobotBtns();
+paintTplotMode(); // (here, once the robot's state exists)
 
 // ---------------- full screen ----------------
 // The 3D view alone, full screen: the browser's own where an element can go full screen, else filling the window.
@@ -2521,7 +2555,6 @@ function renderSettings() {
   const m = RCORE.model(r);
   for (const [id, k] of [['lenUpper', 'upper'], ['lenFore', 'fore'], ['lenHalf', 'half'], ['lenUp', 'up']]) $(id).value = +(m[k] * 100).toFixed(1);
   $('elbowSw').setAttribute('aria-checked', String(r.elbows));
-  $('jointsSw').setAttribute('aria-checked', String(r.joints));
   $('setupSw').setAttribute('aria-checked', String(S.settings.setup));
   paintPaper();
 }
@@ -2531,7 +2564,6 @@ for (const [id, k] of [['lenUpper', 'upper'], ['lenFore', 'fore'], ['lenHalf', '
 }
 $('lenReset').onclick = () => { for (const k of ['back', 'half', 'up', 'upper', 'fore']) delete S.settings.robot[k]; saveSettings(); clearRobotCal(); renderSettings(); };
 $('elbowSw').onclick = () => { S.settings.robot.elbows = !S.settings.robot.elbows; saveSettings(); RB.prev.clear(); renderSettings(); };
-$('jointsSw').onclick = () => { S.settings.robot.joints = !S.settings.robot.joints; saveSettings(); RB.jointsT = 0; renderSettings(); };
 $('setupSw').onclick = () => { S.settings.setup = !S.settings.setup; saveSettings(); renderSettings(); paintSetupSw(); };
 $('setupOpen').onclick = () => { $('settingsDlg').close(); openSetup(0); };
 function openSettings() { if ($('settingsDlg').open) return; renderSettings(); $('settingsDlg').showModal(); }
@@ -2545,22 +2577,47 @@ $('settingsDlg').addEventListener('click', (e) => { if (e.target === $('settings
 let hoverX = null;
 tplot.addEventListener('pointermove', (e) => { const r = tplot.getBoundingClientRect(); hoverX = e.clientX - r.left; });
 tplot.addEventListener('pointerleave', () => { hoverX = null; $('tip').hidden = true; });
+// The series the time plot draws, for the mode shown: {times, rows (each a value per line, or null for a gap), names,
+// cols, css (colours as CSS), unit, fmt (a value as text), tipName, empty}.
+const JOINT_SHORT = ['Sh. fwd', 'Sh. out', 'Arm turn', 'Elbow', 'Forearm', 'W. bend', 'W. tilt'];
+function tplotSeries(mode, now) {
+  if (mode === 'joints') {
+    const arm = robotArms().find((x) => x.side === S.jointSide), h = arm ? (RB.jhist.get(arm.key) || []).filter((x) => x.side === arm.side) : [], D = 180 / Math.PI;
+    return {
+      times: h.map((x) => x.time), rows: h.map((x) => x.q.map((v) => v * D)), names: JOINT_SHORT, cols: JOINT_SHORT.map((_, i) => K.slots[i]), css: JOINT_SHORT.map((_, i) => `var(--s${i + 1})`),
+      unit: '°', fmt: (v) => v.toFixed(0), tipFmt: (v) => v.toFixed(1) + '°', tipName: arm ? (arm.side === 1 ? 'Left arm' : 'Right arm') : '', tipNames: RCORE.JOINTS.map((j) => j.name), empty: 'No arm yet',
+    };
+  }
+  const id = S.tplotTag, a = id === null ? [] : S.hist.get(id), xyz = { names: ['x', 'y', 'z'], cols: [K.x, K.y, K.z], css: ['var(--x)', 'var(--y)', 'var(--z)'] };
+  const ref = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
+  const empty = id === null ? 'Pick a tag' : id === ref ? `${nameOf(id)} is the reference, so it stays at the origin` : `${nameOf(id)} isn’t in view`, base = { times: a.map((x) => x.time), tipName: id === null ? '' : nameOf(id), empty };
+  if (mode === 'quat') {
+    // each sample's sign kept nearest the one before, so the lines don't jump
+    let qp = null;
+    return { ...base, rows: a.map((x) => (qp = C.quatNear(C.quatOf(x.R), qp))), names: ['w', 'x', 'y', 'z'], cols: [K.text2, K.x, K.y, K.z], css: ['var(--ink2)', 'var(--x)', 'var(--y)', 'var(--z)'], unit: 'q', fmt: (v) => v.toFixed(3), tipFmt: (v) => v.toFixed(3), fixed: [-1, 1] };
+  }
+  if (mode === 'velocity') {
+    // the change over the last 0.1 s (at least two samples apart), in cm/s: steadier than frame to frame
+    let j = 0;
+    const rows = a.map((x, k) => {
+      while (j < k - 1 && x.time - a[j + 1].time >= 0.1) j++;
+      const dt = x.time - a[j].time;
+      return k > j && dt > 0.02 && dt < 0.4 ? [0, 1, 2].map((i) => ((x.t[i] - a[j].t[i]) / dt) * 100) : null;
+    });
+    return { ...base, ...xyz, rows, unit: 'cm/s', fmt: (v) => (v >= 0 ? '+' : '') + v.toFixed(0), tipFmt: (v) => v.toFixed(1) + ' cm/s' };
+  }
+  return { ...base, ...xyz, rows: a.map((x) => x.t.map((v) => v * 100)), unit: 'cm', fmt: (v) => v.toFixed(1), tipFmt: (v) => v.toFixed(2) + ' cm' };
+}
 function drawTplot() {
   const { c, w, h } = sizeCanvas(tplot);
   c.clearRect(0, 0, w, h);
-  const id = S.tplotTag, a = id === null ? [] : S.hist.get(id), now = performance.now() / 1000, span = S.settings.span;
-  const L = 50, R = 74, T = 28, B = 24, pw = w - L - R, ph = h - T - B;
+  const mode = tpMode(), now = performance.now() / 1000, span = S.settings.span, sr = tplotSeries(mode, now);
+  const n = sr.names.length, L = 50, R = mode === 'joints' ? 92 : 74, T = 28, B = 24, pw = w - L - R, ph = h - T - B;
   if (pw < 40 || ph < 30) return;
-  // Motion: each coordinate minus its mean over the window, so a 1 cm wobble isn't flattened by a 1 m depth.
-  // Quaternion: w, x, y, z of the orientation, each sample's sign kept nearest the one before so the lines don't jump.
-  const motion = S.tplotMode === 'motion', quat = S.tplotMode === 'quat', mean = [0, 0, 0];
-  if (motion && a.length) for (let i = 0; i < 3; i++) mean[i] = a.reduce((m, s) => m + s.t[i], 0) / a.length;
-  let qprev = null;
-  const qs = quat ? a.map((s) => (qprev = C.quatNear(C.quatOf(s.R), qprev))) : null;
-  const n = quat ? 4 : 3, val = (k, i) => (quat ? qs[k][i] : (a[k].t[i] - mean[i]) * 100);
+  const times = sr.times, rows = sr.rows, has = rows.some((r) => r);
   let lo = Infinity, hi = -Infinity, stp;
-  if (quat) { lo = -1; hi = 1; stp = ph < 80 ? 1 : 0.5; } else {
-    for (let k = 0; k < a.length; k++) for (let i = 0; i < 3; i++) { lo = Math.min(lo, val(k, i)); hi = Math.max(hi, val(k, i)); }
+  if (sr.fixed) { [lo, hi] = sr.fixed; stp = ph < 80 ? 1 : 0.5; } else {
+    for (let k = 0; k < rows.length; k++) if (rows[k] && now - times[k] <= span) for (const v of rows[k]) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
     if (!isFinite(lo)) { lo = -10; hi = 10; }
     if (hi - lo < 2) { const m = (hi + lo) / 2; lo = m - 1; hi = m + 1; }
     stp = C.niceStep(hi - lo, Math.max(2, Math.min(4, Math.floor(ph / 30)))); lo = Math.floor(lo / stp) * stp; hi = Math.ceil(hi / stp) * stp;
@@ -2574,44 +2631,52 @@ function drawTplot() {
   }
   c.textAlign = 'center'; c.textBaseline = 'top';
   const ts = C.niceStep(span, 5);
-  for (let s = 0; s <= span + 1e-9; s += ts) c.fillText(s === 0 ? 'now' : `−${+s.toFixed(3)} s`, L + pw * (1 - s / span), T + ph + 6);
-  c.textAlign = 'right'; c.textBaseline = 'alphabetic'; c.fillText(quat ? 'q' : motion ? 'Δ cm' : 'cm', L - 6, T - 14);
-  const cols = quat ? [K.text2, K.x, K.y, K.z] : [K.x, K.y, K.z], names = quat ? ['w', 'x', 'y', 'z'] : ['x', 'y', 'z'];
-  const cssCols = names.map((nm, i) => (quat && !i ? 'var(--ink2)' : `var(--${nm})`)), fmt = (v) => (quat ? v.toFixed(3) : v.toFixed(1));
+  for (let s2 = 0; s2 <= span + 1e-9; s2 += ts) c.fillText(s2 === 0 ? 'now' : `−${+s2.toFixed(3)} s`, L + pw * (1 - s2 / span), T + ph + 6);
+  c.textAlign = 'right'; c.textBaseline = 'alphabetic'; c.fillText(sr.unit, L - 6, T - 14);
+  c.save(); c.beginPath(); c.rect(L, T - 4, pw, ph + 8); c.clip();
   c.lineWidth = 2; c.lineJoin = 'round'; c.lineCap = 'round';
   for (let i = 0; i < n; i++) {
-    c.strokeStyle = cols[i]; c.beginPath();
+    c.strokeStyle = sr.cols[i]; c.beginPath();
     let pen = false;
-    for (let k = 0; k < a.length; k++) {
-      if (k && a[k].time - a[k - 1].time > 0.25) pen = false;
-      const x = X(a[k].time), y = Y(val(k, i));
+    for (let k = 0; k < rows.length; k++) {
+      if (!rows[k] || (k && times[k] - times[k - 1] > 0.25)) { pen = false; if (!rows[k]) continue; }
+      const x = X(times[k]), y = Y(rows[k][i]);
       pen ? c.lineTo(x, y) : c.moveTo(x, y); pen = true;
     }
     c.stroke();
   }
+  c.restore();
   // direct labels at the newest point, pushed apart so they don't overlap
-  if (a.length) {
-    const kl = a.length - 1, ys = [...Array(n).keys()].map((i) => ({ i, y: Y(val(kl, i)) })).sort((p, q) => p.y - q.y);
-    for (let k = 1; k < n; k++) if (ys[k].y - ys[k - 1].y < 13) ys[k].y = ys[k - 1].y + 13;
-    c.textAlign = 'left'; c.textBaseline = 'middle'; c.font = '600 11px Archivo, system-ui, sans-serif';
-    for (const p of ys) { c.fillStyle = cols[p.i]; c.fillText(names[p.i], L + pw + 6, p.y); c.fillStyle = K.text2; c.font = '11px Archivo, sans-serif'; c.fillText((motion ? (val(kl, p.i) >= 0 ? '+' : '') : '') + fmt(val(kl, p.i)), L + pw + 16, p.y); c.font = '600 11px Archivo, system-ui, sans-serif'; }
+  let kl = rows.length - 1;
+  while (kl >= 0 && !rows[kl]) kl--;
+  if (has && kl >= 0) {
+    const ys = [...Array(n).keys()].map((i) => ({ i, y: Y(rows[kl][i]) })).sort((p, q) => p.y - q.y);
+    const gap = n > 4 ? 11 : 13;
+    for (let k = 1; k < n; k++) if (ys[k].y - ys[k - 1].y < gap) ys[k].y = ys[k - 1].y + gap;
+    const off = Math.max(0, ys[n - 1].y - (T + ph)); // keep the stack above the time axis
+    c.textAlign = 'left'; c.textBaseline = 'middle';
+    const lw = mode === 'joints' ? 52 : 10;
+    for (const p of ys) {
+      c.font = '600 11px Archivo, system-ui, sans-serif'; c.fillStyle = sr.cols[p.i]; c.fillText(sr.names[p.i], L + pw + 6, p.y - off);
+      c.font = '11px Archivo, sans-serif'; c.fillStyle = K.text2; c.fillText(sr.fmt(rows[kl][p.i]), L + pw + 6 + lw, p.y - off);
+    }
   } else {
     c.fillStyle = K.muted; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '12px Archivo, system-ui, sans-serif';
-    const ref = S.settings.frame === 'camera' ? null : parseKey(S.settings.frame);
-    c.fillText(id === null ? 'Pick a tag' : id === ref ? `${nameOf(id)} is the reference, so it stays at the origin` : `${nameOf(id)} isn’t in view`, L + pw / 2, T + ph / 2);
+    c.fillText(sr.empty, L + pw / 2, T + ph / 2);
   }
   // hover: crosshair and a tooltip at the nearest sample
   const tip = $('tip');
-  if (hoverX !== null && a.length && hoverX >= L && hoverX <= L + pw) {
+  if (hoverX !== null && has && hoverX >= L && hoverX <= L + pw) {
     const tt = now - span * (1 - (hoverX - L) / pw);
-    let bk = 0;
-    for (let k = 0; k < a.length; k++) if (Math.abs(a[k].time - tt) < Math.abs(a[bk].time - tt)) bk = k;
-    const best = a[bk], x = X(best.time);
+    let bk = -1;
+    for (let k = 0; k < rows.length; k++) if (rows[k] && (bk < 0 || Math.abs(times[k] - tt) < Math.abs(times[bk] - tt))) bk = k;
+    const x = X(times[bk]);
     c.strokeStyle = K.axis; c.lineWidth = 1; c.beginPath(); c.moveTo(Math.round(x) + 0.5, T); c.lineTo(Math.round(x) + 0.5, T + ph); c.stroke();
-    for (let i = 0; i < n; i++) { c.fillStyle = cols[i]; c.strokeStyle = K.surface; c.lineWidth = 2; c.beginPath(); c.arc(x, Y(val(bk, i)), 4, 0, 7); c.fill(); c.stroke(); }
+    for (let i = 0; i < n; i++) { c.fillStyle = sr.cols[i]; c.strokeStyle = K.surface; c.lineWidth = 2; c.beginPath(); c.arc(x, Y(rows[bk][i]), 4, 0, 7); c.fill(); c.stroke(); }
     tip.hidden = false;
-    tip.innerHTML = `<div class="small muted" style="margin-bottom:3px">${escapeHtml(nameOf(id))}, ${(now - best.time).toFixed(2)} s ago</div>` +
-      names.map((nm, i) => `<div class="r"><span><i class="sw" style="background:${cssCols[i]};width:8px;height:8px"></i>${nm}</span><span class="mono">${quat ? qs[bk][i].toFixed(3) : (best.t[i] * 100).toFixed(2) + ' cm'}</span></div>`).join('') + (motion ? `<div class="small muted" style="margin-top:3px">Plotted as change from the mean</div>` : '');
+    const tn = sr.tipNames || sr.names;
+    tip.innerHTML = `<div class="small muted" style="margin-bottom:3px">${escapeHtml(sr.tipName)}, ${(now - times[bk]).toFixed(2)} s ago</div>` +
+      tn.map((nm, i) => `<div class="r"><span><i class="sw" style="background:${sr.css[i]};width:8px;height:8px"></i>${escapeHtml(nm)}</span><span class="mono">${sr.tipFmt(rows[bk][i])}</span></div>`).join('');
     const tw = tip.offsetWidth;
     tip.style.left = (x + 12 + tw > w ? x - tw - 12 : x + 12) + 'px'; tip.style.top = T + 'px';
   } else tip.hidden = true;
@@ -3916,15 +3981,29 @@ function facing(p, at, roll, tilt, away) {
 }
 // The scene: a body tag, and two hands, each a 10 cm cube with a tag on its front (0, 1), sides and top. The poses
 // are of each tag (and of each hand's front tag, which is its object's origin).
-// Every motion starts from the middle of its swing (sines), so the robot, which takes its start pose from the first
-// moment it sees all three, has the hands' whole range within reach either way.
+// The hands move along a path the robot can follow smoothly (RobotCore.demoPose): each cube's front tag rides on a
+// wrist of the robot, on the chest the robot finds from the body tag, turned toward the cameras in the start pose, and
+// moves within a comfortable box with gentle turns, so the arm stays clear of every singularity and joint limit and
+// each hand keeps facing camera 1 (within about 36°; the other cameras aren't placed at first, so camera 1 alone
+// measures the hands). Each DEMO_CYCLE seconds it rests in the start pose (arms at the sides, forearms forward,
+// palms in) for 3.5 s, and the robot calibrates itself only then (demoAtHome). Test section 5h runs the IK along it.
+const DEMO_CYCLE = 18;
+const demoPhase = (t) => ((t % DEMO_CYCLE) + DEMO_CYCLE) % DEMO_CYCLE;
+// (late in the rest, once every hand's pose has settled)
+const demoAtHome = (t) => { const u = demoPhase(t); return (u > 1.2 && u < 2.3) || u > DEMO_CYCLE - 0.6; };
 function demoTags(t) {
   const A = DEMO.audience, pose = (p, roll, tilt, pitch) => ({ R: C.mul3(facing(p, A, roll, tilt), C.rodrigues([pitch || 0, 0, 0])), t: p });
-  return [
-    { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.45, 0.25) }, // turned a little, as a tag on a chest would be
-    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.15 * Math.sin(0.9 * t)], 0.45 * Math.sin(0.8 * t), 0.6 * Math.sin(0.6 * t), 0.35 + 0.25 * Math.sin(0.7 * t)) },
-    { id: 1, ...pose([0.35 + 0.15 * Math.sin(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t), 1.3 + 0.17 * Math.sin(0.7 * t)], -0.4 + 0.4 * Math.sin(1.2 * t), 0.6 * Math.sin(0.5 * t), 0.35 + 0.25 * Math.sin(0.8 * t)) },
-  ];
+  // square to camera 1, so the hands never pass in front of it there, and tipped back (as a tag on a chest would be),
+  // so camera 1 can tell its two mirror-image poses apart
+  const body = { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.12, 0.45) };
+  const m = RCORE.model(S.settings.robot), chest = C.compose(body, RCORE.calibrate(m, { body: C.toView(body), arms: [] }).bodyOffset);
+  const hand = (id, side) => {
+    const home = C.compose(chest, RCORE.fk(m, side, RCORE.HOME)), w = C.compose(chest, RCORE.demoPose(m, side, t, DEMO_CYCLE));
+    // the cube turned a little (as the old demo's were), so camera 1 sees its top and a side as well as its front:
+    // a single tag seen face-on has two orientations that fit almost equally well
+    return { id, R: C.mul3(w.R, C.mul3(C.tr3(home.R), pose(home.t, 0, side * 0.5, 0.35).R)), t: w.t };
+  };
+  return [body, hand(0, -1), hand(1, 1)]; // the right hand (on the cameras' left) and the left
 }
 // Each hand's cube: the front tag is the origin (x right, y up, z out of its face); the others sit on the left, right
 // and top faces, upright as seen from the front (the top one from the front, looking down).
@@ -4076,7 +4155,7 @@ async function startDemo() {
   };
   frameAll(performance.now() + 100);
   const stopSims = startSimBoards(t0);
-  S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; stopSims(); } };
+  S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; stopSims(); }, atHome: () => demoAtHome((performance.now() - t0) / 1000 - DEMO_LAG) };
 }
 
 // ---------------- the setup guide ----------------

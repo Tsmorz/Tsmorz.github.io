@@ -1290,7 +1290,7 @@
     show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
     // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
     // RobotCore.MODEL), whether the elbows prefer to sit out and below the hands, and whether the joint angles show.
-    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, joints: true, look: 'machine' }, // look: RobotGL.STYLES (`style` was its name while Pearl was the default)
+    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1 }, // scale: the arms' motion, × (teleoperation)
     setup: true, // show the Setup guide when the page opens
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
@@ -1328,9 +1328,9 @@
     if (!['robot', 'tags'].includes(o.show3d)) o.show3d = DEFAULTS.show3d;
     const r = Object.assign({}, DEFAULTS.robot, o.robot && typeof o.robot === 'object' ? o.robot : {});
     for (const k of ['body', 'left', 'right']) r[k] = typeof r[k] === 'string' && r[k] ? r[k] : 'auto';
-    r.elbows = !!r.elbows; r.joints = !!r.joints;
-    delete r.style; // a Pearl saved as the old default doesn't hold back Machine
-    if (!['pearl', 'machine', 'companion', 'hologram'].includes(r.look)) r.look = 'machine';
+    r.elbows = !!r.elbows; delete r.joints; // (joint angles are a tab of the Now panel now, not a switch)
+    delete r.style; delete r.look; // the robot had four looks once; it is the Machine now, the only one
+    r.scale = isFinite(Number(r.scale)) && r.scale !== null && r.scale !== '' ? Math.min(5, Math.max(0.1, Number(r.scale))) : 1;
     for (const k of ['back', 'half', 'up', 'upper', 'fore']) {
       const x = Number(r[k]);
       if (r[k] == null || !isFinite(x)) delete r[k]; else r[k] = Math.min(1, Math.max(k === 'back' || k === 'up' ? 0 : 0.05, x));

@@ -18,7 +18,7 @@
   else root.RobotCore = factory(root.TagCore);
 })(typeof self !== 'undefined' ? self : this, function (C) {
   'use strict';
-  const { mul3, tr3, mulv, add, sub, norm, compose, inverse } = C;
+  const { mul3, tr3, mulv, add, sub, norm, compose, inverse, rodrigues } = C;
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
   const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
@@ -239,21 +239,26 @@
       arms: arms.map((a, i) => {
         const home = fk(m, sides[i], HOME), Rc = mul3(chest.R, home.R);
         const tagC = mulv(tr3(chest.R), sub(a.pose.t, chest.t));
-        return { key: a.key, side: sides[i], Roff: mul3(tr3(a.pose.R), Rc), shift: sub(home.t, tagC) };
+        return { key: a.key, side: sides[i], Roff: mul3(tr3(a.pose.R), Rc), shift: sub(home.t, tagC), home: home.t };
       }),
     };
   }
 
   // The chest's pose now (plotted frame) and each arm's wrist target in the chest frame, from the current poses:
   // { body: pose | null, arms: { [key]: pose } }. A missing arm pose gives a null target.
-  function targets(cal, poses) {
+  // opts.scale (teleoperation): each wrist's move from its start position, in the chest's frame, times this (1: as you
+  // move; 2: twice as far; 0.5: half). The hand's orientation and the chest are never scaled.
+  function targets(cal, poses, opts) {
     const chest = cal.bodyOffset && poses.body ? compose(poses.body, cal.bodyOffset) : cal.chest;
-    const Rt = tr3(chest.R);
+    const Rt = tr3(chest.R), k = opts && isFinite(opts.scale) ? opts.scale : 1;
     return {
       chest,
       arms: cal.arms.map((a) => {
         const p = poses.arms && poses.arms[a.key];
-        return { key: a.key, side: a.side, target: p ? { R: mul3(Rt, mul3(p.R, a.Roff)), t: add(mulv(Rt, sub(p.t, chest.t)), a.shift) } : null };
+        if (!p) return { key: a.key, side: a.side, target: null };
+        let t = add(mulv(Rt, sub(p.t, chest.t)), a.shift);
+        if (k !== 1 && a.home) t = add(a.home, scale(sub(t, a.home), k));
+        return { key: a.key, side: a.side, target: { R: mul3(Rt, mul3(p.R, a.Roff)), t } };
       }),
     };
   }
@@ -261,5 +266,20 @@
   // A chest-frame point in the plotted frame.
   const place = (chest, p) => add(mulv(chest.R, p), chest.t);
 
-  return { MODEL, JOINTS, HOME, PREFER, model, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz };
+  // The demo's hands (index.html, demoTags): the wrist pose {R, t} in the chest frame at time t (s) for the arm on
+  // `side`. It rests in the start pose (HOME) for the first 2.5 s and the last 1 s of each `cycle` seconds; between, the
+  // hand eases into slow sines: 8 cm forward and back, 1 to 11 cm out, 2 to 12 cm up (tipping up 120° a metre as it
+  // rises, as a wrist would) and turns of up to 12°, facing the cameras throughout. That keeps the arm clear of every
+  // singularity and limit (test section 5h runs the IK along it): elbow 75° or more, wrist bend under 35°, each joint
+  // 20° or more from its limits, each hand above its elbow and the elbow out from the shoulder.
+  function demoPose(m, side, t, cycle) {
+    const P = cycle || 18, u = ((t % P) + P) % P, ease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+    const e = ease((u - 2.5) / 2) * (1 - ease((u - (P - 3)) / 2)), k = side > 0 ? 0 : 1.7, s = (w, p) => Math.sin(w * t + p + k);
+    const home = fk(m, side, HOME);
+    const d = [e * 0.08 * s(0.6, 0.2), side * e * (0.06 + 0.05 * s(0.75, 1.3)), e * (0.07 + 0.05 * s(0.9, 2.1))];
+    const r = [e * 12 * DEG * s(0.7, 0.5), e * 12 * DEG * s(0.85, 2.4) - 120 * DEG * d[2], e * 12 * DEG * s(0.65, 1.0)];
+    return { R: mul3(rodrigues(r), home.R), t: add(home.t, d) };
+  }
+
+  return { MODEL, JOINTS, HOME, PREFER, model, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
 });

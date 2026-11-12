@@ -719,6 +719,29 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
     check(outN > 40 && worst < 12 * D, `a hand out of reach and back while it turns: no joint jumps (at most ${(worst / D).toFixed(2)}° per step; ${outN} of 401 steps out of reach)`);
   }
 
+  // the demo's path (RobotCore.demoPose): the IK follows it smoothly, far from every singularity and limit, with the
+  // elbow preference never switching on (so the elbow never swings round)
+  {
+    const out = [];
+    for (const side of [1, -1]) {
+      let pv = null, pp = null, step = 0, acc = 0, minE = Infinity, maxW = 0, margin = Infinity, pref = 0, reach = true;
+      for (let i = 0; i <= 60 * 36; i++) {
+        const s = RC.ik(m, side, RC.demoPose(m, side, i / 60, 18), pv), sh = RC.fk(m, side, s.q).shoulder;
+        if (pv) s.q.forEach((x, j) => { step = Math.max(step, Math.abs(x - pv.q[j])); if (pp) acc = Math.max(acc, Math.abs(x - 2 * pv.q[j] + pp.q[j])); });
+        minE = Math.min(minE, s.q[3]); maxW = Math.max(maxW, Math.abs(s.q[5])); reach = reach && s.reach;
+        s.q.forEach((x, j) => { margin = Math.min(margin, x - RC.JOINTS[j].lo, RC.JOINTS[j].hi - x); });
+        pref = Math.max(pref, s.elbow[2] - s.wrist[2], -side * (s.elbow[1] - sh[1]));
+        pp = pv; pv = s;
+      }
+      out.push({ step, acc, minE, maxW, margin, pref, reach });
+    }
+    const w = (k) => Math.max(...out.map((o) => o[k])), n = (k) => Math.min(...out.map((o) => o[k]));
+    check(out.every((o) => o.reach) && w('step') < D && w('acc') < 0.2 * D && n('minE') > 60 * D && w('maxW') < 45 * D && n('margin') > 15 * D && w('pref') < 1e-4,
+      `the demo's path: at most ${(w('step') / D).toFixed(2)}° a frame at 60 Hz, its pace changing by ${(w('acc') / D).toFixed(2)}°; elbow ${(n('minE') / D).toFixed(0)}° or more, wrist bend under ${(w('maxW') / D).toFixed(0)}°, every joint ${(n('margin') / D).toFixed(0)}° or more from its limits`);
+    const H = RC.fk(m, 1, RC.HOME), home = [0, 0.5, 2.4, 17.2, 17.9].every((t) => { const p = RC.demoPose(m, 1, t, 18); return near(p.t, H.t, 1e-12) && rotErr(p.R, H.R) < 1e-12; });
+    check(home, '... and it rests in the start pose at the start and end of each cycle (where the demo calibrates)');
+  }
+
   // out of reach
   const far = { R: L.R, t: C.add(L.shoulder, [0.5, 0.2, 0.3]) }, fs = RC.ik(m, 1, far, null), Ff = RC.fk(m, 1, fs.q);
   const dist = C.norm(C.sub(far.t, L.shoulder)), along = C.add(L.shoulder, C.sub(far.t, L.shoulder).map((x) => (x * (m.upper + m.fore)) / dist));
@@ -741,6 +764,16 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   check(near(tg.t, RC.fk(m, 1, RC.HOME).t, 1e-12) && Math.abs(C.angleOf(C.mul3(C.tr3(RC.fk(m, 1, RC.HOME).R), tg.R)) - 0.8) < 1e-9, 'turning a wrist turns the hand in place (no swing from where the tag sits)');
   const reach = RC.targets(cal, { body, arms: { L: { R: lt.R, t: C.add(lt.t, [0, -0.1, 0.05]) }, R: rt } }).arms[1].target;
   check(near(C.sub(reach.t, RC.fk(m, 1, RC.HOME).t), [0.1, 0, 0.05], 1e-12), 'a wrist moved 10 cm toward the camera and 5 cm up: the hand moves 10 cm forward and 5 cm up');
+  // teleoperation scale: the move from the start pose is scaled, the turn isn't, and neither is the body
+  {
+    const L = { R: C.mul3(lt.R, C.rodrigues([0.3, -0.5, 0.2])), t: C.add(lt.t, [0.04, -0.1, 0.05]) }, H = RC.fk(m, 1, RC.HOME).t;
+    const at = (k, b) => RC.targets(cal, { body: b || body, arms: { L, R: rt } }, { scale: k }).arms[1].target;
+    const one = at(1), two = at(2), half = at(0.5), d1 = C.sub(one.t, H);
+    const walked = RC.targets(cal, { body: g(body), arms: { L: g(L), R: g(rt) } }, { scale: 2 }).arms[1].target;
+    check(near(C.sub(two.t, H), d1.map((x) => 2 * x), 1e-12) && near(C.sub(half.t, H), d1.map((x) => x / 2), 1e-12) && C.angleOf(C.mul3(C.tr3(one.R), two.R)) < 1e-12 && C.angleOf(C.mul3(C.tr3(one.R), half.R)) < 1e-12
+      && near(walked.t, two.t, 1e-12) && near(RC.targets(cal, { body, arms: { L: lt, R: rt } }, { scale: 3 }).arms[1].target.t, H, 1e-12),
+      'motion scale ×2 and ×0.5: the hand moves twice and half as far from the start pose, turns exactly as the wrist does, and walking with the whole person isn\'t scaled');
+  }
   // no body tag: the chest faces the camera, put so the home wrists land on the tags
   cal = RC.calibrate(m, { body: null, arms: [{ key: 'L', pose: lt }, { key: 'R', pose: rt }] }, { toward: [0, 0, 0] });
   got = solve(cal, { body: null, arms: { L: lt, R: rt } });
@@ -755,12 +788,12 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   const tf = C.tagFit(1170, 2532, 8, 1);
   check(tf.px === 117 && tf.size === 936 && C.tagFit(9, 9, 8, 1).px === 0, 'one tag on a screen: whole pixels per cell, a cell of white round it');
   const st = C.clampSettings({ show3d: 'x', robot: { body: '', left: 'b:hand', upper: 5, back: -1, elbows: 0 } });
-  check(st.show3d === 'robot' && st.robot.body === 'auto' && st.robot.left === 'b:hand' && st.robot.upper === 1 && st.robot.back === 0 && st.robot.elbows === false && st.robot.joints === true && st.setup === true && C.clampSettings({ setup: false }).setup === false, 'robot settings: roles, lengths clamped, switches, and the setup guide on unless turned off');
+  check(st.show3d === 'robot' && st.robot.body === 'auto' && st.robot.left === 'b:hand' && st.robot.upper === 1 && st.robot.back === 0 && st.robot.elbows === false && !('joints' in st.robot) && st.robot.scale === 1 && C.clampSettings({ robot: { scale: 9 } }).robot.scale === 5 && C.clampSettings({ robot: { scale: 'x' } }).robot.scale === 1 && C.clampSettings({ robot: { scale: 0.5 } }).robot.scale === 0.5 && st.setup === true && C.clampSettings({ setup: false }).setup === false, 'robot settings: roles, lengths clamped, switches, and the setup guide on unless turned off');
   // the shaded robot's meshes (robot-gl.js): every surface sound, for the default lengths and for a small person
   const RGL = require(path.join(__dirname, '..', 'tag-tracker/robot-gl.js'));
   let parts = 0, verts = 0, bad = 0;
-  for (const [lens, look] of [[{}, 'pearl'], [{ upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }, 'pearl'], [{}, 'machine'], [{}, 'companion']]) {
-    const M = RGL.meshes(RC.model(lens), look), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
+  for (const lens of [{}, { upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }]) {
+    const M = RGL.meshes(RC.model(lens)), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
     for (const p of all) {
       const { pos, nrm, idx } = p.mesh, n = pos.length / 3;
       parts++; verts += n;
@@ -768,8 +801,8 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
       for (let i = 0; i < n; i++) if (![pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]].every(isFinite) || Math.abs(Math.hypot(nrm[3 * i], nrm[3 * i + 1], nrm[3 * i + 2]) - 1) > 1e-4) { bad++; break; }
     }
   }
-  check(bad === 0 && parts > 160, `the shaded robot's ${parts} meshes (${verts} vertices; each look, and a small person's lengths): finite points, unit normals, 16-bit indices in range`);
-  check(RGL.STYLES.every((s) => C.clampSettings({ robot: { look: s } }).robot.look === s) && C.clampSettings({ robot: { look: 'x' } }).robot.look === 'machine' && C.clampSettings({ robot: { style: 'pearl' } }).robot.look === 'machine', 'every look is a setting; the default (and an unknown or old one) is Machine');
+  check(bad === 0 && parts > 80, `the shaded robot's ${parts} meshes (${verts} vertices; at the default lengths and a small person's): finite points, unit normals, 16-bit indices in range`);
+  check(!('look' in C.clampSettings({ robot: { look: 'pearl', style: 'pearl' } }).robot) && !('style' in C.clampSettings({ robot: { style: 'pearl' } }).robot), 'a saved look (from when the robot had four) is dropped: the robot is the Machine');
   const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
   check(cmd('Calibrate robot.') === 'robot' && cmd('Calibrate.') === 'calib' && cmd('Open settings.') === 'settings', '"calibrate robot" is not "calibrate", and "settings" opens the tab');
 }
