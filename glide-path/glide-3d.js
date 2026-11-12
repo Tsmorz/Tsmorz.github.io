@@ -4,7 +4,8 @@
 // from the 2D map's layers on each change (`mark`), so the 2D map stays the one source of truth.
 'use strict';
 function Glide3D(env) {
-  const { lmap, el, C, L: layers, terrUrl, tiles, onTap } = env;
+  const { lmap, el, L: layers, terrUrl, tiles, onTap } = env;
+  let C = env.pal(); // the colours in use: they follow the base map, as on the 2D map
   const ras = (urls, maxzoom, attribution) => ({ type: 'raster', tiles: urls, tileSize: 256, maxzoom, attribution });
   const dem = () => ({ type: 'raster-dem', tiles: [terrUrl], tileSize: 256, encoding: 'terrarium', maxzoom: 13, attribution: 'Terrain: AWS Terrain Tiles' });
   const empty = { type: 'FeatureCollection', features: [] };
@@ -33,17 +34,17 @@ function Glide3D(env) {
       line('outline', 'lines', { 'line-color': C.line, 'line-width': 1, 'line-opacity': 0.45 }),
       line('hit', 'lines', { 'line-color': C.hit, 'line-width': 4, 'line-opacity': 0.95 }),
       line('ring', 'lines', { 'line-color': C.ring, 'line-width': 2, 'line-dasharray': [4, 3] }),
-      line('profCase', 'lines', { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.85 }),
+      line('profCase', 'lines', { 'line-color': C.casing, 'line-width': 6, 'line-opacity': 0.85 }),
       line('profPast', 'lines', { 'line-color': C.line, 'line-width': 2, 'line-opacity': 0.85, 'line-dasharray': [3, 3] }),
       line('profLine', 'lines', { 'line-color': C.line, 'line-width': 3, 'line-opacity': 0.95 }),
-      line('routeCase', 'lines', { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': 0.9 }),
+      line('routeCase', 'lines', { 'line-color': C.casing, 'line-width': 7, 'line-opacity': 0.9 }),
       line('routeLine', 'lines', { 'line-color': C.route, 'line-width': 4 }),
-      { id: 'ticks', type: 'circle', source: 'points', filter: is('tick'), paint: { 'circle-radius': 3.5, 'circle-color': '#ffffff',
+      { id: 'ticks', type: 'circle', source: 'points', filter: is('tick'), paint: { 'circle-radius': 3.5, 'circle-color': C.casing,
         'circle-stroke-color': C.line, 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } },
       { id: 'routeEnd', type: 'circle', source: 'points', filter: is('routeEnd'), paint: { 'circle-radius': 7, 'circle-color': C.route,
-        'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } },
+        'circle-stroke-color': C.casing, 'circle-stroke-width': 2 } },
       { id: 'probe', type: 'circle', source: 'points', filter: is('probe'), paint: { 'circle-radius': 8, 'circle-color': C.line,
-        'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 } }
+        'circle-stroke-color': C.casing, 'circle-stroke-width': 3 } }
     ]
   };
 
@@ -60,9 +61,20 @@ function Glide3D(env) {
   }
   const point = (k, p) => ({ type: 'Feature', properties: { k }, geometry: { type: 'Point', coordinates: ll(p) } });
 
+  function paintColours() {
+    const set = (id, prop, v) => m.setPaintProperty(id, prop, v);
+    set('outline', 'line-color', C.line); set('hit', 'line-color', C.hit); set('ring', 'line-color', C.ring);
+    set('profCase', 'line-color', C.casing); set('profPast', 'line-color', C.line); set('profLine', 'line-color', C.line);
+    set('routeCase', 'line-color', C.casing); set('routeLine', 'line-color', C.route);
+    set('ticks', 'circle-color', C.casing); set('ticks', 'circle-stroke-color', C.line);
+    set('routeEnd', 'circle-color', C.route); set('routeEnd', 'circle-stroke-color', C.casing);
+    set('probe', 'circle-color', C.line); set('probe', 'circle-stroke-color', C.casing);
+  }
+
   function sync() {
     queued = false;
     if (!open || !ready) return;
+    if (env.pal() !== C) { C = env.pal(); paintColours(); }
     const on = l => lmap.hasLayer(l);
     // the base map: whatever the 2D layers menu says
     const base = env.base();
@@ -121,7 +133,7 @@ function Glide3D(env) {
     m = new maplibregl.Map({ container: el, style, center: [c.lng, c.lat], zoom: lmap.getZoom() - 1, pitch: 62, bearing: 0,
                              maxPitch: 80, attributionControl: { compact: true } });
     m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
-    marker = new maplibregl.Marker({ draggable: true, color: '#2a78d6' }).setLngLat([c.lng, c.lat]).addTo(m);
+    marker = new maplibregl.Marker({ draggable: true, color: '#6459d3' }).setLngLat([c.lng, c.lat]).addTo(m);
     marker.on('dragend', () => { const p = marker.getLngLat(); onTap(p.lat, p.lng); });
     m.on('click', e => onTap(e.lngLat.lat, e.lngLat.lng));
     m.on('load', () => {
@@ -131,7 +143,86 @@ function Glide3D(env) {
     });
   }
 
+  // ---------- Fly it: a chase camera behind and above the glider, along the glide's own heights ----------
+  // path: { lls, d (m along it), h (glider, m above sea level), g (ground), U (read-outs) }. Time runs faster than real:
+  // 8 to 40 s for the whole glide. The glider is drawn at the middle of the view, where the camera looks.
+  let flight = null;
+  const BACK = 150, UP = 55; // metres behind and above the glider
+  function at(path, s) {
+    const d = path.d; let k = 0;
+    while (k < d.length - 2 && d[k + 1] < s) k++;
+    const f = d[k + 1] > d[k] ? Math.min(1, Math.max(0, (s - d[k]) / (d[k + 1] - d[k]))) : 0, a = path.lls[k], b = path.lls[k + 1] || a;
+    const lerp = (x, y) => x + (y - x) * f;
+    return { k: f > 0.5 ? k + 1 : k, lat: lerp(a.lat, b.lat), lng: lerp(a.lng, b.lng), h: lerp(path.h[k], path.h[k + 1] ?? path.h[k]),
+             g: lerp(path.g[k], path.g[k + 1] ?? path.g[k]) };
+  }
+  function hud(html, buttons) {
+    let box = el.querySelector('.fly-hud');
+    if (!box) { box = document.createElement('div'); box.className = 'fly-hud'; box.setAttribute('role', 'status'); el.appendChild(box); }
+    box.innerHTML = `<span>${html}</span>`;
+    for (const [label, fn] of buttons) { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = fn; box.appendChild(b); }
+    return box;
+  }
+  function gliderIcon(on) {
+    let g = el.querySelector('.fly-glider');
+    if (!g && on) {
+      g = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      g.setAttribute('class', 'fly-glider'); g.setAttribute('viewBox', '0 0 120 36'); g.setAttribute('aria-hidden', 'true');
+      // a sailplane seen from behind: long thin wings, a slim fuselage and a T-tail
+      g.innerHTML = '<g fill="#fff" stroke="#1d1e23" stroke-width="1.5" stroke-linejoin="round">' +
+        '<path d="M2 21 L58 17 L62 17 L118 21 L118 23 L62 21 L58 21 L2 23 Z"/><ellipse cx="60" cy="20" rx="4.5" ry="5"/>' +
+        '<path d="M58.5 15 L59 5 L61 5 L61.5 15 Z"/><path d="M48 6 L72 6 L72 8 L48 8 Z"/></g>';
+      el.appendChild(g);
+    }
+    if (g) g.style.display = on ? '' : 'none';
+  }
+  function endFlight(keepHud) {
+    if (!flight) return;
+    cancelAnimationFrame(flight.raf);
+    m.off('movestart', flight.grab);
+    m.setCenterClampedToGround(true);
+    gliderIcon(false);
+    const done = flight.onEnd; flight = null;
+    if (!keepHud) { const b = el.querySelector('.fly-hud'); if (b) b.remove(); }
+    if (done) done();
+  }
+  function fly(path, onAt, onEnd) {
+    if (!ready) { m.once('load', () => fly(path, onAt, onEnd)); return; }
+    endFlight();
+    const total = path.d[path.d.length - 1], dur = Math.min(40, Math.max(8, 6 + total / 250)) * 1000, U = path.U;
+    const hint = el.querySelector('.hint3d'); if (hint) hint.classList.add('gone');
+    // dragging or zooming the map yourself ends the flight
+    const grab = e => { if (e.originalEvent) { endFlight(); } };
+    flight = { raf: 0, grab, onEnd, t0: null };
+    m.on('movestart', grab);
+    m.setCenterClampedToGround(false); // the camera looks at the glider in the air, not at the ground under it
+    gliderIcon(true);
+    let ux = 0, uy = 1; // the way along the track, east and north
+    const stop = () => endFlight();
+    const frame = now => {
+      if (!flight) return;
+      if (flight.t0 === null) flight.t0 = now;
+      const u = Math.min(1, (now - flight.t0) / dur), s = total * u, p = at(path, s), q = at(path, Math.min(total, s + 80));
+      const cos = Math.cos(p.lat * Math.PI / 180), ex = (q.lng - p.lng) * cos, ny = q.lat - p.lat, len = Math.hypot(ex, ny);
+      if (len > 1e-9) { ux = ex / len; uy = ny / len; }
+      const mPerDeg = 111320, fromLat = p.lat - uy * BACK / mPerDeg, fromLng = p.lng - ux * BACK / (mPerDeg * cos);
+      const ground = m.queryTerrainElevation([fromLng, fromLat]) || 0;
+      const camAlt = Math.max(p.h + UP, ground + 25);
+      m.jumpTo(m.calculateCameraOptionsFromTo([fromLng, fromLat], camAlt, [p.lng, p.lat], p.h));
+      onAt(p.k);
+      if (u < 1) {
+        hud(`${U.d(s)} out, ${U.h(Math.max(0, p.h - p.g))} above the ground`, [['Stop', stop]]);
+        flight.raf = requestAnimationFrame(frame);
+      } else {
+        endFlight(true);
+        hud(`Down after ${U.d(total)}`, [['Fly again', () => fly(path, onAt, onEnd)], ['Done', () => { const b = el.querySelector('.fly-hud'); if (b) b.remove(); }]]);
+      }
+    };
+    flight.raf = requestAnimationFrame(frame);
+  }
+
   return {
+    fly,
     open() {
       open = true; el.hidden = false;
       if (!m) create();
@@ -142,6 +233,7 @@ function Glide3D(env) {
       reachDirty = true; mark();
     },
     close() {
+      endFlight();
       open = false;
       if (m) { const c = m.getCenter(); lmap.setView([c.lat, c.lng], Math.round(m.getZoom() + 1), { animate: false }); }
       el.hidden = true;

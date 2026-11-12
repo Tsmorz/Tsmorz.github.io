@@ -301,7 +301,7 @@ including the service worker in a mock.
 
 **Base maps and contours**: Street, Topo, Satellite (Esri World Imagery, online only, never stored: it shows what the ground
 is, a field or a forest, which slope alone can't) and the offline hillshade; the choice is kept as `base` (not when going
-offline swaps in the hillshade). Over Satellite the reach wash is drawn at 60% so the ground shows through. **Contour lines**
+offline swaps in the hillshade). Over Satellite the map's colours switch to the imagery set (below). **Contour lines**
 are an overlay drawn by the page from the same Terrarium tiles (`Contours` grid layer, `terrWindow`; `GlideCore.contours`:
 3 × 3 smoothing, then marching squares, saddles split by the cell's mean), so they work offline and over any base: light with a
 dark edge over imagery, brown over the light maps. Each tile contours a window with a 2 px margin, so lines meet across tile
@@ -320,6 +320,10 @@ cross-section with its marks, the route, the probe) are read from the 2D map's L
 over the panes, under the controls), so the Key, wind badge and layers menu stay; zoom, scale and attribution are hidden
 (`.is-3d`), and its mouse, touch and wheel events are stopped there so the 2D map never pans or sets the launch from them.
 In 3D a tap or dragging the pin moves the launch; long-press routes are 2D only. No WebGL: the button says so.
+**Fly it** (beside the cross-section's title) follows the glide in 3D, the straight one or the long-press route, at its own
+heights (the profile's `glide`): a chase camera 150 m behind and 55 m above the glider (`calculateCameraOptionsFromTo`, kept
+25 m over the ground; the centre is unclamped from the ground while it flies), a glider drawn at the middle of the view, a
+readout with Stop, and the cross-section's cursor following along. The whole glide takes 8 to 40 s; dragging the map ends it.
 
 **No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
 rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or
@@ -331,12 +335,23 @@ colours are read once per theme change (`COL`).
 
 Layout: controls on the left; the map with the cross-section strip under it on the right (on a phone, or any screen under
 520 px tall: header with the status line, map, cross-section, controls). The header shows an "Offline" badge only when offline.
+The panel's sections are `<details>` that remember being open (`open`); a folded one shows its settings in its title row
+(`summaries()`). On a wide screen the top button on the map hides the whole left column (`setPanel`, kept as `panel`).
+**Quick start** (`#guide`, the book in the header): three steps (where you launch, the glider and its launch height as
+presets, reading the map), opened on load until "Show this when the page opens" (`guide`) is switched off; "I'll tap the
+map" closes it and brings it back at step 2 after the tap. The glide ratio runs 1:1 to 30:1; a saved value outside a
+slider's range is brought inside it on load.
+**Look**: the site's own tokens, type and accent (Inter, STIX Two Text headings, JetBrains Mono for numbers and buttons;
+violet, never an orange accent), from Google Fonts (offline the system fonts stand in).
 The map has its own locate button and a key that folds away on small maps (a `<details>` Leaflet control). Long-press is a
 touch timer of its own (550 ms, held within 10 px), not just Leaflet's `contextmenu`, so it behaves the same on iOS and Android
 and never also moves the launch. Inputs are 16 px so iOS doesn't zoom in on them; touch targets are at least 40 px. Colours are
-the colour-blind-safe set validated with the dataviz skill (blue `#2a78d6` landable on a straight glide, aqua `#1baf7a` **plus
-hatching** landable only by curving, orange `#eb6834` where a straight glide hits steep ground, grey too steep); keep identity
-off colour alone. Tokens are defined three times like main.css, and the page follows the site's `theme` in `localStorage` and
+the site's chart palette, checked with the dataviz skill's validator (`PAL` in glide-app.js): violet landable on a straight
+glide, teal **plus hatching** landable only by curving, red where a straight glide hits steep ground, gold the long-press
+route, grey too steep. `PAL.light` (`#5a4fd6`, `#12a599`, `#b8263a`, `#a58d12`) is for the light maps; over satellite imagery
+`PAL.img` (`#8a7af7`, `#0fa593`, `#f2526c`, `#b08f10`, light lines on dark casings) takes over (`restyle()`, the Key's
+`.on-img`), and the reach is drawn more solid. Every landable region has a solid outline (cells on its border, drawn opaque),
+which is what keeps it readable on imagery. Keep identity off colour alone. Tokens are defined three times like main.css, and the page follows the site's `theme` in `localStorage` and
 has its own light/dark switch.
 
 It works offline. `sw.js` keeps the page and every terrain tile it has fetched (a capped `glide-terrain-runtime` cache), and

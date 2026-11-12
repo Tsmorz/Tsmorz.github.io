@@ -10,6 +10,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=STIX+Two+Text:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="lib/leaflet/leaflet.css">
 <link rel="stylesheet" href="glide.css">
 <script>try { const t = localStorage.getItem('theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
@@ -24,6 +27,9 @@
         <button type="button" data-units="metric" aria-pressed="true">m</button>
         <button type="button" data-units="imperial" aria-pressed="false">ft</button>
       </div>
+      <button id="btnGuide" class="icon-btn" type="button" aria-label="Quick start" title="Quick start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5C4.7 20 4 19.3 4 18.5zM20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/></svg>
+      </button>
       <button id="theme" class="icon-btn" type="button" aria-label="Switch light or dark" title="Switch light or dark">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
       </button>
@@ -39,6 +45,7 @@
       <h2 id="prof-h">Cross-section</h2>
       <span id="profWhat" class="prof-what"></span>
       <button id="profBack" class="link" type="button" hidden>Back to the bearing</button>
+      <button id="btnFly" class="btn sm fly" type="button" title="Fly this glide in 3D"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M7 5v14l11-7z" fill="currentColor"/></svg>Fly it</button>
       <div class="prof-keys" aria-hidden="true">
         <span><i id="profKeyLine"></i>Glider</span><span><i id="profKeyMargin" class="m"></i>Glider − margin</span><span><i class="t"></i>Ground</span>
       </div>
@@ -54,47 +61,47 @@
   </section>
 
   <aside id="panel">
-    <section class="group" aria-labelledby="g-launch">
-      <h2 id="g-launch">Launch</h2>
+    <details class="group" data-sec="launch" open>
+      <summary><h2>Launch</h2><span class="sum" id="sumLaunch"></span></summary>
       <div class="btns">
         <button id="btnGeo" class="btn primary" type="button">Use my location</button>
         <button id="btnMHill" class="btn" type="button">Example: M Hill, Rapid City</button>
       </div>
       <p class="hint">Or tap the map, or drag the pin. Long-press (right-click) any spot to see the best route there.</p>
-    </section>
+    </details>
 
-    <section class="group" aria-labelledby="g-glider">
-      <h2 id="g-glider">Glider</h2>
+    <details class="group" data-sec="glider" open>
+      <summary><h2>Glider</h2><span class="sum" id="sumGlider"></span></summary>
       <div class="row"><label for="gr">Glide ratio <output id="v_gr" for="gr"></output></label><input id="gr" type="range"></div>
       <div class="row"><label for="va">Best-glide airspeed <output id="v_va" for="va"></output></label><input id="va" type="range"></div>
       <div class="row"><label for="agl">Launch height above you <output id="v_agl" for="agl"></output></label><input id="agl" type="range"></div>
-    </section>
+    </details>
 
-    <section class="group" aria-labelledby="g-wind">
-      <h2 id="g-wind">Wind</h2>
+    <details class="group" data-sec="wind">
+      <summary><h2>Wind</h2><span class="sum" id="sumWind"></span></summary>
       <div class="wind">
         <div class="row" style="margin:0"><label for="ws">Speed <output id="v_ws" for="ws"></output></label><input id="ws" type="range">
           <p id="windWords" class="hint"></p></div>
         <div><div id="wdDial" class="dial" aria-label="Wind direction (where it blows from)"></div><div class="dial-cap">From</div></div>
       </div>
-    </section>
+    </details>
 
-    <section class="group" aria-labelledby="g-rules">
-      <h2 id="g-rules">Sight and margins</h2>
+    <details class="group" data-sec="rules">
+      <summary><h2>Sight and margins</h2><span class="sum" id="sumRules"></span></summary>
       <div class="row"><label for="vis">How far away you can still see it <output id="v_vis" for="vis"></output></label><input id="vis" type="range">
         <p class="hint">You have to keep it in sight. About 500–800 m for a 2 m glider, less for a small one.</p></div>
       <div class="row"><label for="mg">Clearance over terrain <output id="v_mg" for="mg"></output></label><input id="mg" type="range"></div>
       <div class="row"><label for="sl">Steepest ground you'd land on <output id="v_sl" for="sl"></output></label><input id="sl" type="range"></div>
       <label class="switch"><input id="curve" type="checkbox" checked> Let the glide curve round hills</label>
-    </section>
+    </details>
 
-    <section class="group" aria-labelledby="g-result">
-      <h2 id="g-result">What you can reach</h2>
+    <details class="group" data-sec="result" open>
+      <summary><h2>What you can reach</h2></summary>
       <dl id="stats" class="stats"></dl>
-    </section>
+    </details>
 
-    <section class="group" aria-labelledby="g-offline">
-      <h2 id="g-offline">Offline areas</h2>
+    <details class="group" data-sec="offline">
+      <summary><h2>Offline areas</h2><span class="sum" id="sumOffline"></span></summary>
       <p class="hint">Save the terrain round the launch while you have signal. The reach, the cross-section and a shaded terrain map then work with no connection.</p>
       <div class="row"><input id="areaName" type="text" placeholder="Name, e.g. M Hill" aria-label="Name for this area (optional)"></div>
       <div class="btns"><button id="btnSave" class="btn" type="button">Save this area</button></div>
@@ -102,12 +109,54 @@
       <ul id="areas"></ul>
       <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
       <p id="storage" class="hint"></p>
-    </section>
+    </details>
 
     <p class="note">Glides at best L/D in steady wind, checked against the terrain every few metres; curving routes are searched on a grid. No lift, sink or turn losses, and "landable" only looks at slope, not trees, buildings or water. Check your local rules, height limits and airspace before you fly. For planning, not for safety.
       Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (USGS, SRTM and others). Street map © OpenStreetMap contributors, online only. <a href="https://github.com/Tsmorz/Tsmorz.github.io/tree/main/glide-path">Source</a></p>
   </aside>
 </div>
+<dialog id="guide" class="guide" aria-labelledby="guideH">
+  <div class="g-head"><h2 id="guideH">Quick start</h2><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+    <button type="button" class="icon-btn sm" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+  <div class="g-body">
+    <section data-step="0">
+      <h3>1. Where do you launch?</h3>
+      <p>Glide Path shows where your glider can still land from a launch: round the hills in the way, with the wind, and within sight.</p>
+      <div class="btns"><button type="button" class="btn primary" data-g="geo">Use my location</button><button type="button" class="btn" data-g="example">Try M Hill, Rapid City</button><button type="button" class="btn" data-g="tap">I'll tap the map</button></div>
+    </section>
+    <section data-step="1" hidden>
+      <h3>2. Your glider</h3>
+      <p>Pick the nearest; every number can be fine-tuned later under Glider.</p>
+      <div class="presets" role="radiogroup" aria-label="Glider">
+        <button type="button" role="radio" aria-checked="false" data-glider="foam"><b>Small foam glider</b><span>8:1 at 8 m/s, seen to 400 m</span></button>
+        <button type="button" role="radio" aria-checked="false" data-glider="two"><b>2 m sailplane</b><span>15:1 at 10 m/s, seen to 600 m</span></button>
+        <button type="button" role="radio" aria-checked="false" data-glider="scale"><b>Large scale glider</b><span>25:1 at 14 m/s, seen to 1 km</span></button>
+      </div>
+      <p class="g-lab">How high does it start?</p>
+      <div class="presets" role="radiogroup" aria-label="Launch height">
+        <button type="button" role="radio" aria-checked="false" data-height="20"><b>Hand launch</b><span>about 20 m</span></button>
+        <button type="button" role="radio" aria-checked="false" data-height="120"><b>Winch or bungee</b><span>about 120 m</span></button>
+        <button type="button" role="radio" aria-checked="false" data-height="300"><b>Aerotow or a thermal</b><span>about 300 m</span></button>
+      </div>
+    </section>
+    <section data-step="2" hidden>
+      <h3>3. Reading the map</h3>
+      <ul class="g-key">
+        <li><span class="key k-straight"></span>Landable on a straight glide</li>
+        <li><span class="key k-curve"></span>Landable by curving round a hill</li>
+        <li><span class="key k-steep"></span>Reachable, but too steep to land</li>
+        <li><span class="key k-ring"></span>As far as you can still see it</li>
+      </ul>
+      <p>The strip under the map is a cross-section: drag its dial to turn it. Long-press (or right-click) a spot for the best route there, then press <b>Fly it</b> to follow the glide in 3D. Set the wind under Wind: the reach leans downwind.</p>
+    </section>
+  </div>
+  <div class="g-foot">
+    <label class="switch sm"><input id="guideShow" type="checkbox"> Show this when the page opens</label>
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="guideBack">Back</button>
+    <button type="button" class="btn primary" id="guideNext">Next</button>
+  </div>
+</dialog>
 <script src="lib/leaflet/leaflet.js"></script>
 <script src="glide-core.js"></script>
 <script src="glide-app.js"></script>
