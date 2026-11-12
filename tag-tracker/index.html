@@ -2433,13 +2433,14 @@ function drawRobotFlat(c, o, h, now) {
     ball(P(k.elbow), 0.042, well, ink, al);
     seg(P(k.elbow), P(k.wrist), 0.035, fill, armInk, al);
     ball(P(k.wrist), 0.036, a.live && !a.idle ? K.accent : well, ink, al);
-    // the gripper: a palm bar across the hand, two fingers along it, and a dot on the palm's side
-    const fd = [-H[2], -H[5], -H[8]], up = [H[0], H[3], H[6]], pn = [-a.side * H[1], -a.side * H[4], -a.side * H[7]];
-    const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(up.map((x) => x * v), pn.map((x) => x * (w || 0))))));
-    seg(at(0.025, -0.035), at(0.025, 0.035), 0.02, well, ink, al);
-    seg(at(0.035, 0.03), at(m.hand, 0.02), 0.011, fill, ink, al);
-    seg(at(0.035, -0.03), at(m.hand, -0.02), 0.011, fill, ink, al);
-    ball(at(0.035, 0, 0.022), 0.01, K.accent, K.accent, al);
+    // the gripper: a bar across the hand along the jaws' travel (y), a finger each side at the gap, a dot on the back
+    const fd = [-H[2], -H[5], -H[8]], jy = [H[1], H[4], H[7]], bk = [H[0], H[3], H[6]];
+    const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(jy.map((x) => x * v), bk.map((x) => x * (w || 0))))));
+    const G = RCORE.gripper(m), g2 = (a.gap === undefined ? G.gapMax : a.gap) / 2 + G.finger.c[1], tip = 0.07 + G.fl;
+    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, well, ink, al);
+    seg(at(0.07, g2), at(tip, g2), 0.009, fill, ink, al);
+    seg(at(0.07, -g2), at(tip, -g2), 0.009, fill, ink, al);
+    ball(at(0.045, 0, 0.032), 0.01, K.accent, K.accent, al);
   }
   items.sort((p, q) => q.z - p.z);
   for (const it of items) it.draw();

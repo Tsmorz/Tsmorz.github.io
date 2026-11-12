@@ -793,7 +793,7 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   const RGL = require(path.join(__dirname, '..', 'tag-tracker/robot-gl.js'));
   let parts = 0, verts = 0, bad = 0;
   for (const lens of [{}, { upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }]) {
-    const M = RGL.meshes(RC.model(lens)), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
+    const M = RGL.meshes(RC.model(lens)), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1], ...M.finger[1], ...M.finger[-1]];
     for (const p of all) {
       const { pos, nrm, idx } = p.mesh, n = pos.length / 3;
       parts++; verts += n;

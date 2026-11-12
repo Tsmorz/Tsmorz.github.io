@@ -75,7 +75,8 @@
   // Its groups of meshes, each in the frame it rides in: body (the chest's frame), bar and mount
   // (the chest's, for two arms or one without a body), upper (the upper arm's: origin at the shoulder, the arm along -z),
   // fore and foreLight (the forearm's: origin at the elbow), hand (the hand's: origin at the wrist, fingers along -z, the
-  // jaws apart along x, the palm towards -side·y), and extent: chest-frame points the view fits round. The chest tag sits
+  // back of the hand +x), finger[j] (jaw j = ±1, in the hand's frame shifted j·gap/2 along y, the way the jaws close: see
+  // RobotCore.gripper), and extent: chest-frame points the view fits round. The chest tag sits
   // at the chest's origin, so the body's front passes just behind it.
   function bars(m, out) {
     out.bar = [
@@ -90,7 +91,6 @@
       part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.05, 0.03, 0.05], 0.9, 0.9, { nu: 24, nv: 12 }), 'light'),
     ];
   }
-  const palmLight = (sd, y) => part(blob([0, -sd * y, -0.038], [0.016, 0.003, 0.016], 1, 1, { nu: 20, nv: 6 }), 'light');
 
   // Machine: an engineering robot. Brushed aluminium box sections, motor drums on the joint axes, a battery on its
   // back, a sensor bar for a head with two lenses, a parallel gripper, on a column and a foot.
@@ -122,7 +122,7 @@
       part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'dark'),
     ];
     bars(m, out);
-    const L1 = m.upper, L2 = m.fore, fl = Math.max(0.03, m.hand - 0.075);
+    const L1 = m.upper, L2 = m.fore, G = RC.gripper(m);
     out.upper = [
       part(lathe([0, 0, 0], -0.055, 0.055, () => 0.052, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
       part(blob([0, 0, -L1 / 2], [0.036, 0.03, L1 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
@@ -134,15 +134,20 @@
       part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'dark'),
     ];
     out.foreLight = [part(torus([0, 0, -(L2 - 0.06)], 0.035, 0.004, { nu: 36, nv: 8 }), 'light')];
+    // the gripper: a body across the jaws' travel with a rail under it, a light on the back of the hand
+    const gb = G.body, rail = gb.c[2] - gb.h[2];
     out.hand = {};
     for (const sd of [1, -1]) out.hand[sd] = [
       part(lathe([0, 0, 0], 0.004, -0.022, () => 0.034, { k0: 0.1, k1: 0.1 }), 'dark'),
-      part(blob([0, 0, -0.045], [0.048, 0.03, 0.024], 0.2, 0.2), 'metal'),
-      part(blob([0.03, 0, -(0.07 + fl / 2)], [0.008, 0.022, fl / 2 + 0.006], 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
-      part(blob([-0.03, 0, -(0.07 + fl / 2)], [0.008, 0.022, fl / 2 + 0.006], 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
-      part(blob([0.021, 0, -(0.075 + fl * 0.6)], [0.002, 0.018, fl * 0.36], 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
-      part(blob([-0.021, 0, -(0.075 + fl * 0.6)], [0.002, 0.018, fl * 0.36], 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
-      palmLight(sd, 0.031),
+      part(blob(gb.c, gb.h, 0.2, 0.2), 'metal'),
+      part(blob([0, 0, rail], [0.012, gb.h[1] - 0.006, 0.003], 0.4, 0.3, { nu: 24, nv: 8 }), 'dark'),
+      part(blob([gb.h[0] + 0.001, 0, gb.c[2]], [0.003, 0.016, 0.012], 1, 1, { nu: 20, nv: 6 }), 'light'),
+    ];
+    const mir = (c, j) => [c[0], j * c[1], c[2]];
+    out.finger = {};
+    for (const j of [1, -1]) out.finger[j] = [
+      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
+      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
     ];
     out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], [cx, 0.11, z0 - 0.29], [cx, -0.11, z0 - 0.29], [0, 0, 0]];
     return out;
@@ -231,7 +236,7 @@ void main() {
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
       built = {
         M, gpu, body: up(M.body), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
-        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) },
+        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },
         tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
       };
       built.gpu.push(built.tag.paper, built.tag.border, built.tag.ink, ...built.tag.cells);
@@ -239,7 +244,7 @@ void main() {
       return built;
     }
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
-    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach}], body,
+    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach, gap}], body,
     // mount ('bar', 1, -1 or null), tags: [{R, t, size, color, parts: [{R, t, size}]}], fadeBody, theme: {accent, warn, bg, dark} }
     self.draw = function (o) {
       const dpr = o.dpr || 1, W = Math.max(1, Math.round(o.w * dpr)), H = Math.max(1, Math.round(o.h * dpr));
@@ -307,6 +312,8 @@ void main() {
         // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
         if (!a.reach || (a.live && !a.idle)) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
         drawList(B.hand[a.side], at(k.R, k.wrist), fade);
+        const gap = a.gap === undefined ? RC.gripper(o.m).gapMax : a.gap;
+        for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * gap) / 2, 0]))), fade);
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       return pts;
