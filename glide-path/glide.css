@@ -178,3 +178,15 @@ dl.stats .gain { color: var(--ink); }
 /* Map key additions */
 .k-out { background: rgba(110,108,100,.2); border: 1px solid #d3d1c9; }
 .k-ring { height: 0; border-top: 2px dashed #1f63b8; border-radius: 0; }
+
+/* 3D: MapLibre in a layer inside the 2D map, over its tiles (panes are z 400–700) and under its controls (1000) */
+.leaflet-container .map3d { position: absolute; inset: 0; z-index: 900; background: #dfe8f1; } /* over maplibre-gl.css's relative */
+.map3d[hidden] { display: none; }
+.is-3d .leaflet-control-zoom, .is-3d .leaflet-control-scale, .is-3d .leaflet-control-attribution,
+.is-3d .leaflet-control-layers-separator, .is-3d .leaflet-control-layers-overlays, .is-3d #keyContour { display: none !important; }
+.leaflet-bar a.view3d { font-weight: 700; font-size: 14px; line-height: 40px; width: 40px; height: 40px; text-align: center; }
+.hint3d { position: absolute; z-index: 2; top: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 140px);
+  padding: 6px 12px; border-radius: 8px; background: rgba(29,31,33,.82); color: #fff; font-size: 13px; text-align: center;
+  pointer-events: none; transition: opacity .6s; }
+.hint3d.gone { opacity: 0; }
+.map3d .maplibregl-ctrl-bottom-right { bottom: 4px; }

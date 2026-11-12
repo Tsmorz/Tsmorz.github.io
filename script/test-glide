@@ -200,6 +200,13 @@ console.log('6b. contours');
   const hole = grid(16, 16, x => 30 * x); hole[8 * 16 + 8] = NaN;
   const hs = segs(G.contours(hole, 16, 16, 20));
   check(hs.length > 0 && hs.every(q => [[q[0], q[1]], [q[2], q[3]]].every(([x, y]) => !(x > 6 && x < 10 && y > 6 && y < 10))), 'no lines in the cells round a missing height');
+  // the sight ring for the 3D map: every point r metres from the centre (haversine), closed
+  const hav = (a, b) => { const R = 6371008.8, r = Math.PI / 180, dl = (b[0] - a[0]) * r, dn = (b[1] - a[1]) * r;
+    const h = Math.sin(dl / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+  const ringPts = G.circle(44.09, -103.25, 600, 64);
+  const ringErr = Math.max(...ringPts.map(p => Math.abs(hav([44.09, -103.25], p) - 600)));
+  check(ringPts.length === 65 && ringPts[0][0] === ringPts[64][0] && ringPts[0][1] === ringPts[64][1], 'the sight ring for the 3D map is closed');
+  check(ringErr < 0.5, `and every point on it is 600 m out (worst ${ringErr.toFixed(3)} m off)`);
   const st = z => G.contourStep(z, 'metric')[0], sti = z => Math.round(G.contourStep(z, 'imperial')[0] * G.FT);
   check([9, 10, 11, 12, 13, 14, 17].map(st).join() === '200,200,100,50,20,10,10', `metric spacing by zoom: ${[9, 10, 11, 12, 13, 14, 17].map(st).join(', ')} m`);
   check([10, 11, 12, 13, 14].map(sti).join() === '500,250,200,80,40', `imperial: ${[10, 11, 12, 13, 14].map(sti).join(', ')} ft`);
@@ -231,7 +238,10 @@ console.log('7. service worker');
   const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
 
   await run('install', {});
-  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 16, 'install caches the page, its script and styles, the core, the worker, the manifest, icons and Leaflet');
+  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 19, 'install caches the page, its script and styles, the core, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
+  const shellFiles = vm.runInContext('SHELL_FILES', ctx).filter(f => f !== './');
+  const missing = shellFiles.filter(f => !fs.existsSync(path.join(__dirname, '..', 'glide-path', f)));
+  check(!missing.length, `every file in SHELL_FILES exists${missing.length ? ' (missing: ' + missing.join(', ') + ')' : ''}`);
   stores.set('glide-shell-v0', mkCache());
   await run('activate', {});
   check(!stores.has('glide-shell-v0'), 'activate drops an old version of the page');

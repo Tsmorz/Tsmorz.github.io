@@ -10,6 +10,7 @@
 //   chooseZoom    the terrain zoom that fits the whole possible glide
 //   areaTiles     the terrain tiles a saved area needs, per zoom
 //   tilesOnlyIn   which saved tiles can go when an area is deleted (ones no other area uses)
+//   circle        points round a circle (the sight ring in 3D)
 //   contours / contourStep   contour lines of a height grid (marching squares), and their spacing per zoom
 (function (root, factory) {
   const core = factory();
@@ -265,6 +266,16 @@
     return { minor, major };
   }
 
+  // n + 1 points [lat, lon] round a circle of r metres (closed: the last is the first), for drawing the sight ring.
+  function circle(lat, lon, r, n = 64) {
+    const R = 6371008.8, out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = (i % n) / n * 2 * Math.PI;
+      out.push([lat + r * Math.cos(t) / R / D2R, lon + r * Math.sin(t) / (R * Math.cos(lat * D2R)) / D2R]);
+    }
+    return out;
+  }
+
   // Keys in `area` that no area in `others` also uses.
   function tilesOnlyIn(area, others) {
     const keep = new Set();
@@ -272,5 +283,5 @@
     return area.filter(k => !keep.has(k));
   }
 
-  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, TS, D2R };
+  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, TS, D2R };
 });

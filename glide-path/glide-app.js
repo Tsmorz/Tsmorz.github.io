@@ -271,6 +271,7 @@ map.on('baselayerchange', e => {
   if (base === sat && LS.get('contours', null) === null) contours.addTo(map);
   if (map.hasLayer(contours)) contours.redraw();
   drawOverlay();
+  mark3d();
 });
 map.on('overlayadd overlayremove', e => { if (e.layer === contours) { LS.set('contours', e.type === 'overlayadd'); contourKey(); } });
 map.on('zoomend', () => contourKey());
@@ -359,6 +360,72 @@ map.on('contextmenu', e => routeAt(e.latlng));
   el.addEventListener('touchmove', e => { if (t && Math.hypot(e.touches[0].clientX - x0, e.touches[0].clientY - y0) > 10) cancel(); }, { passive: true });
   el.addEventListener('touchend', cancel); el.addEventListener('touchcancel', cancel);
 })();
+
+// ---------- 3D: the same map tilted, with MapLibre GL, loaded the first time it is opened (glide-3d.js) ----------
+// It sits inside the 2D map, over its tiles and under its controls, so the Key, the wind and the layers menu stay.
+let view3d = null, is3d = false, loading3d = null;
+const mark3d = what => { if (view3d && is3d) view3d.mark(what); };
+const el3d = L.DomUtil.create('div', 'map3d', map.getContainer());
+el3d.hidden = true;
+el3d.setAttribute('role', 'application');
+el3d.setAttribute('aria-label', '3D map. Drag to move it; right-drag, Ctrl-drag or two fingers to tilt and turn; tap to move the launch.');
+// the 2D map underneath must not pan, zoom, set the launch or start a route from what happens in 3D
+for (const t of ['mousedown', 'pointerdown', 'touchstart', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown']) el3d.addEventListener(t, e => e.stopPropagation());
+const hint3d = L.DomUtil.create('div', 'hint3d', el3d);
+hint3d.textContent = 'Right-drag, Ctrl-drag or two fingers to tilt and turn';
+const hasWebGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
+const loadScript = src => new Promise((ok, fail) => {
+  const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.appendChild(s);
+});
+function load3d() {
+  if (!loading3d) loading3d = (async () => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'lib/maplibre/maplibre-gl.css'; document.head.appendChild(css);
+    await loadScript('lib/maplibre/maplibre-gl.js');
+    await loadScript('glide-3d.js');
+    return Glide3D({
+      lmap: map, el: el3d, C, terrUrl: terrUrl('{z}', '{x}', '{y}'),
+      L: { outline, hitLines, ring, profCase, profPast, profLine, profTicks, probe, routeCase, routeLine, routeEnd, marker },
+      tiles: { street: osm._url, streetAttr: osm.options.attribution, topo: topo._url, topoAttr: topo.options.attribution,
+               sat: sat._url, satAttr: sat.options.attribution },
+      base: () => baseName(base), overlay: () => overlay, canvas: overlayCanvas, circle: G.circle,
+      onTap: (lat, lon) => setLaunch(lat, lon)
+    });
+  })();
+  loading3d.catch(() => { loading3d = null; });
+  return loading3d;
+}
+async function set3d(on) {
+  if (on && !hasWebGL) { setStatus('<span class="warn">This browser can\'t draw a 3D map (it has no WebGL).</span>'); return; }
+  is3d = on;
+  map.getContainer().classList.toggle('is-3d', on);
+  btn3d.textContent = on ? '2D' : '3D';
+  btn3d.title = on ? 'Back to the flat map' : 'Tilt the map into 3D';
+  btn3d.setAttribute('aria-pressed', String(on));
+  LS.set('view3d', on);
+  if (!on) { if (view3d) view3d.close(); return; }
+  if (!view3d) {
+    setStatus('Loading the 3D map…');
+    try { view3d = await load3d(); } catch (e) {
+      setStatus('<span class="warn">The 3D map didn\'t load. Check the connection and try again.</span>');
+      return set3d(false);
+    }
+    if (launch) placeStatus();
+  }
+  if (!is3d) return; // switched back while it loaded
+  view3d.open();
+  hint3d.classList.remove('gone'); clearTimeout(hint3d.t); hint3d.t = setTimeout(() => hint3d.classList.add('gone'), 5000);
+}
+let btn3d;
+const View3D = L.Control.extend({ options: { position: 'topleft' }, onAdd() {
+  const div = L.DomUtil.create('div', 'leaflet-bar');
+  btn3d = L.DomUtil.create('a', 'view3d', div);
+  btn3d.href = '#'; btn3d.setAttribute('role', 'button'); btn3d.textContent = '3D'; btn3d.title = 'Tilt the map into 3D';
+  btn3d.setAttribute('aria-pressed', 'false');
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.on(btn3d, 'click', e => { L.DomEvent.preventDefault(e); set3d(!is3d); });
+  return div;
+} });
+new View3D().addTo(map);
 
 function setNet() {
   const on = navigator.onLine;
@@ -473,21 +540,35 @@ async function setLaunch(lat, lon, snapRadius = 0) {
     }
     [lon, lat] = G.pxToLonLat(bx, by, M.z);
   }
+  fineGround = { lat, lon, h: await groundAt13(lat, lon) };
   placeLaunch(lat, lon);
   afterParams();
   compute();
 }
 
+// The ground at the launch always comes from zoom-13 terrain. A long glide works on coarser terrain, which smooths a
+// peak tens of metres lower; reading the launch from that would lower the glider's start, shrink the reach and could
+// send the zoom back again, so "Ground at the launch" (and the range) changed with nothing touched.
+let fineGround = null;
+async function groundAt13(lat, lon) {
+  if (M && M.z === Z_MAX) { const [x, y] = G.lonLatToPx(lon, lat, M.z); return sample(x - M.x0, y - M.y0); }
+  const [x, y] = G.lonLatToPx(lon, lat, Z_MAX), x0 = Math.floor(x - 0.5), y0 = Math.floor(y - 0.5), fx = x - 0.5 - x0, fy = y - 0.5 - y0;
+  const g = await terrWindow(Z_MAX, x0, y0, 2, 2); // bilinear between pixel centres, as sample() does
+  return g[0] * (1 - fx) * (1 - fy) + g[1] * fx * (1 - fy) + g[2] * (1 - fx) * fy + g[3] * fx * fy;
+}
+
 function placeLaunch(lat, lon) {
   launch = L.latLng(lat, lon);
   [lpx, lpy] = G.lonLatToPx(lon, lat, M.z);
-  groundAtLaunch = sample(lpx - M.x0, lpy - M.y0);
+  const fine = fineGround && fineGround.lat === lat && fineGround.lon === lon ? fineGround.h : NaN;
+  groundAtLaunch = fine === fine ? fine : sample(lpx - M.x0, lpy - M.y0); // zoom 13 unless that tile is missing
   marker.setLatLng(launch);
   ring.setLatLng(launch);
   LS.set('launch', { lat, lon });
   GEO = null;
   clearRoute(false);
   placeStatus();
+  mark3d();
 }
 function placeStatus() {
   if (groundAtLaunch !== groundAtLaunch) {
@@ -500,7 +581,10 @@ function placeStatus() {
 }
 
 // A high launch over low ground can glide past the loaded block: pick the zoom whose block holds the whole glide.
-let zoomTimer = null;
+// For one launch and one set of settings the terrain only ever gets coarser: going back to a finer zoom it has already
+// left (the coarser block's lowest ground is a little different, or a tile keeps failing) could flip between two zooms
+// for ever, redrawing the reach and the route each time with nothing changed.
+let zoomTimer = null, zoomKey = null;
 function checkZoom() {
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(async () => {
@@ -510,9 +594,13 @@ function checkZoom() {
     let want = G.chooseZoom(range, lat, RT, Z_MAX, Z_MIN);
     const edge = (R && R.kind.some(k => k === 1)) || (Gres && Gres.edge);
     if (edge && want >= M.z && M.z > Z_MIN) want = M.z - 1; // lower ground just outside the block
-    if (want === M.z) return;
+    const key = [lat, launch.lng, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, P.vis, P.curve].join();
+    const same = key === zoomKey; zoomKey = key;
+    if (want === M.z || (same && want > M.z)) return;
     await useMosaic(lat, launch.lng, want);
+    const keep = route && route.target; // the route asked for (even while loading) stays, worked out again on the new terrain
     placeLaunch(lat, launch.lng);
+    if (keep) route = { target: keep };
     compute();
   }, 350);
 }
@@ -531,6 +619,7 @@ function compute() {
   R = G.castRays(glideOpts(), elevAtENU);
   R.h0 = groundAtLaunch + P.agl; R.ms = performance.now() - t0;
   ring.setRadius(P.vis); if (!map.hasLayer(ring)) ring.addTo(map);
+  mark3d();
   drawOverlay();
   drawProfile();
   runGrid();
@@ -541,6 +630,7 @@ function clearResult() {
   R = null; Gres = null;
   outline.setLatLngs([]); hitLines.setLatLngs([]); clearTrace(); ring.remove(); clearRoute(false);
   if (overlay) { map.removeLayer(overlay); overlay = null; }
+  mark3d();
   $('stats').innerHTML = '';
   const c = $('profile'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
   $('profWhat').textContent = '';
@@ -604,6 +694,7 @@ function drawOverlay() {
   pts.push(pts[0]);
   for (let i = 0; i < n; i++) if (steep[i] && steep[(i + 1) % n]) hits.push([pts[i], pts[i + 1]]);
   outline.setLatLngs(pts); hitLines.setLatLngs(hits);
+  mark3d('reach');
   if (fitNext) { // fit the sight ring (or the reach, if smaller), clear of the key in the bottom-left corner
     fitNext = false;
     const key = document.querySelector('.legend-box'), kh = key ? key.offsetHeight + 16 : 0;
@@ -750,6 +841,7 @@ function niceStep(raw) { const m = 10 ** Math.floor(Math.log10(raw)), f = raw / 
 // ---------- The cross-section on the map, and one cursor for both ----------
 function clearTrace() {
   profCase.setLatLngs([]); profLine.setLatLngs([]); profPast.setLatLngs([]); profTicks.clearLayers(); hideCursor();
+  mark3d();
 }
 // the point on the trace at distance s, between the profile's points
 function llAt(p, s) {
@@ -767,6 +859,7 @@ function drawTrace(p, ticks) {
   for (const s of ticks) if (s > 0) {
     L.circleMarker(llAt(p, s), { radius: 3.5, color: C.line, weight: 1.5, fillColor: '#ffffff', fillOpacity: 1, interactive: false }).addTo(profTicks);
   }
+  mark3d();
 }
 let cursorK = null, cursorFrom = null; // where the cursor is (a profile point) and which graphic put it there
 function showCursor(k, from) {
@@ -781,12 +874,14 @@ function showCursor(k, from) {
   tip.style.left = Math.min(Math.max(4, X + 12), cv.clientWidth - tip.offsetWidth - 4) + 'px';
   tip.style.top = '10px';
   probe.setLatLng(PROF.lls[k]); if (!map.hasLayer(probe)) probe.addTo(map);
+  mark3d();
   // scrubbing the cross-section past the edge of the map pans it just enough to keep the probe in view
-  if (from === 'profile') map.panInside(PROF.lls[k], { padding: [36, 36], animate: false });
+  if (from === 'profile' && !is3d) map.panInside(PROF.lls[k], { padding: [36, 36], animate: false });
 }
 function hideCursor() {
   cursorK = null; cursorFrom = null;
   $('profTip').hidden = true; probe.remove();
+  mark3d();
   if (PROF && PROF.img) $('profile').getContext('2d').putImageData(PROF.img, 0, 0);
 }
 // on the cross-section: the cursor follows the pointer (or finger), and the probe shows the same spot on the map
@@ -805,7 +900,7 @@ $('profile').addEventListener('pointerleave', e => { if (e.pointerType === 'mous
 // on the map: a pointer within a few pixels of the trace moves the cursor on the cross-section too
 const NEAR_PX = 18;
 map.on('mousemove', e => {
-  if (!PROF || !PROF.lls) return;
+  if (!PROF || !PROF.lls || is3d) return;
   let best = -1, bd = NEAR_PX * NEAR_PX;
   for (let k = 0; k < PROF.lls.length; k++) {
     const q = map.latLngToContainerPoint(PROF.lls[k]), dx = q.x - e.containerPoint.x, dy = q.y - e.containerPoint.y;
@@ -925,3 +1020,4 @@ renderAreas();
 const first = (!navigator.onLine && areas().length && !LS.get('launch', null)) ? areas()[0] : start;
 fitNext = true;
 setLaunch(first.lat, first.lon, first === M_HILL ? M_HILL.snap : 0);
+if (LS.get('view3d', false)) set3d(true);
