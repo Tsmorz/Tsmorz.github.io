@@ -136,6 +136,14 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 .flash.on{opacity:1;transition:none}
 /* several cameras: views arranged like monitors in a display-settings panel (sizes and places set by JS) */
 .stages{position:relative;--sx:1;--sy:1}
+/* the camera views full screen: the browser's own, else filling the window (.full, as on an iPhone) */
+.camsbox{position:relative}
+.camsbox.full{position:fixed;inset:0;z-index:100}
+.camsbox.full,.camsbox:fullscreen{background:var(--stage)}
+.camsbox.full .stages,.camsbox:fullscreen .stages{position:absolute;inset:0;height:auto!important}
+#camsExit{position:absolute;top:12px;right:12px;z-index:8;background:rgba(12,14,17,.78);color:#fff;border-color:rgba(255,255,255,.5)}
+#camsExit:hover{background:#000}
+html.cams-full,html.cams-full body{overflow:hidden}
 .stages:empty{display:none}
 .stages .stage{position:absolute;aspect-ratio:auto;border-radius:0;outline:none;container-type:inline-size}
 /* a small view keeps its number, its name and any warning; the rest is in the tooltip */
@@ -422,9 +430,13 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button type="button" id="flipBtn" aria-pressed="false" title="Turn the picture half a turn, for a camera mounted upside down. Only the picture changes.">Flip</button>
         </span>
         <span class="field"><span id="blurLbl">Blur</span><button id="blurSw" class="switch" role="switch" aria-checked="false" aria-labelledby="blurLbl" title="Blur the picture on this screen, so people's faces and the room don't show (for working in public). Tags are still found in the sharp picture, and their outlines stay sharp."></button></span>
+        <button class="btn sm outline sq" id="camsFullBtn" hidden aria-label="Camera views full screen" title="The camera views full screen (Esc to leave)"><svg class="i"><use href="#i-full"/></svg></button>
         <span id="focusWrap" class="field" hidden><span id="focusLbl">Lock focus</span><button id="focusSw" class="switch" role="switch" aria-checked="false" aria-labelledby="focusLbl"></button></span>
       </div>
-      <div class="stages" id="stages"></div>
+      <div class="camsbox" id="camsBox">
+        <div class="stages" id="stages"></div>
+        <button class="btn sm outline sq" id="camsExit" hidden aria-label="Leave full screen" title="Leave full screen (Esc)"><svg class="i"><use href="#i-unfull"/></svg></button>
+      </div>
       <div class="stage" id="stage">
         <div class="reticle" aria-hidden="true"></div>
         <div class="empty" id="empty">
@@ -1255,6 +1267,7 @@ function paintAddCam() {
   const opts = S.demo ? DEMO.cams.map((_, k) => k).filter((k) => !camOf('demo:' + k)).map((k) => ['demo:' + k, nameFor('demo:' + k, `Demo ${k + 1}`)])
     : devices.filter((d) => d.deviceId && !camOf(d.deviceId)).map((d) => [d.deviceId, nameFor(d.deviceId, deviceLabel(d.deviceId))]);
   $('addCamWrap').hidden = !S.cams.length || !opts.length;
+  $('camsFullBtn').hidden = !S.cams.length;
   $('addCamSel').innerHTML = opts.map(([v, l]) => `<option value="${escapeHtml(v)}">${escapeHtml(l)}</option>`).join('');
 }
 if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', listCameras);
@@ -1409,6 +1422,8 @@ function stop(quiet) {
   for (const c of S.cams) { if (c.demo === null) c.stream.getTracks().forEach((t) => t.stop()); c.gone = true; c.video.srcObject = null; c.el.remove(); }
   S.cams = [];
   if (S.demo) { S.demo.stop(); S.demo = null; }
+  const cb = $('camsBox'); cb.classList.remove('full'); document.documentElement.classList.remove('cams-full'); $('camsExit').hidden = true;
+  if (document.fullscreenElement === cb) document.exitFullscreen();
   onCamsChanged();
   $('focusWrap').hidden = true;
   if (!quiet) { showEmpty('Camera stopped', 'Press Start to carry on. Your tags, settings and calibrations are kept in this browser.'); status(S.ready ? 'Ready to start' : 'Loading detector…', S.ready ? '' : 'busy'); }
@@ -1492,13 +1507,13 @@ function layoutTiles() {
   if (!S.cams.length) { box.style.height = ''; return; }
   const rects = arrangement(), x0 = Math.min(...rects.map((r) => r.x)), y0 = Math.min(...rects.map((r) => r.y));
   const bw = Math.max(...rects.map((r) => r.x + r.w)) - x0, bh = Math.max(...rects.map((r) => r.y + r.h)) - y0;
-  const W = box.clientWidth || 600, maxH = W < 500 ? Infinity : Math.max(220, innerHeight * (S.cams.length > 1 ? 0.62 : 0.7));
-  const s = Math.min(W / bw, maxH / bh), ox = (W - bw * s) / 2;
-  box.style.height = Math.round(bh * s) + 'px';
+  const full = camsFull(), W = box.clientWidth || 600, maxH = full ? box.clientHeight || innerHeight : W < 500 ? Infinity : Math.max(220, innerHeight * (S.cams.length > 1 ? 0.62 : 0.7));
+  const s = Math.min(W / bw, maxH / bh), ox = (W - bw * s) / 2, oy = full ? (maxH - bh * s) / 2 : 0;
+  box.style.height = Math.round(bh * s) + 'px'; // full screen overrides it in CSS
   for (const r of rects) {
     const c = camOf(r.key);
     if (!c) continue;
-    Object.assign(c.el.style, { left: ox + (r.x - x0) * s + 'px', top: (r.y - y0) * s + 'px', width: r.w * s + 'px', height: r.h * s + 'px' });
+    Object.assign(c.el.style, { left: ox + (r.x - x0) * s + 'px', top: oy + (r.y - y0) * s + 'px', width: r.w * s + 'px', height: r.h * s + 'px' });
   }
   S.layout = { s, rects };
   for (const c of S.cams) if (c.last && S.mode === 'track') drawOverlay(c); else if (c.lastBoard && S.mode === 'calib') drawBoard(c, c.lastBoard);
@@ -2467,6 +2482,30 @@ $('fullBtn').onclick = () => setFull(!isFull());
 document.addEventListener('fullscreenchange', paintFull);
 document.addEventListener('webkitfullscreenchange', paintFull);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && P3.classList.contains('full')) setFull(false); });
+// The camera views full screen, the same way: every view, arranged as on the page, as big as the screen allows.
+const CB = $('camsBox');
+function camsFull() { return fsEl() === CB || CB.classList.contains('full'); }
+function paintCamsFull() {
+  const on = camsFull();
+  document.documentElement.classList.toggle('cams-full', on);
+  $('camsExit').hidden = !on;
+  $('camsFullBtn').hidden = !S.cams.length;
+  layoutTiles();
+}
+function setCamsFull(on) {
+  if (on === camsFull()) return;
+  if (!on) {
+    if (fsEl() === CB) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    CB.classList.remove('full'); paintCamsFull(); return;
+  }
+  const go = CB.requestFullscreen || CB.webkitRequestFullscreen, fallback = () => { CB.classList.add('full'); paintCamsFull(); };
+  if (go) { try { Promise.resolve(go.call(CB)).catch(fallback); } catch (e) { fallback(); } } else fallback();
+}
+$('camsFullBtn').onclick = () => setCamsFull(true);
+$('camsExit').onclick = () => setCamsFull(false);
+document.addEventListener('fullscreenchange', paintCamsFull);
+document.addEventListener('webkitfullscreenchange', paintCamsFull);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && CB.classList.contains('full')) setCamsFull(false); });
 
 // ---------------- settings: the robot ----------------
 function saveSettings() { S.settings = C.clampSettings(S.settings); store.set('settings', S.settings); }

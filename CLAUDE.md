@@ -371,7 +371,9 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   (10) frames to find new tags, and on the next frame when a predicted tag wasn't found (`expect`, `forceFull`). In the
   demo a window-only frame takes ~4.5 ms against ~13 ms for a full one; the tile shows the share searched.
 - **Several cameras** (`S.cams`, each with its own tile, video, overlay and frame loop; results tagged with the camera's key as `src`). Camera 1 (the top bar's camera) is the frame of everything;
-  "Add camera" adds more. **Placing the cameras** is Calibrate step 4: whenever two or more cameras see the whole board,
+  "Add camera" adds more. The full-screen button beside Blur puts every camera view full screen (`#camsBox`,
+  `setCamsFull`; the browser's own, else a `.full` class filling the window), arranged as on the page and as big as the screen
+  allows, with a leave button in its corner (or Esc). **Placing the cameras** is Calibrate step 4: whenever two or more cameras see the whole board,
   held still, the board's pose in each (the worker's `boardPose`: IPPE, then `refinePose`) is captured as a rig view;
   `TagCore.calibrateRig` chains first poses out from camera 1 through shared views, then refines every camera pose and
   every board pose together (a bundle adjustment of all corners in all cameras). The rig is saved by camera key
