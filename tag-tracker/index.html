@@ -651,7 +651,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
             <button role="radio" data-show3d="tags" aria-checked="false" title="Each tag's trail and axes over the last few seconds">Tags</button>
           </span>
           <label class="field" id="lookField" title="How the robot looks: the same arms and joints in each">Look <select id="robotLook" class="select sm">
-            <option value="pearl">Pearl</option><option value="machine">Machine</option><option value="companion">Companion</option><option value="hologram">Hologram</option>
+            <option value="machine">Machine</option><option value="pearl">Pearl</option><option value="companion">Companion</option><option value="hologram">Hologram</option>
           </select></label>
           <label class="field">Relative to <select id="frameSel" class="select sm"></select></label>
         </div>
@@ -2234,8 +2234,8 @@ function paintRobotBtns() {
   $('robotCalBtn').textContent = RB.cal ? 'Calibrate again' : 'Calibrate robot';
 }
 $('robotCalBtn').onclick = () => calibrateRobot();
-$('robotLook').value = S.settings.robot.style;
-$('robotLook').onchange = () => { S.settings.robot.style = $('robotLook').value; saveSettings(); S.view.fitted = false; };
+$('robotLook').value = S.settings.robot.look;
+$('robotLook').onchange = () => { S.settings.robot.look = $('robotLook').value; saveSettings(); S.view.fitted = false; };
 $('robotClearBtn').onclick = clearRobotCal;
 plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey && S.settings.show3d === 'robot') { e.preventDefault(); calibrateRobot(); } });
 
@@ -2308,7 +2308,7 @@ function robotTags(now) {
 function drawRobotGL(gl, o, w, h, now) {
   const sc = RB.scene;
   RB.pts = gl.draw({
-    w, h, dpr: devicePixelRatio || 1, cam: o, fov: 45, style: S.settings.robot.style, time: now, chest: sc.chest, m: sc.m, arms: sc.arms, body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
+    w, h, dpr: devicePixelRatio || 1, cam: o, fov: 45, style: S.settings.robot.look, time: now, chest: sc.chest, m: sc.m, arms: sc.arms, body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
     mount: sc.body ? null : sc.arms.length === 2 ? 'bar' : sc.arms.length === 1 ? sc.arms[0].side : null,
     tags: robotTags(now).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
     theme: { accent: K.accent, warn: K.warn, bg: K.surface, dark: isDark() },

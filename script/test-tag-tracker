@@ -752,7 +752,7 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
     }
   }
   check(bad === 0 && parts > 160, `the shaded robot's ${parts} meshes (${verts} vertices; each look, and a small person's lengths): finite points, unit normals, 16-bit indices in range`);
-  check(RGL.STYLES.every((s) => C.clampSettings({ robot: { style: s } }).robot.style === s) && C.clampSettings({ robot: { style: 'x' } }).robot.style === 'pearl', 'every look is a setting; an unknown one is Pearl');
+  check(RGL.STYLES.every((s) => C.clampSettings({ robot: { look: s } }).robot.look === s) && C.clampSettings({ robot: { look: 'x' } }).robot.look === 'machine' && C.clampSettings({ robot: { style: 'pearl' } }).robot.look === 'machine', 'every look is a setting; the default (and an unknown or old one) is Machine');
   const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
   check(cmd('Calibrate robot.') === 'robot' && cmd('Calibrate.') === 'calib' && cmd('Open settings.') === 'settings', '"calibrate robot" is not "calibrate", and "settings" opens the tab');
 }

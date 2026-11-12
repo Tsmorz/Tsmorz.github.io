@@ -1,6 +1,6 @@
 // RobotGL: draws the tag tracker's robot with WebGL: smooth curved shells, lit by a key light, a fill light and the sky,
-// with specular highlights and a rim, two-tone panels and violet lights. A generic design (pearl shells, graphite joints,
-// a dark visor, a floating base), modelled on no one's robot.
+// with specular highlights and a rim, two-tone panels and violet lights. Four looks (STYLES): Machine (the page's
+// default), Pearl, Companion and Hologram; generic designs, modelled on no one's robot.
 //
 // The meshes are built here from the robot's lengths (RobotCore.model), each in the frame it rides in: the chest's, or an
 // arm's upper-arm, forearm or hand frame (RobotCore.fk), so a frame only needs its pose to be drawn. The camera is the 3D

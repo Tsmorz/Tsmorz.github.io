@@ -444,8 +444,9 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   the grid: curved meshes (lofted torso, lathed limbs, superellipsoid head, visor, hands, a floating base) built from the
   robot's lengths in the frame each rides in, lit by a key, a fill and the sky with specular highlights and a rim, pearl
   shells, graphite joints and violet lights (the wrist light turns amber while that hand is out of reach). **Four looks** on the
-  same arms (`settings.robot.style`, the Look picker on the Tracking card, `RobotGL.STYLES`): Pearl (that one), Machine
-  (aluminium box sections, motor drums on the joint axes, a sensor-bar head, a parallel gripper, on a column), Companion (an
+  same arms (`settings.robot.look`, the Look picker on the Tracking card, `RobotGL.STYLES`): **Machine, the default**
+  (aluminium box sections, motor drums on the joint axes, a sensor-bar head, a parallel gripper, on a column), Pearl (the
+  sculpted one above), Companion (an
   egg body, a big round head with a face screen and two eyes, mitten hands, a glowing skirt) and Hologram (Pearl's shape as
   see-through violet light with drifting scan lines: premultiplied blending, no depth writes, tags drawn solid first). Each
   look builds the same mesh groups in the same frames, and the chest tag sits just in front of each body. Generic designs;
