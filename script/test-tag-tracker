@@ -21,6 +21,8 @@
 //      object (with mirror-image outliers), and the filter with a gyro and VQF's tilt against without
 //   5h. the robot: home pose, IK against FK, elbows out and low, steady joints, out of reach, calibration with one,
 //      two or three tags (and in Mirror view); one tag on a phone's screen; the robot's settings and voice commands
+//   5i. the table: the physics (a ball at rest, rolling, a cup standing, tipping and sliding, the ball in the cup, the
+//       gripper holding, lifting and pouring, a fast hand, putting fallen things back) and the servo grip's bytes
 //   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
@@ -793,7 +795,10 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   const RGL = require(path.join(__dirname, '..', 'tag-tracker/robot-gl.js'));
   let parts = 0, verts = 0, bad = 0;
   for (const lens of [{}, { upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }]) {
-    const M = RGL.meshes(RC.model(lens)), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
+    const M = RGL.meshes(RC.model(lens)), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1], ...M.finger[1], ...M.finger[-1]];
+    // and the table's (physics-core.js sizes)
+    const Pr = RGL.propMeshes({ table: { size: [0.5, 0.9], thick: 0.03, legs: 0.72 }, ball: { r: 0.02 }, cup: { R: 0.042, Ri: 0.03, H: 0.08, floor: 0.012 } });
+    all.push(...Pr.table, ...Pr.ball, ...Pr.cup, { mesh: Pr.shadow });
     for (const p of all) {
       const { pos, nrm, idx } = p.mesh, n = pos.length / 3;
       parts++; verts += n;
@@ -801,10 +806,102 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
       for (let i = 0; i < n; i++) if (![pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]].every(isFinite) || Math.abs(Math.hypot(nrm[3 * i], nrm[3 * i + 1], nrm[3 * i + 2]) - 1) > 1e-4) { bad++; break; }
     }
   }
-  check(bad === 0 && parts > 80, `the shaded robot's ${parts} meshes (${verts} vertices; at the default lengths and a small person's): finite points, unit normals, 16-bit indices in range`);
+  check(bad === 0 && parts > 80, `the shaded robot's and the table's ${parts} meshes (${verts} vertices; at the default lengths and a small person's): finite points, unit normals, 16-bit indices in range`);
   check(!('look' in C.clampSettings({ robot: { look: 'pearl', style: 'pearl' } }).robot) && !('style' in C.clampSettings({ robot: { style: 'pearl' } }).robot), 'a saved look (from when the robot had four) is dropped: the robot is the Machine');
   const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
   check(cmd('Calibrate robot.') === 'robot' && cmd('Calibrate.') === 'calib' && cmd('Open settings.') === 'settings', '"calibrate robot" is not "calibrate", and "settings" opens the tab');
+}
+
+console.log('5i. the table: the physics the robot plays with, and the gripper on the operator\'s hand');
+{
+  const P = require(path.join(__dirname, '..', 'tag-tracker/physics-core.js'));
+  const RC = require(path.join(__dirname, '..', 'tag-tracker/robot-core.js'));
+  const G = RC.gripper(RC.model()), I = [1, 0, 0, 0, 1, 0, 0, 0, 1], D = 180 / Math.PI;
+  const table = { R: I, t: [0, 0, 0], size: [0.5, 0.9], thick: 0.03 };
+  const run = (W, n, f) => { for (let i = 0; i < n; i++) { if (f) f(i / n, i); W.step(1 / 60); } };
+  const speed = (b) => C.norm(b.v);
+  // a ball dropped on the table comes to rest on it
+  let W = P.world({ table, gripper: G });
+  const b = W.add('ball', [0.05, 0, 0.15]);
+  run(W, 120);
+  check(Math.abs(W.poseOf(b).t[2] - P.BALL.r) < 0.001 && speed(b) < 0.001, `a ball dropped on the table rests on it (${(W.poseOf(b).t[2] * 1000).toFixed(2)} mm up, ${(speed(b) * 1000).toFixed(2)} mm/s)`);
+  // a ball sent along the table slips, then rolls, and slows
+  W = P.world({ table, gripper: G });
+  const r = W.add('ball', [-0.2, 0, P.BALL.r]); r.v = [0.5, 0, 0];
+  run(W, 30);
+  check(Math.abs(r.w[1] * P.BALL.r - r.v[0]) < 0.01 && r.v[0] > 0.1 && r.v[0] < 0.36, `a ball sent along the table rolls without slipping, and slows (${r.v[0].toFixed(2)} m/s, ωr ${(r.w[1] * P.BALL.r).toFixed(2)})`);
+  // a cup stands still, and at rest nothing gains energy
+  W = P.world({ table, gripper: G });
+  const c = W.add('cup', [0, 0, 0]), b2 = W.add('ball', [0.12, 0.1, P.BALL.r]);
+  let tilt = 0, vmax = 0;
+  run(W, 600, (s, i) => { tilt = Math.max(tilt, P.tilt(c)); if (i > 60) vmax = Math.max(vmax, speed(c), speed(b2)); });
+  check(tilt * D < 0.5 && vmax < 0.005, `a cup on the table stands still for 10 s (tilts ${(tilt * D).toFixed(3)}°), and nothing at rest gains speed (at most ${(vmax * 1000).toFixed(2)} mm/s)`);
+  // a ball dropped into the cup stays in it
+  const b3 = W.add('ball', [0.004, 0.003, 0.2]);
+  run(W, 180);
+  const inCup = C.sub(W.poseOf(b3).t, W.poseOf(c).t);
+  check(Math.hypot(inCup[0], inCup[1]) < P.CUP.R - P.CUP.wall && Math.abs(inCup[2] - (2 * P.CUP.wall + P.BALL.r)) < 0.003 && P.tilt(c) * D < 1, `a ball dropped into the cup lands on its floor and stays (${(inCup[2] * 1000).toFixed(1)} mm up, ${(Math.hypot(inCup[0], inCup[1]) * 1000).toFixed(1)} mm off its axis)`);
+  // a push near the rim, following through, tips the cup over; a push at its foot slides it
+  W = P.world({ table, gripper: G });
+  const c2 = W.add('cup', [0, 0, 0]);
+  run(W, 180, (s) => { const x = -0.1 + 0.25 * s, z = 0.065 + 0.08 * s; W.setRobot({ links: [{ id: 1, a: [x, -0.1, z], b: [x, 0.1, z], r: 0.015 }] }); });
+  W.setRobot({}); run(W, 120);
+  W = P.world({ table, gripper: G });
+  const c3 = W.add('cup', [0, 0, 0]);
+  run(W, 180, (s) => { const x = -0.1 + 0.2 * s; W.setRobot({ links: [{ id: 1, a: [x, -0.1, 0.012], b: [x, 0.1, 0.012], r: 0.01 }] }); });
+  W.setRobot({}); run(W, 60);
+  check(P.tilt(c2) * D > 80 && P.tilt(c3) * D < 1 && c3.t[0] > 0.1, `pushed near its rim the cup tips over (${(P.tilt(c2) * D).toFixed(0)}°); pushed at its foot it slides (${(c3.t[0] * 100).toFixed(1)} cm, upright)`);
+  // a cup let go leaning past its tipping point falls; short of it, it rights itself
+  const lean = (deg) => { const a = deg / D, Ww = P.world({ table, gripper: G }), cc = Ww.add('cup', [0, 0, 0.03], [Math.cos(a), 0, Math.sin(a), 0, 1, 0, -Math.sin(a), 0, Math.cos(a)]); run(Ww, 120); return P.tilt(cc) * D; };
+  const l35 = lean(35), l55 = lean(55);
+  check(l35 < 1 && l55 > 80, `a cup let go at 35° rights itself (${l35.toFixed(1)}°), at 55° it falls over (${l55.toFixed(0)}°)`);
+  // the gripper: jaws close on the ball and hold it; lifting carries it; opening drops it
+  W = P.world({ table, gripper: G });
+  const b4 = W.add('ball', [0, 0, P.BALL.r]);
+  run(W, 30);
+  const fz = -G.finger.c[2];
+  let hand = { R: I, t: [0, 0, P.BALL.r + fz] }; // fingers pointing down, jaws along y
+  const drive = (n, f, open) => run(W, n, (s) => { if (f) hand = f(s); W.setRobot({ hands: [{ side: 1, pose: hand, opening: open }] }); });
+  drive(30, null, 1); drive(60, null, 0);
+  const g = W.grippers[1], gap = g.gap;
+  drive(60, (s) => ({ R: I, t: [0, 0, P.BALL.r + fz + 0.1 * s] }), 0);
+  const lifted = W.poseOf(b4).t[2];
+  drive(90, null, 1);
+  check(g.held === null && Math.abs(gap - 2 * P.BALL.r) < 0.004 && Math.abs(lifted - P.BALL.r - 0.1) < 0.005 && Math.abs(W.poseOf(b4).t[2] - P.BALL.r) < 0.001, `the gripper closes on the ball (jaws ${(gap * 1000).toFixed(1)} mm apart), lifts it ${((lifted - P.BALL.r) * 100).toFixed(1)} cm and drops it back on the table when opened`);
+  // ... and the cup from the side, as the hand sits in the start pose; turning the wrist pours the ball out
+  W = P.world({ table, gripper: G });
+  const c4 = W.add('cup', [0, 0, 0]), b5 = W.add('ball', [0, 0, 0.1]);
+  run(W, 60);
+  const Rh = [0, 0, -1, 0, 1, 0, 1, 0, 0];
+  hand = { R: Rh, t: [-fz, 0, 0.04] };
+  drive(30, null, 1); drive(40, null, 0);
+  const held = W.grippers[1].held && W.grippers[1].held.body === c4;
+  drive(60, (s) => ({ R: Rh, t: [-fz, 0, 0.04 + 0.1 * s] }), 0);
+  const ballUp = W.poseOf(b5).t[2];
+  drive(60, (s) => { const a = 2.6 * s, Rx = [1, 0, 0, 0, Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a)]; return { R: C.mul3(Rx, Rh), t: [-fz, 0, 0.14] }; }, 0);
+  drive(60, null, 0);
+  const out = C.sub(W.poseOf(b5).t, W.poseOf(c4).t);
+  check(held && ballUp > 0.12 && C.norm(out) > 0.1, `the gripper holds the cup from the side and lifts it with the ball in it; turning the wrist pours the ball out (${(C.norm(out) * 100).toFixed(0)} cm from the cup)`);
+  // a hand moving fast pushes the ball rather than passing through it
+  W = P.world({ table, gripper: G });
+  const b6 = W.add('ball', [0, 0, P.BALL.r]);
+  run(W, 20);
+  run(W, 20, (s) => W.setRobot({ hands: [{ side: 1, pose: { R: [0, 0, 1, 0, 1, 0, -1, 0, 0], t: [-0.15 + 0.5 * s - 0.03, 0, 0.02] }, opening: 1 }] }));
+  check(b6.t[0] > 0.05 && b6.v[0] > 1, `a hand moving at 1.5 m/s knocks the ball on, not through (${b6.v[0].toFixed(2)} m/s)`);
+  // a body that falls off the table comes back after 2 s
+  W = P.world({ table, gripper: G });
+  const b7 = W.add('ball', [0.2, 0, P.BALL.r]); b7.v = [1, 0, 0];
+  run(W, 60); const gone = b7.t[2] < -0.1;
+  run(W, 200);
+  check(gone && Math.abs(W.poseOf(b7).t[0] - 0.2) < 0.01 && Math.abs(W.poseOf(b7).t[2] - P.BALL.r) < 0.002, 'a ball that rolls off the table is put back where it started 2 s after it lands');
+  // the servo on the operator's hand: its bytes, where it is, and how open that makes the gripper
+  const st = { railOn: true, servoReady: true, analogReady: true, keys: 5, servoPulseUs: 0, feedbackMv: 1650, railMv: 3300, joyMv: [10, 20] };
+  const back = C.decodeActuatorStatus(C.encodeActuatorStatus(st));
+  check(back && back.feedbackMv === 1650 && back.railMv === 3300 && back.analogReady && back.keys === 5 && back.servoPulseUs === null && back.joyMv[1] === 20 && C.decodeActuatorStatus(new DataView(new ArrayBuffer(14))) === null, 'the board\'s actuator status: its bytes decode back (and a short or wrong-version one is refused)');
+  const cal = { open: 700, closed: 300 }, at = (mv) => C.gripOpening(Object.assign({}, st, { feedbackMv: mv }), cal);
+  check(Math.abs(at(1650) - 0.5) < 1e-9 && at(3000) === 1 && at(100) === 0 && Math.abs(C.gripOpening(Object.assign({}, st, { feedbackMv: 1650 }), { open: 300, closed: 700 }) - 0.5) < 1e-9 && Math.abs(C.gripOpening(Object.assign({}, st, { feedbackMv: 990 }), { open: 300, closed: 700 }) - 1) < 1e-9, 'the grip: the servo\'s share of its supply between the closed and open readings, clamped, either way round');
+  check(C.gripOpening(Object.assign({}, st, { analogReady: false }), cal) === null && C.gripOpening(Object.assign({}, st, { railMv: 0 }), cal) === null && C.gripOpening(st, null) === null && C.gripOpening(st, { open: 500, closed: 500 }) === null, 'no grip without a reading, a supply or a calibration');
+  check(C.clampSettings({}).robot.props === 'cup' && C.clampSettings({ robot: { props: 'ball' } }).robot.props === 'ball' && C.clampSettings({ robot: { props: 'x' } }).robot.props === 'cup' && (C.voiceCommand('Reset the table.') || {}).cmd === 'table', 'the table\'s setting (a ball and a cup unless chosen), and "reset the table"');
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.

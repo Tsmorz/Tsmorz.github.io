@@ -75,7 +75,8 @@
   // Its groups of meshes, each in the frame it rides in: body (the chest's frame), bar and mount
   // (the chest's, for two arms or one without a body), upper (the upper arm's: origin at the shoulder, the arm along -z),
   // fore and foreLight (the forearm's: origin at the elbow), hand (the hand's: origin at the wrist, fingers along -z, the
-  // jaws apart along x, the palm towards -side·y), and extent: chest-frame points the view fits round. The chest tag sits
+  // back of the hand +x), finger[j] (jaw j = ±1, in the hand's frame shifted j·jaw/2 along y, the way the jaws close: see
+  // RobotCore.gripper), and extent: chest-frame points the view fits round. The chest tag sits
   // at the chest's origin, so the body's front passes just behind it.
   function bars(m, out) {
     out.bar = [
@@ -90,7 +91,6 @@
       part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.05, 0.03, 0.05], 0.9, 0.9, { nu: 24, nv: 12 }), 'light'),
     ];
   }
-  const palmLight = (sd, y) => part(blob([0, -sd * y, -0.038], [0.016, 0.003, 0.016], 1, 1, { nu: 20, nv: 6 }), 'light');
 
   // Machine: an engineering robot. Brushed aluminium box sections, motor drums on the joint axes, a battery on its
   // back, a sensor bar for a head with two lenses, a parallel gripper, on a column and a foot.
@@ -122,7 +122,7 @@
       part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'dark'),
     ];
     bars(m, out);
-    const L1 = m.upper, L2 = m.fore, fl = Math.max(0.03, m.hand - 0.075);
+    const L1 = m.upper, L2 = m.fore, G = RC.gripper(m);
     out.upper = [
       part(lathe([0, 0, 0], -0.055, 0.055, () => 0.052, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
       part(blob([0, 0, -L1 / 2], [0.036, 0.03, L1 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
@@ -134,17 +134,51 @@
       part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'dark'),
     ];
     out.foreLight = [part(torus([0, 0, -(L2 - 0.06)], 0.035, 0.004, { nu: 36, nv: 8 }), 'light')];
+    // the gripper: a body across the jaws' travel with a rail under it, a light on the back of the hand
+    const gb = G.body, rail = gb.c[2] - gb.h[2];
     out.hand = {};
     for (const sd of [1, -1]) out.hand[sd] = [
       part(lathe([0, 0, 0], 0.004, -0.022, () => 0.034, { k0: 0.1, k1: 0.1 }), 'dark'),
-      part(blob([0, 0, -0.045], [0.048, 0.03, 0.024], 0.2, 0.2), 'metal'),
-      part(blob([0.03, 0, -(0.07 + fl / 2)], [0.008, 0.022, fl / 2 + 0.006], 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
-      part(blob([-0.03, 0, -(0.07 + fl / 2)], [0.008, 0.022, fl / 2 + 0.006], 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
-      part(blob([0.021, 0, -(0.075 + fl * 0.6)], [0.002, 0.018, fl * 0.36], 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
-      part(blob([-0.021, 0, -(0.075 + fl * 0.6)], [0.002, 0.018, fl * 0.36], 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
-      palmLight(sd, 0.031),
+      part(blob(gb.c, gb.h, 0.2, 0.2), 'metal'),
+      part(blob([0, 0, rail], [0.012, gb.h[1] - 0.006, 0.003], 0.4, 0.3, { nu: 24, nv: 8 }), 'dark'),
+      part(blob([gb.h[0] + 0.001, 0, gb.c[2]], [0.003, 0.016, 0.012], 1, 1, { nu: 20, nv: 6 }), 'light'),
+    ];
+    const mir = (c, j) => [c[0], j * c[1], c[2]];
+    out.finger = {};
+    for (const j of [1, -1]) out.finger[j] = [
+      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
+      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
     ];
     out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], [cx, 0.11, z0 - 0.29], [cx, -0.11, z0 - 0.29], [0, 0, 0]];
+    return out;
+  }
+
+  // ---- the table and what's on it (physics-core.js) ----
+  // d: { table: {size: [x, y], thick, legs: how far down they go}, ball: {r}, cup: {R, Ri (inside), H, floor (inside, up
+  // from its base)} }. Each in its own frame: the table's at the middle of its top (z up), the ball's at its centre, the
+  // cup's at the middle of its base. The ball is two-tone so it shows rolling; the cup has a band in the ball's blue.
+  function propMeshes(d) {
+    const T = d.table, lx = T.size[0] / 2, ly = T.size[1] / 2, th = T.thick, out = {};
+    out.table = [part(blob([0, 0, -th / 2], [lx, ly, th / 2], 0.1, 0.06, { nu: 64, nv: 16 }), 'top')];
+    for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) out.table.push(part(lathe([sx * (lx - 0.05), sy * (ly - 0.05), 0], -th, -T.legs, () => 0.014, { k0: 0.01, k1: 0.01, nu: 16, nv: 60 }), 'dark'));
+    const r = d.ball.r;
+    out.ball = [
+      part(blob([0, 0, 0], [r, r, r], 1, 1, { p0: 0, nu: 32, nv: 12 }), 'ball'),
+      part(blob([0, 0, 0], [r, r, r], 1, 1, { p1: 0, nu: 32, nv: 12 }), 'ballB'),
+    ];
+    const c = d.cup, lip = (c.R - c.Ri) / 2;
+    const ring = (rad, z0, z1, inward) => surface((u, v) => [rad * Math.cos(TAU * u), rad * Math.sin(TAU * u), z0 + (z1 - z0) * v], 48, 6, (p) => (inward ? [-p[0], -p[1], 0] : [p[0], p[1], 0]));
+    const disc = (rad, z, up) => surface((u, v) => [rad * v * Math.cos(TAU * u), rad * v * Math.sin(TAU * u), z], 48, 4, () => [0, 0, up ? 1 : -1]);
+    out.cup = [
+      part(ring(c.R, 0, c.H - lip, false), 'ceramic'),
+      part(ring(c.Ri, c.floor, c.H - lip, true), 'ceramic'),
+      part(torus([0, 0, c.H - lip], c.Ri + lip, lip, { nu: 48, nv: 10 }), 'ceramic'),
+      part(disc(c.R, 0, false), 'ceramic'),
+      part(disc(c.Ri, c.floor, true), 'ceramic'),
+      part(ring(c.R + 0.0004, c.H * 0.55, c.H * 0.68, false), 'ball'),
+    ];
+    // a soft shadow: a disc of radius 1, drawn a few times, wider and fainter
+    out.shadow = surface((u, v) => [v * Math.cos(TAU * u), v * Math.sin(TAU * u), 0], 32, 1, () => [0, 0, 1]);
     return out;
   }
 
@@ -165,7 +199,7 @@ void main() { vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz; vN = uRot * aNrm; g
   const FS = `precision mediump float;
 varying vec3 vN, vW;
 uniform vec3 uEye, uKey, uFill, uBase, uRimCol, uFadeTo, uSky, uGround;
-uniform float uSpec, uShine, uRim, uEmit, uFade;
+uniform float uSpec, uShine, uRim, uEmit, uFade, uAlpha;
 void main() {
   vec3 N = normalize(vN), V = normalize(uEye - vW);
   if (dot(N, V) < 0.0) N = -N;
@@ -179,7 +213,7 @@ void main() {
   col = mix(col, uRimCol, fres * uRim);
   col = mix(col, uBase * (0.85 + 0.35 * nv), uEmit);
   col = mix(col, uFadeTo, uFade);
-  gl_FragColor = vec4(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+  gl_FragColor = vec4(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)) * uAlpha, uAlpha);
 }`;
   // sRGB hex (#rgb or #rrggbb) to linear RGB
   function lin(hex, dflt) {
@@ -194,6 +228,10 @@ void main() {
     dark: { base: lin('#24282e'), spec: 0.55, shine: 60, rim: 1 },
     glass: { base: lin('#07080c'), spec: 1.3, shine: 220, rim: 1.4 },
     shell: { base: lin('#c9ced4'), spec: 0.3, shine: 30, rim: 0.8 },
+    top: { base: lin('#6b737c'), spec: 0.25, shine: 24, rim: 0.5 },
+    ball: { base: lin('#2a78d6'), spec: 0.7, shine: 80, rim: 0.6 },
+    ballB: { base: lin('#e9eef5'), spec: 0.7, shine: 80, rim: 0.6 },
+    ceramic: { base: lin('#ece8e1'), spec: 0.6, shine: 90, rim: 0.6 },
   };
   // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
   function model4(p, s) {
@@ -210,7 +248,7 @@ void main() {
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade']) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha']) U[n] = gl.getUniformLocation(prog, n);
     const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm');
     const self = { lost: false };
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); self.lost = true; });
@@ -231,16 +269,30 @@ void main() {
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
       built = {
         M, gpu, body: up(M.body), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
-        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) },
+        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },
         tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
       };
       built.gpu.push(built.tag.paper, built.tag.border, built.tag.ink, ...built.tag.cells);
       builtKey = key;
       return built;
     }
+    let props = null, propsKey = '';
+    function buildProps(d) {
+      const key = JSON.stringify(d);
+      if (key === propsKey) return props;
+      if (props) for (const g of props.gpu) free(g);
+      const M = propMeshes(d), gpu = [];
+      const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
+      props = { gpu, table: up(M.table), ball: up(M.ball), cup: up(M.cup), shadow: upload(M.shadow) };
+      gpu.push(props.shadow);
+      propsKey = key;
+      return props;
+    }
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
-    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach}], body,
-    // mount ('bar', 1, -1 or null), tags: [{R, t, size, color, parts: [{R, t, size}]}], fadeBody, theme: {accent, warn, bg, dark} }
+    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach, jaw: the gripper's gap (m)}], body,
+    // mount ('bar', 1, -1 or null), tags: [{R, t, size, color, parts: [{R, t, size}]}], fadeBody, theme: {accent, warn, bg, dark},
+    // props: null or {dims (as propMeshes), table: {R, t} | null, bodies: [{kind: 'ball' | 'cup', R, t}],
+    // shadows: [{t: where on the table, R: the table's, r: radius, a: darkness 0..1}]} }
     self.draw = function (o) {
       const dpr = o.dpr || 1, W = Math.max(1, Math.round(o.w * dpr)), H = Math.max(1, Math.round(o.h * dpr));
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
@@ -252,7 +304,7 @@ void main() {
       for (let c = 0; c < 4; c++) { PV[c * 4] = r0[c]; PV[c * 4 + 1] = r1[c]; PV[c * 4 + 2] = r2[c]; PV[c * 4 + 3] = r3[c]; }
       gl.useProgram(prog); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true); // colours are premultiplied
-      gl.uniformMatrix4fv(U.uPV, false, PV);
+      gl.uniformMatrix4fv(U.uPV, false, PV); gl.uniform1f(U.uAlpha, 1);
       gl.uniform3fv(U.uEye, e);
       const toward = (a, b, c) => unit([r[0] * a + u[0] * b - w[0] * c, r[1] * a + u[1] * b - w[1] * c, r[2] * a + u[2] * b - w[2] * c]);
       gl.uniform3fv(U.uKey, toward(-0.5, 0.75, 0.45)); gl.uniform3fv(U.uFill, toward(0.85, 0.05, 0.3));
@@ -295,6 +347,18 @@ void main() {
         }
       };
       drawTags();
+      if (o.props) {
+        const PR = buildProps(o.props.dims);
+        if (o.props.table) drawList(PR.table, o.props.table, 0);
+        // the shadows: faint discs just above the table, without writing depth, so they never hide what's on it
+        gl.depthMask(false);
+        for (const sh of o.props.shadows || []) for (const k of [1, 1.3, 1.65]) {
+          gl.uniform1f(U.uAlpha, 0.16 * sh.a); flat([0, 0, 0], 0);
+          drawG(PR.shadow, { R: sh.R, t: C.add(sh.t, C.mulv(sh.R, [0, 0, 0.0008])) }, sh.r * k);
+        }
+        gl.uniform1f(U.uAlpha, 1); gl.depthMask(true);
+        for (const b of o.props.bodies) drawList(PR[b.kind] || [], b, 0);
+      }
       if (o.body) {
         drawList(B.body, ch, o.fadeBody || 0);
         for (const p of B.M.extent) keep(p);
@@ -307,6 +371,8 @@ void main() {
         // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
         if (!a.reach || (a.live && !a.idle)) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
         drawList(B.hand[a.side], at(k.R, k.wrist), fade);
+        const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
+        for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), fade);
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       return pts;
@@ -315,5 +381,5 @@ void main() {
     return self;
   }
 
-  return { meshes, create, lin };
+  return { meshes, propMeshes, create, lin };
 });

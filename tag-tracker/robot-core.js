@@ -11,8 +11,8 @@
 //   elbow     R_fore  = R_upper Ry(-q4)                    bend, 0 = straight
 //   wrist     R_hand  = R_fore Rz(side q5) Rx(side q6) Ry(q7)  turn the forearm, bend the wrist, tilt it
 // With every angle zero the arm hangs straight down. The upper arm runs along its frame's -z, and so does the forearm.
-// The hand's -z points along the fingers, and the palm faces -side·y. In HOME the elbows are bent 90°, so the
-// forearms point forward and the palms face inward.
+// The hand's -z points along the fingers, the gripper's jaws close along its y (side to side in HOME) and its +x is
+// the back of the hand (up in HOME). In HOME the elbows are bent 90°, so the forearms point forward.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'));
   else root.RobotCore = factory(root.TagCore);
@@ -45,6 +45,20 @@
   ];
   // Arms at the sides, forearms forward, palms in.
   const HOME = [0, 0, 0, 90 * DEG, 0, 0, 0];
+
+  // The parallel gripper in the hand's frame (metres), shared by the drawing (robot-gl.js) and the physics
+  // (physics-core.js). Boxes are {c: centre, h: half sizes}. The jaws close along y: jaw j (+1 or -1) has its pad's face at
+  // y = j·gap/2, and its finger box is given for j = +1 at gap 0 (mirror y and add j·gap/2 for the other). gapMax is the
+  // widest the pads open.
+  function gripper(m) {
+    const fl = Math.max(0.045, (m && m.hand ? m.hand : MODEL.hand) - 0.045), z = -(0.07 + fl / 2);
+    return {
+      gapMax: 0.09, fl,
+      body: { c: [0, 0, -0.045], h: [0.03, 0.064, 0.024] },
+      finger: { c: [0, 0.009, z], h: [0.02, 0.009, fl / 2 + 0.006] },
+      pad: { c: [0, 0.0015, -(0.075 + fl * 0.6)], h: [0.016, 0.002, fl * 0.36] },
+    };
+  }
 
   function model(o) {
     const m = Object.assign({}, MODEL);
@@ -281,5 +295,5 @@
     return { R: mul3(rodrigues(r), home.R), t: add(home.t, d) };
   }
 
-  return { MODEL, JOINTS, HOME, PREFER, model, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
+  return { MODEL, JOINTS, HOME, PREFER, model, gripper, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
 });

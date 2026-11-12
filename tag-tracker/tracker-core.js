@@ -602,6 +602,35 @@
     b.setUint8(0, IMU.version); b.setUint16(1, boardId, true); b.setUint16(3, imuRateHz, true); b.setFloat32(5, gyroDpsPerLsb, true); b.setFloat32(9, accelGPerLsb, true);
     return b;
   }
+  // The gripper on the operator's hand: a feedback servo on the board, read through its telemetry service's Actuators
+  // characteristic (nrf-controller's struct dashboard_actuator_status in src/dashboard_wire.h, decoded as its dashboard's
+  // wire.js does; keep the three in step). It notifies 20 times a second while subscribed: u8 version, u8 flags (bit 4:
+  // the ADC that reads the feedback is up), u8 tachammer waveform, u8 servo pattern, u8 keys, then u16 servo pulse (µs),
+  // u16 feedback (mV), u16 servo rail (mV), u16 joystick x, y (mV).
+  const ACT = { service: '6f524c01-0001-4a3c-9d21-1122334455aa', status: '6f524c01-000d-4a3c-9d21-1122334455aa', version: 2, bytes: 15 };
+  function decodeActuatorStatus(v) {
+    if (v.byteLength !== ACT.bytes || v.getUint8(0) !== ACT.version) return null;
+    const f = v.getUint8(1);
+    return { railOn: !!(f & 1), servoReady: !!(f & 8), analogReady: !!(f & 16), keys: v.getUint8(4), servoPulseUs: v.getUint16(5, true) || null, feedbackMv: v.getUint16(7, true), railMv: v.getUint16(9, true), joyMv: [v.getUint16(11, true), v.getUint16(13, true)] };
+  }
+  function encodeActuatorStatus(s) {
+    const b = new DataView(new ArrayBuffer(ACT.bytes));
+    b.setUint8(0, ACT.version); b.setUint8(1, (s.railOn ? 1 : 0) | (s.servoReady ? 8 : 0) | (s.analogReady ? 16 : 0)); b.setUint8(4, s.keys || 0);
+    b.setUint16(5, s.servoPulseUs || 0, true); b.setUint16(7, s.feedbackMv || 0, true); b.setUint16(9, s.railMv || 0, true);
+    b.setUint16(11, (s.joyMv || [0, 0])[0], true); b.setUint16(13, (s.joyMv || [0, 0])[1], true);
+    return b;
+  }
+  // Where the servo is, in thousandths of its supply (the feedback divides the rail, so this doesn't drift with the
+  // battery; the firmware's servo_feedback_permille), or null when it can't be read.
+  const gripPermille = (st) => (st && st.analogReady && st.railMv > 0 ? (1000 * st.feedbackMv) / st.railMv : null);
+  // How open the gripper is, 0 (closed) to 1 (open), from the servo's reading and the two the operator set (cal: {open,
+  // closed} in permille, either way round). null without a reading or a calibration.
+  function gripOpening(st, cal) {
+    const p = gripPermille(st);
+    if (p === null || !cal || !isFinite(cal.open) || !isFinite(cal.closed) || Math.abs(cal.open - cal.closed) < 5) return null;
+    return Math.min(1, Math.max(0, (p - cal.closed) / (cal.open - cal.closed)));
+  }
+
   // A unit quaternion [w, x, y, z] as a rotation matrix.
   function rotOfQuat(q) {
     const n = Math.hypot(...q), [w, x, y, z] = q.map((v) => v / n);
@@ -811,6 +840,7 @@
     fit: ['fit', 'fit view', 'fit the view', 'zoom to fit'],
     reset: ['reset view', 'reset the view'],
     robot: ['calibrate robot', 'calibrate the robot', 'zero robot', 'zero the robot'],
+    table: ['reset table', 'reset the table', 'reset ball', 'reset the ball', 'new ball', 'reset cup', 'reset the cup'],
     settings: ['settings', 'setting', 'preferences'],
   };
   const VOICE_LOOKUP = new Map();
@@ -1290,7 +1320,7 @@
     show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
     // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
     // RobotCore.MODEL), whether the elbows prefer to sit out and below the hands, and whether the joint angles show.
-    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1 }, // scale: the arms' motion, × (teleoperation)
+    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1, props: 'cup' }, // scale: the arms' motion, × (teleoperation); props: the table ('off', 'ball', 'cup': a ball and a cup)
     setup: true, // show the Setup guide when the page opens
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
@@ -1330,6 +1360,7 @@
     for (const k of ['body', 'left', 'right']) r[k] = typeof r[k] === 'string' && r[k] ? r[k] : 'auto';
     r.elbows = !!r.elbows; delete r.joints; // (joint angles are a tab of the Now panel now, not a switch)
     delete r.style; delete r.look; // the robot had four looks once; it is the Machine now, the only one
+    if (!['off', 'ball', 'cup'].includes(r.props)) r.props = DEFAULTS.robot.props;
     r.scale = isFinite(Number(r.scale)) && r.scale !== null && r.scale !== '' ? Math.min(5, Math.max(0.1, Number(r.scale))) : 1;
     for (const k of ['back', 'half', 'up', 'upper', 'fore']) {
       const x = Number(r[k]);
@@ -1347,7 +1378,7 @@
     skew, so3Log, se3Exp, minv, undistort, tagCorners, refinePose, flipPose, solveTag, solveBody, meanRotation, meanPose,
     PoseFilter, MOTION, sigmaAlong,
     toRig, fusePoses, plausible, chooseCand, sighting, jointSystem, refineJoint, planSearch,
-    IMU, decodeBoardInfo, decodeImuBatch, encodeImuBatch, encodeBoardInfo, rotOfQuat, BoardClock, nearestRotation, lineUp, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
+    IMU, decodeBoardInfo, decodeImuBatch, encodeImuBatch, encodeBoardInfo, ACT, decodeActuatorStatus, encodeActuatorStatus, gripPermille, gripOpening, rotOfQuat, BoardClock, nearestRotation, lineUp, calibrateRig, solveSym, placeCameras, lookAt, arrangeTiles, parseIdList,
     PAPER, paperFor, printArea, maxTagSize, maxBoardSquare, STREAM_CSV_HEADER, streamMessage,
     fmtStamp, parseNotes, RECORDING_CSV_HEADER, recordingJson, recordingCsv, tidySpeech, insertSpeech, VOICE_COMMANDS, voiceCommand, VoiceGate,
     DEFAULTS, clampSettings, boardFit, tagFit, displayMap,
