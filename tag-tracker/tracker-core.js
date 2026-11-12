@@ -1283,8 +1283,9 @@
     pose: 'filtered', // what is plotted: raw (OpenCV's IPPE), refined (LM on SE(3)) or filtered (Kalman on SE(3))
     compare: false, // also draw the raw track, faint, to compare
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
-    mirror: false, // Mirror view: the picture, the plots and the data mirrored left to right, as in a mirror (else In person)
+    mirror: false, // show the picture as a mirror would (the picture only: poses and data stay the camera's own)
     flip: false, // show the picture upside down, for a camera mounted that way (the picture only)
+    blur: false, // blur the picture on screen (the picture only), to work in public without showing faces
     search: 'predicted', // predicted: search only where the tags should be (the whole picture every 10th frame); whole: every frame
     show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
     // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
@@ -1322,7 +1323,7 @@
     if (o.every > o.span) o.every = o.span;
     if (!['raw', 'refined', 'filtered'].includes(o.pose)) o.pose = DEFAULTS.pose;
     if (!MOTION[o.motion]) o.motion = DEFAULTS.motion;
-    o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip;
+    o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip; o.blur = !!o.blur;
     if (!['predicted', 'whole'].includes(o.search)) o.search = DEFAULTS.search;
     if (!['robot', 'tags'].includes(o.show3d)) o.show3d = DEFAULTS.show3d;
     const r = Object.assign({}, DEFAULTS.robot, o.robot && typeof o.robot === 'object' ? o.robot : {});

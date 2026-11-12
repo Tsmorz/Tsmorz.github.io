@@ -153,7 +153,7 @@ console.log('4. plot, calibration views, settings');
   // the default 25 mm board and 80 mm tags must print at full size on both
   check(sqA4 >= 25 && sqL >= 25 && 9 * sqL <= 279.4 - 24 && 6 * sqA4 + 30 <= 210 - 24, `paper: the board fits both at full size up to ${sqA4} mm squares on A4 and ${sqL} mm on US Letter`);
   check(tA4 >= 80 && tL >= 80 && tA4 * 1.25 <= 210 - 24 && tL * 1.25 + 30 <= 279.4 - 24, `paper: a tag36h11 fits both up to ${tA4} mm on A4 and ${tL} mm on US Letter`);
-  check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true, 'mirror and flip are booleans, off by default');
+  check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true && C.clampSettings({}).blur === false && C.clampSettings({ blur: 1 }).blur === true, 'mirror, flip and blur are booleans, off by default');
   // a 1280 × 720 picture in a 1000 × 1000 box: 1000 × 562.5, letterboxed 218.75 px top and bottom
   const near = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
   const dm = (m, f) => C.displayMap(1000, 1000, 1280, 720, m, f);
@@ -732,7 +732,7 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   got = solve(cal, { body: null, arms: { R: rt } });
   check(got.length === 1 && got[0].side === -1 && near(got[0].s.q, RC.HOME, 1e-6), 'one wrist tag: one arm, exactly at home');
   cal = RC.calibrate(m, { body: C.mirrorPose(body), arms: [{ key: 'L', pose: C.mirrorPose(lt) }, { key: 'R', pose: C.mirrorPose(rt) }] });
-  check(cal.arms.find((a) => a.key === 'L').side === -1, 'in Mirror view the robot is your reflection: your left wrist drives its right arm');
+  check(cal.arms.find((a) => a.key === 'L').side === -1, 'arms take their sides from where the wrists are: mirrored poses swap them');
 
   // a tag on a phone's screen, and the settings
   const tf = C.tagFit(1170, 2532, 8, 1);
