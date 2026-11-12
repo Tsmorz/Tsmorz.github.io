@@ -295,6 +295,16 @@ the trace moves the strip's cursor (`showCursor`; the strip is redrawn from a sa
 the layers button shows the wind: an arrow the way it blows, its speed and where it comes from (`windBadge`). `script/test-glide` (`task check:glide`, in `check:fast`) guards the core,
 including the service worker in a mock.
 
+**Base maps and contours**: Street, Topo, Satellite (Esri World Imagery, online only, never stored: it shows what the ground
+is, a field or a forest, which slope alone can't) and the offline hillshade; the choice is kept as `base` (not when going
+offline swaps in the hillshade). Over Satellite the reach wash is drawn at 60% so the ground shows through. **Contour lines**
+are an overlay drawn by the page from the same Terrarium tiles (`Contours` grid layer, `terrWindow`; `GlideCore.contours`:
+3 × 3 smoothing, then marching squares, saddles split by the cell's mean), so they work offline and over any base: light with a
+dark edge over imagery, brown over the light maps. Each tile contours a window with a 2 px margin, so lines meet across tile
+edges; above zoom 13 it contours the part of the zoom-13 tile under it and draws it sharp. Spacing is `contourStep` (by zoom
+and units; every 5th line thick), shown in the Key. They come on with Satellite the first time; after that `contours` keeps the
+choice. Google's imagery is not an option: its terms forbid it beside a non-Google map and need a billed API key.
+
 **No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
 rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or
 imperial (`Units` in the core; `SPEC` in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
@@ -499,6 +509,10 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   or the demo; how many tags (one arm, two arms, body and two arms) with their IDs and sizes, which become tags named Body,
   Left wrist and Right wrist and the robot's roles (applied by Next, Print or the phone link, never by closing); the lens
   (optional); the start pose.
+- **Script versions**: index.html loads its own scripts (and the detection worker, which passes it on to `tracker-core.js`)
+  with `?v=<date>`. Bump it whenever any of them changes, or a browser can run a cached old `robot-core.js` beside a new
+  page (it once froze the 3D view: an error in `frame()` stopped the loop, which now asks for the next frame first and
+  reports an error once).
 - `index.html`: the UI. `speech-worker.js`: speech to text (above). `physics-core.js` (PhysicsCore, no DOM): the table (above). `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
   camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
   its `TagVision` factory also runs in Node.

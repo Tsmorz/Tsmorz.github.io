@@ -270,7 +270,7 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
   const post = (m, t) => self.postMessage(m, t || []);
 
   async function load() {
-    importScripts('tracker-core.js');
+    importScripts('tracker-core.js' + self.location.search); // the page's ?v=, so it matches the page's copy
     let lastErr = null;
     for (const u of CV_URLS) {
       try { importScripts(u); lastErr = null; break; } catch (e) { lastErr = e; }

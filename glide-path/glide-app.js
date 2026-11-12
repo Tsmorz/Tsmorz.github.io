@@ -83,6 +83,8 @@ $('curve').addEventListener('change', () => { P.curve = $('curve').checked; save
 document.querySelectorAll('[data-units]').forEach(b => b.onclick = () => {
   units = b.dataset.units; U = G.Units[units]; LS.set('units', units);
   setSliders(); for (const k of Object.keys(SPEC)) P[k] = +$(k).value / factor(k); save(); afterParams(); if (launch) placeStatus(); schedule('all');
+  if (map.hasLayer(contours)) contours.redraw();
+  contourKey();
 });
 
 function afterParams() {
@@ -190,6 +192,50 @@ const Hillshade = L.GridLayer.extend({
   }
 });
 
+// ---------- Contour lines, from the same tiles, over any base map (offline too) ----------
+// Terrain heights at zoom z over global pixels [x0, x0 + w) × [y0, y0 + h); NaN where a tile is missing.
+async function terrWindow(z, x0, y0, w, h) {
+  const out = new Float32Array(w * h).fill(NaN), n = 2 ** z, jobs = [];
+  for (let ty = Math.floor(y0 / TS); ty <= Math.floor((y0 + h - 1) / TS); ty++) {
+    if (ty < 0 || ty >= n) continue;
+    for (let tx = Math.floor(x0 / TS); tx <= Math.floor((x0 + w - 1) / TS); tx++) {
+      jobs.push(loadTerrTile(terrUrl(z, ((tx % n) + n) % n, ty)).then(e => {
+        const xa = Math.max(x0, tx * TS), xb = Math.min(x0 + w, (tx + 1) * TS), ya = Math.max(y0, ty * TS), yb = Math.min(y0 + h, (ty + 1) * TS);
+        for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) out[(y - y0) * w + x - x0] = e[(y - ty * TS) * TS + x - tx * TS];
+      }, () => {}));
+    }
+  }
+  await Promise.all(jobs);
+  return out;
+}
+// Light lines with a dark edge over imagery; brown, like a printed map, over the light maps.
+const contourStyle = () => base === sat ? { line: 'rgba(255,255,255,.8)', halo: 'rgba(0,0,0,.4)', w: [1, 1.8] }
+                                       : { line: 'rgba(122,82,40,.6)', halo: null, w: [0.8, 1.6] };
+const Contours = L.GridLayer.extend({
+  createTile(c, done) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1), tile = document.createElement('canvas');
+    tile.width = tile.height = TS * dpr;
+    // above zoom 13 there is no finer terrain: contour the part of the zoom-13 tile under this one, drawn at full sharpness
+    const zt = Math.min(c.z, Z_MAX), s = 2 ** (c.z - zt), span = TS / s, w = span + 4;
+    const x0 = c.x * span - 2, y0 = c.y * span - 2, [step, every] = G.contourStep(c.z, units);
+    terrWindow(zt, x0, y0, w, w).then(g => {
+      const { minor, major } = G.contours(g, w, w, step, every), ctx = tile.getContext('2d'), st = contourStyle(), k = s * dpr;
+      const X = v => (v - 1.5) * k; // grid index i is the centre of terrain pixel x0 + i: i − 2 + ½ pixels from the tile's corner
+      const stroke = (arr, colour, width) => {
+        if (!arr.length) return;
+        ctx.beginPath();
+        for (let i = 0; i < arr.length; i += 4) { ctx.moveTo(X(arr[i]), X(arr[i + 1])); ctx.lineTo(X(arr[i + 2]), X(arr[i + 3])); }
+        ctx.strokeStyle = colour; ctx.lineWidth = width * dpr; ctx.stroke();
+      };
+      ctx.lineCap = ctx.lineJoin = 'round';
+      if (st.halo) { stroke(minor, st.halo, st.w[0] + 1.5); stroke(major, st.halo, st.w[1] + 1.5); }
+      stroke(minor, st.line, st.w[0]); stroke(major, st.line, st.w[1]);
+      done(null, tile);
+    }).catch(err => done(err, tile));
+    return tile;
+  }
+});
+
 // The reach is drawn straight into a canvas that Leaflet positions like an image, so a slider move repaints
 // pixels without encoding and decoding a PNG.
 const CanvasOverlay = L.ImageOverlay.extend({
@@ -210,10 +256,26 @@ const map = L.map('map', { zoomControl: true }).setView([start.lat, start.lon], 
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
 const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)' });
 const shade = new Hillshade({ minNativeZoom: Z_MIN, maxNativeZoom: Z_MAX, minZoom: 8, maxZoom: 18, attribution: 'Terrain: AWS Terrain Tiles' });
-let base = navigator.onLine ? osm : shade;
+// imagery shows what the ground is (a field, a forest, water), which the slope alone can't; online only, never stored
+const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Powered by Esri | Imagery: Esri, Maxar, Earthstar Geographics, and the GIS User Community' });
+const contours = new Contours({ minZoom: 10, maxZoom: 19, zIndex: 5, attribution: 'Terrain: AWS Terrain Tiles' }); // same text as the hillshade's, so Leaflet shows it once
+const BASES = { street: osm, topo, sat, shade };
+const baseName = l => Object.keys(BASES).find(k => BASES[k] === l);
+let base = navigator.onLine ? (BASES[LS.get('base', 'street')] || osm) : shade;
 base.addTo(map);
-map.on('baselayerchange', e => { base = e.layer; });
-L.control.layers({ 'Street map (online)': osm, 'Topo map (online)': topo, 'Shaded terrain (works offline)': shade }, null, { position: 'topright' }).addTo(map);
+if (LS.get('contours', base === sat)) contours.addTo(map);
+map.on('baselayerchange', e => {
+  base = e.layer;
+  if (navigator.onLine) LS.set('base', baseName(base)); // going offline swaps to the hillshade; that isn't a choice to keep
+  // contours come on with the imagery the first time, until the visitor says otherwise
+  if (base === sat && LS.get('contours', null) === null) contours.addTo(map);
+  if (map.hasLayer(contours)) contours.redraw();
+  drawOverlay();
+});
+map.on('overlayadd overlayremove', e => { if (e.layer === contours) { LS.set('contours', e.type === 'overlayadd'); contourKey(); } });
+map.on('zoomend', () => contourKey());
+L.control.layers({ 'Street map (online)': osm, 'Topo map (online)': topo, 'Satellite (online)': sat, 'Shaded terrain (works offline)': shade },
+  { 'Contour lines': contours }, { position: 'topright' }).addTo(map);
 L.control.scale({ imperial: true }).addTo(map);
 const Wind = L.Control.extend({ options: { position: 'topright' }, onAdd() {
   const box = L.DomUtil.create('div', 'wind-box');
@@ -237,11 +299,21 @@ const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
     '<li><span class="key k-out"></span>Reachable, but out of sight</li>' +
     '<li><span class="key k-ring"></span>As far as you can see it</li>' +
     '<li><span class="key k-hit"></span>Straight glide hits a slope</li>' +
-    '<li><span class="key k-line"></span>Cross-section (dots: its distance marks)</li>';
+    '<li><span class="key k-line"></span>Cross-section (dots: its distance marks)</li>' +
+    '<li id="keyContour" hidden><span class="key k-contour"></span><span></span></li>';
   L.DomEvent.disableClickPropagation(box);
   return box;
 } });
 new Legend().addTo(map);
+// the Key says how far apart the contour lines are at this zoom
+function contourKey() {
+  const li = document.getElementById('keyContour'); if (!li) return;
+  const z = map.getZoom(), on = map.hasLayer(contours) && z >= 10;
+  li.hidden = !on; if (!on) return;
+  const [step, every] = G.contourStep(z, units);
+  li.lastChild.textContent = `Contours every ${U.h(step)} (thick: ${U.h(step * every)})`;
+}
+contourKey();
 const Locate = L.Control.extend({ options: { position: 'topleft' }, onAdd() {
   const div = L.DomUtil.create('div', 'leaflet-bar');
   const a = L.DomUtil.create('a', 'locate', div);
@@ -493,6 +565,7 @@ function drawOverlay() {
   const t0 = performance.now();
   const GW = GRID.GW, mpp = M.mpp, cellA = (2 * mpp) ** 2 / 1e6, geo = geometry(), n = R.n, dmax = R.dmax, vis = P.vis, slMax = P.sl;
   const useG = Gres && Gres.gridId === gridId && P.curve, galt = useG ? Gres.alt : null, slope = GRID.slope;
+  const fade = base === sat ? 0.6 : 1; // a lighter wash over imagery, so the ground under it still shows
   if (overlayCanvas.width !== GW) { overlayCanvas.width = overlayCanvas.height = GW; }
   const ctx = overlayCanvas.getContext('2d'), img = ctx.createImageData(GW, GW), px = img.data;
   let landA = 0, curveLandA = 0, outA = 0;
@@ -509,7 +582,7 @@ function drawOverlay() {
     } else if (!landable) { c = C.steep; a = curved && stripe ? 60 : 85; }
     else if (straight) { c = C.straight; a = 120; landA += cellA; }
     else { c = stripe ? C.curveDark : C.curve; a = stripe ? 190 : 120; landA += cellA; curveLandA += cellA; }
-    px[k] = c[0]; px[k + 1] = c[1]; px[k + 2] = c[2]; px[k + 3] = a;
+    px[k] = c[0]; px[k + 1] = c[1]; px[k + 2] = c[2]; px[k + 3] = a * fade;
   }
   ctx.putImageData(img, 0, 0);
   const bounds = L.latLngBounds(pxLatLng(M.x0, M.y0 + M.W), pxLatLng(M.x0 + M.W, M.y0));

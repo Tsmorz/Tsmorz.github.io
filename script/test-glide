@@ -6,6 +6,7 @@
 //   4. reachAt agrees with the rays
 //   5. map maths: pixel ↔ lon/lat round trip, metres per pixel, Terrarium decoding
 //   6. saved areas: the tile list per zoom, and deleting keeps tiles another area still uses
+//   6b. contours: a plane, a cone (closed rings), a saddle either side of the line, a window against the whole grid, missing heights, spacing
 //   7. the service worker (sw.js) in a mock: terrain from saved/recent caches offline, the recent cache capped,
 //      the page from cache offline or on a stalled network, street-map tiles left alone
 //   8. the old address: /glide-reach/ redirects, and its sw.js retires the old service worker
@@ -150,6 +151,59 @@ const gone = G.tilesOnlyIn(a1, [a2, a3]);
 check(gone.length > 0 && gone.length < a1.length, `deleting one of two overlapping areas frees ${gone.length} of ${a1.length} tiles`);
 check(gone.every(k => !a2.includes(k)), 'and none the other area still uses');
 check(G.tilesOnlyIn(a3, [a1, a2]).length === a3.length, 'an area far away frees all its tiles');
+
+console.log('6b. contours');
+{
+  const segs = c => { const o = []; for (const arr of [c.minor, c.major]) for (let i = 0; i < arr.length; i += 4) o.push(arr.slice(i, i + 4)); return o; };
+  const grid = (w, h, f) => { const g = new Float32Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) g[y * w + x] = f(x, y); return g; };
+  // a plane rising 7 m a pixel eastward: every 20 m is a straight north-south line at x = 20k/7
+  let c = G.contours(grid(64, 64, x => 7 * x), 64, 64, 20);
+  let s = segs(c), worst = 0;
+  for (const [x1, y1, x2, y2] of s) if (x1 > 2 && x1 < 61) { worst = Math.max(worst, Math.abs(x1 - x2), Math.abs(x1 * 7 / 20 - Math.round(x1 * 7 / 20)) * 20 / 7); }
+  check(s.length > 0 && worst < 1e-4, `a plane: straight lines at the right spacing (worst ${worst.toExponential(1)} px)`);
+  check(c.major.length > 0 && c.major.every((v, i) => i % 2 || Math.abs(v * 7 % 100) < 1e-3), 'every 5th line (each 100 m) is a major one');
+  check(G.contours(grid(32, 32, () => 500), 32, 32, 20).minor.length === 0, 'flat ground: no lines');
+  check(G.contours(grid(32, 32, () => 500), 32, 32, 20).major.length === 0, 'not even at an exact level (500 m)');
+  // a cone 10 m down per pixel from 1000 m at the centre: rings at radius (1000 − level) / 10
+  const cx = 40.3, cy = 39.7;
+  c = G.contours(grid(80, 80, (x, y) => 1000 - 10 * Math.hypot(x - cx, y - cy)), 80, 80, 50);
+  s = segs(c); worst = 0; let rings = new Set();
+  for (const [x1, y1, x2, y2] of s) for (const [x, y] of [[x1, y1], [x2, y2]]) {
+    const r = Math.hypot(x - cx, y - cy); if (r < 3 || r > 37) continue;
+    const want = Math.round(r / 5) * 5; worst = Math.max(worst, Math.abs(r - want)); rings.add(want);
+  }
+  check(worst < 0.2 && rings.size === 7, `a cone: rings every 5 px from r = 5 to 35 (${rings.size} rings, worst ${worst.toFixed(3)} px off)`);
+  // each ring is closed: every endpoint is shared by exactly two segments
+  const ends = new Map();
+  for (const [x1, y1, x2, y2] of s.filter(([x1, y1]) => Math.hypot(x1 - cx, y1 - cy) < 37)) for (const k of [`${x1.toFixed(4)},${y1.toFixed(4)}`, `${x2.toFixed(4)},${y2.toFixed(4)}`]) ends.set(k, (ends.get(k) || 0) + 1);
+  check(ends.size > 100 && [...ends.values()].every(n => n === 2), 'and closed: every end meets exactly one other');
+  // a saddle in the middle of cell (10, 10): h = s0 + 40 (x − 10.5)(y − 10.5), which smoothing leaves alone. Its corners
+  // are s0 ± 10; the 100 m line must join the high corners (top-left, bottom-right) through the cell when the saddle
+  // is above 100 m (s0 = 103), and cut them off when it is below (s0 = 97)
+  const saddle = s0 => {
+    const q = segs(G.contours(grid(21, 21, (x, y) => s0 + 40 * (x - 10.5) * (y - 10.5)), 21, 21, 20));
+    const inCell = q.filter(([x1, y1, x2, y2]) => Math.min(x1, x2, y1, y2) >= 10 && Math.max(x1, x2, y1, y2) <= 11);
+    const side = (x, y) => y === 10 ? 'T' : x === 11 ? 'R' : y === 11 ? 'B' : 'L';
+    return inCell.map(([x1, y1, x2, y2]) => [side(x1, y1), side(x2, y2)].sort().join('')).sort().join(' ');
+  };
+  check(saddle(103) === 'BL RT', `a saddle above the line joins the high corners (${saddle(103)})`);
+  check(saddle(97) === 'BR LT', `and one below it cuts them off (${saddle(97)})`);
+  // a window cut from a bigger grid, with a 2 px margin, draws exactly the same lines inside it
+  const big = grid(96, 96, (x, y) => 600 + 80 * Math.sin(x / 9) * Math.cos(y / 13) + 3 * x);
+  const all = segs(G.contours(big, 96, 96, 20)), x0 = 30, y0 = 22, ww = 36;
+  const win = new Float32Array(ww * ww); for (let y = 0; y < ww; y++) for (let x = 0; x < ww; x++) win[y * ww + x] = big[(y + y0) * 96 + x + x0];
+  const key = ([a, b, cc, d]) => [a, b, cc, d].map(v => v.toFixed(4)).join(',');
+  const inner = q => q[0] >= x0 + 2 && q[2] >= x0 + 2 && q[1] >= y0 + 2 && q[3] >= y0 + 2 && q[0] <= x0 + ww - 3 && q[2] <= x0 + ww - 3 && q[1] <= y0 + ww - 3 && q[3] <= y0 + ww - 3;
+  const fromAll = new Set(all.filter(inner).map(key));
+  const fromWin = new Set(segs(G.contours(win, ww, ww, 20)).map(q => [q[0] + x0, q[1] + y0, q[2] + x0, q[3] + y0]).filter(inner).map(key));
+  check(fromAll.size > 50 && fromAll.size === fromWin.size && [...fromAll].every(k => fromWin.has(k)), `a window matches the whole grid inside its 2 px margin (${fromWin.size} segments)`);
+  const hole = grid(16, 16, x => 30 * x); hole[8 * 16 + 8] = NaN;
+  const hs = segs(G.contours(hole, 16, 16, 20));
+  check(hs.length > 0 && hs.every(q => [[q[0], q[1]], [q[2], q[3]]].every(([x, y]) => !(x > 6 && x < 10 && y > 6 && y < 10))), 'no lines in the cells round a missing height');
+  const st = z => G.contourStep(z, 'metric')[0], sti = z => Math.round(G.contourStep(z, 'imperial')[0] * G.FT);
+  check([9, 10, 11, 12, 13, 14, 17].map(st).join() === '200,200,100,50,20,10,10', `metric spacing by zoom: ${[9, 10, 11, 12, 13, 14, 17].map(st).join(', ')} m`);
+  check([10, 11, 12, 13, 14].map(sti).join() === '500,250,200,80,40', `imperial: ${[10, 11, 12, 13, 14].map(sti).join(', ')} ft`);
+}
 
 console.log('7. service worker');
 (async () => {
