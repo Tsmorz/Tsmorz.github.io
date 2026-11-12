@@ -1283,13 +1283,14 @@
     pose: 'filtered', // what is plotted: raw (OpenCV's IPPE), refined (LM on SE(3)) or filtered (Kalman on SE(3))
     compare: false, // also draw the raw track, faint, to compare
     motion: 'balanced', // filter tuning: smooth, balanced or responsive
-    mirror: false, // Mirror view: the picture, the plots and the data mirrored left to right, as in a mirror (else In person)
+    mirror: false, // show the picture as a mirror would (the picture only: poses and data stay the camera's own)
     flip: false, // show the picture upside down, for a camera mounted that way (the picture only)
+    blur: false, // blur the picture on screen (the picture only), to work in public without showing faces
     search: 'predicted', // predicted: search only where the tags should be (the whole picture every 10th frame); whole: every frame
     show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
     // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
     // RobotCore.MODEL), whether the elbows prefer to sit out and below the hands, and whether the joint angles show.
-    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, joints: true },
+    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, joints: true, look: 'machine' }, // look: RobotGL.STYLES (`style` was its name while Pearl was the default)
     setup: true, // show the Setup guide when the page opens
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
@@ -1322,12 +1323,14 @@
     if (o.every > o.span) o.every = o.span;
     if (!['raw', 'refined', 'filtered'].includes(o.pose)) o.pose = DEFAULTS.pose;
     if (!MOTION[o.motion]) o.motion = DEFAULTS.motion;
-    o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip;
+    o.compare = !!o.compare; o.mirror = !!o.mirror; o.flip = !!o.flip; o.blur = !!o.blur;
     if (!['predicted', 'whole'].includes(o.search)) o.search = DEFAULTS.search;
     if (!['robot', 'tags'].includes(o.show3d)) o.show3d = DEFAULTS.show3d;
     const r = Object.assign({}, DEFAULTS.robot, o.robot && typeof o.robot === 'object' ? o.robot : {});
     for (const k of ['body', 'left', 'right']) r[k] = typeof r[k] === 'string' && r[k] ? r[k] : 'auto';
     r.elbows = !!r.elbows; r.joints = !!r.joints;
+    delete r.style; // a Pearl saved as the old default doesn't hold back Machine
+    if (!['pearl', 'machine', 'companion', 'hologram'].includes(r.look)) r.look = 'machine';
     for (const k of ['back', 'half', 'up', 'upper', 'fore']) {
       const x = Number(r[k]);
       if (r[k] == null || !isFinite(x)) delete r[k]; else r[k] = Math.min(1, Math.max(k === 'back' || k === 'up' ? 0 : 0.05, x));

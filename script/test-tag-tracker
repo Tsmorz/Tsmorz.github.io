@@ -153,7 +153,7 @@ console.log('4. plot, calibration views, settings');
   // the default 25 mm board and 80 mm tags must print at full size on both
   check(sqA4 >= 25 && sqL >= 25 && 9 * sqL <= 279.4 - 24 && 6 * sqA4 + 30 <= 210 - 24, `paper: the board fits both at full size up to ${sqA4} mm squares on A4 and ${sqL} mm on US Letter`);
   check(tA4 >= 80 && tL >= 80 && tA4 * 1.25 <= 210 - 24 && tL * 1.25 + 30 <= 279.4 - 24, `paper: a tag36h11 fits both up to ${tA4} mm on A4 and ${tL} mm on US Letter`);
-  check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true, 'mirror and flip are booleans, off by default');
+  check(C.clampSettings({}).mirror === false && C.clampSettings({ flip: 1 }).flip === true && C.clampSettings({}).blur === false && C.clampSettings({ blur: 1 }).blur === true, 'mirror, flip and blur are booleans, off by default');
   // a 1280 × 720 picture in a 1000 × 1000 box: 1000 × 562.5, letterboxed 218.75 px top and bottom
   const near = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
   const dm = (m, f) => C.displayMap(1000, 1000, 1280, 720, m, f);
@@ -732,13 +732,27 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   got = solve(cal, { body: null, arms: { R: rt } });
   check(got.length === 1 && got[0].side === -1 && near(got[0].s.q, RC.HOME, 1e-6), 'one wrist tag: one arm, exactly at home');
   cal = RC.calibrate(m, { body: C.mirrorPose(body), arms: [{ key: 'L', pose: C.mirrorPose(lt) }, { key: 'R', pose: C.mirrorPose(rt) }] });
-  check(cal.arms.find((a) => a.key === 'L').side === -1, 'in Mirror view the robot is your reflection: your left wrist drives its right arm');
+  check(cal.arms.find((a) => a.key === 'L').side === -1, 'arms take their sides from where the wrists are: mirrored poses swap them');
 
   // a tag on a phone's screen, and the settings
   const tf = C.tagFit(1170, 2532, 8, 1);
   check(tf.px === 117 && tf.size === 936 && C.tagFit(9, 9, 8, 1).px === 0, 'one tag on a screen: whole pixels per cell, a cell of white round it');
   const st = C.clampSettings({ show3d: 'x', robot: { body: '', left: 'b:hand', upper: 5, back: -1, elbows: 0 } });
   check(st.show3d === 'robot' && st.robot.body === 'auto' && st.robot.left === 'b:hand' && st.robot.upper === 1 && st.robot.back === 0 && st.robot.elbows === false && st.robot.joints === true && st.setup === true && C.clampSettings({ setup: false }).setup === false, 'robot settings: roles, lengths clamped, switches, and the setup guide on unless turned off');
+  // the shaded robot's meshes (robot-gl.js): every surface sound, for the default lengths and for a small person
+  const RGL = require(path.join(__dirname, '..', 'tag-tracker/robot-gl.js'));
+  let parts = 0, verts = 0, bad = 0;
+  for (const [lens, look] of [[{}, 'pearl'], [{ upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }, 'pearl'], [{}, 'machine'], [{}, 'companion']]) {
+    const M = RGL.meshes(RC.model(lens), look), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
+    for (const p of all) {
+      const { pos, nrm, idx } = p.mesh, n = pos.length / 3;
+      parts++; verts += n;
+      if (n > 65535 || [...idx].some((i) => i >= n)) bad++;
+      for (let i = 0; i < n; i++) if (![pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]].every(isFinite) || Math.abs(Math.hypot(nrm[3 * i], nrm[3 * i + 1], nrm[3 * i + 2]) - 1) > 1e-4) { bad++; break; }
+    }
+  }
+  check(bad === 0 && parts > 160, `the shaded robot's ${parts} meshes (${verts} vertices; each look, and a small person's lengths): finite points, unit normals, 16-bit indices in range`);
+  check(RGL.STYLES.every((s) => C.clampSettings({ robot: { look: s } }).robot.look === s) && C.clampSettings({ robot: { look: 'x' } }).robot.look === 'machine' && C.clampSettings({ robot: { style: 'pearl' } }).robot.look === 'machine', 'every look is a setting; the default (and an unknown or old one) is Machine');
   const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
   check(cmd('Calibrate robot.') === 'robot' && cmd('Calibrate.') === 'calib' && cmd('Open settings.') === 'settings', '"calibrate robot" is not "calibrate", and "settings" opens the tab');
 }
