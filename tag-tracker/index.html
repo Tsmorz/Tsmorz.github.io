@@ -407,7 +407,6 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   </div>
   <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
   <button id="voiceBtn" class="btn mic" aria-pressed="false" title="Voice (or press V): speak a command, such as “Calibrate robot”, “Start recording”, “Tare” or “Fit”, or anything else to add it as a note. Speech is turned into text on this computer."><svg class="i"><use href="#i-mic"/></svg><span>Voice</span></button>
-  <button id="printBtn" class="btn" title="Print AprilTags and the calibration board" aria-haspopup="dialog"><svg class="i"><use href="#i-print"/></svg><span>Print</span></button>
   <button id="helpBtn" class="btn sq" aria-label="Setup guide" aria-haspopup="dialog" title="Setup guide: the camera, your tags, the lens and the robot's start pose"><svg class="i"><use href="#i-book"/></svg></button>
   <button id="settingsBtn" class="btn sq" aria-label="Settings" aria-haspopup="dialog" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
   <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
@@ -1190,8 +1189,10 @@ $('tplotTag').onchange = () => { S.tplotTag = parseKey($('tplotTag').value); };
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 
 // ---------------- status ----------------
+// An empty text hides it: nothing to say while the page waits for Start.
 function status(text, kind) {
-  $('statusText').textContent = text;
+  $('status').hidden = !text;
+  $('statusText').textContent = text || '';
   $('status').className = 'pill ' + (kind || '');
 }
 
@@ -1230,7 +1231,7 @@ function onWorker(m, slot) {
     slot.ready = true;
     for (let k = 1; k < POOL; k++) spawnWorker();
     S.ready = true; S.familyCount = m.count; workerReadyResolve();
-    status(S.running ? 'Detecting…' : 'Ready to start', S.running ? 'live' : '');
+    status(S.running ? 'Detecting…' : '', S.running ? 'live' : '');
     $('emptyDemo').disabled = false;
   } else if (m.type === 'family') { S.familyCount = m.count; }
   else if (m.type === 'tags' || m.type === 'board') {
@@ -1441,7 +1442,7 @@ function stop(quiet) {
   if (document.fullscreenElement === cb) document.exitFullscreen();
   onCamsChanged();
   $('focusWrap').hidden = true;
-  if (!quiet) { showEmpty('Camera stopped', 'Press Start to carry on. Your tags, settings and calibrations are kept in this browser.'); status(S.ready ? 'Ready to start' : 'Loading detector…', S.ready ? '' : 'busy'); }
+  if (!quiet) { showEmpty('Camera stopped', 'Press Start to carry on. Your tags, settings and calibrations are kept in this browser.'); status(S.ready ? '' : 'Loading detector…', S.ready ? '' : 'busy'); }
 }
 // Focus: a camera that refocuses changes its focal length, so locking it keeps a calibration valid. The switch
 // locks every running camera that can.
@@ -3048,7 +3049,6 @@ function paintPrintSummary() {
 }
 ['printIds', 'printSize', 'printSquare'].forEach((id) => { $(id).oninput = paintPrintSummary; });
 $('printBoardSw').onclick = () => { const b = $('printBoardSw'); b.setAttribute('aria-checked', String(b.getAttribute('aria-checked') !== 'true')); paintPrintSummary(); };
-$('printBtn').onclick = () => openPrintDlg();
 $('printBoard').onclick = () => openPrintDlg({ tags: [], board: true });
 function paintPaper() {
   document.querySelectorAll('[data-paper]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.paper === S.paper)));
