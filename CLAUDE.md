@@ -427,12 +427,17 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
 - **The robot** (`robot-core.js`, RobotCore, no DOM; Show: Robot, the default): a humanoid with two 7-joint arms (spherical
   shoulder, elbow, spherical wrist; the right arm the left one's mirror image). The chest follows the Body track and each wrist
   the track on its side. Roles are Settings → Robot (Auto: the track named Body/Chest/Torso is the body, else with three the
-  highest; the others are arms, each taking the side of the chest it is on when calibrated). One track draws one arm on a mount,
+  highest; the others are arms, each taking the side of the chest it is on when calibrated; a role set to a tag that is part of
+  an object is that object). **The demo ignores the saved roles** (`robotSet`): tag 2 is its chest and the hand cubes its arms,
+  whatever the setup guide chose, whose default IDs (Body 2, Left wrist 1, Right wrist 0) match the demo's. One track draws one arm on a mount,
   two draw both arms on a shoulder bar, a body adds the torso and head; only tracks seen since load (or the last frame change)
   count, and a track out of view holds its last pose, faded. `RobotCore.ik` is analytic: the elbow lies on a circle about the
   shoulder-wrist line, 120 swivel angles are scored and the best refined, preferring the elbow below the hand and out to the
-  side, then low, with soft joint limits and steadiness against the last elbow position (`PREFER`; the elbow switch in
-  Settings turns the preference off). A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
+  side, then low, with soft joint limits and steadiness against the last elbow position and joint angles (`PREFER`; the elbow switch in
+  Settings turns the preference off). Following a previous solution (`prev.psi`), the elbow searches only within `swing` (6°)
+  of where it was and heads for a much better place elsewhere 6° at a time, so a straight arm (where the upper arm's turn
+  trades freely against the forearm's) or a joint limit never makes it jump. The demo's hand motions start mid-swing, so
+  the start pose it calibrates from keeps them within reach (out of reach ~1% of the time). A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
   robot** (key C on the plot, voice "calibrate robot") is a tare for the robot: `RobotCore.calibrate` takes the start pose (arms
   at the sides, forearms forward, palms in: `HOME`) from the tags now, keeping each wrist tag's turn to the home hand and
   its shift to the home wrist in the chest's frame, so a turned wrist turns the hand in place. Until then the robot stands in

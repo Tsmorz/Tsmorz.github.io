@@ -111,14 +111,15 @@
 
   // What the spare degree of freedom prefers, by default: elbows below the hands and out to the side, then as low as
   // they go. Weights per m² (elbow position) and rad² (limits).
-  const PREFER = { low: 100, out: 100, sink: 0.01, limits: 1000, steady: 2 };
+  const PREFER = { low: 100, out: 100, sink: 0.01, limits: 1000, steady: 2, turn: 0.01, better: 0.2, swing: 6 * DEG };
 
   // Inverse kinematics for one arm. target = the wrist pose in the chest frame. The elbow lies on a circle about the
   // shoulder-wrist line, and ψ is the angle round it (0 = its lowest point). 120 angles are scored, then the best is
-  // refined. `prev` is the last solution ({q, elbow}), which keeps the elbow from jumping between equally good
-  // places and picks the wrist solution nearest the last one. A target out of reach puts the wrist as near as it
+  // refined. `prev` is the last solution ({q, elbow}), which keeps the elbow and the joints from jumping between
+  // equally good places and picks the wrist solution nearest the last one. A target out of reach puts the wrist as near as it
   // goes, on the line to it (reach false, gap = how far short, m).
-  // opts: { prefer: false } keeps only the limits and steadiness (no elbow preference), or weights to override.
+  // opts: { prefer: false } keeps only the limits and steadiness (no elbow preference), or weights to override;
+  // { swing: Infinity } lets the elbow go straight to the best place even with a previous solution.
   function ik(m, side, target, prev, opts) {
     const o = opts || {}, W = Object.assign({}, PREFER, o.prefer === false ? { low: 0, out: 0, sink: 0 } : o.prefer || {});
     const sh = shoulderOf(m, side), L1 = m.upper, L2 = m.fore;
@@ -142,13 +143,33 @@
       const low = Math.max(0, elbow[2] - wrist[2]), out = Math.max(0, -side * (elbow[1] - sh[1]));
       let cost = W.low * low * low + W.out * out * out + W.sink * (elbow[2] - sh[2]) + W.limits * excess(q);
       if (prevE) { const e = sub(elbow, prevE); cost += W.steady * dot(e, e); }
+      // and the joints steady: with the arm straight (or nearly) the elbow barely moves round the circle, and the upper
+      // arm's turn trades freely against the forearm's, so only this keeps them from jumping
+      if (prevQ) for (let j = 0; j < 7; j++) { const e = Math.atan2(Math.sin(q[j] - prevQ[j]), Math.cos(q[j] - prevQ[j])); cost += W.turn * e * e; }
       return { q, psi, elbow, cost };
     };
-    const K = 120;
+    const K = 120, wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
     let best = null;
     for (let k = 0; k < K; k++) { const s = at((k * TAU) / K - Math.PI); if (!best || s.cost < best.cost) best = s; }
+    let step = TAU / K;
+    // Following a previous solution, the elbow only swings a little each time (`swing`, rad): it searches near where
+    // it was, and heads for a much better place elsewhere (`better`) by that much at a time instead of jumping there.
+    // ψ is measured from the elbow it had (or, with the arm straight, the ψ it had).
+    if (prev && prev.psi !== undefined && o.swing !== Infinity) {
+      const swing = o.swing || PREFER.swing, r = L1 * sb, c = add(sh, scale(n, L1 * cb));
+      let p0 = prev.psi;
+      if (prevE && r > 0.01) { const e = sub(prevE, c); if (Math.abs(dot(e, u)) + Math.abs(dot(e, v)) > 0.2 * r) p0 = Math.atan2(dot(e, v), dot(e, u)); }
+      let near = null;
+      for (let k = -12; k <= 12; k++) { const s = at(p0 + (k * swing) / 12); if (!near || s.cost < near.cost) near = s; }
+      if (best.cost < near.cost - W.better) {
+        const toward = at(p0 + Math.sign(wrap(best.psi - p0)) * swing);
+        best = toward.cost < near.cost ? toward : near;
+        if (best === toward) return finish(best);
+      } else best = near;
+      step = swing / 12;
+    }
     // golden-section search on the bracket round the best sample
-    let a = best.psi - TAU / K, b = best.psi + TAU / K;
+    let a = best.psi - step, b = best.psi + step;
     const g = (Math.sqrt(5) - 1) / 2;
     let x1 = b - g * (b - a), x2 = a + g * (b - a), f1 = at(x1), f2 = at(x2);
     for (let it = 0; it < 40; it++) {
@@ -156,7 +177,8 @@
       else { a = x1; x1 = x2; f1 = f2; x2 = a + g * (b - a); f2 = at(x2); }
     }
     for (const s of [f1, f2]) if (s.cost <= best.cost) best = s;
-    return { q: best.q, psi: best.psi, elbow: best.elbow, wrist, reach: Math.abs(gap) < 1e-9, gap, limits: Math.sqrt(excess(best.q)) };
+    return finish(best);
+    function finish(r) { return { q: r.q, psi: wrap(r.psi), elbow: r.elbow, wrist, reach: Math.abs(gap) < 1e-9, gap, limits: Math.sqrt(excess(r.q)) }; }
   }
 
   // ---- putting the robot on the tags ----

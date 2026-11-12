@@ -2179,10 +2179,20 @@ function robotTake() {
 }
 // Which track is the body and which the arms: Settings, or Auto. Auto's body is the one named Body, Chest or Torso
 // (else, with three tracks, the highest); its arms are the others, each taking the side of the body it is on when
-// calibrated (side null). Only tracks seen since the page opened (or the frame changed) count.
+// calibrated (side null). Only tracks seen since the page opened (or the frame changed) count. A role set to a tag that
+// is part of an object is that object. The demo's scene is fixed, so it always has its own roles (tag 2 is the chest and
+// the hand cubes are the arms), whatever the setup guide or Settings chose for real tags.
+const robotSet = () => (S.demo ? { ...S.settings.robot, body: '2', left: 'auto', right: 'auto' } : S.settings.robot);
+function roleTrack(v, keys) {
+  if (v === 'auto' || v === 'none') return null;
+  const k = keys.find((x) => String(x) === v);
+  if (k !== undefined) return k;
+  const obj = /^\d+$/.test(v) ? S.bodies.find((b) => b.members.some((m) => m.id === +v)) : null;
+  return obj && keys.includes('b:' + obj.id) ? 'b:' + obj.id : null;
+}
 function robotRoles() {
-  const r = S.settings.robot, ref = refKeyNow(), keys = trackKeys().filter((k) => k !== ref && RB.seen.has(k));
-  const pick = (v) => (v === 'auto' || v === 'none' ? null : keys.find((k) => String(k) === v) ?? null);
+  const r = robotSet(), ref = refKeyNow(), keys = trackKeys().filter((k) => k !== ref && RB.seen.has(k));
+  const pick = (v) => roleTrack(v, keys);
   let body = r.body === 'none' ? null : r.body === 'auto' ? keys.find((k) => /\b(body|chest|torso)\b/i.test(nameOf(k))) ?? null : pick(r.body);
   const sides = [[r.left, 1], [r.right, -1]], used = new Set();
   if (body !== null) used.add(body);
@@ -2197,7 +2207,7 @@ function robotRoles() {
   rest.slice(0, auto.length).forEach((k) => arms.push({ key: k, side: auto.length === 2 ? null : auto[0] }));
   return { body, arms };
 }
-const robotSig = () => [...RB.seen].sort(keySort).join(',') + '|' + ['body', 'left', 'right'].map((k) => S.settings.robot[k]).join(',') + '|' + S.settings.frame;
+const robotSig = () => [...RB.seen].sort(keySort).join(',') + '|' + ['body', 'left', 'right'].map((k) => robotSet()[k]).join(',') + '|' + S.settings.frame;
 // where camera 1 is in the plotted frame, if known (the robot faces it when there is no body tag)
 function cameraInPlot() {
   if (S.settings.frame === 'camera') return [0, 0, 0];
@@ -2263,7 +2273,7 @@ function robotUpdate(now) {
   const tg = RCORE.targets(cal, poses), prefer = S.settings.robot.elbows ? undefined : false;
   const arms = tg.arms.map((a) => {
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev : null, { prefer });
-    RB.prev.set(a.key, { q: s.q, elbow: s.elbow, side: a.side });
+    RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, side: a.side });
     return { key: a.key, side: a.side, q: s.q, reach: s.reach, gap: s.gap, live: fresh(a.key) };
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
@@ -3867,12 +3877,14 @@ function facing(p, at, roll, tilt, away) {
 }
 // The scene: a body tag, and two hands, each a 10 cm cube with a tag on its front (0, 1), sides and top. The poses
 // are of each tag (and of each hand's front tag, which is its object's origin).
+// Every motion starts from the middle of its swing (sines), so the robot, which takes its start pose from the first
+// moment it sees all three, has the hands' whole range within reach either way.
 function demoTags(t) {
   const A = DEMO.audience, pose = (p, roll, tilt, pitch) => ({ R: C.mul3(facing(p, A, roll, tilt), C.rodrigues([pitch || 0, 0, 0])), t: p });
   return [
     { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.45, 0.25) }, // turned a little, as a tag on a chest would be
-    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.2 * Math.sin(0.9 * t)], 0.6 * Math.sin(0.8 * t), 0.9 * Math.sin(0.6 * t), 0.35 + 0.3 * Math.sin(0.7 * t)) },
-    { id: 1, ...pose([0.35 + 0.15 * Math.cos(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t + 1), 1.3 + 0.25 * Math.cos(0.7 * t)], -0.4 + 0.5 * Math.cos(1.2 * t), 0.9 * Math.cos(0.5 * t), 0.35 + 0.3 * Math.cos(0.8 * t)) },
+    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.15 * Math.sin(0.9 * t)], 0.45 * Math.sin(0.8 * t), 0.6 * Math.sin(0.6 * t), 0.35 + 0.25 * Math.sin(0.7 * t)) },
+    { id: 1, ...pose([0.35 + 0.15 * Math.sin(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t), 1.3 + 0.17 * Math.sin(0.7 * t)], -0.4 + 0.4 * Math.sin(1.2 * t), 0.6 * Math.sin(0.5 * t), 0.35 + 0.25 * Math.sin(0.8 * t)) },
   ];
 }
 // Each hand's cube: the front tag is the origin (x right, y up, z out of its face); the others sit on the left, right
@@ -4032,7 +4044,8 @@ async function startDemo() {
 // Four short steps on first visit (and from Settings): a camera, your tags (how many, their IDs and sizes, printed or on
 // a phone), the lens, and the start pose. "Show this when the page opens" is settings.setup.
 const SETUP = { step: 0, n: 3, vals: null };
-const SETUP_ROLES = [{ k: 'body', name: 'Body', id: 0 }, { k: 'left', name: 'Left wrist', id: 1 }, { k: 'right', name: 'Right wrist', id: 2 }];
+// the default IDs are the demo's: its chest is tag 2, its left hand's front tag 1 and its right hand's 0
+const SETUP_ROLES = [{ k: 'body', name: 'Body', id: 2 }, { k: 'left', name: 'Left wrist', id: 1 }, { k: 'right', name: 'Right wrist', id: 0 }];
 const setupRoles = () => SETUP_ROLES.slice(3 - SETUP.n);
 function setupDefaults() {
   // what is set already: the robot's roles if they are tags, else tags named for the role, else 0, 1, 2
