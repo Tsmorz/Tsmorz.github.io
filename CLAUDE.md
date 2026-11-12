@@ -414,7 +414,7 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   or arrow keys and +/−) makes it Custom, kept per camera key in `arrange`. Small views drop their name plates.
 - **The demo** is three cameras round one scene (`DEMO`), rendered with WebGL in true perspective from each camera's
   pose and the exact 70° lens (`demoRenderer`), so detection, fusion and placing run on real pictures. The scene: a Body
-  tag (#2, turned a little so one camera can tell its mirror poses apart) and two hands, each a 10 cm partial cube
+  tag (#2, tipped back so one camera can tell its mirror poses apart) and two hands (moved along `RobotCore.demoPose`, below), each a 10 cm partial cube
   (`CUBE`, `DEMO_HANDS`, `cubeMembers`: tags on the front, both sides and the top), added as rigid objects with their exact
   shape when the demo starts (`demoScene` gives every tag's pose); in Calibrate the
   scene is the board, holding 12 poses in turn (`demoBoard`, 60 mm squares). Step 4 then shows how far the solved rig is
@@ -438,8 +438,14 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   side, then low, with soft joint limits and steadiness against the last elbow position and joint angles (`PREFER`; the elbow switch in
   Settings turns the preference off). Following a previous solution (`prev.psi`), the elbow searches only within `swing` (6°)
   of where it was and heads for a much better place elsewhere 6° at a time, so a straight arm (where the upper arm's turn
-  trades freely against the forearm's) or a joint limit never makes it jump. The demo's hand motions start mid-swing, so
-  the start pose it calibrates from keeps them within reach (out of reach ~1% of the time). A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
+  trades freely against the forearm's) or a joint limit never makes it jump. **The demo's hands follow `RobotCore.demoPose`**, a path
+  in the robot's own chest frame (each cube's front tag rides on a wrist, on the chest the robot finds from the body tag) that
+  stays clear of every singularity and limit (elbow 75° or more, wrist bend under 35°, each joint 20° from its limits, hands
+  above the elbows and elbows out, so the elbow preference never switches on) and keeps each hand facing camera 1 within ~36°
+  (only camera 1 measures them until the cameras are placed). The cubes are turned so camera 1 sees two or three faces, and the
+  body tag is square to camera 1 and tipped back, so neither is a face-on single tag (two mirror-image poses) and the hands never
+  pass in front of it. It rests in the start pose 3.5 s of every 18 s (`DEMO_CYCLE`), and the demo calibrates the robot only
+  then (`demoAtHome`). Measured in the demo: hand targets within ~3 cm and 4° of the path, joints at most ~2° a frame. A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
   robot** (key C on the plot, voice "calibrate robot") is a tare for the robot: `RobotCore.calibrate` takes the start pose (arms
   at the sides, forearms forward, palms in: `HOME`) from the tags now, keeping each wrist tag's turn to the home hand and
   its shift to the home wrist in the chest's frame, so a turned wrist turns the hand in place. Until then the robot stands in

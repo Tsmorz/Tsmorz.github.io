@@ -719,6 +719,29 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
     check(outN > 40 && worst < 12 * D, `a hand out of reach and back while it turns: no joint jumps (at most ${(worst / D).toFixed(2)}° per step; ${outN} of 401 steps out of reach)`);
   }
 
+  // the demo's path (RobotCore.demoPose): the IK follows it smoothly, far from every singularity and limit, with the
+  // elbow preference never switching on (so the elbow never swings round)
+  {
+    const out = [];
+    for (const side of [1, -1]) {
+      let pv = null, pp = null, step = 0, acc = 0, minE = Infinity, maxW = 0, margin = Infinity, pref = 0, reach = true;
+      for (let i = 0; i <= 60 * 36; i++) {
+        const s = RC.ik(m, side, RC.demoPose(m, side, i / 60, 18), pv), sh = RC.fk(m, side, s.q).shoulder;
+        if (pv) s.q.forEach((x, j) => { step = Math.max(step, Math.abs(x - pv.q[j])); if (pp) acc = Math.max(acc, Math.abs(x - 2 * pv.q[j] + pp.q[j])); });
+        minE = Math.min(minE, s.q[3]); maxW = Math.max(maxW, Math.abs(s.q[5])); reach = reach && s.reach;
+        s.q.forEach((x, j) => { margin = Math.min(margin, x - RC.JOINTS[j].lo, RC.JOINTS[j].hi - x); });
+        pref = Math.max(pref, s.elbow[2] - s.wrist[2], -side * (s.elbow[1] - sh[1]));
+        pp = pv; pv = s;
+      }
+      out.push({ step, acc, minE, maxW, margin, pref, reach });
+    }
+    const w = (k) => Math.max(...out.map((o) => o[k])), n = (k) => Math.min(...out.map((o) => o[k]));
+    check(out.every((o) => o.reach) && w('step') < D && w('acc') < 0.2 * D && n('minE') > 60 * D && w('maxW') < 45 * D && n('margin') > 15 * D && w('pref') < 1e-4,
+      `the demo's path: at most ${(w('step') / D).toFixed(2)}° a frame at 60 Hz, its pace changing by ${(w('acc') / D).toFixed(2)}°; elbow ${(n('minE') / D).toFixed(0)}° or more, wrist bend under ${(w('maxW') / D).toFixed(0)}°, every joint ${(n('margin') / D).toFixed(0)}° or more from its limits`);
+    const H = RC.fk(m, 1, RC.HOME), home = [0, 0.5, 2.4, 17.2, 17.9].every((t) => { const p = RC.demoPose(m, 1, t, 18); return near(p.t, H.t, 1e-12) && rotErr(p.R, H.R) < 1e-12; });
+    check(home, '... and it rests in the start pose at the start and end of each cycle (where the demo calibrates)');
+  }
+
   // out of reach
   const far = { R: L.R, t: C.add(L.shoulder, [0.5, 0.2, 0.3]) }, fs = RC.ik(m, 1, far, null), Ff = RC.fk(m, 1, fs.q);
   const dist = C.norm(C.sub(far.t, L.shoulder)), along = C.add(L.shoulder, C.sub(far.t, L.shoulder).map((x) => (x * (m.upper + m.fore)) / dist));

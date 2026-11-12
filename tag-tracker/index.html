@@ -2273,8 +2273,8 @@ function robotUpdate(now) {
   const roles = RB.cal ? RB.cal.roles : robotRoles(), m = RCORE.model(S.settings.robot);
   const fresh = (k) => k !== null && RB.last.has(k) && now - RB.last.get(k).time < 0.5;
   const preview = roles.body === null && !roles.arms.length;
-  // the demo lines the robot up by itself, once, as soon as it sees the body and both hands
-  if (S.demo && !RB.cal && !RB.autoDone && roles.body !== null && roles.arms.length === 2 && [roles.body, ...roles.arms.map((a) => a.key)].every(fresh)) {
+  // the demo lines the robot up by itself, once, when it sees the body and both hands while they rest in the start pose
+  if (S.demo && S.demo.atHome() && !RB.cal && !RB.autoDone && roles.body !== null && roles.arms.length === 2 && [roles.body, ...roles.arms.map((a) => a.key)].every(fresh)) {
     RB.autoDone = true; calibrateRobot(true);
     return robotUpdate(now);
   }
@@ -3916,15 +3916,29 @@ function facing(p, at, roll, tilt, away) {
 }
 // The scene: a body tag, and two hands, each a 10 cm cube with a tag on its front (0, 1), sides and top. The poses
 // are of each tag (and of each hand's front tag, which is its object's origin).
-// Every motion starts from the middle of its swing (sines), so the robot, which takes its start pose from the first
-// moment it sees all three, has the hands' whole range within reach either way.
+// The hands move along a path the robot can follow smoothly (RobotCore.demoPose): each cube's front tag rides on a
+// wrist of the robot, on the chest the robot finds from the body tag, turned toward the cameras in the start pose, and
+// moves within a comfortable box with gentle turns, so the arm stays clear of every singularity and joint limit and
+// each hand keeps facing camera 1 (within about 36°; the other cameras aren't placed at first, so camera 1 alone
+// measures the hands). Each DEMO_CYCLE seconds it rests in the start pose (arms at the sides, forearms forward,
+// palms in) for 3.5 s, and the robot calibrates itself only then (demoAtHome). Test section 5h runs the IK along it.
+const DEMO_CYCLE = 18;
+const demoPhase = (t) => ((t % DEMO_CYCLE) + DEMO_CYCLE) % DEMO_CYCLE;
+// (late in the rest, once every hand's pose has settled)
+const demoAtHome = (t) => { const u = demoPhase(t); return (u > 1.2 && u < 2.3) || u > DEMO_CYCLE - 0.6; };
 function demoTags(t) {
   const A = DEMO.audience, pose = (p, roll, tilt, pitch) => ({ R: C.mul3(facing(p, A, roll, tilt), C.rodrigues([pitch || 0, 0, 0])), t: p });
-  return [
-    { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.45, 0.25) }, // turned a little, as a tag on a chest would be
-    { id: 0, ...pose([-0.35 + 0.12 * Math.sin(1.3 * t), 0.05 + 0.12 * Math.sin(2.1 * t), 1.25 + 0.15 * Math.sin(0.9 * t)], 0.45 * Math.sin(0.8 * t), 0.6 * Math.sin(0.6 * t), 0.35 + 0.25 * Math.sin(0.7 * t)) },
-    { id: 1, ...pose([0.35 + 0.15 * Math.sin(1.1 * t), -0.05 + 0.1 * Math.sin(1.7 * t), 1.3 + 0.17 * Math.sin(0.7 * t)], -0.4 + 0.4 * Math.sin(1.2 * t), 0.6 * Math.sin(0.5 * t), 0.35 + 0.25 * Math.sin(0.8 * t)) },
-  ];
+  // square to camera 1, so the hands never pass in front of it there, and tipped back (as a tag on a chest would be),
+  // so camera 1 can tell its two mirror-image poses apart
+  const body = { id: 2, ...pose([0, 0.08, 1.6], 0.02 * Math.sin(t), 0.12, 0.45) };
+  const m = RCORE.model(S.settings.robot), chest = C.compose(body, RCORE.calibrate(m, { body: C.toView(body), arms: [] }).bodyOffset);
+  const hand = (id, side) => {
+    const home = C.compose(chest, RCORE.fk(m, side, RCORE.HOME)), w = C.compose(chest, RCORE.demoPose(m, side, t, DEMO_CYCLE));
+    // the cube turned a little (as the old demo's were), so camera 1 sees its top and a side as well as its front:
+    // a single tag seen face-on has two orientations that fit almost equally well
+    return { id, R: C.mul3(w.R, C.mul3(C.tr3(home.R), pose(home.t, 0, side * 0.5, 0.35).R)), t: w.t };
+  };
+  return [body, hand(0, -1), hand(1, 1)]; // the right hand (on the cameras' left) and the left
 }
 // Each hand's cube: the front tag is the origin (x right, y up, z out of its face); the others sit on the left, right
 // and top faces, upright as seen from the front (the top one from the front, looking down).
@@ -4076,7 +4090,7 @@ async function startDemo() {
   };
   frameAll(performance.now() + 100);
   const stopSims = startSimBoards(t0);
-  S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; stopSims(); } };
+  S.demo = { streams: outs.map((cv) => cv.captureStream(30)), stop() { run = false; stopSims(); }, atHome: () => demoAtHome((performance.now() - t0) / 1000 - DEMO_LAG) };
 }
 
 // ---------------- the setup guide ----------------
