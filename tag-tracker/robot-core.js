@@ -46,6 +46,24 @@
   // Arms at the sides, forearms forward, palms in.
   const HOME = [0, 0, 0, 90 * DEG, 0, 0, 0];
 
+  // How fast each joint can turn (rad/s) and speed up or slow down (rad/s²): a light arm's motors, faster at the wrist.
+  const SLEW = { speed: [3, 3, 4, 4, 6, 6, 6], accel: [20, 20, 25, 25, 40, 40, 40] };
+  // One step of dt (s) of the joints towards cmd within those limits: each heads for cmd as fast as it may while still
+  // able to stop there, and lands on it rather than going past. state {q, v} (rad, rad/s); returns the new one.
+  function slew(state, cmd, dt, lim) {
+    const L = lim || SLEW, q = state.q.slice(), v = state.v.slice();
+    for (let i = 0; i < q.length; i++) {
+      // the fastest it may go and still stop on cmd, slowing by a·dt a step: v²/2a + v·dt/2 = |e|
+      const e = cmd[i] - q[i], a = L.accel[i], ad = a * dt, stop = dt > 0 ? ad * (Math.sqrt(0.25 + (2 * Math.abs(e)) / (ad * dt)) - 0.5) : 0;
+      const want = Math.sign(e) * Math.min(L.speed[i], stop);
+      v[i] += Math.max(-a * dt, Math.min(a * dt, want - v[i]));
+      const step = v[i] * dt;
+      if (e !== 0 && Math.sign(step) === Math.sign(e) && Math.abs(step) >= Math.abs(e)) { q[i] = cmd[i]; v[i] = dt > 0 ? e / dt : 0; }
+      else q[i] += step;
+    }
+    return { q, v };
+  }
+
   // The parallel gripper in the hand's frame (metres), shared by the drawing (robot-gl.js) and the physics
   // (physics-core.js). Boxes are {c: centre, h: half sizes}. The jaws close along y: jaw j (+1 or -1) has its pad's face at
   // y = j·gap/2, and its finger box is given for j = +1 at gap 0 (mirror y and add j·gap/2 for the other). gapMax is the
@@ -295,5 +313,5 @@
     return { R: mul3(rodrigues(r), home.R), t: add(home.t, d) };
   }
 
-  return { MODEL, JOINTS, HOME, PREFER, model, gripper, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
+  return { MODEL, JOINTS, HOME, PREFER, SLEW, model, gripper, slew, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
 });

@@ -157,7 +157,7 @@
 
   // ---- the table and what's on it (physics-core.js) ----
   // d: { table: {size: [x, y], thick, legs: how far down they go}, ball: {r}, cup: {R, Ri (inside), H, floor (inside, up
-  // from its base)} }. Each in its own frame: the table's at the middle of its top (z up), the ball's at its centre, the
+  // from its base), handle: {x, z, a, b} (physics-core.js CUP.handle)} }. Each in its own frame: the table's at the middle of its top (z up), the ball's at its centre, the
   // cup's at the middle of its base. The ball is two-tone so it shows rolling; the cup has a band in the ball's blue.
   function propMeshes(d) {
     const T = d.table, lx = T.size[0] / 2, ly = T.size[1] / 2, th = T.thick, out = {};
@@ -179,6 +179,14 @@
       part(disc(c.Ri, c.floor, true), 'ceramic'),
       part(ring(c.R + 0.0004, c.H * 0.55, c.H * 0.68, false), 'ball'),
     ];
+    // the handle: half a torus round (x, 0, z) in the x-z plane, on the +x side
+    if (c.handle) {
+      const h = c.handle;
+      out.cup.push(part(surface((u, v) => {
+        const th = -Math.PI / 2 + Math.PI * u, ph = TAU * v, w = h.a + h.b * Math.cos(ph);
+        return [h.x + w * Math.cos(th), h.b * Math.sin(ph), h.z + w * Math.sin(th)];
+      }, 24, 12, (p) => { const dx = p[0] - h.x, dz = p[2] - h.z, l = Math.hypot(dx, dz) || 1; return [dx - (h.a * dx) / l, p[1], dz - (h.a * dz) / l]; }), 'ceramic'));
+    }
     // a soft shadow: a disc of radius 1, drawn a few times, wider and fainter
     out.shadow = surface((u, v) => [v * Math.cos(TAU * u), v * Math.sin(TAU * u), 0], 32, 1, () => [0, 0, 1]);
     return out;

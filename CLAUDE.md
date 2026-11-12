@@ -483,28 +483,36 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   (or the context is lost) the robot is drawn flat on the plot canvas (`drawRobotFlat`). The demo's hands are named for the body's sides (its right hand is on
   the cameras' left).
 - **The table** (`physics-core.js`, PhysicsCore, no DOM; Table: Off | Ball | Ball and cup on the Tracking card,
-  `settings.robot.props`, default the ball and cup): a table in front of the robot with a 4 cm ball, and a cup it fits in that
-  can tip over, to push about and pick up. Placed from the chest's pose when the robot is first shown and on each Calibrate
-  robot (`placeTable`: the top just under the fingers in the start pose, its near edge under the wrists; the ball past the left
-  fingertips, the cup past the right; on its own the ball sits between the hands), it then stays put in the world while the
-  body moves. Reset table (key T on the plot, voice "reset the table") puts them back; anything that falls off is put back 2 s
-  after it lands. A small rigid-body engine made for this one scene: every body is spheres (the cup ~360, in rings), every
-  contact is sphere against the table (a box), the floor, the robot (capsules for the arm links, boxes for the gripper's body
-  and jaws: kinematic, swept between frames so a hand pushes things) or another body; sequential impulses with Coulomb
-  friction, restitution and warm starting at 240 Hz, and split impulses for overlap. The cup's wall takes the cylinder's own
-  normal (`smooth`), or a push sits between its rings and presses it down instead of over. The table's grip (0.7) is above
-  the cup's radius over its height, so a push near the rim tips it and one at its foot slides it; the robot's metal is
-  slippery (0.15). **Grasping is a weld**: the jaws close at 0.25 m/s, and when both pads touch one body it is held (moved with
-  the hand, still pushing the other body: a held cup pours); opening 5 mm past the gap it was taken at lets go with the
-  hand's velocity. How open each gripper should be (`gripOf`): a hand moved with the mouse, else the **feedback servo on the
-  operator's hand**, read from the nrf-controller board fixed to that hand's track (`TagCore.ACT`: its telemetry service's
-  Actuators characteristic, `struct dashboard_actuator_status`, 20 Hz while subscribed; `gripOpening` maps the feedback's
-  share of the servo rail between the readings the board row's **Set open** / **Set closed** keep in `boards`), else open.
-  A board allowed before the page asked for that service has to be removed and connected again. **Moving a hand with the
-  mouse** (or a finger; works with no tags, in the demo, and over a tag-driven hand): press on a gripper and drag it over the
-  plane at its height (Alt: the upright plane facing you), scroll on it to close (down) or open it, Shift-scroll to tip the
-  fingers, Space to open or close the last one moved. It stays where it was put (`TB.drive`, IK to that target) until **Tags
-  drive**, Calibrate robot or a reload. The grip from the servo is checked only with encoded bytes so far, not a real board.
+  `settings.robot.props`, default the ball and a mug): a table in front of the robot with a 4 cm ball and a mug with a handle
+  it fits in, to push about and pick up. Placed from the chest's pose when the robot is first shown and on each Calibrate
+  robot (`placeTable`: the top just under the fingers in the start pose, its near edge under the wrists; the ball past the
+  left fingertips, the mug past the right with its handle towards the robot; on its own the ball sits between the hands),
+  it then stays put in the world while the body moves. Reset table (key T, voice "reset the table") puts them back; anything
+  that falls off comes back 2 s after it lands. A small rigid-body engine made for this one scene. **Bodies**: the props and
+  the two hands. Each touches things with spheres (the ball one; the mug's on its rims and handle, all a flat surface can
+  touch; a hand's fill its gripper and line its jaws), and the mug also has its exact shape as a distance function
+  (`cupSdf`: walls, floor, rounded lip, a half-torus handle; mass and inertia sampled from it), which the ball and the hands
+  meet. Arm links are kinematic capsules. Sequential impulses at 240 Hz with Coulomb friction, restitution, **rolling
+  resistance and spin friction in proportion to the contact force** (`crr`, `SPIN_R`), warm starting and split impulses.
+  Props that touch **sleep together** once all are still, as fixed obstacles, and wake together when something moving
+  comes near. The table's grip (0.7) is above the mug's radius over its height, so a push near the rim tips it and one at
+  its foot slides it; the robot's metal is slippery (0.15), its pads rubber. **The hands are bodies** (`HAND`), pulled
+  towards where the arm puts them by a spring and damper with a force and torque limit, so the table and the props stop
+  them; the page then draws the arm by IK to where each hand is (`tableStep`). **The arm's joints** follow the IK within a
+  top speed and acceleration (`RobotCore.slew`, `SLEW`), before the physics. **The grip** (`GRIP`): when both pads touch one
+  prop while closing, a coupling holds it where it was taken, but only with what the pads' friction allows (2·μ·grip force;
+  a twist about the jaws' axis far less, a pad's small patch), and what it can't hold slips and is held where it slipped
+  to: a mug pinched by its handle swings down about the jaws. Opening 5 mm past the gap it was taken at lets go. How open
+  each gripper should be (`gripOf`): a hand moved with the mouse, else the **feedback servo on the operator's hand**, read
+  from the nrf-controller board fixed to that hand's track (`TagCore.ACT`: its telemetry service's Actuators characteristic,
+  `struct dashboard_actuator_status`, 20 Hz while subscribed; `gripOpening` maps the feedback's share of the servo rail
+  between the readings the board row's **Set open** / **Set closed** keep in `boards`), else open. A board allowed before
+  the page asked for that service has to be removed and connected again. **Moving a hand with the mouse** (or a finger;
+  works with no tags, in the demo, and over a tag-driven hand): press on a gripper and drag it over the plane at the
+  height it is sent to (Alt: the upright plane facing you; the plane follows the target, never the physics hand, or a hand
+  held back by the table would drag its own target away), scroll on it to close (down) or open it, Shift-scroll to tip the
+  fingers, Space to open or close the last one moved. It stays where it was put (`TB.drive`) until **Tags drive**,
+  Calibrate robot or a reload. The grip from the servo is checked only with encoded bytes so far, not a real board.
 - **Setup guide** (`#setupDlg`, the book icon in the top bar, which stays there): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera
   or the demo; how many tags (one arm, two arms, body and two arms) with their IDs and sizes, which become tags named Body,
   Left wrist and Right wrist and the robot's roles (applied by Next, Print or the phone link, never by closing); the lens
@@ -589,9 +597,10 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   the mirror-image choice, the joint fit (against one camera and against fusing poses, its covariance by Monte Carlo,
   unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, the recording exports, notes, voice commands and the voice gate,
   the robot (section 5h: the home pose, IK against FK on random poses, elbows out and low, steady joints, out of reach,
-  calibration with one, two or three tags (and arms swapped by mirrored poses), `tagFit`, its settings), the table (section 5i:
-  a ball at rest and rolling, a cup standing, tipping and sliding, the ball into the cup, the gripper holding, lifting and
-  pouring, a fast hand, putting fallen things back, and the servo grip's bytes and mapping), and (with
+  calibration with one, two or three tags (and arms swapped by mirrored poses), `tagFit`, its settings, the joints' speed and
+  acceleration), the table (section 5i: rolling resistance against its formula, spin, the mug's shape, sleeping, tipping,
+  sliding, resting on its handle, the ball in it, hands the table stops, gripping, pressing, pouring, a mug swinging from
+  its handle, a fast hand, the time a frame takes, and the servo grip's bytes and mapping), and (with
   python3) the UDP bridge end to end; the motion sensors (their bytes, clock mapping, lining up, the filter with and
   without them); with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
