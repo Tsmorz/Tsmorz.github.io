@@ -742,8 +742,8 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   // the shaded robot's meshes (robot-gl.js): every surface sound, for the default lengths and for a small person
   const RGL = require(path.join(__dirname, '..', 'tag-tracker/robot-gl.js'));
   let parts = 0, verts = 0, bad = 0;
-  for (const lens of [{}, { upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }]) {
-    const M = RGL.meshes(RC.model(lens)), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
+  for (const [lens, look] of [[{}, 'pearl'], [{ upper: 0.2, fore: 0.18, half: 0.12, up: 0.05, back: 0 }, 'pearl'], [{}, 'machine'], [{}, 'companion']]) {
+    const M = RGL.meshes(RC.model(lens), look), all = [...M.body, ...M.bar, ...M.mount[1], ...M.mount[-1], ...M.upper, ...M.fore, ...M.foreLight, ...M.hand[1], ...M.hand[-1]];
     for (const p of all) {
       const { pos, nrm, idx } = p.mesh, n = pos.length / 3;
       parts++; verts += n;
@@ -751,7 +751,8 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
       for (let i = 0; i < n; i++) if (![pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]].every(isFinite) || Math.abs(Math.hypot(nrm[3 * i], nrm[3 * i + 1], nrm[3 * i + 2]) - 1) > 1e-4) { bad++; break; }
     }
   }
-  check(bad === 0 && parts > 90, `the shaded robot's ${parts} meshes (${verts} vertices, two sets of lengths): finite points, unit normals, 16-bit indices in range`);
+  check(bad === 0 && parts > 160, `the shaded robot's ${parts} meshes (${verts} vertices; each look, and a small person's lengths): finite points, unit normals, 16-bit indices in range`);
+  check(RGL.STYLES.every((s) => C.clampSettings({ robot: { style: s } }).robot.style === s) && C.clampSettings({ robot: { style: 'x' } }).robot.style === 'pearl', 'every look is a setting; an unknown one is Pearl');
   const cmd = (t) => (C.voiceCommand(t) || {}).cmd || null;
   check(cmd('Calibrate robot.') === 'robot' && cmd('Calibrate.') === 'calib' && cmd('Open settings.') === 'settings', '"calibrate robot" is not "calibrate", and "settings" opens the tab');
 }

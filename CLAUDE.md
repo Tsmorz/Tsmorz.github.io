@@ -443,8 +443,13 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   `#plotGL`, a canvas over the plot's own (pointer events off), with the plot's camera (`TagCore.orbit`) so it lines up with
   the grid: curved meshes (lofted torso, lathed limbs, superellipsoid head, visor, hands, a floating base) built from the
   robot's lengths in the frame each rides in, lit by a key, a fill and the sky with specular highlights and a rim, pearl
-  shells, graphite joints and violet lights (the wrist light turns amber while that hand is out of reach). A generic design;
-  keep it looking like no company's robot. `meshes()` has no DOM and test section 5h checks it. Where there is no WebGL
+  shells, graphite joints and violet lights (the wrist light turns amber while that hand is out of reach). **Four looks** on the
+  same arms (`settings.robot.style`, the Look picker on the Tracking card, `RobotGL.STYLES`): Pearl (that one), Machine
+  (aluminium box sections, motor drums on the joint axes, a sensor-bar head, a parallel gripper, on a column), Companion (an
+  egg body, a big round head with a face screen and two eyes, mitten hands, a glowing skirt) and Hologram (Pearl's shape as
+  see-through violet light with drifting scan lines: premultiplied blending, no depth writes, tags drawn solid first). Each
+  look builds the same mesh groups in the same frames, and the chest tag sits just in front of each body. Generic designs;
+  keep them looking like no company's robot. `meshes()` has no DOM and test section 5h checks it. Where there is no WebGL
   (or the context is lost) the robot is drawn flat on the plot canvas (`drawRobotFlat`). The demo's hands are named for the body's sides (its right hand is on
   the cameras' left).
 - **Setup guide** (`#setupDlg`, the book icon in the top bar, which stays there): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera

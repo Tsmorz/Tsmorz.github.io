@@ -92,13 +92,34 @@
   }
   const part = (mesh, mat, extra) => Object.assign({ mesh, mat }, extra || {});
 
-  // Every mesh of the robot for the lengths m, grouped by the frame each rides in.
-  function meshes(m) {
+  // ---- the looks ----
+  // Each look builds the same groups of meshes, each in the frame it rides in: body (the chest's frame), bar and mount
+  // (the chest's, for two arms or one without a body), upper (the upper arm's: origin at the shoulder, the arm along -z),
+  // fore and foreLight (the forearm's: origin at the elbow), hand (the hand's: origin at the wrist, fingers along -z, the
+  // jaws apart along x, the palm towards -side·y), and extent: chest-frame points the view fits round. The chest tag sits
+  // at the chest's origin, so each body's front passes just behind it.
+  const STYLES = ['pearl', 'machine', 'companion', 'hologram'];
+  function bars(m, out) {
+    out.bar = [
+      part(lathe([-m.back, 0, m.up], -m.half, m.half, () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
+      part(blob([-m.back, 0, m.up], [0.065, 0.065, 0.065], 0.9, 0.9), 'shell'),
+      part(torus([-m.back, 0, m.up - 0.01], 0.064, 0.006), 'light'),
+    ];
+    out.mount = {};
+    for (const sd of [1, -1]) out.mount[sd] = [
+      part(lathe([-m.back, 0, m.up], sd * m.half, sd * (m.half - 0.14), () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
+      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.07, 0.025, 0.07], 0.9, 0.6), 'shell'),
+      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.05, 0.03, 0.05], 0.9, 0.9, { nu: 24, nv: 12 }), 'light'),
+    ];
+  }
+  const palmLight = (sd, y) => part(blob([0, -sd * y, -0.038], [0.016, 0.003, 0.016], 1, 1, { nu: 20, nv: 6 }), 'light');
+
+  // Pearl: sculpted pearl shells over graphite joints, a visor with a light across it, floating on a ring.
+  function pearl(m) {
     const T = torsoShape(m), hx = -m.back + 0.012, hz = m.up + 0.215, out = {};
     const tOut = (p) => [p[0] - T.cx, p[1], p[2] - Math.min(T.z1 - 0.08, Math.max(T.z0 + 0.04, p[2]))];
     const band = (v0, v1, s) => surface((u, v) => T.fn(u, v0 + (v1 - v0) * v, s), 48, 3, tOut);
     const stripZ = -0.085, sx = T.front(stripZ);
-    // chest frame: the torso, its collar and light, the waist, hips and the floating base, the neck and head
     out.body = [
       part(surface((u, v) => T.fn(u, v), 56, 44, tOut), 'shell'),
       part(band(0.775, 0.82, 1.012), 'dark'),
@@ -119,20 +140,7 @@
       part(blob([hx - 0.012, -0.091, hz], [0.034, 0.014, 0.034], 1, 1, { nu: 24, nv: 14 }), 'dark'),
       part(blob([hx - 0.02, 0, hz + 0.105], [0.06, 0.012, 0.022], 0.7, 0.5, { nu: 24, nv: 12 }), 'dark'),
     ];
-    // two arms and no body: a bar between the shoulders on a hub; one arm: a mount behind its shoulder
-    out.bar = [
-      part(lathe([-m.back, 0, m.up], -m.half, m.half, () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([-m.back, 0, m.up], [0.065, 0.065, 0.065], 0.9, 0.9), 'shell'),
-      part(torus([-m.back, 0, m.up - 0.01], 0.064, 0.006), 'light'),
-    ];
-    out.mount = {};
-    for (const sd of [1, -1]) out.mount[sd] = [
-      part(lathe([-m.back, 0, m.up], sd * m.half, sd * (m.half - 0.14), () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.07, 0.025, 0.07], 0.9, 0.6), 'shell'),
-      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.05, 0.03, 0.05], 0.9, 0.9, { nu: 24, nv: 12 }), 'light'),
-    ];
-    // an arm: the upper arm's frame (origin at the shoulder, the arm along -z), the forearm's (origin at the elbow) and
-    // the hand's (origin at the wrist, fingers along -z, the jaws apart along x, the palm towards -side·y)
+    bars(m, out);
     const L1 = m.upper, L2 = m.fore, fl = Math.max(0.03, m.hand - 0.075);
     out.upper = [
       part(blob([0, 0, 0], [0.05, 0.05, 0.05], 1, 1, { nu: 28, nv: 18 }), 'dark'),
@@ -155,13 +163,115 @@
       part(blob([-0.029, 0, -(0.07 + fl / 2)], [0.009, 0.018, fl / 2 + 0.006], 0.45, 0.45, { nu: 24, nv: 16 }), 'shell'),
       part(blob([0.019, 0, -(0.072 + fl * 0.6)], [0.003, 0.013, fl * 0.38], 0.5, 0.5, { nu: 12, nv: 8 }), 'dark'),
       part(blob([-0.019, 0, -(0.072 + fl * 0.6)], [0.003, 0.013, fl * 0.38], 0.5, 0.5, { nu: 12, nv: 8 }), 'dark'),
-      part(blob([0, -sd * 0.027, -0.038], [0.016, 0.003, 0.016], 1, 1, { nu: 20, nv: 6 }), 'light'),
+      palmLight(sd, 0.027),
     ];
+    out.extent = [[T.cx, T.wyTop, T.z1], [T.cx, -T.wyTop, T.z1], [T.cx, 0, hz + 0.125], [T.cx, 0.13, T.z0 - 0.22], [T.cx, -0.13, T.z0 - 0.22], [T.front(0), 0, 0]];
+    return out;
+  }
+
+  // Machine: an engineering robot. Brushed aluminium box sections, motor drums on the joint axes, a battery on its
+  // back, a sensor bar for a head with two lenses, a parallel gripper, on a column and a foot.
+  function machine(m) {
+    const out = {}, cx = -0.075, wy = Math.max(0.09, m.half - 0.055), zc = m.up - 0.1, z0 = m.up - 0.3, hz = m.up + 0.17, hx = -m.back + 0.01;
+    out.body = [
+      part(blob([cx, 0, zc], [0.072, wy, 0.15], 0.2, 0.22, { nu: 48, nv: 32 }), 'metal'),
+      part(blob([cx + 0.062, 0, zc + 0.01], [0.014, wy * 0.8, 0.115], 0.18, 0.18, { nu: 40, nv: 24 }), 'dark'),
+      part(blob([cx + 0.077, 0, -0.088], [0.004, 0.05, 0.005], 0.5, 0.3, { nu: 20, nv: 8 }), 'light'),
+      part(blob([cx + 0.077, 0, zc - 0.11], [0.004, 0.008, 0.008], 1, 1, { nu: 12, nv: 8 }), 'light'),
+      part(blob([cx - 0.088, 0, zc + 0.01], [0.028, wy * 0.62, 0.11], 0.25, 0.25), 'dark'),
+      part(blob([cx - 0.118, 0, zc + 0.01], [0.004, wy * 0.4, 0.004], 0.5, 0.3, { nu: 16, nv: 6 }), 'light'),
+      part(lathe([cx, 0, 0], z0 + 0.02, zc - 0.13, () => 0.04, { k0: 0.08, k1: 0.08 }), 'dark'),
+      part(torus([cx, 0, (z0 + zc - 0.11) / 2], 0.043, 0.004), 'light'),
+      part(blob([cx, 0, z0 - 0.03], [0.07, 0.12, 0.045], 0.22, 0.25), 'metal'),
+      part(lathe([cx, 0, z0 - 0.03], 0.095, 0.15, () => 0.034, { axis: 'y', k0: 0.12, k1: 0.12 }), 'dark'),
+      part(lathe([cx, 0, z0 - 0.03], -0.095, -0.15, () => 0.034, { axis: 'y', k0: 0.12, k1: 0.12 }), 'dark'),
+      part(lathe([cx, 0, 0], z0 - 0.07, z0 - 0.26, (s) => 0.028 + 0.004 * s, { k0: 0.05, k1: 0.05 }), 'dark'),
+      part(blob([cx, 0, z0 - 0.27], [0.11, 0.11, 0.016], 1, 0.6, { nu: 40, nv: 12 }), 'metal'),
+      part(torus([cx, 0, z0 - 0.268], 0.104, 0.004), 'light'),
+      part(lathe([hx, 0, 0], m.up + 0.04, m.up + 0.11, () => 0.03, { k0: 0.1, k1: 0.1 }), 'dark'),
+      part(blob([hx, 0, m.up + 0.11], [0.045, 0.045, 0.012], 1, 0.7, { nu: 28, nv: 10 }), 'metal'),
+      part(blob([hx + 0.01, 0, hz], [0.058, 0.105, 0.045], 0.22, 0.22, { nu: 40, nv: 24 }), 'metal'),
+      part(blob([hx + 0.065, 0, hz], [0.006, 0.09, 0.025], 0.25, 0.2, { nu: 32, nv: 12 }), 'glass'),
+      part(blob([hx + 0.071, 0.048, hz], [0.008, 0.018, 0.018], 1, 1, { nu: 20, nv: 12 }), 'glass'),
+      part(blob([hx + 0.071, -0.048, hz], [0.008, 0.018, 0.018], 1, 1, { nu: 20, nv: 12 }), 'glass'),
+      part(blob([hx + 0.078, 0.048, hz], [0.002, 0.006, 0.006], 1, 1, { nu: 12, nv: 8 }), 'light'),
+      part(blob([hx + 0.078, -0.048, hz], [0.002, 0.006, 0.006], 1, 1, { nu: 12, nv: 8 }), 'light'),
+      part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'dark'),
+    ];
+    bars(m, out);
+    const L1 = m.upper, L2 = m.fore, fl = Math.max(0.03, m.hand - 0.075);
+    out.upper = [
+      part(lathe([0, 0, 0], -0.055, 0.055, () => 0.052, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
+      part(blob([0, 0, -L1 / 2], [0.036, 0.03, L1 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
+      part(blob([0.038, 0, -L1 / 2], [0.004, 0.012, L1 / 2 - 0.06], 0.5, 0.5, { nu: 12, nv: 12 }), 'dark'),
+      part(lathe([0, 0, -L1], -0.05, 0.05, () => 0.045, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
+    ];
+    out.fore = [
+      part(blob([0, 0, -L2 / 2], [0.03, 0.027, L2 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
+      part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'dark'),
+    ];
+    out.foreLight = [part(torus([0, 0, -(L2 - 0.06)], 0.035, 0.004, { nu: 36, nv: 8 }), 'light')];
+    out.hand = {};
+    for (const sd of [1, -1]) out.hand[sd] = [
+      part(lathe([0, 0, 0], 0.004, -0.022, () => 0.034, { k0: 0.1, k1: 0.1 }), 'dark'),
+      part(blob([0, 0, -0.045], [0.048, 0.03, 0.024], 0.2, 0.2), 'metal'),
+      part(blob([0.03, 0, -(0.07 + fl / 2)], [0.008, 0.022, fl / 2 + 0.006], 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
+      part(blob([-0.03, 0, -(0.07 + fl / 2)], [0.008, 0.022, fl / 2 + 0.006], 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
+      part(blob([0.021, 0, -(0.075 + fl * 0.6)], [0.002, 0.018, fl * 0.36], 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
+      part(blob([-0.021, 0, -(0.075 + fl * 0.6)], [0.002, 0.018, fl * 0.36], 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
+      palmLight(sd, 0.031),
+    ];
+    out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], [cx, 0.11, z0 - 0.29], [cx, -0.11, z0 - 0.29], [0, 0, 0]];
+    return out;
+  }
+
+  // Companion: soft and friendly. An egg of a body, a big round head with a face screen and two eyes, rounded arms and
+  // mitten hands, on a flared skirt that glows underneath.
+  function companion(m) {
+    const out = {}, cx = -0.1, wy = Math.max(0.1, m.half - 0.035), hx = -m.back + 0.02, hz = m.up + 0.215;
+    out.body = [
+      part(blob([cx, 0, -0.03], [0.105, wy, 0.22], 1, 1, { nu: 56, nv: 40 }), 'shell'),
+      part(blob([cx + 0.083, 0, -0.13], [0.014, 0.06, 0.035], 1, 0.9, { nu: 32, nv: 16 }), 'glass'),
+      part(blob([cx + 0.095, 0, -0.13], [0.004, 0.032, 0.005], 0.7, 0.4, { nu: 20, nv: 8 }), 'light'),
+      part(lathe([cx, 0, 0], m.up - 0.36, m.up - 0.5, (s) => 0.075 + 0.05 * s, { k0: 0.04, k1: 0.12, nu: 40 }), 'dark'),
+      part(blob([cx, 0, m.up - 0.505], [0.11, 0.11, 0.004], 1, 1, { nu: 40, nv: 8 }), 'light'),
+      part(lathe([hx, 0, 0], m.up + 0.05, m.up + 0.12, () => 0.028, { k0: 0.1, k1: 0.1 }), 'dark'),
+      part(blob([hx, 0, hz], [0.118, 0.13, 0.112], 0.9, 0.9, { nu: 56, nv: 36 }), 'shell'),
+      part(blob([hx, 0, hz], [0.118, 0.13, 0.112], 0.9, 0.9, { s: 1.02, t0: -0.95, t1: 0.95, p0: -0.5, p1: 0.45, nu: 40, nv: 20 }), 'glass'),
+      part(blob([hx + 0.117, 0.045, hz + 0.012], [0.006, 0.019, 0.026], 1, 1, { nu: 20, nv: 14 }), 'light'),
+      part(blob([hx + 0.117, -0.045, hz + 0.012], [0.006, 0.019, 0.026], 1, 1, { nu: 20, nv: 14 }), 'light'),
+      part(blob([hx - 0.01, 0.13, hz], [0.03, 0.014, 0.03], 1, 1, { nu: 24, nv: 14 }), 'dark'),
+      part(blob([hx - 0.01, -0.13, hz], [0.03, 0.014, 0.03], 1, 1, { nu: 24, nv: 14 }), 'dark'),
+    ];
+    bars(m, out);
+    const L1 = m.upper, L2 = m.fore, fl = Math.max(0.03, m.hand - 0.075);
+    out.upper = [
+      part(blob([0, 0, 0], [0.056, 0.056, 0.056], 1, 1, { nu: 28, nv: 18 }), 'dark'),
+      part(lathe([0, 0, 0], -0.03, -(L1 - 0.035), (s) => 0.047 - 0.004 * s, { k0: 0.15, k1: 0.15 }), 'shell'),
+      part(blob([0, 0, -L1], [0.046, 0.046, 0.046], 1, 1, { nu: 28, nv: 18 }), 'dark'),
+    ];
+    out.fore = [part(lathe([0, 0, 0], -0.03, -(L2 - 0.025), (s) => 0.044 - 0.008 * s, { k0: 0.15, k1: 0.15 }), 'shell')];
+    out.foreLight = [part(torus([0, 0, -(L2 - 0.035)], 0.037, 0.0045, { nu: 36, nv: 8 }), 'light')];
+    out.hand = {};
+    for (const sd of [1, -1]) out.hand[sd] = [
+      part(blob([0, 0, -0.045], [0.043, 0.03, 0.045], 1, 1, { nu: 32, nv: 20 }), 'shell'),
+      part(blob([0.042, 0, -0.035], [0.014, 0.017, 0.032], 1, 1, { nu: 20, nv: 14 }), 'shell'),
+      part(blob([-0.005, 0, -(0.075 + fl / 2)], [0.034, 0.021, fl / 2 + 0.014], 0.9, 0.9, { nu: 28, nv: 18 }), 'shell'),
+      palmLight(sd, 0.03),
+    ];
+    out.extent = [[cx, wy, 0.15], [cx, -wy, 0.15], [hx, 0, hz + 0.115], [cx, 0.12, m.up - 0.51], [cx, -0.12, m.up - 0.51], [0, 0, 0]];
+    return out;
+  }
+
+  // Every mesh of the robot for the lengths m, in one look; the hologram is the pearl robot's shape, drawn as light.
+  function meshes(m, style) {
+    const st = STYLES.includes(style) ? style : 'pearl';
+    const out = st === 'machine' ? machine(m) : st === 'companion' ? companion(m) : pearl(m);
     // a tag, 1 unit across, facing +z: white margin, a border in the tag's colour, black inside, a few white cells
     const sq = (h, z) => surface((u, v) => [(u - 0.5) * 2 * h, (v - 0.5) * 2 * h, z], 1, 1, () => [0, 0, 1]);
     const cells = [[-0.18, 0.18], [0.06, 0.18], [0.18, -0.06], [-0.06, -0.18], [0.18, 0.18], [-0.18, -0.06]];
     out.tag = { paper: sq(0.5, 0), border: sq(0.46, 0.02), ink: sq(0.36, 0.04), cells: cells.map(([x, y]) => surface((u, v) => [x + (u - 0.5) * 0.12, y + (v - 0.5) * 0.12, 0.06], 1, 1, () => [0, 0, 1])) };
-    out.headTop = hz + 0.125; out.baseBottom = T.z0 - 0.22; out.chestFront = T.front(0); out.torso = T;
+    out.style = st;
     return out;
   }
 
@@ -172,11 +282,19 @@ void main() { vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz; vN = uRot * aNrm; g
   const FS = `precision mediump float;
 varying vec3 vN, vW;
 uniform vec3 uEye, uKey, uFill, uBase, uRimCol, uFadeTo, uSky, uGround;
-uniform float uSpec, uShine, uRim, uEmit, uFade;
+uniform float uSpec, uShine, uRim, uEmit, uFade, uHolo, uTime, uAlpha;
 void main() {
   vec3 N = normalize(vN), V = normalize(uEye - vW);
   if (dot(N, V) < 0.0) N = -N;
   float hemi = 0.5 + 0.5 * N.z, nv = max(dot(N, V), 0.0);
+  if (uHolo > 0.5) {
+    // light, not matter: see-through where it faces you, bright at its edges, with scan lines drifting up
+    float edge = pow(1.0 - nv, 2.0), a = clamp(uAlpha + 0.95 * edge, 0.0, 1.0);
+    a *= (0.78 + 0.22 * sin(vW.z * 300.0 - uTime * 4.0)) * (1.0 - uFade);
+    vec3 c = pow(uBase, vec3(1.0 / 2.2)) * (0.75 + 0.6 * edge);
+    gl_FragColor = vec4(c * a, a);
+    return;
+  }
   vec3 amb = mix(uGround, uSky, hemi);
   float dk = max(dot(N, uKey), 0.0), df = max(dot(N, uFill), 0.0);
   vec3 H = normalize(uKey + V);
@@ -195,10 +313,24 @@ void main() {
     if (!/^[0-9a-f]{6}$/i.test(h)) return dflt || [0.5, 0.5, 0.5];
     return [0, 2, 4].map((i) => Math.pow(parseInt(h.slice(i, i + 2), 16) / 255, 2.2));
   }
-  const MAT = {
-    shell: { base: lin('#e4e7eb'), spec: 0.35, shine: 42, rim: 1 },
-    dark: { base: lin('#30353c'), spec: 0.5, shine: 70, rim: 1 },
-    visor: { base: lin('#0b0d14'), spec: 1.1, shine: 160, rim: 1.4 },
+  // each look's materials ('light' is the violet glow, the same in all)
+  const MATS = {
+    pearl: {
+      shell: { base: lin('#e4e7eb'), spec: 0.35, shine: 42, rim: 1 },
+      dark: { base: lin('#30353c'), spec: 0.5, shine: 70, rim: 1 },
+      visor: { base: lin('#0b0d14'), spec: 1.1, shine: 160, rim: 1.4 },
+    },
+    machine: {
+      metal: { base: lin('#a9b1ba'), spec: 0.9, shine: 110, rim: 0.9 },
+      dark: { base: lin('#24282e'), spec: 0.55, shine: 60, rim: 1 },
+      glass: { base: lin('#07080c'), spec: 1.3, shine: 220, rim: 1.4 },
+      shell: { base: lin('#c9ced4'), spec: 0.3, shine: 30, rim: 0.8 },
+    },
+    companion: {
+      shell: { base: lin('#f1ede6'), spec: 0.22, shine: 22, rim: 0.9 },
+      dark: { base: lin('#8b929b'), spec: 0.3, shine: 30, rim: 0.9 },
+      glass: { base: lin('#111219'), spec: 1, shine: 140, rim: 1.2 },
+    },
   };
   // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
   function model4(p, s) {
@@ -215,7 +347,7 @@ void main() {
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade']) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uHolo', 'uTime', 'uAlpha']) U[n] = gl.getUniformLocation(prog, n);
     const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm');
     const self = { lost: false };
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); self.lost = true; });
@@ -228,11 +360,11 @@ void main() {
       return { b, n, i, count: m.idx.length, src: m };
     };
     const free = (g) => { for (const x of [g.b, g.n, g.i]) gl.deleteBuffer(x); };
-    function build(m) {
-      const key = JSON.stringify(m);
+    function build(m, style) {
+      const key = JSON.stringify(m) + style;
       if (key === builtKey) return built;
       if (built) for (const g of built.gpu) free(g);
-      const M = meshes(m), gpu = [];
+      const M = meshes(m, style), gpu = [];
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
       built = {
         M, gpu, body: up(M.body), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
@@ -244,18 +376,20 @@ void main() {
       return built;
     }
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
-    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach}], body, mount ('bar',
-    // 1, -1 or null), tags: [{R, t, size, color, parts: [{R, t, size}]}], fadeBody, theme: {accent, warn, bg, dark} }
+    // o: { w, h, dpr, cam: TagCore.orbit result, fov, style, time (s), chest, m, arms: [{side, q, live, idle, reach}], body,
+    // mount ('bar', 1, -1 or null), tags: [{R, t, size, color, parts: [{R, t, size}]}], fadeBody, theme: {accent, warn, bg, dark} }
     self.draw = function (o) {
       const dpr = o.dpr || 1, W = Math.max(1, Math.round(o.w * dpr)), H = Math.max(1, Math.round(o.h * dpr));
       if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
       clear();
-      const B = build(o.m), cam = o.cam, f = o.h / 2 / Math.tan((o.fov * Math.PI) / 360), n = 0.03, F = 200, A = (F + n) / (F - n), Bz = (-2 * F * n) / (F - n);
+      const holo = o.style === 'hologram', B = build(o.m, holo ? 'pearl' : o.style), mats = MATS[B.M.style] || MATS.pearl, cam = o.cam, f = o.h / 2 / Math.tan((o.fov * Math.PI) / 360), n = 0.03, F = 200, A = (F + n) / (F - n), Bz = (-2 * F * n) / (F - n);
       const e = cam.eye, r = cam.right, u = cam.up, w = cam.fwd, row = (v, s) => [v[0] * s, v[1] * s, v[2] * s, -dot(v, e) * s];
       const r0 = row(r, (2 * f) / o.w), r1 = row(u, (2 * f) / o.h), r3 = row(w, 1), r2 = r3.map((x, i) => A * x + (i === 3 ? Bz : 0));
       const PV = new Float32Array(16);
       for (let c = 0; c < 4; c++) { PV[c * 4] = r0[c]; PV[c * 4 + 1] = r1[c]; PV[c * 4 + 2] = r2[c]; PV[c * 4 + 3] = r3[c]; }
       gl.useProgram(prog); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true); // colours are premultiplied
+      gl.uniform1f(U.uHolo, 0); gl.uniform1f(U.uTime, o.time || 0);
       gl.uniformMatrix4fv(U.uPV, false, PV);
       gl.uniform3fv(U.uEye, e);
       const toward = (a, b, c) => unit([r[0] * a + u[0] * b - w[0] * c, r[1] * a + u[1] * b - w[1] * c, r[2] * a + u[2] * b - w[2] * c]);
@@ -265,10 +399,15 @@ void main() {
       gl.uniform3fv(U.uSky, dark ? [0.34, 0.36, 0.42] : [0.42, 0.44, 0.48]); gl.uniform3fv(U.uGround, dark ? [0.1, 0.1, 0.12] : [0.2, 0.19, 0.2]);
       gl.uniform3fv(U.uFadeTo, bg);
       const rimLight = dark ? lin('#d9d4ff') : lin('#55606a');
+      const holoCol = dark ? lin('#a99bff') : lin('#5a4ed6');
       const setMat = (mat, fade, tint) => {
+        if (holo) {
+          gl.uniform3fv(U.uBase, tint || holoCol); gl.uniform1f(U.uAlpha, mat === 'light' ? 0.9 : mat === 'shell' ? 0.06 : 0.14);
+          gl.uniform1f(U.uFade, fade || 0); return;
+        }
         if (mat === 'light') { gl.uniform3fv(U.uBase, tint || glow); gl.uniform1f(U.uEmit, 1); gl.uniform1f(U.uSpec, 0); gl.uniform1f(U.uShine, 1); gl.uniform1f(U.uRim, 0); }
         else {
-          const M = MAT[mat];
+          const M = mats[mat] || mats.shell;
           gl.uniform3fv(U.uBase, tint ? M.base.map((x, i) => x * 0.55 + tint[i] * 0.45) : M.base);
           gl.uniform1f(U.uEmit, 0); gl.uniform1f(U.uSpec, M.spec); gl.uniform1f(U.uShine, M.shine); gl.uniform1f(U.uRim, (dark ? 0.42 : 0.32) * M.rim);
         }
@@ -281,14 +420,29 @@ void main() {
         gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
       };
-      const drawList = (list, pose, fade, opts) => { for (const p of list) { if (opts && opts.noLight && p.mat === 'light') continue; setMat(p.mat, fade, opts && p.mat !== 'light' && p.mat !== 'visor' ? opts.tint : null); drawG(p.g, pose); } };
+      const drawList = (list, pose, fade) => { for (const p of list) { setMat(p.mat, fade); drawG(p.g, pose); } };
       const ch = o.chest, at = (R, t) => ({ R: C.mul3(ch.R, R), t: RC.place(ch, t) });
       const pts = [];
       const keep = (p) => pts.push(RC.place(ch, p));
+      // the tags first, solid, so the hologram's light falls round them
+      const drawTags = () => {
+        gl.uniform1f(U.uHolo, 0); gl.depthMask(true);
+        for (const tg of o.tags || []) {
+          const col = lin(tg.color, [0.5, 0.5, 0.5]), fade = tg.fade || 0;
+          for (const p of tg.parts) {
+            const pose = { R: C.mul3(tg.R, p.R), t: C.add(tg.t, C.mulv(tg.R, p.t)) }, s = p.size * 1.25; // the white margin round the black square
+            flat([1, 1, 1], fade); drawG(B.tag.paper, pose, s);
+            flat(col, fade); drawG(B.tag.border, pose, s);
+            flat([0.01, 0.01, 0.012], fade); drawG(B.tag.ink, pose, s);
+            flat([0.95, 0.95, 0.95], fade); for (const g of B.tag.cells) drawG(g, pose, s);
+          }
+        }
+        if (holo) { gl.uniform1f(U.uHolo, 1); gl.depthMask(false); }
+      };
+      drawTags();
       if (o.body) {
-        drawList(B.body, ch, o.fadeBody || 0, o.fadeBody ? { noLight: false } : null);
-        const Tm = B.M.torso;
-        for (const p of [[Tm.cx, Tm.wyTop, Tm.z1], [Tm.cx, -Tm.wyTop, Tm.z1], [Tm.cx, 0, B.M.headTop], [Tm.cx, 0.13, B.M.baseBottom], [Tm.cx, -0.13, B.M.baseBottom], [B.M.chestFront, 0, 0]]) keep(p);
+        drawList(B.body, ch, o.fadeBody || 0);
+        for (const p of B.M.extent) keep(p);
       } else if (o.mount === 'bar') drawList(B.bar, ch, 0);
       else if (o.mount === 1 || o.mount === -1) drawList(B.mount[o.mount], ch, 0);
       for (const a of o.arms) {
@@ -300,22 +454,12 @@ void main() {
         drawList(B.hand[a.side], at(k.R, k.wrist), fade);
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
-      // the tags, riding on the robot
-      for (const tg of o.tags || []) {
-        const col = lin(tg.color, [0.5, 0.5, 0.5]), fade = tg.fade || 0;
-        for (const p of tg.parts) {
-          const pose = { R: C.mul3(tg.R, p.R), t: C.add(tg.t, C.mulv(tg.R, p.t)) }, s = p.size * 1.25; // the white margin round the black square
-          flat([1, 1, 1], fade); drawG(B.tag.paper, pose, s);
-          flat(col, fade); drawG(B.tag.border, pose, s);
-          flat([0.01, 0.01, 0.012], fade); drawG(B.tag.ink, pose, s);
-          flat([0.95, 0.95, 0.95], fade); for (const g of B.tag.cells) drawG(g, pose, s);
-        }
-      }
+      gl.depthMask(true); gl.uniform1f(U.uHolo, 0);
       return pts;
     };
     self.clear = clear;
     return self;
   }
 
-  return { meshes, create, lin };
+  return { STYLES, meshes, create, lin };
 });
