@@ -239,21 +239,26 @@
       arms: arms.map((a, i) => {
         const home = fk(m, sides[i], HOME), Rc = mul3(chest.R, home.R);
         const tagC = mulv(tr3(chest.R), sub(a.pose.t, chest.t));
-        return { key: a.key, side: sides[i], Roff: mul3(tr3(a.pose.R), Rc), shift: sub(home.t, tagC) };
+        return { key: a.key, side: sides[i], Roff: mul3(tr3(a.pose.R), Rc), shift: sub(home.t, tagC), home: home.t };
       }),
     };
   }
 
   // The chest's pose now (plotted frame) and each arm's wrist target in the chest frame, from the current poses:
   // { body: pose | null, arms: { [key]: pose } }. A missing arm pose gives a null target.
-  function targets(cal, poses) {
+  // opts.scale (teleoperation): each wrist's move from its start position, in the chest's frame, times this (1: as you
+  // move; 2: twice as far; 0.5: half). The hand's orientation and the chest are never scaled.
+  function targets(cal, poses, opts) {
     const chest = cal.bodyOffset && poses.body ? compose(poses.body, cal.bodyOffset) : cal.chest;
-    const Rt = tr3(chest.R);
+    const Rt = tr3(chest.R), k = opts && isFinite(opts.scale) ? opts.scale : 1;
     return {
       chest,
       arms: cal.arms.map((a) => {
         const p = poses.arms && poses.arms[a.key];
-        return { key: a.key, side: a.side, target: p ? { R: mul3(Rt, mul3(p.R, a.Roff)), t: add(mulv(Rt, sub(p.t, chest.t)), a.shift) } : null };
+        if (!p) return { key: a.key, side: a.side, target: null };
+        let t = add(mulv(Rt, sub(p.t, chest.t)), a.shift);
+        if (k !== 1 && a.home) t = add(a.home, scale(sub(t, a.home), k));
+        return { key: a.key, side: a.side, target: { R: mul3(Rt, mul3(p.R, a.Roff)), t } };
       }),
     };
   }

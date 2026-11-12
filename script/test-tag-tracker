@@ -764,6 +764,16 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   check(near(tg.t, RC.fk(m, 1, RC.HOME).t, 1e-12) && Math.abs(C.angleOf(C.mul3(C.tr3(RC.fk(m, 1, RC.HOME).R), tg.R)) - 0.8) < 1e-9, 'turning a wrist turns the hand in place (no swing from where the tag sits)');
   const reach = RC.targets(cal, { body, arms: { L: { R: lt.R, t: C.add(lt.t, [0, -0.1, 0.05]) }, R: rt } }).arms[1].target;
   check(near(C.sub(reach.t, RC.fk(m, 1, RC.HOME).t), [0.1, 0, 0.05], 1e-12), 'a wrist moved 10 cm toward the camera and 5 cm up: the hand moves 10 cm forward and 5 cm up');
+  // teleoperation scale: the move from the start pose is scaled, the turn isn't, and neither is the body
+  {
+    const L = { R: C.mul3(lt.R, C.rodrigues([0.3, -0.5, 0.2])), t: C.add(lt.t, [0.04, -0.1, 0.05]) }, H = RC.fk(m, 1, RC.HOME).t;
+    const at = (k, b) => RC.targets(cal, { body: b || body, arms: { L, R: rt } }, { scale: k }).arms[1].target;
+    const one = at(1), two = at(2), half = at(0.5), d1 = C.sub(one.t, H);
+    const walked = RC.targets(cal, { body: g(body), arms: { L: g(L), R: g(rt) } }, { scale: 2 }).arms[1].target;
+    check(near(C.sub(two.t, H), d1.map((x) => 2 * x), 1e-12) && near(C.sub(half.t, H), d1.map((x) => x / 2), 1e-12) && C.angleOf(C.mul3(C.tr3(one.R), two.R)) < 1e-12 && C.angleOf(C.mul3(C.tr3(one.R), half.R)) < 1e-12
+      && near(walked.t, two.t, 1e-12) && near(RC.targets(cal, { body, arms: { L: lt, R: rt } }, { scale: 3 }).arms[1].target.t, H, 1e-12),
+      'motion scale ×2 and ×0.5: the hand moves twice and half as far from the start pose, turns exactly as the wrist does, and walking with the whole person isn\'t scaled');
+  }
   // no body tag: the chest faces the camera, put so the home wrists land on the tags
   cal = RC.calibrate(m, { body: null, arms: [{ key: 'L', pose: lt }, { key: 'R', pose: rt }] }, { toward: [0, 0, 0] });
   got = solve(cal, { body: null, arms: { L: lt, R: rt } });
@@ -778,7 +788,7 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   const tf = C.tagFit(1170, 2532, 8, 1);
   check(tf.px === 117 && tf.size === 936 && C.tagFit(9, 9, 8, 1).px === 0, 'one tag on a screen: whole pixels per cell, a cell of white round it');
   const st = C.clampSettings({ show3d: 'x', robot: { body: '', left: 'b:hand', upper: 5, back: -1, elbows: 0 } });
-  check(st.show3d === 'robot' && st.robot.body === 'auto' && st.robot.left === 'b:hand' && st.robot.upper === 1 && st.robot.back === 0 && st.robot.elbows === false && !('joints' in st.robot) && st.setup === true && C.clampSettings({ setup: false }).setup === false, 'robot settings: roles, lengths clamped, switches, and the setup guide on unless turned off');
+  check(st.show3d === 'robot' && st.robot.body === 'auto' && st.robot.left === 'b:hand' && st.robot.upper === 1 && st.robot.back === 0 && st.robot.elbows === false && !('joints' in st.robot) && st.robot.scale === 1 && C.clampSettings({ robot: { scale: 9 } }).robot.scale === 5 && C.clampSettings({ robot: { scale: 'x' } }).robot.scale === 1 && C.clampSettings({ robot: { scale: 0.5 } }).robot.scale === 0.5 && st.setup === true && C.clampSettings({ setup: false }).setup === false, 'robot settings: roles, lengths clamped, switches, and the setup guide on unless turned off');
   // the shaded robot's meshes (robot-gl.js): every surface sound, for the default lengths and for a small person
   const RGL = require(path.join(__dirname, '..', 'tag-tracker/robot-gl.js'));
   let parts = 0, verts = 0, bad = 0;

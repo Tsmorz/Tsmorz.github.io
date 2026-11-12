@@ -456,7 +456,10 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   `HOME` wherever the tags are; the demo calibrates itself once it sees all three. The calibration is in memory only, cleared
   by a frame change, a new camera 1, or a new track. It reads the plotted poses with the tare taken off, so taring
   never moves it, and Mirror never changes it. Each tag is drawn riding on the robot (on the chest, on the
-  back of its wrist); joint angles are the Now panel's Joint angles tab. **It is drawn shaded with WebGL** (`robot-gl.js`, RobotGL) on
+  back of its wrist); joint angles are the Now panel's Joint angles tab. **Motion ×** on the Tracking card (`settings.robot.scale`,
+  0.1 to 5, offered as 0.25 to 3) scales for teleoperation: `RobotCore.targets(cal, poses, {scale})` multiplies each wrist's
+  move from its start position (`cal.arms[].home`, in the chest's frame); the hand's orientation and the chest (the body tag)
+  are never scaled. **It is drawn shaded with WebGL** (`robot-gl.js`, RobotGL) on
   `#plotGL`, a canvas over the plot's own (pointer events off), with the plot's camera (`TagCore.orbit`) so it lines up with
   the grid: **the Machine**, curved meshes built from the robot's lengths in the frame each rides in (aluminium box
   sections, motor drums on the joint axes, a sensor-bar head, a parallel gripper, on a column), lit by a key, a fill and the

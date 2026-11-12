@@ -661,6 +661,9 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
             <button role="radio" data-show3d="robot" aria-checked="true" title="A robot whose arms follow the wrist tags and whose body follows the chest tag">Robot</button>
             <button role="radio" data-show3d="tags" aria-checked="false" title="Each tag's trail and axes over the last few seconds">Tags</button>
           </span>
+          <label class="field" id="scaleField" title="Teleoperation: the robot's arms move this many times as far as your hands do, from the start pose (below 1 for fine work, above 1 to reach further). The hands still turn exactly as yours do, and the body isn't scaled.">Motion × <select id="robotScale" class="select sm">
+            <option value="0.25">0.25</option><option value="0.5">0.5</option><option value="0.75">0.75</option><option value="1">1</option><option value="1.5">1.5</option><option value="2">2</option><option value="3">3</option>
+          </select></label>
           <label class="field">Relative to <select id="frameSel" class="select sm"></select></label>
         </div>
       </div>
@@ -2275,11 +2278,19 @@ function calibrateRobot(quiet) {
 function clearRobotCal() { RB.cal = null; RB.prev.clear(); paintRobotBtns(); }
 function paintRobotBtns() {
   const on = S.settings.show3d === 'robot';
-  $('robotCalBtn').hidden = !on; $('robotClearBtn').hidden = !on || !RB.cal;
+  $('robotCalBtn').hidden = !on; $('robotClearBtn').hidden = !on || !RB.cal; $('scaleField').hidden = !on;
   $('robotCalBtn').classList.toggle('primary', !RB.cal); $('robotCalBtn').classList.toggle('outline', !!RB.cal);
   $('robotCalBtn').textContent = RB.cal ? 'Calibrate again' : 'Calibrate robot';
 }
 $('robotCalBtn').onclick = () => calibrateRobot();
+// the motion scale: any saved value is offered, even one not in the list
+function paintScale() {
+  const v = S.settings.robot.scale, sel = $('robotScale');
+  if (![...sel.options].some((x) => +x.value === v)) sel.add(new Option(String(v), String(v)));
+  sel.value = [...sel.options].find((x) => +x.value === v).value;
+}
+paintScale();
+$('robotScale').onchange = () => { S.settings.robot.scale = +$('robotScale').value; saveSettings(); RB.prev.clear(); };
 $('robotClearBtn').onclick = clearRobotCal;
 plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey && S.settings.show3d === 'robot') { e.preventDefault(); calibrateRobot(); } });
 
@@ -2304,7 +2315,7 @@ function robotUpdate(now) {
   } else if (!cal) cal = robotCalibrate(roles, m);
   const poses = { body: roles.body !== null ? RB.last.get(roles.body) : null, arms: {} };
   for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
-  const tg = RCORE.targets(cal, poses), prefer = S.settings.robot.elbows ? undefined : false;
+  const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
   const arms = tg.arms.map((a) => {
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev : null, { prefer });
     RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, side: a.side });
