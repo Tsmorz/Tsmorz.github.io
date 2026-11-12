@@ -911,10 +911,10 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 
 <!-- ?v= is the page's version: bump it whenever one of these (or worker.js) changes, so a browser never runs a cached
      old copy of one beside new copies of the others -->
-<script src="tracker-core.js?v=2026-11-11"></script>
-<script src="robot-core.js?v=2026-11-11"></script>
-<script src="robot-gl.js?v=2026-11-11"></script>
-<script src="physics-core.js?v=2026-11-11"></script>
+<script src="tracker-core.js?v=2026-11-11b"></script>
+<script src="robot-core.js?v=2026-11-11b"></script>
+<script src="robot-gl.js?v=2026-11-11b"></script>
+<script src="physics-core.js?v=2026-11-11b"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
 (() => {
@@ -1211,7 +1211,7 @@ function status(text, kind) {
 const POOL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 function spawnWorker() {
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  const w = new Worker(base + 'worker.js?v=2026-11-11'), slot = { w, ready: false, busy: false, first: !S.pool.length };
+  const w = new Worker(base + 'worker.js?v=2026-11-11b'), slot = { w, ready: false, busy: false, first: !S.pool.length };
   S.pool.push(slot);
   w.onmessage = (ev) => onWorker(ev.data, slot);
   w.onerror = (e) => { if (slot.first) status('Detector failed to start', 'bad'); else S.pool = S.pool.filter((x) => x !== slot); console.error(e); };

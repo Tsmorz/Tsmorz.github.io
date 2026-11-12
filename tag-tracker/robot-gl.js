@@ -12,7 +12,9 @@
 })(typeof self !== 'undefined' ? self : this, function (C, RC) {
   'use strict';
   const TAU = 2 * Math.PI;
-  const sp = (w, e) => Math.sign(w) * Math.pow(Math.abs(w), e); // signed power, for superellipses
+  // signed power, for superellipses. sin(π) is ~1e-16, not 0, and a small power of that is not small (to the 0.06 the
+  // table's top uses it is 0.11), which split the shape open at its seam: values that should be 0 are 0.
+  const sp = (w, e) => (Math.abs(w) < 1e-9 ? 0 : Math.sign(w) * Math.pow(Math.abs(w), e));
   const cap = (x, k) => { const d = 1 - Math.min(1, Math.max(0, x) / k); return Math.sqrt(Math.max(0, 1 - d * d)); }; // a quarter circle
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
