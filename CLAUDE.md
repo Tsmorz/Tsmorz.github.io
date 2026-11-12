@@ -343,20 +343,24 @@ in public); detection reads the sharp frames and the overlay's outlines stay sha
 turns with a CSS transform and the overlay with `TagCore.displayMap`, its labels kept readable. Flip is half a turn, for a
 camera mounted upside down (both axes reversed, so `displayMap` gets mirror XOR flip). Detection, fusion, every plotted,
 tabled, streamed and recorded pose and the robot are always the camera's own (`shown()` never mirrors; `TagCore.mirrorPose`
-stays in the core, tested, unused by the page, and Stream and recordings always say `view: 'in person'`). The 3D view starts
-(`view0()`) from behind the person looking at the camera, so their right is on the screen's right, turned 1 rad to the side
-so the robot's arms show past its body.
+stays in the core, tested, unused by the page, and Stream and recordings always say `view: 'in person'`). The 3D view starts,
+and Reset view (key R) goes back, **at camera 1's position** looking at what is plotted (`resetView`, from `cameraInPlot`;
+the first fit does it once, `S.view.fromCam`); camera 1's own pyramid and the origin axes aren't drawn while the eye is on
+them. Where camera 1's place isn't known (relative to a tag before it is seen) it falls back to `view0()`, from behind.
 Two tabs, Track and Calibrate, with the camera column the same width on both. **Settings** (what is set once: the robot's
 roles and lengths, the detector and pose options, the Tags view's History / Axes every / Axis length, the default paper, and
 the setup guide switch) is a panel that slides in from the right (`#settingsDlg`, a modal `<dialog>`), opened by the gear
 beside the theme toggle (or saying "settings"). The **Stream** card sits at the bottom of Track's left column. `S.tab` is the
 tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`: tags). The page's icon (`favicon.svg`, and the logo) is the real tag36h11 #0.
 - Layout: on a wide screen the right column (the 3D plot, then the **Now** panel) is sticky and fills the window, so nothing
-  in it needs scrolling; the 3D plot takes the height that is left, and it has Calibrate robot, Fit, Reset view (back to
-  `view0()`, then fit) and Full screen (the element's own, else a `.plot3d.full` class filling the window, as on an iPhone).
+  in it needs scrolling; the 3D plot takes the height that is left, and it has Calibrate robot, Fit, Reset view (from camera 1,
+  above) and Full screen (the element's own, else a `.plot3d.full` class filling the window, as on an iPhone).
   Now is one panel: the readout table (position in cm, orientation as a unit quaternion w, x, y, z from `TagCore.quatOf`,
-  distance, speed, corner fit, ± depth; click a row to plot it) over the time plot (Motion, Position or Quaternion; the
-  quaternion keeps its sign continuous with `quatNear`).
+  distance, speed, corner fit, ± depth; click a row to plot it) over the time plot. Its tabs, in this order: **Orientation** (the
+  quaternion, its sign kept continuous with `quatNear`), **Position** (cm), **Velocity** (cm/s, each sample's change over
+  the last 0.1 s; it replaced Motion, and a saved `motion` reads as it) and, while the robot has an arm, **Joint angles**:
+  a table of both arms' seven joints with their ranges in place of the readout table, and the chosen arm's joints over time
+  (`RB.jhist`, each new pose's angles). `tplotSeries` gives the plot its lines for each tab.
 - **Detection runs in a pool of workers** (`S.pool`, `POOL`: one per spare core, up to 4, each with its own OpenCV; the
   others start once the first is ready, from the browser's cache). Each camera's frames go to an idle worker, up to its share
   of the pool in flight (`idleWorker`), so one camera is detected several frames at a time; a result overtaken by a later
@@ -452,18 +456,13 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
   `HOME` wherever the tags are; the demo calibrates itself once it sees all three. The calibration is in memory only, cleared
   by a frame change, a new camera 1, or a new track. It reads the plotted poses with the tare taken off, so taring
   never moves it, and Mirror never changes it. Each tag is drawn riding on the robot (on the chest, on the
-  back of its wrist); joint angles show in a corner. **It is drawn shaded with WebGL** (`robot-gl.js`, RobotGL) on
+  back of its wrist); joint angles are the Now panel's Joint angles tab. **It is drawn shaded with WebGL** (`robot-gl.js`, RobotGL) on
   `#plotGL`, a canvas over the plot's own (pointer events off), with the plot's camera (`TagCore.orbit`) so it lines up with
-  the grid: curved meshes (lofted torso, lathed limbs, superellipsoid head, visor, hands, a floating base) built from the
-  robot's lengths in the frame each rides in, lit by a key, a fill and the sky with specular highlights and a rim, pearl
-  shells, graphite joints and violet lights (the wrist light turns amber while that hand is out of reach). **Four looks** on the
-  same arms (`settings.robot.look`, the Look picker on the Tracking card, `RobotGL.STYLES`): **Machine, the default**
-  (aluminium box sections, motor drums on the joint axes, a sensor-bar head, a parallel gripper, on a column), Pearl (the
-  sculpted one above), Companion (an
-  egg body, a big round head with a face screen and two eyes, mitten hands, a glowing skirt) and Hologram (Pearl's shape as
-  see-through violet light with drifting scan lines: premultiplied blending, no depth writes, tags drawn solid first). Each
-  look builds the same mesh groups in the same frames, and the chest tag sits just in front of each body. Generic designs;
-  keep them looking like no company's robot. `meshes()` has no DOM and test section 5h checks it. Where there is no WebGL
+  the grid: **the Machine**, curved meshes built from the robot's lengths in the frame each rides in (aluminium box
+  sections, motor drums on the joint axes, a sensor-bar head, a parallel gripper, on a column), lit by a key, a fill and the
+  sky with specular highlights and a rim, graphite joints and violet lights (the wrist light turns amber while that hand is
+  out of reach). It is the only look: Pearl, Companion and Hologram were tried and taken out, and a saved `look` is dropped.
+  The chest tag sits just in front of its body. A generic design; keep it looking like no company's robot. `meshes()` has no DOM and test section 5h checks it. Where there is no WebGL
   (or the context is lost) the robot is drawn flat on the plot canvas (`drawRobotFlat`). The demo's hands are named for the body's sides (its right hand is on
   the cameras' left).
 - **Setup guide** (`#setupDlg`, the book icon in the top bar, which stays there): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera
