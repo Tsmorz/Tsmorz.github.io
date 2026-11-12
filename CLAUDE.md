@@ -499,6 +499,10 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   or the demo; how many tags (one arm, two arms, body and two arms) with their IDs and sizes, which become tags named Body,
   Left wrist and Right wrist and the robot's roles (applied by Next, Print or the phone link, never by closing); the lens
   (optional); the start pose.
+- **Script versions**: index.html loads its own scripts (and the detection worker, which passes it on to `tracker-core.js`)
+  with `?v=<date>`. Bump it whenever any of them changes, or a browser can run a cached old `robot-core.js` beside a new
+  page (it once froze the 3D view: an error in `frame()` stopped the loop, which now asks for the next frame first and
+  reports an error once).
 - `index.html`: the UI. `speech-worker.js`: speech to text (above). `physics-core.js` (PhysicsCore, no DOM): the table (above). `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
   camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
   its `TagVision` factory also runs in Node.
