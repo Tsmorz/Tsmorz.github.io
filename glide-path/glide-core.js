@@ -10,6 +10,8 @@
 //   chooseZoom    the terrain zoom that fits the whole possible glide
 //   areaTiles     the terrain tiles a saved area needs, per zoom
 //   tilesOnlyIn   which saved tiles can go when an area is deleted (ones no other area uses)
+//   circle        points round a circle (the sight ring in 3D)
+//   gliderMesh    a sailplane as triangles, for the 3D fly-by
 //   contours / contourStep   contour lines of a height grid (marching squares), and their spacing per zoom
 (function (root, factory) {
   const core = factory();
@@ -265,6 +267,120 @@
     return { minor, major };
   }
 
+  // A 2 m model sailplane as a triangle mesh, for the 3D fly-by. Metres; z forward (the nose), y up, x to the left (so the
+  // pilot's right wing is at −x); the origin is the wing's quarter chord at the root. A slim fuselage lofted through
+  // superellipse sections with a painted canopy, tapered wings with a thin cambered airfoil and polyhedral, and a T-tail;
+  // red tips. Proportions of a model, not a scaled-down full-size glider: a shorter wing for its fuselage, a bigger tail.
+  // Returns { pos, nrm, col } (Float32Array, 3 per vertex: position, unit normal pointing out, linear RGB) and idx (Uint16Array).
+  function gliderMesh() {
+    const pos = [], nrm = [], col = [], idx = [];
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const unit = a => { const l = Math.hypot(a[0], a[1], a[2]); return l > 1e-12 ? [a[0] / l, a[1] / l, a[2] / l] : null; };
+    const WHITE = [0.93, 0.93, 0.92], GLASS = [0.05, 0.07, 0.10], TIP = [0.80, 0.08, 0.10];
+    // a grid of rows × cols points; normals from the neighbours, turned to face away from each row's centre
+    function grid(P, centre, colour, wrap, fallback) {
+      const rows = P.length, cols = P[0].length, base = pos.length / 3, cl = c => wrap ? (c + cols) % cols : Math.min(cols - 1, Math.max(0, c));
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const p = P[r][c], o = centre(r);
+        let n = unit(cross(sub(P[Math.min(rows - 1, r + 1)][c], P[Math.max(0, r - 1)][c]), sub(P[r][cl(c + 1)], P[r][cl(c - 1)])))
+          || unit(sub(p, o)) || fallback(r);
+        if (dot(n, sub(p, o)) < 0) n = [-n[0], -n[1], -n[2]];
+        pos.push(...p); nrm.push(...n); col.push(...colour(r, c));
+      }
+      for (let r = 0; r < rows - 1; r++) for (let c = 0; c < (wrap ? cols : cols - 1); c++) {
+        const a = base + r * cols + c, b = base + r * cols + cl(c + 1), d = a + cols, e = b + cols;
+        idx.push(a, d, b, b, d, e);
+      }
+    }
+    // Catmull–Rom through stations [x, ...values]
+    function spline(S, x) {
+      let k = 0; while (k < S.length - 2 && S[k + 1][0] < x) k++;
+      const p0 = S[Math.max(0, k - 1)], p1 = S[k], p2 = S[k + 1], p3 = S[Math.min(S.length - 1, k + 2)], t = (x - p1[0]) / (p2[0] - p1[0]);
+      return p1.map((_, i) => i === 0 ? x : 0.5 * (2 * p1[i] + (-p0[i] + p2[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t * t +
+        (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t * t * t));
+    }
+
+    // fuselage: z, half width, half height, centre height
+    const FUS = [[-.80, .008, .012, .006], [-.70, .010, .015, .005], [-.45, .014, .019, .001], [-.20, .022, .028, -.003], [-.03, .034, .042, -.006],
+                 [.10, .037, .046, -.008], [.22, .034, .041, -.011], [.30, .025, .029, -.014], [.345, .012, .014, -.017], [.36, .003, .003, -.019]];
+    const NZ = 56, NA = 32, P = [], cen = [];
+    for (let r = 0; r < NZ; r++) {
+      const z = -.80 + (.36 + .80) * r / (NZ - 1), [, w, h, cy] = spline(FUS, z), row = [];
+      for (let a = 0; a < NA; a++) {
+        const t = a / NA * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t), e = 2 / 2.4; // a superellipse, a little fuller than an ellipse
+        row.push([w * Math.sign(c) * Math.abs(c) ** e, cy + h * Math.sign(s) * Math.abs(s) ** e, z]);
+      }
+      P.push(row); cen.push([0, cy, z]);
+    }
+    grid(P, r => cen[r], () => WHITE, true, r => [0, 0, r ? 1 : -1]);
+
+    // canopy: the top of an ellipsoid over the cockpit
+    const C = [], CN = 22, CA = 14, cc = [0, .018, .17], ax = [.028, .034, .11];
+    for (let r = 0; r < CN; r++) {
+      const u = -0.97 + 1.94 * r / (CN - 1), k = Math.sqrt(1 - u * u), row = [];
+      for (let a = 0; a < CA; a++) { const t = a / (CA - 1) * Math.PI; row.push([cc[0] + ax[0] * k * Math.cos(t), cc[1] + ax[1] * k * Math.sin(t), cc[2] + ax[2] * u]); }
+      C.push(row);
+    }
+    grid(C, () => [cc[0], cc[1] - 0.025, cc[2]], () => GLASS, false, () => [0, 1, 0]);
+
+    // a lifting surface through stations { le: leading edge, c: chord, up: thickness direction, tau, camber, colour }
+    const NC = 28;
+    function surface(st, capOut) {
+      const Q = [];
+      for (const s of st) {
+        const row = [];
+        for (let i = 0; i < NC; i++) {
+          const th = i / NC * 2 * Math.PI, x = (1 + Math.cos(th)) / 2, upper = Math.sin(th) >= 0;
+          const yt = 5 * s.tau * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4);
+          const y = (s.camber * 4 * x * (1 - x) + (upper ? yt : -yt)) * s.c;
+          row.push([s.le[0] + s.up[0] * y, s.le[1] + s.up[1] * y, s.le[2] - x * s.c + s.up[2] * y]);
+        }
+        Q.push(row);
+      }
+      grid(Q, r => [st[r].le[0], st[r].le[1], st[r].le[2] - st[r].c * 0.4], r => st[r].colour, true, () => st[0].up);
+      // close the outer end
+      const last = Q[Q.length - 1], s = st[st.length - 1], base = pos.length / 3;
+      pos.push(s.le[0], s.le[1], s.le[2] - s.c * 0.4); nrm.push(...capOut); col.push(...s.colour);
+      for (const p of last) { pos.push(...p); nrm.push(...capOut); col.push(...s.colour); }
+      for (let i = 0; i < NC; i++) idx.push(base, base + 1 + i, base + 1 + (i + 1) % NC);
+    }
+    const HALF = 1.0, D1 = Math.tan(3 * D2R), D2 = Math.tan(9 * D2R), KINK = 0.6; // 2 m span; polyhedral from 60 cm out
+    for (const side of [1, -1]) {
+      const st = [];
+      for (let j = 0; j <= 30; j++) {
+        const e = j / 30, x = 0.03 + e * (HALF - 0.03);
+        const c = e < 0.5 ? 0.21 - 0.025 * e / 0.5 : e < 0.86 ? 0.185 - 0.05 * (e - 0.5) / 0.36 : 0.135 - 0.045 * (e - 0.86) / 0.14;
+        const y = 0.035 + Math.min(x, KINK) * D1 + Math.max(0, x - KINK) * D2;
+        st.push({ le: [side * x, y, 0.25 * c], c, up: [0, 1, 0], tau: 0.095 - 0.015 * e, camber: 0.03, colour: e > 0.92 ? TIP : WHITE });
+      }
+      surface(st, [side, 0, 0]);
+      const tail = [];
+      for (let j = 0; j <= 9; j++) {
+        const e = j / 9, c = 0.10 - 0.035 * e;
+        tail.push({ le: [side * e * 0.21, 0.19, -0.715 + 0.25 * c], c, up: [0, 1, 0], tau: 0.09, camber: 0, colour: e > 0.75 ? TIP : WHITE });
+      }
+      surface(tail, [side, 0, 0]);
+    }
+    const fin = [];
+    for (let j = 0; j <= 11; j++) {
+      const e = j / 11, c = 0.16 - 0.07 * e, te = -0.83 + 0.01 * e;
+      fin.push({ le: [0, 0.004 + e * 0.186, te + c], c, up: [1, 0, 0], tau: 0.09, camber: 0, colour: e > 0.8 ? TIP : WHITE });
+    }
+    surface(fin, [0, 1, 0]);
+    return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), col: new Float32Array(col), idx: new Uint16Array(idx) };
+  }
+
+  // n + 1 points [lat, lon] round a circle of r metres (closed: the last is the first), for drawing the sight ring.
+  function circle(lat, lon, r, n = 64) {
+    const R = 6371008.8, out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = (i % n) / n * 2 * Math.PI;
+      out.push([lat + r * Math.cos(t) / R / D2R, lon + r * Math.sin(t) / (R * Math.cos(lat * D2R)) / D2R]);
+    }
+    return out;
+  }
+
   // Keys in `area` that no area in `others` also uses.
   function tilesOnlyIn(area, others) {
     const keep = new Set();
@@ -272,5 +388,5 @@
     return area.filter(k => !keep.has(k));
   }
 
-  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, TS, D2R };
+  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, gliderMesh, TS, D2R };
 });

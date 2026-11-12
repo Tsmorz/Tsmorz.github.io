@@ -200,6 +200,43 @@ console.log('6b. contours');
   const hole = grid(16, 16, x => 30 * x); hole[8 * 16 + 8] = NaN;
   const hs = segs(G.contours(hole, 16, 16, 20));
   check(hs.length > 0 && hs.every(q => [[q[0], q[1]], [q[2], q[3]]].every(([x, y]) => !(x > 6 && x < 10 && y > 6 && y < 10))), 'no lines in the cells round a missing height');
+  // the sight ring for the 3D map: every point r metres from the centre (haversine), closed
+  const hav = (a, b) => { const R = 6371008.8, r = Math.PI / 180, dl = (b[0] - a[0]) * r, dn = (b[1] - a[1]) * r;
+    const h = Math.sin(dl / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+  const ringPts = G.circle(44.09, -103.25, 600, 64);
+  const ringErr = Math.max(...ringPts.map(p => Math.abs(hav([44.09, -103.25], p) - 600)));
+  check(ringPts.length === 65 && ringPts[0][0] === ringPts[64][0] && ringPts[0][1] === ringPts[64][1], 'the sight ring for the 3D map is closed');
+  check(ringErr < 0.5, `and every point on it is 600 m out (worst ${ringErr.toFixed(3)} m off)`);
+  // the fly-by's 2 m model sailplane: mirror-symmetric, normals unit length and pointing out, every index in range
+  const gm = G.gliderMesh(), nv = gm.pos.length / 3;
+  let gBad = 0, gx = [Infinity, -Infinity], gz = [Infinity, -Infinity];
+  for (let i = 0; i < nv; i++) {
+    const l = Math.hypot(gm.nrm[3 * i], gm.nrm[3 * i + 1], gm.nrm[3 * i + 2]); if (!(Math.abs(l - 1) < 1e-4)) gBad++;
+    gx = [Math.min(gx[0], gm.pos[3 * i]), Math.max(gx[1], gm.pos[3 * i])]; gz = [Math.min(gz[0], gm.pos[3 * i + 2]), Math.max(gz[1], gm.pos[3 * i + 2])];
+  }
+  const key3 = (i, sx) => [sx * gm.pos[3 * i], gm.pos[3 * i + 1], gm.pos[3 * i + 2]].map(v => Math.round(v * 1e4) + 0).join();
+  const mirror = new Set(); for (let i = 0; i < nv; i++) mirror.add(key3(i, 1));
+  let unmatched = 0; for (let i = 0; i < nv; i++) if (!mirror.has(key3(i, -1))) unmatched++;
+  check(nv < 65536 && gm.idx.every(i => i < nv) && gm.idx.length % 3 === 0, `the glider mesh: ${nv} vertices, ${gm.idx.length / 3} triangles, indices in range`);
+  check(Math.abs(gx[1] - gx[0] - 2) < 0.01 && Math.abs(gx[0] + gx[1]) < 1e-6 && gz[1] - gz[0] > 1.1 && gz[1] - gz[0] < 1.25,
+    `a 2 m span (${(gx[1] - gx[0]).toFixed(3)} m), ${(gz[1] - gz[0]).toFixed(2)} m long, centred`);
+  check(gBad === 0 && unmatched === 0, `unit normals (${gBad} bad) and mirror-symmetric (${unmatched} vertices without a mirror image)`);
+  // outward: at each wing station the highest point faces up and the lowest down; the fuselage's widest points face out sideways
+  const stations = new Map();
+  for (let i = 0; i < nv; i++) {
+    const x = gm.pos[3 * i]; if (Math.abs(x) < 0.15 || Math.abs(x) > 0.9) continue; // the wings, clear of the fuselage and the tips
+    const k = x.toFixed(4), y = gm.pos[3 * i + 1], s0 = stations.get(k) || { top: null, bot: null };
+    if (!s0.top || y > gm.pos[3 * s0.top + 1]) s0.top = i;
+    if (!s0.bot || y < gm.pos[3 * s0.bot + 1]) s0.bot = i;
+    stations.set(k, s0);
+  }
+  let up = 0, upOk = 0, side = 0, sideOk = 0;
+  for (const { top, bot } of stations.values()) { up += 2; if (gm.nrm[3 * top + 1] > 0.7) upOk++; if (gm.nrm[3 * bot + 1] < -0.7) upOk++; }
+  for (let i = 0; i < nv; i++) {
+    const [x, y, z] = [gm.pos[3 * i], gm.pos[3 * i + 1], gm.pos[3 * i + 2]], nx = gm.nrm[3 * i];
+    if (z > -0.4 && z < -0.05 && Math.abs(x) > 0.012 && Math.abs(x) < 0.04 && Math.abs(y) < 0.004) { side++; if (nx * Math.sign(x) > 0.8) sideOk++; }
+  }
+  check(up > 10 && upOk === up && side > 4 && sideOk === side, `normals point out: wing tops up and bottoms down (${upOk}/${up}), fuselage sides out (${sideOk}/${side})`);
   const st = z => G.contourStep(z, 'metric')[0], sti = z => Math.round(G.contourStep(z, 'imperial')[0] * G.FT);
   check([9, 10, 11, 12, 13, 14, 17].map(st).join() === '200,200,100,50,20,10,10', `metric spacing by zoom: ${[9, 10, 11, 12, 13, 14, 17].map(st).join(', ')} m`);
   check([10, 11, 12, 13, 14].map(sti).join() === '500,250,200,80,40', `imperial: ${[10, 11, 12, 13, 14].map(sti).join(', ')} ft`);
@@ -231,7 +268,10 @@ console.log('7. service worker');
   const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
 
   await run('install', {});
-  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 16, 'install caches the page, its script and styles, the core, the worker, the manifest, icons and Leaflet');
+  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 19, 'install caches the page, its script and styles, the core, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
+  const shellFiles = vm.runInContext('SHELL_FILES', ctx).filter(f => f !== './');
+  const missing = shellFiles.filter(f => !fs.existsSync(path.join(__dirname, '..', 'glide-path', f)));
+  check(!missing.length, `every file in SHELL_FILES exists${missing.length ? ' (missing: ' + missing.join(', ') + ')' : ''}`);
   stores.set('glide-shell-v0', mkCache());
   await run('activate', {});
   check(!stores.has('glide-shell-v0'), 'activate drops an old version of the page');

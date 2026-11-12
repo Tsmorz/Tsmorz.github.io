@@ -7,9 +7,18 @@ const SAVE_R = RT + 1, SAVE_R_LOW = RT;   // a saved area: 9 × 9 tiles at zoom 
 const SAVED = 'glide-terrain-saved', RUNTIME = 'glide-terrain-runtime';
 const terrUrl = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
 const M_HILL = { lat: 44.0860, lon: -103.2490, snap: 200 };
-// Map overlay colours: the light steps of the validated set, since both base maps are light.
-const C = { straight: [42, 120, 214], curve: [27, 175, 122], curveDark: [14, 122, 84], steep: [120, 118, 110], out: [110, 108, 100],
-            hit: '#eb6834', route: '#0e7a54', line: '#1d1f21', ring: '#1f63b8' };
+// Map overlay colours: the site's chart palette (violet, teal, red, gold), checked with the dataviz validator for colour-blind
+// separation. `light` for the street, topo and shaded maps; `img` (mid-tone steps, with light lines on dark casings) over
+// satellite imagery, where each region also gets a solid outline. `C` is the one in use (restyle()).
+const PAL = {
+  light: { straight: [90, 79, 214], curve: [18, 165, 153], curveDark: [10, 118, 109], steep: [118, 120, 128], out: [110, 112, 120],
+           hit: '#b8263a', route: '#a58d12', line: '#1d1e23', ring: '#1d1e23', casing: '#ffffff',
+           a: { out: 42, steep: 85, steepStripe: 60, straight: 110, curve: 105, curveStripe: 185, edge: 235 } },
+  img: { straight: [138, 122, 247], curve: [15, 165, 147], curveDark: [8, 112, 100], steep: [232, 233, 238], out: [255, 255, 255],
+         hit: '#f2526c', route: '#b08f10', line: '#ffffff', ring: '#ffffff', casing: '#1d1e23',
+         a: { out: 48, steep: 45, steepStripe: 30, straight: 130, curve: 95, curveStripe: 185, edge: 255 } }
+};
+let C = PAL.light;
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 const SHORT = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const compass = (d, long) => (long ? COMPASS : SHORT)[Math.round(d / 45) % 8];
@@ -43,7 +52,7 @@ $('theme').onclick = () => {
 // ---------- Units: sliders work in the chosen system; P always holds metric values ----------
 // [min, max, step, unit] per system, and k: the factor from metric to imperial; read-outs come from GlideCore.Units.
 const SPEC = {
-  gr:  { metric: [4, 40, 0.5, ':1'], imperial: [4, 40, 0.5, ':1'], k: 1, def: 15 },
+  gr:  { metric: [1, 30, 0.5, ':1'], imperial: [1, 30, 0.5, ':1'], k: 1, def: 15 },
   va:  { metric: [5, 25, 0.5, 'm/s'], imperial: [10, 55, 1, 'mph'], k: G.MPH, def: 10 },
   agl: { metric: [0, 300, 5, 'm'], imperial: [0, 1000, 10, 'ft'], k: G.FT, def: 120 },
   ws:  { metric: [0, 15, 0.5, 'm/s'], imperial: [0, 35, 1, 'mph'], k: G.MPH, def: 0 },
@@ -55,7 +64,9 @@ let units = LS.get('units', (navigator.language || '').toLowerCase() === 'en-us'
 let U = G.Units[units];
 const saved = LS.get('params', {});
 const P = {};
-for (const k of Object.keys(SPEC)) P[k] = saved[k] != null ? saved[k] : SPEC[k].def;
+// a saved value outside today's range (the glide ratio once went to 40) is brought inside it
+const lo = k => Math.min(SPEC[k].metric[0], SPEC[k].imperial[0] / SPEC[k].k), hi = k => Math.max(SPEC[k].metric[1], SPEC[k].imperial[1] / SPEC[k].k);
+for (const k of Object.keys(SPEC)) P[k] = saved[k] != null ? Math.min(hi(k), Math.max(lo(k), saved[k])) : SPEC[k].def;
 P.wd = saved.wd != null ? saved.wd : 270;
 P.pb = saved.pb != null ? saved.pb : 180;
 P.curve = saved.curve !== false;
@@ -92,7 +103,22 @@ function afterParams() {
   $('windWords').textContent = P.ws ? `From the ${compass(P.wd, true)}, blowing ${compass((P.wd + 180) % 360, true)}.` : 'Calm.';
   const kc = document.getElementById('keyCurve'); if (kc) kc.hidden = !P.curve;
   windBadge();
+  summaries();
 }
+// a folded section says what it's set to, so the panel can stay short
+function summaries() {
+  $('sumGlider').textContent = `${P.gr}:1, ${U.v(P.va)}, ${U.h(P.agl)} up`;
+  $('sumWind').textContent = P.ws ? `${U.v(P.ws)} from ${compass(P.wd)}` : 'calm';
+  $('sumRules').textContent = `seen to ${U.d(P.vis)}, ${U.h(P.mg)} clear, ${P.sl}° max`;
+  $('sumLaunch').textContent = typeof groundAtLaunch === 'number' && groundAtLaunch === groundAtLaunch ? `ground ${U.h(groundAtLaunch)}` : '';
+  const n = areas().length; $('sumOffline').textContent = n ? `${n} saved` : '';
+}
+// which sections are open is kept between visits
+const openSecs = LS.get('open', {});
+document.querySelectorAll('details.group').forEach(d => {
+  const k = d.dataset.sec; if (k in openSecs) d.open = openSecs[k];
+  d.addEventListener('toggle', () => { openSecs[k] = d.open; LS.set('open', openSecs); });
+});
 // the wind on the map: an arrow the way it blows (north is always up), its speed and where it comes from
 function windBadge() {
   const box = document.getElementById('windMap'); if (!box) return;
@@ -270,7 +296,9 @@ map.on('baselayerchange', e => {
   // contours come on with the imagery the first time, until the visitor says otherwise
   if (base === sat && LS.get('contours', null) === null) contours.addTo(map);
   if (map.hasLayer(contours)) contours.redraw();
+  restyle();
   drawOverlay();
+  mark3d('reach');
 });
 map.on('overlayadd overlayremove', e => { if (e.layer === contours) { LS.set('contours', e.type === 'overlayadd'); contourKey(); } });
 map.on('zoomend', () => contourKey());
@@ -300,6 +328,7 @@ const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
     '<li><span class="key k-ring"></span>As far as you can see it</li>' +
     '<li><span class="key k-hit"></span>Straight glide hits a slope</li>' +
     '<li><span class="key k-line"></span>Cross-section (dots: its distance marks)</li>' +
+    '<li><span class="key k-route"></span>Best route to a spot (long-press)</li>' +
     '<li id="keyContour" hidden><span class="key k-contour"></span><span></span></li>';
   L.DomEvent.disableClickPropagation(box);
   return box;
@@ -340,11 +369,29 @@ const probe = L.circleMarker([0, 0], { radius: 8, color: '#ffffff', weight: 3, f
 const routeCase = L.polyline([], { color: '#ffffff', weight: 7, opacity: .9, interactive: false }).addTo(map);
 const routeLine = L.polyline([], { color: C.route, weight: 4, interactive: false }).addTo(map);
 const routeEnd = L.circleMarker([0, 0], { radius: 7, color: '#ffffff', weight: 2, fillColor: C.route, fillOpacity: 1, interactive: false });
+// the colours follow the base map: dark lines on white casings over the light maps, light lines on dark casings over imagery
+function restyle() {
+  C = base === sat ? PAL.img : PAL.light;
+  outline.setStyle({ color: C.line, opacity: base === sat ? .7 : .45 });
+  hitLines.setStyle({ color: C.hit });
+  ring.setStyle({ color: C.ring });
+  profCase.setStyle({ color: C.casing }); routeCase.setStyle({ color: C.casing });
+  profPast.setStyle({ color: C.line }); profLine.setStyle({ color: C.line });
+  probe.setStyle({ color: C.casing, fillColor: C.line });
+  routeLine.setStyle({ color: C.route }); routeEnd.setStyle({ color: C.casing, fillColor: C.route });
+  profTicks.eachLayer(t => t.setStyle({ color: C.line, fillColor: C.casing }));
+  const key = document.querySelector('.legend-box'); if (key) key.classList.toggle('on-img', base === sat);
+}
+restyle();
 const areaBoxes = L.layerGroup().addTo(map);
 const marker = L.marker([start.lat, start.lon], { draggable: true, title: 'Launch', alt: 'Launch' }).addTo(map);
 marker.on('dragend', () => setLaunch(marker.getLatLng().lat, marker.getLatLng().lng));
 let suppressTap = 0;
-map.on('click', e => { if (Date.now() - suppressTap < 700) return; setLaunch(e.latlng.lat, e.latlng.lng); });
+map.on('click', e => {
+  if (Date.now() - suppressTap < 700) return;
+  setLaunch(e.latlng.lat, e.latlng.lng);
+  if (guideAfterTap) { guideAfterTap = false; openGuide(1); }
+});
 let lastRouteAt = 0;
 const routeAt = ll => { if (Date.now() - lastRouteAt < 800) return; lastRouteAt = Date.now(); showRoute(ll); };
 map.on('contextmenu', e => routeAt(e.latlng));
@@ -359,6 +406,72 @@ map.on('contextmenu', e => routeAt(e.latlng));
   el.addEventListener('touchmove', e => { if (t && Math.hypot(e.touches[0].clientX - x0, e.touches[0].clientY - y0) > 10) cancel(); }, { passive: true });
   el.addEventListener('touchend', cancel); el.addEventListener('touchcancel', cancel);
 })();
+
+// ---------- 3D: the same map tilted, with MapLibre GL, loaded the first time it is opened (glide-3d.js) ----------
+// It sits inside the 2D map, over its tiles and under its controls, so the Key, the wind and the layers menu stay.
+let view3d = null, is3d = false, loading3d = null;
+const mark3d = what => { if (view3d && is3d) view3d.mark(what); };
+const el3d = L.DomUtil.create('div', 'map3d', map.getContainer());
+el3d.hidden = true;
+el3d.setAttribute('role', 'application');
+el3d.setAttribute('aria-label', '3D map. Drag to move it; right-drag, Ctrl-drag or two fingers to tilt and turn; tap to move the launch.');
+// the 2D map underneath must not pan, zoom, set the launch or start a route from what happens in 3D
+for (const t of ['mousedown', 'pointerdown', 'touchstart', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown']) el3d.addEventListener(t, e => e.stopPropagation());
+const hint3d = L.DomUtil.create('div', 'hint3d', el3d);
+hint3d.textContent = 'Right-drag, Ctrl-drag or two fingers to tilt and turn';
+const hasWebGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
+const loadScript = src => new Promise((ok, fail) => {
+  const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.appendChild(s);
+});
+function load3d() {
+  if (!loading3d) loading3d = (async () => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'lib/maplibre/maplibre-gl.css'; document.head.appendChild(css);
+    await loadScript('lib/maplibre/maplibre-gl.js');
+    await loadScript('glide-3d.js');
+    return Glide3D({
+      lmap: map, el: el3d, pal: () => C, terrUrl: terrUrl('{z}', '{x}', '{y}'),
+      L: { outline, hitLines, ring, profCase, profPast, profLine, profTicks, probe, routeCase, routeLine, routeEnd, marker },
+      tiles: { street: osm._url, streetAttr: osm.options.attribution, topo: topo._url, topoAttr: topo.options.attribution,
+               sat: sat._url, satAttr: sat.options.attribution },
+      base: () => baseName(base), overlay: () => overlay, canvas: overlayCanvas, circle: G.circle,
+      onTap: (lat, lon) => setLaunch(lat, lon)
+    });
+  })();
+  loading3d.catch(() => { loading3d = null; });
+  return loading3d;
+}
+async function set3d(on) {
+  if (on && !hasWebGL) { setStatus('<span class="warn">This browser can\'t draw a 3D map (it has no WebGL).</span>'); return; }
+  is3d = on;
+  map.getContainer().classList.toggle('is-3d', on);
+  btn3d.textContent = on ? '2D' : '3D';
+  btn3d.title = on ? 'Back to the flat map' : 'Tilt the map into 3D';
+  btn3d.setAttribute('aria-pressed', String(on));
+  LS.set('view3d', on);
+  if (!on) { if (view3d) view3d.close(); return; }
+  if (!view3d) {
+    setStatus('Loading the 3D map…');
+    try { view3d = await load3d(); } catch (e) {
+      setStatus('<span class="warn">The 3D map didn\'t load. Check the connection and try again.</span>');
+      return set3d(false);
+    }
+    if (launch) placeStatus();
+  }
+  if (!is3d) return; // switched back while it loaded
+  view3d.open();
+  hint3d.classList.remove('gone'); clearTimeout(hint3d.t); hint3d.t = setTimeout(() => hint3d.classList.add('gone'), 5000);
+}
+let btn3d;
+const View3D = L.Control.extend({ options: { position: 'topleft' }, onAdd() {
+  const div = L.DomUtil.create('div', 'leaflet-bar');
+  btn3d = L.DomUtil.create('a', 'view3d', div);
+  btn3d.href = '#'; btn3d.setAttribute('role', 'button'); btn3d.textContent = '3D'; btn3d.title = 'Tilt the map into 3D';
+  btn3d.setAttribute('aria-pressed', 'false');
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.on(btn3d, 'click', e => { L.DomEvent.preventDefault(e); set3d(!is3d); });
+  return div;
+} });
+new View3D().addTo(map);
 
 function setNet() {
   const on = navigator.onLine;
@@ -473,21 +586,35 @@ async function setLaunch(lat, lon, snapRadius = 0) {
     }
     [lon, lat] = G.pxToLonLat(bx, by, M.z);
   }
+  fineGround = { lat, lon, h: await groundAt13(lat, lon) };
   placeLaunch(lat, lon);
   afterParams();
   compute();
 }
 
+// The ground at the launch always comes from zoom-13 terrain. A long glide works on coarser terrain, which smooths a
+// peak tens of metres lower; reading the launch from that would lower the glider's start, shrink the reach and could
+// send the zoom back again, so "Ground at the launch" (and the range) changed with nothing touched.
+let fineGround = null;
+async function groundAt13(lat, lon) {
+  if (M && M.z === Z_MAX) { const [x, y] = G.lonLatToPx(lon, lat, M.z); return sample(x - M.x0, y - M.y0); }
+  const [x, y] = G.lonLatToPx(lon, lat, Z_MAX), x0 = Math.floor(x - 0.5), y0 = Math.floor(y - 0.5), fx = x - 0.5 - x0, fy = y - 0.5 - y0;
+  const g = await terrWindow(Z_MAX, x0, y0, 2, 2); // bilinear between pixel centres, as sample() does
+  return g[0] * (1 - fx) * (1 - fy) + g[1] * fx * (1 - fy) + g[2] * (1 - fx) * fy + g[3] * fx * fy;
+}
+
 function placeLaunch(lat, lon) {
   launch = L.latLng(lat, lon);
   [lpx, lpy] = G.lonLatToPx(lon, lat, M.z);
-  groundAtLaunch = sample(lpx - M.x0, lpy - M.y0);
+  const fine = fineGround && fineGround.lat === lat && fineGround.lon === lon ? fineGround.h : NaN;
+  groundAtLaunch = fine === fine ? fine : sample(lpx - M.x0, lpy - M.y0); // zoom 13 unless that tile is missing
   marker.setLatLng(launch);
   ring.setLatLng(launch);
   LS.set('launch', { lat, lon });
   GEO = null;
   clearRoute(false);
   placeStatus();
+  mark3d();
 }
 function placeStatus() {
   if (groundAtLaunch !== groundAtLaunch) {
@@ -497,10 +624,14 @@ function placeStatus() {
   } else {
     setStatus(`Ground at the launch: ${U.h(groundAtLaunch)} above sea level.`);
   }
+  summaries();
 }
 
 // A high launch over low ground can glide past the loaded block: pick the zoom whose block holds the whole glide.
-let zoomTimer = null;
+// For one launch and one set of settings the terrain only ever gets coarser: going back to a finer zoom it has already
+// left (the coarser block's lowest ground is a little different, or a tile keeps failing) could flip between two zooms
+// for ever, redrawing the reach and the route each time with nothing changed.
+let zoomTimer = null, zoomKey = null;
 function checkZoom() {
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(async () => {
@@ -510,9 +641,13 @@ function checkZoom() {
     let want = G.chooseZoom(range, lat, RT, Z_MAX, Z_MIN);
     const edge = (R && R.kind.some(k => k === 1)) || (Gres && Gres.edge);
     if (edge && want >= M.z && M.z > Z_MIN) want = M.z - 1; // lower ground just outside the block
-    if (want === M.z) return;
+    const key = [lat, launch.lng, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, P.vis, P.curve].join();
+    const same = key === zoomKey; zoomKey = key;
+    if (want === M.z || (same && want > M.z)) return;
     await useMosaic(lat, launch.lng, want);
+    const keep = route && route.target; // the route asked for (even while loading) stays, worked out again on the new terrain
     placeLaunch(lat, launch.lng);
+    if (keep) route = { target: keep };
     compute();
   }, 350);
 }
@@ -531,6 +666,7 @@ function compute() {
   R = G.castRays(glideOpts(), elevAtENU);
   R.h0 = groundAtLaunch + P.agl; R.ms = performance.now() - t0;
   ring.setRadius(P.vis); if (!map.hasLayer(ring)) ring.addTo(map);
+  mark3d();
   drawOverlay();
   drawProfile();
   runGrid();
@@ -541,6 +677,7 @@ function clearResult() {
   R = null; Gres = null;
   outline.setLatLngs([]); hitLines.setLatLngs([]); clearTrace(); ring.remove(); clearRoute(false);
   if (overlay) { map.removeLayer(overlay); overlay = null; }
+  mark3d();
   $('stats').innerHTML = '';
   const c = $('profile'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
   $('profWhat').textContent = '';
@@ -565,24 +702,35 @@ function drawOverlay() {
   const t0 = performance.now();
   const GW = GRID.GW, mpp = M.mpp, cellA = (2 * mpp) ** 2 / 1e6, geo = geometry(), n = R.n, dmax = R.dmax, vis = P.vis, slMax = P.sl;
   const useG = Gres && Gres.gridId === gridId && P.curve, galt = useG ? Gres.alt : null, slope = GRID.slope;
-  const fade = base === sat ? 0.6 : 1; // a lighter wash over imagery, so the ground under it still shows
   if (overlayCanvas.width !== GW) { overlayCanvas.width = overlayCanvas.height = GW; }
-  const ctx = overlayCanvas.getContext('2d'), img = ctx.createImageData(GW, GW), px = img.data;
+  const ctx = overlayCanvas.getContext('2d'), img = ctx.createImageData(GW, GW), px = img.data, A = C.a;
+  // each cell's kind: 0 nothing, 1 out of sight, 2 too steep, 3 landable straight, 4 landable by curving
+  const kind = new Uint8Array(GW * GW), curvedSteep = new Uint8Array(GW * GW);
   let landA = 0, curveLandA = 0, outA = 0;
-  for (let gy = 0; gy < GW; gy++) for (let gx = 0; gx < GW; gx++) {
-    const i = gy * GW + gx, r0 = geo.ray[i], d = geo.dist[i];
+  for (let i = 0; i < kind.length; i++) {
+    const r0 = geo.ray[i], d = geo.dist[i];
     const straight = d <= Math.min(dmax[r0], dmax[r0 + 1 === n ? 0 : r0 + 1]);
     const curved = !straight && galt !== null && galt[i] > -Infinity;
     if (!straight && !curved) continue;
-    const k = i * 4, landable = slope[i] <= slMax, stripe = ((gx + gy) & 3) < 2;
+    if (d > vis) { kind[i] = 1; outA += cellA; } // reachable, but out of sight: the dashed ring marks where sight ends
+    else if (slope[i] > slMax) { kind[i] = 2; curvedSteep[i] = curved ? 1 : 0; }
+    else if (straight) { kind[i] = 3; landA += cellA; }
+    else { kind[i] = 4; landA += cellA; curveLandA += cellA; }
+  }
+  // a landable cell on the border of its kind is drawn solid, so each landable region has a crisp outline (it reads on imagery)
+  for (let gy = 0; gy < GW; gy++) for (let gx = 0; gx < GW; gx++) {
+    const i = gy * GW + gx, t = kind[i];
+    if (!t) continue;
+    const edge = t >= 3 && ((gx > 0 && kind[i - 1] !== t) || (gx < GW - 1 && kind[i + 1] !== t) ||
+                            (gy > 0 && kind[i - GW] !== t) || (gy < GW - 1 && kind[i + GW] !== t));
+    const stripe = ((gx + gy) & 3) < 2;
     let c, a;
-    if (d > vis) { // reachable, but out of sight: a faint wash; the dashed ring marks where sight ends
-      outA += cellA;
-      c = C.out; a = 42;
-    } else if (!landable) { c = C.steep; a = curved && stripe ? 60 : 85; }
-    else if (straight) { c = C.straight; a = 120; landA += cellA; }
-    else { c = stripe ? C.curveDark : C.curve; a = stripe ? 190 : 120; landA += cellA; curveLandA += cellA; }
-    px[k] = c[0]; px[k + 1] = c[1]; px[k + 2] = c[2]; px[k + 3] = a * fade;
+    if (t === 1) { c = C.out; a = A.out; }
+    else if (t === 2) { c = C.steep; a = curvedSteep[i] && stripe ? A.steepStripe : A.steep; }
+    else if (t === 3) { c = C.straight; a = edge ? A.edge : A.straight; }
+    else { c = edge || !stripe ? C.curve : C.curveDark; a = edge ? A.edge : stripe ? A.curveStripe : A.curve; }
+    const k = i * 4;
+    px[k] = c[0]; px[k + 1] = c[1]; px[k + 2] = c[2]; px[k + 3] = a;
   }
   ctx.putImageData(img, 0, 0);
   const bounds = L.latLngBounds(pxLatLng(M.x0, M.y0 + M.W), pxLatLng(M.x0 + M.W, M.y0));
@@ -604,6 +752,7 @@ function drawOverlay() {
   pts.push(pts[0]);
   for (let i = 0; i < n; i++) if (steep[i] && steep[(i + 1) % n]) hits.push([pts[i], pts[i + 1]]);
   outline.setLatLngs(pts); hitLines.setLatLngs(hits);
+  mark3d('reach');
   if (fitNext) { // fit the sight ring (or the reach, if smaller), clear of the key in the bottom-left corner
     fitNext = false;
     const key = document.querySelector('.legend-box'), kh = key ? key.offsetHeight + 16 : 0;
@@ -692,7 +841,7 @@ function drawProfile() {
   $('profWhat').textContent = p.what;
   const series = p.curve ? COL.curve : COL.straight;
   $('profKeyLine').style.borderTopColor = series; $('profKeyMargin').style.borderTopColor = series;
-  if (p.d.length < 2) { PROF = null; clearTrace(); return; }
+  if (p.d.length < 2) { PROF = null; clearTrace(); $('btnFly').disabled = true; return; }
   const dMax = p.d[p.d.length - 1];
   let lo = Infinity, hi = -Infinity;
   for (let k = 0; k < p.d.length; k++) { lo = Math.min(lo, p.ground[k]); hi = Math.max(hi, p.ground[k], p.glide[k] || -Infinity); }
@@ -701,6 +850,7 @@ function drawProfile() {
   const L0 = 52, B0 = 22, T0 = 8, R0 = 14, isMetric = units === 'metric', hk = isMetric ? 1 : G.FT;
   const X = d => L0 + (d / dMax) * (Wc - L0 - R0), Y = h => T0 + (1 - (h - lo) / (hi - lo)) * (Hc - T0 - B0);
   PROF = { ...p, X, Y, L0, R0, Wc, Hc, B0, T0, dMax };
+  $('btnFly').disabled = !(p.end > 0 && p.glide[0] === p.glide[0]);
 
   // recessive grid: a few height lines (in the chosen unit) and distance ticks
   c.font = '12px system-ui, sans-serif'; c.fillStyle = COL.muted; c.strokeStyle = COL.line; c.lineWidth = 1;
@@ -750,6 +900,7 @@ function niceStep(raw) { const m = 10 ** Math.floor(Math.log10(raw)), f = raw / 
 // ---------- The cross-section on the map, and one cursor for both ----------
 function clearTrace() {
   profCase.setLatLngs([]); profLine.setLatLngs([]); profPast.setLatLngs([]); profTicks.clearLayers(); hideCursor();
+  mark3d();
 }
 // the point on the trace at distance s, between the profile's points
 function llAt(p, s) {
@@ -765,8 +916,9 @@ function drawTrace(p, ticks) {
     profCase.setLatLngs(p.lls); profLine.setLatLngs(flown); profPast.setLatLngs(p.lls.slice(p.end));
   }
   for (const s of ticks) if (s > 0) {
-    L.circleMarker(llAt(p, s), { radius: 3.5, color: C.line, weight: 1.5, fillColor: '#ffffff', fillOpacity: 1, interactive: false }).addTo(profTicks);
+    L.circleMarker(llAt(p, s), { radius: 3.5, color: C.line, weight: 1.5, fillColor: C.casing, fillOpacity: 1, interactive: false }).addTo(profTicks);
   }
+  mark3d();
 }
 let cursorK = null, cursorFrom = null; // where the cursor is (a profile point) and which graphic put it there
 function showCursor(k, from) {
@@ -781,12 +933,14 @@ function showCursor(k, from) {
   tip.style.left = Math.min(Math.max(4, X + 12), cv.clientWidth - tip.offsetWidth - 4) + 'px';
   tip.style.top = '10px';
   probe.setLatLng(PROF.lls[k]); if (!map.hasLayer(probe)) probe.addTo(map);
+  mark3d();
   // scrubbing the cross-section past the edge of the map pans it just enough to keep the probe in view
-  if (from === 'profile') map.panInside(PROF.lls[k], { padding: [36, 36], animate: false });
+  if (from === 'profile' && !is3d) map.panInside(PROF.lls[k], { padding: [36, 36], animate: false });
 }
 function hideCursor() {
   cursorK = null; cursorFrom = null;
   $('profTip').hidden = true; probe.remove();
+  mark3d();
   if (PROF && PROF.img) $('profile').getContext('2d').putImageData(PROF.img, 0, 0);
 }
 // on the cross-section: the cursor follows the pointer (or finger), and the probe shows the same spot on the map
@@ -805,7 +959,7 @@ $('profile').addEventListener('pointerleave', e => { if (e.pointerType === 'mous
 // on the map: a pointer within a few pixels of the trace moves the cursor on the cross-section too
 const NEAR_PX = 18;
 map.on('mousemove', e => {
-  if (!PROF || !PROF.lls) return;
+  if (!PROF || !PROF.lls || is3d) return;
   let best = -1, bd = NEAR_PX * NEAR_PX;
   for (let k = 0; k < PROF.lls.length; k++) {
     const q = map.latLngToContainerPoint(PROF.lls[k]), dx = q.x - e.containerPoint.x, dy = q.y - e.containerPoint.y;
@@ -880,6 +1034,7 @@ async function deleteArea(id) {
 
 async function renderAreas() {
   const list = areas(), ul = $('areas');
+  summaries();
   ul.innerHTML = ''; areaBoxes.clearLayers();
   for (const a of list) {
     const li = document.createElement('li');
@@ -918,6 +1073,84 @@ function locate() {
 }
 new ResizeObserver(() => schedule('profile')).observe($('profile'));
 
+// ---------- Hide the settings (wide screens): the map takes the whole window; a button on the map brings them back ----------
+let panelBtn;
+function setPanel(on) {
+  $('app').classList.toggle('panel-off', !on);
+  LS.set('panel', on);
+  const label = on ? 'Hide the settings' : 'Show the settings';
+  panelBtn.title = label; panelBtn.setAttribute('aria-label', label); panelBtn.setAttribute('aria-expanded', String(on));
+  panelBtn.querySelector('.chev').setAttribute('d', on ? 'M15.5 9.5 13 12l2.5 2.5' : 'M13 9.5l2.5 2.5L13 14.5');
+  map.invalidateSize(); if (view3d) view3d.resize(); schedule('profile');
+}
+const ShowPanel = L.Control.extend({ options: { position: 'topleft' }, onAdd() {
+  const div = L.DomUtil.create('div', 'leaflet-bar show-panel-bar wide-only');
+  panelBtn = L.DomUtil.create('a', 'show-panel', div);
+  panelBtn.href = '#'; panelBtn.setAttribute('role', 'button');
+  panelBtn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/><path class="chev" d="M15.5 9.5 13 12l2.5 2.5"/></svg>';
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.on(panelBtn, 'click', e => { L.DomEvent.preventDefault(e); setPanel($('app').classList.contains('panel-off')); });
+  return div;
+} });
+const showPanelCtl = new ShowPanel().addTo(map);
+{ const corner = showPanelCtl.getContainer().parentNode; corner.insertBefore(showPanelCtl.getContainer(), corner.firstChild); }
+setPanel(LS.get('panel', true) !== false);
+
+// ---------- Quick start: three steps, on a first visit (until switched off) and from the book in the header ----------
+const GLIDERS = { foam: { gr: 8, va: 8, vis: 400 }, two: { gr: 15, va: 10, vis: 600 }, scale: { gr: 25, va: 14, vis: 1000 } };
+let gStep = 0, guideAfterTap = false;
+function paintGuide() {
+  for (const b of document.querySelectorAll('[data-glider]')) {
+    const g = GLIDERS[b.dataset.glider];
+    b.setAttribute('aria-checked', String(P.gr === g.gr && P.va === g.va && P.vis === g.vis));
+    b.querySelector('span').textContent = `${g.gr}:1 at ${U.v(g.va)}, seen to ${U.d(g.vis)}`;
+  }
+  for (const b of document.querySelectorAll('[data-height]')) {
+    b.setAttribute('aria-checked', String(P.agl === +b.dataset.height));
+    b.querySelector('span').textContent = `about ${U.h(+b.dataset.height)}`;
+  }
+}
+function guideStep(n) {
+  gStep = n;
+  document.querySelectorAll('#guide [data-step]').forEach(el => { el.hidden = +el.dataset.step !== n; });
+  document.querySelectorAll('#guide .dots i').forEach((d, i) => d.classList.toggle('on', i <= n));
+  $('guideBack').disabled = n === 0;
+  $('guideNext').textContent = n === 2 ? 'Done' : 'Next';
+  paintGuide();
+}
+function openGuide(n = 0) {
+  $('guideShow').checked = LS.get('guide', true);
+  guideStep(n);
+  if (!$('guide').open) $('guide').showModal();
+}
+$('btnGuide').onclick = () => openGuide(0);
+$('guideShow').onchange = () => LS.set('guide', $('guideShow').checked);
+$('guideNext').onclick = () => { if (gStep >= 2) $('guide').close(); else guideStep(gStep + 1); };
+$('guideBack').onclick = () => guideStep(Math.max(0, gStep - 1));
+$('guide').querySelector('[data-close]').onclick = () => $('guide').close();
+$('guide').addEventListener('click', e => { if (e.target === $('guide')) $('guide').close(); }); // a click on the backdrop
+$('guide').querySelector('[data-g=geo]').onclick = () => { locate(); guideStep(1); };
+$('guide').querySelector('[data-g=example]').onclick = () => { fitNext = true; setLaunch(M_HILL.lat, M_HILL.lon, M_HILL.snap); guideStep(1); };
+$('guide').querySelector('[data-g=tap]').onclick = () => { guideAfterTap = true; $('guide').close(); setStatus('Tap the map where you launch.'); };
+const applyPreset = vals => {
+  Object.assign(P, vals); save(); setSliders(); afterParams(); schedule('all'); paintGuide();
+};
+document.querySelectorAll('[data-glider]').forEach(b => { b.onclick = () => applyPreset(GLIDERS[b.dataset.glider]); });
+document.querySelectorAll('[data-height]').forEach(b => { b.onclick = () => applyPreset({ agl: +b.dataset.height }); });
+
+// ---------- Fly it: the camera follows the glide (the straight one, or the route) in 3D ----------
+async function flyIt() {
+  const p = PROF;
+  if (!p || !(p.end > 0)) return;
+  if (!is3d) await set3d(true);
+  if (!is3d || !view3d) return;
+  const n = p.end + 1;
+  view3d.fly({ lls: p.lls.slice(0, n), d: p.d.slice(0, n), h: p.glide.slice(0, n), g: p.ground.slice(0, n), U,
+               Va: P.va, gr: P.gr, ws: P.ws, wd: P.wd },
+             k => showCursor(k, 'fly'), () => hideCursor());
+}
+$('btnFly').onclick = flyIt;
+
 setSliders();
 pbDial.render();
 setNet();
@@ -925,3 +1158,5 @@ renderAreas();
 const first = (!navigator.onLine && areas().length && !LS.get('launch', null)) ? areas()[0] : start;
 fitNext = true;
 setLaunch(first.lat, first.lon, first === M_HILL ? M_HILL.snap : 0);
+if (LS.get('view3d', false)) set3d(true);
+if (LS.get('guide', true)) openGuide(0);
