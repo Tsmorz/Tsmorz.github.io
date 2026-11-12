@@ -544,3 +544,4 @@ tab shown; `S.mode` is what the detector looks for (`calib`: the board; `track`:
 - Reintroduce theme boilerplate (`_sass/`, a gemspec, `docs/`, bundled font files).
 - Hardcode a project into a page's HTML.
 - Add a JS dependency for something 20 lines of vanilla JS already does in `site.js`.
+- Add a LICENSE: the site is all rights reserved on purpose (README, "License"). Vendored libraries keep their own.
