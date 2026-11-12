@@ -321,9 +321,15 @@ over the panes, under the controls), so the Key, wind badge and layers menu stay
 (`.is-3d`), and its mouse, touch and wheel events are stopped there so the 2D map never pans or sets the launch from them.
 In 3D a tap or dragging the pin moves the launch; long-press routes are 2D only. No WebGL: the button says so.
 **Fly it** (beside the cross-section's title) follows the glide in 3D, the straight one or the long-press route, at its own
-heights (the profile's `glide`): a chase camera 150 m behind and 55 m above the glider (`calculateCameraOptionsFromTo`, kept
-25 m over the ground; the centre is unclamped from the ground while it flies), a glider drawn at the middle of the view, a
-readout with Stop, and the cross-section's cursor following along. The whole glide takes 8 to 40 s; dragging the map ends it.
+heights (the profile's `glide`): a chase camera 150 m behind and 80 m above the glider (`calculateCameraOptionsFromTo`, kept
+25 m over the ground; the centre is unclamped from the ground while it flies), a readout with Stop, and the cross-section's
+cursor following along. The whole glide takes 8 to 40 s; dragging the map ends it. **The glider** is a 2 m model sailplane,
+`GlideCore.gliderMesh()` (no DOM; test 6b checks its size, symmetry and normals): a lofted fuselage with a painted canopy,
+tapered polyhedral wings with a cambered airfoil, a T-tail, red tips. It is drawn with WebGL in a canvas at the middle of the
+view (larger than life), lit by sun, sky and ground with a gloss highlight, from the chase camera's own angle, and flies:
+it banks for a coordinated turn at the set airspeed (from the track's curvature, smoothed), noses down at the glide angle,
+crabs into a crosswind, and rocks a little. `view3d.preview({ look, yaw, pitch, bank })` draws it alone, for checking the
+model by eye.
 
 **No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
 rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or

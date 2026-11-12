@@ -227,8 +227,8 @@ button.btn.fly:hover { background: var(--accent-soft); }
 .fly-hud button { flex: none; min-height: 34px; padding: 4px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.35);
   background: transparent; color: #fff; font: inherit; cursor: pointer; }
 .fly-hud button:hover { background: rgba(255,255,255,.12); }
-.fly-glider { position: absolute; z-index: 2; left: 50%; top: 50%; width: 120px; height: 36px; margin: -18px 0 0 -60px; pointer-events: none;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.fly-glider { position: absolute; z-index: 2; left: 50%; top: 50%; width: 360px; height: 180px; margin: -90px 0 0 -180px; pointer-events: none; }
+@media (max-width: 560px) { .fly-glider { width: 240px; height: 120px; margin: -60px 0 0 -120px; } }
 
 /* Quick start: a guide in three steps, opened on a first visit and from the book in the header */
 dialog.guide { width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid var(--line-2);

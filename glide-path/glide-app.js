@@ -1145,7 +1145,8 @@ async function flyIt() {
   if (!is3d) await set3d(true);
   if (!is3d || !view3d) return;
   const n = p.end + 1;
-  view3d.fly({ lls: p.lls.slice(0, n), d: p.d.slice(0, n), h: p.glide.slice(0, n), g: p.ground.slice(0, n), U },
+  view3d.fly({ lls: p.lls.slice(0, n), d: p.d.slice(0, n), h: p.glide.slice(0, n), g: p.ground.slice(0, n), U,
+               Va: P.va, gr: P.gr, ws: P.ws, wd: P.wd },
              k => showCursor(k, 'fly'), () => hideCursor());
 }
 $('btnFly').onclick = flyIt;
