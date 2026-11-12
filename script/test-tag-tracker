@@ -23,7 +23,8 @@
 //      two or three tags (and in Mirror view); one tag on a phone's screen; the robot's settings and voice commands
 //   5i. the table: the physics (a ball at rest, rolling and spinning down, the mug's shape, standing, sleeping, tipping and
 //       sliding, resting on its handle, the ball in it; hands the table stops, gripping, lifting, pressing, pouring, a mug
-//       swinging from its handle, a fast hand, putting fallen things back, the time a frame takes) and the servo grip
+//       swinging from its handle held lightly and not firmly, side grips that never spin it up, a light grip it slides
+//       out of, letting go, fingertip and whole-pad pinches on its rim, a fast hand, putting fallen things back, the time a frame takes) and the servo grip
 //   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
@@ -932,17 +933,46 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   const out = C.sub(W.poseOf(b5).t, W.poseOf(c4).t);
   check(heldMug && Math.abs(pressed) < 0.002 && up > 0.1 && C.norm(out) > 0.1 && W.hands[1].grip,
     `a mug held from the side and pressed into the table stays on it (${(pressed * 1000).toFixed(1)} mm); lifted with the ball in it and turned over, it pours the ball out`);
-  // pinched by its handle and lifted, the grip can't hold the mug's weight off to one side: it swings down
-  W = P.world({ table, gripper: G });
-  const c5 = W.add('cup', [0, 0, 0], Rz180);
-  run(W, 30);
-  const hx = -(P.CUP.handle.x + P.CUP.handle.a) - 0.002, hz = P.CUP.handle.z;
-  hand = { R: I, t: [hx, 0, hz - G.finger.c[2]] };
-  drive(30, null, 1); drive(60, null, 0);
-  const onHandle = W.hands[1].grip && W.hands[1].grip.body === c5, hgap = W.hands[1].gap;
-  drive(60, (s) => ({ R: I, t: [hx, 0, hz - G.finger.c[2] + 0.12 * s] }), 0); drive(120, null, 0);
-  check(onHandle && hgap < 2 * P.CUP.handle.b + 0.004 && W.hands[1].grip && P.tilt(c5) * D > 30 && W.poseOf(c5).t[2] > 0.08,
-    `pinched by its handle (jaws ${(hgap * 1000).toFixed(1)} mm apart) and lifted, the mug swings ${(P.tilt(c5) * D).toFixed(0)}° about the jaws and stays held`);
+  // A grip on the mug: close the jaws at `at` (the hand's pose), then squeeze `sq` past where they met it (1: shut),
+  // lift 12 cm (and `back` towards -x) over 1 s and hold 2 s. Its fastest turn, how far it tipped and where it ended.
+  const gripLift = (rot, at, sq, back) => {
+    const Ww = P.world({ table, gripper: G }), cc = Ww.add('cup', [0, 0, 0], rot), capped0 = Ww.capped;
+    run(Ww, 30);
+    let wmax = 0, open = 1;
+    const go = (n, f) => run(Ww, n, (s) => { Ww.setRobot({ hands: [{ side: 1, pose: f ? f(s) : at, opening: open }] }); wmax = Math.max(wmax, C.norm(cc.w)); });
+    go(30); open = 0; go(60);
+    const h = Ww.hands[1], took = !!h.grip, gap = h.gap;
+    open = Math.max(0, (gap - sq) / G.gapMax); go(10);
+    const lift = (s) => ({ R: at.R, t: C.add(at.t, [-(back || 0) * s, 0, 0.12 * s]) });
+    go(60, lift); go(120, () => lift(1));
+    return { W: Ww, c: cc, h, took, gap, wmax, capped: Ww.capped - capped0, tilt: P.tilt(cc) * D, z: Ww.poseOf(cc).t[2], held: !!h.grip && h.touch[0] === cc && h.touch[1] === cc };
+  };
+  // pinched by its handle: a light pinch can't hold the mug's weight off to one side and it swings down about the jaws;
+  // a firm one holds it
+  const hx = -(P.CUP.handle.x + P.CUP.handle.a) - 0.002, hz = P.CUP.handle.z, atHandle = { R: I, t: [hx, 0, hz - G.finger.c[2]] };
+  const hl = gripLift(Rz180, atHandle, 0.001), hf = gripLift(Rz180, atHandle, 1);
+  check(hl.took && Math.abs(hl.gap - 2 * P.CUP.handle.b) < 0.001 && hl.held && hl.tilt > 30 && hl.z > 0.06 && hf.held && hf.tilt < 5 && hf.z > 0.11,
+    `pinched by its handle (jaws ${(hl.gap * 1000).toFixed(1)} mm apart) and lifted, the mug swings ${hl.tilt.toFixed(0)}° about the jaws held lightly and stays held; held firmly, ${hf.tilt.toFixed(1)}°`);
+  // taken from the side by the fingertips, lightly or firmly, either way round, lifted and moved: never spun up (it
+  // once spun at hundreds of rad/s and ended above the jaws, still "held"), and either still between the pads or let go
+  const Rz = (a) => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
+  const tipX = -(G.finger.c[2] - G.finger.h[2]);
+  let spin = 0, capped = 0, astray = 0, runs = 0;
+  for (const ov of [0.005, 0.01, 0.02, 0.03]) for (const rot of [I, Rz180]) for (const sq of [0.002, 1]) {
+    const r = gripLift(rot, { R: Rh, t: [-P.CUP.R + ov - tipX, 0, 0.04] }, sq, 0.05);
+    spin = Math.max(spin, r.wmax); capped += r.capped; runs++;
+    if (!(r.held || (!r.h.grip && r.z < 0.06))) astray++;
+  }
+  check(spin < 20 && !capped && !astray, `the mug taken from the side by the fingertips (${runs} ways), lifted and moved, turns at most ${spin.toFixed(1)} rad/s and stays between the pads or is let go`);
+  // a light grip lets the mug slide out of the jaws back onto the table; a firm one lifts it; opening a millimetre lets go
+  const side = { R: Rh, t: [-P.CUP.R + 0.01 - tipX, 0, 0.04] }, sl = gripLift(I, side, 0.0005), sf = gripLift(I, side, 1);
+  sf.W.setRobot({ hands: [{ side: 1, pose: { R: Rh, t: C.add(side.t, [0, 0, 0.12]) }, opening: (sf.gap + 0.001) / G.gapMax }] }); sf.W.step(P.H);
+  check(sl.took && !sl.h.grip && sl.z < 0.002 && sf.held && sf.z > 0.11 && sf.tilt < 5 && !sf.h.grip,
+    `held lightly (0.5 N) the mug slides out of the jaws onto the table (${(sl.z * 1000).toFixed(1)} mm up); held firmly it lifts ${(sf.z * 100).toFixed(1)} cm; opening 1 mm lets go at once`);
+  // a pinch with only the fingertips on its rim lets it tip about the pads; with the whole pad it stays level
+  const rimAt = (depth) => ({ R: Rz(Math.PI / 2), t: [(P.CUP.R + P.CUP.Ri) / 2, 0, P.CUP.H - depth - (G.finger.c[2] - G.finger.h[2])] });
+  const rt = gripLift(Rz180, rimAt(0.003), 1), rw = gripLift(Rz180, rimAt(0.025), 1);
+  check(rt.held && rt.tilt > 30 && rw.held && rw.tilt < 5, `pinched by the fingertips on its rim the mug tips ${rt.tilt.toFixed(0)}° about the pads; pinched with the whole pad, ${rw.tilt.toFixed(1)}°`);
   // a hand moving fast knocks the ball on rather than passing through it
   W = P.world({ table, gripper: G });
   const b6 = W.add('ball', [0, 0, P.BALL.r]);

@@ -679,7 +679,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <button class="btn sm outline" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
           <button class="btn sm outline sq" id="fullBtn" aria-label="Full screen" title="Full screen (Esc to leave)"><svg class="i"><use href="#i-full"/></svg></button>
         </div>
-        <canvas id="plot" tabindex="0" role="img" aria-label="3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view, C to calibrate the robot, T to reset the table. Drag a robot hand to move it (Alt to lift it), scroll on it to open and close its gripper (Shift to tilt it), Space to open or close it."></canvas>
+        <canvas id="plot" tabindex="0" role="img" aria-label="3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view, C to calibrate the robot, T to reset the table. Drag a robot hand to move it across the view (Alt for the other way), scroll on it to open and close its gripper (Shift to tilt it), Space to open or close it."></canvas>
         <canvas id="plotGL" aria-hidden="true" hidden></canvas>
         <div class="legend" id="legend3d"></div>
         <div class="rhint" id="robotHint" role="status" hidden></div>
@@ -911,10 +911,10 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 
 <!-- ?v= is the page's version: bump it whenever one of these (or worker.js) changes, so a browser never runs a cached
      old copy of one beside new copies of the others -->
-<script src="tracker-core.js?v=2026-11-11c"></script>
-<script src="robot-core.js?v=2026-11-11c"></script>
-<script src="robot-gl.js?v=2026-11-11c"></script>
-<script src="physics-core.js?v=2026-11-11c"></script>
+<script src="tracker-core.js?v=2026-11-12"></script>
+<script src="robot-core.js?v=2026-11-12"></script>
+<script src="robot-gl.js?v=2026-11-12"></script>
+<script src="physics-core.js?v=2026-11-12"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
 (() => {
@@ -1211,7 +1211,7 @@ function status(text, kind) {
 const POOL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 function spawnWorker() {
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  const w = new Worker(base + 'worker.js?v=2026-11-11c'), slot = { w, ready: false, busy: false, first: !S.pool.length };
+  const w = new Worker(base + 'worker.js?v=2026-11-12'), slot = { w, ready: false, busy: false, first: !S.pool.length };
   S.pool.push(slot);
   w.onmessage = (ev) => onWorker(ev.data, slot);
   w.onerror = (e) => { if (slot.first) status('Detector failed to start', 'bad'); else S.pool = S.pool.filter((x) => x !== slot); console.error(e); };
@@ -2585,10 +2585,10 @@ $('robotProps').onchange = () => { S.settings.robot.props = $('robotProps').valu
 $('tableResetBtn').onclick = resetTable;
 $('tagsDriveBtn').onclick = () => { TB.drive.clear(); for (const k of [...RB.prev.keys()]) if (String(k).startsWith('drive')) RB.prev.delete(k); paintRobotBtns(); };
 
-// Moving a hand with the mouse (or a finger): press on a gripper and drag it over the plane at its height; with Alt held
-// it moves in the upright plane facing you instead. Scrolling on a hand opens and closes it (with Shift: tips the fingers
-// down and up), and Space opens or closes the last one moved. A moved hand stays where it was put until Tags drive,
-// Calibrate robot, or a reload.
+// Moving a hand with the mouse (or a finger): press on a gripper and drag it across the view, in the robot's plane the
+// view looks most squarely at (grabPlane); with Alt held, in the next one. Scrolling on a hand opens and closes it
+// (with Shift: tips the fingers down and up), and Space opens or closes the last one moved. A moved hand stays where it
+// was put until Tags drive, Calibrate robot, or a reload.
 function plotOrbit() {
   const V = S.view, r = plot.getBoundingClientRect();
   return { o: C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w: r.width, h: r.height }), r };
@@ -2630,19 +2630,24 @@ function rayHit(o, r, e, p, n) {
   const s = ((p[0] - o.eye[0]) * n[0] + (p[1] - o.eye[1]) * n[1] + (p[2] - o.eye[2]) * n[2]) / dn;
   return s > 0 ? C.add(o.eye, d.map((v) => v * s)) : null;
 }
-function grabPlane(o, alt, p) {
-  if (!alt) return [0, 0, 1];
-  const h = [o.fwd[0], o.fwd[1], 0], l = Math.hypot(h[0], h[1]);
-  return l > 1e-6 ? [h[0] / l, h[1] / l, 0] : [0, 1, 0];
+// The plane a hand is dragged in: its normal is whichever of the robot's forward, side and up (the table's axes, else the
+// chest's, upright) the view looks most nearly along. From above the hand moves side to side and forward and back, from
+// the side forward and back and up and down, from the front side to side and up and down. Alt takes the next nearest,
+// so from above it lifts the hand.
+function grabPlane(o, alt) {
+  const ch = RB.scene.chest, R = TB.world ? TB.world.table.R : RCORE.upright([ch.R[0], ch.R[3], ch.R[6]]);
+  const by = [0, 1, 2].map((i) => [R[i], R[3 + i], R[6 + i]]).map((a) => ({ a, d: Math.abs(a[0] * o.fwd[0] + a[1] * o.fwd[1] + a[2] * o.fwd[2]) }));
+  by.sort((x, y) => y.d - x.d);
+  return by[alt ? 1 : 0].a;
 }
 function handGrab(e) {
   if (e.shiftKey || (e.pointerType === 'mouse' && e.button !== 0)) return false;
   const hit = handAt(e);
   if (!hit) return false;
   const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = RCORE.place(sc.chest, C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]])));
-  const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey, p), at = rayHit(o, r, e, p, n);
+  const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n);
   if (!at) return false;
-  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, off: C.sub(p, at) };
+  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, off: C.sub(p, at) };
   plot.setPointerCapture(e.pointerId); plot.style.cursor = 'grabbing';
   return true;
 }
@@ -2657,10 +2662,10 @@ function handMove(e) {
   // the plane goes through where the hand is sent, not where it is: the table or a load can hold the hand back, and a
   // plane that followed it would move the target with it
   const G = RCORE.gripper(sc.m), p = RCORE.place(sc.chest, C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]])));
-  const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey, p);
+  const { o, r } = plotOrbit();
   // Alt pressed or let go mid-drag: carry on from here on the other plane
-  if (e.altKey !== g.alt) { const at = rayHit(o, r, e, p, n); if (at) { g.off = C.sub(p, at); g.alt = e.altKey; } return true; }
-  const at = rayHit(o, r, e, p, n);
+  if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.off = C.sub(p, at); g.alt = e.altKey; } return true; }
+  const at = rayHit(o, r, e, p, g.n);
   if (!at) return true;
   // the new grip point, in the chest's frame, and the wrist behind it
   const want = C.add(at, g.off), gc = C.mulv(C.tr3(sc.chest.R), C.sub(want, sc.chest.t));

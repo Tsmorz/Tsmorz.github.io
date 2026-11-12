@@ -13,10 +13,13 @@
 // The hands are bodies too, pulled towards where the arm puts them by a spring and damper with a force and torque limit
 // (HAND), so the table and the props stop them and a push has a most it can do. The page draws the arm to where the
 // hand is. Each gripper's jaws close along the hand's y at JAW_SPEED towards the opening the page asks for (a servo on
-// the operator's hand, or the mouse). When both pads touch the same prop while closing, the grip takes it: a coupling
-// that holds it where it was taken with what friction between the pads allows (GRIP: the grip force times the pads'
-// friction, least for a twist about the jaws' axis), so a heavy or off-centre load slips: a mug pinched by its handle
-// swings down until friction holds it. Opening past the gap it was taken at lets go.
+// the operator's hand, or the mouse). When both pads touch the same prop while closing, the grip takes it. The jaws then
+// squeeze like a servo: with a force in proportion to how far past the prop they are told to close (GRIP.k, up to
+// GRIP.force), so a slight close holds lightly. The grip is a joint solved with the contacts that holds the pinched
+// point and the prop's turn with what the pads allow: friction (2·mu·force) along any direction, and against a turn,
+// what the patch of pad that touches can resist (its spread along and across the fingers), so a fingertip pinch lets the
+// load swing about the pads and a whole pad holds it. What it can't hold slips (and is held where it slipped to); the
+// pads stay solid, and a prop that slides out of them, or jaws opened to its width, lets go.
 //
 // Poses are {R, t} as in TagCore (R a row-major 3x3 rotation, t in metres); quaternions [w, x, y, z] inside.
 (function (root, factory) {
@@ -80,8 +83,6 @@
     return s < 1e-12 ? [0, 0, 0] : scale([q[1], q[2], q[3]], (2 * Math.atan2(s, q[0])) / s);
   }
   const turnRate = (R0, R1, h) => scale(rotvec(mul3(R1, tr3(R0))), 1 / h);
-  const compose = (A, B) => ({ R: mul3(A.R, B.R), t: add(mulv(A.R, B.t), A.t) });
-  const inverse = (A) => { const Rt = tr3(A.R); return { R: Rt, t: scale(mulv(Rt, A.t), -1) }; };
 
   // ---- constants ----
   const H = 1 / 240, ITER = 10, SLOP = 0.0005, BETA = 0.25, MARGIN = 0.004, BOUNCE = 0.3;
@@ -101,8 +102,16 @@
   // The grip: the jaws squeeze with `force` (N); the pads' friction mu holds up to 2·mu·force along any direction, a twist
   // about the jaws' axis up to 2·mu·force·twist (a pad's small contact patch), and a tip about the other axes up to
   // 2·force·tilt (the pads' half width). `w`: how stiffly the grip holds (rad/s).
-  const GRIP = { force: 15, mu: 0.9, twist: 0.002, tilt: 0.012, w: 90, drop: 0.03 };
-  const JAW_SPEED = 0.25, LET_GO = 0.005;
+  // The grip: the jaws squeeze with k (N/m) times how far past the prop they are told to close, up to `force` (N), and
+  // take a prop only with at least minF. The pads' friction mu holds up to 2·mu·F along any direction; against a turn
+  // about the jaws' axis mu·F·a (a: the touching patch's half size), about the other two 2·F·(its half spread along the
+  // other axis); a sphere touching makes a patch `patch` across. It lets go when neither pad has held the prop for `free`
+  // s, or when the pinch is `drop` from the pads. `beta`: how much of a drift it puts right each step.
+  // The jaws take it once both pads are within `touch` of it (m, the two together).
+  const GRIP = { force: 15, k: 1000, minF: 0.3, mu: 0.8, patch: 0.003, touch: 0.0005, free: 0.05, drop: 0.01, beta: 0.2 };
+  const JAW_SPEED = 0.25;
+  // a prop never turns faster than this (rad/s): a guard against a solver blow-up, never reached in the tests
+  const W_MAX = 60;
   // Sleep: below these speeds (m/s, at the body's edge) for SLEEP_T s while touching something.
   const SLEEP_V = 0.008, SLEEP_T = 0.5;
 
@@ -210,7 +219,7 @@
     const o = opts || {}, G = o.gripper, table = o.table || null;
     const tableBox = table ? { R: table.R, t: add(table.t, mulv(table.R, [0, 0, -(table.thick || 0.03) / 2])), h: [table.size[0] / 2, table.size[1] / 2, (table.thick || 0.03) / 2] } : null;
     const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor;
-    const W = { bodies: [], hands: {}, time: 0, warm: new Map(), table, tableBox, floorZ, starts: [] };
+    const W = { bodies: [], hands: {}, time: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0 };
     let prevLinks = new Map(), nextLinks = [], nextHands = [];
     const touching = []; // props touching each other this substep
 
@@ -251,7 +260,7 @@
           if (h && h.grip) h.grip = null;
           const body = (h && h.body) || handBody(G);
           place(body, P1.t, P1.R);
-          h = W.hands[hd.side] = { side: hd.side, body, gap: h ? h.gap : G.gapMax, grip: null, touch: [null, null], aim: P1 };
+          h = W.hands[hd.side] = { side: hd.side, body, gap: h ? h.gap : G.gapMax, grip: null, F: 0, touch: [null, null], pads: [[], []], aim: P1 };
         }
         h.target = Math.max(0, Math.min(1, hd.opening === undefined ? 1 : hd.opening)) * G.gapMax;
         const P0 = h.aim;
@@ -274,25 +283,31 @@
       // the hands: their jaws, then pulled towards the arm
       for (const x of hands) {
         const h = x.h, b = h.body, T0 = { R: rOf(nlerp(x.q0, x.q1, a0)), t: lerp(x.t0, x.t1, a0) }, T1 = { R: rOf(nlerp(x.q0, x.q1, a1)), t: lerp(x.t0, x.t1, a1) };
-        const g0 = h.gap;
-        if (h.grip && (h.target > h.grip.gap + LET_GO || h.grip.body.lost > 0)) h.grip = null;
-        if (!h.grip) {
-          const [t1, t2] = h.touch;
-          if (h.target < h.gap && t1 && t1 === t2) {
-            const wr = W.poseOf(b);
-            h.grip = { body: t1, gap: h.gap, rel: compose(inverse(wr), { R: t1.R, t: t1.t }) };
+        const g0 = h.gap, squeeze = Math.min(GRIP.force, GRIP.k * (h.gap - h.target));
+        if (h.grip) {
+          const g = h.grip;
+          g.free = h.touch[0] === g.body && h.touch[1] === g.body ? 0 : g.free + H;
+          if (squeeze <= 0 || g.body.lost > 0 || g.free > GRIP.free) h.grip = null;
+        }
+        h.F = 0;
+        if (h.grip) h.F = squeeze;
+        else {
+          const [t1, t2] = h.touch, near = (k) => Math.max(0, Math.min(...h.pads[k].filter((x) => x.other === t1).map((x) => x.dist)));
+          const air = t1 && t1 === t2 ? near(0) + near(1) : 0;
+          if (t1 && t1 === t2 && squeeze >= GRIP.minF && air < GRIP.touch) {
+            h.grip = takeGrip(h, t1); h.F = squeeze;
             t1.asleep = false; t1.still = 0;
-          } else if (h.target > h.gap) h.gap = Math.min(h.target, h.gap + JAW_SPEED * H);
+          } else if (air && h.target < h.gap) h.gap = Math.max(h.target, h.gap - Math.min(JAW_SPEED * H, air)); // the last of the way to the prop
+          else if (h.target > h.gap) h.gap = Math.min(h.target, h.gap + JAW_SPEED * H);
           else if (h.target < h.gap) h.gap = Math.max(h.target, h.gap - JAW_SPEED * H);
         }
         h.jawRate = (h.gap - g0) / H;
         b.sp = handSpheres(G, h.gap);
-        h.touch = [null, null];
+        h.touch = [null, null]; h.pads = [[], []];
         const c0 = add(T0.t, mulv(T0.R, HAND.com)), c1 = add(T1.t, mulv(T1.R, HAND.com)), K = HAND.w;
         const [F] = clampLen(scale(add(scale(sub(c1, b.t), K * K), scale(sub(scale(sub(c1, c0), 1 / H), b.v), 2 * K)), HAND.mass), HAND.force);
         const [T] = clampLen(mulv(b.Iw, add(scale(rotvec(mul3(T1.R, tr3(b.R))), K * K), scale(sub(turnRate(T0.R, T1.R, H), b.w), 2 * K))), HAND.torque);
         b.v = madd(b.v, F, b.invM * H); b.w = madd(b.w, mulv(b.iW, T), H);
-        if (h.grip) grip(h);
       }
       const awake = props.filter((b) => !b.asleep);
       for (const b of awake) b.v = madd(b.v, G0, H);
@@ -320,7 +335,7 @@
         if (!s.flat) return nOut;
         const f = mulv(b.R, s.flat);
         if (dot(nOut, f) > 0.5) {
-          if (other && other.kind !== 'hand' && dist < 0.0015) { const h = hands.find((x) => x.h.body === b).h; h.touch[s.jaw > 0 ? 0 : 1] = other; }
+          if (other && other.kind !== 'hand' && dist < 0.0015) { const h = hands.find((x) => x.h.body === b).h, k = s.jaw > 0 ? 0 : 1; h.touch[k] = other; h.pads[k].push({ p: s.p, other, dist }); }
           return f;
         }
         return nOut;
@@ -355,8 +370,6 @@
       for (let i = 0; i < movers.length; i++) for (let j = i + 1; j < movers.length; j++) {
         let A = movers[i], B = movers[j];
         if ((A.kind === 'hand' && B.kind === 'hand') || ((A.asleep || A.kind === 'hand') && (B.asleep || B.kind === 'hand'))) continue;
-        const held = (h, p) => hands.some((x) => x.h.body === h && x.h.grip && x.h.grip.body === p);
-        if (held(A, B) || held(B, A)) continue;
         if (norm(sub(A.t, B.t)) > A.bound + B.bound + MARGIN) continue;
         if (A.sdf) { const x = A; A = B; B = x; }
         if (B.sdf) {
@@ -386,13 +399,26 @@
         if (ct.B && ct.B.kind === 'hand' && ct.sB && ct.sB.jaw) ct.eB = jawExt(ct.B, ct.sB);
         prep(ct);
       }
-      solve(cs);
+      const js = [];
+      for (const x of hands) if (x.h.grip) { const j = joint(x.h); if (j) js.push(j); else x.h.grip = null; }
+      solve(cs, js);
       // move
       for (const b of [...awake, ...hb]) {
-        if (b.kind !== 'hand') { b.v = scale(b.v, 1 / (1 + 0.02 * H)); b.w = scale(b.w, 1 / (1 + 0.02 * H)); }
+        if (b.kind !== 'hand') {
+          b.v = scale(b.v, 1 / (1 + 0.02 * H)); b.w = scale(b.w, 1 / (1 + 0.02 * H));
+          const wl = norm(b.w);
+          if (wl > W_MAX) { b.w = scale(b.w, W_MAX / wl); W.capped++; }
+        }
         b.t = add(b.t, scale(add(b.v, b.vp || [0, 0, 0]), H));
         b.q = qstep(b.q, add(b.w, b.wp || [0, 0, 0]), H); b.R = rOf(b.q);
         b.vp = null; b.wp = null;
+      }
+      // what slipped in a grip is held from where it slipped to
+      for (const j of js) {
+        const g = j.g;
+        g.l = j.l; g.a = j.a;
+        if (j.slipL) g.pB = tmulv(j.A.R, sub(add(j.B.t, mulv(j.B.R, g.pH)), j.A.t));
+        if (j.slipA) g.Rrel = mul3(tr3(j.B.R), j.A.R);
       }
       for (const b of awake) {
         const held = hands.some((x) => x.h.grip && x.h.grip.body === b);
@@ -414,27 +440,54 @@
       }
     }
 
-    // The grip: the force and torque, at the point between the pads, that hold the prop where it was taken, within what
-    // the pads' friction allows. What it can't hold slips, and it is then held where it slipped to.
-    function grip(h) {
-      const g = h.grip, B = g.body, Hb = h.body, wr = W.poseOf(Hb), D = compose(wr, g.rel), K = GRIP.w, m = 1 / B.invM;
-      const P = add(wr.t, mulv(wr.R, [0, 0, G.finger.c[2]])), r = sub(P, B.t);
-      if (norm(sub(D.t, B.t)) > GRIP.drop) { h.grip = null; return; } // knocked out of the jaws
-      const vD = add(Hb.v, cross(Hb.w, sub(D.t, Hb.t)));
-      let F = scale(add(add(scale(sub(D.t, B.t), K * K), scale(sub(vD, B.v), 2 * K)), scale(G0, -1)), m);
-      const Tc = mulv(B.Iw, add(scale(rotvec(mul3(D.R, tr3(B.R))), K * K), scale(sub(Hb.w, B.w), 2 * K)));
-      let Tg = sub(Tc, cross(r, F)), slip;
-      [F, slip] = clampLen(F, 2 * GRIP.mu * GRIP.force);
-      const ax = [wr.R[1], wr.R[4], wr.R[7]], ta = dot(Tg, ax), capA = 2 * GRIP.mu * GRIP.force * GRIP.twist;
-      let Ta = scale(ax, Math.max(-capA, Math.min(capA, ta)));
-      if (Math.abs(ta) > capA) slip = true;
-      let To = sub(Tg, scale(ax, ta)), s2;
-      [To, s2] = clampLen(To, 2 * GRIP.force * GRIP.tilt);
-      Tg = add(Ta, To);
-      const T = add(Tg, cross(r, F));
-      B.v = madd(B.v, F, B.invM * H); B.w = madd(B.w, mulv(B.iW, T), H);
-      Hb.v = madd(Hb.v, F, -Hb.invM * H); Hb.w = madd(Hb.w, mulv(Hb.iW, add(Tg, cross(sub(P, Hb.t), F))), -H);
-      if (slip || s2) g.rel = compose(inverse(wr), { R: B.R, t: B.t });
+    // A grip on prop P, from the pad spheres touching it (in the hand's body frame): the pinch is their middle, halfway
+    // between the pads, held where it is on the prop and with the prop's turn as it is; the patch is their spread.
+    function takeGrip(h, P) {
+      const Hb = h.body, pts = [...h.pads[0], ...h.pads[1]].filter((x) => x.other === P).map((x) => x.p);
+      const span = (i) => (Math.max(...pts.map((p) => p[i])) - Math.min(...pts.map((p) => p[i]))) / 2 + GRIP.patch;
+      const pH = [pts.reduce((a, p) => a + p[0], 0) / pts.length, 0, pts.reduce((a, p) => a + p[2], 0) / pts.length];
+      const at = add(Hb.t, mulv(Hb.R, pH));
+      return { body: P, gap: h.gap, pH, pB: tmulv(P.R, sub(at, P.t)), Rrel: mul3(tr3(Hb.R), P.R), sx: span(0), sz: span(2), free: 0, l: [0, 0, 0], a: [0, 0, 0] };
+    }
+    // The grip's joint this substep: the prop A's pinched point to the hand B's, and A's turn to B's, each impulse capped
+    // by what the pads can hold (the turn's in the hand's axes: x, the jaws' y, z along the fingers).
+    function joint(h) {
+      const g = h.grip, A = g.body, B = h.body, F = h.F;
+      const pa = add(A.t, mulv(A.R, g.pB)), pb = add(B.t, mulv(B.R, g.pH));
+      if (norm(sub(pa, pb)) > GRIP.drop) return null; // pulled out of the jaws
+      const rA = sub(pa, A.t), rB = sub(pb, B.t), K = new Array(9).fill(0), Kw = new Array(9);
+      for (let c = 0; c < 3; c++) {
+        const e = [0, 0, 0]; e[c] = 1;
+        const col = add(add(scale(e, A.im + B.im), cross(mulv(A.iWe, cross(rA, e)), rA)), cross(mulv(B.iWe, cross(rB, e)), rB));
+        for (let r = 0; r < 3; r++) K[3 * r + c] = col[r];
+      }
+      for (let i = 0; i < 9; i++) Kw[i] = A.iWe[i] + B.iWe[i];
+      const k = GRIP.beta / H, errR = rotvec(mul3(A.R, tr3(mul3(B.R, g.Rrel))));
+      return {
+        g, A, B, rA, rB, Kinv: inv3(K), KwInv: inv3(Kw), biasL: scale(sub(pa, pb), k), biasA: scale(errR, k),
+        capL: 2 * GRIP.mu * F * H, capA: [2 * F * g.sz * H, GRIP.mu * F * Math.max(g.sx, g.sz) * H, 2 * F * g.sx * H],
+        l: g.l, a: g.a, slipL: false, slipA: false,
+      };
+    }
+    function applyJoint(j, dl, da) {
+      const A = j.A, B = j.B;
+      A.v = madd(A.v, dl, A.im); A.w = add(A.w, mulv(A.iWe, add(cross(j.rA, dl), da)));
+      B.v = madd(B.v, dl, -B.im); B.w = sub(B.w, mulv(B.iWe, add(cross(j.rB, dl), da)));
+    }
+    // the turn impulse in the hand's axes, each within its cap
+    function capTurn(j, a) {
+      const l = tmulv(j.B.R, a);
+      let slip = false;
+      for (let i = 0; i < 3; i++) if (Math.abs(l[i]) > j.capA[i]) { l[i] = Math.sign(l[i]) * j.capA[i]; slip = true; }
+      return [mulv(j.B.R, l), slip];
+    }
+    function solveJoint(j) {
+      const A = j.A, B = j.B;
+      const vr = sub(add(A.v, cross(A.w, j.rA)), add(B.v, cross(B.w, j.rB)));
+      const [nl, sl] = clampLen(add(j.l, mulv(j.Kinv, scale(add(vr, j.biasL), -1))), j.capL);
+      applyJoint(j, sub(nl, j.l), [0, 0, 0]); j.l = nl; j.slipL = sl;
+      const wr = sub(A.w, B.w), [na, sa] = capTurn(j, add(j.a, mulv(j.KwInv, scale(add(wr, j.biasA), -1))));
+      applyJoint(j, [0, 0, 0], sub(na, j.a)); j.a = na; j.slipA = sa;
     }
 
     // A contact on A's sphere i (or -1) with B (a body, its sphere j or -1; or null: the table, the floor or an arm
@@ -476,13 +529,18 @@
       A.vp = madd(A.vp || [0, 0, 0], P, A.im); A.wp = add(A.wp || [0, 0, 0], mulv(A.iWe, cross(ct.rA, P)));
       if (B) { B.vp = madd(B.vp || [0, 0, 0], P, -B.im); B.wp = sub(B.wp || [0, 0, 0], mulv(B.iWe, cross(ct.rB, P))); }
     }
-    function solve(cs) {
+    function solve(cs, js) {
       const warm = new Map();
       for (const ct of cs) {
         const w = W.warm.get(ct.key);
         if (w && ct.dist <= 0.001) { ct.ln = w[0] * 0.9; ct.l1 = w[1] * 0.9; ct.l2 = w[2] * 0.9; apply(ct, add(scale(ct.n, ct.ln), add(scale(ct.t1, ct.l1), scale(ct.t2, ct.l2)))); }
       }
+      for (const j of js) {
+        const [l] = clampLen(scale(j.l, 0.9), j.capL), [a] = capTurn(j, scale(j.a, 0.9));
+        j.l = l; j.a = a; applyJoint(j, l, a);
+      }
       for (let it = 0; it < ITER; it++) {
+        for (const j of js) solveJoint(j);
         for (const ct of cs) {
           if (ct.ln > 0) {
             // friction, within the cone of the normal impulse
@@ -537,5 +595,5 @@
   // How far a body is tipped from upright (rad), for the tests.
   const tilt = (b) => Math.acos(Math.max(-1, Math.min(1, b.R[8])));
 
-  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, tilt, qOf, rOf, rotvec };
+  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, tilt, qOf, rOf, rotvec };
 });

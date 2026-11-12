@@ -536,18 +536,25 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   its foot slides it; the robot's metal is slippery (0.15), its pads rubber. **The hands are bodies** (`HAND`), pulled
   towards where the arm puts them by a spring and damper with a force and torque limit, so the table and the props stop
   them; the page then draws the arm by IK to where each hand is (`tableStep`). **The arm's joints** follow the IK within a
-  top speed and acceleration (`RobotCore.slew`, `SLEW`), before the physics. **The grip** (`GRIP`): when both pads touch one
-  prop while closing, a coupling holds it where it was taken, but only with what the pads' friction allows (2·μ·grip force;
-  a twist about the jaws' axis far less, a pad's small patch), and what it can't hold slips and is held where it slipped
-  to: a mug pinched by its handle swings down about the jaws. Opening 5 mm past the gap it was taken at lets go. How open
+  top speed and acceleration (`RobotCore.slew`, `SLEW`), before the physics. **The grip** (`GRIP`): the jaws close until both pads
+  meet one prop, then squeeze like a servo, with a force in proportion to how far past it they are told to close (`k`, up to
+  `force`), so a slight close holds lightly. The grip is a joint solved with the contacts (`joint`, `solveJoint`): it
+  holds the pinched point and the prop's turn with only what the pads allow, friction (2·μ·F) along any direction and, against
+  a turn, what the patch of pad touching it resists (its spread along and across the fingers, `takeGrip`). What it can't hold
+  slips and is held where it slipped to, so a fingertip pinch or a light hold on the handle lets the mug swing about the
+  pads, and a firm whole-pad grip holds it level. The pads stay solid against what they hold; the prop is let go when it
+  slides out of them or the jaws are opened to its width. A prop never turns faster than `W_MAX` (a guard; the tests check
+  it is never reached: an early grip that held the centre of mass, not the pinch, spun the mug at hundreds of rad/s). How open
   each gripper should be (`gripOf`): a hand moved with the mouse, else the **feedback servo on the operator's hand**, read
   from the nrf-controller board fixed to that hand's track (`TagCore.ACT`: its telemetry service's Actuators characteristic,
   `struct dashboard_actuator_status`, 20 Hz while subscribed; `gripOpening` maps the feedback's share of the servo rail
   between the readings the board row's **Set open** / **Set closed** keep in `boards`), else open. A board allowed before
   the page asked for that service has to be removed and connected again. **Moving a hand with the mouse** (or a finger;
-  works with no tags, in the demo, and over a tag-driven hand): press on a gripper and drag it over the plane at the
-  height it is sent to (Alt: the upright plane facing you; the plane follows the target, never the physics hand, or a hand
-  held back by the table would drag its own target away), scroll on it to close (down) or open it, Shift-scroll to tip the
+  works with no tags, in the demo, and over a tag-driven hand): press on a gripper and drag it across the view, in the
+  robot's plane (forward, side or up as its normal, from the table's axes) that the view looks most squarely at: from above
+  side to side and forward and back, from the side forward and back and up and down, from the front side to side and up
+  and down (`grabPlane`; Alt: the next nearest, so from above it lifts; the plane goes through the target, never the
+  physics hand, or a hand held back by the table would drag its own target away), scroll on it to close (down) or open it, Shift-scroll to tip the
   fingers, Space to open or close the last one moved. It stays where it was put (`TB.drive`) until **Tags drive**,
   Calibrate robot or a reload. The grip from the servo is checked only with encoded bytes so far, not a real board.
 - **Setup guide** (`#setupDlg`, the book icon in the top bar, which stays there): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera
