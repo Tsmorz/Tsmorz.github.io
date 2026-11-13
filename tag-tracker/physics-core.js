@@ -21,6 +21,12 @@
 // load swing about the pads and a whole pad holds it. What it can't hold slips (and is held where it slipped to); the
 // pads stay solid, and a prop that slides out of them, or jaws opened to its width, lets go.
 //
+// What the contacts did, for the page (W.record, after each step): every touching pair's force, slip and rolling speed;
+// impacts (a pair that starts touching, with the speed they met at); and for each hand the forces on it (each contact's,
+// the grip's hold on its prop, and the whole wrench). Each body is made of a material (MATERIALS), named in all of it,
+// so the page can draw the forces, play the contacts as sounds and, through haptics(), send what a hand touched to a
+// haptics board on the operator's hand.
+//
 // Poses are {R, t} as in TagCore (R a row-major 3x3 rotation, t in metres); quaternions [w, x, y, z] inside.
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -114,6 +120,12 @@
   const W_MAX = 60;
   // Sleep: below these speeds (m/s, at the body's edge) for SLEEP_T s while touching something.
   const SLEEP_V = 0.008, SLEEP_T = 0.5;
+  // What things are made of. The ids are meant to go over the air to a haptics board's library (an nrf-controller
+  // looks a contact up by material and speed), so an entry keeps its id for good. The table is wood, the floor stone,
+  // the robot aluminium with rubber pads.
+  const MATERIALS = { wood: 1, ceramic: 2, rubber: 3, aluminium: 4, stone: 5 };
+  // An impact: a pair that starts touching (after `gap` s apart) at `speed` m/s or more.
+  const IMPACT = { speed: 0.03, gap: 0.03 };
 
   // ---- the mug's shape ----
   // Distance from p (in the mug's frame: base at the origin, z up its axis) to the mug, negative inside it.
@@ -171,28 +183,28 @@
   }
   function ballBody() {
     const r = BALL.r, I = 0.4 * BALL.mass * r * r;
-    return makeBody('ball', { m: BALL.mass, Ib: diag([I, I, I]), off: [0, 0, 0], sp: [{ p: [0, 0, 0], r }], bound: r, mu: BALL.mu, e: BALL.e, crr: BALL.crr, rollR: r });
+    return makeBody('ball', { m: BALL.mass, Ib: diag([I, I, I]), off: [0, 0, 0], sp: [{ p: [0, 0, 0], r }], bound: r, mu: BALL.mu, e: BALL.e, crr: BALL.crr, rollR: r, mat: 'rubber' });
   }
   function cupBody() {
     const M = cupMassProps(), sp = cupSpheres().map((s) => ({ p: sub(s.p, M.com), r: s.r }));
     const bound = Math.max(...sp.map((s) => norm(s.p) + s.r));
-    return makeBody('cup', { m: CUP.mass, Ib: M.I, off: scale(M.com, -1), sp, sdf: true, bound, mu: CUP.mu, e: CUP.e, crr: CUP.crr, rollR: CUP.R });
+    return makeBody('cup', { m: CUP.mass, Ib: M.I, off: scale(M.com, -1), sp, sdf: true, bound, mu: CUP.mu, e: CUP.e, crr: CUP.crr, rollR: CUP.R, mat: 'ceramic' });
   }
   // A hand: its spheres in its own frame (the wrist's, moved to its centre of mass) at a jaw gap g. G: RobotCore.gripper.
   function handSpheres(G, g) {
     const c = HAND.com, out = [];
-    const at = (p, r, extra) => out.push(Object.assign({ p: sub(p, c), r, mu: ROBOT_MU }, extra || {}));
+    const at = (p, r, extra) => out.push(Object.assign({ p: sub(p, c), r, mu: ROBOT_MU, mat: 'aluminium' }, extra || {}));
     at([0, 0, -0.012], 0.03);
     for (const y of [-0.04, -0.02, 0, 0.02, 0.04]) at([0, y, G.body.c[2]], Math.min(G.body.h[0], G.body.h[2]));
     const fr = G.finger.h[1], top = G.finger.c[2] + G.finger.h[2] - fr, bot = G.finger.c[2] - G.finger.h[2] + fr;
     for (const j of [1, -1]) for (const x of [-0.011, 0, 0.011]) for (let k = 0; k < 4; k++) {
       // a pad's spheres touch with the pad's own flat face (`flat`, pointing into the gap)
-      at([x, j * (g / 2 + fr), top + ((bot - top) * k) / 3], fr, { jaw: j, flat: [0, -j, 0], mu: PAD_MU });
+      at([x, j * (g / 2 + fr), top + ((bot - top) * k) / 3], fr, { jaw: j, flat: [0, -j, 0], mu: PAD_MU, mat: 'rubber' });
     }
     return out;
   }
   function handBody(G) {
-    return makeBody('hand', { m: HAND.mass, Ib: diag(HAND.I), off: scale(HAND.com, -1), sp: handSpheres(G, G.gapMax), bound: HAND.bound, mu: ROBOT_MU, e: 0.1 });
+    return makeBody('hand', { m: HAND.mass, Ib: diag(HAND.I), off: scale(HAND.com, -1), sp: handSpheres(G, G.gapMax), bound: HAND.bound, mu: ROBOT_MU, e: 0.1, mat: 'aluminium' });
   }
 
   // ---- contacts ----
@@ -213,15 +225,18 @@
   }
   const tangents = (n) => { const a = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], t1 = unit(cross(n, a)); return [t1, cross(n, t1)]; };
 
-  // The world. opts: { table: {R, t (the middle of its top), size: [x, y] (m), thick}, floor: z of the floor (m),
+  // The world. opts: { table: {R, t (the middle of its top), size: [x, y] (m), thick, mu (its grip; TABLE_MU, a rubber
+  // mat, unless given: varnished wood is about 0.25)}, floor: z of the floor (m),
   // gripper: RobotCore.gripper(m) }.
   function world(opts) {
     const o = opts || {}, G = o.gripper, table = o.table || null;
     const tableBox = table ? { R: table.R, t: add(table.t, mulv(table.R, [0, 0, -(table.thick || 0.03) / 2])), h: [table.size[0] / 2, table.size[1] / 2, (table.thick || 0.03) / 2] } : null;
-    const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor;
-    const W = { bodies: [], hands: {}, time: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0 };
+    const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor, tableMu = table && table.mu !== undefined ? table.mu : TABLE_MU;
+    const W = { bodies: [], hands: {}, time: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0, record: null };
     let prevLinks = new Map(), nextLinks = [], nextHands = [];
     const touching = []; // props touching each other this substep
+    let acc = null; // the step's sums for W.record
+    const lastTouch = new Map(); // when each pair last touched, for impacts
 
     W.add = function (kind, pos, Rq) {
       const b = kind === 'ball' ? ballBody() : cupBody();
@@ -244,6 +259,16 @@
     // wrist {R, t}, opening 0..1}]. Each is moved there smoothly over the next step.
     W.setRobot = function (robot) { nextLinks = (robot && robot.links) || []; nextHands = (robot && robot.hands) || []; };
 
+    // W.record, after each step (forces in N, the step's average; points in the world; speeds in m/s):
+    //   events: [{type: 'impact', t, speed (how fast they met), impulse (N s, its first substep), p, a, b}]
+    //   touches: [{a, b, force, slip (the surfaces' speed past each other), roll (how fast a rolling body travels), p}]
+    //   hands: {side: {at (its centre of mass), force, torque (about `at`): everything on it; contacts: [{other, pad
+    //     (±1 a jaw's pad, 0 the rest), f, p}]; squeeze, hold (2·mu·squeeze: the most the pads' friction holds);
+    //     grip: null or {id, kind, mat, p (the pinch), force and torque (the prop's on the hand), load (|force|),
+    //     use (0..1 of what the pads can hold), slipping}}}
+    // a and b name each side: {kind ('ball', 'cup', 'hand', 'table', 'floor', 'arm'), id, mat, and for a hand side and
+    // part ('pad' or 'metal'), for an arm link side and link}.
+
     W.step = function (dt) {
       const d = Math.min(Math.max(dt || 0, 0), 1 / 15), n = Math.max(1, Math.round(d / H));
       if (d <= 0) return;
@@ -259,6 +284,7 @@
           // a new hand (or one that jumped): put it where the arm is
           if (h && h.grip) h.grip = null;
           const body = (h && h.body) || handBody(G);
+          body.side = hd.side;
           place(body, P1.t, P1.R);
           h = W.hands[hd.side] = { side: hd.side, body, gap: h ? h.gap : G.gapMax, grip: null, F: 0, touch: [null, null], pads: [[], []], aim: P1 };
         }
@@ -268,9 +294,11 @@
         return { h, q0: qOf(P0.R), q1: qOf(P1.R), t0: P0.t, t1: P1.t };
       });
       for (const k of Object.keys(W.hands)) if (!hands.some((x) => String(x.h.side) === k)) delete W.hands[k];
+      acc = { n: 0, events: [], pairs: new Map(), hands: new Map() };
       for (let s = 0; s < n; s++) substep(s / n, (s + 1) / n, links, hands);
       prevLinks = new Map(nextLinks.map((L) => [L.id, { a: L.a, b: L.b }]));
       W.time += n * H;
+      W.record = finish(n * H, hands);
     };
 
     function substep(a0, a1, links, hands) {
@@ -343,11 +371,12 @@
       for (const b of [...awake, ...hb]) {
         const SS = S.get(b), isHand = b.kind === 'hand';
         SS.forEach(({ c, r, s }, i) => {
-          if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'T')); }
+          if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
           if (c[2] - r - floorZ < MARGIN) cs.push(contact(b, i, null, -1, [c[0], c[1], c[2] - r], [0, 0, 1], c[2] - r - floorZ, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'F'));
         });
-        if (isHand) continue;
         for (const L of kin) {
+          // a gripper meets the other arm, never its own (it hangs on that one): links are named by their arm's side
+          if (isHand && parseFloat(String(L.id)) === b.side) continue;
           if (sphereCapsule(b.t, b.bound, L.a, L.b, L.r).dist > MARGIN) continue;
           if (b.sdf) {
             // the mug against a link: points along the link against its shape
@@ -357,11 +386,11 @@
               const n = scale(mulv(b.R, cupNormal(loc)), -1);
               cs.push(contact(b, -1, null, -1, add(p, scale(n, L.r)), n, d, scale(sub(p, pp), 1 / H), ROBOT_MU, 'L' + L.id + ':' + k));
             }
-          } else SS.forEach(({ c, r }, i) => {
+          } else SS.forEach(({ c, r, s }, i) => {
             const k = sphereCapsule(c, r, L.a, L.b, L.r);
             if (k.dist >= MARGIN) return;
             const p = add(L.a, scale(sub(L.b, L.a), k.u)), pp = add(L.pa, scale(sub(L.pb, L.pa), k.u));
-            cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, scale(sub(p, pp), 1 / H), ROBOT_MU, 'L' + L.id));
+            cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, scale(sub(p, pp), 1 / H), isHand ? Math.min(s.mu, ROBOT_MU) : ROBOT_MU, 'L' + L.id));
           });
         }
       }
@@ -369,8 +398,19 @@
       const movers = [...props, ...hb];
       for (let i = 0; i < movers.length; i++) for (let j = i + 1; j < movers.length; j++) {
         let A = movers[i], B = movers[j];
-        if ((A.kind === 'hand' && B.kind === 'hand') || ((A.asleep || A.kind === 'hand') && (B.asleep || B.kind === 'hand'))) continue;
         if (norm(sub(A.t, B.t)) > A.bound + B.bound + MARGIN) continue;
+        if (A.kind === 'hand' && B.kind === 'hand') {
+          // the two grippers against each other: rigid, sphere against sphere, both moving (each pulled by its arm)
+          const SA = S.get(A), SB = S.get(B);
+          for (let p = 0; p < SA.length; p++) for (let q = 0; q < SB.length; q++) {
+            const d = sub(SA[p].c, SB[q].c), dl = norm(d), dist = dl - SA[p].r - SB[q].r;
+            if (dist >= MARGIN || dl < 1e-9) continue;
+            const n = scale(d, 1 / dl);
+            cs.push(contact(A, p, B, q, sub(SA[p].c, scale(n, SA[p].r)), n, dist, null, Math.sqrt(SA[p].s.mu * SB[q].s.mu), 'h' + B.id + ':' + q));
+          }
+          continue;
+        }
+        if ((A.asleep || A.kind === 'hand') && (B.asleep || B.kind === 'hand')) continue;
         if (A.sdf) { const x = A; A = B; B = x; }
         if (B.sdf) {
           // A's spheres against the mug B
@@ -402,6 +442,7 @@
       const js = [];
       for (const x of hands) if (x.h.grip) { const j = joint(x.h); if (j) js.push(j); else x.h.grip = null; }
       solve(cs, js);
+      collect(cs, js);
       // move
       for (const b of [...awake, ...hb]) {
         if (b.kind !== 'hand') {
@@ -492,8 +533,10 @@
 
     // A contact on A's sphere i (or -1) with B (a body, its sphere j or -1; or null: the table, the floor or an arm
     // link moving at vB), at p with the normal n from B towards A and the distance dist (negative: overlapping).
+    // `pair` names the two (for the record): A's id with B's, or with the table (T), the floor (F) or an arm link (L<id>).
     function contact(A, i, B, j, p, n, dist, vB, mu, key) {
-      return { A, B, sA: i >= 0 ? A.sp[i] : null, sB: B && j >= 0 ? B.sp[j] : null, p, n, dist, vB, mu, key: A.id + ':' + i + ':' + (B ? B.id : '') + key, eA: null, eB: null };
+      const env = B ? '' : key[0] === 'L' ? key.split(':')[0] : key[0];
+      return { A, B, sA: i >= 0 ? A.sp[i] : null, sB: B && j >= 0 ? B.sp[j] : null, p, n, dist, vB, mu, key: A.id + ':' + i + ':' + (B ? B.id : '') + key, eA: null, eB: null, env, pair: A.id + '|' + (B ? B.id : env) };
     }
     function prep(ct) {
       const A = ct.A, B = ct.B;
@@ -506,7 +549,11 @@
       // rolling resistance (torque per unit of contact force, m) and spin friction
       ct.roll = Math.max(A.crr * A.rollR, B ? B.crr * B.rollR : 0); ct.spin = ct.mu * SPIN_R;
       const vn = dot(relVel(ct), ct.n), e = B ? Math.max(A.e, B.e) * 0.5 : A.e;
-      ct.target = ct.dist > 0 ? -ct.dist / H : vn < -BOUNCE ? -e * vn : 0;
+      ct.vn0 = vn; // before the solve: how fast they were closing (negative), for impacts
+      // A contact that closes this substep at a bouncing speed bounces. Contacts are taken up to MARGIN early (speculative,
+      // so nothing tunnels), and one still apart is otherwise only allowed to close its gap: the ball stopped dead just
+      // short of the table and never bounced. It turns round up to a few mm short, unseen at 240 Hz.
+      ct.target = vn < -BOUNCE && ct.dist + vn * H < 0 ? -e * vn : ct.dist > 0 ? -ct.dist / H : 0;
       if (ct.dist <= 0.001) { A._touch = true; if (B) { B._touch = true; if (A.kind !== 'hand' && B.kind !== 'hand') touching.push([A, B]); } }
     }
     function relVel(ct) {
@@ -577,6 +624,112 @@
       for (const ct of cs) if (ct.ln > 0) warm.set(ct.key, [ct.ln, ct.l1, ct.l2]);
       W.warm = warm;
     }
+
+    // ---- the record ----
+    // A body (or the table, the floor or an arm link, from a contact's env) as the record names it: s is the sphere
+    // that touched, if any (a hand's pads are rubber, the rest of it aluminium).
+    function who(b, s, env) {
+      if (!b) {
+        if (env === 'T') return { kind: 'table', mat: 'wood' };
+        if (env === 'F') return { kind: 'floor', mat: 'stone' };
+        const link = env.slice(1), side = parseFloat(link);
+        return { kind: 'arm', link, side: isFinite(side) ? side : null, mat: 'aluminium' };
+      }
+      const o = { kind: b.kind, id: b.id, mat: (s && s.mat) || b.mat };
+      if (b.kind === 'hand') { o.side = b.side; o.part = s && s.jaw ? 'pad' : 'metal'; }
+      return o;
+    }
+    const other = (ct) => (ct.B ? who(ct.B, ct.sB) : who(null, null, ct.env));
+    function handAcc(b) {
+      let h = acc.hands.get(b.side);
+      if (!h) acc.hands.set(b.side, (h = { f: [0, 0, 0], tau: [0, 0, 0], parts: new Map(), grip: null }));
+      return h;
+    }
+    // impulse P on the hand b through its sphere s at the contact ct, from `from`
+    function handForce(b, s, P, ct, from) {
+      const h = handAcc(b), pad = s && s.jaw ? s.jaw : 0, k = ct.pair + '|' + pad, m = norm(P);
+      const L = cross(sub(ct.p, b.t), P);
+      h.f = add(h.f, P); h.tau = add(h.tau, L);
+      let q = h.parts.get(k);
+      if (!q) h.parts.set(k, (q = { from, pad, P: [0, 0, 0], L: [0, 0, 0], w: 0, p: [0, 0, 0] }));
+      q.P = add(q.P, P); q.L = add(q.L, L); q.w += m; q.p = madd(q.p, ct.p, m);
+    }
+    // After a substep's solve: its impulses into the step's sums, and impacts.
+    function collect(cs, js) {
+      acc.n++;
+      const t = W.time + acc.n * H, seen = new Map();
+      for (const ct of cs) {
+        let e = seen.get(ct.pair);
+        if (!e) seen.set(ct.pair, (e = { ct, best: 0, N: 0, app: 0 }));
+        e.app = Math.max(e.app, -ct.vn0);
+        if (ct.ln <= 0) continue;
+        e.N += ct.ln;
+        if (ct.ln > e.best) { e.best = ct.ln; e.ct = ct; }
+        let q = acc.pairs.get(ct.pair);
+        if (!q) acc.pairs.set(ct.pair, (q = { ct, best: 0, N: 0, slip: 0, roll: 0, p: [0, 0, 0] }));
+        if (ct.ln > q.best) { q.best = ct.ln; q.ct = ct; }
+        // the slip at the contact, and (for something that rolls) how fast it travels over the other
+        const v = relVel(ct), vt = sub(v, scale(ct.n, dot(v, ct.n)));
+        q.N += ct.ln; q.slip += norm(vt) * ct.ln; q.p = madd(q.p, ct.p, ct.ln);
+        if (ct.A.rollR) {
+          const vb = ct.B ? add(ct.B.v, cross(ct.B.w, ct.rB)) : ct.vB, vc = sub(ct.A.v, vb);
+          q.roll += norm(sub(vc, scale(ct.n, dot(vc, ct.n)))) * ct.ln;
+        }
+        const P = add(scale(ct.n, ct.ln), add(scale(ct.t1, ct.l1), scale(ct.t2, ct.l2))); // on A; B takes -P
+        if (ct.A.kind === 'hand') handForce(ct.A, ct.sA, P, ct, other(ct));
+        if (ct.B && ct.B.kind === 'hand') handForce(ct.B, ct.sB, scale(P, -1), ct, who(ct.A, ct.sA));
+      }
+      // the grips: the joint's impulse on the hand (B), where it pinches, and how big the pinch is
+      for (const j of js) {
+        const hb = j.B, h = handAcc(hb), l = scale(j.l, -1), L = scale(add(cross(j.rB, j.l), j.a), -1);
+        h.f = add(h.f, l); h.tau = add(h.tau, L);
+        const g = h.grip || (h.grip = { body: j.A, P: [0, 0, 0], L: [0, 0, 0] });
+        g.P = add(g.P, l); g.L = add(g.L, L);
+        g.p = add(hb.t, mulv(hb.R, j.g.pH)); g.sx = j.g.sx; g.sz = j.g.sz; g.R = hb.R;
+      }
+      // a pair that starts touching, fast enough, after a while apart, is an impact
+      for (const [pair, e] of seen) {
+        if (e.N <= 0) continue;
+        const last = lastTouch.get(pair);
+        if ((last === undefined || t - last > IMPACT.gap) && e.app >= IMPACT.speed) {
+          acc.events.push({ type: 'impact', t, speed: e.app, impulse: e.N, p: e.ct.p.slice(), a: who(e.ct.A, e.ct.sA), b: other(e.ct) });
+        }
+        lastTouch.set(pair, t);
+      }
+    }
+    // The step's record from its sums: forces are the step's average (its impulses over its length dt).
+    function finish(dt, hands) {
+      for (const [k, t] of lastTouch) if (W.time - t > 1) lastTouch.delete(k);
+      const touches = [];
+      for (const q of acc.pairs.values()) touches.push({ a: who(q.ct.A, q.ct.sA), b: other(q.ct), force: q.N / dt, slip: q.slip / q.N, roll: q.roll / q.N, p: scale(q.p, 1 / q.N) });
+      const hs = {};
+      for (const x of hands) {
+        const h = x.h, a = acc.hands.get(h.side);
+        const out = { at: h.body.t.slice(), force: [0, 0, 0], torque: [0, 0, 0], contacts: [], squeeze: h.F, hold: 2 * GRIP.mu * h.F, grip: null };
+        if (a) {
+          out.force = scale(a.f, 1 / dt); out.torque = scale(a.tau, 1 / dt);
+          const g = a.grip, held = g ? g.body.id : null;
+          let gP = g ? g.P : null, gL = g ? g.L : null;
+          for (const q of a.parts.values()) {
+            // the pads on the prop they hold are part of the grip: the joint and they pull against each other inside it,
+            // so the grip's load is their sum, what the prop puts on the hand (a wrist sensor would read just that)
+            if (g && q.from.id === held && q.pad) { gP = add(gP, q.P); gL = add(gL, q.L); continue; }
+            if (q.w > 0) out.contacts.push({ other: q.from, pad: q.pad, f: scale(q.P, 1 / dt), p: scale(q.p, 1 / q.w) });
+          }
+          if (g) {
+            // its share of what the pads can hold: the load against the friction (2·mu·F), and the turn about the pinch
+            // against what the patch of pad resists about each of the hand's axes (as in joint())
+            const f = scale(gP, 1 / dt), tc = scale(gL, 1 / dt), tp = sub(tc, cross(sub(g.p, h.body.t), f)), tl = tmulv(g.R, tp), F = h.F;
+            const caps = [2 * F * g.sz, GRIP.mu * F * Math.max(g.sx, g.sz), 2 * F * g.sx];
+            let use = F > 0 ? norm(f) / (2 * GRIP.mu * F) : 1;
+            for (let i = 0; i < 3; i++) use = Math.max(use, caps[i] > 0 ? Math.abs(tl[i]) / caps[i] : 0);
+            out.grip = { id: held, kind: g.body.kind, mat: g.body.mat, p: g.p, force: f, load: norm(f), torque: tp, use: Math.min(1, use), slipping: use >= 0.98 };
+          }
+        }
+        hs[h.side] = out;
+      }
+      return { time: W.time, dt, events: acc.events, touches, hands: hs };
+    }
     return W;
   }
 
@@ -592,8 +745,61 @@
     return W;
   }
 
+  // What the operator of the hand on `side` should feel from a step's record, for a haptics board: contacts reach it
+  // through the hand itself (via 'hand'), the prop it holds ('held') or its own arm ('arm'). Each names the material
+  // touched (mat, and its MATERIALS id) and, for one through the held prop, that prop's (`through`).
+  //   impacts: [{mat, id, speed, via, through}]
+  //   touches: [{type: 'slide' | 'roll' | 'press', mat, id, speed, force, via, through}]
+  // Sent as repeated state, a touch stops when it is no longer listed: a board should let it go after a short silence.
+  function haptics(rec, side) {
+    const out = { impacts: [], touches: [] };
+    if (!rec || !rec.hands[side]) return out;
+    const g = rec.hands[side].grip, held = g ? g.id : null;
+    const route = (a, b) => {
+      for (const [x, y] of [[a, b], [b, a]]) {
+        if (x.kind === 'hand' && x.side === side) return { other: y, via: 'hand', through: null };
+      }
+      for (const [x, y] of [[a, b], [b, a]]) {
+        if (held !== null && x.id === held && x.kind !== 'hand') return y.kind === 'hand' ? null : { other: y, via: 'held', through: x.mat };
+        if (x.kind === 'arm' && x.side === side) return { other: y, via: 'arm', through: null };
+      }
+      return null;
+    };
+    for (const e of rec.events) {
+      const r = route(e.a, e.b);
+      if (r) out.impacts.push({ mat: r.other.mat, id: MATERIALS[r.other.mat], speed: e.speed, via: r.via, through: r.through });
+    }
+    for (const c of rec.touches) {
+      const r = route(c.a, c.b);
+      if (!r || c.force < 0.01) continue;
+      const type = c.slip > 0.005 && c.slip >= 0.5 * c.roll ? 'slide' : c.roll > 0.005 ? 'roll' : 'press';
+      out.touches.push({ type, mat: r.other.mat, id: MATERIALS[r.other.mat], speed: type === 'slide' ? c.slip : type === 'roll' ? c.roll : 0, force: c.force, via: r.via, through: r.through });
+    }
+    return out;
+  }
+
+  // Where a hand may be sent when it rests on something fixed (the table, the floor, the other arm): `want` (a point on the
+  // hand, in the world) moved back out so it is at most `press` (m) past where that point is now (`at`), along each such
+  // contact's push in the hand's record h. Returns the shift (m). Sent deeper, the arm's spring would press with all it
+  // has, the target could go out of the arm's reach (which slides the wrist along the table as it goes deeper), and
+  // lifting would wait until the target came back up through the table. 5 mm presses with about 12 N.
+  const PRESS = 0.005;
+  function holdBack(h, at, want, press) {
+    const lim = press === undefined ? PRESS : press;
+    let shift = [0, 0, 0];
+    if (!h) return shift;
+    for (const x of h.contacts) {
+      if (!['table', 'floor', 'arm'].includes(x.other.kind)) continue;
+      const F = norm(x.f);
+      if (F < 1e-6) continue;
+      const n = scale(x.f, 1 / F), depth = dot(sub(at, add(want, shift)), n);
+      if (depth > lim) shift = add(shift, scale(n, depth - lim));
+    }
+    return shift;
+  }
+
   // How far a body is tipped from upright (rad), for the tests.
   const tilt = (b) => Math.acos(Math.max(-1, Math.min(1, b.R[8])));
 
-  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, tilt, qOf, rOf, rotvec };
+  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, MATERIALS, IMPACT, PRESS, haptics, holdBack, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, tilt, qOf, rOf, rotvec };
 });

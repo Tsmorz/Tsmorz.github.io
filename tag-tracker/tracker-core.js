@@ -841,6 +841,8 @@
     reset: ['reset view', 'reset the view'],
     robot: ['calibrate robot', 'calibrate the robot', 'zero robot', 'zero the robot'],
     table: ['reset table', 'reset the table', 'reset ball', 'reset the ball', 'new ball', 'reset cup', 'reset the cup'],
+    sound: ['sound on', 'sounds on', 'turn the sound on', 'turn sound on', 'unmute', 'unmute sound'],
+    mute: ['mute', 'mute sound', 'sound off', 'sounds off', 'turn the sound off', 'turn sound off', 'quiet'],
     settings: ['settings', 'setting', 'preferences'],
   };
   const VOICE_LOOKUP = new Map();
@@ -1320,7 +1322,7 @@
     show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
     // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
     // RobotCore.MODEL), whether the elbows prefer to sit out and below the hands, and whether the joint angles show.
-    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1, props: 'cup' }, // scale: the arms' motion, × (teleoperation); props: the table ('off', 'ball', 'cup': a ball and a cup)
+    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1, props: 'cup', forces: true, sound: false }, // scale: the arms' motion, × (teleoperation); props: the table ('off', 'ball', 'cup': a ball and a cup); forces: arrows for the forces on the hands; sound: the table's contacts as sound (off until turned on)
     setup: true, // show the Setup guide when the page opens
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
@@ -1361,6 +1363,7 @@
     r.elbows = !!r.elbows; delete r.joints; // (joint angles are a tab of the Now panel now, not a switch)
     delete r.style; delete r.look; // the robot had four looks once; it is the Machine now, the only one
     if (!['off', 'ball', 'cup'].includes(r.props)) r.props = DEFAULTS.robot.props;
+    r.forces = r.forces !== false; r.sound = r.sound === true;
     r.scale = isFinite(Number(r.scale)) && r.scale !== null && r.scale !== '' ? Math.min(5, Math.max(0.1, Number(r.scale))) : 1;
     for (const k of ['back', 'half', 'up', 'upper', 'fore']) {
       const x = Number(r[k]);

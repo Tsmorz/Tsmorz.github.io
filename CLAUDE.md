@@ -409,7 +409,9 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   quaternion, its sign kept continuous with `quatNear`), **Position** (cm), **Velocity** (cm/s, each sample's change over
   the last 0.1 s; it replaced Motion, and a saved `motion` reads as it) and, while the robot has an arm, **Joint angles**:
   a table of both arms' seven joints with their ranges in place of the readout table, and the chosen arm's joints over time
-  (`RB.jhist`, each new pose's angles). `tplotSeries` gives the plot its lines for each tab.
+  (`RB.jhist`, each new pose's angles), and, while a hand is on the table, **Forces** (N, `RB.fhist` from `forceRow`): each
+  hand's squeeze, what it can hold (2·μ·squeeze), the grip's load and everything else it touches, plus how much of its hold
+  the grip uses. `tplotSeries` gives the plot its lines for each tab.
 - **Detection runs in a pool of workers** (`S.pool`, `POOL`: one per spare core, up to 4, each with its own OpenCV; the
   others start once the first is ready, from the browser's cache). Each camera's frames go to an idle worker, up to its share
   of the pool in flight (`idleWorker`), so one camera is detected several frames at a time; a result overtaken by a later
@@ -529,7 +531,12 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   the two hands. Each touches things with spheres (the ball one; the mug's on its rims and handle, all a flat surface can
   touch; a hand's fill its gripper and line its jaws), and the mug also has its exact shape as a distance function
   (`cupSdf`: walls, floor, rounded lip, a half-torus handle; mass and inertia sampled from it), which the ball and the hands
-  meet. Arm links are kinematic capsules. Sequential impulses at 240 Hz with Coulomb friction, restitution, **rolling
+  meet. Arm links are kinematic capsules. **The grippers are rigid against each other** (sphere against sphere, both
+  moving) **and against the other arm's links** (never their own, which they hang on; a link's `id` starts with its
+  arm's side). **Things bounce**: a contact that will close within the substep at more than
+  `BOUNCE` (0.3 m/s) turns round with its restitution, even while still a few mm apart (contacts are taken `MARGIN` early,
+  and otherwise only closed their gap, so the ball used to stop dead). The table's grip is `table.mu` (default the mat's
+  0.7; a lacquered table is about 0.12, where a ball thrown with backspin skids before it rolls). Sequential impulses at 240 Hz with Coulomb friction, restitution, **rolling
   resistance and spin friction in proportion to the contact force** (`crr`, `SPIN_R`), warm starting and split impulses.
   Props that touch **sleep together** once all are still, as fixed obstacles, and wake together when something moving
   comes near. The table's grip (0.7) is above the mug's radius over its height, so a push near the rim tips it and one at
@@ -555,8 +562,42 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   side to side and forward and back, from the side forward and back and up and down, from the front side to side and up
   and down (`grabPlane`; Alt: the next nearest, so from above it lifts; the plane goes through the target, never the
   physics hand, or a hand held back by the table would drag its own target away), scroll on it to close (down) or open it, Shift-scroll to tip the
-  fingers, Space to open or close the last one moved. It stays where it was put (`TB.drive`) until **Tags drive**,
-  Calibrate robot or a reload. The grip from the servo is checked only with encoded bytes so far, not a real board.
+  fingers, Space to open or close the last one moved. **The gripper the pointer can take lights up** (`hoverNow`, every
+  frame from where the pointer last was, so one that moves under a still pointer lights too; not while orbiting): it is
+  tinted violet (`hot` in robot-gl.js) with a faint disc as big as the grab reach (`GRAB_PX`, 30 px) round it, both
+  stronger while dragged. It stays where it was put (`TB.drive`, **in the world**, the plot's frame, so the arm reaches to
+  keep it there when the body moves, and a change of "Relative to" gives it back to its tag) until **Tags drive**,
+  Calibrate robot or a reload. Dragged into the table (or the floor, or the other arm) its target goes at most
+  `PhysicsCore.PRESS` (5 mm) past where it rests (`holdBack`), and the pointer's offset takes up the rest, so it presses
+  lightly (10 to 20 N, not all the arm has), never sends the arm out of reach under the table (which slid it along), and
+  comes up as soon as the pointer does. The grip from the servo is checked only with encoded bytes so far, not a real board.
+- **What the contacts did** (`W.record`, after each physics step; the comment above `W.step` has its shape): every touching
+  pair's force, slip and rolling speed; **impacts** (a pair that starts touching after 30 ms apart, at 3 cm/s or more, with
+  the speed they met at); and for each hand the forces on it: each contact's, the grip's, and the whole wrench. **A grip's
+  load is the joint and the pads on the held prop together**: the joint and the pads pull against each other inside the
+  grip (about 13 N holding the ball still, growing until the joint "slips"), which cancels in their sum, what a wrist sensor
+  would read; its share of the hold (`use`, slipping at 98%) is that load against 2·μ·F and its turn about the pinch
+  against the joint's torque caps. Every body has a **material** (`MATERIALS`: wood 1 the table, ceramic 2 the mug, rubber
+  3 the ball and the pads, aluminium 4 the robot, stone 5 the floor; the ids are meant to go over the air, so they never
+  change). Three things read it:
+  - **Force arrows** (Forces: Shown | Hidden on the Tracking card, `settings.robot.forces`, shown by default;
+    `forceArrows`): what pushes on a hand ends where it pushes, a grip's load starts at the pinch (amber while it slips),
+    3.5 cm per doubling past 0.2 N; drawn over everything (`o.forces` in robot-gl.js, and flat without WebGL).
+  - **Sound** (`sound.js`, ContactSound; the speaker button among the plot's buttons, M, or "sound on" / "mute";
+    `settings.robot.sound`, off by default): synthesized with Web Audio, no recordings, and **it follows the speeds**. An
+    impact rings both materials' modes (`SOUNDS`: decaying sines and a click of noise) with an amplitude in proportion to
+    the speed they met at (`hitVoice`, `loudness`: full at `IMPACT_FULL`, 4 m/s), brighter when harder (`brightness`: the
+    higher modes and the click grow faster), a soft partner damping the other's ring. A touch that lasts makes two sounds
+    at once, each in proportion to its own speed (`loopVoices`): sliding hisses with the slip, rolling rumbles with the
+    travel, so a skidding ball does both. Stereo: each sound is panned by where it is in the view (`panOf`, a
+    StereoPanner). Played in step with the physics (each impact at its own time within the step); the output stage only
+    limits peaks, so loudness stays in proportion. `render()` does the same offline (an OfflineAudioContext), for a clip.
+    Quiet while the microphone listens (`duckSound`) or the page is hidden.
+  - **Haptics** (`PhysicsCore.haptics(record, side)`, no DOM, not yet sent anywhere): what the operator of a hand should feel,
+    as events for an nrf-controller board's haptography library (material and speed, played on its TacHammer): impacts
+    and touches (slide, roll or press, with speed and force) that reach the hand through itself, the prop it holds
+    (`through` that prop's material) or its own arm. Touches are state, sent again each step, so a lost packet never
+    leaves one buzzing. The BLE stream and the firmware side belong in nrf-controller.
 - **Setup guide** (`#setupDlg`, the book icon in the top bar, which stays there): opens on load while `settings.setup` (its own switch, and Settings → Setup guide): a camera
   or the demo; how many tags (one arm, two arms, body and two arms) with their IDs and sizes, which become tags named Body,
   Left wrist and Right wrist and the robot's roles (applied by Next, Print or the phone link, never by closing); the lens
@@ -565,7 +606,7 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   with `?v=<date>`. Bump it whenever any of them changes, or a browser can run a cached old `robot-core.js` beside a new
   page (it once froze the 3D view: an error in `frame()` stopped the loop, which now asks for the next frame first and
   reports an error once).
-- `index.html`: the UI. `speech-worker.js`: speech to text (above). `physics-core.js` (PhysicsCore, no DOM): the table (above). `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
+- `index.html`: the UI. `speech-worker.js`: speech to text (above). `physics-core.js` (PhysicsCore, no DOM): the table (above). `sound.js` (ContactSound): its sounds (above). `tracker-core.js` (TagCore, no DOM): poses, frames, intrinsics, history and axis sampling, the orbit
   camera, calibration-view checks, and the SE(3) refinement, rigid objects and filter below. `worker.js`: the OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration);
   its `TagVision` factory also runs in Node.
 - OpenCV.js is **pinned** (`@techstark/opencv-js@4.12.0-release.1`, jsDelivr then unpkg) and loaded by the worker; it is
@@ -644,7 +685,11 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   calibration with one, two or three tags (and arms swapped by mirrored poses), `tagFit`, its settings, the joints' speed and
   acceleration), the table (section 5i: rolling resistance against its formula, spin, the mug's shape, sleeping, tipping,
   sliding, resting on its handle, the ball in it, hands the table stops, gripping, pressing, pouring, a mug swinging from
-  its handle, a fast hand, the time a frame takes, and the servo grip's bytes and mapping), and (with
+  its handle, a fast hand, the time a frame takes, and the servo grip's bytes and mapping; the record: impacts at the
+  speed of the fall, rolling and sliding speeds, a hand pushing the table, a grip's load against the ball's weight and its
+  share of the hold, haptics through the hand and through a held ball, materials' ids, a dropped ball's bounces (each about
+  its restitution times the last), a skid on lacquered wood against Coulomb friction, and the sounds: amplitude in
+  proportion to impact speed, brighter when harder, sliding and rolling each as loud as its speed), and (with
   python3) the UDP bridge end to end; the motion sensors (their bytes, clock mapping, lining up, the filter with and
   without them); with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
