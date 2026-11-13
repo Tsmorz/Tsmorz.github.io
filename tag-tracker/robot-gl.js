@@ -304,7 +304,8 @@ void main() {
       return props;
     }
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
-    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach, jaw: the gripper's gap (m)}], body,
+    // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach, jaw: the gripper's gap (m),
+    // hot: 1 the pointer can take its gripper, 2 it is being dragged}], body,
     // mount ('bar', 1, -1 or null), tags: [{R, t, size, color, parts: [{R, t, size}]}], fadeBody, theme: {accent, warn, bg, dark},
     // props: null or {dims (as propMeshes), table: {R, t} | null, bodies: [{kind: 'ball' | 'cup', R, t}],
     // shadows: [{t: where on the table, R: the table's, r: radius, a: darkness 0..1}]} }
@@ -344,7 +345,7 @@ void main() {
         gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
       };
-      const drawList = (list, pose, fade) => { for (const p of list) { setMat(p.mat, fade); drawG(p.g, pose); } };
+      const drawList = (list, pose, fade, tint) => { for (const p of list) { setMat(p.mat, fade, tint); drawG(p.g, pose); } };
       const ch = o.chest, at = (R, t) => ({ R: C.mul3(ch.R, R), t: RC.place(ch, t) });
       const pts = [];
       const keep = (p) => pts.push(RC.place(ch, p));
@@ -385,9 +386,11 @@ void main() {
         drawList(B.fore, at(k.Rf, k.elbow), fade);
         // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
         if (!a.reach || (a.live && !a.idle)) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
-        drawList(B.hand[a.side], at(k.R, k.wrist), fade);
+        // a gripper the pointer can take (a.hot 1) is tinted violet, more so while it is dragged (2)
+        const hot = a.hot ? glow.map((x) => x * (a.hot > 1 ? 1.25 : 1)) : null;
+        drawList(B.hand[a.side], at(k.R, k.wrist), fade, hot);
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
-        for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), fade);
+        for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), fade, hot);
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       // the force arrows (o.forces: [{a: tail, b: tip, warn}]), over everything: they are often inside a gripper

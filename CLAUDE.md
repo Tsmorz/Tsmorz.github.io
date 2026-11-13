@@ -531,7 +531,9 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   the two hands. Each touches things with spheres (the ball one; the mug's on its rims and handle, all a flat surface can
   touch; a hand's fill its gripper and line its jaws), and the mug also has its exact shape as a distance function
   (`cupSdf`: walls, floor, rounded lip, a half-torus handle; mass and inertia sampled from it), which the ball and the hands
-  meet. Arm links are kinematic capsules. **Things bounce**: a contact that will close within the substep at more than
+  meet. Arm links are kinematic capsules. **The grippers are rigid against each other** (sphere against sphere, both
+  moving) **and against the other arm's links** (never their own, which they hang on; a link's `id` starts with its
+  arm's side). **Things bounce**: a contact that will close within the substep at more than
   `BOUNCE` (0.3 m/s) turns round with its restitution, even while still a few mm apart (contacts are taken `MARGIN` early,
   and otherwise only closed their gap, so the ball used to stop dead). The table's grip is `table.mu` (default the mat's
   0.7; a lacquered table is about 0.12, where a ball thrown with backspin skids before it rolls). Sequential impulses at 240 Hz with Coulomb friction, restitution, **rolling
@@ -560,8 +562,15 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   side to side and forward and back, from the side forward and back and up and down, from the front side to side and up
   and down (`grabPlane`; Alt: the next nearest, so from above it lifts; the plane goes through the target, never the
   physics hand, or a hand held back by the table would drag its own target away), scroll on it to close (down) or open it, Shift-scroll to tip the
-  fingers, Space to open or close the last one moved. It stays where it was put (`TB.drive`) until **Tags drive**,
-  Calibrate robot or a reload. The grip from the servo is checked only with encoded bytes so far, not a real board.
+  fingers, Space to open or close the last one moved. **The gripper the pointer can take lights up** (`hoverNow`, every
+  frame from where the pointer last was, so one that moves under a still pointer lights too; not while orbiting): it is
+  tinted violet (`hot` in robot-gl.js) with a faint disc as big as the grab reach (`GRAB_PX`, 30 px) round it, both
+  stronger while dragged. It stays where it was put (`TB.drive`, **in the world**, the plot's frame, so the arm reaches to
+  keep it there when the body moves, and a change of "Relative to" gives it back to its tag) until **Tags drive**,
+  Calibrate robot or a reload. Dragged into the table (or the floor, or the other arm) its target goes at most
+  `PhysicsCore.PRESS` (5 mm) past where it rests (`holdBack`), and the pointer's offset takes up the rest, so it presses
+  lightly (10 to 20 N, not all the arm has), never sends the arm out of reach under the table (which slid it along), and
+  comes up as soon as the pointer does. The grip from the servo is checked only with encoded bytes so far, not a real board.
 - **What the contacts did** (`W.record`, after each physics step; the comment above `W.step` has its shape): every touching
   pair's force, slip and rolling speed; **impacts** (a pair that starts touching after 30 ms apart, at 3 cm/s or more, with
   the speed they met at); and for each hand the forces on it: each contact's, the grip's, and the whole wrench. **A grip's

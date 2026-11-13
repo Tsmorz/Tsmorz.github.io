@@ -998,6 +998,68 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   run(W, 120, (s) => W.setRobot({ hands: [{ side: 1, pose: { R: Rh, t: [-0.05 + 0.1 * s, 0.1, 0.05] }, opening: 1 }, { side: -1, pose: { R: Rh, t: [-0.05, -0.1, 0.05] }, opening: 1 }] }));
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / 120;
   check(ms < 4, `a 60 Hz frame of the table with two hands takes ${ms.toFixed(2)} ms`);
+  // The grippers are rigid against each other and against the other arm: two hands driven through each other meet and
+  // stop (neither passes into the other), each pushing with all its arm can (HAND.force); a hand swept through the
+  // other arm's forearm stops against it, and through its own arm's (it hangs on that one) passes
+  {
+    const Wh = P.world({ gripper: G }), clash = [];
+    let worst = 0;
+    const gap = () => {
+      let m = Infinity;
+      const sp = (side) => { const b = Wh.hands[side].body; return b.sp.map((x) => ({ c: C.add(b.t, C.mulv(b.R, x.p)), r: x.r })); };
+      for (const a of sp(1)) for (const b of sp(-1)) m = Math.min(m, C.norm(C.sub(a.c, b.c)) - a.r - b.r);
+      return m;
+    };
+    run(Wh, 90, (s) => {
+      const y = 0.2 - 0.3 * Math.min(1, 1.5 * s); // each sent 5 cm past the middle, into the other
+      Wh.setRobot({ hands: [{ side: 1, pose: { R: I, t: [0, y, 0.3] }, opening: 1 }, { side: -1, pose: { R: I, t: [0, -y, 0.3] }, opening: 1 }] });
+      if (Wh.record) { clash.push(...Wh.record.events.filter((e) => e.a.kind === 'hand' && e.b.kind === 'hand')); if (Wh.hands[1]) worst = Math.min(worst, gap()); }
+    });
+    const rh = Wh.record.hands[1], push = rh.contacts.filter((x) => x.other.kind === 'hand').reduce((v, x) => C.add(v, x.f), [0, 0, 0]);
+    const felt = P.haptics(Wh.record, 1).touches.find((x) => x.via === 'hand') || {};
+    check(worst > -0.002 && Wh.hands[1].body.t[1] > Wh.hands[-1].body.t[1] && Math.abs(push[1] - P.HAND.force) < 0.1 * P.HAND.force && clash.length >= 1 && clash[0].a.mat === 'aluminium' && felt.mat === 'aluminium',
+      `two grippers driven into each other meet and stop (overlap at most ${(-worst * 1000).toFixed(1)} mm), pushing with ${push[1].toFixed(1)} N (all an arm can: ${P.HAND.force} N); a clank at ${((clash[0] || {}).speed || 0).toFixed(2)} m/s, felt as ${felt.mat || 'nothing'}`);
+    // (the link runs along y at x = 10 cm, level with the fingers; overlap is the deepest any of the hand's spheres goes into it)
+    const sweep = (link) => {
+      const Ws = P.world({ gripper: G }), L = { id: link, a: [0.1, -0.2, 0.3], b: [0.1, 0.2, 0.3], r: 0.032 };
+      let over = 0;
+      run(Ws, 90, (s) => {
+        Ws.setRobot({ links: [L], hands: [{ side: 1, pose: { R: I, t: [-0.1 + 0.3 * Math.min(1, 1.5 * s), 0, 0.3 - G.finger.c[2]] }, opening: 1 }] });
+        const b = Ws.hands[1] && Ws.hands[1].body;
+        if (b) for (const x of b.sp) over = Math.min(over, P.sphereCapsule(C.add(b.t, C.mulv(b.R, x.p)), x.r, L.a, L.b, L.r).dist);
+      });
+      return { x: Ws.handPose(1).t[0], over };
+    };
+    const other = sweep('-1f'), own = sweep('1f');
+    check(other.x < 0.1 && other.over > -0.002 && own.x > 0.19, `a gripper swept through the other arm's forearm stops against it (its wrist at ${(other.x * 100).toFixed(1)} cm, overlapping it ${(-other.over * 1000).toFixed(1)} mm at most); through its own arm's, it passes (${(own.x * 100).toFixed(1)} cm)`);
+  }
+  // A gripper dragged down into the table, as the page drags it: the pointer goes on 10 cm below the top, then comes back
+  // up 1 cm. Held back (holdBack, as the page does: the target at most PRESS past where the hand rests, the rest of the
+  // pointer's travel taken up by its offset) it presses lightly and comes up at once; sent where the pointer is, it
+  // presses with all the arm has and stays down until the pointer is back above the table
+  {
+    const drag = (hold) => {
+      const Wd = P.world({ table, gripper: G }), tz = -(G.finger.c[2] - G.finger.h[2]), grip = (t) => C.add(t, C.mulv(Rh, [0, 0, G.finger.c[2]]));
+      let off = [0, 0, 0], target = [0, 0, 0.045 + 0.03], F = 0, x0 = null;
+      const step = (ptr) => {
+        let want = C.add(ptr, off);
+        if (hold && Wd.record) {
+          const ph = Wd.handPose(1), sh = P.holdBack(Wd.record.hands[1], grip(ph.t), grip(want));
+          want = C.add(want, sh); off = C.add(off, sh);
+        }
+        target = want;
+        Wd.setRobot({ hands: [{ side: 1, pose: { R: Rh, t: target }, opening: 1 }] }); Wd.step(1 / 60);
+      };
+      for (let i = 0; i < 60; i++) step([0, 0, 0.075 - 0.175 * Math.min(1, i / 40)]); // down to 10 cm under the top
+      F = Wd.record.hands[1].force[2]; x0 = Wd.handPose(1).t[0];
+      const z0 = Wd.handPose(1).t[2];
+      for (let i = 0; i < 20; i++) step([0, 0, -0.1 + 0.01 * Math.min(1, i / 5)]); // the pointer up 1 cm
+      return { F, up: Wd.handPose(1).t[2] - z0, slid: Math.abs(Wd.handPose(1).t[0] - x0) };
+    };
+    const held = drag(true), raw = drag(false);
+    check(held.F > 5 && held.F < 20 && held.up > 0.01 - P.PRESS - 0.001 && held.slid < 0.002 && raw.F > 0.9 * P.HAND.force && raw.up < 0.001,
+      `a gripper dragged 10 cm into the table presses with ${held.F.toFixed(1)} N and rises ${(held.up * 1000).toFixed(1)} mm when the pointer comes up 10 mm (the first ${P.PRESS * 1000} mm only lets the press off; sliding ${(held.slid * 1000).toFixed(1)} mm); sent where the pointer is, ${raw.F.toFixed(0)} N and ${(raw.up * 1000).toFixed(1)} mm`);
+  }
   // The record: impacts, touches and the forces on the hands (for the force arrows, the sounds and haptics).
   check(Object.values(P.MATERIALS).every((v, i, a) => Number.isInteger(v) && v > 0 && a.indexOf(v) === i) && P.MATERIALS.wood === 1 && P.MATERIALS.ceramic === 2 && P.MATERIALS.rubber === 3 && P.MATERIALS.aluminium === 4 && P.MATERIALS.stone === 5,
     'materials keep their ids (they go over the air): wood 1, ceramic 2, rubber 3, aluminium 4, stone 5');

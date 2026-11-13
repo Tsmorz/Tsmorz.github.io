@@ -374,8 +374,9 @@
           if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
           if (c[2] - r - floorZ < MARGIN) cs.push(contact(b, i, null, -1, [c[0], c[1], c[2] - r], [0, 0, 1], c[2] - r - floorZ, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'F'));
         });
-        if (isHand) continue;
         for (const L of kin) {
+          // a gripper meets the other arm, never its own (it hangs on that one): links are named by their arm's side
+          if (isHand && parseFloat(String(L.id)) === b.side) continue;
           if (sphereCapsule(b.t, b.bound, L.a, L.b, L.r).dist > MARGIN) continue;
           if (b.sdf) {
             // the mug against a link: points along the link against its shape
@@ -385,11 +386,11 @@
               const n = scale(mulv(b.R, cupNormal(loc)), -1);
               cs.push(contact(b, -1, null, -1, add(p, scale(n, L.r)), n, d, scale(sub(p, pp), 1 / H), ROBOT_MU, 'L' + L.id + ':' + k));
             }
-          } else SS.forEach(({ c, r }, i) => {
+          } else SS.forEach(({ c, r, s }, i) => {
             const k = sphereCapsule(c, r, L.a, L.b, L.r);
             if (k.dist >= MARGIN) return;
             const p = add(L.a, scale(sub(L.b, L.a), k.u)), pp = add(L.pa, scale(sub(L.pb, L.pa), k.u));
-            cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, scale(sub(p, pp), 1 / H), ROBOT_MU, 'L' + L.id));
+            cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, scale(sub(p, pp), 1 / H), isHand ? Math.min(s.mu, ROBOT_MU) : ROBOT_MU, 'L' + L.id));
           });
         }
       }
@@ -397,8 +398,19 @@
       const movers = [...props, ...hb];
       for (let i = 0; i < movers.length; i++) for (let j = i + 1; j < movers.length; j++) {
         let A = movers[i], B = movers[j];
-        if ((A.kind === 'hand' && B.kind === 'hand') || ((A.asleep || A.kind === 'hand') && (B.asleep || B.kind === 'hand'))) continue;
         if (norm(sub(A.t, B.t)) > A.bound + B.bound + MARGIN) continue;
+        if (A.kind === 'hand' && B.kind === 'hand') {
+          // the two grippers against each other: rigid, sphere against sphere, both moving (each pulled by its arm)
+          const SA = S.get(A), SB = S.get(B);
+          for (let p = 0; p < SA.length; p++) for (let q = 0; q < SB.length; q++) {
+            const d = sub(SA[p].c, SB[q].c), dl = norm(d), dist = dl - SA[p].r - SB[q].r;
+            if (dist >= MARGIN || dl < 1e-9) continue;
+            const n = scale(d, 1 / dl);
+            cs.push(contact(A, p, B, q, sub(SA[p].c, scale(n, SA[p].r)), n, dist, null, Math.sqrt(SA[p].s.mu * SB[q].s.mu), 'h' + B.id + ':' + q));
+          }
+          continue;
+        }
+        if ((A.asleep || A.kind === 'hand') && (B.asleep || B.kind === 'hand')) continue;
         if (A.sdf) { const x = A; A = B; B = x; }
         if (B.sdf) {
           // A's spheres against the mug B
@@ -766,8 +778,28 @@
     return out;
   }
 
+  // Where a hand may be sent when it rests on something fixed (the table, the floor, the other arm): `want` (a point on the
+  // hand, in the world) moved back out so it is at most `press` (m) past where that point is now (`at`), along each such
+  // contact's push in the hand's record h. Returns the shift (m). Sent deeper, the arm's spring would press with all it
+  // has, the target could go out of the arm's reach (which slides the wrist along the table as it goes deeper), and
+  // lifting would wait until the target came back up through the table. 5 mm presses with about 12 N.
+  const PRESS = 0.005;
+  function holdBack(h, at, want, press) {
+    const lim = press === undefined ? PRESS : press;
+    let shift = [0, 0, 0];
+    if (!h) return shift;
+    for (const x of h.contacts) {
+      if (!['table', 'floor', 'arm'].includes(x.other.kind)) continue;
+      const F = norm(x.f);
+      if (F < 1e-6) continue;
+      const n = scale(x.f, 1 / F), depth = dot(sub(at, add(want, shift)), n);
+      if (depth > lim) shift = add(shift, scale(n, depth - lim));
+    }
+    return shift;
+  }
+
   // How far a body is tipped from upright (rad), for the tests.
   const tilt = (b) => Math.acos(Math.max(-1, Math.min(1, b.R[8])));
 
-  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, MATERIALS, IMPACT, haptics, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, tilt, qOf, rOf, rotvec };
+  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, MATERIALS, IMPACT, PRESS, haptics, holdBack, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, tilt, qOf, rOf, rotvec };
 });

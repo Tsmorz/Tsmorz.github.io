@@ -922,8 +922,8 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
      old copy of one beside new copies of the others -->
 <script src="tracker-core.js?v=2026-11-13"></script>
 <script src="robot-core.js?v=2026-11-13"></script>
-<script src="robot-gl.js?v=2026-11-13"></script>
-<script src="physics-core.js?v=2026-11-13b"></script>
+<script src="robot-gl.js?v=2026-11-14"></script>
+<script src="physics-core.js?v=2026-11-14b"></script>
 <script src="sound.js?v=2026-11-13b"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
@@ -2230,7 +2230,7 @@ const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist
 // the table (below): its physics world, the hands moved with the mouse
 const PHYS = window.PhysicsCore;
 const TABLE = { size: [0.5, 0.9], thick: 0.03, legs: 0.72 };
-const TB = { world: null, sig: '', t: 0, n: 0, drive: new Map(), grab: null, lastSide: null };
+const TB = { world: null, sig: '', t: 0, n: 0, drive: new Map(), grab: null, lastSide: null, ptr: null, hover: null };
 // The table's contacts as sound (sound.js), off until turned on (the speaker button, M, or "sound on"). It goes quiet
 // while the microphone listens for a voice command or note, and while the page is hidden.
 const SND = window.ContactSound ? ContactSound.create() : null;
@@ -2375,9 +2375,12 @@ function robotUpdate(now) {
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
   const withBody = preview || roles.body !== null;
   if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) arms.push({ key: null, side, q: RCORE.HOME, reach: true, gap: 0, live: false, idle: true });
-  // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it)
+  // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it). It was put
+  // there in the world (by the table), so it stays there when the body moves: the arm reaches to keep it
+  const Rc = C.tr3(tg.chest.R);
   for (const [side, d] of TB.drive) {
-    const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.ik(m, side, { R: d.R, t: d.t }, prev || null, { prefer });
+    if (d.frame !== S.settings.frame) { TB.drive.delete(side); continue; } // (another frame: its world is a different one)
+    const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.ik(m, side, { R: C.mul3(Rc, d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || null, { prefer });
     RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, side });
     const a = arms.find((x) => x.side === side), set = { q: s.q, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
     if (a) Object.assign(a, set); else arms.push(Object.assign({ key: null, side }, set));
@@ -2409,6 +2412,7 @@ function drawRobot(c, o, w, h, now) {
   tableStep(RB.scene);
   const gl = robotGL();
   $('plotGL').hidden = !gl;
+  hoverNow(); drawGrabArea(c, o);
   if (gl) drawRobotGL(gl, o, w, h, now); else drawRobotFlat(c, o, h, now);
   if (TB.world) RB.pts.push(...tableCorners());
   if (!S.view.fitted) autoFit();
@@ -2429,10 +2433,30 @@ function robotTags(now) {
   }
   return out;
 }
+// Which gripper the pointer can take now (its side), or null; while one is dragged, that one. Worked out every frame from
+// where the pointer last was, so a gripper that moves under a still pointer lights up too.
+function hoverNow() {
+  TB.hover = TB.grab ? TB.grab.side : TB.ptr && !TB.ptr.buttons ? ((handAt(TB.ptr) || {}).a || {}).side ?? null : null; // (not while orbiting)
+  if (!TB.grab && TB.ptr && !TB.ptr.buttons) plot.style.cursor = TB.hover !== null ? 'grab' : '';
+}
+const hotOf = (a) => (TB.hover === a.side ? (TB.grab ? 2 : 1) : 0);
+// the grab area round the gripper the pointer can take: a faint violet disc as big as handAt's reach, on the plot's
+// canvas (under the robot, so it shows round the gripper's edge)
+function drawGrabArea(c, o) {
+  const sc = RB.scene, a = TB.hover !== null && sc ? sc.arms.find((x) => x.side === TB.hover) : null;
+  if (!a) return;
+  const s = o.project(gripPoint(sc, a));
+  if (!s) return;
+  c.save();
+  c.beginPath(); c.arc(s[0], s[1], GRAB_PX, 0, 2 * Math.PI);
+  c.fillStyle = alpha(K.accent, TB.grab ? 0.24 : 0.14); c.fill();
+  c.strokeStyle = alpha(K.accent, TB.grab ? 0.9 : 0.6); c.lineWidth = 1.5; c.stroke();
+  c.restore();
+}
 function drawRobotGL(gl, o, w, h, now) {
   const sc = RB.scene;
   RB.pts = gl.draw({
-    w, h, dpr: devicePixelRatio || 1, cam: o, fov: 45, chest: sc.chest, m: sc.m, arms: sc.arms, body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
+    w, h, dpr: devicePixelRatio || 1, cam: o, fov: 45, chest: sc.chest, m: sc.m, arms: sc.arms.map((a) => Object.assign({}, a, { hot: hotOf(a) })), body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
     mount: sc.body ? null : sc.arms.length === 2 ? 'bar' : sc.arms.length === 1 ? sc.arms[0].side : null,
     tags: robotTags(now).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
     theme: { accent: K.accent, warn: K.warn, bg: K.surface, dark: isDark() },
@@ -2504,9 +2528,10 @@ function drawRobotFlat(c, o, h, now) {
     const fd = [-H[2], -H[5], -H[8]], jy = [H[1], H[4], H[7]], bk = [H[0], H[3], H[6]];
     const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(jy.map((x) => x * v), bk.map((x) => x * (w || 0))))));
     const G = RCORE.gripper(m), g2 = (a.jaw === undefined ? G.gapMax : a.jaw) / 2 + G.finger.c[1], tip = 0.07 + G.fl;
-    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, well, ink, al);
-    seg(at(0.07, g2), at(tip, g2), 0.009, fill, ink, al);
-    seg(at(0.07, -g2), at(tip, -g2), 0.009, fill, ink, al);
+    const gInk = hotOf(a) ? K.accent : ink;
+    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, well, gInk, al);
+    seg(at(0.07, g2), at(tip, g2), 0.009, fill, gInk, al);
+    seg(at(0.07, -g2), at(tip, -g2), 0.009, fill, gInk, al);
     ball(at(0.045, 0, 0.032), 0.01, K.accent, K.accent, al);
   }
   tableFlat(face, seg, ball);
@@ -2685,6 +2710,7 @@ function gripPoint(sc, a) {
   const k = RCORE.fk(sc.m, a.side, a.q), G = RCORE.gripper(sc.m);
   return RCORE.place(sc.chest, C.add(k.wrist, C.mulv(k.R, [0, 0, G.finger.c[2]])));
 }
+const GRAB_PX = 30; // how near (px) the pointer must be to a gripper to take it
 function handAt(e) {
   const sc = RB.scene;
   if (S.settings.show3d !== 'robot' || !sc) return null;
@@ -2694,16 +2720,16 @@ function handAt(e) {
     const p = gripPoint(sc, a), s = o.project(p);
     if (!s) continue;
     const d = Math.hypot(s[0] - x, s[1] - y);
-    if (d < 30 && (!best || d < best.d)) best = { a, p, d };
+    if (d < GRAB_PX && (!best || d < best.d)) best = { a, p, d };
   }
   return best;
 }
-// a hand driven from now on, from wherever it is
+// a hand driven from now on, from wherever it is: its wrist's pose in the world (the plot's frame), d.R and d.t
 function driveOf(a) {
   let d = TB.drive.get(a.side);
   if (!d) {
-    const k = RCORE.fk(RB.scene.m, a.side, a.q);
-    d = { R: k.R, t: k.wrist, open: a.open === undefined ? 1 : a.open };
+    const sc = RB.scene, k = RCORE.fk(sc.m, a.side, a.q);
+    d = { R: C.mul3(sc.chest.R, k.R), t: RCORE.place(sc.chest, k.wrist), open: a.open === undefined ? 1 : a.open, frame: S.settings.frame };
     TB.drive.set(a.side, d); paintRobotBtns();
   }
   TB.lastSide = a.side;
@@ -2731,7 +2757,7 @@ function handGrab(e) {
   if (e.shiftKey || (e.pointerType === 'mouse' && e.button !== 0)) return false;
   const hit = handAt(e);
   if (!hit) return false;
-  const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = RCORE.place(sc.chest, C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]])));
+  const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n);
   if (!at) return false;
   TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, off: C.sub(p, at) };
@@ -2741,25 +2767,33 @@ function handGrab(e) {
 function handMove(e) {
   const g = TB.grab;
   if (!g || g.id !== e.pointerId) {
-    if (!g && !e.buttons) plot.style.cursor = handAt(e) ? 'grab' : '';
+    if (!g) { TB.ptr = { clientX: e.clientX, clientY: e.clientY, buttons: e.buttons }; if (!e.buttons) hoverNow(); }
     return !!g;
   }
   const sc = RB.scene, a = sc && sc.arms.find((x) => x.side === g.side), d = TB.drive.get(g.side);
   if (!a || !d) { TB.grab = null; return true; }
   // the plane goes through where the hand is sent, not where it is: the table or a load can hold the hand back, and a
   // plane that followed it would move the target with it
-  const G = RCORE.gripper(sc.m), p = RCORE.place(sc.chest, C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]])));
+  const G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit();
   // Alt pressed or let go mid-drag: carry on from here on the other plane
   if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.off = C.sub(p, at); g.alt = e.altKey; } return true; }
   const at = rayHit(o, r, e, p, g.n);
   if (!at) return true;
-  // the new grip point, in the chest's frame, and the wrist behind it
-  const want = C.add(at, g.off), gc = C.mulv(C.tr3(sc.chest.R), C.sub(want, sc.chest.t));
-  d.t = C.sub(gc, C.mulv(d.R, [0, 0, G.finger.c[2]]));
+  // the new grip point; on the table (or the floor, or the other arm) it goes at most PHYS.PRESS past where the hand rests,
+  // and the pointer slips over the rest (the offset takes it up), so the hand comes up as soon as the pointer does
+  let want = C.add(at, g.off);
+  const ph = TB.world && TB.world.handPose(g.side);
+  if (ph && TB.world.record) {
+    const shift = PHYS.holdBack(TB.world.record.hands[g.side], C.add(ph.t, C.mulv(ph.R, [0, 0, G.finger.c[2]])), want);
+    if (C.norm(shift) > 0) { want = C.add(want, shift); g.off = C.add(g.off, shift); }
+  }
+  // and the wrist behind it
+  d.t = C.sub(want, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   return true;
 }
-function handDrop(e) { if (TB.grab && TB.grab.id === e.pointerId) { TB.grab = null; plot.style.cursor = ''; } }
+function handDrop(e) { if (TB.grab && TB.grab.id === e.pointerId) { TB.grab = null; plot.style.cursor = ''; TB.ptr = { clientX: e.clientX, clientY: e.clientY, buttons: 0 }; } }
+plot.addEventListener('pointerleave', () => { if (!TB.grab) { TB.ptr = null; TB.hover = null; plot.style.cursor = ''; } });
 function handWheel(e) {
   const hit = TB.grab ? { a: RB.scene.arms.find((x) => x.side === TB.grab.side) } : handAt(e);
   if (!hit || !hit.a) return false;
