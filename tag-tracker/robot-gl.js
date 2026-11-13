@@ -286,6 +286,11 @@ void main() {
       builtKey = key;
       return built;
     }
+    // a force arrow: a shaft and a head, each 1 long and 1 wide along +z, stretched to fit when drawn
+    const arrow = {
+      shaft: upload(surface((u, v) => [Math.cos(TAU * u), Math.sin(TAU * u), v], 12, 1, (p) => [p[0], p[1], 0])),
+      head: upload(surface((u, v) => [(1 - v) * Math.cos(TAU * u), (1 - v) * Math.sin(TAU * u), v], 16, 2, (p) => [p[0], p[1], 0.5])),
+    };
     let props = null, propsKey = '';
     function buildProps(d) {
       const key = JSON.stringify(d);
@@ -384,6 +389,28 @@ void main() {
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
         for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), fade);
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
+      }
+      // the force arrows (o.forces: [{a: tail, b: tip, warn}]), over everything: they are often inside a gripper
+      if (o.forces && o.forces.length) {
+        gl.disable(gl.DEPTH_TEST);
+        for (const f of o.forces) {
+          const d = sub(f.b, f.a), L = Math.hypot(d[0], d[1], d[2]), z = unit(d);
+          if (!z || L < 0.004) continue;
+          const x = unit(cross(Math.abs(z[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0], z)), y = cross(z, x), R = [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]];
+          const hl = Math.min(0.022, L * 0.45), stretch = (t, w, len) => {
+            gl.uniformMatrix4fv(U.uModel, false, new Float32Array([x[0] * w, x[1] * w, x[2] * w, 0, y[0] * w, y[1] * w, y[2] * w, 0, z[0] * len, z[1] * len, z[2] * len, 0, t[0], t[1], t[2], 1]));
+            gl.uniformMatrix3fv(U.uRot, false, rot3(R));
+          };
+          const draw = (g) => {
+            gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+          };
+          setMat('light', 0, f.warn ? warn : null);
+          stretch(f.a, 0.0035, L - hl); draw(arrow.shaft);
+          stretch(C.add(f.a, z.map((v) => v * (L - hl))), 0.009, hl); draw(arrow.head);
+        }
+        gl.enable(gl.DEPTH_TEST);
       }
       return pts;
     };

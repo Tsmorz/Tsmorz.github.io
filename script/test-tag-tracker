@@ -24,7 +24,9 @@
 //   5i. the table: the physics (a ball at rest, rolling and spinning down, the mug's shape, standing, sleeping, tipping and
 //       sliding, resting on its handle, the ball in it; hands the table stops, gripping, lifting, pressing, pouring, a mug
 //       swinging from its handle held lightly and not firmly, side grips that never spin it up, a light grip it slides
-//       out of, letting go, fingertip and whole-pad pinches on its rim, a fast hand, putting fallen things back, the time a frame takes) and the servo grip
+//       out of, letting go, fingertip and whole-pad pinches on its rim, a fast hand, putting fallen things back, the time a frame takes) and the servo grip;
+//       the record of what touched what (impacts, rolling, sliding, the forces on the hands, a grip's load and how much of
+//       its hold it uses), what a hand's operator should feel (haptics), materials' ids, and the contacts' sounds
 //   5d. (with python3) the UDP bridge: a WebSocket in, one datagram out per message, and pages from elsewhere refused
 //   6. (only with OpenCV.js installed) the worker's detection and calibration on rendered images:
 //      a ChArUco calibration recovers a known camera, and tag poses come back within a few millimetres.
@@ -938,14 +940,18 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   const gripLift = (rot, at, sq, back) => {
     const Ww = P.world({ table, gripper: G }), cc = Ww.add('cup', [0, 0, 0], rot), capped0 = Ww.capped;
     run(Ww, 30);
-    let wmax = 0, open = 1;
-    const go = (n, f) => run(Ww, n, (s) => { Ww.setRobot({ hands: [{ side: 1, pose: f ? f(s) : at, opening: open }] }); wmax = Math.max(wmax, C.norm(cc.w)); });
+    let wmax = 0, open = 1, use = 0, slipped = false;
+    const go = (n, f) => run(Ww, n, (s) => {
+      Ww.setRobot({ hands: [{ side: 1, pose: f ? f(s) : at, opening: open }] }); wmax = Math.max(wmax, C.norm(cc.w));
+      const g = Ww.record && Ww.record.hands[1] && Ww.record.hands[1].grip;
+      if (g) { use = Math.max(use, g.use); slipped = slipped || g.slipping; }
+    });
     go(30); open = 0; go(60);
     const h = Ww.hands[1], took = !!h.grip, gap = h.gap;
     open = Math.max(0, (gap - sq) / G.gapMax); go(10);
     const lift = (s) => ({ R: at.R, t: C.add(at.t, [-(back || 0) * s, 0, 0.12 * s]) });
     go(60, lift); go(120, () => lift(1));
-    return { W: Ww, c: cc, h, took, gap, wmax, capped: Ww.capped - capped0, tilt: P.tilt(cc) * D, z: Ww.poseOf(cc).t[2], held: !!h.grip && h.touch[0] === cc && h.touch[1] === cc };
+    return { W: Ww, c: cc, h, took, gap, wmax, use, slipped, capped: Ww.capped - capped0, tilt: P.tilt(cc) * D, z: Ww.poseOf(cc).t[2], held: !!h.grip && h.touch[0] === cc && h.touch[1] === cc };
   };
   // pinched by its handle: a light pinch can't hold the mug's weight off to one side and it swings down about the jaws;
   // a firm one holds it
@@ -953,6 +959,7 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   const hl = gripLift(Rz180, atHandle, 0.001), hf = gripLift(Rz180, atHandle, 1);
   check(hl.took && Math.abs(hl.gap - 2 * P.CUP.handle.b) < 0.001 && hl.held && hl.tilt > 30 && hl.z > 0.06 && hf.held && hf.tilt < 5 && hf.z > 0.11,
     `pinched by its handle (jaws ${(hl.gap * 1000).toFixed(1)} mm apart) and lifted, the mug swings ${hl.tilt.toFixed(0)}° about the jaws held lightly and stays held; held firmly, ${hf.tilt.toFixed(1)}°`);
+  check(hl.slipped && hl.use > 0.99 && !hf.slipped && hf.use < 0.9, `the record says so: the light pinch uses all the pads can hold and slips; the firm one ${(hf.use * 100).toFixed(0)}% of it, never slipping`);
   // taken from the side by the fingertips, lightly or firmly, either way round, lifted and moved: never spun up (it
   // once spun at hundreds of rad/s and ended above the jaws, still "held"), and either still between the pads or let go
   const Rz = (a) => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
@@ -991,6 +998,65 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   run(W, 120, (s) => W.setRobot({ hands: [{ side: 1, pose: { R: Rh, t: [-0.05 + 0.1 * s, 0.1, 0.05] }, opening: 1 }, { side: -1, pose: { R: Rh, t: [-0.05, -0.1, 0.05] }, opening: 1 }] }));
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / 120;
   check(ms < 4, `a 60 Hz frame of the table with two hands takes ${ms.toFixed(2)} ms`);
+  // The record: impacts, touches and the forces on the hands (for the force arrows, the sounds and haptics).
+  check(Object.values(P.MATERIALS).every((v, i, a) => Number.isInteger(v) && v > 0 && a.indexOf(v) === i) && P.MATERIALS.wood === 1 && P.MATERIALS.ceramic === 2 && P.MATERIALS.rubber === 3 && P.MATERIALS.aluminium === 4 && P.MATERIALS.stone === 5,
+    'materials keep their ids (they go over the air): wood 1, ceramic 2, rubber 3, aluminium 4, stone 5');
+  {
+    // a ball dropped 13 cm: one impact, rubber on wood, at the speed it fell to; nothing more once it rests
+    let Wr = P.world({ table, gripper: G }), ev = [];
+    const bd = Wr.add('ball', [0.05, 0, 0.15]);
+    run(Wr, 60, () => { if (Wr.record) ev.push(...Wr.record.events); });
+    const fall = Math.sqrt(2 * 9.81 * (0.15 - P.BALL.r)), e0 = ev[0] || { a: {}, b: {} }, rest = [];
+    run(Wr, 60, () => rest.push(...Wr.record.events));
+    check(ev.length === 1 && Math.abs(e0.speed - fall) < 0.03 * fall && e0.a.mat === 'rubber' && e0.b.kind === 'table' && e0.b.mat === 'wood' && Math.abs(e0.p[2]) < 0.005 && !rest.length,
+      `a ball dropped 13 cm makes one impact, rubber on wood, at ${(e0.speed || 0).toFixed(2)} m/s (it fell to ${fall.toFixed(2)}), on the table's top; none once it rests`);
+    // a ball rolling: its touch with the table rolls at its speed and hardly slips, with its weight
+    Wr = P.world({ table, gripper: G });
+    const br = Wr.add('ball', [-0.2, 0, P.BALL.r]); br.v = [0.5, 0, 0];
+    run(Wr, 30);
+    const tr = Wr.record.touches.find((x) => x.a.id === br.id && x.b.kind === 'table') || {};
+    check(Math.abs(tr.roll - br.v[0]) < 0.02 && tr.slip < 0.01 && Math.abs(tr.force - P.BALL.mass * 9.81) < 0.05 * P.BALL.mass * 9.81,
+      `a rolling ball: its touch rolls at ${(tr.roll || 0).toFixed(3)} m/s (it moves at ${br.v[0].toFixed(3)}), slips ${((tr.slip || 0) * 1000).toFixed(1)} mm/s, and presses with its weight (${(tr.force || 0).toFixed(3)} N)`);
+    // a hand pressed into the table: the table pushes back with all the hand can push (HAND.force), up
+    Wr = P.world({ table, gripper: G });
+    const tz = G.finger.c[2] - G.finger.h[2];
+    run(Wr, 90, (s) => Wr.setRobot({ hands: [{ side: 1, pose: { R: I, t: [0, 0, -tz + 0.05 - 0.1 * Math.min(1, 2 * s)] }, opening: 1 }] }));
+    const hp = Wr.record.hands[1], tc = hp.contacts.filter((x) => x.other.kind === 'table');
+    check(Math.abs(hp.force[2] - P.HAND.force) < 0.05 * P.HAND.force && Math.hypot(hp.force[0], hp.force[1]) < 1 && tc.length && tc.every((x) => x.f[2] > 0 && Math.abs(x.p[2]) < 0.002),
+      `a hand pushed into the table feels it push back with ${hp.force[2].toFixed(1)} N (all it can push: ${P.HAND.force} N), at its fingertips on the top`);
+    // dragged along the table it slides on wood at the speed it moves
+    run(Wr, 60, (s) => Wr.setRobot({ hands: [{ side: 1, pose: { R: I, t: [0.1 * s, 0, -tz - 0.01] }, opening: 1 }] }));
+    const hs = P.haptics(Wr.record, 1).touches.find((x) => x.mat === 'wood') || {};
+    check(hs.type === 'slide' && hs.id === 1 && hs.via === 'hand' && Math.abs(hs.speed - 0.1) < 0.02 && hs.force > 1,
+      `dragged at 10 cm/s along the table, the hand's operator should feel ${hs.type} on wood at ${((hs.speed || 0) * 100).toFixed(1)} cm/s with ${(hs.force || 0).toFixed(1)} N`);
+    // the gripper on the ball: closing on it is an impact on its pads; held up, the grip carries its weight; knocked
+    // into a mug, the operator feels ceramic through it; a ball dropped elsewhere isn't felt
+    Wr = P.world({ table, gripper: G });
+    const bg = Wr.add('ball', [0, 0, P.BALL.r]), mug = Wr.add('cup', [0.15, 0, 0]);
+    run(Wr, 20);
+    const far = Wr.add('ball', [0.15, 0.3, 0.3]);
+    let hnd = { R: I, t: [0, 0, P.BALL.r - G.finger.c[2]] }, felt = [], heard = [];
+    const go = (n, f, open) => run(Wr, n, (s) => {
+      if (f) hnd = f(s);
+      Wr.setRobot({ hands: [{ side: 1, pose: hnd, opening: open }] });
+      if (Wr.record) { felt.push(...P.haptics(Wr.record, 1).impacts); heard.push(...Wr.record.events); }
+    });
+    go(30, null, 1); go(60, null, 0);
+    const grasp = felt.filter((x) => x.via === 'hand' && x.mat === 'rubber'), padHits = heard.filter((x) => (x.a.part === 'pad' || x.b.part === 'pad'));
+    felt = [];
+    go(60, (s) => ({ R: I, t: [0, 0, P.BALL.r - G.finger.c[2] + 0.1 * s] }), 0); go(60, null, 0);
+    const g = Wr.record.hands[1].grip || {}, w = P.BALL.mass * 9.81;
+    check(grasp.length >= 1 && padHits.length >= 1 && heard.some((x) => x.a.id === far.id && x.b.kind === 'table') && felt.every((x) => x.mat === 'rubber'),
+      `closing on the ball is an impact on the pads (felt: ${grasp.map((x) => (x.speed * 100).toFixed(0) + ' cm/s').join(', ')}); a ball dropped elsewhere is heard but not felt`);
+    check(g.kind === 'ball' && Math.abs(g.load - w) < 0.1 * w && g.force[2] < 0 && !g.slipping && g.use < 1 && Wr.record.hands[1].hold > g.load,
+      `held up, the grip carries the ball's weight (${(g.load || 0).toFixed(3)} N, ${w.toFixed(3)} N), down on the fingers, within what the pads hold (${Wr.record.hands[1].hold.toFixed(1)} N)`);
+    go(30, (s) => ({ R: I, t: [0, 0, P.BALL.r - G.finger.c[2] + 0.1 - 0.07 * s] }), 0);
+    felt = [];
+    go(24, (s) => ({ R: I, t: [0.12 * s, 0, P.BALL.r - G.finger.c[2] + 0.03] }), 0); go(10, null, 0);
+    const knock = felt.find((x) => x.via === 'held') || {};
+    check(knock.mat === 'ceramic' && knock.id === 2 && knock.through === 'rubber' && knock.speed > 0.15,
+      `knocked into a mug, the operator feels it through the ball: ceramic, through rubber, at ${((knock.speed || 0) * 100).toFixed(0)} cm/s`);
+  }
   // the servo on the operator's hand: its bytes, where it is, and how open that makes the gripper
   const st = { railOn: true, servoReady: true, analogReady: true, keys: 5, servoPulseUs: 0, feedbackMv: 1650, railMv: 3300, joyMv: [10, 20] };
   const back = C.decodeActuatorStatus(C.encodeActuatorStatus(st));
@@ -999,6 +1065,19 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   check(Math.abs(at(1650) - 0.5) < 1e-9 && at(3000) === 1 && at(100) === 0 && Math.abs(C.gripOpening(Object.assign({}, st, { feedbackMv: 1650 }), { open: 300, closed: 700 }) - 0.5) < 1e-9 && Math.abs(C.gripOpening(Object.assign({}, st, { feedbackMv: 990 }), { open: 300, closed: 700 }) - 1) < 1e-9, 'the grip: the servo\'s share of its supply between the closed and open readings, clamped, either way round');
   check(C.gripOpening(Object.assign({}, st, { analogReady: false }), cal) === null && C.gripOpening(Object.assign({}, st, { railMv: 0 }), cal) === null && C.gripOpening(st, null) === null && C.gripOpening(st, { open: 500, closed: 500 }) === null, 'no grip without a reading, a supply or a calibration');
   check(C.clampSettings({}).robot.props === 'cup' && C.clampSettings({ robot: { props: 'ball' } }).robot.props === 'ball' && C.clampSettings({ robot: { props: 'x' } }).robot.props === 'cup' && (C.voiceCommand('Reset the table.') || {}).cmd === 'table', 'the table\'s setting (a ball and a mug unless chosen), and "reset the table"');
+  const rs = (o) => C.clampSettings({ robot: o }).robot;
+  check(rs({}).forces === true && rs({ forces: false }).forces === false && rs({}).sound === false && rs({ sound: true }).sound === true && rs({ sound: 'yes' }).sound === false && (C.voiceCommand('Mute.') || {}).cmd === 'mute' && (C.voiceCommand('Turn the sound on') || {}).cmd === 'sound',
+    'the force arrows are shown and the sound is off unless chosen; "mute" and "turn the sound on"');
+  // the sound of it (sound.js): the faster, the louder; rubber damps a ring, metal and ceramic ring on
+  const S = require(path.join(__dirname, '..', 'tag-tracker/sound.js'));
+  const hit = (a, b, v) => S.hitVoice({ a: { mat: a }, b: { mat: b }, speed: v }, 1);
+  const ring = (vv) => Math.max(...vv.modes.map((m) => m.decay));
+  const soft = hit('ceramic', 'rubber', 0.5), hard = hit('ceramic', 'aluminium', 0.5);
+  check(hit('rubber', 'wood', 1.6).gain === 1 && hit('rubber', 'wood', 0.4).gain < 0.5 && hit('rubber', 'wood', 0.4).gain > 0.2 && ring(soft) < 0.6 * ring(hard) && Object.keys(P.MATERIALS).every((m) => S.SOUNDS[m]) && hard.modes.every((m) => m.f > 0 && m.decay > 0 && m.amp > 0),
+    `contact sounds: full at 1.6 m/s, ${(hit('rubber', 'wood', 0.4).gain * 100).toFixed(0)}% at 0.4; the mug rings ${(ring(soft) * 1000).toFixed(0)} ms struck by rubber, ${(ring(hard) * 1000).toFixed(0)} ms by metal; every material has a sound`);
+  const roll = S.loopVoice({ a: { mat: 'rubber' }, b: { mat: 'wood' }, force: 0.3, slip: 0, roll: 0.3 }), slide = S.loopVoice({ a: { mat: 'aluminium' }, b: { mat: 'wood' }, force: 20, slip: 0.1, roll: 0 });
+  check(roll.type === 'roll' && slide.type === 'slide' && slide.f > roll.f && S.loopVoice({ a: { mat: 'rubber' }, b: { mat: 'wood' }, force: 0.3, slip: 0, roll: 0.001 }) === null && S.loopVoice({ a: { mat: 'rubber' }, b: { mat: 'wood' }, force: 0.3, slip: 0, roll: 0.6 }).gain > roll.gain,
+    'a rolling ball rumbles (louder faster), a hand scraping the table hisses higher, and a still touch is silent');
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
