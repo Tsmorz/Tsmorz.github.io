@@ -8,7 +8,8 @@ scene from them. Tags, settings and calibrations live in `localStorage`.
 
 | File | What it is |
 | --- | --- |
-| `index.html` | the UI and page logic |
+| `index.html` | the markup, then the scripts in order, then the boot script (the only code that runs others at load) |
+| `app-*.js` | the page's logic, in load order: `state` (S, settings, tags, tare, status), `cameras` (workers, cameras, tiles, search windows, frame loop, results, overlays, rigid objects), `plot` (3D), `robot` (robot and table), `views` (full screen, time plot, readout, render loop, modes), `calibrate` (steps 1–4), `share` (printing, board and tags on a screen), `io` (Stream, recording, voice), `boards` (motion sensors), `demo` (demo and setup guide) |
 | `tracker-core.js` | `TagCore`, no DOM: poses, frames, intrinsics, history, orbit camera, SE(3) refinement, rigid objects, `PoseFilter`, search windows, Stream/recording formats, voice parsing, IMU bytes and lining up |
 | `worker.js` | OpenCV side in a Web Worker (detection, solvePnP, ChArUco calibration); its `TagVision` factory also runs in Node |
 | `robot-core.js` | `RobotCore`, no DOM: the humanoid, IK, calibration, joint slew, demo path |
@@ -29,6 +30,13 @@ same ones alone as in the full run.
 
 ## Rules
 
+- **The `app-*.js` files are classic scripts sharing one global scope** (`'use strict'` each, no modules, no wrapper).
+  At load, a file may only declare things and wire handlers; it must not call or read anything from a later file (it
+  isn't defined yet). Startup calls go in the boot script at the end of index.html. New code goes in the file for its
+  area; a new file goes in index.html's list in order, then `task versions`. Check a change with
+  `task shot -- /tag-tracker/ --click '#emptyDemo' --wait 8000` (fails on any exception).
+- Don't name a top-level function or variable after a `window` property (`name`, `status`, `stop`, `print`, `on...`):
+  they're globals now.
 - **Run `task versions` after changing any script.** Each `?v=` is a hash of its file (`worker.js`'s also covers
   `tracker-core.js`, which it loads with the same `?v=`); `check:versions` fails on a stale one. A cached old script beside a
   new page once froze the 3D view.
