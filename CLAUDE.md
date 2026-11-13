@@ -531,7 +531,10 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   the two hands. Each touches things with spheres (the ball one; the mug's on its rims and handle, all a flat surface can
   touch; a hand's fill its gripper and line its jaws), and the mug also has its exact shape as a distance function
   (`cupSdf`: walls, floor, rounded lip, a half-torus handle; mass and inertia sampled from it), which the ball and the hands
-  meet. Arm links are kinematic capsules. Sequential impulses at 240 Hz with Coulomb friction, restitution, **rolling
+  meet. Arm links are kinematic capsules. **Things bounce**: a contact that will close within the substep at more than
+  `BOUNCE` (0.3 m/s) turns round with its restitution, even while still a few mm apart (contacts are taken `MARGIN` early,
+  and otherwise only closed their gap, so the ball used to stop dead). The table's grip is `table.mu` (default the mat's
+  0.7; a lacquered table is about 0.12, where a ball thrown with backspin skids before it rolls). Sequential impulses at 240 Hz with Coulomb friction, restitution, **rolling
   resistance and spin friction in proportion to the contact force** (`crr`, `SPIN_R`), warm starting and split impulses.
   Props that touch **sleep together** once all are still, as fixed obstacles, and wake together when something moving
   comes near. The table's grip (0.7) is above the mug's radius over its height, so a push near the rim tips it and one at
@@ -572,10 +575,15 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
     `forceArrows`): what pushes on a hand ends where it pushes, a grip's load starts at the pinch (amber while it slips),
     3.5 cm per doubling past 0.2 N; drawn over everything (`o.forces` in robot-gl.js, and flat without WebGL).
   - **Sound** (`sound.js`, ContactSound; the speaker button among the plot's buttons, M, or "sound on" / "mute";
-    `settings.robot.sound`, off by default): synthesized with Web Audio, no recordings. An impact rings both materials'
-    modes (`SOUNDS`: decaying sines and a click of noise), louder the faster (`hitVoice`; full at 1.6 m/s), a soft partner
-    damping the other's ring; a rolling or sliding touch is band-passed noise while it lasts (`loopVoice`), at most 6 at
-    once, panned by where it is in the view (`panOf`). Quiet while the microphone listens (`duckSound`) or the page is hidden.
+    `settings.robot.sound`, off by default): synthesized with Web Audio, no recordings, and **it follows the speeds**. An
+    impact rings both materials' modes (`SOUNDS`: decaying sines and a click of noise) with an amplitude in proportion to
+    the speed they met at (`hitVoice`, `loudness`: full at `IMPACT_FULL`, 4 m/s), brighter when harder (`brightness`: the
+    higher modes and the click grow faster), a soft partner damping the other's ring. A touch that lasts makes two sounds
+    at once, each in proportion to its own speed (`loopVoices`): sliding hisses with the slip, rolling rumbles with the
+    travel, so a skidding ball does both. Stereo: each sound is panned by where it is in the view (`panOf`, a
+    StereoPanner). Played in step with the physics (each impact at its own time within the step); the output stage only
+    limits peaks, so loudness stays in proportion. `render()` does the same offline (an OfflineAudioContext), for a clip.
+    Quiet while the microphone listens (`duckSound`) or the page is hidden.
   - **Haptics** (`PhysicsCore.haptics(record, side)`, no DOM, not yet sent anywhere): what the operator of a hand should feel,
     as events for an nrf-controller board's haptography library (material and speed, played on its TacHammer): impacts
     and touches (slide, roll or press, with speed and force) that reach the hand through itself, the prop it holds
@@ -670,7 +678,9 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   sliding, resting on its handle, the ball in it, hands the table stops, gripping, pressing, pouring, a mug swinging from
   its handle, a fast hand, the time a frame takes, and the servo grip's bytes and mapping; the record: impacts at the
   speed of the fall, rolling and sliding speeds, a hand pushing the table, a grip's load against the ball's weight and its
-  share of the hold, haptics through the hand and through a held ball, materials' ids, and the sounds), and (with
+  share of the hold, haptics through the hand and through a held ball, materials' ids, a dropped ball's bounces (each about
+  its restitution times the last), a skid on lacquered wood against Coulomb friction, and the sounds: amplitude in
+  proportion to impact speed, brighter when harder, sliding and rolling each as loud as its speed), and (with
   python3) the UDP bridge end to end; the motion sensors (their bytes, clock mapping, lining up, the filter with and
   without them); with OpenCV.js, that a search window finds the same corners as the whole picture; with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks

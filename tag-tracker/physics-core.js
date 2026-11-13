@@ -225,12 +225,13 @@
   }
   const tangents = (n) => { const a = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], t1 = unit(cross(n, a)); return [t1, cross(n, t1)]; };
 
-  // The world. opts: { table: {R, t (the middle of its top), size: [x, y] (m), thick}, floor: z of the floor (m),
+  // The world. opts: { table: {R, t (the middle of its top), size: [x, y] (m), thick, mu (its grip; TABLE_MU, a rubber
+  // mat, unless given: varnished wood is about 0.25)}, floor: z of the floor (m),
   // gripper: RobotCore.gripper(m) }.
   function world(opts) {
     const o = opts || {}, G = o.gripper, table = o.table || null;
     const tableBox = table ? { R: table.R, t: add(table.t, mulv(table.R, [0, 0, -(table.thick || 0.03) / 2])), h: [table.size[0] / 2, table.size[1] / 2, (table.thick || 0.03) / 2] } : null;
-    const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor;
+    const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor, tableMu = table && table.mu !== undefined ? table.mu : TABLE_MU;
     const W = { bodies: [], hands: {}, time: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0, record: null };
     let prevLinks = new Map(), nextLinks = [], nextHands = [];
     const touching = []; // props touching each other this substep
@@ -370,7 +371,7 @@
       for (const b of [...awake, ...hb]) {
         const SS = S.get(b), isHand = b.kind === 'hand';
         SS.forEach(({ c, r, s }, i) => {
-          if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'T')); }
+          if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
           if (c[2] - r - floorZ < MARGIN) cs.push(contact(b, i, null, -1, [c[0], c[1], c[2] - r], [0, 0, 1], c[2] - r - floorZ, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'F'));
         });
         if (isHand) continue;
@@ -537,7 +538,10 @@
       ct.roll = Math.max(A.crr * A.rollR, B ? B.crr * B.rollR : 0); ct.spin = ct.mu * SPIN_R;
       const vn = dot(relVel(ct), ct.n), e = B ? Math.max(A.e, B.e) * 0.5 : A.e;
       ct.vn0 = vn; // before the solve: how fast they were closing (negative), for impacts
-      ct.target = ct.dist > 0 ? -ct.dist / H : vn < -BOUNCE ? -e * vn : 0;
+      // A contact that closes this substep at a bouncing speed bounces. Contacts are taken up to MARGIN early (speculative,
+      // so nothing tunnels), and one still apart is otherwise only allowed to close its gap: the ball stopped dead just
+      // short of the table and never bounced. It turns round up to a few mm short, unseen at 240 Hz.
+      ct.target = vn < -BOUNCE && ct.dist + vn * H < 0 ? -e * vn : ct.dist > 0 ? -ct.dist / H : 0;
       if (ct.dist <= 0.001) { A._touch = true; if (B) { B._touch = true; if (A.kind !== 'hand' && B.kind !== 'hand') touching.push([A, B]); } }
     }
     function relVel(ct) {

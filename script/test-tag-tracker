@@ -1002,14 +1002,33 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   check(Object.values(P.MATERIALS).every((v, i, a) => Number.isInteger(v) && v > 0 && a.indexOf(v) === i) && P.MATERIALS.wood === 1 && P.MATERIALS.ceramic === 2 && P.MATERIALS.rubber === 3 && P.MATERIALS.aluminium === 4 && P.MATERIALS.stone === 5,
     'materials keep their ids (they go over the air): wood 1, ceramic 2, rubber 3, aluminium 4, stone 5');
   {
-    // a ball dropped 13 cm: one impact, rubber on wood, at the speed it fell to; nothing more once it rests
+    // a ball dropped 13 cm bounces: impacts, rubber on wood, the first at the speed it fell to, each about the
+    // restitution times the last; none once it rests
     let Wr = P.world({ table, gripper: G }), ev = [];
     const bd = Wr.add('ball', [0.05, 0, 0.15]);
-    run(Wr, 60, () => { if (Wr.record) ev.push(...Wr.record.events); });
+    run(Wr, 90, () => { if (Wr.record) ev.push(...Wr.record.events); });
     const fall = Math.sqrt(2 * 9.81 * (0.15 - P.BALL.r)), e0 = ev[0] || { a: {}, b: {} }, rest = [];
     run(Wr, 60, () => rest.push(...Wr.record.events));
-    check(ev.length === 1 && Math.abs(e0.speed - fall) < 0.03 * fall && e0.a.mat === 'rubber' && e0.b.kind === 'table' && e0.b.mat === 'wood' && Math.abs(e0.p[2]) < 0.005 && !rest.length,
-      `a ball dropped 13 cm makes one impact, rubber on wood, at ${(e0.speed || 0).toFixed(2)} m/s (it fell to ${fall.toFixed(2)}), on the table's top; none once it rests`);
+    const ratios = ev.slice(1).map((e, i) => e.speed / ev[i].speed), high = ev.length > 1 ? (ev[1].t - ev[0].t) ** 2 * 9.81 / 8 : 0;
+    check(ev.length >= 4 && Math.abs(e0.speed - fall) < 0.03 * fall && ev.every((e) => e.a.mat === 'rubber' && e.b.kind === 'table' && e.b.mat === 'wood' && Math.abs(e.p[2]) < 0.005) && ratios.every((r) => r > 0.45 && r < 0.7) && Math.abs(high - 0.13 * P.BALL.e ** 2) < 0.006 && !rest.length,
+      `a ball dropped 13 cm bounces: impacts at ${ev.map((e) => e.speed.toFixed(2)).join(', ')} m/s (it fell to ${fall.toFixed(2)}), the first bounce ${(high * 100).toFixed(1)} cm high; none once it rests`);
+    // thrown low with backspin onto a lacquered table (its grip 0.12): it bounces, skids (slipping less and less) and
+    // rolls; the record's slip falls at the rate friction gives: mu·g·(1 + 5/2) for a solid ball, less the rolling
+    // resistance that holds back its spinning up (5/2·crr·g)
+    const Wl = P.world({ table: { R: I, t: [0, 0, 0], size: [2, 0.6], thick: 0.03, mu: 0.12 }, gripper: G }), bl = Wl.add('ball', [-0.9, 0, 0.15]);
+    bl.v = [2.2, 0, -0.4]; bl.w = [0, -170, 0];
+    const slips = [], hits = [];
+    let rolls = {};
+    run(Wl, 90, () => {
+      if (!Wl.record) return;
+      hits.push(...Wl.record.events);
+      const t = Wl.record.touches.find((x) => x.a.id === bl.id);
+      slips.push(t && hits.length >= 5 ? t.slip : null);
+      if (t && hits.length >= 5 && t.slip < 0.01 && !rolls.roll) rolls = t;
+    });
+    const sk = slips.map((x, i) => [i, x]).filter(([, x]) => x !== null && x > 0.1), rate = sk.length > 2 ? (sk[0][1] - sk[sk.length - 1][1]) / ((sk[sk.length - 1][0] - sk[0][0]) / 60) : 0, want = 9.81 * (3.5 * 0.12 - 2.5 * P.BALL.crr);
+    check(hits.length >= 5 && sk.length >= 10 && Math.abs(rate - want) < 0.1 * want && rolls.slip < 0.01 && rolls.roll > 0.5,
+      `thrown with backspin it bounces ${hits.length} times, skids ${(sk.length / 60).toFixed(2)} s, its slip falling at ${rate.toFixed(2)} m/s² (friction: ${want.toFixed(2)}), then rolls at ${(rolls.roll || 0).toFixed(2)} m/s`);
     // a ball rolling: its touch with the table rolls at its speed and hardly slips, with its weight
     Wr = P.world({ table, gripper: G });
     const br = Wr.add('ball', [-0.2, 0, P.BALL.r]); br.v = [0.5, 0, 0];
@@ -1068,16 +1087,19 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
   const rs = (o) => C.clampSettings({ robot: o }).robot;
   check(rs({}).forces === true && rs({ forces: false }).forces === false && rs({}).sound === false && rs({ sound: true }).sound === true && rs({ sound: 'yes' }).sound === false && (C.voiceCommand('Mute.') || {}).cmd === 'mute' && (C.voiceCommand('Turn the sound on') || {}).cmd === 'sound',
     'the force arrows are shown and the sound is off unless chosen; "mute" and "turn the sound on"');
-  // the sound of it (sound.js): the faster, the louder; rubber damps a ring, metal and ceramic ring on
+  // the sound of it (sound.js): an impact's amplitude in proportion to its speed, brighter when harder; rubber damps a
+  // ring, metal and ceramic ring on
   const S = require(path.join(__dirname, '..', 'tag-tracker/sound.js'));
   const hit = (a, b, v) => S.hitVoice({ a: { mat: a }, b: { mat: b }, speed: v }, 1);
-  const ring = (vv) => Math.max(...vv.modes.map((m) => m.decay));
+  const ring = (vv) => Math.max(...vv.modes.map((m) => m.decay)), top = (vv) => vv.modes.filter((m) => m.f > 400).reduce((x, m) => x + m.amp, 0) / vv.modes.reduce((x, m) => x + m.amp, 0);
   const soft = hit('ceramic', 'rubber', 0.5), hard = hit('ceramic', 'aluminium', 0.5);
-  check(hit('rubber', 'wood', 1.6).gain === 1 && hit('rubber', 'wood', 0.4).gain < 0.5 && hit('rubber', 'wood', 0.4).gain > 0.2 && ring(soft) < 0.6 * ring(hard) && Object.keys(P.MATERIALS).every((m) => S.SOUNDS[m]) && hard.modes.every((m) => m.f > 0 && m.decay > 0 && m.amp > 0),
-    `contact sounds: full at 1.6 m/s, ${(hit('rubber', 'wood', 0.4).gain * 100).toFixed(0)}% at 0.4; the mug rings ${(ring(soft) * 1000).toFixed(0)} ms struck by rubber, ${(ring(hard) * 1000).toFixed(0)} ms by metal; every material has a sound`);
-  const roll = S.loopVoice({ a: { mat: 'rubber' }, b: { mat: 'wood' }, force: 0.3, slip: 0, roll: 0.3 }), slide = S.loopVoice({ a: { mat: 'aluminium' }, b: { mat: 'wood' }, force: 20, slip: 0.1, roll: 0 });
-  check(roll.type === 'roll' && slide.type === 'slide' && slide.f > roll.f && S.loopVoice({ a: { mat: 'rubber' }, b: { mat: 'wood' }, force: 0.3, slip: 0, roll: 0.001 }) === null && S.loopVoice({ a: { mat: 'rubber' }, b: { mat: 'wood' }, force: 0.3, slip: 0, roll: 0.6 }).gain > roll.gain,
-    'a rolling ball rumbles (louder faster), a hand scraping the table hisses higher, and a still touch is silent');
+  const lin = [0.2, 0.5, 1, 2, 3.9].every((v) => Math.abs(hit('rubber', 'wood', v).gain - v / S.IMPACT_FULL) < 1e-12);
+  check(lin && hit('rubber', 'stone', 5).gain === 1 && top(hit('rubber', 'wood', 2)) > top(hit('rubber', 'wood', 0.3)) && hit('rubber', 'wood', 2).click.amp > hit('rubber', 'wood', 0.3).click.amp && ring(soft) < 0.6 * ring(hard) && Object.keys(P.MATERIALS).every((m) => S.SOUNDS[m]) && hard.modes.every((m) => m.f > 0 && m.decay > 0 && m.amp > 0),
+    `contact sounds: an impact's amplitude is its speed over ${S.IMPACT_FULL} m/s, and a harder one is brighter; the mug rings ${(ring(soft) * 1000).toFixed(0)} ms struck by rubber, ${(ring(hard) * 1000).toFixed(0)} ms by metal; every material has a sound`);
+  const lv = (o) => S.loopVoices(Object.assign({ a: { mat: 'rubber' }, b: { mat: 'wood' }, force: 0.3, slip: 0, roll: 0 }, o)), one = (o, ty) => lv(o).find((x) => x.type === ty);
+  const skid = lv({ slip: 1, roll: 1.5 });
+  check(one({ roll: 0.3 }, 'roll') && !one({ roll: 0.3 }, 'slide') && Math.abs(one({ roll: 0.6 }, 'roll').gain - 2 * one({ roll: 0.3 }, 'roll').gain) < 1e-12 && Math.abs(one({ slip: 0.4 }, 'slide').gain - 2 * one({ slip: 0.2 }, 'slide').gain) < 1e-12 && one({ slip: 0.4 }, 'slide').f > one({ slip: 0.2 }, 'slide').f && skid.length === 2 && !lv({ roll: 0.01 }).length,
+    'a touch\'s sounds: rolling rumbles and sliding hisses, each as loud as its speed (twice as fast, twice as loud), a skid does both, and a still touch is silent');
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
