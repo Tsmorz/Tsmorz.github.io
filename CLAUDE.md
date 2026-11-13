@@ -92,8 +92,13 @@ Detail for each subsystem lives next to it, so it isn't in every session's conte
 | `/recipes/` and the Journal look | `.claude/rules/recipes.md` |
 | The footer cat | `.claude/rules/footer-cat.md` |
 
-If you change how an area works, update its guide, not this file. Keep guides to things the code can't say (why, gotchas,
-rules, which test guards what).
+If you change how an area works, update its guide, not this file.
+
+**Guides hold rules and gotchas; the commit message holds the story.** Add a line to a guide only when it is something the
+code can't say and the next edit could get wrong: a rule ("never hand-edit ..."), a trap and why it bites, a pinned version,
+a cross-repo contract, which test guards what. Don't add how a feature works step by step, measured numbers, or history
+("used to ..., now ..."): the code, the tests and `git log` already hold those. Name the identifier to search for rather than
+describing it. When a guide passes about 150 lines, trim it before adding to it.
 
 ## Running and checking
 

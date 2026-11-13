@@ -112,7 +112,7 @@ tasks:
   check:tag-tracker:
     desc: Check the pose, history and plot maths behind /tag-tracker/ (Node, no build; detection too if OpenCV.js is installed)
     cmds:
-      - script/test-tag-tracker
+      - script/test-tag-tracker {{.CLI_ARGS}}
 
   check:links:
     desc: Check internal links with html-proofer

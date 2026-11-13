@@ -23,7 +23,9 @@ scene from them. Tags, settings and calibrations live in `localStorage`.
 Carlo, mirror poses), the filter vs a textbook Kalman filter, the joint fit, search windows, Stream/recording formats, voice, the
 robot (section 5h), the table and its record and sounds (section 5i), the UDP bridge (with python3) and the motion sensors. With
 OpenCV.js installed (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also checks detection and calibration on
-rendered pictures, and the screen board (section 6b).
+rendered pictures, and the screen board (section 6b). **Run only what you touched while iterating**:
+`task check:tag-tracker -- 5i` (or `5h 5i`; `5` is only section 5). Each section reseeds its random numbers, so it draws the
+same ones alone as in the full run.
 
 ## Rules
 
