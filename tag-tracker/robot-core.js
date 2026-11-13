@@ -45,6 +45,14 @@
   ];
   // Arms at the sides, forearms forward, palms in.
   const HOME = [0, 0, 0, 90 * DEG, 0, 0, 0];
+  // The IK never straightens an elbow past this. A straight arm is the singular pose: the elbow's circle shrinks to a
+  // point, so where it would bend (ψ) is no longer defined and the upper arm's turn trades freely against the forearm's.
+  // Kept a little bent, the elbow always has a side to bend to (the preferred one: down and out), so an arm that has
+  // reached as far as it goes bends straight back out of it, smoothly, the moment the target comes back. 5° costs 0.4 mm
+  // of reach.
+  const MIN_BEND = 5 * DEG;
+  // How far a wrist can be from its shoulder (m): the arm out with its elbow at MIN_BEND.
+  const reachOf = (m) => Math.sqrt(m.upper * m.upper + m.fore * m.fore + 2 * m.upper * m.fore * Math.cos(MIN_BEND));
 
   // How fast each joint can turn (rad/s) and speed up or slow down (rad/s²): a light arm's motors, faster at the wrist.
   const SLEW = { speed: [3, 3, 4, 4, 6, 6, 6], accel: [20, 20, 25, 25, 40, 40, 40] };
@@ -149,7 +157,7 @@
   // shoulder-wrist line, and ψ is the angle round it (0 = its lowest point). 120 angles are scored, then the best is
   // refined. `prev` is the last solution ({q, elbow}), which keeps the elbow and the joints from jumping between
   // equally good places and picks the wrist solution nearest the last one. A target out of reach puts the wrist as near as it
-  // goes, on the line to it (reach false, gap = how far short, m).
+  // goes, on the line to it, its elbow bent MIN_BEND (reach false, gap = how far short, m).
   // opts: { prefer: false } keeps only the limits and steadiness (no elbow preference), or weights to override;
   // { swing: Infinity } lets the elbow go straight to the best place even with a previous solution.
   function ik(m, side, target, prev, opts) {
@@ -157,7 +165,7 @@
     const sh = shoulderOf(m, side), L1 = m.upper, L2 = m.fore;
     const D = sub(target.t, sh), dist = norm(D);
     const n = dist > 1e-9 ? scale(D, 1 / dist) : [0, 0, -1];
-    const dmax = L1 + L2, dmin = Math.sqrt(L1 * L1 + L2 * L2 + 2 * L1 * L2 * Math.cos(JOINTS[3].hi));
+    const dmax = reachOf(m), dmin = Math.sqrt(L1 * L1 + L2 * L2 + 2 * L1 * L2 * Math.cos(JOINTS[3].hi));
     const d = clamp(dist, dmin, dmax), gap = dist - d, wrist = add(sh, scale(n, d));
     const cb = clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1), sb = Math.sqrt(1 - cb * cb);
     const q4 = Math.acos(clamp((d * d - L1 * L1 - L2 * L2) / (2 * L1 * L2), -1, 1));
@@ -222,6 +230,21 @@
     return cols(h, cross([0, 0, 1], h), [0, 0, 1]);
   }
   const horiz = (a) => { const h = [a[0], a[1], 0], l = norm(h); return l > 1e-6 ? scale(h, 1 / l) : null; };
+
+  // A wrist position (chest frame) brought back within the arm's reach (`margin` m short of reachOf): moved only within
+  // the plane through it square to `n` (a unit normal, chest frame; optional), to the nearest reachable point of that
+  // plane. For a target dragged in a plane: out of reach, ik() puts the wrist on the line from the shoulder, which lies
+  // above the target (the shoulder is higher than the hands), so a hand dragged too far would rise; this keeps its height.
+  // Without n, or if the whole plane is out of reach, it is that line's point. Returns the wrist (unchanged if in reach).
+  function inReach(m, side, wrist, n, margin) {
+    const sh = shoulderOf(m, side), r = reachOf(m) - (margin === undefined ? 0.005 : margin), D = sub(wrist, sh), dist = norm(D);
+    if (dist <= r) return wrist;
+    if (n) {
+      const h = dot(D, n), P = sub(D, scale(n, h)), pl = norm(P);
+      if (Math.abs(h) < r && pl > 1e-9) return add(sh, add(scale(n, h), scale(P, Math.sqrt(r * r - h * h) / pl)));
+    }
+    return add(sh, scale(D, r / dist));
+  }
 
   // The calibration, from one moment in the start pose (arms at the sides, forearms forward, palms in).
   // input: { body: {R, t} | null, arms: [{key, pose: {R, t}, side: +1 | -1 | null}] }, poses in the plotted frame
@@ -313,5 +336,5 @@
     return { R: mul3(rodrigues(r), home.R), t: add(home.t, d) };
   }
 
-  return { MODEL, JOINTS, HOME, PREFER, SLEW, model, gripper, slew, fk, ik, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
+  return { MODEL, JOINTS, HOME, MIN_BEND, PREFER, SLEW, reachOf, model, gripper, slew, fk, ik, inReach, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
 });

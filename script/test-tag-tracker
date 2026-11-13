@@ -667,7 +667,7 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
   const RC = require(path.join(__dirname, '..', 'tag-tracker/robot-core.js'));
   const m = RC.model(), D = Math.PI / 180, N = 2000;
   const rotErr = (A, B) => C.norm(C.so3Log(C.mul3(C.tr3(A), B)));
-  const randQ = () => RC.JOINTS.map((j) => j.lo + (j.hi - j.lo) * rnd());
+  const randQ = () => RC.JOINTS.map((j, i) => { const lo = i === 3 ? RC.MIN_BEND : j.lo; return lo + (j.hi - lo) * rnd(); }); // (the IK keeps the elbow bent MIN_BEND)
   const palm = (f, side) => [-side * f.R[1], -side * f.R[4], -side * f.R[7]], fingers = (f) => [-f.R[2], -f.R[5], -f.R[8]];
   const L = RC.fk(m, 1, RC.HOME), Rt = RC.fk(m, -1, RC.HOME);
   check(near(C.sub(L.elbow, L.shoulder), [0, 0, -m.upper], 1e-12) && near(C.sub(L.wrist, L.elbow), [m.fore, 0, 0], 1e-12) && near(fingers(L), [1, 0, 0], 1e-12), 'home: the upper arm hangs straight down, the forearm and fingers point forward');
@@ -750,8 +750,34 @@ console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a scr
 
   // out of reach
   const far = { R: L.R, t: C.add(L.shoulder, [0.5, 0.2, 0.3]) }, fs = RC.ik(m, 1, far, null), Ff = RC.fk(m, 1, fs.q);
-  const dist = C.norm(C.sub(far.t, L.shoulder)), along = C.add(L.shoulder, C.sub(far.t, L.shoulder).map((x) => (x * (m.upper + m.fore)) / dist));
-  check(!fs.reach && Math.abs(fs.gap - (dist - m.upper - m.fore)) < 1e-12 && near(Ff.t, along, 1e-9) && rotErr(Ff.R, far.R) < 1e-7, 'a wrist out of reach: the arm points straight at it, says how far short it is, and still turns the hand');
+  const dist = C.norm(C.sub(far.t, L.shoulder)), along = C.add(L.shoulder, C.sub(far.t, L.shoulder).map((x) => (x * RC.reachOf(m)) / dist));
+  check(!fs.reach && Math.abs(fs.gap - (dist - RC.reachOf(m))) < 1e-12 && Math.abs(fs.q[3] - RC.MIN_BEND) < 1e-9 && near(Ff.t, along, 1e-9) && rotErr(Ff.R, far.R) < 1e-7, 'a wrist out of reach: the arm points at it with its elbow bent MIN_BEND (never quite straight), says how far short it is, and still turns the hand');
+  // ... and never locked there: from a target 20 cm out of reach, held, a target back 2 cm inside bends the elbow out of
+  // it at once (one solve, following the stretched solution), down and to the side as preferred, as a fresh solve would
+  {
+    let worst = 0, wrong = 0;
+    const devs = [];
+    for (let k = 0; k < 200; k++) {
+      const side = k % 2 ? 1 : -1, S0 = RC.fk(m, side, RC.HOME), dir = C.mulv(RC.Rz(side * (rnd() - 0.3)), C.mulv(RC.Ry(rnd() - 0.2), [1, 0, 0]));
+      let prev = null;
+      for (let i = 0; i < 30; i++) { const s = RC.ik(m, side, { R: S0.R, t: C.add(S0.shoulder, dir.map((x) => x * (RC.reachOf(m) + 0.2))) }, prev); prev = { q: s.q, elbow: s.elbow, psi: s.psi }; }
+      const back = { R: S0.R, t: C.add(S0.shoulder, dir.map((x) => x * (RC.reachOf(m) - 0.02))) }, s = RC.ik(m, side, back, prev), fresh = RC.ik(m, side, back, null);
+      worst = Math.max(worst, C.norm(C.sub(RC.fk(m, side, s.q).t, back.t)));
+      if (!s.reach || C.norm(C.sub(s.elbow, fresh.elbow)) > 0.05) wrong++;
+      devs.push(C.norm(C.sub(s.elbow, fresh.elbow)));
+    }
+    devs.sort((a, b) => a - b);
+    const med = devs[100];
+    check(worst < 1e-9 && wrong <= 6 && med < 0.005, `an arm held 20 cm past its reach bends back out the moment its target is back in (200 directions: wrist within ${worst.toExponential(1)} m; the elbow ${(med * 1000).toFixed(1)} mm from where a fresh solve puts it at the median, over 5 cm in ${wrong}; without the minimum bend, 10.5 cm)`);
+  }
+  // ... and a target dragged level out of reach (across the body, below the shoulder) is brought back within reach at its
+  // own height, not up the line from the shoulder; in reach it is left alone
+  {
+    const lvl = [0.25, -0.45, L.shoulder[2] - 0.2], z = [0, 0, 1], keep = RC.inReach(m, 1, lvl, z), line = RC.inReach(m, 1, lvl), r = RC.reachOf(m) - 0.005;
+    const inside = [0.2, 0.1, 0], same = RC.inReach(m, 1, inside, z);
+    check(Math.abs(C.norm(C.sub(keep, L.shoulder)) - r) < 1e-12 && Math.abs(keep[2] - lvl[2]) < 1e-12 && line[2] - lvl[2] > 0.03 && RC.ik(m, 1, { R: L.R, t: keep }, null).reach && same === inside,
+      `a target dragged level out of reach is kept at its height (${((keep[2] - lvl[2]) * 1000).toFixed(1)} mm) on the edge of reach; the line from the shoulder would lift it ${((line[2] - lvl[2]) * 1000).toFixed(0)} mm`);
+  }
 
   // calibration. A person 1.6 m from the camera, facing it (the plotted frame: x right, y away, z up), so their
   // left is +x. Their wrist tags sit a little off the robot's home wrists, turned any way.
@@ -1059,6 +1085,29 @@ console.log('5i. the table: the physics the robot plays with, and the gripper on
     const held = drag(true), raw = drag(false);
     check(held.F > 5 && held.F < 20 && held.up > 0.01 - P.PRESS - 0.001 && held.slid < 0.002 && raw.F > 0.9 * P.HAND.force && raw.up < 0.001,
       `a gripper dragged 10 cm into the table presses with ${held.F.toFixed(1)} N and rises ${(held.up * 1000).toFixed(1)} mm when the pointer comes up 10 mm (the first ${P.PRESS * 1000} mm only lets the press off; sliding ${(held.slid * 1000).toFixed(1)} mm); sent where the pointer is, ${raw.F.toFixed(0)} N and ${(raw.up * 1000).toFixed(1)} mm`);
+  }
+  // A gripper tilted 23° about its fingers, dragged level (in a horizontal plane) 5 cm into the other gripper. Held back
+  // in the drag plane it rests against it at its own height; sent where the pointer is, the drive spends all its force
+  // on the push, the tilted faces turn some of it up and down, and the two slide past each other
+  {
+    const Rt = C.mul3([1, 0, 0, 0, Math.cos(0.4), -Math.sin(0.4), 0, Math.sin(0.4), Math.cos(0.4)], Rh), z = 0.3;
+    const drag = (hold) => {
+      const Wd = P.world({ gripper: G }), grip = (t, R) => C.add(t, C.mulv(R, [0, 0, G.finger.c[2]]));
+      let off = [0, 0, 0];
+      for (let i = 0; i < 150; i++) {
+        let want = C.add([0, 0.25 - 0.3 * Math.min(1, i / 80), z], off);
+        if (hold && Wd.record) {
+          const ph = Wd.handPose(1), sh = P.holdBack(Wd.record.hands[1], grip(ph.t, ph.R), grip(want, Rt), undefined, [0, 0, 1]);
+          want = C.add(want, sh); off = C.add(off, sh);
+        }
+        Wd.setRobot({ hands: [{ side: 1, pose: { R: Rt, t: want }, opening: 1 }, { side: -1, pose: { R: Rh, t: [0, 0, z] }, opening: 1 }] });
+        Wd.step(1 / 60);
+      }
+      return { dz: Wd.handPose(1).t[2] - z, other: Wd.handPose(-1).t[2] - z, push: Wd.record.hands[1].contacts.filter((x) => x.other.kind === 'hand').reduce((v, x) => v + C.norm(x.f), 0) };
+    };
+    const held = drag(true), raw = drag(false);
+    check(Math.abs(held.dz) < 0.002 && Math.abs(held.other) < 0.002 && held.push > 2 && held.push < 20 && Math.abs(raw.dz) > 0.01,
+      `a tilted gripper dragged level into the other rests against it at its height (${(held.dz * 1000).toFixed(1)} mm off, the other ${(held.other * 1000).toFixed(1)} mm), pushing ${held.push.toFixed(1)} N; sent where the pointer is, it slides ${(raw.dz * 1000).toFixed(0)} mm and the other ${(raw.other * 1000).toFixed(0)} mm`);
   }
   // The record: impacts, touches and the forces on the hands (for the force arrows, the sounds and haptics).
   check(Object.values(P.MATERIALS).every((v, i, a) => Number.isInteger(v) && v > 0 && a.indexOf(v) === i) && P.MATERIALS.wood === 1 && P.MATERIALS.ceramic === 2 && P.MATERIALS.rubber === 3 && P.MATERIALS.aluminium === 4 && P.MATERIALS.stone === 5,

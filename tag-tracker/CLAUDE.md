@@ -126,7 +126,10 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   (only camera 1 measures them until the cameras are placed). The cubes are turned so camera 1 sees two or three faces, and the
   body tag is square to camera 1 and tipped back, so neither is a face-on single tag (two mirror-image poses) and the hands never
   pass in front of it. It rests in the start pose 3.5 s of every 18 s (`DEMO_CYCLE`), and the demo calibrates the robot only
-  then (`demoAtHome`). Measured in the demo: hand targets within ~3 cm and 4° of the path, joints at most ~2° a frame. A target out of reach puts the wrist on the line to it (`reach`, `gap`). **Calibrate
+  then (`demoAtHome`). Measured in the demo: hand targets within ~3 cm and 4° of the path, joints at most ~2° a frame. A target out of reach puts the wrist on the line to it (`reach`, `gap`). **The elbow never goes quite straight**
+  (`MIN_BEND`, 5°, so the reach is `reachOf(m)`, 0.4 mm short of upper + fore): a straight arm is the singular pose, where the
+  elbow's circle is a point and ψ means nothing, and an arm let go straight came back with its elbow wherever the joints'
+  steadiness left it (a median 10 cm from the preferred place, sometimes up) and stayed there. **Calibrate
   robot** (key C on the plot, voice "calibrate robot") is a tare for the robot: `RobotCore.calibrate` takes the start pose (arms
   at the sides, forearms forward, palms in: `HOME`) from the tags now, keeping each wrist tag's turn to the home hand and
   its shift to the home wrist in the chest's frame, so a turned wrist turns the hand in place. Until then the robot stands in
@@ -190,13 +193,18 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   physics hand, or a hand held back by the table would drag its own target away), scroll on it to close (down) or open it, Shift-scroll to tip the
   fingers, Space to open or close the last one moved. **The gripper the pointer can take lights up** (`hoverNow`, every
   frame from where the pointer last was, so one that moves under a still pointer lights too; not while orbiting): it is
-  tinted violet (`hot` in robot-gl.js) with a faint disc as big as the grab reach (`GRAB_PX`, 30 px) round it, both
-  stronger while dragged. It stays where it was put (`TB.drive`, **in the world**, the plot's frame, so the arm reaches to
+  tinted violet (`hot` in robot-gl.js; within `GRAB_PX`, 30 px), brighter while dragged. Only the gripper: no disc round
+  it. It stays where it was put (`TB.drive`, **in the world**, the plot's frame, so the arm reaches to
   keep it there when the body moves, and a change of "Relative to" gives it back to its tag) until **Tags drive**,
-  Calibrate robot or a reload. Dragged into the table (or the floor, or the other arm) its target goes at most
-  `PhysicsCore.PRESS` (5 mm) past where it rests (`holdBack`), and the pointer's offset takes up the rest, so it presses
-  lightly (10 to 20 N, not all the arm has), never sends the arm out of reach under the table (which slid it along), and
-  comes up as soon as the pointer does. The grip from the servo is checked only with encoded bytes so far, not a real board.
+  Calibrate robot or a reload. Dragged into the table (or the floor, the other arm or the other gripper) its target goes
+  at most `PhysicsCore.PRESS` (5 mm) past where it rests (`holdBack`), and the pointer's offset takes up the rest, so it
+  presses lightly (10 to 20 N, not all the arm has), never sends the arm out of reach under the table (which slid it
+  along), and comes up as soon as the pointer does. That shift stays **in the drag plane** (`holdBack`'s `plane`): a push
+  that isn't level (a tilted gripper, a capsule's round side) moved the target up along it, and with the drive spending all
+  of `HAND.force` on the push the two grippers slid 3 to 4 cm past each other. Dragged past the arm's reach the wrist is
+  kept on the edge of it, in the drag plane (`RobotCore.inReach`): out of reach the IK stretches along the line from the
+  shoulder, which lies above the target, so the hand rose (and the target had to come all the way back before anything
+  moved). Grabbing a hand whose target was left out of reach (the body moved away) starts it again from the hand. The grip from the servo is checked only with encoded bytes so far, not a real board.
 - **What the contacts did** (`W.record`, after each physics step; the comment above `W.step` has its shape): every touching
   pair's force, slip and rolling speed; **impacts** (a pair that starts touching after 30 ms apart, at 3 cm/s or more, with
   the speed they met at); and for each hand the forces on it: each contact's, the grip's, and the whole wrench. **A grip's
@@ -307,11 +315,13 @@ no "Ready to start". The page's icon (`favicon.svg`, and the logo) is the real t
   against Monte Carlo, the mirror-image case, a three-tag cube, the filter against a textbook Kalman filter, flips and gating,
   the mirror-image choice, the joint fit (against one camera and against fusing poses, its covariance by Monte Carlo,
   unsynchronised moving tags, a bad corner), the corner-fed filter, the search windows, the Stream messages, the recording exports, notes, voice commands and the voice gate,
-  the robot (section 5h: the home pose, IK against FK on random poses, elbows out and low, steady joints, out of reach,
+  the robot (section 5h: the home pose, IK against FK on random poses, elbows out and low, steady joints, out of reach and
+  back (the elbow bends straight back out to its preferred place), `inReach` keeping a dragged target's height,
   calibration with one, two or three tags (and arms swapped by mirrored poses), `tagFit`, its settings, the joints' speed and
   acceleration), the table (section 5i: rolling resistance against its formula, spin, the mug's shape, sleeping, tipping,
   sliding, resting on its handle, the ball in it, hands the table stops, gripping, pressing, pouring, a mug swinging from
-  its handle, a fast hand, the time a frame takes, and the servo grip's bytes and mapping; the record: impacts at the
+  its handle, a fast hand, the time a frame takes, grippers against each other and the other arm, a drag into the table
+  and a tilted gripper dragged level into the other (holding its height), and the servo grip's bytes and mapping; the record: impacts at the
   speed of the fall, rolling and sliding speeds, a hand pushing the table, a grip's load against the ball's weight and its
   share of the hold, haptics through the hand and through a held ball, materials' ids, a dropped ball's bounces (each about
   its restitution times the last), a skid on lacquered wood against Coulomb friction, and the sounds: amplitude in
