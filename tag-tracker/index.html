@@ -918,13 +918,13 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
   <a href="/projects/">tsmorz.github.io</a>
 </footer>
 
-<!-- ?v= is the page's version: bump it whenever one of these (or worker.js) changes, so a browser never runs a cached
-     old copy of one beside new copies of the others -->
-<script src="tracker-core.js?v=2026-11-13"></script>
-<script src="robot-core.js?v=2026-11-14b"></script>
-<script src="robot-gl.js?v=2026-11-14"></script>
-<script src="physics-core.js?v=2026-11-14c"></script>
-<script src="sound.js?v=2026-11-13b"></script>
+<!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
+     run `task versions` (check:fast fails until you do) -->
+<script src="tracker-core.js?v=6c0d3fa0"></script>
+<script src="robot-core.js?v=5767e370"></script>
+<script src="robot-gl.js?v=b5e3f603"></script>
+<script src="physics-core.js?v=6d5e5852"></script>
+<script src="sound.js?v=4f5ec6ef"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
 (() => {
@@ -1223,7 +1223,7 @@ function status(text, kind) {
 const POOL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 function spawnWorker() {
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  const w = new Worker(base + 'worker.js?v=2026-11-13'), slot = { w, ready: false, busy: false, first: !S.pool.length };
+  const w = new Worker(base + 'worker.js?v=337f2721'), slot = { w, ready: false, busy: false, first: !S.pool.length };
   S.pool.push(slot);
   w.onmessage = (ev) => onWorker(ev.data, slot);
   w.onerror = (e) => { if (slot.first) status('Detector failed to start', 'bad'); else S.pool = S.pool.filter((x) => x !== slot); console.error(e); };
@@ -3929,7 +3929,7 @@ function voiceSay(state, text, hold) {
 function speechWorker() {
   if (V.worker) return;
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  V.worker = new Worker(base + 'speech-worker.js', { type: 'module' });
+  V.worker = new Worker(base + 'speech-worker.js?v=40a2f428', { type: 'module' });
   const fail = (msg) => { V.failed = msg; for (const f of V.pending.values()) f({ error: msg }); V.pending.clear(); };
   V.worker.onmessage = ({ data: d }) => {
     if (d.type === 'progress') {

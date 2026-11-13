@@ -104,8 +104,18 @@ describing it. When a guide passes about 150 lines, trim it before adding to it.
 
 ```sh
 script/serve    # http://127.0.0.1:4000 with live reload
-task check      # what CI runs: data → swingup → lab → build → JS → links
+task check:fast # seconds, no build: data, script versions, every page's maths
+task check      # what CI runs: check:fast → build → JS → links
+task versions   # after changing a self-contained page's script: its ?v= becomes the file's hash
+task shot -- /tag-tracker/ --click '#emptyDemo' --wait 8000   # headless screenshot to .shots/, exits 1 on a page exception
 ```
+
+**See UI changes yourself**: after changing a page, `task shot` it (`--dark`, `--phone`, `--eval JS`, `--click SEL`; options
+at the top of `script/shot`), read the PNG and fix what it shows or throws, instead of asking me to look. Jekyll pages need
+`task build` first; self-contained ones don't. Still say what only a real device (camera, Bluetooth, a board) can check.
+
+`.claude/settings.json` allows the usual commands and runs `.claude/hooks/check-js.sh` (`node --check`) after every edit of a
+`.js` file, so a syntax error comes back at once.
 
 Needs Ruby ≥ 2.7; the system Ruby on this Mac (2.6.10) can't run Jekyll 4, so use `brew install ruby@3.3`
 or rely on CI. `Taskfile.yml` is the single entrypoint (`task --list`); `script/check` and

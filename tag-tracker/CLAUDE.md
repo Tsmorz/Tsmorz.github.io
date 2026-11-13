@@ -29,8 +29,9 @@ same ones alone as in the full run.
 
 ## Rules
 
-- **Bump the `?v=<date>` script version** in index.html (it also reaches the worker and `tracker-core.js`) whenever any script
-  changes. A cached old `robot-core.js` beside a new page once froze the 3D view.
+- **Run `task versions` after changing any script.** Each `?v=` is a hash of its file (`worker.js`'s also covers
+  `tracker-core.js`, which it loads with the same `?v=`); `check:versions` fails on a stale one. A cached old script beside a
+  new page once froze the 3D view.
 - **Pinned, not vendored:** OpenCV.js `@techstark/opencv-js@4.12.0-release.1` and `@huggingface/transformers@4.3.2`, each from
   jsDelivr then unpkg. Keep exact versions.
 - **Poses are always the camera's own.** Mirror, Flip and Blur change only the picture (CSS transform/filter, `TagCore.displayMap`

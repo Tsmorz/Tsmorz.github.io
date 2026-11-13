@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+// Screenshot a page in headless Chrome and report its errors: a check that a page loads and looks right, without a person.
+//   script/shot /tag-tracker/                       → .shots/tag-tracker.png, plus any exceptions and console errors
+//   task shot -- /tag-tracker/ --eval "document.querySelector('[data-a=demo]').click()" --wait 6000
+// Options:
+//   --out FILE        where to write the PNG (default .shots/<page>.png; .shots/ is git-ignored)
+//   --size WxH        viewport (default 1400x900); --phone is 390x844 at 3x, touch
+//   --dark, --light   prefers-color-scheme
+//   --wait MS         time after load (and after the --evals) before the shot (default 2500)
+//   --click SEL       wait (up to 30 s) until the element exists and is enabled, then click it; repeatable, in order
+//                     with --eval. The tag tracker's demo: --click '#emptyDemo' --wait 8000
+//   --eval JS         run in the page after load; repeatable; a returned value is printed; may return a promise
+//   --full            the whole page, not just the viewport
+//   --console         print every console message, not only warnings and errors
+// Self-contained pages (no front matter: tag-tracker, glide-path, serial-plotter, ...) are served from the repo as they
+// are; Jekyll pages from _site/, so run `task build` first. Exits 1 if the page threw.
+// Chrome: $CHROME, else the usual macOS install. WebGL runs on the GPU (--use-angle=metal), as the demo needs.
+const fs = require('fs'), path = require('path'), http = require('http'), os = require('os');
+const { spawn } = require('child_process');
+const ROOT = path.join(__dirname, '..');
+
+const args = process.argv.slice(2), opt = { size: '1400x900', wait: 2500, evals: [], scheme: null };
+let page = '/';
+for (let i = 0; i < args.length; i++) {
+  const a = args[i];
+  if (a === '--out') opt.out = args[++i];
+  else if (a === '--size') opt.size = args[++i];
+  else if (a === '--phone') opt.phone = true;
+  else if (a === '--dark') opt.scheme = 'dark';
+  else if (a === '--light') opt.scheme = 'light';
+  else if (a === '--wait') opt.wait = Number(args[++i]);
+  else if (a === '--eval') opt.evals.push(args[++i]);
+  else if (a === '--click') {
+    const sel = JSON.stringify(args[++i]);
+    opt.evals.push(`new Promise((ok, no) => { const t0 = Date.now(), t = setInterval(() => { const b = document.querySelector(${sel});
+      if (b && !b.disabled) { clearInterval(t); document.querySelectorAll('dialog[open]').forEach((d) => { if (!d.contains(b)) d.close(); }); b.click(); ok(); }
+      else if (Date.now() - t0 > 30000) { clearInterval(t); no(new Error('never clickable: ' + ${sel})); } }, 100); })`);
+  }
+  else if (a === '--full') opt.full = true;
+  else if (a === '--console') opt.console = true;
+  else if (a.startsWith('--')) { console.error('unknown option ' + a); process.exit(2); }
+  else page = a;
+}
+if (!page.startsWith('/')) page = '/' + page;
+const [W, H] = opt.phone ? [390, 844] : opt.size.split('x').map(Number);
+const slug = page.split(/[?#]/)[0].replace(/^\/|\/$/g, '').replace(/[^\w-]+/g, '-') || 'home';
+const out = path.resolve(opt.out || path.join(ROOT, '.shots', slug + '.png'));
+
+// Which tree to serve: a page whose source has no front matter is served as it is.
+function rootFor(p) {
+  const rel = decodeURIComponent(p.split(/[?#]/)[0]).replace(/^\//, '');
+  const src = path.join(ROOT, rel, rel === '' || rel.endsWith('/') ? 'index.html' : '');
+  if (fs.existsSync(src) && fs.statSync(src).isFile() && !fs.readFileSync(src, 'utf8').startsWith('---')) return ROOT;
+  const site = path.join(ROOT, '_site');
+  if (!fs.existsSync(site)) { console.error('That page is built by Jekyll and _site/ is missing: run `task build` first.'); process.exit(2); }
+  return site;
+}
+const serveRoot = rootFor(page);
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.wasm': 'application/wasm',
+  '.bin': 'application/octet-stream', '.woff2': 'font/woff2', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.py': 'text/plain' };
+const server = http.createServer((req, res) => {
+  let f = path.join(serveRoot, decodeURIComponent(req.url.split('?')[0]));
+  if (!f.startsWith(serveRoot)) { res.writeHead(403); return res.end(); }
+  if (fs.existsSync(f) && fs.statSync(f).isDirectory()) f = path.join(f, 'index.html');
+  if (!fs.existsSync(f) && fs.existsSync(f + '.html')) f += '.html';
+  if (!fs.existsSync(f)) { res.writeHead(404); return res.end('not found'); }
+  res.writeHead(200, { 'Content-Type': TYPES[path.extname(f)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+  fs.createReadStream(f).pipe(res);
+});
+
+const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let chrome, profile, failed = false;
+
+async function main() {
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${server.address().port}${page}`;
+  profile = fs.mkdtempSync(path.join(os.tmpdir(), 'shot-'));
+  chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--use-angle=metal',
+    '--hide-scrollbars', '--no-first-run', '--no-default-browser-check', '--autoplay-policy=no-user-gesture-required', 'about:blank'],
+  { stdio: ['ignore', 'ignore', 'pipe'] });
+  const wsUrl = await new Promise((res, rej) => {
+    let buf = '';
+    chrome.stderr.on('data', (d) => { buf += d; const m = buf.match(/DevTools listening on (ws:\/\/\S+)/); if (m) res(m[1]); });
+    chrome.on('exit', (c) => rej(new Error('Chrome exited (' + c + ') before it was ready; set $CHROME?')));
+    setTimeout(() => rej(new Error('Chrome did not start')), 20000);
+  });
+
+  const ws = new WebSocket(wsUrl), pending = new Map(), listeners = [];
+  let nextId = 1;
+  await new Promise((r, j) => { ws.onopen = r; ws.onerror = () => j(new Error('no DevTools connection')); });
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.id && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.rej(new Error(m.error.message)) : p.res(m.result); }
+    else if (m.method) listeners.forEach((f) => f(m));
+  };
+  const send = (method, params = {}, sessionId) => new Promise((res, rej) => {
+    const id = nextId++; pending.set(id, { res, rej }); ws.send(JSON.stringify({ id, method, params, sessionId }));
+  });
+
+  const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+  const s = (method, params) => send(method, params, sessionId);
+  const text = (a) => a.map((x) => (x.value !== undefined ? String(x.value) : x.description || x.type)).join(' ');
+  let loaded = null;
+  const loadedP = new Promise((r) => { loaded = r; });
+  listeners.push((m) => {
+    if (m.sessionId !== sessionId) return;
+    const p = m.params;
+    if (m.method === 'Page.loadEventFired') loaded();
+    else if (m.method === 'Runtime.exceptionThrown') {
+      failed = true;
+      const d = p.exceptionDetails, e = d.exception;
+      console.log(`EXCEPTION ${(e && e.description) || d.text}${d.url ? `\n    at ${d.url.replace(/^http:\/\/[^/]+/, '')}:${d.lineNumber + 1}` : ''}`);
+    } else if (m.method === 'Runtime.consoleAPICalled') {
+      if (opt.console || p.type === 'error' || p.type === 'warning' || p.type === 'assert') console.log(`console.${p.type}: ${text(p.args)}`);
+    } else if (m.method === 'Log.entryAdded') {
+      const e = p.entry;
+      if (e.level === 'error' || (opt.console && e.level === 'warning')) console.log(`${e.source} ${e.level}: ${e.text}${e.url ? ' ' + e.url.replace(/^http:\/\/[^/]+/, '') : ''}`);
+    }
+  });
+  await Promise.all([s('Page.enable'), s('Runtime.enable'), s('Log.enable')]);
+  await s('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: opt.phone ? 3 : 1, mobile: !!opt.phone });
+  if (opt.phone) await s('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  if (opt.scheme) await s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: opt.scheme }] });
+  await s('Page.navigate', { url });
+  await Promise.race([loadedP, sleep(30000)]);
+  for (const expression of opt.evals) {
+    const r = await s('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
+    if (r.exceptionDetails) { failed = true; console.log(`EVAL FAILED ${expression}\n    ${(r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text}`); }
+    else if (r.result && r.result.value !== undefined) console.log(`eval → ${JSON.stringify(r.result.value)}`);
+  }
+  await sleep(opt.wait);
+  const shot = await s('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !!opt.full });
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, Buffer.from(shot.data, 'base64'));
+  console.log(`${failed ? 'FAIL' : 'OK'}: ${page} at ${W}×${H}${opt.scheme ? ' ' + opt.scheme : ''} → ${path.relative(process.cwd(), out)}`);
+  ws.close();
+}
+
+main().catch((e) => { console.error('shot: ' + e.message); failed = true; }).finally(() => {
+  if (chrome) chrome.kill();
+  server.close();
+  if (profile) setTimeout(() => { try { fs.rmSync(profile, { recursive: true, force: true }); } catch (e) { /* Chrome may hold it a moment */ } }, 500);
+  setTimeout(() => process.exit(failed ? 1 : 0), 600);
+});
