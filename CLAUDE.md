@@ -92,15 +92,30 @@ Detail for each subsystem lives next to it, so it isn't in every session's conte
 | `/recipes/` and the Journal look | `.claude/rules/recipes.md` |
 | The footer cat | `.claude/rules/footer-cat.md` |
 
-If you change how an area works, update its guide, not this file. Keep guides to things the code can't say (why, gotchas,
-rules, which test guards what).
+If you change how an area works, update its guide, not this file.
+
+**Guides hold rules and gotchas; the commit message holds the story.** Add a line to a guide only when it is something the
+code can't say and the next edit could get wrong: a rule ("never hand-edit ..."), a trap and why it bites, a pinned version,
+a cross-repo contract, which test guards what. Don't add how a feature works step by step, measured numbers, or history
+("used to ..., now ..."): the code, the tests and `git log` already hold those. Name the identifier to search for rather than
+describing it. When a guide passes about 150 lines, trim it before adding to it.
 
 ## Running and checking
 
 ```sh
 script/serve    # http://127.0.0.1:4000 with live reload
-task check      # what CI runs: data → swingup → lab → build → JS → links
+task check:fast # seconds, no build: data, script versions, every page's maths
+task check      # what CI runs: check:fast → build → JS → links
+task versions   # after changing a self-contained page's script: its ?v= becomes the file's hash
+task shot -- /tag-tracker/ --click '#emptyDemo' --wait 8000   # headless screenshot to .shots/, exits 1 on a page exception
 ```
+
+**See UI changes yourself**: after changing a page, `task shot` it (`--dark`, `--phone`, `--eval JS`, `--click SEL`; options
+at the top of `script/shot`), read the PNG and fix what it shows or throws, instead of asking me to look. Jekyll pages need
+`task build` first; self-contained ones don't. Still say what only a real device (camera, Bluetooth, a board) can check.
+
+`.claude/settings.json` allows the usual commands and runs `.claude/hooks/check-js.sh` (`node --check`) after every edit of a
+`.js` file, so a syntax error comes back at once.
 
 Needs Ruby ≥ 2.7; the system Ruby on this Mac (2.6.10) can't run Jekyll 4, so use `brew install ruby@3.3`
 or rely on CI. `Taskfile.yml` is the single entrypoint (`task --list`); `script/check` and
@@ -129,6 +144,13 @@ site's layouts (no front matter, so Jekyll copies it as-is).
 
 `dashboard/index.html` is this site's own: a redirect from the page's old address (`/dashboard/`, until
 2026-10-25) to `/data-logger/`, keeping any query and hash. The publish task doesn't touch it.
+
+### Haptography (`/haptography/`)
+
+`haptography/` is a copy of `tools/haptography/` from the private nrf-controller repo, written by `task
+publish-haptography` there (it replaces the whole folder), like the data logger: **never edit it here**.
+A standalone Web Serial page (no front matter) that records surface textures from that repo's recording
+device, keeps labelled takes in IndexedDB, replays them and scores them; `?demo` runs a simulated device.
 
 ### The serial plotter (`/serial-plotter/`)
 

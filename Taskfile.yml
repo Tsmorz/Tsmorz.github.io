@@ -112,7 +112,22 @@ tasks:
   check:tag-tracker:
     desc: Check the pose, history and plot maths behind /tag-tracker/ (Node, no build; detection too if OpenCV.js is installed)
     cmds:
-      - script/test-tag-tracker
+      - script/test-tag-tracker {{.CLI_ARGS}}
+
+  shot:
+    desc: "Screenshot a page in headless Chrome and report its errors (task shot -- /tag-tracker/ --click '#emptyDemo' --wait 8000; options in script/shot)"
+    cmds:
+      - script/shot {{.CLI_ARGS}}
+
+  versions:
+    desc: Rewrite each self-contained page's script ?v= to its file's hash (run after changing a tag-tracker script)
+    cmds:
+      - script/versions --write
+
+  check:versions:
+    desc: Check every script ?v= in the self-contained pages matches its file's hash (no build)
+    cmds:
+      - script/versions
 
   check:links:
     desc: Check internal links with html-proofer
@@ -121,9 +136,10 @@ tasks:
       - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt --ignore-urls "http://192.168.4.1,http://cartpole.local"
 
   check:fast:
-    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, vision and embedded models, CSV fit, recipe units, glide path, tag tracker"
+    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, vision and embedded models, CSV fit, recipe units, glide path, tag tracker, script versions"
     cmds:
       - task: check:data
+      - task: check:versions
       - task: check:installer
       - task: check:swingup
       - task: check:lab

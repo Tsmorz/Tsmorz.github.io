@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f4f2ec">
+<meta name="description" content="Record surface textures from a XIAO nRF54LM20A recording device over Web Serial, then label, replay and score them.">
+<title>Haptography</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // Apply a saved theme before first paint (shared with the data logger on the same site).
+  try {
+    const saved = localStorage.getItem("theme");
+    if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+  } catch { /* storage blocked: follow the OS setting */ }
+</script>
+<style>
+  /* The data logger's bench-instrument panel (tools/dashboard), for its sibling tool: a warm
+     chassis holding numbered modules on hairline seams, recessed screens for plots, amber
+     readouts, one orange key. X/Y/Z are muted red/green/blue, a set per theme. Blue only outlines
+     panels. */
+  :root {
+    color-scheme: light;
+    --page: #e3e0d8; --panel: #f4f2ec; --inset: #ebe8e0; --line-strong: #b4aea1;
+    --text: #1d1c19; --text-2: #46433c; --muted: #6a655b;
+    --signal: #ff5f1f; --signal-edge: #c7440c; --signal-hover: #ff7337; --signal-ink: #b13f06;
+    --panel-outline: #005fcc;
+    --good: #1f8a3e; --warn: #a35a00; --bad: #b8322a; --lamp-off: #cbc6ba; --key-shadow: #c9c3b5;
+    --screen: #fbfaf6; --screen-raised: #ffffff; --screen-edge: #b4aea1; --screen-rim: #c9c3b5; --screen-shade: rgba(60, 50, 30, .08);
+    --screen-grid: rgba(29, 28, 25, .07); --screen-line: rgba(29, 28, 25, .25);
+    --screen-text: #2b2a26; --screen-muted: #6a655b;
+    --readout: #a35a00; --readout-glow: transparent;
+    --series-x: #8e3329; --series-y: #6f9e2e; --series-z: #0e57aa;
+    --band-away: rgba(14, 87, 170, .10); --band-toward: rgba(142, 51, 41, .10); --band-span: rgba(29, 28, 25, .08);
+    /* Surfaces compared in the Spectrum view, in order */
+    --cat-1: #0e57aa; --cat-2: #4f7a1f; --cat-3: #7a3e9d; --cat-4: #00838a; --cat-5: #b8322a; --cat-6: #6a655b;
+    --sans: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0f0f0e; --panel: #1a1a18; --inset: #222220; --line-strong: #3d3b36;
+      --text: #ebe9e3; --text-2: #c3c0b7; --muted: #959187;
+      --signal: #ff6a2b; --signal-edge: #b8470f; --signal-hover: #ff8048; --signal-ink: #ff8a52;
+      --panel-outline: #6ea8ff;
+      --good: #4ade80; --warn: #ffb23f; --bad: #ff6b5e; --lamp-off: #3a3935; --key-shadow: #0b0b0a;
+      --screen: #0f100f; --screen-raised: #1d1e1d; --screen-edge: #3d3b36; --screen-rim: #3d3b36; --screen-shade: rgba(0, 0, 0, .5);
+      --screen-grid: rgba(236, 233, 224, .07); --screen-line: rgba(236, 233, 224, .22);
+      --screen-text: #d8d5cc; --screen-muted: #8f8b81;
+      --readout: #ffb23f; --readout-glow: rgba(255, 178, 63, .45);
+      --series-x: #d16161; --series-y: #b7e774; --series-z: #6896f3;
+      --band-away: rgba(104, 150, 243, .13); --band-toward: rgba(209, 97, 97, .13); --band-span: rgba(236, 233, 224, .08);
+      --cat-1: #6896f3; --cat-2: #b7e774; --cat-3: #c39bf0; --cat-4: #4fd1c5; --cat-5: #f08a8a; --cat-6: #b5b0a5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0f0f0e; --panel: #1a1a18; --inset: #222220; --line-strong: #3d3b36;
+    --text: #ebe9e3; --text-2: #c3c0b7; --muted: #959187;
+    --signal: #ff6a2b; --signal-edge: #b8470f; --signal-hover: #ff8048; --signal-ink: #ff8a52;
+    --panel-outline: #6ea8ff;
+    --good: #4ade80; --warn: #ffb23f; --bad: #ff6b5e; --lamp-off: #3a3935; --key-shadow: #0b0b0a;
+    --screen: #0f100f; --screen-raised: #1d1e1d; --screen-edge: #3d3b36; --screen-rim: #3d3b36; --screen-shade: rgba(0, 0, 0, .5);
+    --screen-grid: rgba(236, 233, 224, .07); --screen-line: rgba(236, 233, 224, .22);
+    --screen-text: #d8d5cc; --screen-muted: #8f8b81;
+    --readout: #ffb23f; --readout-glow: rgba(255, 178, 63, .45);
+    --series-x: #d16161; --series-y: #b7e774; --series-z: #6896f3;
+    --band-away: rgba(104, 150, 243, .13); --band-toward: rgba(209, 97, 97, .13); --band-span: rgba(236, 233, 224, .08);
+    --cat-1: #6896f3; --cat-2: #b7e774; --cat-3: #c39bf0; --cat-4: #4fd1c5; --cat-5: #f08a8a; --cat-6: #b5b0a5;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--page); color: var(--text); font: 13.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line-strong); }
+  .title { margin-right: auto; display: flex; align-items: center; gap: 10px; }
+  h1 { margin: 0; font: 800 19px/1.1 var(--sans); font-stretch: 120%; letter-spacing: -.01em; }
+  .storage-note { font: 11px var(--mono); color: var(--muted); }
+
+  /* Modules on 1px seams, numbered in order. Narrow screens stack and scroll. */
+  main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; counter-reset: module; width: calc(100% - 32px); margin: 14px auto; }
+  section { display: flex; flex-direction: column; background: var(--panel); box-shadow: 0 0 0 1px var(--line-strong); padding: 14px; min-width: 0; counter-increment: module; }
+  .scope-section { min-height: 640px; }
+  /* Laptop screens and up: recorder and library on the left, the scope in the middle, scores on
+     the right, the whole page fitting the window; each module scrolls inside itself. */
+  @media (min-width: 1100px) and (min-height: 600px) {
+    body { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+    main { flex: 1; min-height: 0; grid-template-columns: minmax(300px, 22%) minmax(0, 1fr) minmax(320px, 25%); grid-template-rows: auto minmax(0, 1fr); }
+    .record-section { grid-column: 1; grid-row: 1; }
+    .library-section { grid-column: 1; grid-row: 2; overflow: hidden; }
+    .library-section .takes { min-height: 0; }
+    .scope-section { grid-column: 2; grid-row: 1 / 3; min-height: 0; }
+    .score-section { grid-column: 3; grid-row: 1 / 3; }
+    section { overflow-y: auto; }
+  }
+
+  h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font: 650 11.5px/1.2 var(--sans); font-stretch: 80%; letter-spacing: .09em; text-transform: uppercase; }
+  section > h2:first-child::before { content: counter(module, decimal-leading-zero); font: 500 10.5px var(--mono); letter-spacing: 0; color: var(--signal-ink); }
+  h3 { margin: 14px 0 8px; padding-top: 12px; border-top: 1px dashed var(--line-strong); font: 650 10.5px/1.2 var(--sans); font-stretch: 80%; letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+  h2 .end, h3 .end { margin-left: auto; }
+  h2 > label { font: 400 12px var(--sans); letter-spacing: 0; text-transform: none; }
+
+  button.info { position: relative; display: inline-block; flex: none; width: 18px; height: 18px; margin: -3px 0; padding: 0; border: 0; border-radius: 50%; background: none; box-shadow: none; color: var(--muted); }
+  button.info::before { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.9' fill='none' stroke='black' stroke-width='1.4'/%3E%3Cpath d='M8 7.3v4.2' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='4.9' r='1' fill='black'/%3E%3C/svg%3E") center / contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.9' fill='none' stroke='black' stroke-width='1.4'/%3E%3Cpath d='M8 7.3v4.2' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='4.9' r='1' fill='black'/%3E%3C/svg%3E") center / contain no-repeat; }
+  button.info:hover:not(:disabled) { background: none; color: var(--signal-ink); }
+  button.info:active:not(:disabled) { transform: none; box-shadow: none; }
+  .info-pop { position: fixed; inset: auto; margin: 0; width: min(360px, calc(100vw - 16px)); padding: 10px 12px; border: 1px solid var(--panel-outline);
+              border-radius: 3px; background: var(--panel); color: var(--text-2); font-size: 12.5px; line-height: 1.5; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
+  .info-pop:not(.placed) { visibility: hidden; }
+  .info-pop p { margin: 0; }
+  .info-pop p + p { margin-top: 8px; }
+
+  button { font: 600 12px/1.4 var(--sans); font-stretch: 88%; letter-spacing: .02em; padding: 5px 12px 6px; border-radius: 2px;
+           border: 1px solid var(--line-strong); background: var(--panel); color: var(--text); cursor: pointer;
+           box-shadow: inset 0 -2px 0 var(--key-shadow); transition: background-color .1s ease, transform .05s ease; }
+  button:hover:not(:disabled) { background: var(--inset); }
+  button:active:not(:disabled) { transform: translateY(1px); box-shadow: inset 0 -1px 0 var(--key-shadow); }
+  button.primary { background: var(--signal); border-color: var(--signal-edge); color: #1a0c04; box-shadow: inset 0 -2px 0 var(--signal-edge); }
+  button.primary:hover:not(:disabled) { background: var(--signal-hover); }
+  button.primary:disabled { background: var(--panel); border-color: var(--line-strong); color: var(--signal-ink); box-shadow: inset 0 -2px 0 var(--key-shadow); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.small { padding: 2px 8px 3px; font-size: 11.5px; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  /* Record is the panel's one big key; while recording it shows a lit red lamp. */
+  #record { min-width: 104px; }
+  #record.recording { background: var(--panel); border-color: var(--bad); color: var(--bad); box-shadow: inset 0 -2px 0 var(--key-shadow); }
+  #record.recording::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 6px var(--bad); vertical-align: 0; }
+
+  .theme-toggle, .segmented { display: inline-grid; grid-auto-flow: column; padding: 2px; border: 1px solid var(--line-strong); border-radius: 2px; background: var(--inset); }
+  .theme-toggle { position: relative; grid-template-columns: 1fr 1fr; color: var(--muted); box-shadow: none; }
+  .theme-toggle:hover:not(:disabled) { background: var(--inset); }
+  .theme-toggle:active:not(:disabled) { transform: none; box-shadow: none; }
+  .theme-toggle::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); pointer-events: none; border-radius: 1px; background: var(--text); transition: transform .2s cubic-bezier(.3, .7, .2, 1); }
+  .tt-opt { position: relative; z-index: 1; display: grid; place-items: center; width: 24px; height: 22px; transition: color .2s; }
+  .tt-opt svg { display: block; }
+  .tt-light { color: var(--panel); }
+  :root[data-theme="dark"] .theme-toggle::before { transform: translateX(100%); }
+  :root[data-theme="dark"] .tt-light { color: var(--muted); }
+  :root[data-theme="dark"] .tt-dark { color: var(--panel); }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .theme-toggle::before { transform: translateX(100%); }
+    :root:not([data-theme="light"]) .tt-light { color: var(--muted); }
+    :root:not([data-theme="light"]) .tt-dark { color: var(--panel); }
+  }
+  @media (prefers-reduced-motion: reduce) { .theme-toggle::before, .tt-opt { transition: none; } }
+  .segmented { gap: 2px; }
+  .segmented label { position: relative; padding: 1px 10px; border-radius: 1px; font-weight: 600; font-stretch: 88%; font-size: 11.5px; letter-spacing: .02em; text-transform: none; color: var(--text-2); cursor: pointer; }
+  .segmented label:hover { color: var(--text); }
+  .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+  .segmented label:has(input:checked) { background: var(--text); color: var(--panel); }
+  .segmented label:has(input:focus-visible) { outline: 2px solid var(--signal); outline-offset: 1px; }
+  .segmented label:has(input:disabled) { cursor: default; opacity: .45; }
+
+  input[type=text], select, textarea { font: 12px var(--mono); padding: 5px 8px; border-radius: 2px; border: 1px solid var(--line-strong); background: var(--inset); color: var(--text); min-width: 0; }
+  textarea { resize: vertical; min-height: 30px; font-family: var(--sans); font-size: 12.5px; }
+  input[type=checkbox] { accent-color: var(--signal); }
+  label { color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+
+  .fields { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 10px; align-items: center; }
+  .fields > label { font: 650 10px var(--sans); font-stretch: 80%; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+  .row + .row, .fields + .row, .row + .fields { margin-top: 8px; }
+  .muted { color: var(--muted); }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .status-line { margin: 6px 0 0; font-size: 12.5px; min-height: 1lh; color: var(--text-2); }
+  .status-line.bad { color: var(--bad); }
+  .status-line.go { color: var(--good); }
+
+  /* Lamps */
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 7px; border: 1px solid var(--line-strong); border-radius: 2px;
+          background: var(--inset); font: 500 11px var(--mono); color: var(--text-2); white-space: nowrap; }
+  .chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  .chip.on { color: var(--text); }
+  .chip.on::before { background: var(--good); box-shadow: 0 0 6px var(--good); }
+  .chip.warn::before { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+  .chip.fail::before { background: var(--bad); box-shadow: 0 0 6px var(--bad); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chips .chip { padding: 1px 6px 1px 5px; font-size: 10.5px; gap: 5px; }
+
+  /* Readouts: amber figures on a recessed screen */
+  .meters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: 8px; background: var(--screen-rim); border-radius: 3px; overflow: hidden; box-shadow: 0 0 0 1px var(--screen-rim); }
+  .meter { background: var(--screen); padding: 5px 7px 4px; min-width: 0; }
+  .meter span { display: block; font: 650 9.5px var(--sans); font-stretch: 80%; letter-spacing: .1em; text-transform: uppercase; color: var(--screen-muted); }
+  .meter b { display: block; font: 500 13px/1.25 var(--mono); color: var(--readout); text-shadow: 0 0 6px var(--readout-glow); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meter b.bad { color: var(--bad); text-shadow: none; }
+  .log { margin: 8px 0 0; padding: 4px 8px; max-height: 50px; overflow-y: auto; background: var(--screen); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--screen-rim);
+         font: 11px/1.45 var(--mono); color: var(--screen-text); list-style: none; }
+  .log:empty::before { content: "The board's messages show here."; color: var(--screen-muted); }
+  .log li.warning { color: var(--warn); }
+  .log li.error { color: var(--bad); }
+  .elapsed { font: 500 18px var(--mono); color: var(--readout); text-shadow: 0 0 6px var(--readout-glow); font-variant-numeric: tabular-nums; }
+  .recover { margin: 0 0 10px; padding: 8px 10px; border-left: 2px solid var(--signal); background: var(--inset); font-size: 12.5px; }
+  .recover .row { margin-top: 6px; }
+
+  /* Library list */
+  .takes { list-style: none; margin: 4px 0 0; padding: 0; flex: 1; min-height: 80px; overflow-y: auto; }
+  .takes:empty::after { content: "No takes yet: connect the board (or Demo), name the surface and Record."; display: block; padding: 10px 2px; color: var(--muted); font-size: 12.5px; }
+  .takes .group { padding: 8px 4px 4px; font: 650 10px var(--sans); font-stretch: 80%; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line-strong); }
+  .take { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 0 8px; align-items: center; padding: 5px 4px 5px 7px; cursor: pointer; font-size: 12.5px;
+          background: linear-gradient(to right, var(--line-strong) 50%, transparent 0) left bottom / 6px 1px repeat-x; box-shadow: inset 3px 0 0 transparent; }
+  .take:hover { background-color: var(--inset); }
+  .take.selected { background-color: var(--inset); box-shadow: inset 3px 0 0 var(--signal); }
+  .take.rejected .label { text-decoration: line-through; color: var(--muted); }
+  .take time, .take .dur { font: 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .take .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { min-width: 30px; padding: 0 5px; border-radius: 2px; text-align: center; font: 600 11px/18px var(--mono); color: var(--panel); background: var(--muted); }
+  .badge.good { background: var(--good); }
+  .badge.usable { background: var(--warn); }
+  .badge.poor { background: var(--bad); }
+  .badge.big { min-width: 54px; font-size: 20px; line-height: 32px; }
+
+  /* Scope */
+  .transport { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: -2px 0 10px; }
+  .transport .time { font: 500 12px var(--mono); color: var(--text-2); font-variant-numeric: tabular-nums; min-width: 13ch; }
+  .transport input[type=text] { width: 120px; }
+  .plots { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .plot-head { display: flex; align-items: baseline; justify-content: space-between; gap: 2px 12px; font-size: 12px; margin: 0 0 4px; }
+  .plot-head > span:first-child { font-weight: 600; }
+  .plot-head .muted { font: 400 11px var(--mono); }
+  .plot-head + .plot + .plot-head { margin-top: 8px; }
+  .legend { display: flex; gap: 10px; font: 11px var(--mono); color: var(--text-2); }
+  .legend i { display: inline-block; width: 12px; height: 3px; margin-right: 4px; vertical-align: middle; border-radius: 1px; }
+  .plot { position: relative; flex: 1 1 0; min-height: 70px; background: var(--screen); border-radius: 3px; box-shadow: inset 0 0 0 1px var(--screen-rim), inset 0 2px 10px var(--screen-shade); }
+  .plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .plot canvas.over { cursor: crosshair; touch-action: none; }
+  .axis { position: relative; height: 18px; flex: none; }
+  .axis canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .spectrum-legend { flex-wrap: wrap; margin-top: 6px; min-height: 1lh; }
+  .spectrum-legend span { white-space: nowrap; }
+  .empty-scope { position: absolute; inset: 0; display: grid; place-items: center; color: var(--screen-muted); font-size: 12.5px; pointer-events: none; text-align: center; padding: 10px; }
+
+  /* Score */
+  .score-head { display: flex; align-items: center; gap: 12px; }
+  .score-head .what { min-width: 0; }
+  .score-head .what b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score-head .what span { font: 11px var(--mono); color: var(--muted); }
+  .checks { list-style: none; margin: 10px 0 0; padding: 0; }
+  .checks li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 2px 8px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed var(--line-strong); }
+  .checks li::before { content: ""; width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 5px var(--good); }
+  .checks li.warn::before { background: var(--warn); box-shadow: 0 0 5px var(--warn); }
+  .checks li.fail::before { background: var(--bad); box-shadow: 0 0 5px var(--bad); }
+  .checks .pts { font: 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .checks .detail { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; }
+  .spans { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+  .spans:empty::after { content: "None. In Replay, drag across a plot to select a stretch, name it and press Add span."; color: var(--muted); font-size: 12px; }
+  .spans li { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+  .spans li .num { font-size: 11px; color: var(--muted); }
+  .spans li button { margin-left: auto; }
+  table.ds { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.ds th { text-align: left; font: 650 9.5px var(--sans); font-stretch: 80%; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 0 4px 5px; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+  table.ds td { padding: 5px 4px; vertical-align: middle; border-bottom: 1px dashed var(--line-strong); }
+  table.ds td.n { font: 11.5px var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+  table.ds td.lbl { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  table.ds tr.next td { border-bottom: 1px dashed var(--line-strong); padding-top: 0; color: var(--muted); font-size: 11.5px; }
+  .bins { display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; vertical-align: middle; }
+  .bins i { width: 7px; background: var(--readout); border-radius: 1px 1px 0 0; min-height: 1px; opacity: .9; }
+  .bins i.thin { background: var(--lamp-off); }
+  code { font: 11.5px var(--mono); padding: 0 4px; border-radius: 2px; background: var(--inset); border: 1px solid var(--line-strong); }
+  .empty-note { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+  .ds-name { font: 500 11px var(--mono); color: var(--muted); text-transform: none; letter-spacing: 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <img src="icon.svg" alt="" width="26" height="26">
+    <h1>Haptography</h1>
+    <span class="storage-note" id="storage-note"></span>
+  </div>
+  <button class="theme-toggle" id="theme" type="button" role="switch" aria-checked="false" aria-label="Dark theme" title="Toggle color theme">
+    <span class="tt-opt tt-light" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.4"/><path d="M12 2.5v1.5M12 21.5V20M2.5 12H4M21.5 12H20M5.3 5.3l1.1 1.1M18.7 5.3l-1.1 1.1M5.3 18.7l1.1-1.1M18.7 18.7l-1.1-1.1"/></svg></span>
+    <span class="tt-opt tt-dark" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path transform="translate(1.3 -1.3)" d="M5.6 5.6A9 9 0 0 0 18.4 18.4A12 12 0 0 1 5.6 5.6Z"/></svg></span>
+  </button>
+</header>
+
+<main>
+  <section class="record-section" aria-labelledby="record-title">
+    <h2 id="record-title">Record <button class="info" type="button" popovertarget="record-info" aria-label="About recording"></button>
+      <span class="chip end" id="link-lamp">Not connected</span></h2>
+    <div class="row">
+      <button class="primary" id="connect" type="button">Connect board</button>
+      <button id="demo" type="button" title="A simulated board: still for 5 s, then strokes over a texture">Demo</button>
+    </div>
+    <div class="fields" style="margin-top: 10px">
+      <label for="rec-dataset">Dataset</label>
+      <input type="text" id="rec-dataset" list="dataset-names" placeholder="e.g. Desk textures" autocomplete="off">
+      <label for="rec-label">Surface</label>
+      <input type="text" id="rec-label" list="label-names" placeholder="e.g. Cork tile" autocomplete="off">
+      <label for="rec-notes">Notes</label>
+      <input type="text" id="rec-notes" placeholder="optional" autocomplete="off">
+      <label for="rec-limit">Length</label>
+      <select id="rec-limit">
+        <option value="0">until Stop</option>
+        <option value="10">10 s</option>
+        <option value="20">20 s</option>
+        <option value="30" selected>30 s</option>
+        <option value="60">60 s</option>
+      </select>
+    </div>
+    <datalist id="dataset-names"></datalist>
+    <datalist id="label-names"></datalist>
+    <div class="row">
+      <button id="record" type="button" disabled title="R">Record</button>
+      <span class="elapsed" id="rec-elapsed">0.0 s</span>
+    </div>
+    <p class="status-line" id="rec-status" role="status"></p>
+    <div class="meters" aria-label="Live stream">
+      <div class="meter"><span>IMU /s</span><b id="m-imu">—</b></div>
+      <div class="meter"><span>Mic /s</span><b id="m-mic">—</b></div>
+      <div class="meter"><span>ToF /s</span><b id="m-tof">—</b></div>
+      <div class="meter"><span>Wall</span><b id="m-dist">—</b></div>
+      <div class="meter"><span>Lost</span><b id="m-lost">—</b></div>
+      <div class="meter"><span>Bad</span><b id="m-bad">—</b></div>
+      <div class="meter"><span>Dropped</span><b id="m-drop">—</b></div>
+      <div class="meter"><span>Board</span><b id="m-board">—</b></div>
+    </div>
+    <div class="chips" style="margin-top: 8px" aria-label="Sensors and actuators">
+      <span class="chip" id="s-imu">IMU</span><span class="chip" id="s-mic">Mic</span><span class="chip" id="s-tof">ToF</span>
+      <span class="chip" id="s-tach">Hammer</span><span class="chip" id="s-erm">ERM</span>
+    </div>
+    <ul class="log" id="messages" aria-label="Board messages"></ul>
+  </section>
+
+  <section class="library-section" aria-labelledby="library-title">
+    <h2 id="library-title">Library <button class="info" type="button" popovertarget="library-info" aria-label="About the library"></button>
+      <select id="lib-dataset" class="end" aria-label="Dataset shown"></select></h2>
+    <div class="recover" id="recover" hidden>
+      <span id="recover-text"></span>
+      <div class="row"><button class="small primary" id="recover-save" type="button">Save it</button><button class="small" id="recover-discard" type="button">Discard</button></div>
+    </div>
+    <div class="row">
+      <button class="small" id="import" type="button" title="A session folder, or a folder of them">Import…</button>
+      <button class="small" id="export-take" type="button" disabled title="Write the selected take as a session folder">Export…</button>
+      <button class="small" id="export-dataset" type="button" disabled title="Write every take in the dataset shown under Score, with dataset.json">Export dataset…</button>
+    </div>
+    <p class="status-line" id="lib-status" role="status"></p>
+    <input type="file" id="import-input" webkitdirectory multiple hidden>
+    <ul class="takes" id="takes" aria-label="Takes"></ul>
+  </section>
+
+  <section class="scope-section" aria-labelledby="scope-title">
+    <h2 id="scope-title">Scope
+      <span class="segmented" role="radiogroup" aria-label="View">
+        <label><input type="radio" name="mode" id="mode-live" value="live" checked>Live</label>
+        <label><input type="radio" name="mode" id="mode-replay" value="replay">Replay</label>
+        <label><input type="radio" name="mode" id="mode-spectrum" value="spectrum">Spectrum</label>
+      </span>
+      <button class="info" type="button" popovertarget="scope-info" aria-label="About the scope"></button>
+      <span class="segmented end" role="radiogroup" aria-label="Vibration and sound as" id="view-as">
+        <label><input type="radio" name="as" id="as-wave" value="wave" checked>Wave</label>
+        <label><input type="radio" name="as" id="as-spectrogram" value="spectrogram">Spectrogram</label>
+      </span>
+      <span class="legend" id="xyz-legend"><span><i style="background: var(--series-x)"></i>X</span><span><i style="background: var(--series-y)"></i>Y</span><span><i style="background: var(--series-z)"></i>Z</span></span>
+      <label id="compare-wrap" class="end" hidden><input type="checkbox" id="compare"> compare surfaces</label>
+    </h2>
+    <div class="transport" id="transport" hidden>
+      <button id="play" type="button" title="Space">Play</button>
+      <span class="segmented" role="radiogroup" aria-label="Listen to">
+        <label><input type="radio" name="listen" id="listen-mic" value="mic" checked>Sound</label>
+        <label><input type="radio" name="listen" id="listen-vib" value="vib">Vibration</label>
+      </span>
+      <span class="time" id="time-readout">0.00 / 0.00 s</span>
+      <button class="small" id="zoom-fit" type="button" title="Show the whole take (double-click a plot)">Fit</button>
+      <span class="row" style="margin-left: auto; gap: 6px">
+        <input type="text" id="span-label" list="span-names" placeholder="span label" autocomplete="off" aria-label="Span label">
+        <button class="small" id="span-add" type="button" disabled>Add span</button>
+      </span>
+      <datalist id="span-names"><option value="slide"><option value="tap"><option value="lift"><option value="still"><option value="bad"></datalist>
+    </div>
+    <div class="plots" id="plots">
+      <div class="plot-head"><span>Vibration</span><span class="muted"><label><input type="checkbox" id="vib-raw"> with gravity</label> <span id="r-vib"></span></span></div>
+      <div class="plot" id="plot-vib"><canvas class="base"></canvas><canvas class="over"></canvas><div class="empty-scope" id="scope-empty">Connect the board or start the Demo to see it live.</div></div>
+      <div class="plot-head"><span>Rotation</span><span class="muted" id="r-gyro"></span></div>
+      <div class="plot" id="plot-gyro"><canvas class="base"></canvas><canvas class="over"></canvas></div>
+      <div class="plot-head"><span>Sound</span><span class="muted" id="r-mic"></span></div>
+      <div class="plot" id="plot-mic"><canvas class="base"></canvas><canvas class="over"></canvas></div>
+      <div class="plot-head"><span>Distance to the wall</span><span class="muted" id="r-dist"></span></div>
+      <div class="plot" id="plot-dist"><canvas class="base"></canvas><canvas class="over"></canvas></div>
+      <div class="plot-head"><span>Speed <span class="muted">(+ away from the wall)</span></span><span class="muted" id="r-speed"></span></div>
+      <div class="plot" id="plot-speed"><canvas class="base"></canvas><canvas class="over"></canvas></div>
+      <div class="axis"><canvas id="axis"></canvas></div>
+    </div>
+    <div class="plots" id="spectra" hidden>
+      <div class="plot-head"><span>Vibration spectrum <span class="muted">(strongest axis, g²/Hz)</span></span><span class="muted" id="r-vspec"></span></div>
+      <div class="plot" id="plot-vspec"><canvas class="base"></canvas><canvas class="over"></canvas><div class="empty-scope" id="spectra-empty"></div></div>
+      <div class="plot-head"><span>Sound spectrum <span class="muted">(full scale²/Hz)</span></span><span class="muted" id="r-mspec"></span></div>
+      <div class="plot" id="plot-mspec"><canvas class="base"></canvas><canvas class="over"></canvas></div>
+      <div class="plot-head"><span>Grain <span class="muted">(each stroke's vibration peak against its peak speed, mm/s)</span></span><span class="muted" id="r-grain"></span></div>
+      <div class="plot" id="plot-grain"><canvas class="base"></canvas><canvas class="over"></canvas></div>
+      <div class="legend spectrum-legend" id="spectrum-legend"></div>
+    </div>
+  </section>
+
+  <section class="score-section" aria-labelledby="score-title">
+    <h2 id="score-title">Score <button class="info" type="button" popovertarget="score-info" aria-label="How takes and datasets are scored"></button></h2>
+    <div id="take-none" class="empty-note">Pick a take in the Library, or record one.</div>
+    <div id="take-panel" hidden>
+      <div class="score-head">
+        <span class="badge big" id="take-score">—</span>
+        <div class="what"><b id="take-title"></b><span id="take-sub"></span></div>
+      </div>
+      <ul class="checks" id="checks"></ul>
+      <h3>Labels</h3>
+      <div class="fields">
+        <label for="take-dataset">Dataset</label><input type="text" id="take-dataset" list="dataset-names" autocomplete="off">
+        <label for="take-label">Surface</label><input type="text" id="take-label" list="label-names" autocomplete="off">
+        <label for="take-notes">Notes</label><input type="text" id="take-notes" autocomplete="off">
+        <label for="take-keep">Use</label><span class="row"><label><input type="checkbox" id="take-keep"> in the dataset</label>
+          <button class="small" id="delete-take" type="button" style="margin-left: auto">Delete take…</button></span>
+      </div>
+      <h3>Spans</h3>
+      <ul class="spans" id="spans"></ul>
+    </div>
+    <h3>Dataset <span class="ds-name" id="ds-name"></span><span class="badge end" id="ds-score">—</span></h3>
+    <div id="ds-none" class="empty-note">No takes in this dataset yet.</div>
+    <table class="ds" id="ds-table" hidden>
+      <thead><tr><th>Surface</th><th title="Usable takes / all">Takes</th><th>Strokes</th><th id="ds-bins-head">Speeds</th><th>Score</th></tr></thead>
+      <tbody id="ds-body"></tbody>
+    </table>
+  </section>
+</main>
+
+<div class="info-pop" id="record-info" popover>
+  <p>Plug the recording device (the <code>capture</code> build) into this computer's USB and press <b>Connect board</b>: Chrome or Edge on a computer lists its serial port. <b>Demo</b> plays a simulated board instead.</p>
+  <p>Name the dataset and the surface, then <b>Record</b> (or press R). Hold the device still for the first 4 s so the gyro's bias can be learned, then slide it toward and away from the wall the distance sensor points at, at different speeds.</p>
+  <p><b>Lost</b> counts packets that never arrived, <b>Bad</b> ones that arrived damaged, <b>Dropped</b> ones the board couldn't send. All three should stay at 0.</p>
+</div>
+<div class="info-pop" id="library-info" popover>
+  <p>Takes are kept in this browser only. <b>Export</b> writes each take as a session folder (<code>raw.bin</code>, CSVs, <code>mic.wav</code>, <code>info.json</code> and <code>labels.json</code>) in the layout the recording tools on the computer read; <b>Import</b> reads such folders back.</p>
+  <p><b>Export</b> writes the selected take; <b>Export dataset</b> every take of the dataset shown under Score, plus <code>dataset.json</code> with its scores.</p>
+  <p>A take you untick under Score › Use stays in the library but doesn't count towards its dataset.</p>
+</div>
+<div class="info-pop" id="scope-info" popover>
+  <p><b>Live</b> shows the last 5 s from the board. <b>Replay</b> shows the selected take: scroll to zoom, Shift-scroll to pan, click to move the playhead, drag to select a stretch and label it as a span, double-click to fit.</p>
+  <p><b>Vibration</b> is the accelerometer with gravity and hand motion filtered out (above 5 Hz). Listening to it plays its strongest axis at its own pace: the texture as you would feel it, heard.</p>
+  <p>Speed comes from the distance sensor alone, uncorrected for tilt; shaded bands are the strokes found in it (blue away from the wall, red toward it).</p>
+  <p><b>Spectrogram</b> draws the vibration (to 835 Hz; the accelerometer rolls off above ~400 Hz) and the sound (to 8 kHz, log scale) as frequency over time. <b>Spectrum</b> shows their power spectra: live, the last second; in a take, the strokes, the quiet between them, and a selection if you made one. <b>Compare surfaces</b> overlays every surface of the dataset.</p>
+  <p><b>Grain</b>: a texture with a spacing λ vibrates at speed ÷ λ, so its strokes line up along a line through zero; the dashed line is the surface's median grain.</p>
+</div>
+<div class="info-pop" id="score-info" popover>
+  <p>Each take scores out of 100: the serial link (15), the IMU's samples (10), the microphone (10), good distance readings (20), 4 s still at the start (10), strokes found (15), the texture signal (10: the strokes' vibration at least 10 dB over the quiet between them) and IMU headroom (10).</p>
+  <p>Each surface in a dataset scores on its usable takes (scoring 60 or more and ticked Use): their mean score scaled by having 3 of them (40), 24 strokes (30) and 3 strokes in each mean-speed band (30). Under it: the grain (its texture's spacing, from speed ÷ vibration frequency), how alike its takes' vibration spectra are, and what to record next.</p>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

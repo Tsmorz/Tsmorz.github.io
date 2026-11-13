@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+// Cache-busting versions for self-contained pages: every `name.js?v=...` in the files below must be the first 8 hex digits
+// of a SHA-1 of that script (and of what it loads itself, DEPS), so a browser never runs a cached old script beside a
+// new page.
+//   script/versions           check them (task check:versions, in check:fast)
+//   script/versions --write   rewrite them (task versions)
+const fs = require('fs'), path = require('path'), crypto = require('crypto');
+const ROOT = path.join(__dirname, '..');
+const DIRS = ['tag-tracker'];
+// A script that loads others passes its own ?v= on to them, so its version covers them too.
+const DEPS = { 'tag-tracker/worker.js': ['tag-tracker/tracker-core.js'] };
+const RE = /([\w./-]+\.js)\?v=([\w-]+)/g;
+
+const hashOf = (rel) => {
+  const h = crypto.createHash('sha1');
+  for (const f of [rel, ...(DEPS[rel] || [])]) h.update(fs.readFileSync(path.join(ROOT, f)));
+  return h.digest('hex').slice(0, 8);
+};
+
+const write = process.argv.includes('--write');
+let bad = 0, seen = 0;
+for (const dir of DIRS) {
+  for (const name of fs.readdirSync(path.join(ROOT, dir)).filter((n) => /\.(html|js)$/.test(n))) {
+    const file = path.join(dir, name), text = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    const out = text.replace(RE, (all, src, v) => {
+      const rel = path.posix.normalize(path.posix.join(dir, src));
+      if (!fs.existsSync(path.join(ROOT, rel))) return all; // a URL elsewhere, not ours
+      seen++;
+      const want = hashOf(rel);
+      if (v === want) return all;
+      bad++;
+      console.log(`${write ? 'updated' : 'STALE  '} ${file}: ${src}?v=${v} -> ${want}`);
+      return `${src}?v=${want}`;
+    });
+    if (write && out !== text) fs.writeFileSync(path.join(ROOT, file), out);
+  }
+}
+if (bad && !write) {
+  console.log(`\n${bad} of ${seen} script versions don't match their files. Run: task versions`);
+  process.exit(1);
+}
+console.log(`OK: ${seen} script versions ${write && bad ? `(${bad} updated)` : 'match their files'}`);
