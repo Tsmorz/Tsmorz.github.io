@@ -145,6 +145,13 @@ site's layouts (no front matter, so Jekyll copies it as-is).
 `dashboard/index.html` is this site's own: a redirect from the page's old address (`/dashboard/`, until
 2026-10-25) to `/data-logger/`, keeping any query and hash. The publish task doesn't touch it.
 
+### Haptography (`/haptography/`)
+
+`haptography/` is a copy of `tools/haptography/` from the private nrf-controller repo, written by `task
+publish-haptography` there (it replaces the whole folder), like the data logger: **never edit it here**.
+A standalone Web Serial page (no front matter) that records surface textures from that repo's recording
+device, keeps labelled takes in IndexedDB, replays them and scores them; `?demo` runs a simulated device.
+
 ### The serial plotter (`/serial-plotter/`)
 
 `serial-plotter/index.html` is one self-contained page (no front matter, so Jekyll copies it as-is) with its own
