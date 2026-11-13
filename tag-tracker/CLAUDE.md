@@ -110,7 +110,8 @@ limits and keep each hand facing camera 1 (the only one measuring before placing
 A humanoid with two 7-joint arms; the chest follows the Body track and each wrist the track on its side. Roles: Settings → Robot
 (Auto picks Body/Chest/Torso by name). `RobotCore.ik` is analytic (elbow on a circle about the shoulder–wrist line, swivel angles
 scored by `PREFER`); following a previous solution it moves the elbow at most `swing` per frame, so a straight arm or a limit
-never makes it jump. **Calibrate robot** (C, `RobotCore.calibrate`) is a tare to the start pose (`HOME`), read from plotted poses
+never makes it jump. **The elbow never goes quite straight** (`MIN_BEND`; reach is `reachOf(m)`): a straight arm is singular, and
+one let go straight came back with its elbow anywhere. **Calibrate robot** (C, `RobotCore.calibrate`) is a tare to the start pose (`HOME`), read from plotted poses
 with the tare taken off; cleared by a frame change, a new camera 1 or a new track. **Motion ×** (`settings.robot.scale`) scales each
 wrist's move from its home position, never orientation or the chest. Joint speed limits: `RobotCore.slew`, `SLEW`.
 
@@ -129,8 +130,11 @@ mug up). How open a gripper is (`gripOf`): the mouse, else the nrf-controller bo
 `gripOpening`, with Set open / Set closed in `boards`), else open.
 
 **Mouse drag**: `grabPlane` (the robot plane the view faces most squarely; Alt for the next), through the target, never the physics
-hand. `TB.drive` keeps a dragged hand's target in the world until Tags drive or Calibrate robot. Into the table its target goes at
-most `PhysicsCore.PRESS` past contact (`holdBack`). The grabbable gripper lights up (`hoverNow`, `hot` in robot-gl.js, `GRAB_PX`).
+hand. `TB.drive` keeps a dragged hand's target in the world until Tags drive or Calibrate robot. Into the table, floor, other arm
+or other gripper its target goes at most `PhysicsCore.PRESS` past contact (`holdBack`), and **that shift stays in the drag plane**
+(`plane`), or a tilted push slides the grippers past each other. Past the arm's reach the target is kept on its edge in the drag
+plane (`RobotCore.inReach`), or the IK lifts the hand. The grabbable gripper lights up (`hoverNow`, `hot` in robot-gl.js, within
+`GRAB_PX`): only the gripper, no disc round it.
 
 **The contact record** (`W.record`; its shape is in the comment above `W.step`): pair forces, slip, rolling, impacts, each hand's
 wrench. A grip's load is the joint and the pads together (they cancel inside the grip). Materials (`MATERIALS`) have ids that go
