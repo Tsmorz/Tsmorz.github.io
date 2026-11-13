@@ -34,6 +34,8 @@ plugins:
 exclude:
   - .github
   - CLAUDE.md
+  - tag-tracker/CLAUDE.md      # area guides for Claude Code, not served
+  - glide-path/CLAUDE.md
   - Gemfile
   - Gemfile.lock
   - README.md

@@ -921,9 +921,9 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 <!-- ?v= is the page's version: bump it whenever one of these (or worker.js) changes, so a browser never runs a cached
      old copy of one beside new copies of the others -->
 <script src="tracker-core.js?v=2026-11-13"></script>
-<script src="robot-core.js?v=2026-11-13"></script>
+<script src="robot-core.js?v=2026-11-14b"></script>
 <script src="robot-gl.js?v=2026-11-14"></script>
-<script src="physics-core.js?v=2026-11-14b"></script>
+<script src="physics-core.js?v=2026-11-14c"></script>
 <script src="sound.js?v=2026-11-13b"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script>
@@ -2412,7 +2412,7 @@ function drawRobot(c, o, w, h, now) {
   tableStep(RB.scene);
   const gl = robotGL();
   $('plotGL').hidden = !gl;
-  hoverNow(); drawGrabArea(c, o);
+  hoverNow();
   if (gl) drawRobotGL(gl, o, w, h, now); else drawRobotFlat(c, o, h, now);
   if (TB.world) RB.pts.push(...tableCorners());
   if (!S.view.fitted) autoFit();
@@ -2440,19 +2440,6 @@ function hoverNow() {
   if (!TB.grab && TB.ptr && !TB.ptr.buttons) plot.style.cursor = TB.hover !== null ? 'grab' : '';
 }
 const hotOf = (a) => (TB.hover === a.side ? (TB.grab ? 2 : 1) : 0);
-// the grab area round the gripper the pointer can take: a faint violet disc as big as handAt's reach, on the plot's
-// canvas (under the robot, so it shows round the gripper's edge)
-function drawGrabArea(c, o) {
-  const sc = RB.scene, a = TB.hover !== null && sc ? sc.arms.find((x) => x.side === TB.hover) : null;
-  if (!a) return;
-  const s = o.project(gripPoint(sc, a));
-  if (!s) return;
-  c.save();
-  c.beginPath(); c.arc(s[0], s[1], GRAB_PX, 0, 2 * Math.PI);
-  c.fillStyle = alpha(K.accent, TB.grab ? 0.24 : 0.14); c.fill();
-  c.strokeStyle = alpha(K.accent, TB.grab ? 0.9 : 0.6); c.lineWidth = 1.5; c.stroke();
-  c.restore();
-}
 function drawRobotGL(gl, o, w, h, now) {
   const sc = RB.scene;
   RB.pts = gl.draw({
@@ -2757,6 +2744,10 @@ function handGrab(e) {
   if (e.shiftKey || (e.pointerType === 'mouse' && e.button !== 0)) return false;
   const hit = handAt(e);
   if (!hit) return false;
+  // a target left out of reach (the body moved away from it, say) starts again from where the hand is, so the first move
+  // of the pointer moves the hand; from the old target, nothing would move until the pointer had brought it back in reach
+  const kept = TB.drive.get(hit.a.side);
+  if (kept && !hit.a.reach) { TB.drive.delete(hit.a.side); driveOf(hit.a).open = kept.open; }
   const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n);
   if (!at) return false;
@@ -2780,15 +2771,20 @@ function handMove(e) {
   if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.off = C.sub(p, at); g.alt = e.altKey; } return true; }
   const at = rayHit(o, r, e, p, g.n);
   if (!at) return true;
-  // the new grip point; on the table (or the floor, or the other arm) it goes at most PHYS.PRESS past where the hand rests,
-  // and the pointer slips over the rest (the offset takes it up), so the hand comes up as soon as the pointer does
+  // the new grip point; on the table (or the floor, the other arm or the other gripper) it goes at most PHYS.PRESS past
+  // where the hand rests, and the pointer slips over the rest (the offset takes it up), so the hand comes up as soon as
+  // the pointer does. The shift stays in the drag plane, so a tilted push never carries the hand up or down.
   let want = C.add(at, g.off);
   const ph = TB.world && TB.world.handPose(g.side);
   if (ph && TB.world.record) {
-    const shift = PHYS.holdBack(TB.world.record.hands[g.side], C.add(ph.t, C.mulv(ph.R, [0, 0, G.finger.c[2]])), want);
+    const shift = PHYS.holdBack(TB.world.record.hands[g.side], C.add(ph.t, C.mulv(ph.R, [0, 0, G.finger.c[2]])), want, undefined, g.n);
     if (C.norm(shift) > 0) { want = C.add(want, shift); g.off = C.add(g.off, shift); }
   }
-  // and the wrist behind it
+  // and the wrist behind it, kept within the arm's reach in the drag plane (out of reach the arm would stretch along the
+  // line from its shoulder, which lifts the hand); the pointer slips over the rest here too
+  const ch = sc.chest, Rct = C.tr3(ch.R), wr = C.sub(want, C.mulv(d.R, [0, 0, G.finger.c[2]]));
+  const loc = C.mulv(Rct, C.sub(wr, ch.t)), inr = RCORE.inReach(sc.m, g.side, loc, C.mulv(Rct, g.n));
+  if (inr !== loc) { const shift = C.mulv(ch.R, C.sub(inr, loc)); want = C.add(want, shift); g.off = C.add(g.off, shift); }
   d.t = C.sub(want, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   return true;
 }

@@ -778,22 +778,30 @@
     return out;
   }
 
-  // Where a hand may be sent when it rests on something fixed (the table, the floor, the other arm): `want` (a point on the
-  // hand, in the world) moved back out so it is at most `press` (m) past where that point is now (`at`), along each such
-  // contact's push in the hand's record h. Returns the shift (m). Sent deeper, the arm's spring would press with all it
-  // has, the target could go out of the arm's reach (which slides the wrist along the table as it goes deeper), and
-  // lifting would wait until the target came back up through the table. 5 mm presses with about 12 N.
+  // Where a hand may be sent when it rests on something its arm can't move (the table, the floor, the other arm or the
+  // other gripper): `want` (a point on the hand, in the world) moved back out so it is at most `press` (m) past where that
+  // point is now (`at`), along each such contact's push in the hand's record h. Returns the shift (m). Sent deeper, the
+  // arm's spring would press with all it has, the target could go out of the arm's reach (which slides the wrist along
+  // the table as it goes deeper), and lifting would wait until the target came back up through the table. 5 mm presses
+  // with about 12 N.
+  // `plane` (optional, a unit normal): the plane the target is being moved in. The shift then stays in it, along the push
+  // as seen in that plane (unless the push is nearly square to it). A push that isn't level (a tilted gripper, a rounded
+  // edge) would otherwise lift the target with every step, and a saturated drive (all of HAND.force spent on the push)
+  // keeps little to hold the hand's height: two grippers pushed past each other slid 3 to 4 cm up and down.
   const PRESS = 0.005;
-  function holdBack(h, at, want, press) {
+  function holdBack(h, at, want, press, plane) {
     const lim = press === undefined ? PRESS : press;
     let shift = [0, 0, 0];
     if (!h) return shift;
     for (const x of h.contacts) {
-      if (!['table', 'floor', 'arm'].includes(x.other.kind)) continue;
+      if (!['table', 'floor', 'arm', 'hand'].includes(x.other.kind)) continue;
       const F = norm(x.f);
       if (F < 1e-6) continue;
       const n = scale(x.f, 1 / F), depth = dot(sub(at, add(want, shift)), n);
-      if (depth > lim) shift = add(shift, scale(n, depth - lim));
+      if (depth <= lim) continue;
+      let m = n; // the way the target is moved out
+      if (plane) { const q = sub(n, scale(plane, dot(n, plane))), ql = norm(q); if (ql > 0.3) m = scale(q, 1 / ql); }
+      shift = add(shift, scale(m, (depth - lim) / dot(n, m)));
     }
     return shift;
   }
