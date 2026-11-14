@@ -205,6 +205,7 @@ function travelPose(chest,m,now) {
     if (!forward && !turn && fresh && !document.hidden && !$('gameSettings').open) { const input=TravelCore.tagInput(TASK.tagNeutral,chest);forward=input.forward;turn=input.turn; }
     base=TASK.tagNeutral;
   }
+  if (forward || turn) TASK.destination=null;
   if (TASK.destination && !forward && !turn) { const i=TravelCore.destination(nav.state,TASK.destination);forward=i.forward;turn=i.turn;if(!forward&&!turn)TASK.destination=null; }
   if (TASK.suspended || document.hidden || $('gameSettings').open) forward=turn=0;
   const dt=Math.max(0,Math.min(.05,now-nav.time));nav.time=now;

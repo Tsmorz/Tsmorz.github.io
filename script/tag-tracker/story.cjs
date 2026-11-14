@@ -67,6 +67,9 @@ module.exports = function({check,near}) {
   function frame(){pw.setRobot({hands:[{side:1,pose:{R:k.R,t:[hx,.17,-.2]},opening:1}]});pw.step(1/60);T.update(physical,1/60,true);}
   for(let i=0;i<20;i++)frame();for(let tap=0;tap<3;tap++){for(let i=0;i<25;i++){hx+=.007;frame();}for(let i=0;i<25;i++){hx-=.007;frame();}}for(let i=0;i<60;i++)frame();
   check(physical.knocks===3&&physical.complete&&pw.capped===0,'three actual approaching and withdrawing physical hands knock on the solid door');
+  const closed=physical.doorClosed||pw.poseOf(physical.byKey.get('door'));T.update(physical,1,true);const opened=pw.poseOf(physical.byKey.get('door'));
+  check(C.angleOf(C.mul3(C.tr3(closed.R),opened.R))>1&&C.norm(C.sub(opened.t,closed.t))>.3,'the completed door visibly opens with its physical collider');
+  physical.reset();check(near(pw.poseOf(physical.byKey.get('door')).t,closed.t,1e-8)&&physical.open===0,'restart closes the door and resets its animation');
   const l=T.mission(data.levels[0],'story'),g=T.create(l,table,G),ball=g.byKey.get('ball'),bowl=g.world.poseOf(g.byKey.get('bowl'));
   ball.t=C.add(bowl.t,[0,0,.03]);ball.v=[0,0,0];ball.w=[0,0,0];
   T.update(g,1,true);check(!g.complete,'finishing a prop objective cannot bypass walking to the workbench');g.arrived=true;T.update(g,1,true);check(g.complete,'the story level completes after both navigation and the physical objective');

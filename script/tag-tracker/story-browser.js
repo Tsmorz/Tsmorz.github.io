@@ -65,8 +65,11 @@
   d.open=1;d.t=C.sub(C.add(p,[0,0,.07]),offset);await wait(1600);d.t=C.sub(p,offset);await wait(1300);d.open=0;
   await until(()=>W.hands[1].grip&&W.hands[1].grip.body===ball,'the mobile robot can grasp after driving: '+JSON.stringify({base:TASK.nav.state,ball:ball.t,wrist:W.handPose(1),reach:RB.scene.arms.find(a=>a.side===1).reach}));
   // Switching character preserves the level, base pose and a live physical grasp.
-  const oldWorld=TB.world,position=RB.scene.chest.t.slice();$('playActor').value='teen';$('playActor').dispatchEvent(new Event('change'));await wait(200);
-  assert(TB.world===oldWorld&&C.norm(C.sub(position,RB.scene.chest.t))<.005&&W.hands[1].grip,'switching to Eli preserves the scene and held object');
+  const oldWorld=TB.world,position=RB.scene.chest.t.slice();
+  for(const actor of ['robot','teen']){
+    $('playActor').value=actor;$('playActor').dispatchEvent(new Event('change'));await wait(200);
+    assert(TB.world===oldWorld&&C.norm(C.sub(position,RB.scene.chest.t))<.005&&W.hands[1].grip,'switching to '+actor+' preserves the scene and held object');
+  }
   d.t=C.add(d.t,[0,0,.15]);await wait(1400);const bowl=W.poseOf(TB.game.byKey.get('bowl')).t;d.t=C.sub(C.add(bowl,[0,0,.16]),offset);await wait(1900);d.open=1;
   await until(()=>TB.game.complete,'Eli finishes the first story job through physical grips',5000);
   assert(TASK.saved.bowl&&JSON.parse(localStorage.getItem('tag-tracker-story')).bowl&&!TASK.records.practice.bowl,'story results save independently of practice');
