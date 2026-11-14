@@ -1205,7 +1205,7 @@ if (run('5i')) {
   const cal = { open: 700, closed: 300 }, at = (mv) => C.gripOpening(Object.assign({}, st, { feedbackMv: mv }), cal);
   check(Math.abs(at(1650) - 0.5) < 1e-9 && at(3000) === 1 && at(100) === 0 && Math.abs(C.gripOpening(Object.assign({}, st, { feedbackMv: 1650 }), { open: 300, closed: 700 }) - 0.5) < 1e-9 && Math.abs(C.gripOpening(Object.assign({}, st, { feedbackMv: 990 }), { open: 300, closed: 700 }) - 1) < 1e-9, 'the grip: the servo\'s share of its supply between the closed and open readings, clamped, either way round');
   check(C.gripOpening(Object.assign({}, st, { analogReady: false }), cal) === null && C.gripOpening(Object.assign({}, st, { railMv: 0 }), cal) === null && C.gripOpening(st, null) === null && C.gripOpening(st, { open: 500, closed: 500 }) === null, 'no grip without a reading, a supply or a calibration');
-  check(C.clampSettings({}).robot.props === 'cup' && C.clampSettings({ robot: { props: 'ball' } }).robot.props === 'ball' && C.clampSettings({ robot: { props: 'x' } }).robot.props === 'cup' && (C.voiceCommand('Reset the table.') || {}).cmd === 'table', 'the table\'s setting (a ball and a mug unless chosen), and "reset the table"');
+  check(C.clampSettings({}).robot.props === 'arcade' && C.clampSettings({ robot: { props: 'ball' } }).robot.props === 'ball' && C.clampSettings({ robot: { props: 'x' } }).robot.props === 'arcade' && (C.voiceCommand('Reset the table.') || {}).cmd === 'table', 'the table\'s setting (arcade unless chosen), and "reset the table"');
   const rs = (o) => C.clampSettings({ robot: o }).robot;
   check(rs({}).forces === true && rs({ forces: false }).forces === false && rs({}).sound === false && rs({ sound: true }).sound === true && rs({ sound: 'yes' }).sound === false && (C.voiceCommand('Mute.') || {}).cmd === 'mute' && (C.voiceCommand('Turn the sound on') || {}).cmd === 'sound',
     'the force arrows are shown and the sound is off unless chosen; "mute" and "turn the sound on"');
@@ -1222,6 +1222,16 @@ if (run('5i')) {
   const skid = lv({ slip: 1, roll: 1.5 });
   check(one({ roll: 0.3 }, 'roll') && !one({ roll: 0.3 }, 'slide') && Math.abs(one({ roll: 0.6 }, 'roll').gain - 2 * one({ roll: 0.3 }, 'roll').gain) < 1e-12 && Math.abs(one({ slip: 0.4 }, 'slide').gain - 2 * one({ slip: 0.2 }, 'slide').gain) < 1e-12 && one({ slip: 0.4 }, 'slide').f > one({ slip: 0.2 }, 'slide').f && skid.length === 2 && !lv({ roll: 0.01 }).length,
     'a touch\'s sounds: rolling rumbles and sliding hisses, each as loud as its speed (twice as fast, twice as loud), a skid does both, and a still touch is silent');
+}
+
+if (run('5j')) {
+  console.log('5j. teleoperation progression, compound props, cloth and the robot-eye camera');
+  require('./tag-tracker/teleop.cjs')({ check, near });
+}
+
+if (run('5k')) {
+  console.log('5k. tiny-room story, walking, AMR collision and character meshes');
+  require('./tag-tracker/story.cjs')({ check, near });
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.

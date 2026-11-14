@@ -24,6 +24,7 @@ To change what the site says, edit YAML, not HTML.
 | Services (and the work that shows each), process, contact on /solutions/ | `_data/solutions.yml` |
 | The "Have a look around" tiles under the home hero | `_data/home.yml` |
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
+| Tag tracker teleoperation levels, objectives, hints and scoring targets | `_data/tag_tasks.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Lessons on /controls/, /vision/ or /embedded/ | `_data/labs/controls.yml`, `vision.yml`, `embedded.yml` |
 | Name, bio links, CV button | `_config.yml` |
@@ -327,7 +328,7 @@ itself and moves open tabs to the new address, deleting no caches (the terrain c
 
 ### The tag tracker (`/tag-tracker/`)
 
-`tag-tracker/` is a self-contained tool page (no front matter, so Jekyll copies it as-is) with its own look: an instrument on a
+`tag-tracker/` is a self-contained tool page (`index.html` uses front matter only to render `_data/tag_tasks.yml`, with no site layout) with its own look: an instrument on a
 vision bench. Cool anodised greys and ink with the site's violet (`--accent`, as in main.css) for what is live or pressed, and amber
 only for warnings (never an orange accent on the dark greys: it reads as a certain adult site's branding); panels are plain outlined boxes
 (1 px rule, 4 px corners, no shadows); viewfinder corner marks only on the video (`.reticle`, violet while detecting); flat ink-outlined
@@ -368,6 +369,41 @@ plot and a readout table. Tags, settings and calibrations (keyed by camera label
   with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.
+
+### Tag tracker teleoperation arcade
+
+The Physics selector opens the arcade. **Story** defaults to “Before the doors open”: Eli, a teenage helper, and
+Pip, an AMR-mounted robot, prepare a neighbourhood workshop. Eight 2.3 × 2.3 m rooms have one small job each:
+a ball in a bowl, a mug target, two parcels, two stacked blocks, a handoff, a tray delivery, one dishwasher plate and
+one towel. Finish a room to unlock the next. **Practice** keeps the original larger challenges, with all levels open.
+Content and room geometry are in `_data/tag_tasks.yml`; `TaskCore.mission` derives story variants without mutating
+practice data. Story and practice results are separate (`tag-tracker-story` and `tag-tracker-teleop`). No time limit;
+target times only earn a star. The character switch preserves the scene, navigation and live physical grips.
+
+`travel-core.js` is DOM-free locomotion: accelerated differential-drive steering, conservative swept circles against
+room bounds and furniture, braking, distance and gait/wheel phase. Move mode uses W/S or I/K to advance/reverse and
+A/D or J/L to turn; Hands mode keeps the reaching keys. The page transforms the tracked body and manual wrist
+targets together while the workbenches stay fixed. Held props travel through the original grip constraints.
+Walking/driving to the work spot is required; the tray also needs 0.35 m of travel held in both hands and has a
+second physical table. Focus loss stops motion. New rooms and calibration reset navigation. Room transitions are
+small separate scenes, not an open-world map. `robot-gl.js` builds Eli's clothed mesh and walking legs, plus Pip's
+AMR and rolling wheels. Both use the same arm FK and physical pinch; human fingers are a visual approximation.
+
+`physics-core.js` runs a 240 Hz fixed-step accumulator, friction-limited grips, contacts and sleep. Compound boxes
+and cylinders share their dimensions with the renderer; openings stay hollow. Mass properties combine analytic
+piece inertia and the parallel-axis theorem (small seam overlaps are an approximation). `cloth-core.js` uses
+small-step XPBD stretch/shear, compliant bending, table friction and particle self-contact. This is coarse cloth,
+not garment simulation. Objectives require released, settled props (0.75 s); handoffs, two-hand lifts and aligned
+cloth edges have extra checks. Story tutorial targets are brought closer to stay comfortably inside arm reach.
+
+First person attaches to the character's head, with −80° to +25° tilt and a fixed 70° horizontal field of view.
+The mesh, projection and hand picking use the same pose. The outside camera is kept separately.
+
+`task check:tag-tracker -- 5j 5k` tests both challenge sizes, physical grasps and cloth folds, locomotion collision,
+unlocks, persistence, reachability, character meshes and head projections (`script/tag-tracker/`). After building,
+`task shot -- /tag-tracker/ --eval "$(cat script/tag-tracker/story-browser.js)"` drives to the first bench, performs
+a physical grasp, changes character while holding, finishes the job and checks the next room, walking, focus loss
+and separate practice saves. `browser.js` in the same folder covers the full practice mode. Repeat with `--phone`.
 
 ## When editing, don't
 
