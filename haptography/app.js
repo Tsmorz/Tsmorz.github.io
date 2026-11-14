@@ -5,15 +5,24 @@
 
 import * as wire from "./wire.js";
 import { decodeSession } from "./session.js";
-import { analyze, scoreTake, scoreDataset, ANALYSIS_VERSION, SETTINGS, spectraBetween, principalAxis, project } from "./analysis.js";
+import { analyze, scoreTake, scoreDataset, ANALYSIS_VERSION, SETTINGS, TARGETS, segmentStrokes, spectraBetween, principalAxis, project } from "./analysis.js";
 import { spectrogram, welch, peakFrequency } from "./spectrum.js";
-import { sessionFiles, folderName, slugify, readLabels, timeFromFolderName } from "./export.js";
+import { sessionFiles, folderName, slugify, readLabels, timeFromFolderName, sessionFolders } from "./export.js";
 import { Simulator } from "./simulate.js";
 import { openStore } from "./storage.js";
 import { Plot, XYPlot, readColors, drawAxis, fmtHz } from "./plots.js";
 
+import { healthSummary, diagnostics, downloadDiagnostics, encodeProfile } from "./device-health.js";
+import { bindProfileEditor } from "./profile-view.js";
+import { DeviceClient, COMMAND, openBoardPort } from "./device.js";
+import { mountStudio } from "./studio.js";
+
+let studio = null;
+let deviceClient = null;
+const labelUndo = [];
+let coverageTick = 0;
+
 const $ = (id) => document.getElementById(id);
-const BAUD = 1_000_000;
 const LIVE_WINDOW_S = 5;
 const SPOOL_EVERY_MS = 2000;
 const ALL = "\u0000all";
@@ -32,6 +41,7 @@ function themeChanged() {
   document.querySelector('meta[name="theme-color"]').content = getComputedStyle(document.documentElement).getPropertyValue("--panel").trim();
   $("theme").setAttribute("aria-checked", String(effectiveTheme() === "dark"));
   dirty = true;
+  document.dispatchEvent(new Event("haptography-theme"));
 }
 $("theme").addEventListener("click", () => {
   const next = effectiveTheme() === "dark" ? "light" : "dark";
@@ -156,7 +166,7 @@ const live = {
 function resetLive() {
   live.reader = new wire.StreamReader();
   for (const k of ["imuT", "vib", "accel", "gyro", "mic", "tofT", "tofD", "tofOk", "speedT", "speed"]) live[k].clear();
-  Object.assign(live, { micEnd: null, lp: null, lastImuT: null, info: null, firstStats: null, lastStats: null, lastTof: null });
+  Object.assign(live, { micEnd: null, lp: null, lastImuT: null, info: null, firstStats: null, lastStats: null, lastTof: null, health: null, profile: null, healthReceivedMs: null, measuredImuHz: null, meterMs: performance.now() });
   live.counts = { imu: 0, mic: 0, tof: 0 };
   live.prevCounts = { imu: 0, mic: 0, tof: 0 };
   $("messages").replaceChildren();
@@ -165,6 +175,7 @@ function resetLive() {
 }
 
 function onBytes(bytes) {
+  deviceClient?.bytes(bytes);
   if (rec) {
     rec.chunks.push(bytes.slice());
     rec.pending.push(bytes.slice());
@@ -175,10 +186,14 @@ function onBytes(bytes) {
 }
 
 function handlePacket({ type, body }) {
+  deviceClient?.feed({ type, body });
   switch (type) {
+    case wire.HEALTH: live.health = body; live.healthReceivedMs = performance.now(); break;
+    case wire.PROFILE: live.profile = body; break;
     case wire.INFO:
       live.info = body;
       updateLamps();
+      studio?.refresh();
       break;
     case wire.IMU:
       liveImu(body);
@@ -300,11 +315,15 @@ function updateMeters() {
   $("m-imu").textContent = on ? fmtInt(c.imu - p.imu) : "—";
   $("m-mic").textContent = on ? fmtInt(c.mic - p.mic) : "—";
   $("m-tof").textContent = on ? fmtInt(c.tof - p.tof) : "—";
+  const now = performance.now();
+  live.measuredImuHz = live.meterMs == null ? null : (c.imu - p.imu) * 1000 / Math.max(1, now - live.meterMs);
+  live.meterMs = now;
   live.prevCounts = { ...c };
   const tof = live.lastTof;
   const dist = $("m-dist");
   dist.textContent = !on || !tof ? "—" : tof.status === 0 ? `${tof.distance_mm} mm` : `status ${tof.status}`;
   dist.classList.toggle("bad", Boolean(on && tof && tof.status !== 0));
+  renderDeviceHealth();
   const dropped = live.lastStats && live.firstStats ? live.lastStats.tx_dropped - live.firstStats.tx_dropped : 0;
   for (const [id, n] of [["m-lost", live.reader.lost], ["m-bad", live.reader.bad], ["m-drop", dropped]]) {
     $(id).textContent = on ? fmtInt(n) : "—";
@@ -336,8 +355,7 @@ function startDemo() {
 async function connectSerial() {
   let port;
   try {
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: BAUD, bufferSize: 1 << 20 });
+    port = await openBoardPort(navigator.serial);
   } catch (err) {
     if (err.name !== "NotFoundError") setStatus("rec-status", `Couldn't open the port: ${err.message}`, "bad");
     return;
@@ -352,6 +370,9 @@ async function connectSerial() {
     },
   };
   resetLive();
+  const writer = port.writable.getWriter();
+  deviceClient = new DeviceClient((packet) => writer.write(packet));
+  source.writer = writer;
   sourceChanged();
   setStatus("rec-status", "Connected: waiting for the board's stream…");
   try {
@@ -363,11 +384,14 @@ async function connectSerial() {
   } catch (err) {
     if (!stopping) setStatus("rec-status", `The port closed: ${err.message}`, "bad");
   } finally {
+    deviceClient?.close();
+    deviceClient = null;
+    writer.releaseLock();
     reader.releaseLock();
     await port.close().catch(() => {});
     if (source?.kind === "serial") {
       source = null;
-      if (rec) await stopRecording("the board was disconnected");
+      if (rec) await stopRecording("the board was disconnected").catch(recordingError);
       sourceChanged();
     }
   }
@@ -376,6 +400,7 @@ async function connectSerial() {
 async function stopSource() {
   const s = source;
   if (!s) return;
+  if (studio?.busy()) await studio.stop();
   if (rec) await stopRecording();
   source = null;
   await s.stop();
@@ -389,7 +414,7 @@ function sourceChanged() {
   $("demo").textContent = kind === "demo" ? "Stop demo" : "Demo";
   $("demo").disabled = kind === "serial";
   $("record").disabled = !source;
-  // The one orange key is the next thing to press: Connect, then Record
+  // Keep the next collection action prominent.
   $("connect").classList.toggle("primary", !source);
   $("record").classList.toggle("primary", Boolean(source));
   const lampEl = $("link-lamp");
@@ -399,6 +424,7 @@ function sourceChanged() {
   updateMeters();
   updateEmpty();
   dirty = true;
+  studio?.sourceChanged();
 }
 
 $("connect").addEventListener("click", () => (source ? stopSource() : connectSerial()));
@@ -413,11 +439,21 @@ function recMeta() {
     dataset: $("rec-dataset").value.trim(),
     label: $("rec-label").value.trim(),
     notes: $("rec-notes").value.trim(),
+    setup: $("rec-setup").value.trim(),
+    simulated: source?.kind === "demo",
+    repetition: [...takes.values()].filter((t) => t.dataset === $("rec-dataset").value.trim() && t.label === $("rec-label").value.trim()).length + 1,
   };
 }
 
 function startRecording() {
-  if (!source || rec) return;
+  if (!source || rec || studio?.busy()) return;
+  if (!$("quick-capture").checked && (!$("rec-dataset").value.trim() || !$("rec-label").value.trim())) {
+    const field = !$("rec-dataset").value.trim() ? $("rec-dataset") : $("rec-label");
+    field.focus();
+    setStatus("rec-status", "Name the dataset and surface, or enable Quick capture.", "bad");
+    return;
+  }
+  $("after-record").hidden = true;
   stopAudio();
   if (source.kind === "demo") {
     // A fresh simulated take: still for 5 s from now, over this surface's grain
@@ -432,14 +468,19 @@ function startRecording() {
     pending: [],
     bytes: 0,
     spoolN: 0,
+    coverage: [0, 0, 0, 0], strokeEnd: -Infinity,
     startMs: performance.now(),
     still: { t0: null, n: 0, sums: new Float64Array(12), run: 0, done: false, brokeAt: null, first: null },
   };
   rec.spoolTimer = setInterval(spool, SPOOL_EVERY_MS);
   $("record").textContent = "Stop";
+  document.body.dataset.recording = "true";
   $("record").classList.add("recording");
-  for (const id of ["rec-dataset", "rec-label", "rec-notes"]) $(id).disabled = true;
+  for (const id of ["rec-dataset", "rec-label", "rec-notes", "rec-setup"]) $(id).disabled = true;
+  studio?.workspace("collect");
+  studio?.refresh();
   setMode("live");
+  if (matchMedia("(max-width: 720px)").matches) $("coach-state").scrollIntoView({ block: "center" });
 }
 
 // Coach the still start: VQF needs ~4 s at rest to learn the gyro's bias.
@@ -476,6 +517,20 @@ function updateRecording() {
   const elapsed = (performance.now() - rec.startMs) / 1000;
   $("rec-elapsed").textContent = `${elapsed.toFixed(1)} s`;
   const s = rec.still;
+  $("restart-still").hidden = s.brokeAt === null;
+  $("still-progress").value = Math.min(4, s.run);
+  $("coach-state").textContent = s.done ? "Slide across the surface" : s.brokeAt !== null ? "Stillness interrupted" : "Hold the device still";
+  $("coach-detail").textContent = s.done ? "Move toward and away from the wall. Aim for a steady speed in each band." : s.brokeAt !== null ? "Restart the stillness check to begin a clean take; no need to reconnect." : `Keep still for ${Math.max(0, 4 - s.run).toFixed(1)} more seconds.`;
+  if (s.done) {
+    const ts = live.speedT.view(), speeds = live.speed.view();
+    const valid = Uint8Array.from(speeds, (v) => Number.isFinite(v) ? 1 : 0);
+    for (const stroke of segmentStrokes(ts, speeds, valid)) {
+      if (stroke.t1 <= rec.strokeEnd || ts.at(-1) - stroke.t1 < 0.15) continue;
+      const bin = TARGETS.speedBins.findIndex((lo, i) => stroke.mean_mm_s >= lo && stroke.mean_mm_s < TARGETS.speedBins[i + 1]);
+      if (bin >= 0) rec.coverage[bin]++;
+      rec.strokeEnd = stroke.t1;
+    }
+  }
   if (s.first === null) {
     setStatus("rec-status", elapsed > 2 ? "No IMU samples are arriving." : "Hold still…", elapsed > 2 ? "bad" : "");
   } else if (s.done) {
@@ -486,7 +541,7 @@ function updateRecording() {
     setStatus("rec-status", `Hold still… ${Math.max(0, SETTINGS.stillNeededS - s.run).toFixed(1)} s`);
   }
   const limit = Number($("rec-limit").value);
-  if (limit && elapsed >= limit) stopRecording();
+  if (limit && elapsed >= limit) stopRecording().catch(recordingError);
 }
 setInterval(updateRecording, 100);
 
@@ -507,7 +562,8 @@ async function spool() {
   try {
     await store.spoolAppend(r.id, n, bytes, n === 0 ? { ...r.meta, created: r.created } : undefined);
   } catch {
-    /* the spool is a safety net only: the recording itself is in memory */
+    storageError = true;
+    $("storage-note").textContent = "Recovery storage failed: keep this tab open and export the take.";
   }
 }
 
@@ -517,8 +573,10 @@ async function stopRecording(why) {
   rec = null;
   clearInterval(r.spoolTimer);
   $("record").textContent = "Record";
+  document.body.dataset.recording = "false";
   $("record").classList.remove("recording");
-  for (const id of ["rec-dataset", "rec-label", "rec-notes"]) $(id).disabled = false;
+  $("restart-still").hidden = true;
+  for (const id of ["rec-dataset", "rec-label", "rec-notes", "rec-setup"]) $(id).disabled = false;
   const bytes = concat(r.chunks);
   if (!bytes.length) {
     setStatus("rec-status", "Nothing arrived from the board: no take saved.", "bad");
@@ -531,16 +589,33 @@ async function stopRecording(why) {
   await store.spoolClear(r.id).catch(() => {});
   const score = scoreTake(meta.summary);
   setStatus("rec-status", `${why ? `Stopped: ${why}. ` : ""}Saved ${meta.label || "the take"}: ${score.score} (${score.grade}).`, score.grade === "poor" ? "bad" : "go");
-  select(meta.id);
+  await select(meta.id);
+  $("storage-note").textContent = store.persistent ? "Saved locally · not exported" : "Memory only · export to keep";
+  $("after-record").hidden = false;
+  $("coach-state").textContent = "Take saved";
+  $("coach-detail").textContent = "Record another take or select a stroke in Inspect.";
+  studio?.refresh();
 }
 
-$("record").addEventListener("click", () => (rec ? stopRecording() : startRecording()));
-for (const id of ["rec-dataset", "rec-label", "rec-notes"]) {
+function recordingError(err) {
+  setStatus("rec-status", `Couldn't save the take: ${err.message}. The recovery copy will be offered on your next visit.`, "bad");
+}
+$("record").addEventListener("click", () => (rec ? stopRecording().catch(recordingError) : startRecording()));
+$("restart-still").addEventListener("click", async () => {
+  const previous = rec; if (!previous) return;
+  clearInterval(previous.spoolTimer); rec = null;
+  await store.spoolClear(previous.id).catch(() => {});
+  startRecording();
+});
+$("record-another").addEventListener("click", startRecording);
+$("retry-take").addEventListener("click", startRecording);
+$("inspect-take").addEventListener("click", () => studio?.workspace("inspect", true));
+for (const id of ["rec-dataset", "rec-label", "rec-notes", "rec-setup"]) {
   $(id).value = recall(id);
   $(id).addEventListener("change", () => remember(id, $(id).value));
 }
 addEventListener("beforeunload", (event) => {
-  if (rec) event.preventDefault();
+  if (rec || studio?.busy()) event.preventDefault();
 });
 
 // ---- Library ------------------------------------------------------------------------------
@@ -624,9 +699,9 @@ function renderLibrary() {
     li.className = `take${t.id === selectedId ? " selected" : ""}${t.keep === false ? " rejected" : ""}`;
     li.dataset.id = t.id;
     li.tabIndex = 0;
-    li.title = `${fmtDate(t.created)} · ${t.notes || "no notes"}`;
+    li.title = `${fmtDate(t.created)} · ${t.notes || "no notes"}${t.setup ? ` · ${t.setup}` : ""}`;
     const time = Object.assign(document.createElement("time"), { dateTime: t.created, textContent: fmtTime(t.created) });
-    const label = Object.assign(document.createElement("span"), { className: "label", textContent: t.label || "(unlabelled)" });
+    const label = Object.assign(document.createElement("span"), { className: "label", textContent: `${t.simulated ? "Demo · " : ""}${t.label || "Quick capture"}` });
     const dur = Object.assign(document.createElement("span"), { className: "dur", textContent: `${t.seconds.toFixed(0)} s` });
     const badge = Object.assign(document.createElement("span"), { className: `badge ${s.grade}`, textContent: s.score });
     li.append(time, label, dur, badge);
@@ -641,13 +716,13 @@ function renderLibrary() {
 
 $("takes").addEventListener("click", (event) => {
   const li = event.target.closest(".take");
-  if (li) select(li.dataset.id, { replay: !rec });
+  if (li) select(li.dataset.id, { replay: !rec }).then(() => !rec && studio?.workspace("inspect"));
 });
 $("takes").addEventListener("keydown", (event) => {
   const li = event.target.closest(".take");
   if (li && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
-    select(li.dataset.id, { replay: !rec });
+    select(li.dataset.id, { replay: !rec }).then(() => !rec && studio?.workspace("inspect"));
   }
 });
 $("lib-dataset").addEventListener("change", () => {
@@ -675,6 +750,8 @@ async function select(id, { replay = false } = {}) {
   else if (replay) setMode("replay");
   updateEmpty();
   dirty = true;
+  renderStrokes();
+  studio?.takeSelected();
 }
 
 $("delete-take").addEventListener("click", async () => {
@@ -723,6 +800,8 @@ async function exportTake(parent, t) {
   }, t.summary);
   const name = folderName(t);
   await writeFolder(parent, name, files);
+  await updateTake(t.id, { exported: new Date().toISOString() });
+  $("storage-note").textContent = "Selected take exported";
   return name;
 }
 
@@ -771,14 +850,7 @@ $("import-input").addEventListener("change", async (event) => {
   const files = [...event.target.files];
   event.target.value = "";
   // Group by folder; a folder holding raw.bin is a take
-  const folders = new Map();
-  for (const f of files) {
-    const path = f.webkitRelativePath || f.name;
-    const dir = path.slice(0, path.lastIndexOf("/"));
-    if (!folders.has(dir)) folders.set(dir, {});
-    folders.get(dir)[f.name] = f;
-  }
-  const found = [...folders.entries()].filter(([, f]) => f["raw.bin"]);
+  const found = sessionFolders(files);
   if (!found.length) {
     setStatus("lib-status", "No raw.bin in that folder: pick a session folder, or a folder of them.", "bad");
     return;
@@ -796,7 +868,7 @@ $("import-input").addEventListener("change", async (event) => {
     }
     // Takes in a folder of folders, with no dataset of their own, take the folder's name
     const dataset = labels.dataset || (parts.length > 1 ? parts.at(-2) : "");
-    await saveTake(bytes, { id: newId(), created, dataset, label: labels.label, notes: labels.notes, keep: labels.keep, spans: labels.spans });
+    await saveTake(bytes, { id: newId(), created, dataset, label: labels.label, notes: labels.notes, setup: labels.setup, simulated: labels.simulated, repetition: labels.repetition, keep: labels.keep, spans: labels.spans });
     imported++;
   }
   setStatus("lib-status", `Imported ${imported} take${imported === 1 ? "" : "s"}${skipped ? `, ${skipped} already here` : ""}.`, "go");
@@ -848,8 +920,11 @@ function renderScore() {
     const badge = $("take-score");
     badge.textContent = s.score;
     badge.className = `badge big ${s.grade}`;
+    $("quality-number").textContent = `${s.score}/100`;
+    const issues = s.checks.filter((c) => c.status !== "pass" && c.status !== "good" && c.points < c.max);
+    $("quality-summary").textContent = issues.length ? `${s.grade === "poor" ? "Check this take" : "Usable recording"} · ${issues[0].name}: ${issues[0].detail}` : "Clean recording. Inspect a stroke to create an actuator signal.";
     $("take-title").textContent = t.label || "(unlabelled)";
-    $("take-sub").textContent = `${fmtDate(t.created)} · ${t.seconds.toFixed(1)} s · board ${t.board ?? "?"} · ${fmtMB(t.bytes)}`;
+    $("take-sub").textContent = `${t.simulated ? "Simulated · " : ""}${t.repetition ? `Take ${t.repetition} · ` : ""}${fmtDate(t.created)} · ${t.seconds.toFixed(1)} s · board ${t.board ?? "?"} · ${fmtMB(t.bytes)}`;
     $("checks").replaceChildren(...s.checks.map((c) => {
       const li = document.createElement("li");
       li.className = c.status;
@@ -860,7 +935,7 @@ function renderScore() {
       );
       return li;
     }));
-    for (const [id, key] of [["take-dataset", "dataset"], ["take-label", "label"], ["take-notes", "notes"]]) {
+    for (const [id, key] of [["take-dataset", "dataset"], ["take-label", "label"], ["take-notes", "notes"], ["take-setup", "setup"]]) {
       if (document.activeElement !== $(id)) $(id).value = t[key] ?? "";
     }
     $("take-keep").checked = t.keep !== false;
@@ -889,7 +964,7 @@ function renderSpans(t) {
   }));
 }
 
-for (const [id, key] of [["take-dataset", "dataset"], ["take-label", "label"], ["take-notes", "notes"]]) {
+for (const [id, key] of [["take-dataset", "dataset"], ["take-label", "label"], ["take-notes", "notes"], ["take-setup", "setup"]]) {
   $(id).addEventListener("change", () => selectedId && updateTake(selectedId, { [key]: $(id).value.trim() }));
 }
 $("take-keep").addEventListener("change", () => selectedId && updateTake(selectedId, { keep: $("take-keep").checked }));
@@ -906,7 +981,7 @@ function renderDataset() {
     badge.className = "badge end";
     return;
   }
-  const d = scoreDataset(list.map((t) => ({ label: t.label, keep: t.keep, summary: t.summary })));
+  const d = scoreDataset(list.map((t) => ({ label: `${t.simulated ? "Demo: " : ""}${t.label}`, keep: t.keep, summary: usableSummary(t) })));
   badge.textContent = d.score;
   badge.className = `badge end ${d.grade}`;
   $("ds-bins-head").title = `Strokes by mean speed: ${d.bins.join(", ")} mm/s`;
@@ -951,6 +1026,82 @@ function renderDataset() {
 
 // ---- Scope: live and replay plots ---------------------------------------------------------
 
+function usableSummary(t) {
+  const bad = (t.spans ?? []).filter((s) => s.label === "bad");
+  return { ...t.summary, strokes: (t.summary?.strokes ?? []).filter((stroke) => !bad.some((s) => s.t0 < stroke.t1 && s.t1 > stroke.t0)) };
+}
+
+function updateCollectionGuide() {
+  const speed = live.speed.last();
+  const valid = Boolean(source) && Number.isFinite(speed);
+  $("speed-now").textContent = valid ? Math.abs(speed).toFixed(0) : "—";
+  $("speed-direction").textContent = !valid ? "No valid distance reading" : Math.abs(speed) < 10 ? "Still" : speed > 0 ? "Away from wall →" : "← Toward wall";
+  $("speed-meter").value = valid ? Math.abs(speed) : 0;
+  const bin = Number($("speed-target").value);
+  const lo = TARGETS.speedBins[bin], hi = Math.min(500, TARGETS.speedBins[bin + 1]);
+  $("speed-meter").low = lo; $("speed-meter").high = hi; $("speed-meter").optimum = (lo + hi) / 2;
+  if (++coverageTick % 5) return;
+  const name = $("rec-dataset").value.trim(), label = $("rec-label").value.trim();
+  const list = [...takes.values()].filter((t) => t.dataset === name && t.label === label && Boolean(t.simulated) === (source?.kind === "demo"));
+  const data = scoreDataset(list.map((t) => ({ label: t.label, keep: t.keep, summary: usableSummary(t) }))).labels[0];
+  const counts = (data?.binCounts ?? [0, 0, 0, 0]).map((v, i) => v + (rec?.coverage[i] ?? 0));
+  $("coverage-bins").replaceChildren(...counts.map((n, i) => {
+    const el = document.createElement("span"); el.className = `coverage-bin${n >= TARGETS.strokesPerBin ? " complete" : ""}`;
+    el.textContent = `${["0–100", "100–200", "200–300", "300+"][i]} mm/s: ${Math.min(n, TARGETS.strokesPerBin)}/${TARGETS.strokesPerBin}${n >= TARGETS.strokesPerBin ? " ✓" : ""}`;
+    return el;
+  }));
+  const missing = counts.findIndex((n) => n < TARGETS.strokesPerBin);
+  $("coverage-next").textContent = !name || !label ? "Name a dataset and surface to track your progress." : `${data?.kept ?? 0}/${TARGETS.takes} usable takes · ${data?.strokes ?? 0}/${TARGETS.strokes} saved strokes. ${missing >= 0 ? `Next: ${TARGETS.strokesPerBin - counts[missing]} strokes at ${["0–100", "100–200", "200–300", "300+"][missing]} mm/s.` : "Speed coverage complete."}${rec ? " Live counts are provisional until the take is scored." : ""}`;
+}
+setInterval(updateCollectionGuide, 200);
+
+function renderStrokes() {
+  const a = loaded?.id === selectedId ? loaded.analysis : null;
+  $("stroke-list").replaceChildren(...(a?.strokes ?? []).map((stroke, i) => {
+    const button = document.createElement("button"); button.type = "button";
+    const excluded = takes.get(selectedId)?.spans?.some((s) => s.label === "bad" && s.t0 < stroke.t1 && s.t1 > stroke.t0);
+    button.textContent = `Stroke ${i + 1}${excluded ? " · excluded" : ""}`;
+    const detail = document.createElement("span"); detail.textContent = `${(stroke.t1 - stroke.t0).toFixed(2)} s · ${stroke.mean_mm_s.toFixed(0)} mm/s · ${stroke.direction}`;
+    button.append(detail); button.setAttribute("aria-pressed", String(Boolean(selection && Math.abs(selection[0] - stroke.t0) < 0.001 && Math.abs(selection[1] - stroke.t1) < 0.001)));
+    button.addEventListener("click", () => {
+      setMode("replay"); selection = [stroke.t0, stroke.t1]; playhead = stroke.t0;
+      const pad = (stroke.t1 - stroke.t0) * 0.15;
+      setView(stroke.t0 - pad, stroke.t1 + pad); renderStrokes();
+    });
+    return button;
+  }));
+}
+
+$("select-interval").addEventListener("click", () => {
+  const t0 = Number($("selection-start").value), t1 = Number($("selection-end").value);
+  if (!loaded || !Number.isFinite(t0) || !Number.isFinite(t1) || t0 < 0 || t1 > duration() || t1 - t0 < 0.01) {
+    setStatus("lib-status", "Choose start and end times inside the recording, at least 0.01 s apart.", "bad"); return;
+  }
+  selection = [t0, t1]; playhead = t0; renderStrokes(); dirty = true;
+});
+$("zoom-selection").addEventListener("click", () => selection && setView(selection[0], selection[1]));
+for (const [id, factor] of [["zoom-in", 0.5], ["zoom-out", 2]]) $(id).addEventListener("click", () => {
+  const center = (view.t0 + view.t1) / 2, half = (view.t1 - view.t0) * factor / 2;
+  setView(center - half, center + half);
+});
+$("extra-channels").addEventListener("change", () => { document.body.dataset.channels = $("extra-channels").checked ? "all" : "essential"; dirty = true; });
+async function changeSpans(spans) {
+  const t = takes.get(selectedId); if (!t) return;
+  labelUndo.push({ id: t.id, spans: structuredClone(t.spans ?? []) });
+  if (labelUndo.length > 30) labelUndo.shift();
+  $("undo-label").disabled = false;
+  await updateTake(t.id, { spans }); renderStrokes(); dirty = true;
+}
+$("exclude-selection").addEventListener("click", () => {
+  const t = takes.get(selectedId); if (!t || !selection) return;
+  changeSpans([...(t.spans ?? []), { t0: selection[0], t1: selection[1], label: "bad" }]);
+});
+$("undo-label").addEventListener("click", async () => {
+  const previous = labelUndo.pop(); if (!previous || !takes.has(previous.id)) return;
+  await updateTake(previous.id, { spans: previous.spans }); renderStrokes(); dirty = true;
+  $("undo-label").disabled = !labelUndo.length;
+});
+
 const plots = {
   vib: new Plot($("plot-vib")),
   gyro: new Plot($("plot-gyro")),
@@ -985,6 +1136,7 @@ function setMode(next) {
   $("view-as").hidden = mode === "spectrum";
   $("xyz-legend").hidden = mode === "spectrum" || viewAs === "spectrogram";
   $("compare-wrap").hidden = mode !== "spectrum";
+  $("selection-tools").hidden = mode !== "replay" || document.body.dataset.workspace !== "inspect";
   if (mode === "live") stopAudio();
   hover = null;
   updateEmpty();
@@ -1159,12 +1311,22 @@ function drawOverlays() {
   for (const p of Object.values(plots)) p.overlay({ playhead, hover, selection, colors });
   $("time-readout").textContent = `${playhead.toFixed(2)} / ${duration().toFixed(2)} s`;
   $("span-add").disabled = !selection || Math.abs(selection[1] - selection[0]) < 0.01;
+  for (const [index, id] of [[0, "selection-start"], [1, "selection-end"]]) {
+    if (selection && document.activeElement !== $(id)) $(id).value = selection[index].toFixed(3);
+  }
+  $("create-target").disabled = !selection || studio?.busy();
+  $("exclude-selection").disabled = !selection;
 }
 
 function frame(now) {
+  if (document.body.dataset.workspace === "tune" || document.body.dataset.workspace === "compare") {
+    requestAnimationFrame(frame);
+    return;
+  }
   if (audio.source) {
     playhead = audio.startT + (audio.ctx.currentTime - audio.startCtx);
-    if (playhead >= duration()) stopAudio();
+    if (audio.source?.loop) playhead = audio.loopStart + (playhead - audio.loopStart) % (audio.loopEnd - audio.loopStart);
+    else if (playhead >= duration()) stopAudio();
     else if (playhead > view.t1) setView(playhead, playhead + (view.t1 - view.t0));
   }
   if (mode === "spectrum") {
@@ -1320,7 +1482,10 @@ for (const p of Object.values(plots)) {
   el.addEventListener("pointerdown", (event) => {
     if (mode !== "replay" || !loaded) return;
     el.setPointerCapture(event.pointerId);
-    press = { x: event.clientX, t: p.timeAtClientX(event.clientX), dragging: false };
+    const t = p.timeAtClientX(event.clientX);
+    const tolerance = (view.t1 - view.t0) * 12 / Math.max(1, el.clientWidth);
+    const edge = selection ? selection.findIndex((x) => Math.abs(x - t) < tolerance) : -1;
+    press = { x: event.clientX, t, dragging: false, edge, initial: selection?.slice() };
   });
   el.addEventListener("pointermove", (event) => {
     if (mode !== "replay" || !loaded) return;
@@ -1328,17 +1493,22 @@ for (const p of Object.values(plots)) {
     hover = t;
     if (press && Math.abs(event.clientX - press.x) > 3) {
       press.dragging = true;
-      selection = [press.t, t].sort((a, b) => a - b).map((x) => Math.max(0, Math.min(duration(), x)));
+      const ends = press.edge >= 0 ? press.initial.map((x, i) => i === press.edge ? t : x) : [press.t, t];
+      selection = ends.sort((a, b) => a - b).map((x) => Math.max(0, Math.min(duration(), x)));
     }
   });
   el.addEventListener("pointerup", (event) => {
     if (!press) return;
-    if (!press.dragging) {
-      selection = null;
-      seek(Math.max(0, Math.min(duration(), p.timeAtClientX(event.clientX))));
+    if (!press.dragging && press.edge < 0) {
+      const t = Math.max(0, Math.min(duration(), p.timeAtClientX(event.clientX)));
+      const stroke = loaded.analysis.strokes.find((s) => t >= s.t0 && t <= s.t1);
+      selection = stroke ? [stroke.t0, stroke.t1] : null;
+      seek(t);
     }
     press = null;
+    renderStrokes();
   });
+  el.addEventListener("pointercancel", () => { press = null; });
   el.addEventListener("pointerleave", () => (hover = null));
   el.addEventListener("dblclick", () => fitView());
   el.addEventListener("wheel", (event) => {
@@ -1363,7 +1533,7 @@ $("span-add").addEventListener("click", async () => {
   const span = { t0: Math.round(selection[0] * 1000) / 1000, t1: Math.round(selection[1] * 1000) / 1000, label: $("span-label").value.trim() };
   const spans = [...(t.spans ?? []), span].sort((a, b) => a.t0 - b.t0);
   selection = null;
-  await updateTake(t.id, { spans });
+  await changeSpans(spans);
   dirty = true;
 });
 
@@ -1398,7 +1568,7 @@ function bufferFor(which) {
       samples[i] = y[j] + u * (y[j + 1] - y[j]);
       peak = Math.max(peak, Math.abs(samples[i]));
     }
-    for (let i = 0; i < n; i++) samples[i] *= 0.9 / peak;
+    if ($("audio-normalize").checked) for (let i = 0; i < n; i++) samples[i] *= 0.9 / peak;
   }
   if (!samples.length) return null;
   audio.ctx ??= new AudioContext();
@@ -1422,9 +1592,15 @@ function play() {
   src.onended = () => {
     if (audio.source === src) stopAudio();
   };
-  src.start(0, offset);
-  Object.assign(audio, { source: src, startCtx: audio.ctx.currentTime, startT: b.start + offset });
-  $("play").textContent = "Pause";
+  const loop = $("audio-loop").checked && selection && selection[1] > selection[0];
+  const startT = loop ? selection[0] : b.start + offset;
+  if (loop) {
+    src.loop = true; src.loopStart = Math.max(0, selection[0] - b.start); src.loopEnd = Math.min(b.buffer.duration, selection[1] - b.start);
+    audio.loopStart = selection[0]; audio.loopEnd = selection[1];
+  }
+  src.start(0, Math.max(0, startT - b.start));
+  Object.assign(audio, { source: src, startCtx: audio.ctx.currentTime, startT });
+  $("play").textContent = "Pause listening";
 }
 
 function stopAudio() {
@@ -1437,7 +1613,7 @@ function stopAudio() {
       /* already ended */
     }
   }
-  $("play").textContent = "Play";
+  $("play").textContent = "Listen on computer";
 }
 
 function seek(t) {
@@ -1449,6 +1625,8 @@ function seek(t) {
 }
 
 $("play").addEventListener("click", () => (audio.source ? stopAudio() : play()));
+$("audio-normalize").addEventListener("change", () => { stopAudio(); audioBuffers = {}; });
+$("audio-loop").addEventListener("change", () => { if (audio.source) { stopAudio(); play(); } });
 for (const id of ["listen-mic", "listen-vib"]) {
   $(id).addEventListener("change", () => {
     if (audio.source) {
@@ -1463,9 +1641,9 @@ for (const id of ["listen-mic", "listen-vib"]) {
 addEventListener("keydown", (event) => {
   if (event.target.closest("input, textarea, select") || event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.key === "r" || event.key === "R") {
-    if (rec) stopRecording();
+    if (rec) stopRecording().catch(recordingError);
     else if (source) startRecording();
-  } else if (event.key === " " && mode === "replay") {
+  } else if (event.key === " " && mode === "replay" && document.body.dataset.workspace === "inspect") {
     event.preventDefault();
     audio.source ? stopAudio() : play();
   } else if (event.key === "Escape") {
@@ -1492,12 +1670,21 @@ async function reanalyseOld() {
 async function start() {
   store = await openStore();
   if (!store.persistent) $("storage-note").textContent = "this browser won't keep takes: export them";
+  try { await store.importBench?.(); }
+  catch (error) { $("storage-note").textContent = `Bench recordings were preserved but could not be imported: ${error.message}`; }
   for (const t of await store.listTakes()) takes.set(t.id, t);
   themeChanged();
   sourceChanged();
   setMode("live");
   renderLibrary();
   renderScore();
+  studio = await mountStudio({
+    source: () => source, info: () => live.info, client: () => deviceClient, store: () => store,
+    recording: () => Boolean(rec), loaded: () => loaded?.id === selectedId ? loaded : null,
+    take: () => takes.get(selectedId), selection: () => selection,
+    stopAudio, setMode, redraw: () => { dirty = true; },
+    selectionStatus: (text) => setStatus("lib-status", text, "bad"),
+  });
   requestAnimationFrame(frame);
   unsaved = await store.spooled().catch(() => []);
   showRecover();
@@ -1505,5 +1692,38 @@ async function start() {
   // Opened with ?demo: start the simulated board (for a quick look, and the page's own checks)
   if (new URLSearchParams(location.search).has("demo")) startDemo();
 }
+
+let storageError = false;
+const profileEditor = bindProfileEditor($("hardware-profile"), {
+  save: async (profile, key) => {
+    if (source?.kind !== "serial" || !deviceClient || studio?.busy() || rec || String(live.info?.board_id) !== key) throw Error("Stop recording/playback and select the connected board first");
+    if ((live.info?.version ?? 0) < 5) throw Error("Update the capture firmware to save profiles");
+    await deviceClient.command(COMMAND.setProfile, encodeProfile(profile));
+    // ACK is sent after the profile is persisted; wait for its periodic read-back.
+    for (let n = 0; n < 25; n++) {
+      if (JSON.stringify(live.profile) === JSON.stringify(profile)) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw Error("Profile read-back was not confirmed");
+  },
+});
+function currentHealth() {
+  return healthSummary({ connected: Boolean(source), health: live.health,
+    healthAgeMs: live.healthReceivedMs == null ? null : performance.now() - live.healthReceivedMs,
+    rateHz: live.measuredImuHz ?? null, expectedHz: live.info?.imu_rate_hz,
+    lost: live.reader.lost, bad: live.reader.bad, storage: storageError ? "error" : store?.persistent === false ? "memory" : null });
+}
+function renderDeviceHealth() {
+  const summary = currentHealth();
+  $("device-health").textContent = source?.kind === "demo" ? "Demo · simulated readings" : summary.text;
+  $("device-health").dataset.state = source?.kind === "demo" ? "demo" : summary.state;
+  $("export-diagnostics").disabled = !live.info;
+  profileEditor.sync(live.profile, String(live.info?.board_id), source?.kind === "serial");
+}
+$("export-diagnostics").addEventListener("click", () => downloadDiagnostics(diagnostics({
+  boardId: live.info?.board_id?.toString(16).toUpperCase().padStart(4, "0"), health: live.health,
+  profile: live.profile, summary: currentHealth(), counters: { lost: live.reader.lost, bad: live.reader.bad, ...(live.lastStats ?? {}) },
+  recording: { active: Boolean(rec), persistent: Boolean(store?.persistent) },
+})));
 
 start();

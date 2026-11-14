@@ -1,0 +1,60 @@
+{
+  "format": "nrf-controller-capture/1",
+  "version": 5,
+  "limits": {
+    "IMU_MAX_SAMPLES": 32,
+    "MIC_MAX_SAMPLES": 160,
+    "TEXT_MAX": 120
+  },
+  "packets": {
+    "HEALTH": 10,
+    "PROFILE": 11,
+    "INFO": 1,
+    "IMU": 2,
+    "MIC": 4,
+    "TOF": 5,
+    "STATS": 6,
+    "TEXT": 7,
+    "ACK": 8,
+    "PLAYBACK": 9
+  },
+  "commands": {
+    "SET_PROFILE": 72,
+    "CLIP_BEGIN": 65,
+    "CLIP_DATA": 66,
+    "PLAY_CLIP": 67,
+    "PLAY_WAVEFORM": 68,
+    "PLAY_ERM_EFFECT": 69,
+    "STOP": 70,
+    "ERM_PULSE": 71
+  },
+  "playbackKinds": {
+    "WAVEFORM": 1,
+    "CLIP": 2,
+    "ERM_EFFECT": 3,
+    "ERM_PULSE": 4
+  },
+  "flags": {
+    "IMU": 1,
+    "MIC": 2,
+    "TOF": 4,
+    "TACHAMMER": 8,
+    "ERM": 16
+  },
+  "statsFields": [
+    "t_us",
+    "imu_samples",
+    "imu_dropped",
+    "mic_blocks",
+    "mic_errors",
+    "tof_readings",
+    "tof_errors",
+    "tx_packets",
+    "tx_dropped",
+    "tx_bytes",
+    "tx_peak_bytes",
+    "rx_commands",
+    "rx_bad",
+    "haptic_errors"
+  ]
+}

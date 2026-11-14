@@ -32,6 +32,9 @@ export function labelsJson(take, score) {
     dataset: take.dataset ?? "",
     label: take.label ?? "",
     notes: take.notes ?? "",
+    setup: take.setup ?? "",
+    simulated: Boolean(take.simulated),
+    repetition: take.repetition ?? null,
     keep: take.keep !== false,
     created: take.created,
     spans: (take.spans ?? []).map((s) => ({ start_s: s.t0, end_s: s.t1, label: s.label })),
@@ -45,6 +48,9 @@ export function readLabels(json) {
     dataset: typeof json.dataset === "string" ? json.dataset : "",
     label: typeof json.label === "string" ? json.label : "",
     notes: typeof json.notes === "string" ? json.notes : "",
+    setup: typeof json.setup === "string" ? json.setup : "",
+    simulated: json.simulated === true,
+    repetition: Number.isInteger(json.repetition) && json.repetition > 0 ? json.repetition : null,
     keep: json.keep !== false,
     created: typeof json.created === "string" ? json.created : null,
     spans: Array.isArray(json.spans)
@@ -108,6 +114,8 @@ export function sessionFiles(raw, session, take, extra = {}, summary = null) {
     bad_packets: session.bad,
     written: { imu: imu.t_us.length, mic_blocks: mic.blocks.length / 4, tof: tof.t_us.length },
     device_stats: session.stats.at(-1) ?? null,
+    ...(session.health && { health: session.health }),
+    ...(session.profile && { profile: session.profile }),
     ...extra,
   };
   files["info.json"] = JSON.stringify(infoJson, null, 2) + "\n";
@@ -135,4 +143,17 @@ export function timeFromFolderName(name) {
   if (!m) return null;
   const [, y, mo, d, h, mi, s] = m.map(Number);
   return new Date(y, mo - 1, d, h, mi, s).toISOString();
+}
+
+/** Group imported files by session directory, including browsers that omit relative paths. */
+export function sessionFolders(files) {
+  const folders = new Map();
+  for (const file of files) {
+    const path = file.webkitRelativePath || file.name;
+    const slash = path.lastIndexOf("/");
+    const dir = slash < 0 ? "" : path.slice(0, slash);
+    if (!folders.has(dir)) folders.set(dir, {});
+    folders.get(dir)[file.name] = file;
+  }
+  return [...folders.entries()].filter(([, files]) => files["raw.bin"]);
 }
