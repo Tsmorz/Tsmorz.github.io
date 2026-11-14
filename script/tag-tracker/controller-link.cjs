@@ -24,6 +24,6 @@ module.exports=async function({check}){
   check(!Scores.ranking(rows,level,'practice').length&&!Scores.ranking(rows,{id:'a',revision:2},mode).length,'full/small tasks and changed challenge revisions never mix times');
   check(Scores.clean([{task:'a',seconds:NaN,at:1}]).length===0&&Scores.format(61.234)==='1:01.234','invalid scores are dropped and best times retain millisecond precision');
   const yaml=JSON.parse(cp.execFileSync('ruby',['-ryaml','-rjson','-e','puts JSON.generate(YAML.load_file(ARGV[0]))',root+'/_data/tag_tasks.yml'])),R=require(root+'/tag-tracker/robot-core'),I=[1,0,0,0,1,0,0,0,1],g=T.create(yaml.levels.find(l=>l.id==='bowl'),{R:I,t:[0,0,0],size:[.5,.9]},R.gripper(R.model()));
-  const migrated=T.progress({cable:{stars:3,time:12}},yaml.levels),current=T.progress({cable:{stars:2,time:40,revision:2}},yaml.levels);check(migrated.connector?.time===12&&!migrated.cable&&current.cable?.time===40&&!current.connector,'old fixed-socket personal bests migrate to connector practice without contaminating the phone ranking');
+  const migrated=T.progress({cable:{stars:3,time:12}},yaml.levels),current=T.progress({cable:{stars:2,time:40,revision:2}},yaml.levels);check(!migrated.cable&&!migrated.connector&&current.cable?.time===40,'removed fixed-socket results do not contaminate phone charging times');
   T.update(g,.01,true,10);T.update(g,.01,true,15);check(g.elapsed===5,'ranked completion time uses monotonic elapsed time, not a capped physics frame count');g.reset();check(g.clockStart==null&&g.elapsed===0,'restart clears the completion clock');
 };

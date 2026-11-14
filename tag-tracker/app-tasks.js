@@ -98,6 +98,13 @@ function paintTaskLabels(o,w,h){
     const points=state==='shirt_left'?[[cloth.landmarks.cuffs[0],names.left_cuff]]:state==='shirt_right'?[[cloth.landmarks.cuffs[1],names.right_cuff]]:['shirt_hem','shirt_fold'].includes(state)?cloth.landmarks.hem.map(i=>[i,names.hem]):[];
     for(const [i,text] of points)labels.push({p:C.add(cloth.nodes[i].p,C.mulv(W.table.R,[0,0,.018])),text,active:true});
   }
+  for(const cloth of W.cloths)if(cloth.kind==='towel'&&TB.game.level.goals.some(r=>r.type==='fold'&&r.folds===2)){
+    const second=cloth.foldStage===1,state=TASK.guide?.state,names=TB.game.level.guide.labels;
+    if(state!=='done'&&state!=='settle'&&state!=='towel_release')for(const handle of ClothCore.handles(cloth)){
+      labels.push({p:C.add(handle.point,C.mulv(W.table.R,[0,0,.026])),text:second?names.second:names.first,active:true});
+      labels.push({p:C.add(handle.target,C.mulv(W.table.R,[0,0,.012])),text:names.target,active:false});
+    }
+  }
   for(const r of markerList())labels.push({p:C.add(W.table.t,C.mulv(W.table.R,[r.at[0],r.at[1]-r.size[1]/2-.02,.004])),text:r.label,active:TASK.guide&&TASK.guide.at&&Math.hypot(r.at[0]-TASK.guide.at[0],r.at[1]-TASK.guide.at[1])<.025});
   el.innerHTML=labels.map(l=>{const p=o.project(l.p);return p&&p[0]>0&&p[0]<w&&p[1]>0&&p[1]<h?`<span class="task-label" data-active="${!!l.active}" style="left:${p[0].toFixed(1)}px;top:${p[1].toFixed(1)}px">${escapeHtml(l.text)}</span>`:'';}).join('');
 }

@@ -44,10 +44,12 @@ module.exports=function({check,near}){
   check(T.guidance(bowl).state==='wrong'&&T.guidance(bowl).held==='bowl','holding a vessel instead of the requested ball is explained');
   const tray=create('tray');tray.world.hands[1]={grip:{body:tray.byKey.get('tray')}};
   check(T.guidance(tray).state==='dual','one held tray rim prompts using the second gripper');
-  const handoff=create('handoff');handoff.world.hands[1]={grip:{body:handoff.byKey.get('ball')}};handoff.heldBy.set('ball',new Set([1]));
-  check(T.guidance(handoff).state==='handoff','the handoff task explains transferring to the other gripper');
-  const cloth=create('laundry'),towel=cloth.byKey.get('shirt');towel.pins.set(1,{i:0});
-  check(T.guidance(cloth).state==='shirt_left','a shirt starts by folding a sleeve rather than folding the body first');
+  const cloth=create('laundry'),towel=cloth.byKey.get('towel');towel.pins.set('1',{i:0});
+  check(T.guidance(cloth).state==='towel_first_grab','one towel corner still asks for both first-fold corners');
+  towel.foldStage=1;for(const [i,n]of towel.nodes.entries()){const p=towel.material[i];n.p=[Math.abs(p[0]),p[1],.005];}
+  check(T.guidance(cloth).state==='towel_second_grab','the released first fold prompts regripping the doubled edge');
+  tray.balance.rimHit=true;check(T.guidance(tray).state==='tray_retry','a rim collision explicitly asks for a new clean attempt');
+  towel.pins.set('-1',{i:0,throughFold:false});check(T.guidance(cloth).state==='towel_layers','catching only one ply prompts lowering the pads around both layers and regripping');
   const meshes=GL.actorMeshes(R.model());check([...meshes.amr,...meshes.wheel].every(p=>p.mesh.pos.every(Number.isFinite)),'robot AMR meshes remain available');
   const html=fs.readFileSync(root+'/tag-tracker/index.html','utf8');
   check(!/playActor|grandmaLine|character-core|travel-core|rewardToken/.test(html),'the page loads no boy, story, home rewards or travel scripts');

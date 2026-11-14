@@ -71,7 +71,22 @@
     }
     const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0, gripper };
     game.local = (p) => C.mulv(C.tr3(table.R), C.sub(p, table.t));
-    game.reset = () => { W.reset(); game.elapsed = 0; game.clockStart = null; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; };
+    game.reset = () => { W.reset(); game.elapsed = 0; game.clockStart = null; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; if(level.balance)game.balance={rimHit:false,liftTime:0}; };
+    if(level.balance){
+      game.balance={rimHit:false,liftTime:0};
+      const spec=level.balance,tray=byKey.get(spec.tray),ball=byKey.get(spec.ball);
+      W.mechanisms.push(dt=>{
+        const state=game.balance,tp=W.poseOf(tray),bp=W.poseOf(ball),q=C.mulv(C.tr3(tp.R),C.sub(bp.t,tp.t));
+        const hands=Object.values(W.hands).filter(h=>h.grip?.body===tray),height=game.local(tp.t)[2];
+        {
+          const rim=P.shapeDistance(q,tray.pieces.slice(1))<=P.BALL.r+.0006;
+          const lost=Math.abs(q[0])>.085||Math.abs(q[1])>.19||q[2]<-.015||q[2]>.12;
+          if(rim||lost)state.rimHit=true;
+        }
+        if(!state.rimHit&&hands.length===2&&height>=spec.min_height)state.liftTime+=dt;
+        else if(state.liftTime<spec.seconds)state.liftTime=0;
+      });
+    }
     if(level.charging)Charging.attach(game);
     return game;
   }
@@ -96,12 +111,19 @@
     const settled = (b) => C.norm(b.v) < 0.04 && C.norm(b.w) < 0.25;
     g.steps = g.level.goals.map((r) => {
       const b = g.byKey.get(r.object);
+      if(r.type==='balance')return !g.balance.rimHit&&g.balance.liftTime>=g.level.balance.seconds;
+      if(g.balance?.rimHit)return false;
+      if(r.type==='aboard'){
+        const tray=g.byKey.get(r.target),tp=W.poseOf(tray),q=C.mulv(C.tr3(tp.R),C.sub(W.poseOf(b).t,tp.t));
+        return released(b)&&settled(b)&&settled(tray)&&Math.abs(q[0])+P.BALL.r<.077&&Math.abs(q[1])+P.BALL.r<.182&&Math.abs(q[2]-(.006+P.BALL.r))<.015;
+      }
       if(r.type==='power')return g.charging.wallDwell>.3;
       if(r.type==='charge')return Charging.complete(g);
       if (r.type === 'fold') {
         const f = Cloth.folded(b), ps = b.nodes.map((n) => g.local(n.p)), mid = [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
         const span = [0, 1].map((i) => Math.max(...ps.map((p) => p[i])) - Math.min(...ps.map((p) => p[i])));
-        return (b.kind==='shirt' ? f.complete : (f.x || f.y) && f.compact && Math.max(...span) > Math.min(b.width, b.height) * 0.75) && b.pins.size === 0 && b.touched.size === 2
+        if(b.kind==='towel'&&!b.pins.size&&b.firstHands.size===2&&f.x&&f.compact)b.foldStage=1;
+        return (b.kind==='shirt' ? f.complete : r.folds===2 ? b.foldStage===1&&b.foldHands.size===2&&f.complete : (f.x || f.y) && f.compact && Math.max(...span) > Math.min(b.width, b.height) * 0.75) && b.pins.size === 0 && b.touched.size === 2
           && within(mid, r.at, r.tolerance) && b.nodes.every((n) => C.norm(n.v) < 0.05);
       }
       const pose = W.poseOf(b), p = g.local(pose.t);
@@ -129,6 +151,15 @@
     const W=g.world,goals=g.level.goals,held=Object.values(W.hands).filter(h=>h.grip);
     let index=goals.findIndex((r,i)=>!g.steps[i]);
     if(g.complete)return {state:'done',index:0,object:goals[0].object};
+    if(g.balance){
+      const spec=g.level.balance,base={index:0,object:spec.tray};
+      if(g.balance.rimHit)return {...base,state:'tray_retry'};
+      const holds=held.filter(h=>h.grip.body.key===spec.tray);
+      if(g.balance.liftTime<spec.seconds)return {...base,state:holds.length<2?'dual':g.local(W.poseOf(g.byKey.get(spec.tray)).t)[2]<spec.min_height?'tray_lift':'tray_hold'};
+      const goal=goals.find(r=>r.type==='place'),tray=g.byKey.get(spec.tray),p=g.local(W.poseOf(tray).t);
+      if(holds.length)return {...base,index:1,at:goal.at,state:within(p,goal.at,goal.tolerance)?'release':'tray_move'};
+      return {...base,index:1,at:goal.at,state:'settle'};
+    }
     if(g.charging){const state=Charging.guidance(g),first=g.charging.wallDwell<.3,s=g.level.charging,object=first?s.charger:state==='phone_pickup'?s.phone:s.plug,target=first?s.outlet:s.phone;return {state,index:first?0:1,object,target,at:g.local(W.poseOf(g.byKey.get(target)).t)};}
     const selected=goals.findIndex((r,i)=>!g.steps[i]&&held.some(h=>h.grip.body.key===r.object));
     if(selected>=0)index=selected;
@@ -151,6 +182,16 @@
         if(!f.sleeves[0])return result('shirt_left');
         if(!f.sleeves[1])return result('shirt_right');
         return result(f.complete?(b.pins.size?'shirt_release':'settle'):b.pins.size>=2?'shirt_fold':'shirt_hem');
+      }
+      if(r.folds===2){
+        const f=Cloth.folded(b),second=b.foldStage===1;
+        if(second&&b.pins.size===2&&[...b.pins.values()].some(p=>!p.throughFold))return result('towel_layers');
+        if(second&&!b.foldHands.size&&!f.x)return result('towel_repair');
+        if(second&&b.foldHands.size===2&&!b.pins.size&&!f.complete)return result('towel_tidy');
+        if(f.complete&&second&&b.foldHands.size===2)return result(b.pins.size?'towel_release':'settle');
+        if(second)return result(b.pins.size>=2?'towel_second_move':'towel_second_grab');
+        if(f.x&&f.compact&&b.pins.size)return result('towel_first_release');
+        return result(b.pins.size>=2?'towel_first_move':'towel_first_grab');
       }
       if(b.pins.size===1)return result('fold_second');
       if(b.pins.size){const f=Cloth.folded(b);return result((f.x||f.y)&&f.compact?'fold_release':'fold_move');}

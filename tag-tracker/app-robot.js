@@ -9,7 +9,7 @@
 // sides, forearms forward, palms in) wherever the tags are; pressing it fixes how each tag sits on the robot, as a
 // tare does. It reads the plotted poses (in the chosen frame) with any tare taken off, so taring never moves it.
 const RCORE = window.RobotCore;
-const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist: new Map(), slew: new Map(), slewT: 0, scene: null, pts: [], msg: '', msgWarn: false, msgT: 0, hintT: 0, jointsT: 0, autoDone: false, fitSig: '', fhist: new Map(), view: null, viewW: 0 };
+const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist: new Map(), slew: new Map(), ready: new Map(), slewT: 0, scene: null, pts: [], msg: '', msgWarn: false, msgT: 0, hintT: 0, jointsT: 0, autoDone: false, fitSig: '', fhist: new Map(), view: null, viewW: 0 };
 // the table (below): its physics world, the hands moved with the mouse
 const PHYS = window.PhysicsCore;
 const TABLE = { size: [0.5, 0.9], thick: 0.03, legs: 0.72 };
@@ -128,6 +128,13 @@ plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') &
 
 // The robot this frame: the chest's pose and each arm's joint angles. With no tracks yet it is a preview, standing
 // in its start pose a little way in front of the camera.
+function robotReady(m,side){
+  const ready=typeof currentTask==='function'&&gameView()&&currentTask().ready;if(!ready)return RCORE.HOME;
+  const key=JSON.stringify([m,ready]),cached=RB.ready.get(side);if(cached?.key===key)return cached.q;
+  const home=RCORE.fk(m,side,RCORE.HOME),d=ready.offset;
+  const target={R:RCORE.Ry((ready.pitch||0)*Math.PI/180),t:C.add(home.wrist,[d[0],side*d[1],d[2]])};
+  const q=RCORE.ik(m,side,target).q;RB.ready.set(side,{key,q});return q;
+}
 function robotUpdate(now) {
   robotTake();
   const sig = robotSig();
@@ -163,7 +170,7 @@ function robotUpdate(now) {
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
   const withBody = preview || roles.body !== null || S.settings.robot.props === 'arcade';
-  if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) arms.push({ key: null, side, q: RCORE.HOME, reach: true, gap: 0, live: false, idle: true });
+  if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) arms.push({ key: null, side, q: robotReady(m,side), reach: true, gap: 0, live: false, idle: true });
   // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it). It was put
   // there in the world (by the table), so it stays there when the body moves: the arm reaches to keep it
   const Rc = C.tr3(tg.chest.R);
@@ -486,7 +493,7 @@ function tableFlat(face, seg, ball) {
     else seg(p.t, C.add(p.t, C.mulv(p.R, [0, 0, PHYS.CUP.H])), PHYS.CUP.R, K.surface, K.text, 1);
   }
   for (const cable of W.cables) for(let i=1;i<cable.nodes.length;i++)seg(cable.nodes[i-1].p,cable.nodes[i].p,cable.radius,cable.color,cable.color,1);
-  for (const cloth of W.cloths) for (let i = 0; i < cloth.triangles.length; i += 3) face(cloth.triangles.slice(i, i + 3).map((k) => cloth.nodes[k].p), cloth.color, 1);
+  for(const cloth of W.cloths){const mesh=RobotGL.clothMesh(cloth);for(let i=0;i<mesh.idx.length;i+=3)face([...mesh.idx.slice(i,i+3)].map(k=>[...mesh.pos.slice(k*3,k*3+3)]),cloth.color,1);}
 }
 $('robotProps').value = S.settings.robot.props;
 $('robotProps').onchange = () => { S.settings.robot.props = $('robotProps').value; saveSettings(); if (S.settings.robot.props === 'arcade') setMode('tasks'); paintRobotBtns(); };
@@ -529,7 +536,7 @@ function driveOf(a) {
   if (!d) {
     const sc = RB.scene, k = RCORE.fk(sc.m, a.side, a.q);
     d = { R: C.mul3(sc.chest.R, k.R), t: RCORE.place(sc.chest, k.wrist), open: a.open === undefined ? 1 : a.open, frame: S.settings.frame };
-    TB.drive.set(a.side, d); paintRobotBtns();
+    TB.drive.set(a.side, d); if(gameView()&&currentTask().ready)RB.prev.set('drive'+a.side,{q:a.q.slice(),elbow:k.elbow,psi:0,side:a.side}); paintRobotBtns();
   }
   TB.lastSide = a.side;
   return d;

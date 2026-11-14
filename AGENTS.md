@@ -23,7 +23,6 @@ To change what the site says, edit YAML, not HTML.
 | --- | --- |
 | Projects shown anywhere | `_data/projects.yml` |
 | Services (and the work that shows each), process, contact on /solutions/ | `_data/solutions.yml` |
-| The "Have a look around" tiles under the home hero | `_data/home.yml` |
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Tag tracker robot tasks, instructions and hints | `_data/tag_tasks.yml` |
 | DynaSoar aircraft presets, branding, weather copy and landmarks | `_data/glide.yml` |

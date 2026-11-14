@@ -11,12 +11,13 @@ module.exports = function ({ check, near }) {
   const create = (id) => T.create(levels.find((l) => l.id === id), table, G);
   const put = (W, b, at, rot = I) => { b.R = rot.slice(); b.q = P.qOf(rot); b.t = C.sub(at, C.mulv(rot, b.off)); b.v = [0,0,0]; b.w = [0,0,0]; b.asleep = false; b.still = 0; };
   const finish = (g, n = 60) => { for (let i = 0; i < n; i++) { g.world.step(1/60); T.update(g,1/60,true); } };
-  check(levels.length >= 8 && levels[0].id === 'bowl' && levels.at(-1).id === 'laundry' && levels.some((l) => l.id === 'dishwasher') && new Set(levels.map((l) => l.id)).size === levels.length && levels.slice(0,4).every((l) => l.hands === 1) && levels.slice(4).every((l) => l.hands === 2), 'distinct tasks progress from one-hand placement to two-hand household and cable manipulation');
+  check(levels.map(l=>l.id).join(',')==='bowl,sort,tray,cable,laundry'&&levels.slice(0,2).every(l=>l.hands===1)&&levels.slice(2).every(l=>l.hands===2), 'exactly five tasks progress from a first grasp to two-handed balance, charging and a towel');
+  check(levels.find(l=>l.id==='sort').objects.length===2&&T.mission(levels.find(l=>l.id==='sort'),'guided').objects.length===2,'both modes offer exactly two blocks');
   for (const l of levels) {
     const g = create(l.id), W = g.world, keys = new Set([...W.bodies, ...W.cloths].map((b) => b.key));
     check(l.name && l.brief && l.hint && l.par > 0 && l.goals.length && l.goals.every((r) => keys.has(r.object) && (!r.target || keys.has(r.target))), l.id + ': content and objective references are valid');
     const t = performance.now(); run(W,60); T.update(g,1,false);
-    check(!g.complete && !g.steps.some(Boolean) && W.capped === 0 && W.respawns === 0 && W.bodies.every((b) => [...b.t,...b.v,...b.R].every(Number.isFinite)) && W.cloths.every((c) => c.nodes.every((n) => [...n.p,...n.v].every(Number.isFinite))), l.id + ': initial state is stable, finite and does not award itself');
+    check(!g.complete && !g.steps.some((done,i)=>done&&l.goals[i].type!=='aboard') && W.capped === 0 && W.respawns === 0 && W.bodies.every((b) => [...b.t,...b.v,...b.R].every(Number.isFinite)) && W.cloths.every((c) => c.nodes.every((n) => [...n.p,...n.v].every(Number.isFinite))), l.id + ': initial state is stable, finite and does not award itself');
     const ms = (performance.now()-t)/60;
     check(ms < 50, `${l.id}: physics frame ${ms.toFixed(2)} ms (60 Hz input)`);
     for (const b of W.bodies.filter((b) => b.pieces)) {
@@ -40,26 +41,13 @@ module.exports = function ({ check, near }) {
   check(!g.complete, 'hovering above the bowl does not complete the task');
   W.hands[1] = { grip: {body:g.byKey.get('ball')} }; put(W,g.byKey.get('ball'),[.04,-.17,.03]); T.update(g,.8,true);
   check(!g.complete, 'a held ball does not count as released');
-  g = create('precision'); W = g.world; put(W,g.byKey.get('ball'),[.03,-.18,.028]); finish(g);
-  check(g.complete, 'the smaller mug target accepts a ball settled on its interior floor');
   g = create('sort'); W = g.world; for (const r of g.level.goals) put(W,g.byKey.get(r.object),r.at); finish(g);
-  check(g.complete, 'three correctly placed, settled blocks complete sorting');
-  g = create('tower'); W = g.world; for (const r of g.level.goals) put(W,g.byKey.get(r.object),r.at); finish(g,150);
-  check(g.complete && W.capped === 0 && W.bodies.every((b) => C.norm(b.w)<.05), 'three colliding blocks form a stable tower and complete only at their own heights');
-  g = create('handoff'); W = g.world; put(W,g.byKey.get('ball'),[.05,-.2,.03]); finish(g);
-  check(!g.complete, 'a ball in the bowl alone cannot skip the handoff');
-  g.heldBy.set('ball',new Set([1,-1])); finish(g);
-  check(g.complete, 'the handoff counts each hand having grasped the ball');
-  g = create('tray'); W = g.world; for (const r of g.level.goals) put(W,g.byKey.get(r.object),r.at); finish(g);
-  check(!g.complete, 'parking the tray without lifting it in both hands cannot skip the carry');
-  g.dual.add('tray'); finish(g);
-  check(g.complete, 'a carried tray and its settled load complete together');
-  g = create('dishwasher'); W = g.world;
-  const Rx = [1,0,0,0,0,-1,0,1,0], rackStart = g.byKey.get('rack').t.slice();
-  for (const r of g.level.goals) put(W,g.byKey.get(r.object),r.at,Rx); finish(g,150);
-  check(g.complete && near(g.byKey.get('rack').t,rackStart,1e-12) && W.capped === 0, 'all three plates settle upright between solid rack dividers; the rack stays fixed');
-  g = create('dishwasher'); W = g.world; for (const r of g.level.goals) put(W,g.byKey.get(r.object),r.at); T.update(g,1,true);
-  check(!g.complete, 'horizontal plates cannot count as loaded upright');
+  check(g.complete, 'two correctly placed, settled blocks complete placement');
+  g = create('tray'); W = g.world; const trayGoal=g.level.goals.find(r=>r.type==='place');
+  put(W,g.byKey.get('tray'),trayGoal.at);put(W,g.byKey.get('ball'),C.add(trayGoal.at,[0,0,.026]));finish(g);
+  check(!g.complete, 'parking the tray without the clean two-hand lift cannot skip balancing');
+  g.balance.liftTime=1;g.dual.add('tray');finish(g);
+  check(g.complete,'a clean lifted tray and its settled load complete together after release');
   // Force-limited grasp on a new shape, not a teleport or a scoring-only prop.
   W = P.world({table,gripper:G}); const block = W.add({kind:'block',mass:.09,pieces:T.geometry('block')},[0,0,.025]);
   let z = .13; const hand = (opening) => W.setRobot({hands:[{side:1,pose:{R:I,t:[0,0,z]},opening}]});
@@ -98,20 +86,20 @@ module.exports = function ({ check, near }) {
   }
   W.setRobot({hands:foldedHands.map(h=>({...h,opening:1}))});run(W,150);
   check(Cloth.folded(cloth).x && Cloth.folded(cloth).compact && cloth.touched.size===2, 'two physical grippers turn their finite fabric patches through a towel fold and release: '+JSON.stringify(Cloth.folded(cloth)));
-  g=create('laundry');
-  const shirt=g.world.cloths[0];shirt.touched=new Set([1,-1]);
-  shirt.nodes.forEach((n,i)=>{const p=shirt.material[i],sleeve=Math.abs(p[1])>shirt.bodySpan/2,y=sleeve?Math.sign(p[1])*(shirt.bodySpan-Math.abs(p[1])):p[1];n.p=[Math.abs(p[0])-.055,y,.0025+(sleeve?.006:0)+(p[0]<0?.006:0)];n.v=[0,0,0];});
-  const cuff=shirt.nodes[shirt.landmarks.cuffs[0]],savedCuff=cuff.p.slice();cuff.p[1]=.24;T.update(g,1,true);
-  check(!g.complete,'folding only the body cannot bypass an extended shirt sleeve');cuff.p=savedCuff;
-  T.update(g,1,true);check(g.complete, 'a released, aligned shirt with both sleeves and its body folded passes the garment objective');
+  g=create('laundry');const taskTowel=g.world.cloths[0];taskTowel.touched=new Set([1,-1]);
+  const shape=(twice)=>taskTowel.nodes.forEach((n,i)=>{const p=taskTowel.material[i],x=Math.abs(p[0]);n.p=[twice?-.21+Math.abs(x-.06):-.21+x,p[1],.005+(p[0]>0?.01:0)+(twice&&x<.06?.02:0)];n.v=[0,0,0];});
+  shape(true);T.update(g,1,true);check(!g.complete,'a quarter fold cannot skip the released first fold');
+  g.reset();taskTowel.touched=new Set([1,-1]);taskTowel.firstHands=new Set([1,-1]);shape(false);T.update(g,1,true);
+  check(!g.complete&&taskTowel.foldStage===1,'one aligned half fold advances guidance but cannot complete the towel task');
+  taskTowel.foldHands=new Set([1,-1]);shape(true);T.update(g,1,true);check(g.complete,'a released, spread four-layer towel passes both folds after the first-fold checkpoint');
   W.reset();const N=cloth.N;
   for(let j=0;j<N;j++)for(let i=0;i<N;i++)cloth.nodes[j*N+i].p=[Math.abs((i/(N-1)-.5)*.2), (j/(N-1)-.5)*.24, .005+(i<N/2?.005:0)];
   check(Cloth.folded(cloth).x && !Cloth.folded(cloth).y && Cloth.folded(cloth).compact, 'aligned opposite edges detect a half fold');
   const mesh=GL.clothMesh(cloth);check([...mesh.pos,...mesh.nrm].every(Number.isFinite) && mesh.idx.length===(N-1)**2*6, 'the cloth surface has finite normals and two triangles per cell');
   W.reset();check(cloth.pins.size===0 && cloth.touched.size===0 && near(cloth.nodes[0].p,[-.1,-.12,Cloth.radius],1e-12), 'restart restores cloth, releases patches and clears hand history');
   g=create('laundry');const towel=g.world.cloths[0];for(const n of towel.nodes)n.p=[.1,-.22,.01];towel.touched=new Set([1,-1]);T.update(g,1,true);
-  check(!g.steps[0], 'a crumpled point cannot pass as a folded shirt');
-  check(!T.progress({laundry:{stars:3,time:10}},levels).laundry,'old towel results do not seed the revised shirt task');
+  check(!g.steps[0], 'a crumpled point cannot pass as a twice-folded towel');
+  check(!T.progress({laundry:{stars:3,time:10}},levels).laundry,'old shirt and single-fold times do not seed the twice-folded towel task');
   const p = T.progress({bowl:{stars:3,time:40},laundry:{stars:99,time:-1},other:{stars:1,time:1}},levels);
   check(Object.keys(p).join() === 'bowl' && T.best(p.bowl,{stars:2,elapsed:60}).time===40 && T.best(p.bowl,{stars:2,elapsed:60}).stars===3, 'saved progress validates input and preserves the best time and stars independently');
   // Head camera follows the body, keeps an orthonormal basis, and projects what the robot looks towards at centre.

@@ -231,13 +231,28 @@
     return result;
   }
   function clothMesh(c) {
-    const pos = new Float32Array(c.nodes.flatMap((n) => n.p)), nrm = new Float32Array(pos.length), idx = new Uint16Array(c.triangles);
-    for (let i = 0; i < idx.length; i += 3) {
-      const [a, b, d] = [...idx.slice(i, i + 3)], n = cross(sub(c.nodes[b].p, c.nodes[a].p), sub(c.nodes[d].p, c.nodes[a].p));
-      for (const k of [a, b, d]) for (let j = 0; j < 3; j++) nrm[k * 3 + j] += n[j];
+    const count=c.nodes.length,normals=c.nodes.map(()=>[0,0,0]);
+    for(let t=0;t<c.triangles.length;t+=3){const ids=c.triangles.slice(t,t+3),n=cross(sub(c.nodes[ids[1]].p,c.nodes[ids[0]].p),sub(c.nodes[ids[2]].p,c.nodes[ids[0]].p));for(const i of ids)normals[i]=C.add(normals[i],n);}
+    for(let i=0;i<count;i++)normals[i]=unit(normals[i])||[0,0,1];
+    if(!c.pile)return {pos:new Float32Array(c.nodes.flatMap(n=>n.p)),nrm:new Float32Array(normals.flat()),idx:new Uint16Array(c.triangles)};
+    // Closed, rounded-depth terry shell follows the same deforming midsurface and contact thickness.
+    const pos=[],nrm=[],idx=[],edges=new Map(),half=c.halfThickness;
+    for(const side of [1,-1])for(let i=0;i<count;i++){
+      const x=i%c.N,y=Math.floor(i/c.N),hem=Math.min(x,y,c.N-1-x,c.rows-1-y),round=hem===0?.55:1;
+      const loft=half*round+c.pile*(.75+.25*Math.sin(i*7.13)),point=C.add(c.nodes[i].p,normals[i].map(v=>v*side*loft));
+      const local=C.mulv(C.tr3(c.table.R),C.sub(point,c.table.t));if(Math.abs(local[0])<c.table.size[0]/2&&Math.abs(local[1])<c.table.size[1]/2&&local[2]<.0002){local[2]=.0002;point.splice(0,3,...C.add(c.table.t,C.mulv(c.table.R,local)));}
+      pos.push(...point);nrm.push(...normals[i].map(v=>v*side));
     }
-    for (let i = 0; i < nrm.length; i += 3) nrm.set(unit([...nrm.slice(i, i + 3)]) || [0, 0, 1], i);
-    return { pos, nrm, idx };
+    for(let t=0;t<c.triangles.length;t+=3){
+      const [a,b,d]=c.triangles.slice(t,t+3);idx.push(a,b,d,d+count,b+count,a+count);
+      for(const [i,j]of [[a,b],[b,d],[d,a]]){const key=Math.min(i,j)+':'+Math.max(i,j);if(edges.has(key))edges.delete(key);else edges.set(key,[i,j]);}
+    }
+    for(const [a,b]of edges.values()){
+      const first=pos.length/3,normal=unit(cross(sub(c.nodes[b].p,c.nodes[a].p),C.add(normals[a],normals[b])))||[1,0,0];
+      for(const i of [a,b,b+count,a+count]){pos.push(...pos.slice(i*3,i*3+3));nrm.push(...normal);}
+      idx.push(first,first+2,first+1,first,first+3,first+2);
+    }
+    return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
   }
 
   function cableMesh(c) {
@@ -290,6 +305,8 @@ varying vec3 vN,vW;varying vec4 vShadow;
 uniform vec3 uEye,uKey,uFill,uBase,uRimCol,uFadeTo,uSky,uGround;
 uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface;uniform sampler2D uShadow;
 float noise(vec3 p){return fract(sin(dot(floor(p),vec3(12.9898,78.233,37.719)))*43758.5453);}
+float fleece(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+ return mix(mix(noise(vec3(i,0.0)),noise(vec3(i+vec2(1.0,0.0),0.0)),f.x),mix(noise(vec3(i+vec2(0.0,1.0),0.0)),noise(vec3(i+vec2(1.0,1.0),0.0)),f.x),f.y);}
 float depth(vec2 p){return dot(texture2D(uShadow,p),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0))*(255.0/256.0);}
 float shade(vec3 N){if(uShadowOn<0.5)return 1.0;vec3 q=vShadow.xyz/vShadow.w*.5+.5;if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0||q.z>1.0)return 1.0;
  float a=0.0,bias=max(.0008,.0018*(1.0-dot(N,uKey)));for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)a+=step(q.z-bias,depth(q.xy+vec2(float(x),float(y))*2.0/2048.0));return .22+.78*a/9.0;}
@@ -299,11 +316,18 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
  if(uSurface>3.5&&abs(N.z)>.8){float row=floor(vW.y*6.0),fy=fract(vW.y*6.0),fx=fract(vW.x*1.35+row*.37),seam=min(min(fy,1.0-fy),min(fx,1.0-fx));base*=.96+.07*noise(vec3(row,0,0));base*=mix(.72,1.0,smoothstep(.0,max(.005,fwidth(seam)*1.2),seam));}}
 
 
+ if(uSurface>2.5&&uSurface<3.5){
+   vec2 uv=vW.xy+vW.z*vec2(.37,-.29);float visible=1.0-smoothstep(.35,2.5,max(fwidth(uv.x),fwidth(uv.y))*400.0);
+   float fine=fleece(uv*1800.0),loft=fleece(uv*550.0);
+   base*=.87+visible*(.20*fine+.12*loft);
+   N=normalize(N+visible*.40*vec3(fleece(uv*1800.0+vec2(17.0,3.0))-.5,fleece(uv*1800.0+vec2(5.0,29.0))-.5,0.0));
+ }
  float nl=max(dot(N,uKey),0.0),nv=max(dot(N,V),.001),sh=shade(N);vec3 H=normalize(uKey+V);float nh=max(dot(N,H),0.0),vh=max(dot(V,H),0.0);
  float rough=clamp(sqrt(2.0/(uShine+2.0)),.12,.95),a=rough*rough,a2=a*a,den=nh*nh*(a2-1.0)+1.0,D=a2/(3.14159265*den*den+.0001),k=(rough+1.0)*(rough+1.0)/8.0,G=nv/(nv*(1.0-k)+k)*nl/(nl*(1.0-k)+k);
  vec3 F=mix(vec3(.035),vec3(.25),clamp(uSpec*.25,0.0,.6));F=F+(1.0-F)*pow(1.0-vh,5.0);vec3 spec=D*G*F/(4.0*nv*max(nl,.001));
  float hemi=.5+.5*N.z;vec3 ambient=mix(uGround,uSky,hemi);float fill=max(dot(N,uFill),0.0);
  vec3 col=base*(ambient+vec3(1.0,.97,.92)*nl*sh*1.35+vec3(.52,.63,.78)*fill*.22)+spec*nl*sh*min(1.0,uSpec)*.75;
+ if(uSurface>2.5&&uSurface<3.5)col+=base*.18*pow(1.0-nv,2.5);
  col=mix(col,base*1.8,uEmit);col=mix(col,uFadeTo,uFade);col=aces(col*1.15);gl_FragColor=vec4(pow(col,vec3(1.0/2.2))*uAlpha,uAlpha);}`;
   const DEPTH_VS=`attribute vec3 aPos;uniform mat4 uPV,uModel;void main(){gl_Position=uPV*uModel*vec4(aPos,1.0);}`;
   const DEPTH_FS=`precision highp float;void main(){vec4 d=fract(gl_FragCoord.z*vec4(16777216.0,65536.0,256.0,1.0));d-=d.xxyz*vec4(0.0,1.0/256.0,1.0/256.0,1.0/256.0);gl_FragColor=d*(256.0/255.0);}`;

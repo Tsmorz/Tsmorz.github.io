@@ -24,23 +24,6 @@ description: Tony Smoragiewicz – robotics software engineer at Agile Robots wo
     </div>
     <img class="hero-photo" src="{{ site.author.photo | relative_url }}" alt="Portrait of Tony Smoragiewicz">
   </div>
-  {%- assign spotlight = site.data.projects | where: "name", site.data.home.featured.project | first -%}
-  {%- if spotlight %}
-  <div class="wrap home-featured-wrap">
-    <a class="home-featured" href="{{ spotlight.links.first.url | relative_url }}">
-      <img src="{{ spotlight.image | relative_url }}" alt="{{ spotlight.image_alt }}" width="960" height="640" decoding="async">
-      <div><span class="hero-eyebrow">{{ site.data.home.featured.label }}</span><h2>{{ spotlight.name }}</h2><p>{{ site.data.home.featured.blurb }}</p><span class="home-featured-action">{{ site.data.home.featured.action }} <span aria-hidden="true">→</span></span></div>
-    </a>
-  </div>
-  {%- endif %}
-  <nav class="wrap home-explore" aria-label="{{ site.data.home.explore_label }}">
-    <span class="hero-eyebrow">{{ site.data.home.explore_label }}</span>
-    <div class="home-grid">
-      {%- for x in site.data.home.explore %}
-      <article class="card"><h3><a href="{{ x.url | relative_url }}">{{ x.name }}</a></h3><p>{{ x.blurb }}</p></article>
-      {%- endfor %}
-    </div>
-  </nav>
 </section>
 
 <script src="{{ '/assets/js/marker.js' | relative_url }}?v={{ site.time | date: '%s' }}"></script>
