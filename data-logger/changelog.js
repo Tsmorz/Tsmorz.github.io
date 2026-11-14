@@ -8,6 +8,64 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-14-controller-reliability",
+    date: "2026-11-14",
+    firmware: "next",
+    title: "Controller health, hardware profiles and dependable stopping",
+    items: [
+      "Actuator tests stop when their controlling connection leaves or stops renewing its lease. Stop bypasses the playback queue, and the page shows device-reported command outcomes.",
+      "Both dashboards show board health and export diagnostics. Hardware profiles save drive ceilings, servo limits and joystick calibration on the board, with wiring identified by the firmware.",
+      "Controllers monitor stalled IMU and microphone streams and attempt bounded recovery. An optional endurance test checks streaming and finite haptics, reconnects and selected firmware updates; hardware validation remains to be run.",
+    ],
+  },
+  {
+    id: "2026-11-14-teleop-links",
+    date: "2026-11-14",
+    title: "USB and ESB teleoperation firmware",
+    items: ["A separate teleoperation build supports direct USB controllers or a spare XIAO as an ESB receiver. The controllers target 416 Hz motion streaming and finite TacHammer feedback, with expired commands dropped and actuator-start timing reported. It is built and host-tested; radio latency and actuator response still need a hardware run. The regular Bluetooth image is unchanged."],
+  },
+  {
+    id: "2026-11-14-interaction-effects",
+    date: "2026-11-14",
+    firmware: "next",
+    title: "Physical interaction effects sampler",
+    items: ["Recording boards now use the Drake for haptics, with ERM playback removed. Preview friction, a stronger single impact, and deep rumble at a 70% setting with waveform headroom. The labelled sampler records each response and saves the waveforms for replay. Haptography can convert a selected span to a Drake WAV and play or stop it on the connected board. Recording firmware also restores the distance sensor after warm updates."],
+  },
+  {
+    id: "2026-11-14-texture-recording",
+    date: "2026-11-14",
+    firmware: "next",
+    title: "Texture recording and haptic replay",
+    items: [
+      "A separate recording firmware streams motion, microphone audio and distance readings over USB. Recordings can be replayed through the TacHammer and ERM while the sensors measure their response.",
+      "A browser recorder organises takes by surface and dataset, with audio replay, spectra, recording scores and session export.",
+    ],
+  },
+  {
+    id: "2026-11-14-erm-bringup",
+    date: "2026-11-14",
+    firmware: "next",
+    title: "Gentle actuator tests for recording boards",
+    items: ["Recording boards support short ERM-only pulses at 1–100% drive, defaulting to 10%, with a 500 ms duration limit and up to five pulses at one pulse per second. Repeated commands no longer replay an actuator, and identification starts with a separate 30% drive ceiling."],
+  },
+  {
+    id: "2026-11-14-usb-startup",
+    date: "2026-11-14",
+    firmware: "next",
+    title: "More reliable USB startup",
+    items: ["Boards prepare USB power before starting the IMU and microphone, preventing repeated restarts during sensor startup."],
+  },
+  {
+    id: "2026-11-11-tracking-leds",
+    date: "2026-11-11",
+    firmware: "next",
+    title: "Tracking LEDs",
+    items: [
+      "Settings › Tracking LEDs switches a controller's infrared LEDs on and off and sets how bright they are, for a camera to follow. Each board keeps its own, and they stay as bright as the battery runs down.",
+      "Sync all boards copies the level; each board keeps its LEDs on or off.",
+    ],
+  },
+  {
     id: "2026-11-10-info-keys",
     date: "2026-11-10",
     title: "Info keys' ring sits round the ⓘ",

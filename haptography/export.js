@@ -114,6 +114,8 @@ export function sessionFiles(raw, session, take, extra = {}, summary = null) {
     bad_packets: session.bad,
     written: { imu: imu.t_us.length, mic_blocks: mic.blocks.length / 4, tof: tof.t_us.length },
     device_stats: session.stats.at(-1) ?? null,
+    ...(session.health && { health: session.health }),
+    ...(session.profile && { profile: session.profile }),
     ...extra,
   };
   files["info.json"] = JSON.stringify(infoJson, null, 2) + "\n";
@@ -141,4 +143,17 @@ export function timeFromFolderName(name) {
   if (!m) return null;
   const [, y, mo, d, h, mi, s] = m.map(Number);
   return new Date(y, mo - 1, d, h, mi, s).toISOString();
+}
+
+/** Group imported files by session directory, including browsers that omit relative paths. */
+export function sessionFolders(files) {
+  const folders = new Map();
+  for (const file of files) {
+    const path = file.webkitRelativePath || file.name;
+    const slash = path.lastIndexOf("/");
+    const dir = slash < 0 ? "" : path.slice(0, slash);
+    if (!folders.has(dir)) folders.set(dir, {});
+    folders.get(dir)[file.name] = file;
+  }
+  return [...folders.entries()].filter(([, files]) => files["raw.bin"]);
 }

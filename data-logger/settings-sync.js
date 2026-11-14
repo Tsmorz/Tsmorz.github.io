@@ -1,7 +1,7 @@
 // Settings › Sync all boards: copies the selected board's saved settings (mouse speed, joystick
-// curve, IMU ranges, wake on motion) to another board. Each board's own choices stay out of it:
-// whether its mouse is on, its clock role (only one board is the source) and its thermometer offset
-// (each sensor's is its own). Pure, so tests/dashboard/settings-sync.test.mjs runs it in Node.
+// curve, IMU ranges, wake on motion, tracking LED level) to another board. Each board's own choices
+// stay out of it: whether its mouse and its tracking LEDs are on, its clock role (only one board is
+// the source) and its thermometer offset (each sensor's is its own). Pure, so tests/dashboard/settings-sync.test.mjs runs it in Node.
 
 const SYNCED = [
   {
@@ -12,6 +12,11 @@ const SYNCED = [
   { label: "joystick curve", read: (board) => board.joystickTuning, write: (board, tuning) => board.setJoystickTuning(tuning) },
   { label: "IMU ranges", read: (board) => board.imuRanges, write: (board, ranges) => board.setImuRanges(ranges), blockable: true },
   { label: "wake on motion", read: (board) => board.motionWake, write: (board, enabled) => board.setMotionWake(enabled) },
+  {
+    label: "tracking LED level",
+    read: (board) => board.irLeds?.levelPercent,
+    write: (board, levelPercent) => board.setIrLeds({ on: board.irLeds.on, levelPercent }),
+  },
 ];
 
 const known = (value) => value !== undefined && value !== null;

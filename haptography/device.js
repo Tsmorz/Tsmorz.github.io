@@ -1,9 +1,9 @@
 // Acknowledged commands on the recording device's existing serial stream. No serial port is
 // opened here: the recorder owns it, and forwards decoded ACK/PLAYBACK packets to this client.
-import { ACK, PLAYBACK, INFO_TACHAMMER_OK, encodePacket } from "./wire.js";
-import { packClip, GRID, bandpass, interpolate } from "./haptics-core.js";
+import { ACK, PLAYBACK, INFO_TACHAMMER_OK, INFO_ERM_OK, encodePacket } from "./wire.js";
+import { packClip, GRID, bandpass, interpolate, peak, driveSafe } from "./haptics-core.js";
 
-export const COMMAND = { begin: 0x41, data: 0x42, play: 0x43, waveform: 0x44, stop: 0x46 };
+export const COMMAND = { begin: 0x41, data: 0x42, play: 0x43, waveform: 0x44, effect: 0x45, stop: 0x46, setProfile: 0x48 };
 const STATUS = ["ok", "bad command", "no actuator", "busy", "not ready", "too long", "gap in upload", "bad value", "device failure"];
 export const abortError = () => new DOMException("Stopped", "AbortError");
 export function checkAbort(signal) { if (signal?.aborted) throw abortError(); }
@@ -23,11 +23,22 @@ function body(size, fill) {
   return bytes;
 }
 
+export async function openBoardPort(serial) {
+  const known = (await serial.getPorts()).filter(port => {
+    const info = port.getInfo();
+    return info.usbVendorId === 0x2886 && info.usbProductId === 0x0068;
+  });
+  const port = known.length === 1 ? known[0] : await serial.requestPort({ filters: [{ usbVendorId: 0x2886, usbProductId: 0x0068 }] });
+  await port.open({ baudRate: 1000000, bufferSize: 1 << 20 });
+  return port;
+}
+
+
 export class DeviceClient {
   constructor(write, { timeout = 800, attempts = 3 } = {}) {
     this.write = write; this.timeout = timeout; this.attempts = attempts;
     this.number = 0; this.tag = 0; this.waiters = new Set(); this.closed = false;
-    this.capture = null;
+    this.capture = null; this.commandPending = false; this.playing = false; this.stopping = null; this.playAbort = null;
   }
 
   feed(packet) {
@@ -57,45 +68,63 @@ export class DeviceClient {
   async command(type, bytes = new Uint8Array(), signal) {
     checkAbort(signal);
     if (this.closed) throw new Error("Device disconnected.");
-    const number = this.number++ & 0xffff, packet = encodePacket(type, number, bytes);
-    for (let attempt = 0; attempt < this.attempts; attempt++) {
-      checkAbort(signal);
-      const pending = this.wait((p) => p.type === ACK && p.body.command_type === type && p.body.command_number === number, this.timeout, signal);
-      try {
-        await this.write(packet);
-        const ack = await pending.promise;
-        if (ack.status) throw new Error(`Device refused: ${STATUS[ack.status] ?? ack.status}.`);
-        return ack;
-      } catch (err) {
-        pending.cancel();
-        if (signal?.aborted || this.closed || err.message.startsWith("Device refused") || attempt + 1 === this.attempts) throw err;
+    if (this.commandPending) throw new Error("Another command is waiting for the board.");
+    this.commandPending = true;
+    try {
+      const number = this.number++ & 0xffff, packet = encodePacket(type, number, bytes);
+      for (let attempt = 0; attempt < this.attempts; attempt++) {
+        checkAbort(signal);
+        const pending = this.wait((p) => p.type === ACK && p.body.command_type === type && p.body.command_number === number, this.timeout, signal);
+        try {
+          await this.write(packet);
+          const ack = await pending.promise;
+          if (ack.status) throw new Error(`Device refused: ${STATUS[ack.status] ?? ack.status}.`);
+          return ack;
+        } catch (err) {
+          pending.cancel();
+          if (err.name === "AbortError" || signal?.aborted || this.closed || err.message.startsWith("Device refused") || attempt + 1 === this.attempts) throw err;
+        }
       }
-    }
+    } finally { this.commandPending = false; }
   }
 
-  async upload(drive, info, signal, progress = () => {}) {
-    if (info?.flags != null && !(info.flags & INFO_TACHAMMER_OK)) throw new Error("The TacHammer output is not ready.");
-    const clip = packClip(drive, info?.haptic_rate_hz);
-    if (!(info?.clip_max_samples > 0) || clip.samples > info.clip_max_samples) {
+  async upload(drive, erm, info, signal, progress = () => {}) {
+    if (info?.flags != null && (!(info.flags & INFO_TACHAMMER_OK) || (erm && !(info.flags & INFO_ERM_OK)))) throw new Error("The selected actuator output is not ready.");
+    if (!driveSafe(drive) || (erm && (peak(erm) > 0.7 || erm.some(v => !Number.isFinite(v) || v < 0)))) throw new Error("Reduce the drive: preview exceeds the 70% peak or sustained drive limit.");
+    const rate = info?.haptic_rate_hz, step = info?.erm_step_us;
+    const clip = packClip(drive, erm, rate, step);
+    if (!(info?.clip_max_samples > 0) || clip.samples > info.clip_max_samples || clip.levels.length > info.clip_max_erm) {
       throw new Error("This signal exceeds the device's clip capacity. Shorten the selection or duration.");
     }
-    // Protocol 3 retains the second track count; TacHammer-only firmware requires zero.
-    await this.command(COMMAND.begin, body(8, (v) => { v.setUint32(0, clip.samples, true); v.setUint32(4, 0, true); }), signal);
-    for (let at = 0; at < clip.pcm.length; at += 448) {
-      checkAbort(signal);
-      const part = clip.pcm.subarray(at, at + 448);
-      await this.command(COMMAND.data, body(5 + part.length, (v, b) => { v.setUint8(0, 0); v.setUint32(1, at / 2, true); b.set(part, 5); }), signal);
-      progress((at + part.length) / clip.pcm.length);
+    await this.command(COMMAND.begin, body(8, (v) => { v.setUint32(0, clip.samples, true); v.setUint32(4, clip.levels.length, true); }), signal);
+    const total = clip.pcm.length + clip.levels.length;
+    let sent = 0;
+    for (const [track, bytes, stride] of [[0, clip.pcm, 2], [1, clip.levels, 1]]) {
+      for (let at = 0; at < bytes.length; at += 448) {
+        checkAbort(signal);
+        const part = bytes.subarray(at, at + 448);
+        await this.command(COMMAND.data, body(5 + part.length, (v, b) => { v.setUint8(0, track); v.setUint32(1, at / stride, true); b.set(part, 5); }), signal);
+        sent += part.length; progress(sent / total);
+      }
     }
     return clip;
   }
 
-  async play(drive, info, signal, status = () => {}) {
+  async play(drive, erm, info, signal, status = () => {}) {
+    if (this.playing || this.stopping) throw new Error("A haptic playback is already in progress.");
+    this.playing = true;
+    const abort = this.playAbort = new AbortController();
+    const cancel = () => abort.abort();
+    signal?.addEventListener("abort", cancel, { once: true });
+    if (signal?.aborted) cancel();
+    const external = signal;
+    signal = abort.signal;
     this.capture = [];
     let pending;
     try {
+      await this.command(COMMAND.stop, new Uint8Array(), signal);
       status("Uploading", 0);
-      const clip = await this.upload(drive, info, signal, (p) => status("Uploading", p));
+      const clip = await this.upload(drive, erm, info, signal, (p) => status("Uploading", p));
       await pause(300, signal); // pre-roll for the measurement filter
       const tag = this.tag = (this.tag + 1) & 0xffff;
       pending = this.wait((p) => p.type === PLAYBACK && p.body.kind === 2 && p.body.id === tag && p.body.outcome !== 1,
@@ -112,13 +141,26 @@ export class DeviceClient {
       let at = 0; for (const b of chunks) { raw.set(b, at); at += b.length; }
       return { report, raw };
     } finally {
-      pending?.cancel(); this.capture = null;
+      pending?.cancel();
+      external?.removeEventListener("abort", cancel);
+      this.capture = null;
+      try { if (!this.closed) await this.stop(); }
+      finally { this.playing = false; this.playAbort = null; }
     }
   }
 
-  stop() { return this.command(COMMAND.stop); }
+  stop() {
+    if (this.stopping) return this.stopping;
+    this.playAbort?.abort();
+    for (const waiter of [...this.waiters]) waiter.reject(abortError());
+    this.stopping = (async () => {
+      while (this.commandPending) await new Promise(resolve => setTimeout(resolve, 0));
+      return this.command(COMMAND.stop);
+    })().finally(() => { this.stopping = null; });
+    return this.stopping;
+  }
   close() {
-    this.closed = true;
+    this.closed = true; this.playAbort?.abort();
     for (const w of [...this.waiters]) w.reject(new Error("Device disconnected."));
     this.capture = null;
   }

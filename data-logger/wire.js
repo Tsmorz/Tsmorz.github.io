@@ -21,6 +21,7 @@ export const TELEMETRY_TEMPERATURE_OFFSET = "6f524c01-000b-4a3c-9d21-1122334455a
 export const TELEMETRY_IMU_CALIBRATION = "6f524c01-000c-4a3c-9d21-1122334455aa";
 export const TELEMETRY_ACTUATORS = "6f524c01-000d-4a3c-9d21-1122334455aa";
 export const TELEMETRY_JOYSTICK = "6f524c01-000e-4a3c-9d21-1122334455aa";
+export const TELEMETRY_IR_LEDS = "6f524c01-000f-4a3c-9d21-1122334455aa";
 export const DATA_SERVICE = "6f524c03-0001-4a3c-9d21-1122334455aa";
 export const DATA_IMU = "6f524c03-0002-4a3c-9d21-1122334455aa";
 export const DATA_ENVELOPE = "6f524c03-0003-4a3c-9d21-1122334455aa";
@@ -551,3 +552,40 @@ export function decodeJoystickTuning(view) {
   if (view.byteLength !== 6 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
   return { deadzonePercent: view.getUint8(1), slowGain: view.getUint16(2, true), fastGain: view.getUint16(4, true) };
 }
+
+// The IR tracking LEDs (struct dashboard_ir_leds, dashboard_wire.h; src/ir_led_drive.h): on or off
+// and a level, which the board holds as a steady average current whatever the cell's charge.
+export const IR_LEDS = Object.freeze({
+  count: 5, // IR_LED_COUNT
+  fullAverageMa: 60, // IR_LED_FULL_AVERAGE_MA, each LED at 100%
+  levelMinPercent: 1, // IR_LED_LEVEL_MIN_PERCENT
+  levelMaxPercent: 100, // IR_LED_LEVEL_MAX_PERCENT
+  levelDefaultPercent: 50, // IR_LED_LEVEL_DEFAULT_PERCENT
+});
+const IR_LEDS_ON = 1; // DASHBOARD_IR_LEDS_ON
+
+/** Whether the firmware would take these settings (ir_led_settings_valid()). */
+export function irLedsValid({ on, levelPercent }) {
+  return typeof on === "boolean" && Number.isInteger(levelPercent) &&
+    levelPercent >= IR_LEDS.levelMinPercent && levelPercent <= IR_LEDS.levelMaxPercent;
+}
+
+/** Encodes settings as dashboard_decode_ir_leds() expects; null for ones it refuses. */
+export function encodeIrLeds(settings) {
+  if (!irLedsValid(settings)) return null;
+  return Uint8Array.of(PROTOCOL_VERSION, settings.on ? IR_LEDS_ON : 0, settings.levelPercent);
+}
+
+/** Decodes the board's settings, or null if they are not that. */
+export function decodeIrLeds(view) {
+  if (view.byteLength !== 3 || view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  return { on: (view.getUint8(1) & IR_LEDS_ON) !== 0, levelPercent: view.getUint8(2) };
+}
+
+/** What all the LEDs draw from the cell on average at a level, in mA. */
+export const irLedsCellMa = (levelPercent) => (levelPercent * IR_LEDS.fullAverageMa * IR_LEDS.count) / 100;
+
+export const TELEMETRY_CONTROL = "6f524c01-0010-4a3c-9d21-1122334455aa";
+
+export const TELEMETRY_HEALTH = "6f524c01-0011-4a3c-9d21-1122334455aa";
+export const TELEMETRY_PROFILE = "6f524c01-0012-4a3c-9d21-1122334455aa";

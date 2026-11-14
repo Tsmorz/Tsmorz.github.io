@@ -118,6 +118,7 @@ tasks:
     desc: Check haptic signal processing, actuator commands, measurement validation and session exports (Node, no hardware)
     cmds:
       - script/test-haptography
+      - node --test tests/haptography/*.test.mjs
 
   shot:
     desc: "Screenshot a page in headless Chrome and report its errors (task shot -- /tag-tracker/ --click '#emptyDemo' --wait 8000; options in script/shot)"

@@ -73,11 +73,21 @@ export function recordingTarget(analysis, t0, t1, axis = "principal") {
   if (!Number.isFinite(t0) || !Number.isFinite(t1) || t0 < t[0] || t1 > t.at(-1) || t1 - t0 < 0.05) {
     throw new Error("Select at least 0.05 s inside the recording.");
   }
+  for (let i = 1; i < t.length; i++) {
+    if (t[i] < t0 || t[i - 1] > t1) continue;
+    if (!Number.isFinite(t[i]) || !Number.isFinite(t[i - 1]) || t[i] <= t[i - 1] || t[i] - t[i - 1] > 0.01) throw new Error("The selected span has an IMU gap or invalid timestamps.");
+    for (let at = (i - 1) * 3; at < (i + 1) * 3; at++) if (!Number.isFinite(analysis.imu.accel[at])) throw new Error("The selected span has invalid IMU samples.");
+  }
   const query = Float64Array.from({ length: Math.floor((t1 - t0) * GRID) }, (_, i) => t0 + i / GRID);
-  const cols = [0, 1, 2].map((c) => bandpass(interpolate(t, analysis.imu.accel, query, 3, c), GRID, 20, 600));
+  const cols = [0, 1, 2].map(c => {
+    const x = interpolate(t, analysis.imu.accel, query, 3, c), mean = x.reduce((sum, v) => sum + v, 0) / x.length;
+    return bandpass(Float64Array.from(x, v => v - mean), GRID, 20, 600);
+  });
   const values = Float64Array.from({ length: query.length * 3 }, (_, i) => cols[i % 3][Math.floor(i / 3)]);
   const direction = axis === "principal" ? principalAxis(values) : [0, 1, 2].map((c) => c === Number(axis) ? 1 : 0);
-  return { target: project(values, direction), axis: direction };
+  const target = project(values, direction);
+  if (rms(target) < 0.0005) throw new Error("Too little vibration in this span; select contact with a surface.");
+  return { target, axis: direction };
 }
 
 export function makeSignal({ kind, seconds = 1, frequency = 150, endFrequency = 400, width = 5, seed = 17 }) {
@@ -109,7 +119,8 @@ export function validateModel(m) {
       m.freqs[0] < 0 || m.freqs.at(-1) > GRID / 2 || m.freqs.some((f, i) => i && f <= m.freqs[i - 1]) ||
       !Number.isInteger(m.delay) || m.delay < 0 || m.delay > GRID ||
       m.axis?.length !== 3 || !m.axis.every(Number.isFinite) || Math.abs(Math.hypot(...m.axis) - 1) > 0.02 ||
-      !m.coherence.every((v) => v >= 0 && v <= 1.001)) {
+      !m.coherence.every((v) => v >= 0 && v <= 1.001) ||
+      (m.erm_gain_g != null && !(Number.isFinite(m.erm_gain_g) && m.erm_gain_g > 0))) {
     throw new Error("Invalid actuator profile; expected the 1600 Hz model.json format.");
   }
   return m;
@@ -154,24 +165,21 @@ export function envelope(x, frame = 32) {
   return Float64Array.from({ length: Math.floor(x.length / frame) }, (_, i) => rms(x.subarray(i * frame, (i + 1) * frame)));
 }
 
-// Older experiments can remain in the library, but must never be played as if their
-// removed output were a TacHammer. Missing output is valid for TacHammer-only settings.
-export function isTacHammer(settings, result = null) {
-  return (settings?.output == null || settings.output === "hammer") &&
-    (result?.settings?.output == null || result.settings.output === "hammer") && result?.erm == null;
-}
-
 export function generate(raw, settings, model = null) {
-  if (!isTacHammer(settings)) throw new Error("Only TacHammer playback is supported.");
-  const { low = 20, high = 400, attack = 20, release = 20, strength = 40, regularization = 0.05 } = settings;
+  const { low = 20, high = 400, attack = 20, release = 20, strength = 40, ermShare = 0, output = "hammer", regularization = 0.05 } = settings;
   const target = fade(bandpass(raw, GRID, low, high), attack / 1000, release / 1000);
-  const limit = clamp(strength / 100, 0, 1);
+  const limit = clamp(strength / 100 * 0.95, 0, PREVIEW_PEAK);
   const calibrated = Boolean(model && settings.kind === "recording");
   const rawPeak = peak(target) || 1;
-  const unbounded = calibrated ? inverseDrive(target, model, regularization) : Float64Array.from(target, (v) => v * limit / rawPeak);
+  let unbounded = calibrated ? inverseDrive(target, model, regularization) : Float64Array.from(target, (v) => v * limit / rawPeak);
+  if (output === "erm") unbounded = new Float64Array(target.length);
   const clipped = unbounded.reduce((s, v) => s + (Math.abs(v) > limit + 1e-8), 0) / Math.max(1, unbounded.length);
-  const drive = Float64Array.from(unbounded, (v) => clamp(v, -limit, limit));
-  return { target, drive, clipped, calibrated, predicted: model ? predict(drive, model) : null };
+  const drive = boundDrive(Float64Array.from(unbounded, (v) => clamp(v, -limit, limit)), limit);
+  const env = envelope(target, 16), smooth = env.length > 1 ? bandpass(env, 100, 0, 8) : env;
+  const share = output === "hammer" ? 0 : output === "erm" ? 1 : ermShare / 100;
+  const gain = model?.erm_gain_g || peak(smooth) || 1;
+  const erm = share ? Float64Array.from(smooth, (v) => clamp(share * v / gain, 0, limit)) : null;
+  return { target, drive, erm, clipped, calibrated, predicted: model ? predict(drive, model) : null };
 }
 
 export function refine(drive, target, measured, model, gain = 0.6, regularization = 0.05, limit = 1) {
@@ -239,23 +247,24 @@ export function identify(takes) {
   });
   const model = { grid_hz: GRID, freqs: Array.from(xx, (_, k) => k * GRID / n), h_re: Array.from(xyR, (v, k) => v / (xx[k] + 1e-30)),
     h_im: Array.from(xyI, (v, k) => v / (xx[k] + 1e-30)), coherence: Array.from(xx, (_, k) => clamp((xyR[k] ** 2 + xyI[k] ** 2) / (xx[k] * yy[k] + 1e-30), 0, 1)),
-    delay, axis, level_gains: gains };
+    delay, axis, level_gains: gains, erm_gain_g: null, erm_rise_s: null };
   if (rms(strongest.vibration) < 1e-4 || !model.freqs.some((f, i) => f > 20 && f < 400 && model.coherence[i] > 0.5)) {
     throw new Error("No reliable actuator response. Check the actuator, mounting and IMU, then measure again.");
   }
   return validateModel(model);
 }
 
-export function packClip(drive, rate = 16000) {
-  if (!(rate >= GRID && rate <= 48000)) throw new Error("Unsupported actuator sample rate.");
+export function packClip(drive, erm, rate = 16000, ermStepUs = 10000) {
+  if (!(rate >= GRID && rate <= 48000 && ermStepUs >= 1000 && ermStepUs <= 1000000)) throw new Error("Unsupported actuator sample rate.");
   const samples = resample(drive, GRID, rate);
   const pcm = new Uint8Array(samples.length * 2), view = new DataView(pcm.buffer);
   samples.forEach((v, i) => view.setInt16(i * 2, Math.round(clamp(v) * 30000), true));
-  return { pcm, samples: samples.length };
+  const levels = erm ? Uint8Array.from(resample(erm, 100, 1e6 / ermStepUs), (v) => Math.round(clamp(v, 0, 1) * 127)) : new Uint8Array();
+  return { pcm, levels, samples: samples.length };
 }
 
 export function wav(drive, rate = 16000) {
-  const { pcm } = packClip(drive, rate);
+  const { pcm } = packClip(drive, null, rate);
   const bytes = new Uint8Array(44 + pcm.length), v = new DataView(bytes.buffer);
   const str = (at, s) => Array.from(s).forEach((c, i) => v.setUint8(at + i, c.charCodeAt(0)));
   str(0, "RIFF"); v.setUint32(4, 36 + pcm.length, true); str(8, "WAVE"); str(12, "fmt "); v.setUint32(16, 16, true);
@@ -265,18 +274,40 @@ export function wav(drive, rate = 16000) {
 }
 
 // Explicitly simulated actuator for the page's demo and tests: a damped resonance, 7.5 ms
-// delay and soft stops.
-export function demoVibration(drive) {
+// delay, soft stops, and an ERM carrier with a 50 ms envelope response.
+export function demoVibration(drive, erm = null) {
   const axis = [0.3, 0.2, Math.sqrt(0.87)], out = new Float64Array(drive.length * 3);
   const w = 2 * Math.PI * 150 / GRID, decay = Math.exp(-w * 0.22);
   const a1 = 2 * decay * Math.cos(w), a2 = -decay * decay, gain = 0.12;
-  let y1 = 0, y2 = 0;
+  let y1 = 0, y2 = 0, level = 0;
   for (let i = 0; i < drive.length; i++) {
     const u = i >= 12 ? drive[i - 12] : 0;
     const y = a1 * y1 + a2 * y2 + gain * u;
     y2 = y1; y1 = y;
-    const v = 0.65 * Math.tanh(y / 0.65);
+    level += (Math.max(0, erm?.[Math.floor(i / 16)] ?? 0) - level) * (1 - Math.exp(-1 / (GRID * 0.05)));
+    const v = 0.65 * Math.tanh(y / 0.65) + level * 0.4 * Math.sin(2 * Math.PI * 160 * i / GRID);
     for (let c = 0; c < 3; c++) out[3 * i + c] = v * axis[c];
   }
   return out;
+}
+
+// Keep the bench's tested peak headroom and 100 ms sustained-drive budget in the studio.
+export const PREVIEW_PEAK = 0.70 * 0.95;
+export const PREVIEW_RMS = 7000 / 30000;
+export function windowRms(x, rate = GRID) {
+  const width = Math.min(x.length, Math.round(rate * 0.1));
+  let energy = 0, maximum = 0;
+  for (let i = 0; i < x.length; i++) {
+    energy += x[i] ** 2;
+    if (i >= width) energy -= x[i - width] ** 2;
+    maximum = Math.max(maximum, energy);
+  }
+  return Math.sqrt(maximum / (width || 1));
+}
+export function driveSafe(x) {
+  return x?.length > 0 && x.every(Number.isFinite) && peak(x) <= PREVIEW_PEAK + 1e-8 && windowRms(x) <= PREVIEW_RMS + 1e-8;
+}
+export function boundDrive(x, limit = PREVIEW_PEAK) {
+  const gain = Math.min(1, limit / (peak(x) || 1), PREVIEW_RMS / (windowRms(x) || 1));
+  return Float64Array.from(x, v => v * gain);
 }

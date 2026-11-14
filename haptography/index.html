@@ -31,7 +31,7 @@ layout: null
 {% endfor %}
 </nav>
   <span class="storage-note" id="storage-note" role="status">Saved in this browser</span>
-  <button id="stop-actuators" class="stop-key" type="button" disabled>{{ site.data.haptography.labels.stop }} <kbd>Esc</kbd></button>
+  <button id="stop-actuators" class="stop-key" type="button" disabled>Stop actuators <kbd>Esc</kbd></button>
   <button class="theme-toggle" id="theme" type="button" role="switch" aria-checked="false" aria-label="Dark theme" title="Toggle color theme">
     <span class="tt-opt tt-light" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.4"/><path d="M12 2.5v1.5M12 21.5V20M2.5 12H4M21.5 12H20M5.3 5.3l1.1 1.1M18.7 5.3l-1.1 1.1M5.3 18.7l1.1-1.1M18.7 18.7l-1.1-1.1"/></svg></span>
     <span class="tt-opt tt-dark" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path transform="translate(1.3 -1.3)" d="M5.6 5.6A9 9 0 0 0 18.4 18.4A12 12 0 0 1 5.6 5.6Z"/></svg></span>
@@ -89,10 +89,13 @@ layout: null
       <div class="meter"><span>Dropped</span><b id="m-drop">—</b></div>
       <div class="meter"><span>Board</span><b id="m-board">—</b></div>
     </div>
-    <div class="chips" style="margin-top: 8px" aria-label="{{ site.data.haptography.labels.diagnostics }}">
+    <div class="chips" style="margin-top: 8px" aria-label="Sensors and actuators">
       <span class="chip" id="s-imu">IMU</span><span class="chip" id="s-mic">Mic</span><span class="chip" id="s-tof">ToF</span>
-      <span class="chip" id="s-tach">TacHammer</span>
+      <span class="chip" id="s-tach">Hammer</span><span class="chip" id="s-erm">ERM</span>
     </div>
+    <p id="device-health" role="status"></p>
+    <button id="export-diagnostics" type="button" disabled>Export diagnostics</button>
+    <div id="hardware-profile"></div>
     <ul class="log" id="messages" aria-label="Board messages"></ul>
     </details>
   </section>
@@ -218,6 +221,7 @@ layout: null
         <h3>Signal source</h3>
         <label for="signal-kind">Create from</label><select id="signal-kind" name="kind">{% for source in site.data.haptography.sources %}<option value="{{ source.id }}"{% if source.id == 'sine' %} selected{% endif %}>{{ source.name }}</option>{% endfor %}</select>
         <p id="target-source" class="muted">A test signal; choose a recording in Inspect to reproduce a texture.</p>
+        <label for="signal-output">Send to</label><select id="signal-output" name="output"><option value="hammer">TacHammer</option><option value="erm">ERM envelope</option><option value="both">TacHammer + ERM</option></select>
         <div class="presets" aria-label="Signal presets">{% for preset in site.data.haptography.presets %}<button type="button" data-preset="{{ forloop.index0 }}">{{ preset.name }}</button>{% endfor %}</div>
         {% for control in site.data.haptography.controls %}
         <div class="signal-control" data-control="{{ control.id }}">
@@ -247,15 +251,14 @@ layout: null
         <div class="signal-tracks">
           <div class="track target-track"><div class="plot-head"><span id="target-heading">Source shape</span><span id="target-readout"></span></div><div class="plot studio-plot" id="plot-target"><canvas class="base"></canvas><canvas class="over"></canvas></div><div class="axis"><canvas id="target-axis"></canvas></div></div>
           <div class="track drive-track"><div class="plot-head"><span>TacHammer command <span class="unit">% full scale</span></span><span id="drive-readout"></span></div><div class="plot studio-plot" id="plot-drive"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
+          <div class="track" id="erm-plot-wrap" hidden><div class="plot-head"><span>ERM envelope <span class="unit">% full scale</span></span><span>One level per device step</span></div><div class="plot studio-plot small-plot" id="plot-erm"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
           <div class="track spectrum-track"><div class="plot-head"><span>Drive spectrum</span><span id="spectrum-band-label">Passband shaded</span></div><div class="plot studio-plot" id="plot-drive-spectrum"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
         </div>
         <div id="comparison-panel">
           <h3>Measurement <span id="measurement-kind" class="end">Not measured</span></h3>
           <div class="metrics"><div><b id="metric-band">—</b><span>Band error (dB)</span><small>Lower is better</small></div><div><b id="metric-envelope">—</b><span>Envelope match</span><small>Closer to 1 is better</small></div><div><b id="metric-rms">—</b><span>Relative RMS error</span><small>Lower is better</small></div></div>
-          <div class="comparison-plots">
-            <div class="comparison-track"><div class="plot-head"><span>Frequency-band comparison</span><span class="muted">Solid: target · dashed: measured</span></div><div class="plot studio-plot" id="plot-band-comparison"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
-            <div class="comparison-track"><div class="plot-head"><span>Vibration envelope (g RMS)</span><span class="muted">Target and measured</span></div><div class="plot studio-plot small-plot" id="plot-envelope"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
-          </div>
+          <div class="plot-head"><span>Frequency-band comparison</span><span class="muted">Solid: target · dashed: measured</span></div><div class="plot studio-plot" id="plot-band-comparison"><canvas class="base"></canvas><canvas class="over"></canvas></div>
+          <div class="plot-head"><span>Vibration envelope (g RMS)</span><span class="muted">Target and measured</span></div><div class="plot studio-plot small-plot" id="plot-envelope"><canvas class="base"></canvas><canvas class="over"></canvas></div>
           <p id="comparison-note" class="muted">Recordings are compared in physical units. Test signals can measure a response, but have no acceleration target to score.</p>
           <div class="row"><button type="button" id="refine-drive" disabled>Refine from measurement</button><button type="button" id="restore-best" disabled>Restore best round</button></div>
         </div>

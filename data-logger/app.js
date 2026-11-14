@@ -1,3 +1,6 @@
+import { runEndurance } from "./endurance.js";
+import { healthSummary, diagnostics, downloadDiagnostics } from "./device-health.js";
+import { bindProfileEditor } from "./profile-view.js";
 import { Board, DISPLAY_DECIMATION, ENVELOPE_SECONDS, TRACE_POINTS } from "./board.js";
 import { fitCanvas, hairline } from "./canvas.js";
 import { describeLatency, resultRow } from "./latency.js";
@@ -13,6 +16,7 @@ import { FACE_TOLERANCE_DEG } from "./imu-calibration.js";
 import { initSpeech, pushToTalk, renderSpeech } from "./speech-view.js";
 import { actuatorDialogOpen, initActuators, renderActuatorSummary, renderActuators } from "./actuator-view.js";
 import { initJoystick, joystickDialogOpen, renderJoystick, renderJoystickKey } from "./joystick-view.js";
+import { initIrLeds, renderIrLeds } from "./ir-leds-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
 import { kvGet, kvSet, openSpool } from "./storage.js";
 import {
@@ -30,6 +34,7 @@ import { moveBoard, parseSavedOrder, sortByOrder } from "./board-order.js";
 import { drawList, mixColors } from "./board-model.js";
 
 const $ = (id) => document.getElementById(id);
+let profileEditor = null;
 const ENVELOPE_FLOOR_DBFS = -80;
 // A tap's press and release can arrive together, so a press keeps the USER lamp lit at least this
 // long; short enough that the gap in a double press still shows (the lamp redraws every frame).
@@ -1291,6 +1296,7 @@ function renderUserLamps() {
 }
 
 function renderBoards() {
+  renderDeviceHealth();
   renderAwayRows();
   for (const board of boards.values()) if (board.shown) renderBoardRow(board);
   placeRows(); // a board's ID is known only once it has connected
@@ -1312,12 +1318,13 @@ function renderBoards() {
   if (actuatorDialogOpen()) renderActuators();
   renderJoystickKey();
   if (joystickDialogOpen()) renderJoystick();
+  renderIrLeds();
   renderSpeech();
 }
 setInterval(renderBoards, 250);
 
 setInterval(() => {
-  for (const board of boards.values()) board.tick();
+  for (const board of boards.values()) { board.tick(); if (board.streamsReady) board.refreshHealth().catch(() => {}); }
 }, 1000);
 
 function select(board) {
@@ -1885,6 +1892,7 @@ const FLUSH_MS = 2000;
 const ABANDONED_MS = 15000;
 const spoolLock = (id) => `recording:${id}`;
 const spoolReady = openSpool();
+spoolReady.then(({ durable }) => { recorder.durable = durable; });
 
 function holdLock(name) {
   let release = () => {};
@@ -1910,6 +1918,8 @@ function memberMeta(board, late, part) {
     name: `nrf-controller-${board.boardId}`,
     label: board.label,
     firmware: board.firmwareVersion,
+    ...(board.health && { health: board.health }),
+    ...(board.hardwareProfile && { hardware_profile: board.hardwareProfile }),
     imu_rate_hz: board.info.imuRateHz,
     gyro_dps_per_lsb: Math.round(board.info.gyroDpsPerLsb * 1e9) / 1e9,
     accel_g_per_lsb: Math.round(board.info.accelGPerLsb * 1e9) / 1e9,
@@ -1967,6 +1977,7 @@ function detachMember(member) {
   if (!board) return;
   for (const [stream, count] of Object.entries(gapCounts(board))) member.gaps[stream] += count - member.gapBase[stream];
   member.meta.imu_dropped_on_board_since_boot = board.info.imuDropped;
+  if (board.health) member.meta.health_at_stop = board.health;
   board.recording = null;
   member.board = null;
 }
@@ -1983,8 +1994,10 @@ function flushRecording() {
     try {
       await recorder.spool.append(recorder.spoolId, chunks);
       recorder.unflushed = [];
+      recorder.storageError = false;
     } catch (error) {
       recorder.unflushed = chunks;
+      recorder.storageError = true;
       setRecStatus(`Couldn't store the recording in this browser (${error.message}); it's kept in memory meanwhile.`, { bad: true });
     }
   });
@@ -2006,7 +2019,7 @@ async function startRecording() {
     setRecStatus(`Couldn't start: ${error.message}`, { bad: true });
     return;
   }
-  Object.assign(recorder, { active: true, startedAt, members: new Map(), retired: [], spool, spoolId: record.id, unflushed: [], releaseLock: holdLock(spoolLock(record.id)) });
+  Object.assign(recorder, { active: true, durable, storageError: false, startedAt, members: new Map(), retired: [], spool, spoolId: record.id, unflushed: [], releaseLock: holdLock(spoolLock(record.id)) });
   for (const board of members) joinRecording(board);
   recorder.flushTimer = setInterval(flushRecording, FLUSH_MS);
   offerReplay(null);
@@ -3268,6 +3281,7 @@ initCalibrate({ getBoard: () => selected, drawPose, drawBoardPicture, setStatus 
 initSpeech({ getBoard: () => selected, isRecording: () => recorder.active });
 initActuators({ getBoard: () => selected });
 initJoystick({ getBoard: () => selected });
+initIrLeds({ getBoard: () => selected, setStatus });
 initWhatsNew({ getBoards: () => [...boards.values()] });
 function showReplay(show) {
   if (show) $("panel-dialog").close(); // a session dropped on the page opens Replay from over it
@@ -3283,3 +3297,86 @@ renderBoards();
 renderMouse();
 renderLatency();
 showTappedBoard();
+
+
+profileEditor = bindProfileEditor($("hardware-profile"), {
+  save: async (profile, key) => {
+    const board = boards.get(key);
+    if (!board?.connected || board !== selected) throw Error("The selected board changed; reopen its profile");
+    return board.setHardwareProfile(profile);
+  },
+});
+function selectedHealth() {
+  const board = selected;
+  return healthSummary({ connected: Boolean(board?.connected), health: board?.health,
+    healthAgeMs: board?.healthReceivedMs === undefined ? null : performance.now() - board.healthReceivedMs,
+    rateHz: board?.rateHz ?? null, expectedHz: board?.info?.imuRateHz, lost: board?.imuGaps ?? 0,
+    clock: board?.clock, storage: recorder.storageError ? "error" : recorder.durable === false ? "memory" : null,
+    paused: Boolean(board?.download || board?.audioStream) });
+}
+function renderDeviceHealth() {
+  const summary = selectedHealth();
+  $("device-health").textContent = summary.text;
+  $("device-health").dataset.state = summary.state;
+  $("export-diagnostics").disabled = !selected;
+  profileEditor?.sync(selected?.hardwareProfile, selected?.key, Boolean(selected?.connected));
+}
+$("export-diagnostics").addEventListener("click", () => {
+  if (!selected) return;
+  downloadDiagnostics(diagnostics({ boardId: selected.boardId, health: selected.health, profile: selected.hardwareProfile,
+    summary: selectedHealth(), counters: { imuLost: selected.imuGaps, envelopeLost: selected.envelopeGaps, eventsLost: selected.eventGaps },
+    clock: selected.clock, recording: { active: recorder.active, storageError: Boolean(recorder.storageError) } }));
+});
+
+
+let enduranceAbort = null;
+$("endurance-stop").addEventListener("click", () => enduranceAbort?.abort());
+$("endurance-start").addEventListener("click", async () => {
+  let board = selected;
+  if (!board?.connected || !board.control || recorder.active || board.download || firmwareJobs.get(board.key)?.active) {
+    $("endurance-status").textContent = "Select an updated controller and stop recordings, uploads and firmware updates first."; return;
+  }
+  const device = board.device, key = board.key;
+  const update = $("endurance-update").checked;
+  if (update && !firmwareImage) { $("endurance-status").textContent = "Choose a signed image in Firmware first."; return; }
+  const seconds = Number($("endurance-seconds").value);
+  if (!Number.isInteger(seconds) || seconds < 5 || seconds > 3600) { $("endurance-status").textContent = "Choose a test length from 5 to 3600 seconds."; return; }
+  const testName = board.displayName;
+  const chosenImage = firmwareImage;
+  enduranceAbort = new AbortController();
+  $("endurance-start").disabled = true; $("endurance-stop").disabled = false;
+  const report = await runEndurance({
+    snapshot: async () => {
+      await board.refreshHealth();
+      return { connected: board.connected, boardId: board.boardId, health: board.health,
+        profile: board.hardwareProfile, healthAgeMs: performance.now() - (board.healthReceivedMs ?? -Infinity),
+        rateHz: board.rateHz, expectedHz: board.info.imuRateHz, imuLost: board.imuGaps,
+        envelopeLost: board.envelopeGaps, eventsLost: board.eventGaps };
+    },
+    click: () => board.actuatorCommand({ command: 2, id: 1, level: 10 }),
+    stop: () => board.connected ? board.actuatorCommand({ command: 1 }) : Promise.resolve(),
+    listen: fn => { const current = board, listener = event => fn(event.detail); current.addEventListener("control-result", listener); return () => current.removeEventListener("control-result", listener); },
+    wait: (ms, signal) => new Promise((resolve, reject) => {
+      const stop = () => { clearTimeout(timer); reject(Error("Test stopped")); };
+      const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
+      signal?.addEventListener("abort", stop, { once: true });
+    }),
+    reconnect: async () => {
+      board.disconnect(); await sleepMs(500);
+      board = await reconnect(device, key); select(board);
+    },
+    update: async signal => {
+      const result = await board.updateFirmware(chosenImage.bytes, { signal });
+      if (result.alreadyRunning) return "already-running";
+      await sleepMs(3000);
+      board = await reconnect(device, key); select(board);
+      let verdict = await board.verifyFirmware(chosenImage.image);
+      for (let i = 0; verdict.pending && i < 3; i++) { await sleepMs(2000); verdict = await board.verifyFirmware(chosenImage.image); }
+      if (!verdict.ok) throw Error(verdict.reason);
+    },
+  }, { seconds, reconnect: $("endurance-reconnect").checked,
+    update, signal: enduranceAbort.signal, progress: text => { $("endurance-status").textContent = `${testName}: ${text}`; } });
+  downloadDiagnostics({ ...report, boardId: board.boardId });
+  $("endurance-status").textContent = `${report.ok ? "Passed" : "Failed"}: ${report.error ?? "report downloaded"}. Unverified steps are listed in the report.`;
+  $("endurance-start").disabled = false; $("endurance-stop").disabled = true; enduranceAbort = null;
+});

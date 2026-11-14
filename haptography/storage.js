@@ -38,6 +38,27 @@ class IdbStore {
     return new IdbStore(db);
   }
 
+  async importBench() {
+    if (!indexedDB.databases || await this.getState("bench-import/1")) return;
+    if (!(await indexedDB.databases()).some(db => db.name === "haptography-bench")) return;
+    const legacy = await request(indexedDB.open("haptography-bench"));
+    try {
+      const names = ["takes", "raw", "spool"];
+      const read = legacy.transaction(names);
+      const rows = await Promise.all(names.map(name => request(read.objectStore(name).getAll())));
+      await new Promise((resolve, reject) => {
+        const tx = this.db.transaction([...names, "studio"], "readwrite");
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error("Bench import interrupted."));
+        rows[0].forEach(row => tx.objectStore("takes").put({ ...row, id: `bench:${row.id}` }));
+        rows[1].forEach(row => tx.objectStore("raw").put({ ...row, id: `bench:${row.id}` }));
+        rows[2].forEach(row => tx.objectStore("spool").put({ ...row, take: `bench:${row.take}`, key: `bench:${row.key}` }));
+        tx.objectStore("studio").put(true, "bench-import/1");
+      });
+    } finally { legacy.close(); }
+  }
+
   tx(store, mode = "readonly") {
     return this.db.transaction(store, mode).objectStore(store);
   }

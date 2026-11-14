@@ -7,12 +7,14 @@ import * as wire from "./wire.js";
 import { decodeSession } from "./session.js";
 import { analyze, scoreTake, scoreDataset, ANALYSIS_VERSION, SETTINGS, TARGETS, segmentStrokes, spectraBetween, principalAxis, project } from "./analysis.js";
 import { spectrogram, welch, peakFrequency } from "./spectrum.js";
-import { sessionFiles, folderName, slugify, readLabels, timeFromFolderName } from "./export.js";
+import { sessionFiles, folderName, slugify, readLabels, timeFromFolderName, sessionFolders } from "./export.js";
 import { Simulator } from "./simulate.js";
 import { openStore } from "./storage.js";
 import { Plot, XYPlot, readColors, drawAxis, fmtHz } from "./plots.js";
 
-import { DeviceClient } from "./device.js";
+import { healthSummary, diagnostics, downloadDiagnostics, encodeProfile } from "./device-health.js";
+import { bindProfileEditor } from "./profile-view.js";
+import { DeviceClient, COMMAND, openBoardPort } from "./device.js";
 import { mountStudio } from "./studio.js";
 
 let studio = null;
@@ -21,7 +23,6 @@ const labelUndo = [];
 let coverageTick = 0;
 
 const $ = (id) => document.getElementById(id);
-const BAUD = 1_000_000;
 const LIVE_WINDOW_S = 5;
 const SPOOL_EVERY_MS = 2000;
 const ALL = "\u0000all";
@@ -165,7 +166,7 @@ const live = {
 function resetLive() {
   live.reader = new wire.StreamReader();
   for (const k of ["imuT", "vib", "accel", "gyro", "mic", "tofT", "tofD", "tofOk", "speedT", "speed"]) live[k].clear();
-  Object.assign(live, { micEnd: null, lp: null, lastImuT: null, info: null, firstStats: null, lastStats: null, lastTof: null });
+  Object.assign(live, { micEnd: null, lp: null, lastImuT: null, info: null, firstStats: null, lastStats: null, lastTof: null, health: null, profile: null, healthReceivedMs: null, measuredImuHz: null, meterMs: performance.now() });
   live.counts = { imu: 0, mic: 0, tof: 0 };
   live.prevCounts = { imu: 0, mic: 0, tof: 0 };
   $("messages").replaceChildren();
@@ -187,6 +188,8 @@ function onBytes(bytes) {
 function handlePacket({ type, body }) {
   deviceClient?.feed({ type, body });
   switch (type) {
+    case wire.HEALTH: live.health = body; live.healthReceivedMs = performance.now(); break;
+    case wire.PROFILE: live.profile = body; break;
     case wire.INFO:
       live.info = body;
       updateLamps();
@@ -297,8 +300,9 @@ function updateLamps() {
   lamp("s-imu", known ? Boolean(f & wire.INFO_IMU_OK) : null);
   lamp("s-mic", known ? Boolean(f & wire.INFO_MIC_OK) : null);
   lamp("s-tof", known ? Boolean(f & wire.INFO_TOF_OK) : null);
-  // The I²S-ready flag cannot detect a physically connected TacHammer.
+  // Actuators are optional on a recording device: one that didn't answer stays dark, not red
   lamp("s-tach", known && f & wire.INFO_TACHAMMER_OK ? true : null, "TacHammer, through the amp (lit when it answered at boot)");
+  lamp("s-erm", known && f & wire.INFO_ERM_OK ? true : null, "ERM, through the DRV2605L (lit when it answered at boot)");
   $("m-board").textContent = known ? hex4(info.board_id) : "—";
   if (known && info.version > wire.VERSION) {
     $("link-lamp").textContent = `Firmware v${info.version}: update the page`;
@@ -311,11 +315,15 @@ function updateMeters() {
   $("m-imu").textContent = on ? fmtInt(c.imu - p.imu) : "—";
   $("m-mic").textContent = on ? fmtInt(c.mic - p.mic) : "—";
   $("m-tof").textContent = on ? fmtInt(c.tof - p.tof) : "—";
+  const now = performance.now();
+  live.measuredImuHz = live.meterMs == null ? null : (c.imu - p.imu) * 1000 / Math.max(1, now - live.meterMs);
+  live.meterMs = now;
   live.prevCounts = { ...c };
   const tof = live.lastTof;
   const dist = $("m-dist");
   dist.textContent = !on || !tof ? "—" : tof.status === 0 ? `${tof.distance_mm} mm` : `status ${tof.status}`;
   dist.classList.toggle("bad", Boolean(on && tof && tof.status !== 0));
+  renderDeviceHealth();
   const dropped = live.lastStats && live.firstStats ? live.lastStats.tx_dropped - live.firstStats.tx_dropped : 0;
   for (const [id, n] of [["m-lost", live.reader.lost], ["m-bad", live.reader.bad], ["m-drop", dropped]]) {
     $(id).textContent = on ? fmtInt(n) : "—";
@@ -347,8 +355,7 @@ function startDemo() {
 async function connectSerial() {
   let port;
   try {
-    port = await navigator.serial.requestPort();
-    await port.open({ baudRate: BAUD, bufferSize: 1 << 20 });
+    port = await openBoardPort(navigator.serial);
   } catch (err) {
     if (err.name !== "NotFoundError") setStatus("rec-status", `Couldn't open the port: ${err.message}`, "bad");
     return;
@@ -555,7 +562,8 @@ async function spool() {
   try {
     await store.spoolAppend(r.id, n, bytes, n === 0 ? { ...r.meta, created: r.created } : undefined);
   } catch {
-    /* the spool is a safety net only: the recording itself is in memory */
+    storageError = true;
+    $("storage-note").textContent = "Recovery storage failed: keep this tab open and export the take.";
   }
 }
 
@@ -842,14 +850,7 @@ $("import-input").addEventListener("change", async (event) => {
   const files = [...event.target.files];
   event.target.value = "";
   // Group by folder; a folder holding raw.bin is a take
-  const folders = new Map();
-  for (const f of files) {
-    const path = f.webkitRelativePath || f.name;
-    const dir = path.slice(0, path.lastIndexOf("/"));
-    if (!folders.has(dir)) folders.set(dir, {});
-    folders.get(dir)[f.name] = f;
-  }
-  const found = [...folders.entries()].filter(([, f]) => f["raw.bin"]);
+  const found = sessionFolders(files);
   if (!found.length) {
     setStatus("lib-status", "No raw.bin in that folder: pick a session folder, or a folder of them.", "bad");
     return;
@@ -1669,6 +1670,8 @@ async function reanalyseOld() {
 async function start() {
   store = await openStore();
   if (!store.persistent) $("storage-note").textContent = "this browser won't keep takes: export them";
+  try { await store.importBench?.(); }
+  catch (error) { $("storage-note").textContent = `Bench recordings were preserved but could not be imported: ${error.message}`; }
   for (const t of await store.listTakes()) takes.set(t.id, t);
   themeChanged();
   sourceChanged();
@@ -1689,5 +1692,38 @@ async function start() {
   // Opened with ?demo: start the simulated board (for a quick look, and the page's own checks)
   if (new URLSearchParams(location.search).has("demo")) startDemo();
 }
+
+let storageError = false;
+const profileEditor = bindProfileEditor($("hardware-profile"), {
+  save: async (profile, key) => {
+    if (source?.kind !== "serial" || !deviceClient || studio?.busy() || rec || String(live.info?.board_id) !== key) throw Error("Stop recording/playback and select the connected board first");
+    if ((live.info?.version ?? 0) < 5) throw Error("Update the capture firmware to save profiles");
+    await deviceClient.command(COMMAND.setProfile, encodeProfile(profile));
+    // ACK is sent after the profile is persisted; wait for its periodic read-back.
+    for (let n = 0; n < 25; n++) {
+      if (JSON.stringify(live.profile) === JSON.stringify(profile)) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw Error("Profile read-back was not confirmed");
+  },
+});
+function currentHealth() {
+  return healthSummary({ connected: Boolean(source), health: live.health,
+    healthAgeMs: live.healthReceivedMs == null ? null : performance.now() - live.healthReceivedMs,
+    rateHz: live.measuredImuHz ?? null, expectedHz: live.info?.imu_rate_hz,
+    lost: live.reader.lost, bad: live.reader.bad, storage: storageError ? "error" : store?.persistent === false ? "memory" : null });
+}
+function renderDeviceHealth() {
+  const summary = currentHealth();
+  $("device-health").textContent = source?.kind === "demo" ? "Demo · simulated readings" : summary.text;
+  $("device-health").dataset.state = source?.kind === "demo" ? "demo" : summary.state;
+  $("export-diagnostics").disabled = !live.info;
+  profileEditor.sync(live.profile, String(live.info?.board_id), source?.kind === "serial");
+}
+$("export-diagnostics").addEventListener("click", () => downloadDiagnostics(diagnostics({
+  boardId: live.info?.board_id?.toString(16).toUpperCase().padStart(4, "0"), health: live.health,
+  profile: live.profile, summary: currentHealth(), counters: { lost: live.reader.lost, bad: live.reader.bad, ...(live.lastStats ?? {}) },
+  recording: { active: Boolean(rec), persistent: Boolean(store?.persistent) },
+})));
 
 start();

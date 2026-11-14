@@ -10,7 +10,6 @@
     }
   };
   await wait(() => $('takes') && $('demo') && $('signal-summary').textContent, 'studio ready');
-  assert(!$('signal-output') && !$('signal-ermShare') && !$('plot-erm') && !$('s-erm'), 'the editor and diagnostics expose only TacHammer');
   // Recording requires labels, and its keyboard path shares that validation.
   $('demo').click(); $('record').click();
   assert($('rec-status').textContent.includes('Name the dataset'), 'unlabelled takes need explicit quick capture');
@@ -70,22 +69,10 @@
   await wait(() => $('experiment-storage').textContent === 'Experiment exported' && exports.size >= 4, 'experiment export');
   const exported = exports.get('experiment.json');
   assert(JSON.parse(exported).variants.length === 3, 'all variants exported');
-  assert(JSON.parse(exported).variants.every(v => v.settings.output === 'hammer' && v.result.erm == null && v.profile.erm_gain_g == null), 'new variants and response measurements are TacHammer-only');
   assert([...exports.keys()].filter(name => name.endsWith('-drive.wav')).length === 3, 'playable WAV for each variant');
-  assert(![...exports.keys()].some(name => name.endsWith('-erm.csv')), 'no removed-output export files');
   const transfer = new DataTransfer(); transfer.items.add(new File([exported], 'experiment.json', { type: 'application/json' }));
   $('experiment-input').files = transfer.files; $('experiment-input').dispatchEvent(new Event('change'));
   await wait(() => $('variants').querySelectorAll('li').length === 6, 'experiment import');
-  for (const oldTrack of [false, true]) {
-    const obsolete = JSON.parse(exported);
-    if (oldTrack) obsolete.variants[0].result.erm = [0.2];
-    else obsolete.variants[0].settings.output = 'both';
-    const transfer = new DataTransfer(); transfer.items.add(new File([JSON.stringify(obsolete)], 'obsolete.json', { type: 'application/json' }));
-    $('experiment-input').files = transfer.files; $('experiment-input').dispatchEvent(new Event('change'));
-    await wait(() => $('actuator-status').textContent.includes('Only TacHammer experiments'), 'removed output rejected');
-    assert($('variants').querySelectorAll('li').length === 6, 'removed-output import leaves saved experiments intact');
-    await wait(() => !$('experiment-input').value, 'file input reset');
-  }
   const malformed = JSON.parse(exported); delete malformed.variants[0].about;
   const badTransfer = new DataTransfer(); badTransfer.items.add(new File([JSON.stringify(malformed)], 'bad.json', { type: 'application/json' }));
   $('experiment-input').files = badTransfer.files; $('experiment-input').dispatchEvent(new Event('change'));
