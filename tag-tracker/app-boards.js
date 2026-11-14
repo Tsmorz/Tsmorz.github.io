@@ -17,7 +17,7 @@ const HAS_BT = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
 S.boards = [];
 const boardStore = {
   get: () => store.get('boards', {}),
-  save(b) { const all = store.get('boards', {}); all[b.id] = { track: b.track, M: b.M, use: b.use, rms: b.rms, grip: b.grip }; store.set('boards', all); },
+  save(b) { const all = store.get('boards', {}); all[b.id] = { track: b.track, M: b.M, use: b.use, rms: b.rms, grip: b.grip, hapticSide: b.hapticSide }; store.set('boards', all); },
 };
 const camPoses = new Map();
 function noteCamPose(key, time, R) {
@@ -33,6 +33,7 @@ function newBoard(id, name, extra) {
     id, name, device: null, sim: false, info: null, clock: new C.BoardClock(), buf: [], track: saved.track === undefined ? null : saved.track,
     M: saved.M || null, rms: saved.rms == null ? null : saved.rms, use: saved.use !== false, W: null, pairs: [], wPairs: [], pairT: -Infinity,
     state: 'connecting', err: '', lastSeq: null, lost: 0, n: 0, nPrev: 0, rate: 0, rateT: performance.now(), fit: null, learn: '',
+    hapticSide: ['1','-1','off'].includes(saved.hapticSide) ? saved.hapticSide : 'auto', hapticCharacteristic: null,
     grip: saved.grip || null, act: null, actT: 0, actOk: null, // the gripper servo: {open, closed} in permille, its last status, whether it can be read
   }, extra || {});
   S.boards.push(b);
@@ -170,7 +171,7 @@ async function connectDevice(device) {
     try {
       const ach = await (await server.getPrimaryService(C.ACT.service)).getCharacteristic(C.ACT.status);
       ach.addEventListener('characteristicvaluechanged', (e) => { const st = C.decodeActuatorStatus(e.target.value); if (st) { b.act = st; b.actT = performance.now(); } });
-      await ach.startNotifications(); b.actOk = true;
+      await ach.startNotifications(); b.actOk = true; b.hapticCharacteristic = ach; b.hapticError = null;
     } catch (e) { b.actOk = false; }
   } catch (e) {
     b.state = 'error'; b.err = e && e.message ? e.message : String(e);
@@ -211,6 +212,7 @@ function renderBoards() {
       <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</strong>
       <label class="sr" for="bt-${b.id}">What board ${escapeHtml(b.id)} is fixed to</label>
       <select id="bt-${b.id}" class="select sm"><option value="">Fixed to…</option>${keys.map((k) => `<option value="${k}"${k === b.track ? ' selected' : ''}>${escapeHtml(nameOf(k))}</option>`).join('')}</select>
+      <label class="field">${escapeHtml(TASK_DATA.haptics.routing)} <select class="select sm" data-haptic-side>${['auto','1','-1','off'].map((v,i)=>`<option value="${v}"${b.hapticSide===v?' selected':''}>${escapeHtml(TASK_DATA.haptics.sides[i])}</option>`).join('')}</select></label>
       <span class="field" title="Use it in Filtered poses once it is lined up"><span id="bu-${b.id}">Use</span><button class="switch" role="switch" aria-checked="${b.use}" aria-labelledby="bu-${b.id}" data-a="use"></button></span>
       <span style="white-space:nowrap">${canConnect ? '<button class="btn sm" data-a="connect">Connect</button>' : ''}<button class="btn sm" data-a="relearn" title="Learn again how it sits on what it's fixed to">Relearn</button>${b.sim ? '' : `<button class="btn sm sq danger" data-a="rm" aria-label="Disconnect ${escapeHtml(b.name)}" title="Disconnect"><svg class="i"><use href="#i-x"/></svg></button>`}</span>
       <div class="meta"><span class="seen" id="bs-${b.id}"><span class="dot"></span><span></span></span><span id="bl-${b.id}"></span></div>
@@ -219,6 +221,7 @@ function renderBoards() {
       b.track = e.target.value === '' ? null : parseKey(e.target.value);
       b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; boardStore.save(b); renderBoards();
     };
+    row.querySelector('[data-haptic-side]').onchange=e=>{b.hapticSide=e.target.value;boardStore.save(b);};
     row.querySelector('[data-a=use]').onclick = () => { b.use = !b.use; boardStore.save(b); renderBoards(); };
     row.querySelector('[data-a=relearn]').onclick = () => { b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; b.learn = ''; boardStore.save(b); renderBoards(); };
     const rm = row.querySelector('[data-a=rm]');

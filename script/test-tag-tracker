@@ -1230,8 +1230,8 @@ if (run('5j')) {
 }
 
 if (run('5k')) {
-  console.log('5k. tiny-room story, walking, AMR collision and character meshes');
-  require('./tag-tracker/story.cjs')({ check, near });
+  console.log('5k. robot task guidance, saved-setting migration and sequential one-gripper placement');
+  require('./tag-tracker/guidance.cjs')({ check, near });
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
@@ -1271,7 +1271,7 @@ function testBridge() {
 
 let cvPkg = null;
 try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
-const bridged = run('5d') ? testBridge() : Promise.resolve();
+const bridged = Promise.all([run('5d') ? testBridge() : Promise.resolve(),run('5l') ? require('./tag-tracker/advanced.cjs')({check,near}) : Promise.resolve()]);
 if (!run('6') && !run('6b')) bridged.then(finish);
 else if (!cvPkg) bridged.then(() => {
   console.log('6. detection and calibration: skipped (OpenCV.js not installed)');

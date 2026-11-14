@@ -1,0 +1,54 @@
+// Task guidance must follow actual physical grasp/release state and never require two blocks at once.
+module.exports=function({check,near}){
+  const root=require('path').resolve(__dirname,'../..'),{spawnSync}=require('child_process'),fs=require('fs');
+  const C=require(root+'/tag-tracker/tracker-core'),T=require(root+'/tag-tracker/task-core'),R=require(root+'/tag-tracker/robot-core'),GL=require(root+'/tag-tracker/robot-gl');
+  const data=JSON.parse(spawnSync('ruby',['-ryaml','-rjson','-e','puts JSON.generate(YAML.load_file(ARGV[0]))',root+'/_data/tag_tasks.yml'],{encoding:'utf8'}).stdout);
+  const I=[1,0,0,0,1,0,0,0,1],G=R.gripper(R.model()),table={R:I,t:[0,0,0],size:[.5,.9],thick:.03},create=id=>T.create(T.mission(data.levels.find(l=>l.id===id),'guided'),table,G);
+  check(C.DEFAULTS.robot.actor==='robot'&&C.DEFAULTS.robot.playMode==='guided'&&C.DEFAULTS.robot.level==='bowl','new visitors start with robot manipulation, without a story prologue');
+  const old=C.clampSettings({robot:{actor:'teen',playMode:'story',level:'door'}});
+  check(old.robot.actor==='robot'&&old.robot.playMode==='guided'&&old.robot.level==='bowl','stored human/story/door settings migrate to the robot workbench');
+  for(const raw of data.levels){
+    const before=JSON.stringify(raw),l=T.mission(raw,'guided'),g=T.create(l,table,G);
+    check(JSON.stringify(raw)===before&&T.mission(raw,'practice')===raw,'small '+l.id+' does not change the full challenge');
+    check(!l.travel&&!l.story&&l.guide.plan.length>=3&&l.guide.tips.length&&l.goals.every(r=>g.byKey.has(r.object)&&(!r.target||g.byKey.has(r.target))),l.id+' has a stationary task, valid objectives and useful instructions');
+    const hint=T.guidance(g);check(data.guidance.stages[hint.state]&&g.byKey.has(hint.object),l.id+' begins with a valid contextual hint');
+  }
+  const homeScene=T.create(T.mission(data.levels.find(l=>l.id==='sort'),'guided'),{R:I,t:[.43,0,-.225],size:[.5,.9],thick:.03},G),homeWorld=homeScene.world,starts=homeWorld.bodies.map(b=>homeWorld.poseOf(b).t.slice());
+  homeWorld.setRobot({hands:[1,-1].map(side=>({side,pose:{R:R.fk(R.model(),side,R.HOME).R,t:R.fk(R.model(),side,R.HOME).wrist},opening:1}))});
+  for(let i=0;i<120;i++)homeWorld.step(1/60);
+  check(homeWorld.bodies.every((b,i)=>Math.hypot(b.t[0]-starts[i][0],b.t[1]-starts[i][1])<.002),'small-task blocks start clear of the robot’s idle open grippers');
+  const sort=create('sort'),W=sort.world;
+  check(sort.level.objects.length===2&&sort.level.goals.length===2&&sort.level.hands===1,'small placement retains exactly two blocks and one gripper');
+  check(T.guidance(sort).object==='a'&&T.guidance(sort).state==='approach','the first hint identifies A and asks for an open aligned gripper');
+  const first=W.poseOf(sort.byKey.get('a')).t.slice(),second=W.poseOf(sort.byKey.get('b')).t.slice(),ga=sort.level.goals[0].at,gb=sort.level.goals[1].at;
+  let wrist=C.add(first,[0,0,-G.finger.c[2]]),opening=1;
+  const frame=()=>{W.setRobot({hands:[{side:1,pose:{R:I,t:wrist},opening}]});W.step(1/60);T.update(sort,1/60,true);};
+  const run=n=>{for(let i=0;i<n;i++)frame();};
+  const move=(to,n=80)=>{const from=wrist.slice();for(let i=1;i<=n;i++){wrist=from.map((v,k)=>v+(to[k]-v)*i/n);frame();}};
+  run(20);check(T.guidance(sort).state==='grip','aligned open pads prompt closing rather than sideways dragging');
+  const h=W.hands[1],gap=h.gap,target=h.target;h.gap=0;h.target=0;
+  check(T.guidance(sort).state==='retry','closed empty jaws produce a specific open/recentre/retry hint');h.gap=gap;h.target=target;
+  opening=0;run(45);check(h.grip&&h.grip.body.key==='a'&&T.guidance(sort).state==='lift','a real physical grasp prompts lifting A');
+  move([wrist[0],wrist[1],wrist[2]+.12]);check(T.guidance(sort).state==='move','a lifted block prompts moving toward its own outline');
+  move([ga[0],ga[1],wrist[2]]);check(T.guidance(sort).state==='lower','above the destination the next action is lowering');
+  move([ga[0],ga[1],ga[2]+.003-G.finger.c[2]]);check(T.guidance(sort).state==='release','a held block at its target prompts opening the gripper');
+  check(!sort.complete,'a correctly positioned held block cannot finish the task');opening=1;run(100);
+  check(sort.steps[0]&&!sort.steps[1]&&T.guidance(sort).state==='clear','after releasing A, the hint first clears the empty gripper');
+  move([wrist[0],wrist[1],wrist[2]+.12]);check(T.guidance(sort).object==='b','once the empty gripper lifts clear, the hint advances to B');
+  move(C.add(second,[0,0,.12-G.finger.c[2]]));move(C.add(second,[0,0,-G.finger.c[2]]));opening=0;run(45);
+  check(h.grip&&h.grip.body.key==='b','the same gripper can pick B after releasing A');
+  move(C.add(second,[0,0,.12-G.finger.c[2]]));move([gb[0],gb[1],gb[2]+.12-G.finger.c[2]]);move([gb[0],gb[1],gb[2]+.003-G.finger.c[2]]);opening=1;run(130);
+  check(sort.complete&&sort.steps.every(Boolean)&&sort.heldBy.get('a').has(1)&&sort.heldBy.get('b').has(1)&&W.capped===0,'both blocks physically place and settle using one gripper sequentially');
+  check(T.guidance(sort).state==='done','completion replaces the action hint');sort.reset();check(T.guidance(sort).object==='a'&&!sort.complete,'restart resets guidance as well as the physical blocks');
+  const bowl=create('bowl');bowl.world.hands[1]={grip:{body:bowl.byKey.get('bowl')}};
+  check(T.guidance(bowl).state==='wrong'&&T.guidance(bowl).held==='bowl','holding a vessel instead of the requested ball is explained');
+  const tray=create('tray');tray.world.hands[1]={grip:{body:tray.byKey.get('tray')}};
+  check(T.guidance(tray).state==='dual','one held tray rim prompts using the second gripper');
+  const handoff=create('handoff');handoff.world.hands[1]={grip:{body:handoff.byKey.get('ball')}};handoff.heldBy.set('ball',new Set([1]));
+  check(T.guidance(handoff).state==='handoff','the handoff task explains transferring to the other gripper');
+  const cloth=create('laundry'),towel=cloth.byKey.get('towel0');towel.pins.set(1,{i:0});
+  check(T.guidance(cloth).state==='fold_second','one pinned cloth corner prompts pinching the other corner');
+  const meshes=GL.actorMeshes(R.model());check([...meshes.amr,...meshes.wheel].every(p=>p.mesh.pos.every(Number.isFinite)),'robot AMR meshes remain available');
+  const html=fs.readFileSync(root+'/tag-tracker/index.html','utf8');
+  check(!/playActor|grandmaLine|character-core|travel-core|rewardToken/.test(html),'the page loads no boy, story, home rewards or travel scripts');
+};

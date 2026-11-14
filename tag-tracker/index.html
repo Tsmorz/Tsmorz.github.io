@@ -406,34 +406,26 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 #robotPlayControls{align-self:start}#robotPlayControls>#handControls{padding-top:4px}#travelStatus{min-height:17px}
 @media(min-width:1001px){body.teleop-active .robot-controls{padding-bottom:10px}body.teleop-active #taskPanel{max-width:240px}}
 
-/* The game keeps its warm daylight palette in either bench theme. */
-:root{--game-sweet:#bd4d63;--game-sweet-edge:#e6b7a5;--game-coin:#d3a54e;--game-coin-edge:#b88635;--game-crumb:#85502c;--game-biscuit:#d6ab6d;--game-biscuit-edge:#bd8e58;--game-cash:#99ad77;--game-cash-edge:#5c7452;--game-stage:#c8c0ad;--game-stage-light:#e4dccc;--game-stage-dark:#b6b7a7;--game-ivory:#f5eee0;--game-hud:#292e29e8;--game-gold:#cfb57d;--game-hud-muted:#d6cfbd;--game-hud-soft:#ded9cc;--game-hud-rule:#b9b09a;--game-tilt:#b09667;--game-camera-active:#615a45;--game-paper:#faf2dfee;--game-dialogue-ink:#39362e;--game-dialogue-rule:#957947;--game-dialogue-label:#76603f;--game-reward-ink:#69562e;--game-continue:#515f49;--game-continue-ink:#fff8e8;--game-backdrop:#18221bd4;}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--game-sweet:#bd4d63;--game-sweet-edge:#e6b7a5;--game-coin:#d3a54e;--game-coin-edge:#b88635;--game-crumb:#85502c;--game-biscuit:#d6ab6d;--game-biscuit-edge:#bd8e58;--game-cash:#99ad77;--game-cash-edge:#5c7452;--game-stage:#c8c0ad;--game-stage-light:#e4dccc;--game-stage-dark:#b6b7a7;--game-ivory:#f5eee0;--game-hud:#292e29e8;--game-gold:#cfb57d;--game-hud-muted:#d6cfbd;--game-hud-soft:#ded9cc;--game-hud-rule:#b9b09a;--game-tilt:#b09667;--game-camera-active:#615a45;--game-paper:#faf2dfee;--game-dialogue-ink:#39362e;--game-dialogue-rule:#957947;--game-dialogue-label:#76603f;--game-reward-ink:#69562e;--game-continue:#515f49;--game-continue-ink:#fff8e8;--game-backdrop:#18221bd4;}}
-:root[data-theme="dark"]{--game-sweet:#bd4d63;--game-sweet-edge:#e6b7a5;--game-coin:#d3a54e;--game-coin-edge:#b88635;--game-crumb:#85502c;--game-biscuit:#d6ab6d;--game-biscuit-edge:#bd8e58;--game-cash:#99ad77;--game-cash-edge:#5c7452;--game-stage:#c8c0ad;--game-stage-light:#e4dccc;--game-stage-dark:#b6b7a7;--game-ivory:#f5eee0;--game-hud:#292e29e8;--game-gold:#cfb57d;--game-hud-muted:#d6cfbd;--game-hud-soft:#ded9cc;--game-hud-rule:#b9b09a;--game-tilt:#b09667;--game-camera-active:#615a45;--game-paper:#faf2dfee;--game-dialogue-ink:#39362e;--game-dialogue-rule:#957947;--game-dialogue-label:#76603f;--game-reward-ink:#69562e;--game-continue:#515f49;--game-continue-ink:#fff8e8;--game-backdrop:#18221bd4;}
-#rewardToken{display:inline-block;width:30px;height:22px;background:var(--game-sweet);transform:rotate(-12deg);border:3px solid var(--game-sweet-edge);margin-right:14px;position:relative}#rewardToken::before,#rewardToken::after{content:'';position:absolute;top:2px;border:7px solid transparent;border-left-color:var(--game-sweet);left:-15px}#rewardToken::after{left:auto;right:-15px;transform:rotate(180deg)}#rewardToken[data-kind="coin"],#rewardToken[data-kind="cookie"]{border-radius:50%;background:var(--game-coin);border-color:var(--game-coin-edge);width:28px;height:28px}#rewardToken[data-kind="cookie"]{background:radial-gradient(circle at 35% 30%,var(--game-crumb) 2px,transparent 3px),radial-gradient(circle at 65% 70%,var(--game-crumb) 2px,var(--game-biscuit) 3px);border-color:var(--game-biscuit-edge)}#rewardToken[data-kind="cash"]{background:var(--game-cash);border-color:var(--game-cash-edge);width:42px}#rewardToken[data-kind="coin"]::before,#rewardToken[data-kind="coin"]::after,#rewardToken[data-kind="cookie"]::before,#rewardToken[data-kind="cookie"]::after,#rewardToken[data-kind="cash"]::before,#rewardToken[data-kind="cash"]::after{display:none}
-/* The game is a stage; the instrument panels remain in the setup drawer. */
-body.game-screen{overflow:hidden;background:var(--game-stage)}
+/* Task workbench: instructions beside the scene, setup commands in the drawer. */
+body.game-screen{overflow:hidden;background:var(--well)}
 body.game-screen>header,body.game-screen main>.col:first-child,body.game-screen #nowCard,body.game-screen footer,body.game-screen .voice{display:none!important}
 body.game-screen main{display:block!important;max-width:none!important;margin:0;padding:0}
 body.game-screen #view-track{display:block;position:fixed;inset:0;height:100dvh}
 body.game-screen #view-track .card3d{display:block!important;height:100%;border:0;border-radius:0}
-body.game-screen #view-track .plot3d{position:absolute;inset:0;height:100%!important;min-height:0!important;margin:0;background:radial-gradient(ellipse at 45% 35%,var(--game-stage-light),var(--game-stage-dark))}
-body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen .plot3d #robotHint,body.game-screen #taskLabels{display:none!important}
-#gameHUD{position:fixed;inset:0;pointer-events:none;z-index:5;color:var(--game-ivory);font-family:Archivo,system-ui,sans-serif}
-.game-top{position:absolute;top:24px;left:28px;right:28px;display:flex;justify-content:space-between;gap:16px;align-items:start}
-.game-chore{padding:14px 18px;background:var(--game-hud);border-left:3px solid var(--game-gold);max-width:540px}
-.game-chore small{font-size:12px;letter-spacing:.07em;color:var(--game-hud-muted)}.game-chore h1{font-size:clamp(22px,3vw,32px);line-height:1.15;margin:6px 0;font-weight:600}.game-chore p{margin:0;font-size:13px;color:var(--game-hud-soft)}
-.game-actions{display:flex;gap:8px;pointer-events:auto;align-items:center}.game-actions button{background:var(--game-hud);color:var(--game-ivory);border:1px solid var(--game-hud-rule);font:inherit;padding:9px 13px;min-height:42px;border-radius:4px;cursor:pointer}
-.game-actions input{width:90px;accent-color:var(--game-tilt)}.game-actions button[aria-pressed=true]{background:var(--game-camera-active)}
-.game-dialogue{position:absolute;bottom:26px;left:28px;max-width:480px;padding:18px 22px;background:var(--game-paper);color:var(--game-dialogue-ink);border-left:3px solid var(--game-dialogue-rule);pointer-events:auto}
-.game-dialogue small{font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--game-dialogue-label)}.game-dialogue p{font-size:clamp(15px,1.6vw,18px);line-height:1.5;margin:7px 0}.game-dialogue #gameReward{font-size:13px;font-weight:600;color:var(--game-reward-ink)}
-.game-dialogue button{background:var(--game-continue);color:var(--game-continue-ink);border:0;padding:10px 18px;font:inherit;cursor:pointer;min-height:42px}
-.game-pocket{position:absolute;bottom:28px;right:28px;max-width:250px;padding:12px 15px;background:var(--game-hud);pointer-events:auto;font-size:12px;line-height:1.5}.game-pocket summary{cursor:pointer;font-size:13px}.game-pocket p{margin:8px 0 0;color:var(--game-hud-soft)}
-#gameSettings{width:min(850px,calc(100vw - 24px));max-height:90dvh;background:var(--panel);color:var(--ink);padding:0;border:1px solid var(--rule2);border-radius:4px}#gameSettings::backdrop{background:var(--game-backdrop)}
+body.game-screen #view-track .plot3d{position:absolute;inset:0 0 0 320px;height:100%!important;min-height:0!important;margin:0;background:var(--well)}
+body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen .plot3d #robotHint{display:none!important}
+#gameHUD{position:fixed;inset:0;pointer-events:none;z-index:5;color:var(--ink)}
+.workbench-guide{position:absolute;top:16px;bottom:16px;left:16px;width:288px;box-sizing:border-box;overflow:auto;padding:16px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;pointer-events:auto;scrollbar-width:thin}
+.workbench-guide>label{display:block;font-size:12px;color:var(--muted)}.workbench-guide .select{width:100%;margin:5px 0 15px;min-width:0;font-size:14px}.workbench-guide small{color:var(--muted);font-size:12px}.workbench-guide h1{font-size:23px;line-height:1.2;margin:6px 0 10px}.workbench-guide p{font-size:14px;line-height:1.5;margin:0 0 14px}
+.workbench-guide .live-guide{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:14px 0;margin:14px 0}.live-guide h2{color:var(--accent);font-size:17px;line-height:1.3;margin:6px 0}.live-guide p{margin:0}
+#guideGoals{list-style:none;padding:0;font-size:13px;line-height:1.5;margin:14px 0}#guideGoals li{padding:4px 0}#guideGoals li::before{content:'○';display:inline-block;width:20px}#guideGoals li[data-done=true]::before{content:'✓';color:var(--accent)}#guideGoals li[data-active=true]{font-weight:600}
+.workbench-guide details{margin:12px 0;font-size:13px;line-height:1.5}.workbench-guide summary{cursor:pointer;font-weight:600}.workbench-guide ol,.workbench-guide ul{padding-left:21px}.workbench-guide li{margin:7px 0}.workbench-guide .guide-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.workbench-guide .hint{font-size:12px}
+.game-actions{position:absolute;top:16px;right:16px;display:flex;gap:8px;align-items:center;pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:6px}.game-actions input{width:90px;accent-color:var(--accent)}.game-actions button{min-height:40px}.game-actions label{display:flex;align-items:center}
+#taskLabels .task-label[data-active=true]{border-color:var(--accent);color:var(--accent);font-weight:700}
+#gameSettings{width:min(850px,calc(100vw - 24px));max-height:90dvh;background:var(--panel);color:var(--ink);padding:0;border:1px solid var(--rule2);border-radius:4px}#gameSettings::backdrop{background:var(--well);opacity:.85}
 #gameSettings>.card-h{position:sticky;top:0;background:var(--panel);z-index:2}#gameSettingsTools{padding:10px}#gameSettingsTools #taskPanel{max-width:none;border:0}#gameSettingsTools #robotPlayControls{padding:12px}#gameSettingsTools .task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}#gameSettingsTools .task-select{display:flex}#gameSettingsTools .vbtns{display:flex;gap:6px;flex-wrap:wrap;padding:12px}#gameSettingsTools>.card-h{display:block;padding:12px}#gameSettingsTools>.card-h .toolbar{margin-top:10px}
 #backToGame{position:fixed;bottom:18px;right:18px;z-index:40}
-@media(max-width:600px){.game-top{left:12px;right:12px;top:12px;flex-wrap:wrap;gap:8px}.game-chore{padding:10px 13px;max-width:calc(100% - 50px)}.game-chore h1{font-size:22px}.game-chore small{font-size:10px}.game-chore p{font-size:12px}.game-actions{gap:5px}.game-actions button{padding:7px 10px;font-size:12px}.game-actions input{width:70px}.game-dialogue{bottom:16px;left:12px;right:12px;padding:12px 15px;max-width:none}.game-dialogue p{font-size:14px}.game-pocket{bottom:185px;right:12px;max-width:175px;padding:8px 10px}.game-pocket p{max-height:100px;overflow:auto}#gameSettingsTools .task-levels{display:none}}
-
+@media(max-width:720px){body.game-screen #view-track .plot3d{inset:0 0 38dvh;height:62dvh!important}.workbench-guide{top:auto;left:8px;right:8px;bottom:8px;width:auto;height:calc(38dvh - 16px);padding:12px}.workbench-guide h1{font-size:18px;margin:4px 0 6px}.workbench-guide #gameObjective,.workbench-guide #gameChapter{display:none}.workbench-guide #guideGoals{margin:7px 0}.workbench-guide #guideGoals li{padding:2px 0;margin:0}.workbench-guide .live-guide{padding:8px 0;margin:8px 0}.workbench-guide .live-guide p{font-size:13px}.workbench-guide .select{margin-bottom:9px}.game-actions{top:8px;right:8px;gap:5px;padding:4px}.game-actions input{width:65px}.game-actions .btn{font-size:12px;padding:0 9px}#gameSettingsTools .task-levels{display:none}}
 </style>
 </head>
 <body>
@@ -743,10 +735,10 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
             <button role="radio" data-show3d="tags" aria-checked="false" title="Each tag's trail and axes over the last few seconds">Tags</button>
           </span>
           <label class="field" id="scaleField" title="Teleoperation: the robot's arms move this many times as far as your hands do, from the start pose (below 1 for fine work, above 1 to reach further). The hands still turn exactly as yours do, and the body isn't scaled.">Motion × <select id="robotScale" class="select sm">
-            <option value="0.25">0.25</option><option value="0.5">0.5</option><option value="0.75">0.75</option><option value="1">1</option><option value="1.5">1.5</option><option value="2">2</option><option value="3">3</option>
+            <option value="0.1">0.1</option><option value="0.25">0.25</option><option value="0.5">0.5</option><option value="0.75">0.75</option><option value="1">1</option><option value="1.5">1.5</option><option value="2">2</option><option value="3">3</option>
           </select></label>
           <label class="field" id="propsField" title="Something on a table in front of the robot to push about and pick up. Drag a hand with the mouse to try it without tags.">Physics <select id="robotProps" class="select sm">
-            <option value="arcade">Teleoperation arcade</option><option value="off">Off</option><option value="ball">Ball (free play)</option><option value="cup">Ball and cup (free play)</option>
+            <option value="arcade">Robot tasks</option><option value="off">Off</option><option value="ball">Ball (free play)</option><option value="cup">Ball and cup (free play)</option>
           </select></label>
           <label class="field" id="forcesField" title="Arrows for the forces on the robot's hands: where something pushes on a hand, and at a grip the load its prop puts on the fingers, amber while the grip slips. The Now panel's Forces tab has the numbers.">Forces <select id="robotForces" class="select sm">
             <option value="on">Shown</option><option value="off">Hidden</option>
@@ -756,18 +748,15 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
       </div>
       <div id="taskPanel" class="task-panel" hidden>
         <div class="task-title"><div><h3 id="taskTitle">{{ site.data.tag_tasks.title }}</h3><p class="hint" id="taskSubtitle">{{ site.data.tag_tasks.subtitle }}</p></div><span id="taskOverall" class="small"></span></div>
-        <div class="seg sm" id="campaignMode" role="radiogroup" aria-label="Campaign mode"><button role="radio" data-campaign-mode="story" aria-checked="true">Story</button><button role="radio" data-campaign-mode="practice" aria-checked="false">Practice</button></div>
-        <p id="storyBeat" class="hint"></p>
+        <div class="seg sm" id="campaignMode" role="radiogroup" aria-label="Campaign mode"><button role="radio" data-campaign-mode="guided" aria-checked="true">{{ site.data.tag_tasks.ui.guided }}</button><button role="radio" data-campaign-mode="practice" aria-checked="false">{{ site.data.tag_tasks.ui.practice }}</button></div>
         <label class="task-select field">Level <select id="taskSelect" class="select"></select></label>
         <nav id="taskLevels" class="task-levels" aria-label="Teleoperation levels"></nav>
         <div class="task-brief"><div><strong id="taskName"></strong><p id="taskBrief"></p></div><span id="taskClock" class="small">0:00</span></div>
         <div class="task-goals" id="taskGoals" aria-label="Level objectives"></div>
         <div class="row task-feedback"><span id="taskStatus" role="status" aria-live="polite"></span><span id="taskBest" class="small muted"></span><div class="spacer"></div><button class="btn sm primary" id="taskNext" hidden>Next level</button></div>
-        <details class="task-guide"><summary>How to play</summary><p id="campaignIntro" hidden></p><p>{{ site.data.tag_tasks.story.navigation }}</p><p>{{ site.data.tag_tasks.controls.intro }}</p><p id="taskHint"></p><p>{{ site.data.tag_tasks.controls.keyboard }}</p><p>{{ site.data.tag_tasks.controls.scoring }}</p><p class="hint">{{ site.data.tag_tasks.physics }}</p></details>
+        <details class="task-guide"><summary>How to play</summary><p>{{ site.data.tag_tasks.controls.intro }}</p><p id="taskHint"></p><p>{{ site.data.tag_tasks.controls.keyboard }}</p><p>{{ site.data.tag_tasks.controls.scoring }}</p><p class="hint">{{ site.data.tag_tasks.physics }}</p></details>
       </div>
       <div class="robot-controls" id="robotPlayControls">
-        <div class="row"><label class="field">Play as <select class="select sm" id="playActor">{% for actor in site.data.tag_tasks.story.actors %}<option value="{{ actor.id }}">{{ actor.name }}</option>{% endfor %}</select></label><span id="actorDescription" class="hint"></span></div>
-        <div class="travel-controls" id="travelControls" hidden><div class="row"><span class="seg sm" id="inputMode" role="radiogroup" aria-label="Control mode"><button role="radio" data-input-mode="move" aria-checked="true">Move</button><button role="radio" data-input-mode="hands" aria-checked="false">Hands</button></span><button class="btn sm outline" data-travel="forward">Forward ↑</button><button class="btn sm outline" data-travel="back">Back ↓</button><button class="btn sm outline" data-travel="left">Turn left ↶</button><button class="btn sm outline" data-travel="right">Turn right ↷</button><button class="btn sm outline" id="travelStop">Stop</button></div><p class="hint" id="travelStatus" role="status"></p></div>
         <div class="row" id="handControls"><span class="small">Hand</span><span id="playHands" class="seg sm" role="radiogroup" aria-label="Hand to control"><button role="radio" data-hand="1" aria-checked="true">Left</button><button role="radio" data-hand="-1" aria-checked="false">Right</button><button role="radio" data-hand="both" aria-checked="false">Both</button></span>
           <button class="btn sm outline" data-nudge="forward">Forward</button><button class="btn sm outline" data-nudge="back">Back</button><button class="btn sm outline" data-nudge="left">Left ←</button><button class="btn sm outline" data-nudge="right">Right →</button><button class="btn sm outline" data-nudge="up">Lift ↑</button><button class="btn sm outline" data-nudge="down">Lower ↓</button>
           <button class="btn sm outline" id="playGrip">Grip</button><button class="btn sm outline" id="playRelease">Release</button><button class="btn sm outline" data-turn="-1">Tilt −</button><button class="btn sm outline" data-turn="1">Tilt +</button><button class="btn sm outline" data-roll="-1">Roll −</button><button class="btn sm outline" data-roll="1">Roll +</button>
@@ -827,14 +816,20 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
   </div>
 </main>
 <div id="gameHUD" hidden>
-  <div class="game-top"><div class="game-chore"><small id="gameChapter"></small><h1 id="gameTitle"></h1><p id="gameObjective"></p></div>
-    <div class="game-actions"><span id="characterStatus" hidden></span><button id="gameEyes" aria-pressed="false">{{ site.data.tag_tasks.story.ui.eyes }}</button><label title="{{ site.data.tag_tasks.story.ui.tilt }}"><span class="sr">{{ site.data.tag_tasks.story.ui.tilt }}</span><input id="gameTilt" type="range" min="-80" max="25" value="-40" aria-label="{{ site.data.tag_tasks.story.ui.tilt }}"></label><button id="gameTags" hidden>{{ site.data.tag_tasks.story.ui.tags }}</button><button id="gameSettingsBtn" aria-haspopup="dialog" aria-label="{{ site.data.tag_tasks.story.ui.settings }}" title="{{ site.data.tag_tasks.story.ui.settings }}"><svg class="i"><use href="#i-gear"/></svg></button></div>
-  </div>
-  <div class="game-dialogue"><small id="grandmaName"></small><p id="grandmaLine"></p><span id="rewardToken" aria-hidden="true" hidden></span><p id="gameReward" role="status" hidden></p><button id="gameNext" hidden>{{ site.data.tag_tasks.story.ui.next }}</button></div>
-  <details class="game-pocket"><summary>{{ site.data.tag_tasks.story.ui.pocket }}</summary><p id="gamePocket"></p></details>
+  <section class="workbench-guide" aria-labelledby="gameTitle">
+    <label for="workbenchTask">{{ site.data.tag_tasks.ui.picker }}</label><select class="select" id="workbenchTask"></select>
+    <small id="gameChapter"></small><h1 id="gameTitle"></h1><p id="gameObjective"></p>
+    <ul id="guideGoals" aria-label="{{ site.data.tag_tasks.ui.objectives }}"></ul>
+    <div class="live-guide" aria-live="polite"><small>{{ site.data.tag_tasks.ui.next_action }}</small><h2 id="guideTitle"></h2><p id="guideText"></p></div>
+    <details id="guidePlan"><summary>{{ site.data.tag_tasks.ui.plan }}</summary><ol id="guidePlanList"></ol></details>
+    <details id="guideTips"><summary>{{ site.data.tag_tasks.ui.tips }}</summary><ul id="guideTipsList"></ul></details>
+    <details><summary>{{ site.data.tag_tasks.ui.controls }}</summary><p>{{ site.data.tag_tasks.guidance.mouse }}</p><p>{{ site.data.tag_tasks.controls.intro }}</p><p>{{ site.data.tag_tasks.controls.keyboard }}</p></details>
+    <div class="guide-actions"><button class="btn sm primary" id="gameNext" hidden>{{ site.data.tag_tasks.ui.next }}</button><button class="btn sm outline" id="guideRestart">{{ site.data.tag_tasks.ui.restart }}</button></div>
+  </section>
+  <div class="game-actions"><button class="btn sm outline" id="gameEyes" aria-pressed="false">{{ site.data.tag_tasks.ui.eyes }}</button><label title="{{ site.data.tag_tasks.ui.tilt }}"><span class="sr">{{ site.data.tag_tasks.ui.tilt }}</span><input id="gameTilt" type="range" min="-80" max="25" value="-40" aria-label="{{ site.data.tag_tasks.ui.tilt }}"></label><button class="btn sm" id="gameTags" hidden>{{ site.data.tag_tasks.ui.tags }}</button><button class="btn sm sq" id="gameSettingsBtn" aria-haspopup="dialog" aria-label="{{ site.data.tag_tasks.ui.settings }}" title="{{ site.data.tag_tasks.ui.settings }}"><svg class="i"><use href="#i-gear"/></svg></button></div>
 </div>
-<button class="btn primary" id="backToGame" hidden>{{ site.data.tag_tasks.story.ui.return }}</button>
-<dialog id="gameSettings" aria-labelledby="gameSettingsTitle"><div class="card-h"><h2 id="gameSettingsTitle">{{ site.data.tag_tasks.story.ui.settings }}</h2><div class="spacer"></div><button class="btn" id="gameSetupBtn">{{ site.data.tag_tasks.story.ui.setup }}</button><button class="btn" id="gameSettingsClose">{{ site.data.tag_tasks.story.ui.return }}</button></div><div id="gameSettingsTools"></div></dialog>
+<button class="btn primary" id="backToGame" hidden>{{ site.data.tag_tasks.ui.return }}</button>
+<dialog id="gameSettings" aria-labelledby="gameSettingsTitle"><div class="card-h"><h2 id="gameSettingsTitle">{{ site.data.tag_tasks.ui.settings }}</h2><div class="spacer"></div><button class="btn" id="gameSetupBtn">{{ site.data.tag_tasks.ui.setup }}</button><button class="btn" id="gameSettingsClose">{{ site.data.tag_tasks.ui.return }}</button></div><section style="padding:16px"><label><input type="checkbox" id="taskHaptics"> {{ site.data.tag_tasks.haptics.label }}</label> <label>{{ site.data.tag_tasks.haptics.strength }} <input type="range" id="taskHapticStrength" min="0.1" max="1" step="0.1"></label><p>{{ site.data.tag_tasks.haptics.help }}</p><p>{{ site.data.tag_tasks.haptics.routing_help }}</p><p id="taskHapticStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p></section><div id="gameSettingsTools"></div></dialog>
 
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
   <form method="dialog" id="printForm" novalidate>
@@ -1030,27 +1025,27 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
-<script src="tracker-core.js?v=5bc902a4"></script>
+<script src="tracker-core.js?v=d97fd48c"></script>
 <script src="robot-core.js?v=5767e370"></script>
-<script src="character-core.js?v=27a8e9e2"></script>
-<script src="robot-gl.js?v=6e71f8e3"></script>
-<script src="physics-core.js?v=b4b05456"></script>
+<script src="robot-gl.js?v=e7972e13"></script>
+<script src="physics-core.js?v=36b8b70a"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
-<script src="cloth-core.js?v=c8ee1a44"></script>
-<script src="travel-core.js?v=7f9bbe6e"></script>
-<script src="task-core.js?v=05804b61"></script>
+<script src="cable-core.js?v=d22ee1ce"></script>
+<script src="haptic-core.js?v=5c419251"></script>
+<script src="cloth-core.js?v=9599d904"></script>
+<script src="task-core.js?v=27be68ee"></script>
 <script src="sound.js?v=4f5ec6ef"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script src="app-state.js?v=4622e9af"></script>
-<script src="app-cameras.js?v=768f8da8"></script>
-<script src="app-plot.js?v=2eb29cf3"></script>
-<script src="app-robot.js?v=88328a5c"></script>
-<script src="app-tasks.js?v=bf37f60c"></script>
+<script src="app-cameras.js?v=5f4da7b1"></script>
+<script src="app-plot.js?v=56bdb92c"></script>
+<script src="app-robot.js?v=b468e2b0"></script>
+<script src="app-tasks.js?v=e4bc1ebf"></script>
 <script src="app-views.js?v=b778539d"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>
 <script src="app-io.js?v=d4354267"></script>
-<script src="app-boards.js?v=625d8d32"></script>
+<script src="app-boards.js?v=3005ec71"></script>
 <script src="app-demo.js?v=f40e920f"></script>
 <script>
 'use strict';

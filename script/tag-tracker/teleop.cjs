@@ -11,7 +11,7 @@ module.exports = function ({ check, near }) {
   const create = (id) => T.create(levels.find((l) => l.id === id), table, G);
   const put = (W, b, at, rot = I) => { b.R = rot.slice(); b.q = P.qOf(rot); b.t = C.sub(at, C.mulv(rot, b.off)); b.v = [0,0,0]; b.w = [0,0,0]; b.asleep = false; b.still = 0; };
   const finish = (g, n = 60) => { for (let i = 0; i < n; i++) { g.world.step(1/60); T.update(g,1/60,true); } };
-  check(levels.length >= 8 && levels[0].id === 'bowl' && levels.at(-1).id === 'laundry' && levels.some((l) => l.id === 'dishwasher') && new Set(levels.map((l) => l.id)).size === levels.length && levels.slice(0,4).every((l) => l.hands === 1) && levels.slice(4).every((l) => l.hands === 2), 'eight distinct levels progress from one-hand placement to two-hand household tasks');
+  check(levels.length >= 8 && levels[0].id === 'bowl' && levels.at(-1).id === 'laundry' && levels.some((l) => l.id === 'dishwasher') && new Set(levels.map((l) => l.id)).size === levels.length && levels.slice(0,4).every((l) => l.hands === 1) && levels.slice(4).every((l) => l.hands === 2), 'distinct tasks progress from one-hand placement to two-hand household and cable manipulation');
   for (const l of levels) {
     const g = create(l.id), W = g.world, keys = new Set([...W.bodies, ...W.cloths].map((b) => b.key));
     check(l.name && l.brief && l.hint && l.par > 0 && l.goals.length && l.goals.every((r) => keys.has(r.object) && (!r.target || keys.has(r.target))), l.id + ': content and objective references are valid');

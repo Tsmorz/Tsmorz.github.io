@@ -15,7 +15,9 @@ simulated humanoid robot and a tabletop physics scene from them. Tags, settings 
 | `robot-core.js` | `RobotCore`, no DOM: the humanoid, IK, calibration, joint slew, demo path |
 | `robot-gl.js` | `RobotGL`: the shaded robot; `meshes()` has no DOM |
 | `physics-core.js` | `PhysicsCore`, no DOM: the table, props, hands, grip, contact record, haptic events |
-| `cloth-core.js` | small-step XPBD towel cloth, no DOM |
+| `cloth-core.js` | small-step XPBD towel cloth and gripper reactions, no DOM |
+| `cable-core.js` | elastic cable, endpoint reactions, continuous USB-C sleeve contacts and spring detent, no DOM |
+| `haptic-core.js` | finite TacHammer cue mapping and BLE write dispatcher, no DOM |
 | `task-core.js` | `TaskCore`, no DOM: the robot workbench's scenes, physical objectives, progress, `guidance`, the head camera |
 | `sound.js` | `ContactSound`: Web Audio contact sounds |
 | `speech-worker.js` | speech to text (Whisper tiny.en through Transformers.js) |
@@ -179,7 +181,7 @@ over the air: **never change them**. Read by force arrows (`forceArrows`, `o.for
 
 The Physics selector opens a robot workbench. **Small tasks** is the default: a ball in a bowl, a cup on a coaster,
 two blocks in separate outlines, two stacked books, using each gripper for a ball, a loaded tray, one dishwasher
-plate and one folded towel. **Full challenges** retains the original larger eight tasks. Every task is selectable;
+plate, a USB-C cable insertion and one folded towel. **Full challenges** retains the original larger tasks. Every task is selectable;
 there are no story rooms, human avatars, rewards, navigation requirements or level locks. Keep all task content,
 variant definitions, instructions and hints in `_data/tag_tasks.yml`. `TaskCore.mission(level, 'guided')` applies
 `guided` overrides without mutating the full challenge. Results use `tag-tracker-guided` and `tag-tracker-teleop`;
@@ -206,7 +208,7 @@ The renderer retains material lighting, tone mapping, soft sampled shadows and b
 `physics-core.js` runs a 240 Hz accumulator, friction-limited grasps, contacts and sleep. Compound collision boxes
 and cylinders share dimensions with rendering; openings stay hollow. Mass properties use analytic piece inertia
 and the parallel-axis theorem (seam overlaps are an approximation). `cloth-core.js` is coarse XPBD towel cloth,
-with stretch/shear, compliant bending, table friction and particle self-contact, not garment simulation. Props
+with stretch/shear, compliant bending, table friction and particle self-contact. The small towel uses a 13 × 13 mesh; the full pile keeps 9 × 9 per towel. The small towel folds in place on a pad. It is a physical approximation, not garment FEM. Props
 must be released and settled for 0.75 s; handoff, two-gripper lifts and folding have additional checks.
 
 `task check:tag-tracker -- 5j 5k` covers physical manipulation and guidance (`script/tag-tracker/teleop.cjs` and
@@ -214,3 +216,39 @@ must be released and settled for 0.75 s; handoff, two-gripper lifts and folding 
 After building, `task shot -- /tag-tracker/ --eval-file script/tag-tracker/guided-browser.js` performs the same
 exercise through IK and motor slew, checks live hints, mode changes, all task views and the head camera.
 `browser.js` covers the full challenges. Repeat browser checks with `--phone`.
+
+
+### Cable insertion and tactile output
+
+The USB-C task starts the plug on a narrow cradle so the robot's bulky fingers can pinch its housing without
+hitting the table. The right gripper takes the plug; the left can lift cable slack. The cable is a 33-node XPBD
+elastic rod with stretch, compliant bending, gravity, table friction, self-contact and rigid-body collision.
+Its endpoint reactions act back on the plug and optional cable-pinching hand. Cloth pin reactions similarly
+act back on the hands. These impulses are consumed before the next rigid contact solve, so a supported
+load does not leave a false final velocity. They reset with the scene.
+
+The metal plug is a hollow shell. The fixed socket has real walls and a centre tongue. A clipped shell-edge
+manifold covers the sleeve continuously between the general engine's surface samples, with 0.05 mm slop
+and 24 solver iterations for precision bodies. Axial friction and a damped spring detent are force laws;
+no pose snapping or locking is used. Release and settle remain required. Geometry and forces are
+representative approximations, not USB compliance or measured connector calibration. Cable torsion,
+individual conductors and electrical contacts are not modelled. Shift + movement keys gives 0.2 mm
+steps; Shift + wrist keys gives fine turns. AprilTag translation supports Motion × 0.1.
+
+`haptic-core.js` uses the existing nrf-controller actuator characteristic (`TagCore.ACT.status`, read/notify/write),
+matching `src/dashboard_wire.h`: six bytes `version=2, command=2, waveform=1 or 3, level, value_le16=0`.
+Firmware acquires its power rail on play; readiness does not require the rail already on. Only finite TacHammer CLICK (6 ms) and KNOCK (12 ms including brake) are sent, capped at 45 percent and
+10 writes/s or less. Contact impacts, slip, fabric tension, cable tension and the seating edge drive the cues.
+**No ERM, servo or STOP_ALL writes**: STOP_ALL would also release the gripper servo. This is tactile vibration,
+not calibrated force feedback. Each write self-terminates in firmware; no sustained-output stop command is needed.
+
+Boards route automatically from live wrist-tag assignments, or explicitly to Left/Right/Off for mouse practice.
+Unmapped, simulated, disconnected, unready or stale-status (>500 ms) boards get no output. A busy GATT
+characteristic drops new cues, never queues old commands. Task changes, off, blur and hidden pages reset cues.
+Settings expose enable/strength and connection/acknowledgement status. Acknowledgement means GATT write
+success, not proof that an actuator moved. Real controller feel and physical material calibration remain unverified.
+
+`task check:tag-tracker -- 5l` (`script/tag-tracker/advanced.cjs`) performs real grasp/lift/insert/release, checks
+cable tension and stretch, folds the finer towel with both physical grippers, and checks TacHammer packets,
+routing, capability/stale/off guards and in-flight writes with mocked GATT. `advanced-browser.js` repeats USB
+insertion through actual robot IK/motor slew and the rendered page; it never moves a prop directly. `fabric-browser.js` folds the small towel through both actual robot arms and checks released completion.
