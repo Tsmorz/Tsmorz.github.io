@@ -3,7 +3,7 @@ module.exports=async function({check}){
   const path=require('path'),root=path.resolve(__dirname,'../..'),{execFileSync}=require('child_process');
   const C=require(root+'/tag-tracker/tracker-core'),R=require(root+'/tag-tracker/robot-core'),P=require(root+'/tag-tracker/physics-core'),T=require(root+'/tag-tracker/task-core'),Cable=require(root+'/tag-tracker/cable-core'),GL=require(root+'/tag-tracker/robot-gl'),H=require(root+'/tag-tracker/haptic-core');
   const data=JSON.parse(execFileSync('ruby',['-ryaml','-rjson','-e','puts JSON.generate(YAML.load_file(ARGV[0]))',root+'/_data/tag_tasks.yml'])),I=[1,0,0,0,1,0,0,0,1],G=R.gripper(R.model()),table={R:I,t:[0,0,0],size:[.5,.9],thick:.03};
-  const g=T.create(data.levels.find(l=>l.id==='connector'),table,G),W=g.world,plug=g.byKey.get('plug'),wire=W.cables[0];
+  const g=T.create(require('./connector-fixture.json'),table,G),W=g.world,plug=g.byKey.get('plug'),wire=W.cables[0];
   const socket=g.byKey.get('port'),portAt=W.poseOf(socket).t;
   let orient=I,wrist=C.add(W.poseOf(plug).t,[-.012,0,.0925]),opening=1;
   const frame=()=>{W.setRobot({hands:[{side:1,pose:{R:orient,t:wrist},opening}]});W.step(1/60);T.update(g,1/60,true);};
@@ -41,7 +41,7 @@ module.exports=async function({check}){
   }
   Object.assign(plug,saved);g.reset();
   check(!g.complete&&wire.pins.size===0&&wire.nodes.every(n=>n.v.every(v=>v===0))&&!plug.externalImpulse,'restart clears the cable, results and pending reaction impulses');
-  // Fabric patch rotation and the complete shirt fold are covered separately by section 5o.
+  // Fabric patch rotation and the twice-folded plush towel are covered separately by section 5o.
   // Wire packets, per-hand routing, unavailable/stale/off guards, rate limits and no asynchronous backlog.
   check([...H.packet(99,3)].join(',')==='2,2,3,45,0,0','TacHammer command is version 2 / play / knock / capped strength / zero value');
   const status=C.decodeActuatorStatus(new DataView(C.encodeActuatorStatus({railOn:true,tachammerReady:true,ermReady:true}).buffer));

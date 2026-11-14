@@ -179,6 +179,7 @@ export class Plot {
     g.strokeStyle = s.color;
     g.lineWidth = (s.width ?? 1.25) * dpr;
     g.lineJoin = "round";
+    g.setLineDash((s.dash ?? []).map((v) => v * dpr));
     const perPixel = (b - a) / w;
     g.beginPath();
     if (perPixel < 3) {
@@ -213,6 +214,7 @@ export class Plot {
       }
     }
     g.stroke();
+    g.setLineDash([]);
   }
 
   /** The overlay: a playhead, a hover line and a selection band, in the last draw's time map. */
@@ -231,6 +233,7 @@ export class Plot {
       g.globalAlpha = 1;
       g.fillRect(Math.round(xa), 0, dpr, h);
       g.fillRect(Math.round(xb), 0, dpr, h);
+      for (const x of [xa, xb]) g.fillRect(Math.round(x) - 3 * dpr, h / 2 - 12 * dpr, 6 * dpr, 24 * dpr);
     }
     if (hover !== null && hover !== undefined) {
       g.fillStyle = colors.line;
@@ -420,6 +423,12 @@ export class XYPlot {
     const X = o.xLog ? (v) => (Math.log(v / x0) / Math.log(x1 / x0)) * w : (v) => ((v - x0) / (x1 - x0)) * w;
     const Y = (v) => h - ((v - y0) / (y1 - y0)) * h;
     this.map = { x0, x1, y0, y1, xLog: o.xLog, w, h };
+
+    for (const band of o.bands ?? []) {
+      const a = X(Math.max(x0, band.x0)), b = X(Math.min(x1, band.x1));
+      g.fillStyle = band.color;
+      g.fillRect(a, 0, Math.max(0, b - a), h);
+    }
 
     g.lineWidth = dpr;
     g.font = `${10 * dpr}px ${colors.mono}`;

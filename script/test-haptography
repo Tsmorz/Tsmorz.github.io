@@ -1,0 +1,155 @@
+#!/usr/bin/env node
+// Hardware-free checks for the browser studio, against known signals and a fake serial peer.
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const load = name => import(pathToFileURL(path.join(__dirname, '../haptography', name)));
+(async () => {
+  const H = await load('haptics-core.js'), W = await load('wire.js'), { DeviceClient, COMMAND, measuredVibration } = await load('device.js');
+  const { decodeSession } = await load('session.js'), { analyze } = await load('analysis.js');
+  const { Simulator } = await load('simulate.js'), E = await load('export.js'), { openStore } = await load('storage.js');
+  const near = (a, b, tolerance, message) => assert.ok(Math.abs(a - b) <= tolerance, `${message}: ${a} vs ${b}`);
+  const n = H.GRID * 2, sine = H.makeSignal({ kind: 'sine', seconds: 2, frequency: 100 });
+  console.log('1. Signals, filters and targets');
+  near(H.rms(sine), Math.SQRT1_2, 1e-10, '100 Hz sine RMS');
+  const filtered = H.bandpass(sine, H.GRID, 20, 400);
+  near(H.rms(filtered.subarray(500, -500)), Math.SQRT1_2, 0.01, 'passband keeps the sine');
+  assert.ok(H.rms(H.bandpass(sine, H.GRID, 200, 400)) < 0.03, 'out-of-band energy rejected');
+  assert.deepEqual(H.makeSignal({ kind: 'noise', seed: 2 }), H.makeSignal({ kind: 'noise', seed: 2 }), 'repeatable noise');
+  const swept = H.makeSignal({ kind: 'sweep', frequency: 100, endFrequency: 100 });
+  near(H.rms(swept), Math.SQRT1_2, 1e-10, 'zero-width sweep remains a sine');
+  const faded = H.fade(sine, 0.02, 0.04);
+  near(faded[0], 0, 0, "attack starts at zero"); near(faded.at(-1), 0, 0, "release ends at zero");
+  const axis = [0.3, 0.4, Math.sqrt(0.75)], rate = 1670;
+  const times = Float64Array.from({ length: rate * 3 }, (_, i) => i / rate);
+  const accel = Float64Array.from({ length: times.length * 3 }, (_, i) => Math.sin(2 * Math.PI * 100 * times[Math.floor(i / 3)]) * axis[i % 3]);
+  const target = H.recordingTarget({ imu: { t: times, accel } }, 0.2, 2.2);
+  near(Math.abs(target.axis.reduce((s, v, i) => s + v * axis[i], 0)), 1, 1e-6, 'principal axis');
+  near(H.rms(target.target), Math.SQRT1_2, 0.02, 'target preserves g rather than normalizing');
+  assert.throws(() => H.recordingTarget({ imu: { t: times, accel } }, 2, 4), /inside the recording/);
+
+  console.log('2. Response identification, inverse and correction');
+  const drive = H.fade(H.bandpass(H.makeSignal({ kind: 'noise', seconds: 3 }), H.GRID, 20, 600));
+  // An exactly linear reference actuator: gain 2 g/full scale, known axis, 10 samples late.
+  const vibration = Float64Array.from({ length: drive.length * 3 }, (_, i) => (drive[Math.floor(i / 3) - 10] ?? 0) * 2 * axis[i % 3]);
+  const model = H.identify([{ drive, vibration }]);
+  assert.equal(model.delay, 10);
+  near(H.rms(model.h_re.slice(20, 100)), 2, 0.01, 'identified response gain');
+  assert.ok(model.coherence.slice(20, 100).every(v => v > 0.99));
+  const desired = H.fade(Float64Array.from(sine, v => v * 0.2));
+  const command = H.inverseDrive(desired, model, 0.005), predicted = H.predict(command, model);
+  assert.ok(H.compare(desired, predicted).bandError < 0.15, 'regularized inverse reaches the known target');
+  const wrongGain = { ...model, h_re: model.h_re.map(v => v * 1.5), h_im: model.h_im.map(v => v * 1.5) };
+  let learning = H.inverseDrive(desired, wrongGain);
+  const before = H.compare(desired, H.predict(learning, model)).bandError;
+  for (let i = 0; i < 4; i++) learning = H.refine(learning, desired, H.predict(learning, model), wrongGain);
+  assert.ok(H.compare(desired, H.predict(learning, model)).bandError < before / 3, 'learning corrects an imperfect model');
+  assert.throws(() => H.identify([{ drive, vibration: new Float64Array(vibration.length) }]), /No reliable/);
+  assert.throws(() => H.validateModel({ ...model, h_re: [NaN] }), /Invalid/);
+  assert.throws(() => H.validateModel({ ...model, grid_hz: 1000 }), /Invalid/);
+  assert.throws(() => H.validateModel({ ...model, freqs: model.freqs.map(() => 0) }), /Invalid/);
+  const coherenceGated = { ...model, coherence: model.coherence.map(() => 0) };
+  assert.equal(H.peak(H.inverseDrive(desired, coherenceGated)), 0, 'unmeasured bands never produce a huge inverse');
+  const limited = H.generate(Float64Array.from(sine, v => v * 10), { kind: 'recording', strength: 10 }, model);
+  assert.ok(H.peak(limited.drive) <= 0.1 && limited.clipped > 0);
+  assert.equal('erm' in limited, false, 'generated signals contain only TacHammer drive');
+  for (const output of ['erm', 'both']) {
+    assert.throws(() => H.generate(sine, { output }), /Only TacHammer/);
+    assert.equal(H.isTacHammer({ output }), false, 'old output selections cannot be played');
+  }
+  assert.equal(H.isTacHammer({ output: 'hammer' }, { erm: new Float64Array(100) }), false, 'legacy tracks cannot be relabelled as TacHammer');
+  assert.equal(H.isTacHammer({ output: 'hammer' }, { settings: { output: 'both' } }), false, 'restored draft settings cannot hide an unsupported output');
+  assert.equal(H.isTacHammer({ output: 'hammer' }, { erm: null }), true, 'existing TacHammer experiments still load');
+  const demoTakes = [0.1, 0.2, 0.4].map(level => {
+    const x = Float64Array.from(drive, v => v * level); return { drive: x, vibration: H.demoVibration(x) };
+  });
+  H.validateModel(H.identify(demoTakes));
+
+  console.log('3. Accuracy metrics, quantization and exports');
+  const exact = H.compare(desired, desired);
+  near(exact.bandError, 0, 1e-12, 'identical band levels'); near(exact.envelope, 1, 1e-10, 'identical envelopes'); near(exact.nrmse, 0, 1e-12, 'identical waveforms');
+  near(H.compare(desired, Float64Array.from(desired, v => v / 2)).bandError, 20 * Math.log10(2), 1e-6, 'half acceleration is 6.02 dB');
+  assert.throws(() => H.compare(desired, desired.subarray(1)), /full measurement/);
+  const clip = H.packClip(new Float64Array([1, -1, 0]));
+  const view = new DataView(clip.pcm.buffer);
+  assert.equal(view.getInt16(0, true), 30000); assert.equal(view.getInt16(20, true), -30000);
+  assert.equal('levels' in clip, false, 'clip packing has no second actuator track');
+  const wave = H.wav(sine), wv = new DataView(wave.buffer);
+  assert.equal(new TextDecoder().decode(wave.subarray(0, 4)), 'RIFF'); assert.equal(wv.getUint32(24, true), 16000); assert.equal(wv.getUint32(40, true), n * 10 * 2);
+  assert.throws(() => H.packClip(sine, 0), /Unsupported/);
+  const labels = E.readLabels(E.labelsJson({ setup: 'foam', simulated: true, repetition: 2, spans: [{ t0: 1, t1: 2, label: 'bad' }] }));
+  assert.equal(labels.setup, 'foam'); assert.equal(labels.simulated, true); assert.equal(labels.repetition, 2); assert.equal(labels.spans[0].label, 'bad');
+  const storage = await openStore();
+  await storage.putState('studio', { variants: [{ drive: sine }] });
+  assert.deepEqual((await storage.getState('studio')).variants[0].drive, sine);
+
+  console.log('4. Commands, ACK matching, retry, cancellation and upload offsets');
+  const commands = [], parser = new W.StreamReader(); parser.synced = true;
+  let client, droppedAck = false;
+  client = new DeviceClient(async bytes => {
+    const [packet] = parser.feed(bytes); assert.ok(packet, 'command CRC and framing'); commands.push(packet);
+    if (!droppedAck) { droppedAck = true; return; }
+    client.feed({ type: W.ACK, body: { command_type: packet.type, command_number: (packet.number + 1) & 65535, status: 0 } }); // unrelated ACK
+    queueMicrotask(() => client.feed({ type: W.ACK, body: { command_type: packet.type, command_number: packet.number, status: 0 } }));
+  }, { timeout: 5 });
+  await client.command(COMMAND.stop);
+  assert.equal(commands.length, 2); assert.equal(commands[0].number, commands[1].number, 'retries preserve command number');
+  commands.length = 0;
+  // Current recording firmware retains zero-valued legacy fields in protocol 3.
+  const info = W.parseBody(W.INFO, W.encodeInfo({ version: 3, flags: W.INFO_IMU_OK | W.INFO_TACHAMMER_OK,
+    haptic_rate_hz: 16000, erm_step_us: 0, clip_max_samples: 96000, clip_max_erm: 0 }));
+  const progress = [];
+  await client.upload(new Float64Array(1600).fill(0.5), info, undefined, p => progress.push(p));
+  assert.equal(commands[0].type, COMMAND.begin);
+  const begin = new DataView(commands[0].body.buffer); assert.equal(begin.getUint32(0, true), 16000); assert.equal(begin.getUint32(4, true), 0, 'no second track');
+  const chunks = commands.filter(c => c.type === COMMAND.data);
+  assert.equal(chunks[0].body[0], 0); assert.equal(new DataView(chunks[1].body.buffer).getUint32(1, true), 224, 'PCM offset in samples, not bytes');
+  assert.ok(chunks.every(c => c.body[0] === 0), 'only TacHammer PCM chunks');
+  assert.equal(progress.at(-1), 1, 'upload progress finishes at 100%');
+  assert.ok(progress.every((p, i) => p > 0 && p <= 1 && (!i || p > progress[i - 1])), 'upload progress is monotonic');
+  const beforeRejected = commands.length;
+  await assert.rejects(client.upload(sine, { ...info, flags: W.INFO_IMU_OK }), /TacHammer output is not ready/);
+  await assert.rejects(client.upload(sine, { ...info, haptic_rate_hz: 0 }), /Unsupported/);
+  await assert.rejects(client.upload(sine, { ...info, clip_max_samples: 2 }), /capacity/);
+  assert.equal(commands.length, beforeRejected, 'invalid output configurations fail before sending commands');
+  const aborted = new AbortController(); aborted.abort();
+  const count = commands.length; await assert.rejects(client.upload(sine, info, aborted.signal), { name: 'AbortError' }); assert.equal(commands.length, count);
+  const noAck = new DeviceClient(async () => {}, { timeout: 5, attempts: 2 });
+  await assert.rejects(noAck.command(COMMAND.stop), /did not answer/);
+  const waiting = noAck.command(COMMAND.stop); noAck.close(); await assert.rejects(waiting, /disconnected/);
+  let refused;
+  refused = new DeviceClient(async bytes => {
+    const packet = parser.feed(bytes)[0]; refused.feed({ type: W.ACK, body: { command_type: packet.type, command_number: packet.number, status: 2 } });
+  });
+  await assert.rejects(refused.command(COMMAND.play), /no actuator/);
+  let player;
+  player = new DeviceClient(async bytes => {
+    const packet = parser.feed(bytes)[0];
+    player.bytes(new Uint8Array([0, 1, 2]));
+    player.feed({ type: W.ACK, body: { command_type: packet.type, command_number: packet.number, status: 0 } });
+    if (packet.type === COMMAND.play) {
+      const tag = new DataView(packet.body.buffer).getUint16(0, true);
+      player.feed({ type: W.PLAYBACK, body: { kind: 2, id: tag, outcome: 1 } }); // stopped duplicate after a retry
+      queueMicrotask(() => player.feed({ type: W.PLAYBACK, body: { kind: 2, id: tag, outcome: 0, frames: 800, start_us: 1000000, end_us: 1050000 } }));
+    }
+  });
+  const played = await player.play(new Float64Array(80), info);
+  assert.equal(played.report.frames, 800); assert.ok(played.raw.length > 0, 'playback retains its captured byte stream');
+  const stopDuringUpload = new AbortController();
+  const interrupted = player.play(sine, info, stopDuringUpload.signal, () => stopDuringUpload.abort());
+  await assert.rejects(interrupted, { name: 'AbortError' }); assert.equal(player.capture, null);
+
+  console.log('5. Session decoding and board-clock measurement coverage');
+  const sim = new Simulator({ seed: 3 }), buffers = [];
+  for (let i = 0; i < 140; i++) buffers.push(sim.next(50));
+  const bytes = new Uint8Array(buffers.reduce((s, b) => s + b.length, 0)); let at = 0;
+  for (const b of buffers) { bytes.set(b, at); at += b.length; }
+  const analysis = analyze(decodeSession(bytes));
+  assert.ok(analysis.strokes.length > 0 && analysis.imu.t.length > 10000);
+  const report = { start_us: analysis.origin_us + 1e6 };
+  assert.equal(measuredVibration(analysis, report, H.GRID).length, H.GRID * 3);
+  assert.throws(() => measuredVibration(analysis, { start_us: analysis.origin_us }, H.GRID), /cover/);
+  const gap = { ...analysis, imu: { ...analysis.imu, t: Float64Array.from(analysis.imu.t, (v, i) => i > 2000 ? v + 0.1 : v) } };
+  assert.throws(() => measuredVibration(gap, report, H.GRID * 2), /gaps/);
+  console.log('All haptography checks passed.');
+})().catch(e => { console.error(e); process.exitCode = 1; });

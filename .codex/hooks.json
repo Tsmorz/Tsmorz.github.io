@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'/Users/tsmoragiewicz/Documents/Repos/personal-site/.codex/hooks/check-js.sh'",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -114,6 +114,11 @@ tasks:
     cmds:
       - script/test-tag-tracker {{.CLI_ARGS}}
 
+  check:haptography:
+    desc: Check haptic signal processing, actuator commands, measurement validation and session exports (Node, no hardware)
+    cmds:
+      - script/test-haptography
+
   shot:
     desc: "Screenshot a page in headless Chrome and report its errors (task shot -- /tag-tracker/ --click '#emptyDemo' --wait 8000; options in script/shot)"
     cmds:
@@ -136,7 +141,7 @@ tasks:
       - bundle exec htmlproofer ./{{.SITE_DIR}} --disable-external --allow-hash-href --ignore-empty-alt --ignore-urls "http://192.168.4.1,http://cartpole.local"
 
   check:fast:
-    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, vision and embedded models, CSV fit, recipe units, glide path, tag tracker, script versions"
+    desc: "Quick checks, no build: _data content, firmware installer files, swing-up port, lab math, vision and embedded models, CSV fit, recipe units, glide path, tag tracker, haptography, script versions"
     cmds:
       - task: check:data
       - task: check:versions
@@ -149,6 +154,7 @@ tasks:
       - task: check:recipes
       - task: check:glide
       - task: check:tag-tracker
+      - task: check:haptography
 
   check:
     desc: "Everything CI runs: quick checks, then build, JS references, internal links"

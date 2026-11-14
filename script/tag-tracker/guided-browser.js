@@ -29,9 +29,10 @@
   $('gameEyes').click();$('gameTilt').value=-45;$('gameTilt').dispatchEvent(new Event('input'));await wait(100);
   const eye=plotOrbit().o.eye,expected=TaskCore.headCamera(RB.scene.chest,RB.scene.m,-45,plot.clientWidth,plot.clientHeight).eye;
   assert(C.norm(C.sub(eye,expected))<1e-8,'the tilting robot head camera is retained');setRobotView('orbit');
-  setCampaignMode('practice');await wait(250);assert(TB.game.level.objects.length===3&&$('guidePlanList').textContent.includes('C'),'the full three-block challenge and matching instructions remain');
+  setCampaignMode('practice');await wait(250);assert(TB.game.level.objects.length===2&&$('guidePlanList').textContent.includes('B'),'the full challenge still has exactly two blocks and matching instructions');
   for(const l of TASK_DATA.levels){taskLevel(l.id);await wait(l.id==='laundry'?450:100);assert(TB.game.level.id===l.id&&TASK.guide&&$('guideTitle').textContent,'each full task loads with guidance');}
-  assert(TB.world.cloths.length===1,'the full challenge contains the long-sleeve shirt');
+  assert(TASK_DATA.levels.length===5&&$('workbenchTask').options.length===5,'the task picker contains exactly five choices');
+  assert(TB.world.cloths.length===1,'the full challenge contains one fluffy towel');
   setCampaignMode('guided');taskLevel('sort');await wait(300);assert(TB.game.level.objects.length===2&&!TB.game.complete,'switching back restores the small two-block exercise');
   $('gameSettingsBtn').click();assert(!$('handControls')&&!document.querySelector('[data-nudge]'),'the obsolete hand command bar is removed');$('gameSettingsClose').click();
   assert(document.documentElement.scrollWidth<=innerWidth+1,'the layout fits the viewport');

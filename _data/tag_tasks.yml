@@ -1,13 +1,14 @@
 # Robot tasks and guidance. Metres and seconds.
 title: Robot tasks
-subtitle: Pick a task. Practise a grasp. Build up to two grippers.
+subtitle: Five tasks, from a first grasp to two-handed precision and soft fabric.
 levels:
 - id: bowl
   name: Ball in the bowl
   hands: 1
   skill: First grasp
   brief: Pick up the blue ball and release it inside the wide bowl. Take your time.
-  hint: Close around the ball, lift, move over the opening, then release. A settled ball counts.
+  hint: Close around the ball, lift, move over the opening, then release. A settled
+    ball counts.
   par: 90
   objects:
   - key: ball
@@ -17,7 +18,7 @@ levels:
     - 0.18
     - 0.02
     label: Ball
-    color: '#2a78d6'
+    color: "#2a78d6"
   - key: bowl
     kind: bowl
     at:
@@ -25,7 +26,7 @@ levels:
     - -0.17
     - 0
     label: Bowl
-    color: '#168a73'
+    color: "#168a73"
     mass: 0.22
   goals:
   - type: inside
@@ -45,101 +46,24 @@ levels:
       - 0.03
       - 0
     name: Ball in the bowl
-    brief: Pick up the ball, move it over the bowl, and open the gripper. Let the ball settle inside.
+    brief: Pick up the ball, move it over the bowl, and open the gripper. Let the
+      ball settle inside.
   guide:
     plan:
     - Open either gripper and centre the ball between its two pads.
     - Close until the ball stays between the pads. Lift it clear of the table.
     - Move over the bowl, lower just above the opening, then open the gripper.
     tips:
-    - Close around the ball, lift, move over the opening, then release. A settled ball counts.
-    - If the jaws close without gripping, open them and centre the prop between both pads before trying
-      again.
-- id: precision
-  name: A smaller target
-  hands: 1
-  skill: Precision
-  brief: Put the ball inside the mug. The opening is only a little wider than the ball.
-  hint: Look down through the head camera to line up the opening. Motion × 0.5 helps with tags.
-  par: 120
-  objects:
-  - key: ball
-    kind: ball
-    at:
-    - -0.09
-    - 0.18
-    - 0.02
-    label: Ball
-    color: '#2a78d6'
-  - key: cup
-    kind: cup
-    at:
-    - 0.03
-    - -0.18
-    - 0
-    label: Mug
-    color: '#2a78d6'
-  goals:
-  - type: inside
-    object: ball
-    target: cup
-    label: Release the ball in the mug
-    destination: the mug
-  guided:
-    keep:
-    - cup
-    goal_count: 1
-    par: 90
-    placements:
-      cup:
-      - -0.1
-      - 0.17
-      - 0
-    goals:
-    - type: place
-      object: cup
-      label: Cup upright on the coaster
-      at:
-      - 0.015
-      - -0.05
-      - 0
-      tolerance:
-      - 0.03
-      - 0.03
-      - 0.012
-      upright: true
-      destination: the coaster
-    markers:
-    - at:
-      - 0.015
-      - -0.05
-      - 0.001
-      size:
-      - 0.1
-      - 0.1
-      label: Coaster
-    name: Cup on the coaster
-    brief: Pick up the cup and set it upright on its coaster. Release it before checking its position.
-  guide:
-    plan:
-    - Grip the sides of the cup, not its handle.
-    - Lift the cup, keep it upright, and move above the coaster.
-    - Lower it onto the table and open the gripper.
-    tips:
-    - Look down through the head camera to line up the opening. Motion × 0.5 helps with tags.
-    - If the jaws close without gripping, open them and centre the prop between both pads before trying
-      again.
-    full_plan:
-    - Pick up the ball with either gripper.
-    - Lift it above the mug and line it up with the opening.
-    - Lower the ball just above the rim and open the gripper.
-    full_tips:
-    - Look down through the head camera to line up the opening. Motion × 0.5 helps with tags.
+    - Close around the ball, lift, move over the opening, then release. A settled
+      ball counts.
+    - If the jaws close without gripping, open them and centre the prop between both
+      pads before trying again.
 - id: sort
-  name: Sort the delivery
+  name: Place two blocks
   hands: 1
   skill: Placement
-  brief: Move each labelled block to its matching outline. All three must stay there together.
+  brief: Use one gripper to place A in outline A, then B in outline B. Release each
+    block and lift clear before picking up the next.
   hint: Lift clear of the other blocks. Letters identify the targets as well as colour.
   par: 150
   objects:
@@ -150,7 +74,7 @@ levels:
     - 0.25
     - 0.025
     label: A
-    color: '#2a78d6'
+    color: "#2a78d6"
     mass: 0.09
   - key: b
     kind: block
@@ -159,16 +83,7 @@ levels:
     - 0
     - 0.025
     label: B
-    color: '#168a73'
-    mass: 0.09
-  - key: c
-    kind: block
-    at:
-    - -0.12
-    - -0.25
-    - 0.025
-    label: C
-    color: '#8574d6'
+    color: "#168a73"
     mass: 0.09
   goals:
   - label: A in its outline
@@ -197,19 +112,6 @@ levels:
     - 0.01
     upright: true
     destination: outline B
-  - label: C in its outline
-    object: c
-    type: place
-    at:
-    - 0.1
-    - -0.25
-    - 0.025
-    tolerance:
-    - 0.028
-    - 0.028
-    - 0.01
-    upright: true
-    destination: outline C
   guided:
     keep:
     - a
@@ -218,7 +120,8 @@ levels:
     par: 105
     goal_x: 0.015
     name: Place two blocks
-    brief: Use one gripper to place A in outline A, then B in outline B. Move them one at a time.
+    brief: Use one gripper to place A in outline A, then B in outline B. Move them
+      one at a time.
     placements:
       a:
       - -0.06
@@ -230,249 +133,48 @@ levels:
       - 0.025
   guide:
     plan:
-    - Open one gripper and put the pads around the upper half of A. Keep the gripper body above the table.
-      Close, then lift A clear.
+    - Open one gripper and put the pads around the upper half of A. Keep the gripper
+      body above the table. Close, then lift A clear.
     - Carry A over the outline labelled A. Lower it onto the table and open the gripper.
-    - Keep the empty gripper open and lift it clear of A. Then use the same gripper to pick up B.
+    - Keep the empty gripper open and lift it clear of A. Then use the same gripper
+      to pick up B.
     - Place B in outline B and release it. Both blocks must stay upright and still.
     tips:
     - One gripper means one block at a time. You do not need to hold both blocks together.
-    - The letter above each block matches the letter beside its destination. A and B each have their own
-      outline.
-    - Keep the bulky gripper body above the table. Aim the pads a little above the block’s centre, then
-      close around its upper half.
-    - If a closed gripper does not lift the block, open it, centre the block between both pads, then close
-      again.
-    - Lift before moving sideways. If the block scrapes along the table, it can slip out of the gripper.
-    - Q lifts the selected gripper and E lowers it while the view has focus. Alt-drag changes the mouse
-      movement plane.
+    - The letter above each block matches the letter beside its destination. A and
+      B each have their own outline.
+    - Keep the bulky gripper body above the table. Aim the pads a little above the
+      block’s centre, then close around its upper half.
+    - If a closed gripper does not lift the block, open it, centre the block between
+      both pads, then close again.
+    - Lift before moving sideways. If the block scrapes along the table, it can slip
+      out of the gripper.
+    - Q lifts the selected gripper and E lowers it while the view has focus. Alt-drag
+      changes the mouse movement plane.
     full_plan:
-    - Pick up block A with one gripper, lift it, and release it inside outline A.
-    - Repeat for B, then C. Each block has its own labelled outline.
-    - Keep each released block upright and still while moving the next one.
+    - Open one gripper and put the pads around the upper half of A. Keep the gripper
+      body above the table. Close, then lift A clear.
+    - Carry A over the outline labelled A. Lower it onto the table and open the gripper.
+    - Keep the empty gripper open and lift it clear of A. Then use the same gripper
+      to pick up B.
+    - Place B in outline B and release it. Both blocks must stay upright and still.
     full_tips:
-    - Lift clear of the other blocks. Letters identify the targets as well as colour.
+    - The full challenge puts the two targets farther away. Both blocks must stay
+      upright and still.
     stages:
       approach:
         title: Line up with the upper half of {object}
-        text: Open the gripper. Put its pads on opposite sides of {object}, a little above the centre.
-          Keep the bulky gripper body clear of the table.
-- id: tower
-  name: Build a tower
-  hands: 1
-  skill: Balance
-  brief: Stack A, B, then C on the marked base. Release each block without toppling the stack.
-  hint: Place the bottom block first. Lower gently; the blocks collide and can slide or fall.
-  par: 210
-  objects:
-  - key: a
-    kind: block
-    at:
-    - -0.12
-    - 0.23
-    - 0.025
-    label: A
-    color: '#2a78d6'
-    mass: 0.09
-  - key: b
-    kind: block
-    at:
-    - -0.12
-    - 0
-    - 0.025
-    label: B
-    color: '#168a73'
-    mass: 0.09
-  - key: c
-    kind: block
-    at:
-    - -0.12
-    - -0.23
-    - 0.025
-    label: C
-    color: '#8574d6'
-    mass: 0.09
-  goals:
-  - label: A in the tower
-    object: a
-    type: place
-    at:
-    - 0.08
-    - 0
-    - 0.025
-    tolerance:
-    - 0.018
-    - 0.018
-    - 0.008
-    upright: true
-    destination: the stack
-  - label: B in the tower
-    object: b
-    type: place
-    at:
-    - 0.08
-    - 0
-    - 0.075
-    tolerance:
-    - 0.018
-    - 0.018
-    - 0.008
-    upright: true
-    destination: the stack
-  - label: C in the tower
-    object: c
-    type: place
-    at:
-    - 0.08
-    - 0
-    - 0.125
-    tolerance:
-    - 0.018
-    - 0.018
-    - 0.008
-    upright: true
-    destination: the stack
-  guided:
-    keep:
-    - a
-    - b
-    goal_count: 2
-    par: 147
-    goal_x: 0.015
-    objects:
-    - key: a
-      kind: book
-      at:
-      - -0.1
-      - 0.22
-      - 0.012
-      label: Red book
-      color: '#944f48'
-      mass: 0.12
-    - key: b
-      kind: book
-      at:
-      - -0.1
-      - -0.2
-      - 0.012
-      label: Green book
-      color: '#4e7770'
-      mass: 0.12
-    goals:
-    - type: place
-      object: a
-      at:
-      - 0.015
-      - 0
-      - 0.012
-      tolerance:
-      - 0.025
-      - 0.035
-      - 0.009
-      upright: true
-      label: First book flat on the mat
-      destination: the stack
-    - type: place
-      object: b
-      at:
-      - 0.015
-      - 0
-      - 0.036
-      tolerance:
-      - 0.025
-      - 0.035
-      - 0.009
-      upright: true
-      label: Second book stacked on top
-      destination: the stack
-    markers:
-    - at:
-      - 0.015
-      - 0
-      - 0.001
-      size:
-      - 0.11
-      - 0.15
-      label: Books
-    name: Stack two books
-    brief: Stack the two books flat, one at a time. Put the red book down first.
-  guide:
-    plan:
-    - Grip a short edge of the red book. Turn the wrist if the book is wider than the open jaws.
-    - Place the red book flat on the marked stack position and release it.
-    - Lift the green book, lower it onto the red one, and release it gently.
-    tips:
-    - A book can be too wide for the jaws in one orientation. Turn the wrist so the jaws close around
-      a short edge.
-    - Release the lower book before picking up the upper book.
-    full_plan:
-    - Place A flat on the tower outline and release it.
-    - Stack B on A, then C on B, releasing each block before picking up the next.
-    - Keep the blocks centred and upright; move slowly near the stack.
-    full_tips:
-    - Place the bottom block first. Lower gently; the blocks collide and can slide or fall.
-- id: handoff
-  name: Pass it on
-  hands: 2
-  skill: Hand coordination
-  brief: Grasp the ball with each hand in turn, then put it in the bowl.
-  hint: The receiving hand closes before the other opens. With one mouse, switch Left / Right between
-    moves.
-  par: 180
-  objects:
-  - key: ball
-    kind: ball
-    at:
-    - -0.09
-    - 0.18
-    - 0.02
-    label: Ball
-    color: '#2a78d6'
-  - key: bowl
-    kind: bowl
-    at:
-    - 0.05
-    - -0.2
-    - 0
-    label: Bowl
-    color: '#168a73'
-    mass: 0.22
-  goals:
-  - type: inside
-    object: ball
-    target: bowl
-    handoff: true
-    label: Both hands grasped the ball; ball in bowl
-    destination: the bowl
-  guided:
-    keep:
-    - ball
-    - bowl
-    goal_count: 1
-    par: 125
-    placements:
-      bowl:
-      - 0
-      - -0.03
-      - 0
-    name: Pass the ball
-    brief: Use each gripper to hold the ball in turn, then release it in the bowl.
-  guide:
-    plan:
-    - Pick up the ball with either gripper.
-    - Bring the other open gripper to the ball. Close it before releasing the first.
-    - Move the ball over the bowl and release it. Both grippers must have held it.
-    tips:
-    - The receiving hand closes before the other opens. With one mouse, switch Left / Right between moves.
-    - If the jaws close without gripping, open them and centre the prop between both pads before trying
-      again.
+        text: Open the gripper. Put its pads on opposite sides of {object}, a little
+          above the centre. Keep the bulky gripper body clear of the table.
+  revision: 2
 - id: tray
-  name: Room service
+  name: Balance a loaded tray
   hands: 2
   skill: Carry together
-  brief: Lift the loaded tray with both hands, carry it to the outline, and set it down with the ball
-    aboard.
-  hint: Pinch opposite rims, then choose Both to move the hands together. Keep the tray level.
+  brief: Grip both side rims, lift the loaded tray and hold it level for one second.
+    Set it on its outline without the ball touching a rim.
+  hint: Move both grippers gently together. If the ball hits a side, restart and try
+    a slower, more level lift.
   par: 240
   objects:
   - key: tray
@@ -482,7 +184,7 @@ levels:
     - 0
     - 0.006
     label: Tray
-    color: '#168a73'
+    color: "#168a73"
     mass: 0.35
   - key: ball
     kind: ball
@@ -491,9 +193,12 @@ levels:
     - 0
     - 0.038
     label: Ball
-    color: '#2a78d6'
+    color: "#2a78d6"
   goals:
-  - label: Tray carried with both hands and set down
+  - type: balance
+    object: tray
+    label: Lift with both hands and balance for one second
+  - label: Set the tray down and release both grippers
     object: tray
     type: place
     at:
@@ -507,262 +212,68 @@ levels:
     dual: true
     upright: true
     destination: the tray outline
-  - label: Ball still on the tray
+  - type: aboard
     object: ball
-    type: place
-    at:
-    - 0.115
-    - 0
-    - 0.038
-    tolerance:
-    - 0.07
-    - 0.16
-    - 0.025
-    destination: the tray outline
+    target: tray
+    label: Keep the ball clear of every rim
+    destination: the centre of the tray
   guided:
     keep:
     - tray
     - ball
-    goal_count: 2
+    goal_count: 3
     par: 168
-    name: Lift a loaded tray
+    name: Balance a loaded tray
     goal_x: 0.015
-    brief: Hold the two side rims, lift the loaded tray, then set it down on its outline with the ball
-      still aboard.
+    brief: Grip both side rims, lift the loaded tray and hold it level for one second.
+      Set it on its outline without the ball touching a rim.
   guide:
     plan:
-    - Move one open gripper to each side rim of the tray. Close both around the rims.
-    - Lift both grippers together and keep the tray level.
-    - Move the tray over its outline, lower both grippers, and release both. Keep the ball on board.
+    - Centre one open gripper on each side rim of the tray, away from the ball. Close
+      both around the rims.
+    - Select both grippers (3). Raise them gently together until the lift objective
+      is checked; hold level for one second.
+    - Carry the tray to its outline slowly, lower evenly, then open both grippers.
+      The ball must never touch a side.
     tips:
-    - Pinch opposite rims, then choose Both to move the hands together. Keep the tray level.
-    - If the jaws close without gripping, open them and centre the prop between both pads before trying
-      again.
-- id: dishwasher
-  name: Load the dishwasher
-  hands: 2
-  skill: Orient and insert
-  brief: Load three plates upright into the open dishwasher rack. Fit one plate into each slot.
-  hint: Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the rack slots, then
-    lower and release.
-  par: 360
-  objects:
-  - key: rack
-    kind: rack
-    at:
-    - 0.11
-    - -0.16
-    - 0
-    label: Dishwasher rack
-    color: '#168a73'
-    fixed: true
-    mass: 1
-    mat: aluminium
-  - key: plate0
-    kind: plate
-    at:
-    - -0.11
-    - 0.18
-    - 0.006
-    label: '1'
-    color: '#2a78d6'
-    mass: 0.12
-    mat: ceramic
-  - key: plate1
-    kind: plate
-    at:
-    - -0.11
-    - 0.18
-    - 0.022
-    label: '2'
-    color: '#168a73'
-    mass: 0.12
-    mat: ceramic
-  - key: plate2
-    kind: plate
-    at:
-    - -0.11
-    - 0.18
-    - 0.038
-    label: '3'
-    color: '#8574d6'
-    mass: 0.12
-    mat: ceramic
-  goals:
-  - label: Plate 1 upright in slot 1
-    object: plate0
-    type: place
-    at:
-    - 0.11
-    - -0.23
-    - 0.073
-    tolerance:
-    - 0.028
-    - 0.022
-    - 0.012
-    upright: false
-    destination: the rack slot
-  - label: Plate 2 upright in slot 2
-    object: plate1
-    type: place
-    at:
-    - 0.11
-    - -0.16
-    - 0.073
-    tolerance:
-    - 0.028
-    - 0.022
-    - 0.012
-    upright: false
-    destination: the rack slot
-  - label: Plate 3 upright in slot 3
-    object: plate2
-    type: place
-    at:
-    - 0.11
-    - -0.09
-    - 0.073
-    tolerance:
-    - 0.028
-    - 0.022
-    - 0.012
-    upright: false
-    destination: the rack slot
-  guided:
-    keep:
-    - rack
-    - plate2
-    goal_count: 1
-    par: 251
-    goal_indices:
-    - 2
-    placements:
-      rack:
-      - 0.015
-      - -0.16
-      - 0
-    goal_x: 0.015
-    name: Load a plate
-    brief: Pick up the plate, turn it upright, and lower it between the rack dividers.
-  guide:
-    plan:
-    - Grip the plate near its edge. Use the second gripper to steady it if needed.
-    - Lift it clear of the table, then tilt it onto its edge.
-    - Line up with the marked rack slot, lower the plate between the dividers, then open the gripper.
-    tips:
-    - Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the rack slots, then lower
-      and release.
-    - If the jaws close without gripping, open them and centre the prop between both pads before trying
-      again.
-    full_plan:
-    - Pick up one plate from the pile and turn it onto its edge.
-    - Lower it upright into the rack slot with the same number.
-    - Release it, then repeat for the remaining two plates.
-    full_tips:
-    - Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the rack slots, then lower
-      and release.
-- id: connector
-  name: Connector practice
-  hands: 2
-  skill: Cable routing and insertion
-  brief: Support the flexible cable with one gripper. Use the other to align and seat the USB-C plug in
-    the fixed socket.
-  hint: Pinch the rear of the black housing, not the metal nose. Approach the socket straight along its
-    axis. Reduce Motion × for fine alignment.
-  par: 240
-  objects:
-  - key: plug
-    kind: usb-plug
-    at:
-    - -0.06
-    - -0.16
-    - 0.0675
-    label: USB-C plug
-    color: '#454c58'
-    mass: 0.035
-    mat: rubber
-    slop: 5.0e-05
-  - key: port
-    kind: usb-port
-    at:
-    - -0.015
-    - -0.08
-    - 0.065
-    label: USB-C socket
-    color: '#aab3bf'
-    mass: 0.2
-    fixed: true
-    mat: aluminium
-    slop: 5.0e-05
-    show_label: true
-  - key: rest
-    kind: plug-rest
-    at:
-    - -0.06
-    - -0.16
-    - 0
-    fixed: true
-    label: Plug cradle
-    color: '#7e8996'
-    mat: aluminium
-  cables:
-  - key: wire
-    label: Flexible cable
-    plug: plug
-    anchor:
-    - 0.08
-    - 0.15
-    - 0.002
-    length: 0.44
-    resolution: 33
-    color: '#454c58'
-  goals:
-  - type: insert
-    object: plug
-    target: port
-    label: Release the plug fully seated in the socket
-    destination: the USB-C socket
-  camera:
-    at:
-    - 0.01
-    - 0.03
-    - 0.055
-    offset:
-    - -0.36
-    - -0.42
-    - 0.3
-  markers: []
-  guide:
-    plan:
-    - Use the right gripper to pinch the rear half of the black plug housing on its narrow cradle. Leave
-      the metal nose clear of the fingers.
-    - Lift the plug. With the other gripper, pinch the cable midway to take up its weight and leave a
-      relaxed loop.
-    - Align the flat metal nose with the socket mouth. Keep the plug level and approach straight along
-      the opening.
-    - Advance slowly until the detent seats. Open the plug gripper, then release the cable and let the
-      connector settle.
-    tips:
-    - The socket is hollow, with a centre tongue and solid walls. Lateral or angular error blocks insertion;
-      pulling harder is not alignment.
-    - Turn the wrist 180 degrees to reverse USB-C. A quarter turn cannot fit. Drag empty space to orbit
-      and scroll to zoom.
-    - The cable bends, drags on the table and pulls back on the plug. Lift a slack loop with the second
-      gripper if tension pulls the nose off axis.
-    - TacHammer cues distinguish contact impacts, cable load and the seating click. Enable them in Task
-      settings and map each controller to its wrist or hand.
-    - Hold Shift with W/A/S/D/Q/E for 0.2 mm steps, or with J/K/U/O for fine wrist angles. Motion × 0.1
-      reduces AprilTag translation for this precision task.
-  legacy_id: cable
+    - Watch the ball, not just the tray. Small wrist tilts make the ball roll.
+    - If the ball hits a rim or falls off, choose Restart task. A new attempt starts
+      with the ball centred.
+    - Select 3 to move both hands together. Use small movements and keep both wrists
+      at the same height.
+    stages:
+      tray_lift:
+        title: Lift both rims evenly
+        text: Both grippers are holding the tray. Raise them together gently; keep
+          the ball away from every rim.
+      tray_hold:
+        title: Hold the tray level
+        text: Keep both grippers still for one second. Watch the ball and make small
+          wrist corrections before it rolls toward a rim.
+      tray_move:
+        title: Lower onto the tray outline
+        text: The clean lift is complete. Move slowly over the outline, lower evenly
+          and release both grippers. Keep the ball clear of the sides.
+      tray_retry:
+        title: Ball touched a rim — restart
+        text: This attempt cannot finish. Set the tray down, then choose Restart task.
+          Lift more slowly and keep both wrists level next time.
+  revision: 2
+  balance:
+    tray: tray
+    ball: ball
+    min_height: 0.07
+    seconds: 1.0
 - id: cable
   revision: 2
   name: Charge the Samsung phone
   hands: 2
   skill: Two-handed cable assembly
-  brief: Plug the charger into the outlet. Then hold the Samsung phone in one gripper and connect its
-    USB-C cable with the other.
-  hint: Use the right gripper for the charger and USB-C housing, and the left for the phone. Keep a loose
-    cable loop; align the connector with the phone’s bottom edge.
+  brief: Plug the charger into the outlet. Then hold the Samsung phone in one gripper
+    and connect its USB-C cable with the other.
+  hint: Use the right gripper for the charger and USB-C housing, and the left for
+    the phone. Keep a loose cable loop; align the connector with the phone’s bottom
+    edge.
   par: 300
   objects:
   - key: charger
@@ -773,7 +284,7 @@ levels:
     - 0.029
     mass: 0.085
     label: Phone charger
-    color: '#e3e5e7'
+    color: "#e3e5e7"
     mat: aluminium
     slop: 5.0e-05
   - key: outlet
@@ -785,7 +296,7 @@ levels:
     mass: 0.3
     fixed: true
     label: Power outlet
-    color: '#b7bdc4'
+    color: "#b7bdc4"
     mat: aluminium
     slop: 5.0e-05
     show_label: true
@@ -797,7 +308,7 @@ levels:
     - 0.0445
     mass: 0.185
     label: Samsung Galaxy phone
-    color: '#252b32'
+    color: "#252b32"
     mat: aluminium
     slop: 5.0e-05
     show_label: true
@@ -808,7 +319,7 @@ levels:
     - -0.025
     - 0.0675
     label: USB-C plug
-    color: '#30363e'
+    color: "#30363e"
     mass: 0.025
     mat: rubber
     slop: 5.0e-05
@@ -820,7 +331,7 @@ levels:
     - 0
     fixed: true
     label: Cable cradle
-    color: '#6f7985'
+    color: "#6f7985"
     mat: aluminium
   - key: phone-rest
     kind: phone-rest
@@ -830,7 +341,7 @@ levels:
     - 0
     fixed: true
     label: Phone cradle
-    color: '#6f7985'
+    color: "#6f7985"
     mat: aluminium
   cables:
   - key: wire
@@ -846,7 +357,7 @@ levels:
     radius: 0.0016
     resolution: 65
     bend_stiffness: 2.0e-05
-    color: '#242a32'
+    color: "#242a32"
     loop_direction: -1
   goals:
   - type: power
@@ -880,138 +391,208 @@ levels:
   markers: []
   guide:
     plan:
-    - Use the right gripper to grasp the charger body. Lift it, align both round pins with the outlet
-      and push straight in. Open the gripper once it seats.
-    - Use the left gripper around the lower half of the Samsung phone on its cradle. Lift it clear and
-      keep its screen facing up.
-    - With the right gripper, pinch the rear half of the USB-C housing on its cradle. Lift it without
-      pulling the cable taut.
-    - Bring the plug straight toward the socket in the phone’s bottom edge. Hold the phone steady with
-      the left gripper and adjust the right wrist in fine steps.
-    - Once connected, open the plug gripper while continuing to hold the phone. Keep both connections
-      still until the charging objective completes.
+    - Use the right gripper to grasp the charger body. Lift it, align both round pins
+      with the outlet and push straight in. Open the gripper once it seats.
+    - Use the left gripper around the lower half of the Samsung phone on its cradle.
+      Lift it clear and keep its screen facing up.
+    - With the right gripper, pinch the rear half of the USB-C housing on its cradle.
+      Lift it without pulling the cable taut.
+    - Bring the plug straight toward the socket in the phone’s bottom edge. Hold the
+      phone steady with the left gripper and adjust the right wrist in fine steps.
+    - Once connected, open the plug gripper while continuing to hold the phone. Keep
+      both connections still until the charging objective completes.
     tips:
-    - Lift the phone straight up and keep it toward the left shoulder while the right gripper picks up
-      the cable. Lift the empty cable gripper clear before moving sideways.
-    - The socket moves with the phone. Insertion force pushes back on both hands; a phone left on the
-      table cannot satisfy the two-handed objective.
-    - Both cable ends move with their attached objects. The jacket bends, drags, collides and develops
-      tension; move the objects closer if the cable pulls them off axis.
-    - Keep the phone screen up and its bottom edge toward the robot. Leave room between both grippers
-      for the metal connector nose.
-    - Shift + W/A/S/D/Q/E moves in 0.2 mm steps. Shift + J/K/U/O turns the wrist finely. Motion × 0.1
-      helps with AprilTags.
-    - TacHammer pulses indicate impacts and changes in load. One knock marks a seating event. This is
-      a simulated outlet and charger.
+    - Lift the phone straight up and keep it toward the left shoulder while the right
+      gripper picks up the cable. Lift the empty cable gripper clear before moving
+      sideways.
+    - The socket moves with the phone. Insertion force pushes back on both hands;
+      a phone left on the table cannot satisfy the two-handed objective.
+    - Both cable ends move with their attached objects. The jacket bends, drags, collides
+      and develops tension; move the objects closer if the cable pulls them off axis.
+    - Keep the phone screen up and its bottom edge toward the robot. Leave room between
+      both grippers for the metal connector nose.
+    - Shift + W/A/S/D/Q/E moves in 0.2 mm steps. Shift + J/K/U/O turns the wrist finely.
+      Motion × 0.1 helps with AprilTags.
+    - TacHammer pulses indicate impacts and changes in load. One knock marks a seating
+      event. This is a simulated outlet and charger.
     stages:
       done:
         title: Phone charging complete
-        text: Both connections are seated. You connected USB-C while holding the phone with the other
-          gripper. You can set the phone down or try again.
+        text: Both connections are seated. You connected USB-C while holding the phone
+          with the other gripper. You can set the phone down or try again.
 - id: laundry
-  revision: 2
-  name: Fold a long-sleeve shirt
+  revision: 3
+  name: Fold a fluffy towel
   hands: 2
-  skill: Deformable objects
-  brief: Fold each long sleeve across the torso, then bring the hem up to the shoulders. Release the shirt on the folding pad.
-  hint: Fold one sleeve at a time. Keep the shoulders on the table, then use both grippers for the hem.
-  par: 600
+  skill: Two folds in soft fabric
+  ready:
+    offset: [0.04, 0.02, 0.12]
+    pitch: 0
+  brief: Fold the far edge toward you and release it. Regrip both layers of the aligned
+    open edge, fold them back onto the crease and release a four-layer stack.
+  hint: Release between folds. On the second grasp, centre the pads around both aligned
+    open edges, then lift and turn them back toward the crease.
+  par: 360
   objects: []
   cloths:
-  - key: shirt
-    kind: shirt
-    label: Long-sleeve shirt
-    at: [-0.055, 0, 0]
-    width: 0.28
-    height: 0.5
-    body_span: 0.18
-    resolution: 17
-    iterations: 8
-    mass: 0.11
-    color: '#547fbc'
+  - key: towel
+    kind: towel
+    label: Fluffy towel
+    at:
+    - -0.09
+    - 0
+    - 0
+    width: 0.24
+    height: 0.32
+    resolution: 13
+    iterations: 10
+    mass: 0.06
+    thickness: 0.006
+    pile: 0.0025
+    bend_compliance: 20.0
+    color: "#c5b49a"
+    fold_axes: xx
   goals:
   - type: fold
-    object: shirt
-    label: Both sleeves tucked in, body folded and released
-    at: [0.015, 0, 0.018]
-    tolerance: [0.045, 0.045, 0.04]
+    object: towel
+    folds: 2
+    label: Two folds, four layers, released and settled
+    at:
+    - -0.14
+    - 0
+    - 0.025
+    tolerance:
+    - 0.065
+    - 0.065
+    - 0.045
     destination: the folding pad
   markers:
-  - at: [0.015, 0, 0.001]
-    size: [0.18, 0.22]
-    label: Folded shirt
+  - at:
+    - -0.14
+    - 0
+    - 0.001
+    size:
+    - 0.12
+    - 0.35
+    label: Four-layer towel
   guided:
-    name: Fold a long-sleeve shirt
-    brief: Bring the left sleeve across the torso, then the right sleeve. Fold the hem up to the shoulders and release both grippers.
-    par: 600
+    name: Fold a fluffy towel
+    brief: Fold the far edge toward you and release it. Regrip both layers of the
+      aligned open edge, fold them back onto the crease and release a four-layer stack.
+    par: 360
     goals:
     - type: fold
-      object: shirt
-      label: Both sleeves tucked in, body folded and released
-      at: [0.015, 0, 0.018]
-      tolerance: [0.07, 0.06, 0.045]
+      object: towel
+      folds: 2
+      label: Two folds, four layers, released and settled
+      at:
+      - -0.14
+      - 0
+      - 0.025
+      tolerance:
+      - 0.08
+      - 0.075
+      - 0.05
       destination: the folding pad
+  camera:
+    at:
+    - -0.09
+    - 0
+    - 0.055
+    offset:
+    - 0.8
+    - -0.8
+    - 0.65
   guide:
     plan:
-    - Pinch the left cuff. Lift it slightly and turn the wrist as you lay the sleeve across the torso. Release it.
-    - Repeat with the right cuff. Keep both sleeves inside the sides of the torso.
-    - Pinch the two hem corners, one with each gripper. Lift and fold the hem up to the shoulders, turning both wrists with the fabric.
-    - Lower, open both grippers and lift clear. The sleeves and body must stay folded on the pad.
+    - Pinch the two labelled far corners, one per gripper. Lift them and bring the
+      far edge toward you onto the near edge. Lower and release both grippers.
+    - Lift the open grippers clear. Regrip both layers at each labelled end of the
+      aligned open edge. Centre the pads between the two layers.
+    - Lift the doubled open edge and bring it back onto the crease, keeping the grippers
+      facing down. Lower gently and release to leave four layers on the pad.
+    - Open both grippers and lift clear. Let the towel settle; a single fold or a
+      crumpled bundle will not finish.
     tips:
-    - A closed gripper holds a small patch of fabric, including its direction. Turn the wrist with the fold; fabric no longer swivels freely on a single point.
-    - Work just above the table so the rest of the shirt stays supported. Lift higher if a sleeve catches underneath.
-    - Click a gripper or press 1 / 2 to select it. Q/E raise/lower, J/K tilt forward/back, I/P tilt sideways and U/O turn the wrist. Press 3 to move both hem corners together.
-    - Open the jaws and regrip to change which part of the shirt you hold. A very hard pull can slip out of the pads.
-    full_plan:
-    - Fold the left sleeve across the torso, release, then repeat with the right sleeve.
-    - Take both hem corners, turn the wrists and fold the body up to the shoulders.
-    - Release the shirt inside the smaller target and let it settle.
-    full_tips:
-    - The full challenge uses a tighter placement tolerance. Both sleeves and the hem must stay folded after release.
+    - The towel has a soft fabric core, a thick plush nap and clearly visible edges. Aim
+      the pads around its edge, with the palm above the table.
+    - For the second fold, the grab labels sit between the two open edges. Centre
+      the gripper there so it catches both layers, not just the top corner.
+    - Keep the jaws facing down for both folds. Select 3 to move both hands together;
+      use Q/E to lift and lower. You can complete this task without turning the wrists.
+    - Release and regrip between folds. If an edge slips, open the jaws, centre the
+      doubled edge and close again.
     labels:
-      left_cuff: Left cuff
-      right_cuff: Right cuff
-      hem: Hem corner
+      target: Line up here
+      first: First fold corner
+      second: Second fold corner
     stages:
-      shirt_sleeve_release:
-        title: Release the tucked sleeve
-        text: Open the gripper holding this sleeve and lift clear. The sleeve should stay inside the torso before the next fold.
-      shirt_left:
-        title: Fold the left sleeve in
-        text: Pinch the left cuff, lift it just clear of the table and lay the long sleeve across the torso. Turn your wrist with the fabric, then release.
-      shirt_right:
-        title: Fold the right sleeve in
-        text: The left sleeve is tucked in. Fold the right cuff across the torso and release it, keeping both sleeves within the sides of the shirt.
-      shirt_hem:
-        title: Take both hem corners
-        text: Both sleeves are in. Pinch the two bottom corners of the torso, one with each gripper.
-      shirt_fold:
-        title: Bring the hem to the shoulders
-        text: Lift the hem and fold it up to the shoulder edge. Turn both wrists with the fabric and lower onto the pad.
-      shirt_release:
-        title: Release the folded shirt
-        text: Open both grippers and lift clear. Both sleeves and the body must remain folded and settle on the pad.
+      towel_first_grab:
+        title: Pinch the two far corners
+        text: Use one gripper at each labelled corner of the far edge. Close around
+          a small patch and keep the palm above the towel.
+      towel_first_move:
+        title: Bring the far edge toward you
+        text: Lift both far corners and bring them onto the near corners. Keep the
+          jaws facing down and lower gently before releasing.
+      towel_first_release:
+        title: Release the first fold
+        text: The opposite edges line up. Open both grippers and lift clear, leaving
+          the towel folded in half.
+      towel_second_grab:
+        title: Grip both aligned open edges
+        text: Pinch both towel layers at each labelled end of the open edge. Centre
+          the pads between the layers before closing.
+      towel_second_move:
+        title: Bring the doubled edge back to the crease
+        text: Lift both layers of the open edge and bring them back onto the labelled
+          crease. Keep the jaws down, lower gently and open both grippers.
+      towel_release:
+        title: Release the four-layer towel
+        text: Both folds line up. Open both grippers and lift clear. The four-layer
+          stack must stay compact and settle on its pad.
+      towel_tidy:
+        title: Line up the final fold
+        text: Regrip both layers at the labelled open edge and bring them onto the crease.
+          Lower gently, release and let the four layers settle.
+      towel_repair:
+        title: Line up the first fold again
+        text: The first fold slipped open. Line up its two open edges again before
+          making the second fold.
+      towel_layers:
+        title: Catch both towel layers
+        text: A gripper has only the top layer. Open it, lower the pads around both
+          aligned edges, then close again. Pulling one layer would open the first
+          fold.
 navigation:
   calibrate: Calibrate
   tracking: Tracking
   tasks: Tasks
 controls:
-  scene_label: >-
-    3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit (in Robot eyes: up/down lift/lower the selected gripper, left/right move it sideways), 1/2/3 select left/right/both grippers, F to fit, R to reset the view, C to calibrate the robot, T to reset the table, M to turn its sound on or off. Drag a robot hand to move it across the view (Alt for the other way), scroll on it to open and close its gripper (Shift to tilt it), Space to open or close it.
-  intro: AprilTags drive the grippers. You can also drag a gripper with the mouse. Scroll down on it to
-    close, up to open; Space toggles the selected gripper.
-  keyboard: Click a gripper to select it, or press 1 for left, 2 for right, 3 for both. W/S forward/back,
-    A/D sideways, Q/E lift/lower. In Robot eyes, ↑/↓ lift/lower and ←/→ move sideways. Space opens/closes.
-    J/K tilt forward/back, I/P tilt sideways and U/O roll the wrist. Alt-drag changes the mouse movement plane. Hold Shift for 0.2 mm steps and fine wrist turns.
-  scoring: One star for finishing, one for the target time, one for no dropped props. Best results stay
-    in this browser.
+  scene_label: '3D view: the robot the tags drive, or each tag''s recent positions
+    and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit (in Robot
+    eyes: up/down lift/lower the selected gripper, left/right move it sideways), 1/2/3
+    select left/right/both grippers, F to fit, R to reset the view, C to calibrate
+    the robot, T to reset the table, M to turn its sound on or off. Drag a robot hand
+    to move it across the view (Alt for the other way), scroll on it to open and close
+    its gripper (Shift to tilt it), Space to open or close it.'
+  intro: AprilTags drive the grippers. You can also drag a gripper with the mouse.
+    Scroll down on it to close, up to open; Space toggles the selected gripper.
+  keyboard: Click a gripper to select it, or press 1 for left, 2 for right, 3 for
+    both. W/S forward/back, A/D sideways, Q/E lift/lower. In Robot eyes, ↑/↓ lift/lower
+    and ←/→ move sideways. Space opens/closes. J/K tilt forward/back, I/P tilt sideways
+    and U/O roll the wrist. Alt-drag changes the mouse movement plane. Hold Shift
+    for 0.2 mm steps and fine wrist turns.
+  scoring: One star for finishing, one for the target time, one for no dropped props.
+    Best results stay in this browser.
 camera:
   label: First person
-  help: Look through the robot’s wide head camera. Tilt with the slider. With the view focused, ↑/↓ lift/lower
-    the selected gripper and ←/→ move it sideways.
-physics: Rigid contacts, friction-limited grasps, deformable XPBD fabric and an elastic cable run at 240
-  Hz. Cable and fabric loads pull back on the grippers. These are physical approximations; connector forces
-  are representative, not measured hardware calibration.
+  help: Look through the robot’s wide head camera. Tilt with the slider. With the
+    view focused, ↑/↓ lift/lower the selected gripper and ←/→ move it sideways.
+physics: Rigid contacts, friction-limited grasps, deformable XPBD fabric and an elastic
+  cable run at 240 Hz. Cable and fabric loads pull back on the grippers. These are
+  physical approximations; connector forces are representative, not measured hardware
+  calibration.
 ui:
   settings: Task settings
   task: Task
@@ -1036,141 +617,150 @@ ui:
   one_gripper: One gripper
   two_grippers: Two grippers
 guidance:
-  mouse: Drag a gripper to reach. Scroll down on it to close and up to open. Space toggles the selected
-    gripper. Hold Alt while dragging to change the movement plane.
+  mouse: Drag a gripper to reach. Scroll down on it to close and up to open. Space
+    toggles the selected gripper. Hold Alt while dragging to change the movement plane.
   stages:
     approach:
       title: Line up the gripper
-      text: Open either gripper and move its pads to opposite sides of {object}. The prop goes between
-        the pads, not under the palm.
+      text: Open either gripper and move its pads to opposite sides of {object}. The
+        prop goes between the pads, not under the palm.
     grip:
       title: Close around {object}
-      text: The gripper is close enough. Close it around {object}, then lift a little to check that the
-        prop follows.
+      text: The gripper is close enough. Close it around {object}, then lift a little
+        to check that the prop follows.
     retry:
       title: Open and try the grasp again
-      text: The jaws closed without holding {object}. Open them first, centre {object} between both pads,
-        and close again.
+      text: The jaws closed without holding {object}. Open them first, centre {object}
+        between both pads, and close again.
     lift:
       title: Lift {object} clear of the table
-      text: The gripper is holding {object}. Lift it a few centimetres before moving toward {target}.
+      text: The gripper is holding {object}. Lift it a few centimetres before moving
+        toward {target}.
     move:
       title: Move {object} above {target}
-      text: Keep the jaws closed. Move the held prop over its highlighted destination before lowering
-        it.
+      text: Keep the jaws closed. Move the held prop over its highlighted destination
+        before lowering it.
     orient:
       title: Turn {object} to match its destination
-      text: Keep holding it and tilt the wrist. Plates go upright into the rack; blocks, books, cups and
-        the tray stay level.
+      text: Keep holding it and tilt the wrist. Plates go upright into the rack; blocks,
+        books, cups and the tray stay level.
     lower:
       title: Lower {object} gently
-      text: You are above {target}. Lower the prop toward its support while keeping the jaws closed.
+      text: You are above {target}. Lower the prop toward its support while keeping
+        the jaws closed.
     release:
       title: Open the gripper
-      text: Release {object} at {target}. It only counts after the gripper lets go and the prop stays
-        still.
+      text: Release {object} at {target}. It only counts after the gripper lets go
+        and the prop stays still.
     settle:
       title: Let {object} settle
-      text: Leave the prop released. Its objective gets a check mark once it is in the right position
-        and still.
+      text: Leave the prop released. Its objective gets a check mark once it is in
+        the right position and still.
     wrong:
       title: Put down {held} first
-      text: The next prop to move is {object}. Set {held} down, open the gripper, then reach for {object}.
+      text: The next prop to move is {object}. Set {held} down, open the gripper,
+        then reach for {object}.
     dual:
       title: Grip both side rims
-      text: The tray needs both grippers. Put one around each side rim, then lift both together without
-        tipping the load.
+      text: The tray needs both grippers. Put one around each side rim, then lift
+        both together without tipping the load.
     handoff:
       title: Let the other gripper take the ball
-      text: Bring the other open gripper to the ball. Close it around the ball, then open the first gripper.
+      text: Bring the other open gripper to the ball. Close it around the ball, then
+        open the first gripper.
     fold_grab:
       title: Pinch two corners on one edge
-      text: Use one gripper for each corner of the same towel edge. Close each gripper on a small patch
-        of fabric.
+      text: Use one gripper for each corner of the same towel edge. Close each gripper
+        on a small patch of fabric.
     fold_move:
       title: Bring that edge to the opposite edge
-      text: Lift both corners, carry them across the towel, then lower them to line up with the opposite
-        corners.
+      text: Lift both corners, carry them across the towel, then lower them to line
+        up with the opposite corners.
     fold_release:
       title: Release both corners
-      text: Open both grippers. The towel must be folded, compact and resting on the marked stack.
+      text: Open both grippers. The towel must be folded, compact and resting on the
+        marked stack.
     done:
       title: Task complete
-      text: All objectives are released and settled. You can retry, choose any task, or move to the next
-        one.
+      text: All objectives are released and settled. You can retry, choose any task,
+        or move to the next one.
     fold_second:
       title: Pinch the other corner
-      text: One corner is held. Use the other gripper to pinch the other corner on that same edge before
-        lifting.
+      text: One corner is held. Use the other gripper to pinch the other corner on
+        that same edge before lifting.
     clear:
       title: Lift the empty gripper clear of {object}
-      text: Keep it open and lift straight up before reaching for {next}. Moving sideways too soon can
-        knock the placed prop out of its outline.
+      text: Keep it open and lift straight up before reaching for {next}. Moving sideways
+        too soon can knock the placed prop out of its outline.
     usb_grab:
       title: Grip the rear of the plug housing
-      text: Use the right gripper around the back half of {object}. Keep its metal nose beyond the fingers.
-        The left gripper can support a slack loop of cable.
+      text: Use the right gripper around the back half of {object}. Keep its metal
+        nose beyond the fingers. The left gripper can support a slack loop of cable.
     usb_align:
       title: Line up the metal nose
-      text: Hold the plug level with {target}. Match the flat opening and approach along its axis. Orbit
-        or zoom for a closer look; reduce Motion × for fine moves.
+      text: Hold the plug level with {target}. Match the flat opening and approach
+        along its axis. Orbit or zoom for a closer look; reduce Motion × for fine
+        moves.
     usb_insert:
       title: Advance gently into the socket
-      text: The nose is aligned. Move straight forward in small increments. If a wall stops it, withdraw
-        slightly and correct the angle rather than forcing it.
+      text: The nose is aligned. Move straight forward in small increments. If a wall
+        stops it, withdraw slightly and correct the angle rather than forcing it.
     usb_release:
       title: The connector is seated
-      text: Open the gripper holding the plug, then release the cable. The connector must remain seated
-        and still to finish.
+      text: Open the gripper holding the plug, then release the cable. The connector
+        must remain seated and still to finish.
     usb_cable_release:
       title: Release the cable support
-      text: The plug is seated and released. Open the other gripper to let go of the cable, then leave
-        the connector still.
+      text: The plug is seated and released. Open the other gripper to let go of the
+        cable, then leave the connector still.
     charger_outlet:
       title: Plug the charger into the outlet
-      text: Grasp the charger body with the right gripper. Lift it, line up both round pins with the outlet
-        holes and advance straight in. Keep a slack loop of cable.
+      text: Grasp the charger body with the right gripper. Lift it, line up both round
+        pins with the outlet holes and advance straight in. Keep a slack loop of cable.
     charger_release:
       title: Release the seated charger
-      text: The charger pins are seated. Open the right gripper and leave the charger supported by the
-        outlet.
+      text: The charger pins are seated. Open the right gripper and leave the charger
+        supported by the outlet.
     phone_pickup:
       title: Pick up the Samsung phone
-      text: Use the left gripper around the lower half of the phone. Lift it clear of the table, keep
-        the screen facing up, and leave the bottom USB-C socket exposed.
+      text: Use the left gripper around the lower half of the phone. Lift it clear
+        of the table, keep the screen facing up, and leave the bottom USB-C socket
+        exposed.
     phone_insert:
       title: Hold the phone and line up USB-C
-      text: Hold the phone steady with the left gripper. Use the right gripper on the cable housing, line
-        up the flat nose with the phone’s bottom socket, and insert slowly.
+      text: Hold the phone steady with the left gripper. Use the right gripper on
+        the cable housing, line up the flat nose with the phone’s bottom socket, and
+        insert slowly.
     phone_release:
       title: Release the connected USB-C plug
-      text: The connector is seated. Open the gripper holding the cable plug. Continue holding the phone
-        in the other gripper.
+      text: The connector is seated. Open the gripper holding the cable plug. Continue
+        holding the phone in the other gripper.
     phone_regrasp:
       title: Connect while the phone is held
-      text: This task needs both hands during insertion. Withdraw the plug slightly, hold the raised phone
-        with one gripper, then seat the plug using the other.
+      text: This task needs both hands during insertion. Withdraw the plug slightly,
+        hold the raised phone with one gripper, then seat the plug using the other.
     phone_hold:
       title: Keep the connected phone steady
-      text: Keep holding the phone with the cable gripper open. The charger must stay in the outlet and
-        the USB-C connector must remain seated.
+      text: Keep holding the phone with the cable gripper open. The charger must stay
+        in the outlet and the USB-C connector must remain seated.
     phone_seat_wait:
       title: Keep both grips for a moment
-      text: Hold the phone and connector steady as the plug seats. Then the guide will ask you to open
-        the cable gripper.
+      text: Hold the phone and connector steady as the plug seats. Then the guide
+        will ask you to open the cable gripper.
 haptics:
   label: TacHammer task feedback
   strength: Strength
-  help: Brief, self-ending TacHammer pulses for contact, grip slip, fabric and cable tension, and connector
-    seating. ERM and gripper-servo commands are not sent.
+  help: Brief, self-ending TacHammer pulses for contact, grip slip, fabric and cable
+    tension, and connector seating. ERM and gripper-servo commands are not sent.
   routing: Haptic hand
   sides:
   - From wrist tag
   - Left hand
   - Right hand
   - 'Off'
-  routing_help: Connect nrf-controller boards in Camera & AprilTags → Motion sensors. Assign each board
-    its wrist tag, or choose a haptic hand for mouse practice. The board must report TacHammer ready.
+  routing_help: Connect nrf-controller boards in Camera & AprilTags → Motion sensors.
+    Assign each board its wrist tag, or choose a haptic hand for mouse practice. The
+    board must report TacHammer ready.
   'off': TacHammer feedback off
   disconnected: No controllers connected
   unavailable: Waiting for a controller with TacHammer ready
@@ -1179,8 +769,8 @@ haptics:
   error: A controller write failed. Reconnect the controller.
 scores:
   title: Leaderboard
-  scope: Best completion times on this device. Small tasks and full challenges are ranked separately.
-    Set your player name in Task settings.
+  scope: Best completion times on this device. Small tasks and full challenges are
+    ranked separately. Set your player name in Task settings.
   empty: No completed times yet
   best: Best time
   rank: Rank
@@ -1191,9 +781,9 @@ link:
   connect: Connect USB / ESB
   ble: Connect BLE
   baud: Baud
-  help: Use BLE, a direct USB controller, or a USB-connected XIAO ESB receiver. USB and ESB require TP/1
-    teleop firmware; its default is 1,000,000 baud. Both routes send motion into Filtered tracking and
-    return TacHammer cues.
+  help: Use BLE, a direct USB controller, or a USB-connected XIAO ESB receiver. USB
+    and ESB require TP/1 teleop firmware; its default is 1,000,000 baud. Both routes
+    send motion into Filtered tracking and return TacHammer cues.
   unsupported: Web Serial needs Chrome or Edge on a computer and HTTPS or localhost.
   closed: Serial controller disconnected. Connect USB / ESB to choose the port again.
   waiting: Port open. Waiting for controller identity and motion…
@@ -1203,14 +793,19 @@ link:
   dropped: USB / radio drops
   drive_delay: accepted → I2S start
   missing: Controller stopped streaming. Check its power and connection.
-
 voice:
   title: Voice commands
   source: Microphone
   auto: Automatic (controller, then computer)
   computer: Computer microphone
-  help: Press Voice or V, speak a command, then pause or press again to stop. With a Bluetooth controller, hold its joystick button to talk and release to send. Audio is transcribed locally with Whisper.
-  commands: 'Try “Tasks”, “Tracking”, “Calibrate robot”, “Robot eyes”, “Outside view”, “Restart task”, “Next task”, “Fit view” or “Resume AprilTags”. Other speech becomes a note.'
-  transport: Controller audio uses the normal Bluetooth firmware. The separate USB / ESB teleoperation image has no microphone stream. Reconnect with Connect Bluetooth if an earlier connection did not grant the audio service.
+  help: Press Voice or V, speak a command, then pause or press again to stop. With
+    a Bluetooth controller, hold its joystick button to talk and release to send.
+    Audio is transcribed locally with Whisper.
+  commands: Try “Tasks”, “Tracking”, “Calibrate robot”, “Robot eyes”, “Outside view”,
+    “Restart task”, “Next task”, “Fit view” or “Resume AprilTags”. Other speech becomes
+    a note.
+  transport: Controller audio uses the normal Bluetooth firmware. The separate USB
+    / ESB teleoperation image has no microphone stream. Reconnect with Connect Bluetooth
+    if an earlier connection did not grant the audio service.
   stop: Stop listening
   cancel: Cancel voice input

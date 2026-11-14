@@ -1,0 +1,39 @@
+collect_intro: Keep grip and contact pressure consistent between takes.
+coach_label: Recording status
+labels:
+  stop: Stop TacHammer
+  diagnostics: Sensors and TacHammer
+  record: Recording
+  waveform: Waveform
+  comparison: Comparison
+  variants: Variants
+workspaces:
+  - { id: collect, name: Record, hint: Record a surface }
+  - { id: inspect, name: Inspect, hint: Find a good stroke }
+  - { id: tune, name: Waveform, hint: Shape the signal }
+  - { id: compare, name: Compare, hint: Measure and refine }
+speed_bands:
+  - { name: "Slow · 0–100 mm/s", low: 0, high: 100 }
+  - { name: "Medium · 100–200 mm/s", low: 100, high: 200 }
+  - { name: "Fast · 200–300 mm/s", low: 200, high: 300 }
+  - { name: "Very fast · 300+ mm/s", low: 300, high: 500 }
+presets:
+  - { name: Soft pulse, kind: pulse, frequency: 8, width: 8, seconds: 1, strength: 25 }
+  - { name: Fine texture, kind: noise, low: 80, high: 350, seconds: 2, strength: 30 }
+  - { name: Frequency sweep, kind: sweep, frequency: 30, endFrequency: 400, seconds: 2, strength: 25 }
+sources:
+  - { id: recording, name: Selected recording }
+  - { id: sine, name: Sine wave }
+  - { id: sweep, name: Frequency sweep }
+  - { id: pulse, name: Pulse train }
+  - { id: noise, name: Band-limited noise }
+controls:
+  - { id: strength, name: Drive limit, unit: "%", min: 1, max: 100, step: 1, value: 40, hint: Maximum command level; the measured vibration depends on the actuator. }
+  - { id: seconds, name: Duration, unit: s, min: 0.05, max: 6, step: 0.05, value: 1 }
+  - { id: frequency, name: Frequency, unit: Hz, min: 1, max: 600, step: 1, value: 150 }
+  - { id: endFrequency, name: Sweep end, unit: Hz, min: 1, max: 600, step: 1, value: 400 }
+  - { id: width, name: Pulse width, unit: ms, min: 1, max: 50, step: 0.5, value: 5 }
+  - { id: low, name: High-pass, unit: Hz, min: 0, max: 550, step: 1, value: 20 }
+  - { id: high, name: Low-pass, unit: Hz, min: 21, max: 600, step: 1, value: 400 }
+  - { id: attack, name: Attack, unit: ms, min: 0, max: 200, step: 1, value: 20 }
+  - { id: release, name: Release, unit: ms, min: 0, max: 200, step: 1, value: 20 }

@@ -1,0 +1,107 @@
+{
+  "id": "connector",
+  "name": "Connector practice",
+  "hands": 2,
+  "skill": "Cable routing and insertion",
+  "brief": "Support the flexible cable with one gripper. Use the other to align and seat the USB-C plug in the fixed socket.",
+  "hint": "Pinch the rear of the black housing, not the metal nose. Approach the socket straight along its axis. Reduce Motion \u00d7 for fine alignment.",
+  "par": 240,
+  "objects": [
+    {
+      "key": "plug",
+      "kind": "usb-plug",
+      "at": [
+        -0.06,
+        -0.16,
+        0.0675
+      ],
+      "label": "USB-C plug",
+      "color": "#454c58",
+      "mass": 0.035,
+      "mat": "rubber",
+      "slop": 5e-05
+    },
+    {
+      "key": "port",
+      "kind": "usb-port",
+      "at": [
+        -0.015,
+        -0.08,
+        0.065
+      ],
+      "label": "USB-C socket",
+      "color": "#aab3bf",
+      "mass": 0.2,
+      "fixed": true,
+      "mat": "aluminium",
+      "slop": 5e-05,
+      "show_label": true
+    },
+    {
+      "key": "rest",
+      "kind": "plug-rest",
+      "at": [
+        -0.06,
+        -0.16,
+        0
+      ],
+      "fixed": true,
+      "label": "Plug cradle",
+      "color": "#7e8996",
+      "mat": "aluminium"
+    }
+  ],
+  "cables": [
+    {
+      "key": "wire",
+      "label": "Flexible cable",
+      "plug": "plug",
+      "anchor": [
+        0.08,
+        0.15,
+        0.002
+      ],
+      "length": 0.44,
+      "resolution": 33,
+      "color": "#454c58"
+    }
+  ],
+  "goals": [
+    {
+      "type": "insert",
+      "object": "plug",
+      "target": "port",
+      "label": "Release the plug fully seated in the socket",
+      "destination": "the USB-C socket"
+    }
+  ],
+  "camera": {
+    "at": [
+      0.01,
+      0.03,
+      0.055
+    ],
+    "offset": [
+      -0.36,
+      -0.42,
+      0.3
+    ]
+  },
+  "markers": [],
+  "guide": {
+    "plan": [
+      "Use the right gripper to pinch the rear half of the black plug housing on its narrow cradle. Leave the metal nose clear of the fingers.",
+      "Lift the plug. With the other gripper, pinch the cable midway to take up its weight and leave a relaxed loop.",
+      "Align the flat metal nose with the socket mouth. Keep the plug level and approach straight along the opening.",
+      "Advance slowly until the detent seats. Open the plug gripper, then release the cable and let the connector settle."
+    ],
+    "tips": [
+      "The socket is hollow, with a centre tongue and solid walls. Lateral or angular error blocks insertion; pulling harder is not alignment.",
+      "Turn the wrist 180 degrees to reverse USB-C. A quarter turn cannot fit. Drag empty space to orbit and scroll to zoom.",
+      "The cable bends, drags on the table and pulls back on the plug. Lift a slack loop with the second gripper if tension pulls the nose off axis.",
+      "TacHammer cues distinguish contact impacts, cable load and the seating click. Enable them in Task settings and map each controller to its wrist or hand.",
+      "Hold Shift with W/A/S/D/Q/E for 0.2 mm steps, or with J/K/U/O for fine wrist angles. Motion \u00d7 0.1 reduces AprilTag translation for this precision task."
+    ]
+  },
+  "legacy_id": "cable"
+}

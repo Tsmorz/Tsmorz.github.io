@@ -4,7 +4,7 @@
 // window, blocked storage): the page still works, it just forgets on reload.
 
 const DB_NAME = "haptography";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function request(r) {
   return new Promise((resolve, reject) => {
@@ -23,11 +23,19 @@ class IdbStore {
     const open = indexedDB.open(DB_NAME, DB_VERSION);
     open.onupgradeneeded = () => {
       const db = open.result;
-      db.createObjectStore("takes", { keyPath: "id" });
-      db.createObjectStore("raw", { keyPath: "id" });
-      db.createObjectStore("spool", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("takes")) db.createObjectStore("takes", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("raw")) db.createObjectStore("raw", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("spool")) db.createObjectStore("spool", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("studio")) db.createObjectStore("studio");
     };
-    return new IdbStore(await request(open));
+    let blocked = false;
+    const db = await new Promise((resolve, reject) => {
+      open.onblocked = () => { blocked = true; reject(new Error("Close older Haptography tabs to upgrade storage.")); };
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => { if (blocked) open.result.close(); else resolve(open.result); };
+    });
+    db.onversionchange = () => db.close();
+    return new IdbStore(db);
   }
 
   tx(store, mode = "readonly") {
@@ -35,6 +43,16 @@ class IdbStore {
   }
 
   listTakes() { return request(this.tx("takes").getAll()); }
+  getState(key) { return request(this.tx("studio").get(key)); }
+  putState(key, value) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction("studio", "readwrite");
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error("Studio save interrupted."));
+      tx.objectStore("studio").put(value, key);
+    });
+  }
   putTake(meta) { return request(this.tx("takes", "readwrite").put(meta)); }
   async getRaw(id) {
     const row = await request(this.tx("raw").get(id));
@@ -79,8 +97,11 @@ class MemoryStore {
     this.persistent = false;
     this.takes = new Map();
     this.raw = new Map();
+    this.state = new Map();
   }
   async listTakes() { return [...this.takes.values()]; }
+  async getState(key) { return structuredClone(this.state.get(key)); }
+  async putState(key, value) { this.state.set(key, structuredClone(value)); }
   async putTake(meta) { this.takes.set(meta.id, structuredClone(meta)); }
   async getRaw(id) { return this.raw.get(id) ?? null; }
   async putRaw(id, bytes) { this.raw.set(id, bytes); }

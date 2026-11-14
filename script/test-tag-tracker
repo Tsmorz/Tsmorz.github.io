@@ -1239,8 +1239,13 @@ if (run('5p')) {
   require('./tag-tracker/voice.cjs')({check,near});
 }
 
+if (run('5q')) {
+  console.log('5q. clean two-hand tray balance and rim-contact failure');
+  require('./tag-tracker/balance.cjs')({ check, near });
+}
+
 if (run('5o')) {
-  console.log('5o. finite cloth patches, surface contact and long-sleeve shirt folding');
+  console.log('5o. finite cloth patches, plush layer contact and two towel folds');
   require('./tag-tracker/fabric.cjs')({ check, near });
 }
 
