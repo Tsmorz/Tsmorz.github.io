@@ -1,0 +1,3 @@
+# Golden protocol fixtures retain the exact encoder/exporter bytes on every checkout.
+tests/fixtures/capture/** -text
+tests/fixtures/capture/**/session/*.csv whitespace=cr-at-eol
