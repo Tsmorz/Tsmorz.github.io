@@ -255,7 +255,9 @@ export function identify(takes) {
 }
 
 export function packClip(drive, erm, rate = 16000, ermStepUs = 10000) {
-  if (!(rate >= GRID && rate <= 48000 && ermStepUs >= 1000 && ermStepUs <= 1000000)) throw new Error("Unsupported actuator sample rate.");
+  if (!(rate >= GRID && rate <= 48000)) throw new Error("Unsupported actuator sample rate.");
+  // Drake-only capture firmware reports erm_step_us 0, so the step only matters for an ERM track.
+  if (erm && !(ermStepUs >= 1000 && ermStepUs <= 1000000)) throw new Error("Unsupported ERM step.");
   const samples = resample(drive, GRID, rate);
   const pcm = new Uint8Array(samples.length * 2), view = new DataView(pcm.buffer);
   samples.forEach((v, i) => view.setInt16(i * 2, Math.round(clamp(v) * 30000), true));

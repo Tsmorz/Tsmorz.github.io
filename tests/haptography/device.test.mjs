@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DeviceClient, COMMAND, openBoardPort } from '../../haptography/device.js';
 import { decodeHealth, decodeProfile, encodeProfile } from '../../haptography/device-health.js';
-import { boundDrive, driveSafe, GRID, PREVIEW_PEAK, windowRms, PREVIEW_RMS, recordingTarget } from '../../haptography/haptics-core.js';
+import { boundDrive, driveSafe, GRID, packClip, PREVIEW_PEAK, windowRms, PREVIEW_RMS, recordingTarget } from '../../haptography/haptics-core.js';
 import * as W from '../../haptography/wire.js';
-const info = { version: 5, flags: W.INFO_TACHAMMER_OK, haptic_rate_hz: 16000, erm_step_us: 10000, clip_max_samples: 96000, clip_max_erm: 0 };
+const info = { version: 5, flags: W.INFO_TACHAMMER_OK, haptic_rate_hz: 16000, erm_step_us: 0, clip_max_samples: 96000, clip_max_erm: 0 };
 function peer(options = {}) {
   const commands = []; let client, tag, frames = 0, dropped = false;
   client = new DeviceClient(async bytes => {
@@ -86,4 +86,9 @@ test('recording conversion refuses IMU gaps, invalid samples and still data', ()
   t[1000] += 0.1; assert.throws(() => recordingTarget(a, 0.1, 1), /gap/); t[1000] -= 0.1;
   accel[1500] = NaN; assert.throws(() => recordingTarget(a, 0.1, 1), /invalid/);
   accel.fill(1); assert.throws(() => recordingTarget(a, 0.1, 1), /little vibration/);
+});
+test('a Drake-only clip packs with the firmware\'s zero ERM step, an ERM track needs a real one', () => {
+  assert.equal(packClip(new Float64Array(160), null, 16000, 0).samples, 1600);
+  assert.throws(() => packClip(new Float64Array(160), new Float64Array(10), 16000, 0), /ERM step/);
+  assert.throws(() => packClip(new Float64Array(160), null, 0, 0), /sample rate/);
 });
