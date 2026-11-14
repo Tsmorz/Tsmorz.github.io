@@ -12,7 +12,7 @@
   const { Simulator } = await import('/haptography/simulate.js');
   const sim = new Simulator({ seed: 71 });
   const originalInfo = sim.info.bind(sim);
-  sim.info = t => ({ ...originalInfo(t), flags: 15, haptic_rate_hz: 16000, erm_step_us: 10000, clip_max_samples: 96000, clip_max_erm: 0 });
+  sim.info = t => ({ ...originalInfo(t), flags: 15, haptic_rate_hz: 16000, erm_step_us: 0, clip_max_samples: 96000, clip_max_erm: 0 });
   const commands = [], parser = new W.StreamReader(); parser.synced = true;
   let input, timer, clipSamples = 0, chooserCalls = 0;
   const emit = (type, body) => input.enqueue(W.encodePacket(type, sim.number++ & 65535, body));
