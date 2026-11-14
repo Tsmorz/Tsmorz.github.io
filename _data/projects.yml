@@ -5,6 +5,9 @@
 
 
 - name: Dyna-soar
+  image: /glide-path/dyna-soar.png
+  image_style: illustration
+  image_alt: Dinosaur Park’s green brontosaurus watching a white model sailplane.
   blurb: >-
     Explore glide reach and candidate lee ridges for dynamic soaring over real terrain.
     Start at Dinosaur Park in Rapid City, load local model wind, inspect cross-sections
@@ -18,6 +21,9 @@
       url: /glide-path/
 
 - name: Serial Plotter
+  image: /assets/img/projects/serial-plotter.webp
+  image_style: illustration
+  image_alt: A laptop plotting signals from a USB microcontroller.
   blurb: >-
     A serial console and plotter that runs in the browser. Plug in a board and it pulls
     values and units out of each line, plots one chart per unit, records test runs you can
@@ -31,6 +37,9 @@
       url: /serial-plotter/
 
 - name: Tag Tracker
+  image: /assets/img/projects/tag-tracker.webp
+  image_style: illustration
+  image_alt: A webcam tracking tagged blocks in three dimensions.
   blurb: >-
     Tracks AprilTags with any webcam, in the browser. Name each tag, calibrate the camera
     with a printed board, and watch the last second of every tag's position and orientation
@@ -44,6 +53,9 @@
       url: /tag-tracker/
 
 - name: Double Pendulum
+  image: /assets/img/projects/double-pendulum.webp
+  image_style: illustration
+  image_alt: A cart on a rail with two hinged pendulum links.
   blurb: >-
     A double pendulum is a classic underactuated system with multiple equilibrium points.
     I trained a reinforcement-learning policy to swing up the pendulums and transition between each equilibrium point.
@@ -58,6 +70,9 @@
       url: /controls/swingup/
 
 - name: VQF GPS Filter
+  image: /assets/img/projects/vqf-gps-filter.webp
+  image_style: illustration
+  image_alt: A motion-sensing board and GPS antenna receiving a satellite signal.
   blurb: >-
     A small circuit board (an ESP32-S3) that works out which way it's facing and
     where it is by combining its motion sensor with GPS, and shows both live in a
@@ -71,6 +86,9 @@
       url: https://github.com/Tsmorz/vqf-gps-vibes
 
 - name: RC Plane Design
+  image: /assets/img/projects/rc-plane-design.webp
+  image_style: illustration
+  image_alt: A model airplane beside an exploded wooden wing structure.
   blurb: >-
     Design tools for a beginner radio-controlled plane under 250 g: wing shape,
     weight and balance, and wing ribs ready to 3D print. A small onboard computer
@@ -84,6 +102,9 @@
       url: https://github.com/Tsmorz/rc-plane-design
 
 - name: UAV Design Optimization
+  image: /assets/img/projects/uav-design-optimization.webp
+  image_style: illustration
+  image_alt: A tilt-rotor aircraft with alternative rotor positions.
   blurb: >-
     Software that searches for the best design for a drone whose rotors tilt so it
     can hover like a helicopter and cruise like a plane (under 25 kg, up to 45 m/s),
@@ -97,6 +118,9 @@
       url: https://github.com/Tsmorz/UAV-Code
 
 - name: EKF-SLAM
+  image: /assets/img/projects/ekf-slam.webp
+  image_style: illustration
+  image_alt: A small mobile robot mapping landmarks around a room.
   blurb: >-
     Lets a robot build a 3D map of its surroundings while working out where it is on
     that map (SLAM), using an extended Kalman filter, a standard way to combine noisy
@@ -110,6 +134,9 @@
       url: https://github.com/Tsmorz/ekf-slam
 
 - name: ESP32 Cam
+  image: /assets/img/projects/esp32-cam.webp
+  image_style: illustration
+  image_alt: An embedded camera detecting an orange tabby cat.
   blurb: >-
     A private Wi-Fi camera (an ESP32-S3 with an autofocus lens) that you set up from
     your phone, with no app and no cloud. It streams live video to any browser at home,

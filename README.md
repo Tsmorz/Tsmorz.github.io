@@ -68,7 +68,7 @@ Pushes to `main` build and deploy through [`.github/workflows/pages.yml`](.githu
 pull requests build and run the checks without deploying. In the repo settings, **Pages → Source** must be
 **GitHub Actions**.
 
-See [CLAUDE.md](CLAUDE.md) for the full field reference, conventions and architecture.
+See [AGENTS.md](AGENTS.md) for the full field reference, conventions and architecture.
 
 ## License
 

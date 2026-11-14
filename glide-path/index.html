@@ -60,7 +60,7 @@ layout: null
       <span id="profWhat" class="prof-what"></span>
       <button id="profBack" class="link" type="button" hidden>Clear destination</button>
       <button id="btnFly" class="btn sm fly" type="button" title="Fly this glide in 3D"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M7 5v14l11-7z" fill="currentColor"/></svg>Fly it</button>
-      <label class="bearing-input" for="bearingValue">Bearing <input id="bearingValue" type="number" min="0" max="359.9" step="0.1" value="180">°</label>
+      <label class="bearing-input" for="bearingValue">{{ site.data.glide.orientation.heading }} <input id="bearingValue" type="number" min="0" max="359.9" step="0.1" value="180">°</label>
       <div class="prof-keys" aria-hidden="true">
         <span><i id="profKeyLine"></i>Glider</span><span><i id="profKeyMargin" class="m"></i>Glider − margin</span><span><i class="t"></i>Ground</span>
       </div>
@@ -71,7 +71,7 @@ layout: null
     </div>
     <div class="prof-side">
       <div id="pbDial" class="dial" aria-label="Cross-section bearing"></div>
-      <div class="dial-cap">Bearing</div>
+      <div class="dial-cap">{{ site.data.glide.orientation.heading }}</div>
     </div>
   </section>
 
@@ -87,7 +87,7 @@ layout: null
       <details class="launch-coords"><summary>Enter coordinates</summary><div class="coordinates"><label for="launchLat">Latitude<input id="launchLat" type="number" min="-85.05112878" max="85.05112878" step="any"></label><label for="launchLon">Longitude<input id="launchLon" type="number" min="-180" max="180" step="any"></label><button type="button" id="setCoordinates" class="btn sm">Set launch</button></div></details>
     </details>
 
-    <details class="group" data-sec="glider" open>
+    <details class="group" data-sec="glider">
       <summary><h2>Aircraft</h2><span class="sum" id="sumGlider"></span></summary>
       <label class="preset-label" for="aircraftPreset">Preset <select id="aircraftPreset"><option value="">Custom settings</option>{% for aircraft in site.data.glide.aircraft %}<option value="{{ aircraft.id }}">{{ aircraft.name }}</option>{% endfor %}</select></label>
       <div class="save-row"><input type="text" id="aircraftName" placeholder="Aircraft name" aria-label="Custom aircraft name"><button id="saveAircraft" type="button" class="btn sm">Save aircraft</button><button id="deleteAircraft" type="button" class="btn sm" disabled>Delete</button></div><p id="aircraftStatus" class="hint" role="status"></p>
@@ -96,30 +96,33 @@ layout: null
       <div class="row"><label for="agl">{% assign control = site.data.glide.controls | where: "id", "agl" | first %}{{ control.name }} <output id="v_agl" for="agl"></output></label><div class="input-pair"><input id="agl" type="range"><input id="n_agl" type="number" step="any" aria-label="agl exact value"></div></div>
     </details>
 
-    <details class="group soaring-group" data-sec="soaring" open>
-      <summary><h2>{{ site.data.glide.soaring.title }}</h2><span id="sumSoaring" class="sum"></span></summary>
-      <p class="hint">{{ site.data.glide.soaring.intro }}</p>
-      <div class="wind-fetch"><button id="fetchWind" type="button" class="btn">{{ site.data.glide.weather.button }}</button><button id="retryScreen" type="button" class="btn sm" hidden>Retry terrain</button></div>
-      <p id="windSource" class="hint" role="status">{{ site.data.glide.weather.manual }}</p>
-      <label class="switch"><input id="terrainWind" type="checkbox" checked> {{ site.data.glide.flow.enabled }}</label>
-      <div class="flow-settings"><label for="windHeight">{{ site.data.glide.flow.height }} <span id="windHeightUnit"></span><input id="windHeight" type="number" step="any" value="30"></label><label for="roughness">{{ site.data.glide.flow.roughness }}<select id="roughness"><option value="0.003">{{ site.data.glide.flow.smooth }}</option><option value="0.03">{{ site.data.glide.flow.grass }}</option><option value="0.3">{{ site.data.glide.flow.rough }}</option></select></label></div>
-      <p id="flowStatus" class="hint" role="status"></p>
-      <label class="switch"><input id="windArrows" type="checkbox" checked> {{ site.data.glide.flow.arrows }}</label>
-      <label class="switch"><input id="ridgeShading" type="checkbox"> {{ site.data.glide.flow.shading }}</label>
-      <p class="hint">{{ site.data.glide.flow.key }}</p>
-      <label class="switch"><input id="dsEnabled" type="checkbox" checked> Show candidate lee ridges</label>
-      <p id="dsStatus" class="hint" role="status"></p><ol id="dsCandidates" class="ds-candidates"></ol>
-      <p class="hint ds-caveat">{{ site.data.glide.soaring.caveat }}</p>
-      <details class="ds-method"><summary>How this screen works</summary><p class="hint">{{ site.data.glide.soaring.method }}</p><p class="hint">{{ site.data.glide.weather.note }}</p><p class="hint">{{ site.data.glide.flow.method }}</p><p class="hint"><a href="https://ninjastorm.firelab.org/windninja/faq.html">Terrain wind: diagnostic-model limitations</a></p><p class="hint"><a href="{{ site.data.glide.soaring.source }}">Dynamic soaring: Richardson, WHOI</a> · <a href="{{ site.data.glide.weather.source }}">Wind: Open-Meteo</a> · <a href="https://open-meteo.com/en/licence">CC BY 4.0</a></p></details>
-    </details>
-
-    <details class="group" data-sec="wind">
-      <summary><h2>{{ site.data.glide.flow.reference }}</h2><span class="sum" id="sumWind"></span></summary>
+    <details class="group" data-sec="wind" open>
+      <summary><h2>{{ site.data.glide.flow.title }}</h2><span class="sum" id="sumWind"></span></summary>
       <div class="wind">
         <div class="row" style="margin:0"><label for="ws">{% assign control = site.data.glide.controls | where: "id", "ws" | first %}{{ control.name }} <output id="v_ws" for="ws"></output></label><div class="input-pair"><input id="ws" type="range"><input id="n_ws" type="number" step="any" aria-label="ws exact value"></div>
           <p id="windWords" class="hint"></p></div>
         <div><div id="wdDial" class="dial" aria-label="Wind direction (where it blows from)"></div><label class="direction-input" for="windBearing">From <input id="windBearing" type="number" min="0" max="359.9" step="0.1" value="270">°</label></div>
       </div>
+      <div class="wind-fetch"><button id="fetchWind" type="button" class="btn">{{ site.data.glide.weather.button }}</button></div>
+      <p id="windSource" class="hint" role="status">{{ site.data.glide.weather.manual }}</p>
+      <label class="switch"><input id="windArrows" type="checkbox" checked> {{ site.data.glide.flow.arrows }}</label>
+      <details class="ds-method wind-advanced"><summary>{{ site.data.glide.flow.settings }}</summary>
+      <label class="switch"><input id="terrainWind" type="checkbox" checked> {{ site.data.glide.flow.enabled }}</label>
+      <div class="flow-settings"><label for="windHeight">{{ site.data.glide.flow.height }} <span id="windHeightUnit"></span><input id="windHeight" type="number" step="any" value="30"></label><label for="roughness">{{ site.data.glide.flow.roughness }}<select id="roughness"><option value="0.003">{{ site.data.glide.flow.smooth }}</option><option value="0.03">{{ site.data.glide.flow.grass }}</option><option value="0.3">{{ site.data.glide.flow.rough }}</option></select></label></div>
+      <p id="flowStatus" class="hint" role="status"></p>
+      <label class="switch"><input id="ridgeShading" type="checkbox"> {{ site.data.glide.flow.shading }}</label>
+      <p class="hint">{{ site.data.glide.flow.key }}</p>
+      </details>
+    </details>
+
+    <details class="group soaring-group" data-sec="soaring" open>
+      <summary><h2>{{ site.data.glide.soaring.title }}</h2><span id="sumSoaring" class="sum"></span></summary>
+      <p class="hint">{{ site.data.glide.soaring.intro }}</p>
+      <label class="switch"><input id="dsEnabled" type="checkbox" checked> {{ site.data.glide.soaring.show }}</label>
+      <button id="retryScreen" type="button" class="btn sm" hidden>Retry terrain</button>
+      <p id="dsStatus" class="hint" role="status"></p><ol id="dsCandidates" class="ds-candidates"></ol>
+      <p class="hint ds-caveat">{{ site.data.glide.soaring.caveat }}</p>
+      <details class="ds-method"><summary>How this screen works</summary><p class="hint">{{ site.data.glide.soaring.method }}</p><p class="hint">{{ site.data.glide.weather.note }}</p><p class="hint">{{ site.data.glide.flow.method }}</p><p class="hint"><a href="https://ninjastorm.firelab.org/windninja/faq.html">Terrain wind: diagnostic-model limitations</a></p><p class="hint"><a href="{{ site.data.glide.soaring.source }}">Dynamic soaring: Richardson, WHOI</a> · <a href="{{ site.data.glide.weather.source }}">Wind: Open-Meteo</a> · <a href="https://open-meteo.com/en/licence">CC BY 4.0</a></p></details>
     </details>
 
     <details class="group" data-sec="rules">
@@ -187,7 +190,7 @@ layout: null
         <li><span class="key k-steep"></span>Reachable, but too steep to land</li>
         <li><span class="key k-ring"></span>As far as you can still see it</li>
       </ul>
-      <p>The strip under the map is a cross-section: drag its dial to turn it. Select Inspect destination, then tap a spot for the route with the highest predicted arrival height, then press <b>Fly it</b> to follow the glide in 3D. Set the wind under Wind: the reach leans downwind.</p>
+      <p>{{ site.data.glide.orientation.guide }}</p>
     </section>
   </div>
   <div class="g-foot">

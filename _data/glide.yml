@@ -32,6 +32,7 @@ calculation:
   ready: Ready
   partial: Terrain incomplete
   missing: Terrain unavailable
+  timeout: Terrain request timed out. Retry terrain when the connection improves.
 name: Dyna-soar
 tagline: Glides, ridges and the wind.
 landmark:
@@ -41,9 +42,12 @@ landmark:
   alt: Cartoon of the green Dinosaur Park brontosaurus watching a white sailplane fly overhead.
   source: https://tile.loc.gov/storage-services/master/pnp/habshaer/sd/sd0400/sd0422/data/sd0422data.pdf
 soaring:
-  title: Dynamic soaring
-  intro: Screen nearby ridges for a wind-facing rise and a steep lee drop. Select a DS? mark to inspect the terrain along the wind.
-  caveat: Candidates and diagnostic airflow estimates, not confirmed soaring sites. Flow separation, turbulence and room to turn are not resolved. Vertical air motion and dynamic-soaring energy add no reach.
+  title: Ridges
+  key: Ridge crest + dashed lee area
+  empty: Choose a numbered ridge on the map or in Ridges.
+  show: Show ridge candidates
+  intro: Select a numbered ridge. The solid line marks its crest; the dashed area is the lee, downwind. The map turns to look along the wind.
+  caveat: Terrain candidates, not confirmed soaring sites. Estimated airflow adds no glide height.
   method: The screen looks for at least 15 m of rise and drop over roughly 140 m along the wind, a lee angle of at least 8°, and a local crest. These are screening choices, not flight limits.
   source: https://www2.whoi.edu/staff/prichardson/wp-content/uploads/sites/75/2018/11/Richardson-2012-RCSD-High-speed-Dynamic-Soaring.pdf
   states:
@@ -54,7 +58,7 @@ soaring:
     coarse: Terrain is too coarse for this screen. Detailed terrain is needed.
     missing: Detailed terrain is unavailable. Connect and retry, or save this area before going offline.
     none: No ridges met these geometry thresholds within the sight distance. This does not rule out dynamic soaring here.
-    candidates: Candidate lee ridges within sight. Select one to inspect its profile.
+    candidates: Select a ridge to see its windward slope, crest and lee.
 weather:
   button: Load local wind
   note: Regional Open-Meteo vectors at 10 and, when available, 80 m initialise the estimate. Values are interpolated as vectors, not compass angles. One model grid point may cover several requested locations. Forecast wind is not an on-site measurement.
@@ -62,6 +66,8 @@ weather:
   manual: Manual 10 m reference wind. Load regional model wind or edit speed and direction below.
   loading: Loading regional model wind…
 flow:
+  title: Wind
+  settings: Terrain wind settings
   reference: Reference wind · 10 m
   enabled: Use terrain-adjusted horizontal wind for reach
   height: Wind layer
@@ -69,7 +75,7 @@ flow:
   smooth: Smooth / z₀ 0.003 m
   grass: Open grass / z₀ 0.03 m
   rough: Rough ground / z₀ 0.3 m
-  arrows: Show wind arrows
+  arrows: Show wind direction on the map
   shading: Shade estimated lift / sink
   key: Arrows show horizontal flow. Teal shows estimated upflow; red hatching shows downflow. Lift and sink do not extend glide reach.
   ready: Terrain wind estimate ready.
@@ -77,3 +83,15 @@ flow:
   disabled: Uniform reference wind for reach. Terrain-flow estimate is off.
   missing: Regional wind only; terrain coverage is incomplete. No local lift or sink is inferred.
   method: A finite-volume diagnostic projection enforces mass conservation and zero flow into the terrain. It does not solve momentum, turbulence or separated flow. The selected fixed AGL wind layer drives both straight glides and route search; the outer field blends to regional wind. Below 10 m and without an 80 m forecast, a neutral logarithmic profile uses the selected roughness assumption. Profile flow lines project the estimated 3-D wind into the selected vertical section; crosswind motion leaves that plane. Terrain is resolved on a local grid, so sharper ridges and shear layers remain uncertain.
+orientation:
+  heading: Heading
+  left: Turn map left
+  right: Turn map right
+  north: North up
+  hint: Map faces this heading. Turn with the arrows or enter degrees.
+  ridge: Ridge
+  windward: Windward
+  lee: Lee
+  crest: Crest
+  direction: Wind →
+  guide: The strip under the map is a cross-section. Changing its heading turns the map too. Tap the map to inspect a destination, then use Fly it to follow the glide in 3D. Set speed and direction under Wind. Use the map’s turn arrows to rotate, or North up to reset.

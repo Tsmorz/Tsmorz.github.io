@@ -17,7 +17,7 @@ const HAS_BT = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
 S.boards = [];
 const boardStore = {
   get: () => store.get('boards', {}),
-  save(b) { const all = store.get('boards', {}); all[b.id] = { track: b.track, M: b.M, use: b.use, rms: b.rms, grip: b.grip }; store.set('boards', all); },
+  save(b) { const all = store.get('boards', {}); all[b.id] = { track: b.track, M: b.M, use: b.use, rms: b.rms, grip: b.grip, hapticSide: b.hapticSide }; store.set('boards', all); },
 };
 const camPoses = new Map();
 function noteCamPose(key, time, R) {
@@ -33,6 +33,7 @@ function newBoard(id, name, extra) {
     id, name, device: null, sim: false, info: null, clock: new C.BoardClock(), buf: [], track: saved.track === undefined ? null : saved.track,
     M: saved.M || null, rms: saved.rms == null ? null : saved.rms, use: saved.use !== false, W: null, pairs: [], wPairs: [], pairT: -Infinity,
     state: 'connecting', err: '', lastSeq: null, lost: 0, n: 0, nPrev: 0, rate: 0, rateT: performance.now(), fit: null, learn: '',
+    hapticSide: ['1','-1','off'].includes(saved.hapticSide) ? saved.hapticSide : 'auto', hapticCharacteristic: null,
     grip: saved.grip || null, act: null, actT: 0, actOk: null, // the gripper servo: {open, closed} in permille, its last status, whether it can be read
   }, extra || {});
   S.boards.push(b);
@@ -150,8 +151,9 @@ async function btFailure(e) {
 async function connectDevice(device) {
   const id = idOf(device);
   let b = S.boards.find((x) => x.id === id);
-  if (b && ['connecting', 'pairing', 'live'].includes(b.state)) return;
+  if (b && ['connecting', 'pairing', 'live'].includes(b.state) && !b.serialLink) return;
   if (!b) b = newBoard(id, device.name || 'nrf-controller-' + id);
+  if(b.serialLink){b.serialLink.detach(b.id);b.hapticCharacteristic=null;b.hapticBusy=false;b.hapticRateHz=10;b.transport=null;b.serialRtt=null;b.actuatorDelayMs=null;b.act=null;b.actT=0;b.clock=new C.BoardClock();b.buf=[];b.lastSeq=null;}
   b.device = device; b.state = 'connecting'; b.err = ''; b.closing = false;
   renderBoards();
   if (!b.listening) { device.addEventListener('gattserverdisconnected', () => boardGone(b)); b.listening = true; }
@@ -170,7 +172,7 @@ async function connectDevice(device) {
     try {
       const ach = await (await server.getPrimaryService(C.ACT.service)).getCharacteristic(C.ACT.status);
       ach.addEventListener('characteristicvaluechanged', (e) => { const st = C.decodeActuatorStatus(e.target.value); if (st) { b.act = st; b.actT = performance.now(); } });
-      await ach.startNotifications(); b.actOk = true;
+      await ach.startNotifications(); b.actOk = true; b.hapticCharacteristic = ach; b.hapticError = null;
     } catch (e) { b.actOk = false; }
   } catch (e) {
     b.state = 'error'; b.err = e && e.message ? e.message : String(e);
@@ -211,6 +213,7 @@ function renderBoards() {
       <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</strong>
       <label class="sr" for="bt-${b.id}">What board ${escapeHtml(b.id)} is fixed to</label>
       <select id="bt-${b.id}" class="select sm"><option value="">Fixed to…</option>${keys.map((k) => `<option value="${k}"${k === b.track ? ' selected' : ''}>${escapeHtml(nameOf(k))}</option>`).join('')}</select>
+      <label class="field">${escapeHtml(TASK_DATA.haptics.routing)} <select class="select sm" data-haptic-side>${['auto','1','-1','off'].map((v,i)=>`<option value="${v}"${b.hapticSide===v?' selected':''}>${escapeHtml(TASK_DATA.haptics.sides[i])}</option>`).join('')}</select></label>
       <span class="field" title="Use it in Filtered poses once it is lined up"><span id="bu-${b.id}">Use</span><button class="switch" role="switch" aria-checked="${b.use}" aria-labelledby="bu-${b.id}" data-a="use"></button></span>
       <span style="white-space:nowrap">${canConnect ? '<button class="btn sm" data-a="connect">Connect</button>' : ''}<button class="btn sm" data-a="relearn" title="Learn again how it sits on what it's fixed to">Relearn</button>${b.sim ? '' : `<button class="btn sm sq danger" data-a="rm" aria-label="Disconnect ${escapeHtml(b.name)}" title="Disconnect"><svg class="i"><use href="#i-x"/></svg></button>`}</span>
       <div class="meta"><span class="seen" id="bs-${b.id}"><span class="dot"></span><span></span></span><span id="bl-${b.id}"></span></div>
@@ -219,10 +222,11 @@ function renderBoards() {
       b.track = e.target.value === '' ? null : parseKey(e.target.value);
       b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; boardStore.save(b); renderBoards();
     };
+    row.querySelector('[data-haptic-side]').onchange=e=>{b.hapticSide=e.target.value;boardStore.save(b);};
     row.querySelector('[data-a=use]').onclick = () => { b.use = !b.use; boardStore.save(b); renderBoards(); };
     row.querySelector('[data-a=relearn]').onclick = () => { b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; b.learn = ''; boardStore.save(b); renderBoards(); };
     const rm = row.querySelector('[data-a=rm]');
-    if (rm) rm.onclick = () => { b.closing = true; if (b.device && b.device.gatt.connected) b.device.gatt.disconnect(); S.boards = S.boards.filter((x) => x !== b); renderBoards(); };
+    if (rm) rm.onclick = () => { b.closing = true; if (b.serialLink) b.serialLink.close().catch(()=>{});if (b.device && b.device.gatt.connected) b.device.gatt.disconnect(); S.boards = S.boards.filter((x) => x !== b); renderBoards(); };
     for (const [a, k] of [['gopen', 'open'], ['gclosed', 'closed']]) {
       const g = row.querySelector(`[data-a=${a}]`);
       if (g) g.onclick = () => { const p = C.gripPermille(b.act); if (p === null) return; b.grip = Object.assign({}, b.grip, { [k]: p }); boardStore.save(b); paintBoards(); };
@@ -244,11 +248,12 @@ function paintBoards() {
     if (!st) continue;
     const live = b.state === 'live';
     st.classList.toggle('on', live && b.rate > 50);
-    st.lastElementChild.textContent = live ? `${b.rate.toFixed(0)} Hz${b.lost ? `, ${b.lost} lost` : ''}` : { connecting: 'Connecting…', pairing: 'Pairing: if asked, enter the code the board prints on its USB console', lost: 'Disconnected, trying again…', saved: 'Not connected', error: b.err }[b.state] || '';
+    st.lastElementChild.textContent = live ? `${b.rate.toFixed(0)} Hz${b.lost ? `, ${b.lost} lost` : ''}` : { connecting: 'Connecting…', pairing: 'Pairing: if asked, enter the code the board prints on its USB console', lost: b.serialLink ? (b.serialLink.closed?TASK_DATA.link.closed:TASK_DATA.link.missing) : 'Disconnected, trying again…', saved: 'Not connected', error: b.err }[b.state] || '';
     ln.textContent = !live ? '' : b.track === null ? 'Choose what it’s fixed to.'
       : !b.M ? `Learning how it sits: turn it slowly about different axes while a camera sees it (${b.pairs.length} poses${b.learn === 'turn' ? ', needs more turning' : b.learn === 'fit' ? ', poses disagree: is it fixed firmly?' : ''})`
       : !b.W ? 'Finding its heading…'
       : `Lined up${b.fit != null ? `, within ${deg(b.fit)}°` : ''}${!b.use ? ', not used' : S.settings.pose !== 'filtered' ? '; used by Filtered poses' : ''}`;
+    if(live&&b.transport)ln.textContent=(b.transport==='esb'?TASK_DATA.link.esb:TASK_DATA.link.serial)+(Number.isFinite(b.serialRtt)?`, ${b.serialRtt.toFixed(1)} ms ${TASK_DATA.link.rtt}`:'')+(Number.isFinite(b.actuatorDelayMs)?`, ${b.actuatorDelayMs.toFixed(1)} ms ${TASK_DATA.link.drive_delay}`:'')+(b.linkDropped||b.radioDropped?`, ${b.linkDropped||0} / ${b.radioDropped||0} ${TASK_DATA.link.dropped}`:'')+'; '+ln.textContent;
     const gl = $('bg-' + b.id);
     if (gl) {
       const fresh = b.act && now - b.actT < 500, p = fresh ? C.gripPermille(b.act) : null, g = fresh ? C.gripOpening(b.act, b.grip) : null;

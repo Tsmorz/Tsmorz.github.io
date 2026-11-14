@@ -381,6 +381,15 @@ console.log('6e. mass-consistent terrain wind and spatial glide integration');
  check(elapsed<2500,`ridge solve runs off-thread in a bounded time (${elapsed.toFixed(0)} ms for 32×32×24)`);
 }
 
+console.log('6f. chase-camera physical scale');
+for (const [height, glyph] of [[620,180],[400,120],[220,120]]) {
+  const c=G.flightCamera(2,glyph,height,36.86989765);
+  const worldPixels=height*2/(2*c.distance*Math.tan(36.86989765*Math.PI/360));
+  const glyphPixels=glyph*2/(2*G.FLIGHT_VIEW.distance*2*Math.tan(G.FLIGHT_VIEW.fov*Math.PI/360));
+  near(worldPixels,glyphPixels,1e-8,`2 m glider matches the ground scale in a ${height}px view`);
+  check(c.back>1&&c.back<10&&c.up<6&&c.clearance<=1,'camera follows a model glider from metres away, including near landing');
+}
+
 console.log('7. service worker');
 (async () => {
   // Minimal Cache Storage, fetch and service-worker globals, enough for sw.js.

@@ -1,6 +1,6 @@
-# Teleoperation practice and Grandma’s tiny-home campaign. Metres and seconds.
-title: Teleoperation arcade
-subtitle: Start small. Build steady hands. Finish the housework.
+# Robot tasks and guidance. Metres and seconds.
+title: Robot tasks
+subtitle: Pick a task. Practise a grasp. Build up to two grippers.
 levels:
 - id: bowl
   name: Ball in the bowl
@@ -32,50 +32,29 @@ levels:
     object: ball
     target: bowl
     label: Release the ball in the bowl
-  story:
-    room: Sitting room
-    title: A toy left behind
-    brief: “Mind that little ball by the table, love. Pop it in the bowl for me.”
-    outro: “Lovely. Have a boiled sweet from the tin.”
+    destination: the bowl
+  guided:
     keep:
     - ball
     - bowl
     goal_count: 1
     par: 90
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
-      - -0.06
-      - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
-      - - -0.78
-        - 0.83
-        - 0.24
-        - 0.25
     placements:
       bowl:
       - 0
       - 0.03
       - 0
-    reward:
-      label: A wrapped sweet
-      kind: candy
-    decor:
-      wall: '#e3d1b3'
-      floor: '#916340'
-      rug: '#9a4f4e'
-      curtain: '#b4b68c'
+    name: Ball in the bowl
+    brief: Pick up the ball, move it over the bowl, and open the gripper. Let the ball settle inside.
+  guide:
+    plan:
+    - Open either gripper and centre the ball between its two pads.
+    - Close until the ball stays between the pads. Lift it clear of the table.
+    - Move over the bowl, lower just above the opening, then open the gripper.
+    tips:
+    - Close around the ball, lift, move over the opening, then release. A settled ball counts.
+    - If the jaws close without gripping, open them and centre the prop between both pads before trying
+      again.
 - id: precision
   name: A smaller target
   hands: 1
@@ -105,49 +84,17 @@ levels:
     object: ball
     target: cup
     label: Release the ball in the mug
-  story:
-    room: Tea corner
-    title: A place for the cup
-    brief: “Put my favourite cup on its coaster, would you? Gently does it.”
-    outro: “Just right. There’s a biscuit for you.”
+    destination: the mug
+  guided:
     keep:
     - cup
     goal_count: 1
     par: 90
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
-      - -0.06
-      - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
-      - - -0.78
-        - 0.83
-        - 0.24
-        - 0.25
     placements:
       cup:
       - -0.1
       - 0.17
       - 0
-    reward:
-      label: A shortbread biscuit
-      kind: cookie
-    decor:
-      wall: '#e3d1b3'
-      floor: '#916340'
-      rug: '#9a4f4e'
-      curtain: '#b4b68c'
     goals:
     - type: place
       object: cup
@@ -161,6 +108,7 @@ levels:
       - 0.03
       - 0.012
       upright: true
+      destination: the coaster
     markers:
     - at:
       - 0.015
@@ -170,6 +118,23 @@ levels:
       - 0.1
       - 0.1
       label: Coaster
+    name: Cup on the coaster
+    brief: Pick up the cup and set it upright on its coaster. Release it before checking its position.
+  guide:
+    plan:
+    - Grip the sides of the cup, not its handle.
+    - Lift the cup, keep it upright, and move above the coaster.
+    - Lower it onto the table and open the gripper.
+    tips:
+    - Look down through the head camera to line up the opening. Motion × 0.5 helps with tags.
+    - If the jaws close without gripping, open them and centre the prop between both pads before trying
+      again.
+    full_plan:
+    - Pick up the ball with either gripper.
+    - Lift it above the mug and line it up with the opening.
+    - Lower the ball just above the rim and open the gripper.
+    full_tips:
+    - Look down through the head camera to line up the opening. Motion × 0.5 helps with tags.
 - id: sort
   name: Sort the delivery
   hands: 1
@@ -218,6 +183,7 @@ levels:
     - 0.028
     - 0.01
     upright: true
+    destination: outline A
   - label: B in its outline
     object: b
     type: place
@@ -230,6 +196,7 @@ levels:
     - 0.028
     - 0.01
     upright: true
+    destination: outline B
   - label: C in its outline
     object: c
     type: place
@@ -242,46 +209,54 @@ levels:
     - 0.028
     - 0.01
     upright: true
-  story:
-    room: Play corner
-    title: Tidy the toys
-    brief: “The little ones left their blocks out. Can you put these two in their places?”
-    outro: “A tidy table! Here’s another sweet for the walk home.”
+    destination: outline C
+  guided:
     keep:
     - a
     - b
     goal_count: 2
     par: 105
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
+    goal_x: 0.015
+    name: Place two blocks
+    brief: Use one gripper to place A in outline A, then B in outline B. Move them one at a time.
+    placements:
+      a:
+      - -0.06
+      - 0.18
+      - 0.025
+      b:
       - -0.06
       - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
-      - - -0.78
-        - 0.83
-        - 0.24
-        - 0.25
-    goal_x: 0.015
-    reward:
-      label: A strawberry sweet
-      kind: candy
-    decor:
-      wall: '#e3d1b3'
-      floor: '#916340'
-      rug: '#9a4f4e'
-      curtain: '#b4b68c'
+      - 0.025
+  guide:
+    plan:
+    - Open one gripper and put the pads around the upper half of A. Keep the gripper body above the table.
+      Close, then lift A clear.
+    - Carry A over the outline labelled A. Lower it onto the table and open the gripper.
+    - Keep the empty gripper open and lift it clear of A. Then use the same gripper to pick up B.
+    - Place B in outline B and release it. Both blocks must stay upright and still.
+    tips:
+    - One gripper means one block at a time. You do not need to hold both blocks together.
+    - The letter above each block matches the letter beside its destination. A and B each have their own
+      outline.
+    - Keep the bulky gripper body above the table. Aim the pads a little above the block’s centre, then
+      close around its upper half.
+    - If a closed gripper does not lift the block, open it, centre the block between both pads, then close
+      again.
+    - Lift before moving sideways. If the block scrapes along the table, it can slip out of the gripper.
+    - Q lifts the selected gripper and E lowers it while the view has focus. Alt-drag changes the mouse
+      movement plane.
+    full_plan:
+    - Pick up block A with one gripper, lift it, and release it inside outline A.
+    - Repeat for B, then C. Each block has its own labelled outline.
+    - Keep each released block upright and still while moving the next one.
+    full_tips:
+    - Lift clear of the other blocks. Letters identify the targets as well as colour.
+    stages:
+      approach:
+        title: Line up with the upper half of {object}
+        text: Open the gripper. Put its pads on opposite sides of {object}, a little above the centre.
+          Keep the bulky gripper body clear of the table.
 - id: tower
   name: Build a tower
   hands: 1
@@ -330,6 +305,7 @@ levels:
     - 0.018
     - 0.008
     upright: true
+    destination: the stack
   - label: B in the tower
     object: b
     type: place
@@ -342,6 +318,7 @@ levels:
     - 0.018
     - 0.008
     upright: true
+    destination: the stack
   - label: C in the tower
     object: c
     type: place
@@ -354,46 +331,14 @@ levels:
     - 0.018
     - 0.008
     upright: true
-  story:
-    room: Reading nook
-    title: Stack the books
-    brief: “My stories are all over the table. Stack these two books for me.”
-    outro: “Now I can find my stories. Keep this shiny coin.”
+    destination: the stack
+  guided:
     keep:
     - a
     - b
     goal_count: 2
     par: 147
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
-      - -0.06
-      - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
-      - - -0.78
-        - 0.83
-        - 0.24
-        - 0.25
     goal_x: 0.015
-    reward:
-      label: A shiny coin
-      kind: coin
-    decor:
-      wall: '#e3d1b3'
-      floor: '#916340'
-      rug: '#9a4f4e'
-      curtain: '#b4b68c'
     objects:
     - key: a
       kind: book
@@ -401,7 +346,7 @@ levels:
       - -0.1
       - 0.22
       - 0.012
-      label: Story book
+      label: Red book
       color: '#944f48'
       mass: 0.12
     - key: b
@@ -410,7 +355,7 @@ levels:
       - -0.1
       - -0.2
       - 0.012
-      label: Garden book
+      label: Green book
       color: '#4e7770'
       mass: 0.12
     goals:
@@ -426,6 +371,7 @@ levels:
       - 0.009
       upright: true
       label: First book flat on the mat
+      destination: the stack
     - type: place
       object: b
       at:
@@ -438,6 +384,7 @@ levels:
       - 0.009
       upright: true
       label: Second book stacked on top
+      destination: the stack
     markers:
     - at:
       - 0.015
@@ -447,6 +394,23 @@ levels:
       - 0.11
       - 0.15
       label: Books
+    name: Stack two books
+    brief: Stack the two books flat, one at a time. Put the red book down first.
+  guide:
+    plan:
+    - Grip a short edge of the red book. Turn the wrist if the book is wider than the open jaws.
+    - Place the red book flat on the marked stack position and release it.
+    - Lift the green book, lower it onto the red one, and release it gently.
+    tips:
+    - A book can be too wide for the jaws in one orientation. Turn the wrist so the jaws close around
+      a short edge.
+    - Release the lower book before picking up the upper book.
+    full_plan:
+    - Place A flat on the tower outline and release it.
+    - Stack B on A, then C on B, releasing each block before picking up the next.
+    - Keep the blocks centred and upright; move slowly near the stack.
+    full_tips:
+    - Place the bottom block first. Lower gently; the blocks collide and can slide or fall.
 - id: handoff
   name: Pass it on
   hands: 2
@@ -479,38 +443,29 @@ levels:
     target: bowl
     handoff: true
     label: Both hands grasped the ball; ball in bowl
-  story:
-    room: Team corner
-    title: Pass it on
-    brief: A good helper can use either hand. Pass the ball between hands, then leave it in the bowl.
-    outro: Both hands on the job. The next delivery needs both at once.
+    destination: the bowl
+  guided:
     keep:
     - ball
     - bowl
     goal_count: 1
     par: 125
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
-      - -0.06
-      - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
     placements:
       bowl:
       - 0
       - -0.03
       - 0
+    name: Pass the ball
+    brief: Use each gripper to hold the ball in turn, then release it in the bowl.
+  guide:
+    plan:
+    - Pick up the ball with either gripper.
+    - Bring the other open gripper to the ball. Close it before releasing the first.
+    - Move the ball over the bowl and release it. Both grippers must have held it.
+    tips:
+    - The receiving hand closes before the other opens. With one mouse, switch Left / Right between moves.
+    - If the jaws close without gripping, open them and centre the prop between both pads before trying
+      again.
 - id: tray
   name: Room service
   hands: 2
@@ -551,6 +506,7 @@ levels:
     - 0.012
     dual: true
     upright: true
+    destination: the tray outline
   - label: Ball still on the tray
     object: ball
     type: place
@@ -562,101 +518,26 @@ levels:
     - 0.07
     - 0.16
     - 0.025
-  story:
-    room: Sitting room
-    title: Tea for Grandma
-    brief: “Bring my tray to the little table. Two hands, love. Don’t spill the tea.”
-    outro: “Thank you, darling. Sit down for a moment and have a chocolate.”
+    destination: the tray outline
+  guided:
     keep:
     - tray
     - ball
     goal_count: 2
     par: 168
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
-      - -0.06
-      - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
-      - - 0.43
-        - 0.72
-        - 0.21
-        - 0.16
-      - - -0.78
-        - 0.83
-        - 0.24
-        - 0.25
-    delivery:
-      at:
-      - 0
-      - 0.72
-      dock:
-      - -0.06
-      - 0.72
-      carry: 0.35
-    reward:
-      label: A chocolate caramel
-      kind: candy
-    decor:
-      wall: '#e3d1b3'
-      floor: '#916340'
-      rug: '#9a4f4e'
-      curtain: '#b4b68c'
-    objects:
-    - key: tray
-      kind: tray
-      at:
-      - -0.105
-      - 0
-      - 0.006
-      label: Tray
-      color: '#168a73'
-      mass: 0.35
-    - key: cup
-      kind: cup
-      at:
-      - -0.105
-      - 0
-      - 0.015
-      label: Teacup
-      color: '#e3c6a5'
-    goals:
-    - label: Tray carried with both hands and set down
-      object: tray
-      type: place
-      at:
-      - 0.115
-      - 0
-      - 0.006
-      tolerance:
-      - 0.026
-      - 0.035
-      - 0.012
-      dual: true
-      upright: true
-    - type: place
-      object: cup
-      at:
-      - 0
-      - 0.72
-      - 0.015
-      tolerance:
-      - 0.06
-      - 0.14
-      - 0.02
-      upright: true
-      label: Teacup still on the tray
+    name: Lift a loaded tray
+    goal_x: 0.015
+    brief: Hold the two side rims, lift the loaded tray, then set it down on its outline with the ball
+      still aboard.
+  guide:
+    plan:
+    - Move one open gripper to each side rim of the tray. Close both around the rims.
+    - Lift both grippers together and keep the tray level.
+    - Move the tray over its outline, lower both grippers, and release both. Keep the ball on board.
+    tips:
+    - Pinch opposite rims, then choose Both to move the hands together. Keep the tray level.
+    - If the jaws close without gripping, open them and centre the prop between both pads before trying
+      again.
 - id: dishwasher
   name: Load the dishwasher
   hands: 2
@@ -720,6 +601,7 @@ levels:
     - 0.022
     - 0.012
     upright: false
+    destination: the rack slot
   - label: Plate 2 upright in slot 2
     object: plate1
     type: place
@@ -732,6 +614,7 @@ levels:
     - 0.022
     - 0.012
     upright: false
+    destination: the rack slot
   - label: Plate 3 upright in slot 3
     object: plate2
     type: place
@@ -744,37 +627,13 @@ levels:
     - 0.022
     - 0.012
     upright: false
-  story:
-    room: Kitchen
-    title: After tea
-    brief: “One last plate for the dishwasher. Turn it on its edge and slide it into the rack.”
-    outro: “That’s the washing-up sorted. A little pocket money for your trouble.”
+    destination: the rack slot
+  guided:
     keep:
     - rack
     - plate2
     goal_count: 1
     par: 251
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
-      - -0.06
-      - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
-      - - -0.78
-        - 0.83
-        - 0.24
-        - 0.25
     goal_indices:
     - 2
     placements:
@@ -783,14 +642,272 @@ levels:
       - -0.16
       - 0
     goal_x: 0.015
-    reward:
-      label: Some pocket money
-      kind: cash
-    decor:
-      wall: '#e3d1b3'
-      floor: '#916340'
-      rug: '#9a4f4e'
-      curtain: '#b4b68c'
+    name: Load a plate
+    brief: Pick up the plate, turn it upright, and lower it between the rack dividers.
+  guide:
+    plan:
+    - Grip the plate near its edge. Use the second gripper to steady it if needed.
+    - Lift it clear of the table, then tilt it onto its edge.
+    - Line up with the marked rack slot, lower the plate between the dividers, then open the gripper.
+    tips:
+    - Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the rack slots, then lower
+      and release.
+    - If the jaws close without gripping, open them and centre the prop between both pads before trying
+      again.
+    full_plan:
+    - Pick up one plate from the pile and turn it onto its edge.
+    - Lower it upright into the rack slot with the same number.
+    - Release it, then repeat for the remaining two plates.
+    full_tips:
+    - Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the rack slots, then lower
+      and release.
+- id: connector
+  name: Connector practice
+  hands: 2
+  skill: Cable routing and insertion
+  brief: Support the flexible cable with one gripper. Use the other to align and seat the USB-C plug in
+    the fixed socket.
+  hint: Pinch the rear of the black housing, not the metal nose. Approach the socket straight along its
+    axis. Reduce Motion × for fine alignment.
+  par: 240
+  objects:
+  - key: plug
+    kind: usb-plug
+    at:
+    - -0.06
+    - -0.16
+    - 0.0675
+    label: USB-C plug
+    color: '#454c58'
+    mass: 0.035
+    mat: rubber
+    slop: 5.0e-05
+  - key: port
+    kind: usb-port
+    at:
+    - -0.015
+    - -0.08
+    - 0.065
+    label: USB-C socket
+    color: '#aab3bf'
+    mass: 0.2
+    fixed: true
+    mat: aluminium
+    slop: 5.0e-05
+    show_label: true
+  - key: rest
+    kind: plug-rest
+    at:
+    - -0.06
+    - -0.16
+    - 0
+    fixed: true
+    label: Plug cradle
+    color: '#7e8996'
+    mat: aluminium
+  cables:
+  - key: wire
+    label: Flexible cable
+    plug: plug
+    anchor:
+    - 0.08
+    - 0.15
+    - 0.002
+    length: 0.44
+    resolution: 33
+    color: '#454c58'
+  goals:
+  - type: insert
+    object: plug
+    target: port
+    label: Release the plug fully seated in the socket
+    destination: the USB-C socket
+  camera:
+    at:
+    - 0.01
+    - 0.03
+    - 0.055
+    offset:
+    - -0.36
+    - -0.42
+    - 0.3
+  markers: []
+  guide:
+    plan:
+    - Use the right gripper to pinch the rear half of the black plug housing on its narrow cradle. Leave
+      the metal nose clear of the fingers.
+    - Lift the plug. With the other gripper, pinch the cable midway to take up its weight and leave a
+      relaxed loop.
+    - Align the flat metal nose with the socket mouth. Keep the plug level and approach straight along
+      the opening.
+    - Advance slowly until the detent seats. Open the plug gripper, then release the cable and let the
+      connector settle.
+    tips:
+    - The socket is hollow, with a centre tongue and solid walls. Lateral or angular error blocks insertion;
+      pulling harder is not alignment.
+    - Turn the wrist 180 degrees to reverse USB-C. A quarter turn cannot fit. Drag empty space to orbit
+      and scroll to zoom.
+    - The cable bends, drags on the table and pulls back on the plug. Lift a slack loop with the second
+      gripper if tension pulls the nose off axis.
+    - TacHammer cues distinguish contact impacts, cable load and the seating click. Enable them in Task
+      settings and map each controller to its wrist or hand.
+    - Hold Shift with W/A/S/D/Q/E for 0.2 mm steps, or with J/K/U/O for fine wrist angles. Motion × 0.1
+      reduces AprilTag translation for this precision task.
+  legacy_id: cable
+- id: cable
+  revision: 2
+  name: Charge the Samsung phone
+  hands: 2
+  skill: Two-handed cable assembly
+  brief: Plug the charger into the outlet. Then hold the Samsung phone in one gripper and connect its
+    USB-C cable with the other.
+  hint: Use the right gripper for the charger and USB-C housing, and the left for the phone. Keep a loose
+    cable loop; align the connector with the phone’s bottom edge.
+  par: 300
+  objects:
+  - key: charger
+    kind: charger
+    at:
+    - -0.045
+    - -0.2
+    - 0.029
+    mass: 0.085
+    label: Phone charger
+    color: '#e3e5e7'
+    mat: aluminium
+    slop: 5.0e-05
+  - key: outlet
+    kind: outlet
+    at:
+    - 0.06
+    - -0.22
+    - 0.1
+    mass: 0.3
+    fixed: true
+    label: Power outlet
+    color: '#b7bdc4'
+    mat: aluminium
+    slop: 5.0e-05
+    show_label: true
+  - key: phone
+    kind: phone
+    at:
+    - 0.005
+    - 0.18
+    - 0.0445
+    mass: 0.185
+    label: Samsung Galaxy phone
+    color: '#252b32'
+    mat: aluminium
+    slop: 5.0e-05
+    show_label: true
+  - key: plug
+    kind: usb-plug
+    at:
+    - -0.07
+    - -0.025
+    - 0.0675
+    label: USB-C plug
+    color: '#30363e'
+    mass: 0.025
+    mat: rubber
+    slop: 5.0e-05
+  - key: rest
+    kind: plug-rest
+    at:
+    - -0.07
+    - -0.025
+    - 0
+    fixed: true
+    label: Cable cradle
+    color: '#6f7985'
+    mat: aluminium
+  - key: phone-rest
+    kind: phone-rest
+    at:
+    - 0.005
+    - 0.18
+    - 0
+    fixed: true
+    label: Phone cradle
+    color: '#6f7985'
+    mat: aluminium
+  cables:
+  - key: wire
+    label: Phone charging cable
+    plug: plug
+    anchor_body: charger
+    anchor_local:
+    - -0.02
+    - 0
+    - -0.018
+    length: 0.6
+    mass: 0.025
+    radius: 0.0016
+    resolution: 65
+    bend_stiffness: 2.0e-05
+    color: '#242a32'
+    loop_direction: -1
+  goals:
+  - type: power
+    object: charger
+    target: outlet
+    label: Seat and release the charger in the outlet
+    destination: the power outlet
+  - type: charge
+    object: plug
+    target: phone
+    label: Connect USB-C while holding the phone in the other gripper
+    destination: the phone’s USB-C socket
+  charging:
+    charger: charger
+    outlet: outlet
+    phone: phone
+    plug: plug
+    socket_at:
+    - -0.078
+    - 0
+    - 0
+  camera:
+    at:
+    - 0
+    - 0
+    - 0.14
+    offset:
+    - 0.8
+    - -0.75
+    - 0.55
+  markers: []
+  guide:
+    plan:
+    - Use the right gripper to grasp the charger body. Lift it, align both round pins with the outlet
+      and push straight in. Open the gripper once it seats.
+    - Use the left gripper around the lower half of the Samsung phone on its cradle. Lift it clear and
+      keep its screen facing up.
+    - With the right gripper, pinch the rear half of the USB-C housing on its cradle. Lift it without
+      pulling the cable taut.
+    - Bring the plug straight toward the socket in the phone’s bottom edge. Hold the phone steady with
+      the left gripper and adjust the right wrist in fine steps.
+    - Once connected, open the plug gripper while continuing to hold the phone. Keep both connections
+      still until the charging objective completes.
+    tips:
+    - Lift the phone straight up and keep it toward the left shoulder while the right gripper picks up
+      the cable. Lift the empty cable gripper clear before moving sideways.
+    - The socket moves with the phone. Insertion force pushes back on both hands; a phone left on the
+      table cannot satisfy the two-handed objective.
+    - Both cable ends move with their attached objects. The jacket bends, drags, collides and develops
+      tension; move the objects closer if the cable pulls them off axis.
+    - Keep the phone screen up and its bottom edge toward the robot. Leave room between both grippers
+      for the metal connector nose.
+    - Shift + W/A/S/D/Q/E moves in 0.2 mm steps. Shift + J/K/U/O turns the wrist finely. Motion × 0.1
+      helps with AprilTags.
+    - TacHammer pulses indicate impacts and changes in load. One knock marks a seating event. This is
+      a simulated outlet and charger.
+    stages:
+      done:
+        title: Phone charging complete
+        text: Both connections are seated. You connected USB-C while holding the phone with the other
+          gripper. You can set the phone down or try again.
 - id: laundry
   name: Fold the laundry pile
   hands: 2
@@ -813,6 +930,7 @@ levels:
     - 0.07
     - 0.07
     - 0.045
+    destination: the towel stack
   - type: fold
     object: towel1
     label: Towel 2 folded and stacked
@@ -824,6 +942,7 @@ levels:
     - 0.07
     - 0.07
     - 0.045
+    destination: the towel stack
   - type: fold
     object: towel2
     label: Towel 3 folded and stacked
@@ -835,6 +954,7 @@ levels:
     - 0.07
     - 0.07
     - 0.045
+    destination: the towel stack
   cloths:
   - key: towel0
     label: Towel 1
@@ -872,160 +992,272 @@ levels:
     - 0.16
     - 0.28
     label: Folded stack
-  story:
-    room: Laundry corner
-    title: The last fold
-    brief: “Fold this towel in half, then leave it on the little mat. We’re nearly done.”
-    outro: “Beautiful. You’ve earned a rest and a little something in an envelope.”
+  guided:
     keep:
     - towel0
     goal_count: 1
     par: 420
-    travel:
-      half:
-      - 1.15
-      - 1.15
-      start:
-      - -0.78
-      - -0.42
-      - 0
-      dock:
-      - -0.06
-      - 0
-      minimum: 0.45
-      obstacles:
-      - - 0.43
-        - 0
-        - 0.25
-        - 0.45
-      - - -0.78
-        - 0.83
-        - 0.24
-        - 0.25
     goal_x: 0.015
-    reward:
-      label: Grandma’s envelope
-      kind: cash
-    decor:
-      wall: '#e3d1b3'
-      floor: '#916340'
-      rug: '#9a4f4e'
-      curtain: '#b4b68c'
+    name: Fold a towel
+    brief: Pinch two corners of the near edge. Fold that edge onto the opposite edge and release the towel
+      on the marked pad.
+    cloths:
+    - key: towel0
+      label: Towel 1
+      at:
+      - -0.075
+      - 0
+      - 0
+      width: 0.2
+      height: 0.24
+      color: '#2a78d6'
+      resolution: 13
+      iterations: 7
+      mass: 0.08
+    goals:
+    - type: fold
+      object: towel0
+      label: Towel folded and released on the pad
+      at:
+      - -0.025
+      - 0
+      - 0.018
+      tolerance:
+      - 0.07
+      - 0.07
+      - 0.045
+      destination: the folding pad
+    markers:
+    - at:
+      - -0.025
+      - 0
+      - 0.001
+      size:
+      - 0.16
+      - 0.28
+      label: Folding pad
+  guide:
+    plan:
+    - Pinch the two corners of the same edge, one with each gripper.
+    - Lift that edge and carry it across to the opposite edge. Keep the corners aligned.
+    - Lower and release both corners. In the small task, fold directly onto the marked pad; no extra carry
+      is needed.
+    tips:
+    - Use both hands on opposite corners of an edge. Lift that edge over the far edge, lower, release,
+      then stack. The whole edge must line up.
+    - If the jaws close without gripping, open them and centre the prop between both pads before trying
+      again.
+    - Fabric weight and stretch pull back on the grippers. TacHammer pulses grow with simulated tension;
+      open the jaws to release a patch.
+    full_plan:
+    - Use both grippers to pinch two corners of one towel edge.
+    - Fold that edge across to the opposite edge, then lower and release both corners on the stack.
+    - Repeat for each towel in the pile.
+    full_tips:
+    - Use both hands on opposite corners of an edge. Lift that edge over the far edge, lower, release,
+      then stack. The whole edge must line up.
 controls:
-  intro: AprilTags drive the hands. Drag either hand or gripper with the mouse to take over; scroll on
-    it to grip and release. Resume AprilTags gives control back to the tags.
-  keyboard: 'Hands: W/S forward/back; A/D sideways; Q/E lift/lower; Space grip; J/K tilt; U/O roll. Move:
-    I/K forward/back; J/L turn. Choose Left, Right or Both.'
+  intro: AprilTags drive the grippers. You can also drag a gripper with the mouse. Scroll down on it to
+    close, up to open; Space toggles the selected gripper.
+  keyboard: W/S forward/back, A/D sideways, Q/E lift/lower. Space opens/closes. J/K tilt and U/O roll
+    the wrist. Alt-drag changes the mouse movement plane. Hold Shift for 0.2 mm steps and fine wrist turns.
   scoring: One star for finishing, one for the target time, one for no dropped props. Best results stay
     in this browser.
 camera:
   label: First person
-  help: Look through your character’s eyes. Tilt up/down with the slider or ↑/↓ while the 3D view is focused.
-physics: Rigid props collide and grips can slip. Towels use a coarse deformable mesh with self-contact;
-  fabric is an approximation.
-story:
-  title: Grandma’s little helper
-  subtitle: A visit, a few chores, and a pocketful of treats.
-  intro: Eli is visiting Grandma for the afternoon. Knock on her door, help around her cosy home, and
-    leave with a few of her favourite thank-yous. Pip can help too.
-  ending: “All done! Come sit with me, love. There’s a little something in this envelope for you.”
-  navigation: Lean your calibrated body tag forward or back to walk or drive; turn your shoulders to steer.
-    Stand neutrally to stop. Double-click the floor to travel with the mouse, or use W/S and A/D. Drag
-    either hand to reach; scroll on it to grip, Shift-scroll to tilt, Space to release. Settings contains
-    camera setup and practice.
-  actors:
-  - id: robot
-    name: Pip, the robot
-    description: Pip visits Grandma. Drive an AMR base and help with both grippers.
-  - id: teen
-    name: Eli, the teenage helper
-    description: Eli visits Grandma. Walk to each little chore and lend a hand.
-  order:
-  - door
-  - bowl
-  - precision
-  - sort
-  - tower
-  - tray
-  - dishwasher
-  - laundry
-  ui:
-    settings: Game settings
-    chapter: Chore
-    grandma: Grandma
-    next: Next chore
-    finish: An afternoon well spent
-    reward: Grandma gave you
-    pocket: In your pocket
-    setup: Camera & AprilTags
-    return: Back to the game
-    retry: Try this chore again
-    help: How to play
-    view: View
-    outside: Room
-    eyes: Through their eyes
-    tilt: Look up / down
-    tags: Resume AprilTags
-    empty: Your pocket is empty… for now.
-    loading: Loading Eli…
-  prologue:
-    id: door
-    name: Knock, knock
-    hands: 1
-    skill: First touch
-    brief: Knock on Grandma’s front door three times.
-    hint: Move a hand forward to tap the door, pull it back, then knock again. A resting hand is not another
-      knock.
-    par: 60
-    objects:
-    - key: door
-      kind: door
-      at:
-      - 0.08
-      - 0
-      - -0.75
-      fixed: true
-      mass: 1
-      mat: wood
-      color: '#698574'
-      label: Front door
-    goals:
-    - type: knock
-      object: door
-      count: 3
-      label: Three knocks on the door
-    story:
-      title: Knock, knock
-      room: Front porch
-      brief: “Is that you, love? Give the door a little knock!”
-      outro: “There you are! Come in. I’ve kept a peppermint for you.”
-      keep:
-      - door
-      goal_count: 1
-      par: 60
-      travel:
-        half:
-        - 1.15
-        - 1.15
-        start:
-        - -0.78
-        - -0.42
-        - 0
-        dock:
-        - -0.06
-        - 0
-        minimum: 0.45
-        obstacles:
-        - - 0.51
-          - 0
-          - 0.03
-          - 0.4
-      reward:
-        label: A peppermint
-        kind: candy
-      decor:
-        wall: '#d9cbb6'
-        floor: '#987757'
-        rug: '#596f60'
-        curtain: '#b4b68c'
-      camera_tilt: -8
+  help: Look through the robot’s head camera. Tilt with the slider or the up/down arrows while the view
+    has focus.
+physics: Rigid contacts, friction-limited grasps, deformable XPBD fabric and an elastic cable run at 240
+  Hz. Cable and fabric loads pull back on the grippers. These are physical approximations; connector forces
+  are representative, not measured hardware calibration.
+ui:
+  settings: Task settings
+  task: Task
+  next: Next task
+  finish: Task complete
+  setup: Camera & AprilTags
+  return: Back to tasks
+  outside: Outside view
+  eyes: Robot eyes
+  tilt: Head camera tilt
+  tags: Resume AprilTags
+  guided: Small tasks
+  practice: Full challenges
+  picker: Choose a task
+  plan: Step-by-step instructions
+  tips: Stuck? Try these hints
+  next_action: What to do next
+  objectives: Objectives
+  restart: Restart task
+  controls: Mouse and AprilTags
+  done: Released and settled. Choose another task when you’re ready.
+  one_gripper: One gripper
+  two_grippers: Two grippers
+guidance:
+  mouse: Drag a gripper to reach. Scroll down on it to close and up to open. Space toggles the selected
+    gripper. Hold Alt while dragging to change the movement plane.
+  stages:
+    approach:
+      title: Line up the gripper
+      text: Open either gripper and move its pads to opposite sides of {object}. The prop goes between
+        the pads, not under the palm.
+    grip:
+      title: Close around {object}
+      text: The gripper is close enough. Close it around {object}, then lift a little to check that the
+        prop follows.
+    retry:
+      title: Open and try the grasp again
+      text: The jaws closed without holding {object}. Open them first, centre {object} between both pads,
+        and close again.
+    lift:
+      title: Lift {object} clear of the table
+      text: The gripper is holding {object}. Lift it a few centimetres before moving toward {target}.
+    move:
+      title: Move {object} above {target}
+      text: Keep the jaws closed. Move the held prop over its highlighted destination before lowering
+        it.
+    orient:
+      title: Turn {object} to match its destination
+      text: Keep holding it and tilt the wrist. Plates go upright into the rack; blocks, books, cups and
+        the tray stay level.
+    lower:
+      title: Lower {object} gently
+      text: You are above {target}. Lower the prop toward its support while keeping the jaws closed.
+    release:
+      title: Open the gripper
+      text: Release {object} at {target}. It only counts after the gripper lets go and the prop stays
+        still.
+    settle:
+      title: Let {object} settle
+      text: Leave the prop released. Its objective gets a check mark once it is in the right position
+        and still.
+    wrong:
+      title: Put down {held} first
+      text: The next prop to move is {object}. Set {held} down, open the gripper, then reach for {object}.
+    dual:
+      title: Grip both side rims
+      text: The tray needs both grippers. Put one around each side rim, then lift both together without
+        tipping the load.
+    handoff:
+      title: Let the other gripper take the ball
+      text: Bring the other open gripper to the ball. Close it around the ball, then open the first gripper.
+    fold_grab:
+      title: Pinch two corners on one edge
+      text: Use one gripper for each corner of the same towel edge. Close each gripper on a small patch
+        of fabric.
+    fold_move:
+      title: Bring that edge to the opposite edge
+      text: Lift both corners, carry them across the towel, then lower them to line up with the opposite
+        corners.
+    fold_release:
+      title: Release both corners
+      text: Open both grippers. The towel must be folded, compact and resting on the marked stack.
+    done:
+      title: Task complete
+      text: All objectives are released and settled. You can retry, choose any task, or move to the next
+        one.
+    fold_second:
+      title: Pinch the other corner
+      text: One corner is held. Use the other gripper to pinch the other corner on that same edge before
+        lifting.
+    clear:
+      title: Lift the empty gripper clear of {object}
+      text: Keep it open and lift straight up before reaching for {next}. Moving sideways too soon can
+        knock the placed prop out of its outline.
+    usb_grab:
+      title: Grip the rear of the plug housing
+      text: Use the right gripper around the back half of {object}. Keep its metal nose beyond the fingers.
+        The left gripper can support a slack loop of cable.
+    usb_align:
+      title: Line up the metal nose
+      text: Hold the plug level with {target}. Match the flat opening and approach along its axis. Orbit
+        or zoom for a closer look; reduce Motion × for fine moves.
+    usb_insert:
+      title: Advance gently into the socket
+      text: The nose is aligned. Move straight forward in small increments. If a wall stops it, withdraw
+        slightly and correct the angle rather than forcing it.
+    usb_release:
+      title: The connector is seated
+      text: Open the gripper holding the plug, then release the cable. The connector must remain seated
+        and still to finish.
+    usb_cable_release:
+      title: Release the cable support
+      text: The plug is seated and released. Open the other gripper to let go of the cable, then leave
+        the connector still.
+    charger_outlet:
+      title: Plug the charger into the outlet
+      text: Grasp the charger body with the right gripper. Lift it, line up both round pins with the outlet
+        holes and advance straight in. Keep a slack loop of cable.
+    charger_release:
+      title: Release the seated charger
+      text: The charger pins are seated. Open the right gripper and leave the charger supported by the
+        outlet.
+    phone_pickup:
+      title: Pick up the Samsung phone
+      text: Use the left gripper around the lower half of the phone. Lift it clear of the table, keep
+        the screen facing up, and leave the bottom USB-C socket exposed.
+    phone_insert:
+      title: Hold the phone and line up USB-C
+      text: Hold the phone steady with the left gripper. Use the right gripper on the cable housing, line
+        up the flat nose with the phone’s bottom socket, and insert slowly.
+    phone_release:
+      title: Release the connected USB-C plug
+      text: The connector is seated. Open the gripper holding the cable plug. Continue holding the phone
+        in the other gripper.
+    phone_regrasp:
+      title: Connect while the phone is held
+      text: This task needs both hands during insertion. Withdraw the plug slightly, hold the raised phone
+        with one gripper, then seat the plug using the other.
+    phone_hold:
+      title: Keep the connected phone steady
+      text: Keep holding the phone with the cable gripper open. The charger must stay in the outlet and
+        the USB-C connector must remain seated.
+    phone_seat_wait:
+      title: Keep both grips for a moment
+      text: Hold the phone and connector steady as the plug seats. Then the guide will ask you to open
+        the cable gripper.
+haptics:
+  label: TacHammer task feedback
+  strength: Strength
+  help: Brief, self-ending TacHammer pulses for contact, grip slip, fabric and cable tension, and connector
+    seating. ERM and gripper-servo commands are not sent.
+  routing: Haptic hand
+  sides:
+  - From wrist tag
+  - Left hand
+  - Right hand
+  - 'Off'
+  routing_help: Connect nrf-controller boards in Camera & AprilTags → Motion sensors. Assign each board
+    its wrist tag, or choose a haptic hand for mouse practice. The board must report TacHammer ready.
+  'off': TacHammer feedback off
+  disconnected: No controllers connected
+  unavailable: Waiting for a controller with TacHammer ready
+  ready: TacHammer ready. Move a mapped hand into contact.
+  sent: TacHammer command acknowledged
+  error: A controller write failed. Reconnect the controller.
+scores:
+  title: Leaderboard
+  scope: Best completion times on this device. Small tasks and full challenges are ranked separately.
+    Set your player name in Task settings.
+  empty: No completed times yet
+  best: Best time
+  rank: Rank
+  player: Player
+  time: Time
+  previous: Previous best
+link:
+  connect: Connect USB / ESB
+  ble: Connect BLE
+  baud: Baud
+  help: Use BLE, a direct USB controller, or a USB-connected XIAO ESB receiver. USB and ESB require TP/1
+    teleop firmware; its default is 1,000,000 baud. Both routes send motion into Filtered tracking and
+    return TacHammer cues.
+  unsupported: Web Serial needs Chrome or Edge on a computer and HTTPS or localhost.
+  closed: Serial controller disconnected. Connect USB / ESB to choose the port again.
+  waiting: Port open. Waiting for controller identity and motion…
+  serial: USB serial
+  esb: USB → ESB
+  rtt: command round trip
+  dropped: USB / radio drops
+  drive_delay: accepted → I2S start
+  missing: Controller stopped streaming. Check its power and connection.

@@ -1,9 +1,9 @@
 // Small-step XPBD towels. Stretch/shear and compliant bending constraints follow Macklin et al. (2016):
 // https://mmacklin.com/xpbd.pdf . No DOM; the same state drives the mesh and the objective checks.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./physics-core.js'));
-  else root.ClothCore = factory(root.PhysicsCore);
-})(typeof self !== 'undefined' ? self : this, function (P) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./physics-core.js'), require('./cable-core.js'));
+  else root.ClothCore = factory(root.PhysicsCore, root.CableCore);
+})(typeof self !== 'undefined' ? self : this, function (P, Cable) {
   'use strict';
   const add = (a, b) => a.map((v, i) => v + b[i]), sub = (a, b) => a.map((v, i) => v - b[i]);
   const mul = (a, s) => a.map((v) => v * s), len = (a) => Math.hypot(...a);
@@ -11,6 +11,7 @@
   const mt = (R, p) => [0, 1, 2].map((i) => R[i] * p[0] + R[3 + i] * p[1] + R[6 + i] * p[2]);
   const radius = 0.0025, N = 9, ITER = 5;
   function towel(spec, table) {
+    const N = spec.resolution || 9, iterations = spec.iterations || ITER;
     const width = spec.width || 0.20, height = spec.height || 0.24, start = [], edges = [], triangles = [], pins = new Map();
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const p = [(i / (N - 1) - 0.5) * width, (j / (N - 1) - 0.5) * height, radius];
@@ -26,11 +27,11 @@
       if (i + 2 < N) link(k, k + 2, 0.5);
       if (j + 2 < N) link(k, k + 2 * N, 0.5);
     }
-    const c = { key: spec.key, color: spec.color, label: spec.label, N, width, height, triangles, edges, pins, nodes: [], folds: new Set(), touched: new Set() };
-    c.reset = () => { c.nodes = start.map((p) => ({ p: p.slice(), v: [0, 0, 0] })); pins.clear(); c.folds.clear(); c.touched.clear(); };
+    const c = { key: spec.key, color: spec.color, label: spec.label, N, width, height, triangles, edges, pins, reactions: {}, nodes: [], folds: new Set(), touched: new Set() };
+    c.reset = () => { c.nodes = start.map((p) => ({ p: p.slice(), v: [0, 0, 0] })); pins.clear(); c.folds.clear(); c.touched.clear(); c.reactions = {}; };
     c.reset();
     c.step = (dt, W) => {
-      const ns = c.nodes, invM = ns.length / 0.08;
+      const ns = c.nodes, invM = ns.length / (spec.mass || 0.08);
       // Both jaws must surround a patch. Closing captures it, opening releases it; no cursor-to-cloth teleport.
       for (const [side, h] of Object.entries(W.hands)) {
         const pose = W.handPose(side), pin = pins.get(side), gap = h.gap;
@@ -71,7 +72,7 @@
           }
         }
       };
-      for (let it = 0; it < ITER; it++) {
+      for (let it = 0; it < iterations; it++) {
         for (const e of edges) {
           const a = ns[e.a], b = ns[e.b], d = sub(a.p, b.p), L = len(d);
           if (L < 1e-9) continue;
@@ -112,6 +113,16 @@
         if (hits.has(i)) { const v = mt(table.R, n.v); v[0] *= 0.82; v[1] *= 0.82; n.v = mv(table.R, v); }
         const speed = len(n.v); if (speed > 2) n.v = mul(n.v, 2 / speed);
       });
+      c.reactions = {};
+      for (const [side,pin] of pins) {
+        let force = [0,0,-9.81/invM];
+        for (const e of edges) if (e.a===pin.i || e.b===pin.i) {
+          const d=sub(ns[e.a].p,ns[e.b].p),L=len(d)||1;
+          force=add(force,mul(d,(e.a===pin.i?1:-1)*e.lambda/(dt*dt*L)));
+        }
+        c.reactions[side]={force,load:len(force),at:ns[pin.i].p};
+        Cable.react(W.hands[side].body,force,ns[pin.i].p,dt);
+      }
       if (ns.every((n) => n.p[2] < table.t[2] - 0.15) && pins.size === 0) { c.reset(); W.respawns++; }
     };
     return c;

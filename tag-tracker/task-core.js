@@ -1,15 +1,21 @@
-// Teleoperation campaign: scene construction, physical objectives, progress and a robot-mounted camera. No DOM.
+// Robot workbench: scene construction, physical objectives, progress and a robot-mounted camera. No DOM.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./physics-core.js'), require('./cloth-core.js'));
-  else root.TaskCore = factory(root.TagCore, root.PhysicsCore, root.ClothCore);
-})(typeof self !== 'undefined' ? self : this, function (C, P, Cloth) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./physics-core.js'), require('./cloth-core.js'), require('./cable-core.js'), require('./charging-core.js'));
+  else root.TaskCore = factory(root.TagCore, root.PhysicsCore, root.ClothCore, root.CableCore, root.ChargingCore);
+})(typeof self !== 'undefined' ? self : this, function (C, P, Cloth, Cable, Charging) {
   'use strict';
   const I = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   const box = (p, h) => ({ type: 'box', p, h });
   const cyl = (p, r, h) => ({ type: 'cylinder', p, r, h });
   const rz = (a) => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
   function geometry(kind) {
-    if (kind === 'door') return [box([0,0,.72],[.024,.38,.72]),box([-.032,-.25,.74],[.018,.055,.016])];
+    if(kind==='phone-rest')return [box([0,0,.004],[.082,.044,.004]),box([0,0,.024],[.058,.008,.016])];
+    if(kind==='charger')return [{...box([0,0,0],[.020,.025,.029]),material:'shell'},...[-1,1].map(sign=>({...cyl([.0295,sign*.0095,0],.002,.0095),R:[0,0,1,0,1,0,-1,0,0],material:'metal'}))];
+    if(kind==='outlet')return [box([.029,0,-.03],[.009,.042,.070]),box([.010,0,.019],[.010,.04,.0163]),box([.010,0,-.019],[.010,.04,.0163]),box([.010,0,0],[.010,.0068,.0027]),...[-1,1].map(sign=>box([.010,sign*.0261,0],[.010,.0139,.0027]))];
+    if(kind==='phone')return [{...box([.006,0,0],[.072,.035,.0045]),material:'metal'},...[-1,1].flatMap(sign=>[{...box([-.072,sign*.0198,0],[.006,.0152,.0045]),material:'metal'},{...box([-.072,0,sign*.003],[.006,.0046,.0015]),material:'metal'}]),{...box([-.072,0,0],[.004,.0028,.0003]),material:'dark'},{...box([.006,0,.0048],[.067,.032,.0003]),material:'glass'},...[-.042,-.022,-.002].flatMap(x=>[{...cyl([x,-.024,-.0055],.0055,.001),material:'metal'},{...cyl([x,-.024,-.0066],.0043,.00015),material:'glass'}])];
+    if (kind === 'plug-rest') return [box([0,0,.004],[.028,.024,.004]),box([0,0,.035],[.020,.005,.027])];
+    if (kind === 'usb-plug') return [box([0,0,0],[.020,.007,.0055]),box([.024,0,.00115],[.004,.0042,.00015]),box([.024,0,-.00115],[.004,.0042,.00015]),box([.024,.004,0],[.004,.0002,.001]),box([.024,-.004,0],[.004,.0002,.001])];
+    if (kind === 'usb-port') return [box([.005,0,.0035],[.005,.008,.002]),box([.005,0,-.0035],[.005,.008,.002]),box([.005,.0062,0],[.005,.0016,.0015]),box([.005,-.0062,0],[.005,.0016,.0015]),box([.006,0,0],[.004,.0028,.0003]),box([.011,0,0],[.001,.008,.006]),box([.012,0,-.034],[.012,.022,.028])];
     if (kind === 'book') return [box([0,0,0],[.045,.065,.012])];
     if (kind === 'block') return [box([0, 0, 0], [0.025, 0.025, 0.025])];
     if (kind === 'plate') return [cyl([0, 0, 0], 0.06, 0.006)];
@@ -31,52 +37,42 @@
     }
     throw new Error('Unknown task geometry: ' + kind);
   }
-  // Story rooms keep only one small job. Practice retains the original full-size challenges and saved results.
+  // Small tasks retain the full challenge as a separate selectable variant.
   function mission(level, mode) {
-    if (mode !== 'story' || !level.story) return level;
-    const l = JSON.parse(JSON.stringify(level)), s = l.story;
-    l.name = s.title; l.brief = s.brief; l.par = s.par; l.travel = s.travel;
-    l.objects = (l.objects || []).filter((o) => (s.keep || []).includes(o.key));
-    l.cloths = (l.cloths || []).filter((o) => (s.keep || []).includes(o.key));
-    for (const o of l.objects) if (s.placements && s.placements[o.key]) o.at = s.placements[o.key];
-    l.goals = s.goal_indices ? s.goal_indices.map((i) => l.goals[i]) : l.goals.slice(0, s.goal_count);
-    if (s.goal_x !== undefined) { for (const r of l.goals) if (r.at) r.at[0] = s.goal_x; for (const m of l.markers || []) m.at[0] = s.goal_x; }
-    if (s.objects) l.objects = s.objects;
-    if (s.goals) l.goals = s.goals;
-    if (s.markers) l.markers = s.markers;
-    if (s.delivery) for (const r of l.goals) { r.at[0] = s.delivery.at[0]; r.at[1] = s.delivery.at[1]; if (r.object === 'tray') r.carry = s.delivery.carry; }
+    if (mode !== 'guided' || !level.guided) return level;
+    const l=JSON.parse(JSON.stringify(level)),s=l.guided;
+    l.name=s.name;l.brief=s.brief;l.par=s.par;
+    l.objects=(s.objects || l.objects || []).filter(o=>!s.keep || s.keep.includes(o.key));
+    l.cloths=(s.cloths || l.cloths || []).filter(o=>!s.keep || s.keep.includes(o.key));
+    for(const o of l.objects)if(s.placements&&s.placements[o.key])o.at=s.placements[o.key];
+    l.goals=s.goals || (s.goal_indices?s.goal_indices.map(i=>l.goals[i]):l.goals.slice(0,s.goal_count));
+    if(s.goal_x!==undefined)for(const r of l.goals)if(r.at)r.at[0]=s.goal_x;
+    if(s.markers)l.markers=s.markers;
     return l;
   }
-  function unlocked(levels, saved) { const i = levels.findIndex((l) => !saved[l.id]); return i < 0 ? levels.length - 1 : i; }
   function create(level, table, gripper) {
     const W = P.world({ table, gripper }), byKey = new Map();
-    W.hideTable = level.id === 'door';
     const at = (p) => C.add(table.t, C.mulv(table.R, p));
     for (const s of level.objects || []) {
       const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, pieces: geometry(s.kind) }, at(s.at), C.mul3(table.R, s.R || I));
       Object.assign(b, { key: s.key, color: s.color, label: s.label }); byKey.set(s.key, b);
     }
     for (const s of level.cloths || []) { const c = Cloth.towel(s, table); W.cloths.push(c); byKey.set(s.key, c); }
-    if (level.travel && level.story.delivery) {
-      const [x,y] = level.story.delivery.at, pieces = [box([x,y,-.015],[.21,.16,.015])];
-      for (const a of [-1,1]) for (const b of [-1,1]) pieces.push(box([x+a*.18,y+b*.13,-.39],[.012,.012,.36]));
-      W.add({kind:'serving',key:'serving',label:'Serving table',fixed:true,mass:1,pieces,color:'#70858c'}, table.t, table.R);
+    for (const s of level.cables || []) { const c = Cable.cable(s, table, byKey.get(s.plug),s.anchor_body?byKey.get(s.anchor_body):null); W.cables.push(c); byKey.set(s.key,c); }
+    for (const r of level.goals.filter(r=>r.type==='insert')) {
+      const plug=byKey.get(r.object),port=byKey.get(r.target);
+      W.contactGenerators.push(()=>Cable.sleeveContacts(W,plug,port));
+      W.mechanisms.push(()=>{ plug.insertion=Cable.insertion(W,plug,port); });
     }
-    const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0, arrived: false, carryMeters: 0, knocks: 0, lastKnock: -Infinity };
+    const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0, gripper };
     game.local = (p) => C.mulv(C.tr3(table.R), C.sub(p, table.t));
-    game.reset = () => { W.reset(); game.elapsed = 0; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; game.arrived = false; game.carryMeters = 0; game.knocks = 0; game.lastKnock = -Infinity; game.open = 0; };
+    game.reset = () => { W.reset(); game.elapsed = 0; game.clockStart = null; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; };
+    if(level.charging)Charging.attach(game);
     return game;
   }
   const within = (p, q, tolerance) => p.every((v, i) => Math.abs(v - q[i]) < tolerance[i]);
-  function update(g, dt, active) {
-    if (g.complete) {
-      if (g.level.id === 'door') {
-        const b=g.byKey.get('door');g.doorClosed=g.doorClosed||g.world.poseOf(b);g.open=Math.min(1,(g.open||0)+dt*1.2);
-        const closed=g.doorClosed,pivot=C.add(closed.t,C.mulv(closed.R,[0,.38,0])),R=C.mul3(closed.R,rz(g.open*1.2)),origin=C.sub(pivot,C.mulv(R,[0,.38,0]));
-        b.R=R;b.q=P.qOf(R);b.t=C.sub(origin,C.mulv(R,b.off));
-      }
-      return g;
-    }
+  function update(g, dt, active, clock) {
+    if (g.complete) return g;
     const W = g.world, holds = new Map();
     for (const [side, h] of Object.entries(W.hands)) if (h.grip) {
       const key = h.grip.body.key; if (!holds.has(key)) holds.set(key, new Set()); holds.get(key).add(+side);
@@ -86,19 +82,17 @@
       const b = g.byKey.get(key), p = g.local(W.poseOf(b).t);
       if (p[2] > 0.04) g.dual.add(key);
     }
-    if (active) g.started = true;
-    if (g.started) g.elapsed += dt;
+    if (active || holds.size || W.cloths.some(c=>c.pins.size) || W.cables.some(c=>c.pins.size)) g.started = true;
+    if (g.started) {
+      if(Number.isFinite(clock)){if(g.clockStart==null)g.clockStart=clock-g.elapsed;g.elapsed=Math.max(g.elapsed,clock-g.clockStart);}
+      else g.elapsed+=dt;
+    }
     const released = (b) => !holds.has(b.key);
     const settled = (b) => C.norm(b.v) < 0.04 && C.norm(b.w) < 0.25;
     g.steps = g.level.goals.map((r) => {
       const b = g.byKey.get(r.object);
-      if (r.type === 'knock') {
-        for (const e of W.record && W.record.events || []) {
-          const hit = e.a.id === b.id && e.b.kind === 'hand' || e.b.id === b.id && e.a.kind === 'hand';
-          if (hit && e.speed >= .04 && e.t - g.lastKnock > .25) { g.knocks++; g.lastKnock = e.t; }
-        }
-        return g.knocks >= r.count;
-      }
+      if(r.type==='power')return g.charging.wallDwell>.3;
+      if(r.type==='charge')return Charging.complete(g);
       if (r.type === 'fold') {
         const f = Cloth.folded(b), ps = b.nodes.map((n) => g.local(n.p)), mid = [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
         const span = [0, 1].map((i) => Math.max(...ps.map((p) => p[i])) - Math.min(...ps.map((p) => p[i])));
@@ -107,6 +101,7 @@
       }
       const pose = W.poseOf(b), p = g.local(pose.t);
       if (!released(b) || !settled(b)) return false;
+      if (r.type === 'insert') return !!b.insertion?.seated && W.cables.filter(c=>c.plug===b).every(c=>c.pins.size===0);
       if (r.type === 'inside') {
         const vessel = g.byKey.get(r.target), vp = W.poseOf(vessel), q = C.mulv(C.tr3(vp.R), C.sub(pose.t, vp.t));
         const radius = vessel.kind === 'cup' ? P.CUP.Ri : 0.08, floor = vessel.kind === 'cup' ? P.CUP.floor : 0.01;
@@ -118,25 +113,81 @@
       }
       if (r.handoff && (g.heldBy.get(r.object) || new Set()).size !== 2) return false;
       if (r.dual && !g.dual.has(r.object)) return false;
-      if (r.carry && g.carryMeters < r.carry) return false;
       return true;
     });
-    const all = g.started && (!g.level.travel || g.arrived) && g.steps.every(Boolean);
+    const all = g.started && g.steps.every(Boolean);
     g.dwell = all ? g.dwell + dt : 0;
     if (g.dwell >= 0.75) { g.complete = true; g.stars = 1 + (g.elapsed <= g.level.par ? 1 : 0) + (W.respawns === 0 ? 1 : 0); }
     return g;
+  }
+  function guidance(g) {
+    const W=g.world,goals=g.level.goals,held=Object.values(W.hands).filter(h=>h.grip);
+    let index=goals.findIndex((r,i)=>!g.steps[i]);
+    if(g.complete)return {state:'done',index:0,object:goals[0].object};
+    if(g.charging){const state=Charging.guidance(g),first=g.charging.wallDwell<.3,s=g.level.charging,object=first?s.charger:state==='phone_pickup'?s.phone:s.plug,target=first?s.outlet:s.phone;return {state,index:first?0:1,object,target,at:g.local(W.poseOf(g.byKey.get(target)).t)};}
+    const selected=goals.findIndex((r,i)=>!g.steps[i]&&held.some(h=>h.grip.body.key===r.object));
+    if(selected>=0)index=selected;
+    if(index<0)index=0;
+    if(!held.length&&goals.some((r,i)=>!g.steps[i])){
+      for(let i=0;i<goals.length;i++)if(g.steps[i]&&goals[i].type!=='fold'){
+        const placed=g.local(W.poseOf(g.byKey.get(goals[i].object)).t);
+        for(const h of Object.values(W.hands)){
+          const wrist=W.handPose(h.side),point=g.local(C.add(wrist.t,C.mulv(wrist.R,[0,0,g.gripper.finger.c[2]])));
+          if(Math.hypot(point[0]-placed[0],point[1]-placed[1])<.09&&point[2]<placed[2]+.08)return {state:'clear',index:i,object:goals[i].object,next:goals[index].object,at:goals[i].at};
+        }
+      }
+    }
+    const r=goals[index],b=g.byKey.get(r.object),holds=held.filter(h=>h.grip.body===b),base={index,object:r.object,target:r.target||null};
+    const result=state=>({...base,state});
+    if(r.type==='fold'){
+      if(b.pins.size===1)return result('fold_second');
+      if(b.pins.size){const f=Cloth.folded(b);return result((f.x||f.y)&&f.compact?'fold_release':'fold_move');}
+      return result(b.touched.size===2&&(Cloth.folded(b).x||Cloth.folded(b).y)&&Cloth.folded(b).compact?'settle':'fold_grab');
+    }
+    if(r.type==='insert'){
+      base.at=g.local(W.poseOf(g.byKey.get(r.target)).t);
+      if(b.insertion?.seated)return result(holds.length?'usb_release':W.cables.some(c=>c.plug===b&&c.pins.size)?'usb_cable_release':'settle');
+      return result(holds.length?(b.insertion?.aligned?'usb_insert':'usb_align'):'usb_grab');
+    }
+    const pose=W.poseOf(b),p=g.local(pose.t),destination=r.type==='inside'?g.local(W.poseOf(g.byKey.get(r.target)).t):r.at;
+    base.at=destination;
+    const xy=Math.hypot(p[0]-destination[0],p[1]-destination[1]),floor=r.type==='inside'?(g.byKey.get(r.target).kind==='cup'?P.CUP.floor:.01)+P.BALL.r:destination[2];
+    const localR=C.mul3(C.tr3(W.table.R),pose.R),upright=r.upright===undefined||(r.upright===true?localR[8]>=.94:Math.abs(localR[8])<=.2);
+    const aligned=r.type==='inside'?xy<Math.min(.035,(g.byKey.get(r.target).kind==='cup'?P.CUP.Ri:.08)-P.BALL.r-.004):Math.abs(p[0]-destination[0])<(r.tolerance?.[0]||.035)*.8&&Math.abs(p[1]-destination[1])<(r.tolerance?.[1]||.035)*.8;
+    if(holds.length){
+      if(r.handoff&&(g.heldBy.get(r.object)||new Set()).size<2)return result('handoff');
+      if(r.dual&&holds.length<2)return result('dual');
+      if(!upright)return result('orient');
+      if(!aligned){
+        const start=(g.level.objects||[]).find(o=>o.key===r.object),height=(start?start.at[2]:0)+.055;
+        return result(p[2]<height?'lift':'move');
+      }
+      return result(p[2]>floor+(r.type==='inside'?.10:.035)?'lower':'release');
+    }
+    if(aligned&&Math.abs(p[2]-floor)<.025&&upright&&(!r.dual||g.dual.has(r.object))&&(!r.handoff||(g.heldBy.get(r.object)||new Set()).size===2))return result('settle');
+    if(held.length)return {...base,state:'wrong',held:held[0].grip.body.key};
+    if(r.dual)return result('dual');
+    for(const h of Object.values(W.hands)){
+      const wrist=W.handPose(h.side),point=C.add(wrist.t,C.mulv(wrist.R,[0,0,g.gripper.finger.c[2]]));
+      if(C.norm(C.sub(point,pose.t))<.065){
+        if(h.target<g.gripper.gapMax*.2&&h.gap<.015)return result('retry');
+        if(C.norm(C.sub(point,pose.t))<.035)return result('grip');
+      }
+    }
+    return result('approach');
   }
   function progress(raw, levels) {
     const out = {};
     if (!raw || typeof raw !== 'object') return out;
     for (const l of levels) {
-      const p = raw[l.id];
-      if (p && Number.isFinite(p.time) && p.time >= 0 && Number.isInteger(p.stars) && p.stars >= 1 && p.stars <= 3) out[l.id] = { stars: p.stars, time: p.time };
+      const legacy=l.legacy_id&&raw[l.legacy_id];
+      const p = raw[l.id] || (legacy&&!legacy.revision?legacy:null);
+      if (p && (!l.revision||p.revision===l.revision) && Number.isFinite(p.time) && p.time >= 0 && Number.isInteger(p.stars) && p.stars >= 1 && p.stars <= 3) out[l.id] = { stars: p.stars, time: p.time, ...(l.revision?{revision:l.revision}:{}) };
     }
     return out;
   }
   function best(previous, game) {
-    return { stars: Math.max(previous ? previous.stars : 0, game.stars), time: Math.min(previous ? previous.time : Infinity, game.elapsed) };
+    return { stars: Math.max(previous ? previous.stars : 0, game.stars), time: Math.min(previous ? previous.time : Infinity, game.elapsed), ...(game.level?.revision?{revision:game.level.revision}:{}) };
   }
   function headCamera(chest, m, tilt, w, h) {
     const a = Math.max(-80, Math.min(25, Number.isFinite(tilt) ? tilt : -40)) * Math.PI / 180;
@@ -147,5 +198,5 @@
     return { eye, fwd, right, up, fov, project(p) { const d = C.sub(p, eye), z = d.reduce((s, v, i) => s + v * fwd[i], 0); if (z < 0.001) return null;
       return [w / 2 + f * d.reduce((s, v, i) => s + v * right[i], 0) / z, h / 2 - f * d.reduce((s, v, i) => s + v * up[i], 0) / z, z]; } };
   }
-  return { geometry, mission, unlocked, create, update, progress, best, headCamera };
+  return { geometry, mission, create, update, guidance, progress, best, headCamera };
 });

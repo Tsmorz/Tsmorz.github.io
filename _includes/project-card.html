@@ -1,7 +1,7 @@
 {%- assign proj = include.project -%}
 <article class="card">
   {%- if proj.image %}
-  <div class="card-media"><img src="{{ proj.image | relative_url }}" alt="{{ proj.name }}" loading="lazy"></div>
+  <div class="card-media{% if proj.image_style == 'illustration' %} card-illustration{% endif %}"><img src="{{ proj.image | relative_url }}" alt="{{ proj.image_alt | default: proj.name }}" loading="lazy" decoding="async"></div>
   {%- endif %}
   <div class="card-top">
     <h3>
