@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Extract a compact, rest-pose skinned mesh from the credited CC0 GLB. Stdlib only; not a site build step."""
+"""Offline GLB -> compact teleoperation skin + original PBR textures. No runtime dependencies.
+Usage: prepare-character.py source.glb output-dir [simplified-indices.bin]
+Run simplify-character.mjs first for the checked-in web LOD. Source/CC0 credit is beside the output.
+"""
 import json,struct,math,sys
 from pathlib import Path
 raw=Path(sys.argv[1]).read_bytes();size=struct.unpack_from('<I',raw,12)[0];g=json.loads(raw[20:20+size]);buf=raw[28+size:]
@@ -14,66 +17,64 @@ def inverse(m):
    if r!=c:
     k=a[r][c];a[r]=[x-k*y for x,y in zip(a[r],a[c])]
  return [a[r][c+4] for c in range(4) for r in range(4)]
-def cv(p): return [-p[1]*100,p[0]*100,p[2]*100]
+def cv(p):return [p[2],p[0],p[1]]
 def sub(a,b):return [x-y for x,y in zip(a,b)]
 def cross(a,b):return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
 def unit(a):
  l=math.sqrt(sum(v*v for v in a));return [v/l for v in a]
-J=g['skins'][0]['joints'];rest={g['nodes'][i]['name']:cv(inverse(m)[12:15]) for i,m in zip(J,accessor(g['skins'][0]['inverseBindMatrices']))}
-groups=[]
-def group(name,origin,end=None,parent='body'):
- t=rest[origin];z=unit(sub(t,rest[end])) if end else [0,0,1];x=unit(sub([1,0,0],[v*z[0] for v in z]));y=cross(z,x);R=[x[0],y[0],z[0],x[1],y[1],z[1],x[2],y[2],z[2]]
- groups.append(dict(name=name,t=t,R=R,length=math.dist(t,rest[end]) if end else 1));return len(groups)-1
-group('body','Chest');group('head','Head')
-for side in ['L','R']:
- for name,start,end in [('upper','UpperArm','LowerArm'),('fore','LowerArm','Wrist'),('hand','Wrist','Middle2'),('thigh','UpperLeg','LowerLeg'),('shin','LowerLeg','Foot'),('foot','Foot',None)]:
-  group(name+side,start+'.'+side,(end+'.'+side) if end else None)
+J=g['skins'][0]['joints'];rest={g['nodes'][i]['name']:cv(inverse(m)[12:15]) for i,m in zip(J,accessor(g['skins'][0]['inverseBindMatrices']))};groups=[]
+def group(name,origin,end=None,direction=None):
+ t=rest[origin];z=unit(sub(t,rest[end])) if end else unit(direction) if direction else [0,0,1];x=unit(sub([1,0,0],[v*z[0] for v in z]));y=cross(z,x)
+ groups.append(dict(name=name,t=t,R=[x[0],y[0],z[0],x[1],y[1],z[1],x[2],y[2],z[2]],length=math.dist(t,rest[end]) if end else 1))
+group('body','Spine');group('head','Head')
+for side,prefix in [('L','Left'),('R','Right')]:
+ group('upper'+side,prefix+'Arm',prefix+'ForeArm');group('fore'+side,prefix+'ForeArm',prefix+'Hand');group('hand'+side,prefix+'Hand',direction=sub(rest[prefix+'ForeArm'],rest[prefix+'Hand']))
+ group('thigh'+side,prefix+'UpLeg',prefix+'Leg');group('shin'+side,prefix+'Leg',prefix+'Foot');group('foot'+side,prefix+'Foot')
 def category(name):
- side=name[-1:] if name.endswith(('.L','.R')) else None
- if name.startswith(('Head','Neck')):return 'head'
- if side:
-  if name.startswith('UpperArm'):return 'upper'+side
-  if name.startswith('LowerArm'):return 'fore'+side
-  if name.startswith(('Wrist','Index','Middle','Ring','Pinky','Thumb')):return 'hand'+side
-  if name.startswith('UpperLeg'):return 'thigh'+side
-  if name.startswith('LowerLeg'):return 'shin'+side
-  if name.startswith('Foot'):return 'foot'+side
+ if name in ['Head','neck','head_end','headfront']:return 'head'
+ for prefix,side in [('Left','L'),('Right','R')]:
+  if name==prefix+'Arm':return 'upper'+side
+  if name==prefix+'ForeArm':return 'fore'+side
+  if name==prefix+'Hand':return 'hand'+side
+  if name==prefix+'UpLeg':return 'thigh'+side
+  if name==prefix+'Leg':return 'shin'+side
+  if name in [prefix+'Foot',prefix+'ToeBase']:return 'foot'+side
  return 'body'
-lookup={n['name']:i for i,n in enumerate(groups)}
-parts=[];data=bytearray()
-def store(values,fmt):
+lookup={n['name']:i for i,n in enumerate(groups)};parts=[];data=bytearray()
+def store(rows,fmt):
  while len(data)%4:data.append(0)
- offset=len(data);flat=[v for row in values for v in row];data.extend(struct.pack('<'+fmt*len(flat),*flat));return dict(offset=offset,count=len(flat))
-for mesh in g['meshes']:
- for p in mesh['primitives']:
-  a=p['attributes'];pos=[cv(v) for v in accessor(a['POSITION'])];norm=[[-v[1],v[0],v[2]] for v in accessor(a['NORMAL'])];ids=accessor(a['JOINTS_0']);weights=accessor(a['WEIGHTS_0']);skin=g['skins'][0]['joints']
-  joints=[];ws=[];fingers=[]
-  for js,ww in zip(ids,weights):
-   dominant=g['nodes'][skin[js[max(range(4),key=lambda k:ww[k])]]]['name'];fingers.append([-1 if dominant.startswith('Thumb') else 1 if dominant.startswith(('Index','Middle','Ring','Pinky')) else 0])
-   merged={}
-   for j,w in zip(js,ww):
-    k=lookup[category(g['nodes'][skin[j]]['name'])];merged[k]=merged.get(k,0)+w
-   pairs=sorted(merged.items(),key=lambda q:-q[1]);pairs+=[(0,0)]*(4-len(pairs));joints.append([i for i,w in pairs]);ws.append([w for i,w in pairs])
-  mat=g['materials'][p['material']];name=mat['name'];color=mat['pbrMetallicRoughness']['baseColorFactor'][:3]
-  # Eli wears an everyday blue knit top, charcoal trousers and canvas shoes.
-  overrides={'LightBrown':[.055,.13,.20],'LightBlue':[.025,.035,.05],'Red_Dark':[.08,.10,.12]}
-  indices=accessor(p['indices'])
-  if name=='Hair':
-   # Remove the four separate ponytail tufts; keep the scalp and crop the back to a short haircut.
-   adjacency={}
-   for tri in [indices[i:i+3] for i in range(0,len(indices),3)]:
-    ps=[tuple(round(v,5) for v in pos[j[0]]) for j in tri]
-    for q in ps:adjacency.setdefault(q,set()).update(ps)
-   seen=set();remove=set()
-   for q in adjacency:
-    if q in seen:continue
-    todo=[q];seen.add(q);component=[]
-    while todo:
-     v=todo.pop();component.append(v)
-     for w in adjacency[v]-seen:seen.add(w);todo.append(w)
-    if max(v[2] for v in component)<1.70:remove.update(component)
-   indices=[j for i in range(0,len(indices),3) if not any(tuple(round(v,5) for v in pos[j[0]]) in remove for j in indices[i:i+3]) for j in indices[i:i+3]]
-   for v in pos:v[2]=max(v[2],1.675)
-  parts.append(dict(name=mesh['name']+'_'+name,material=name,color=overrides.get(name,color),pos=store(pos,'f'),normal=store(norm,'f'),joints=store(joints,'B'),weights=store(ws,'f'),fingers=store(fingers,'f'),indices=store(indices,'H')))
-out=Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True);(out/'eli.bin').write_bytes(data);(out/'eli.json').write_text(json.dumps(dict(groups=groups,parts=parts),separators=(',',':'))+'\n')
-print('Exported',len(parts),'parts,',sum(p['pos']['count']//3 for p in parts),'vertices,',len(data),'bytes')
+ flat=[v for row in rows for v in row];offset=len(data);data.extend(struct.pack('<'+fmt*len(flat),*flat));return dict(offset=offset,count=len(flat))
+p=g['meshes'][0]['primitives'][0];a=p['attributes'];positions=[cv(v) for v in accessor(a['POSITION'])];normals=[cv(v) for v in accessor(a['NORMAL'])];uv=accessor(a['TEXCOORD_0']);ids=accessor(a['JOINTS_0']);weights=accessor(a['WEIGHTS_0']);joints=[];ws=[];fingers=[]
+for v,js,ww in zip(positions,ids,weights):
+ merged={}
+ for j,w in zip(js,ww):
+  k=lookup[category(g['nodes'][J[j]]['name'])];merged[k]=merged.get(k,0)+w
+ pairs=sorted(merged.items(),key=lambda q:-q[1]);dominant=groups[pairs[0][0]];flag=0
+ if dominant['name'].startswith('hand'):
+  R=dominant['R'];d=sub(v,dominant['t']);along=sum(R[r*3+2]*d[r] for r in range(3));flag=1 if along<-.025 else 0
+ fingers.append([flag]);pairs+=[(0,0)]*(4-len(pairs));joints.append([i for i,w in pairs]);ws.append([w for i,w in pairs])
+if len(sys.argv)>3:
+ b=Path(sys.argv[3]).read_bytes();indices=struct.unpack('<'+'I'*(len(b)//4),b)
+else:indices=[q[0] for q in accessor(p['indices'])]
+# Separate the head for the first-person camera. Split/compact to Uint16 WebGL 1 chunks, no index extension needed.
+buckets={'Head':[],'Body':[]}
+for k in range(0,len(indices),3):
+ tri=indices[k:k+3];head=sum(sum(w for j,w in zip(joints[i],ws[i]) if groups[j]['name']=='head') for i in tri)>1.5;buckets['Head' if head else 'Body'].append(tri)
+for name,triangles in buckets.items():
+ remap={};source=[];idx=[];chunk=0
+ def flush():
+  if not idx:return
+  pick=lambda rows:[rows[i] for i in source]
+  parts.append(dict(name=name+str(chunk),material='PBR',color=[1,1,1],pos=store(pick(positions),'f'),normal=store(pick(normals),'f'),uv=store(pick(uv),'f'),joints=store(pick(joints),'B'),weights=store(pick(ws),'f'),fingers=store(pick(fingers),'f'),indices=store([[i] for i in idx],'H')))
+ for tri in triangles:
+  if len(remap)+sum(i not in remap for i in set(tri))>30000:flush();chunk+=1;remap={};source=[];idx=[]
+  for i in tri:
+   if i not in remap:remap[i]=len(source);source.append(i)
+   idx.append(remap[i])
+ flush()
+out=Path(sys.argv[2]);out.mkdir(parents=True,exist_ok=True);textures={}
+mat=g['materials'][p['material']]
+for name,index in [('base',mat['pbrMetallicRoughness']['baseColorTexture']['index']),('normal',mat['normalTexture']['index']),('roughness',mat['pbrMetallicRoughness']['metallicRoughnessTexture']['index'])]:
+ image=g['images'][g['textures'][index]['source']];v=g['bufferViews'][image['bufferView']];file=name+'.jpg';(out/file).write_bytes(buf[v.get('byteOffset',0):v.get('byteOffset',0)+v['byteLength']]);textures[name]=file
+(out/'eli.bin').write_bytes(data);(out/'eli.json').write_text(json.dumps(dict(groups=groups,parts=parts,textures=textures,detailed=True),separators=(',',':'))+'\n')
+print('Exported',len(parts),'parts,',sum(p['pos']['count']//3 for p in parts),'vertices,',len(indices)//3,'triangles,',len(data),'bytes + PBR maps')

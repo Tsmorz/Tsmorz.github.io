@@ -59,6 +59,10 @@ levels:
         - 0
         - 0.25
         - 0.45
+      - - -0.78
+        - 0.83
+        - 0.24
+        - 0.25
     placements:
       bowl:
       - 0
@@ -127,6 +131,10 @@ levels:
         - 0
         - 0.25
         - 0.45
+      - - -0.78
+        - 0.83
+        - 0.24
+        - 0.25
     placements:
       cup:
       - -0.1
@@ -261,6 +269,10 @@ levels:
         - 0
         - 0.25
         - 0.45
+      - - -0.78
+        - 0.83
+        - 0.24
+        - 0.25
     goal_x: 0.015
     reward:
       label: A strawberry sweet
@@ -369,6 +381,10 @@ levels:
         - 0
         - 0.25
         - 0.45
+      - - -0.78
+        - 0.83
+        - 0.24
+        - 0.25
     goal_x: 0.015
     reward:
       label: A shiny coin
@@ -577,6 +593,10 @@ levels:
         - 0.72
         - 0.21
         - 0.16
+      - - -0.78
+        - 0.83
+        - 0.24
+        - 0.25
     delivery:
       at:
       - 0
@@ -751,6 +771,10 @@ levels:
         - 0
         - 0.25
         - 0.45
+      - - -0.78
+        - 0.83
+        - 0.24
+        - 0.25
     goal_indices:
     - 2
     placements:
@@ -874,6 +898,10 @@ levels:
         - 0
         - 0.25
         - 0.45
+      - - -0.78
+        - 0.83
+        - 0.24
+        - 0.25
     goal_x: 0.015
     reward:
       label: Grandma’s envelope
@@ -1000,3 +1028,4 @@ story:
         floor: '#987757'
         rug: '#596f60'
         curtain: '#b4b68c'
+      camera_tilt: -8

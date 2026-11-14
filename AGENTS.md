@@ -393,12 +393,15 @@ The page transforms the body and mouse wrist targets together while tables stay 
 physical grip constraints. Reaching the work spot is required; the tray also needs 0.35 m held by both hands and
 has a second physical table. Each room is a separate small scene, not an open-world map.
 
-`character-core.js` CPU-skins a CC0 Quaternius mesh to the same RobotCore FK and physical hands. The compact
+`character-core.js` CPU-skins a detailed, textured CC0 Grab3D boy to the same RobotCore FK and physical hands. The compact
 mesh, source credit and rebuild instructions are in `tag-tracker/assets/eli/`; the offline extractor is
-`script/tag-tracker/prepare-character.py`. Human fingers are a visual approximation of the physical pinch.
+`script/tag-tracker/prepare-character.py`; `simplify-character.mjs` uses meshoptimizer 1.3.0 offline to derive the
+60k-triangle web LOD. Original base-colour, normal and roughness maps are local and cache-versioned. The source
+license and AI-assisted origin are included beside the asset. Human fingers approximate the physical pinch.
 `robot-gl.js` renders the character, AMR and wheels with a packed-depth shadow pass, soft shadow sampling,
 hemisphere/directional lighting, specular materials, tone mapping and procedural wood/plaster/fabric. Cutaway
-home furnishings are visual scenery outside the chore path. First person attaches to the head with −80° to +25°
+home furnishings have rounded edges and the chair participates in navigation collision. Camera-facing walls
+cut away to keep the face and chore visible. First person attaches to the head with −80° to +25°
 tilt and a fixed 70° horizontal field of view; projection and hand picking use the same camera.
 
 `physics-core.js` runs a 240 Hz accumulator, friction-limited grips, contacts and sleep. Compound boxes and

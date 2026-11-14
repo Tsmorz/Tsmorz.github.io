@@ -193,20 +193,25 @@
     return out;
   }
 
+  // A six-patch rounded cuboid stays within its collision box, with clustered samples on the bevel.
+  function beveledBox(h,r){
+    const axis=(u,h)=>u<.25?-h+r*(1-Math.cos(u*2*Math.PI)):u>.75?-axis(1-u,h):(u-.25)*4*(h-r)-(h-r),out=[];
+    for(let a=0;a<3;a++)for(const sign of [-1,1]){
+      const b=(a+1)%3,c=(a+2)%3;
+      out.push(surface((u,v)=>{const p=[0,0,0];p[a]=sign*h[a];p[b]=axis(u,h[b]);p[c]=axis(v,h[c]);const core=p.map((x,i)=>Math.max(-h[i]+r,Math.min(h[i]-r,x))),d=sub(p,core),len=Math.hypot(...d);return core.map((x,i)=>x+d[i]*r/len);},16,16,p=>p));
+    }
+    return out;
+  }
   function compoundMeshes(pieces) {
     const result = [];
     for (const s of pieces) {
       const R = s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1], p = s.p || [0, 0, 0];
       const meshes = [];
-      if (s.type === 'cylinder') {
+      if(s.type==='ellipsoid'){meshes.push(blob([0,0,0],s.r,1,1,{nu:24,nv:16}));}
+      else if (s.type === 'cylinder') {
         meshes.push(surface((u, v) => [s.r * Math.cos(TAU * u), s.r * Math.sin(TAU * u), (v * 2 - 1) * s.h], 32, 2, (p) => [p[0], p[1], 0]));
         for (const sign of [-1, 1]) meshes.push(surface((u, v) => [s.r * v * Math.cos(TAU * u), s.r * v * Math.sin(TAU * u), sign * s.h], 32, 2, () => [0, 0, sign]));
-      } else {
-        for (let a = 0; a < 3; a++) for (const sign of [-1, 1]) {
-          const b = (a + 1) % 3, c = (a + 2) % 3;
-          meshes.push(surface((u, v) => { const p = [0, 0, 0]; p[a] = sign * s.h[a]; p[b] = (u * 2 - 1) * s.h[b]; p[c] = (v * 2 - 1) * s.h[c]; return p; }, 1, 1, () => { const n = [0, 0, 0]; n[a] = sign; return n; }));
-        }
-      }
+      } else meshes.push(...beveledBox(s.h,s.bevel===0?.00001:Math.min(s.bevel||.009,...s.h.map(h=>h*(s.bevel?.95:.28)))));
       for (const m of meshes) {
         for (let i = 0; i < m.pos.length; i += 3) { m.pos.set(C.add(C.mulv(R, [...m.pos.slice(i, i + 3)]), p), i); m.nrm.set(C.mulv(R, [...m.nrm.slice(i, i + 3)]), i); }
         result.push(part(m, 'ceramic'));
@@ -243,30 +248,34 @@
   }
 
   // ---- drawing ----
-  const VS = `attribute vec3 aPos; attribute vec3 aNrm;
-uniform mat4 uPV,uModel,uLightPV; uniform mat3 uRot; varying vec3 vN,vW; varying vec4 vShadow;
-void main(){vec4 w=uModel*vec4(aPos,1.0);vW=w.xyz;vN=uRot*aNrm;vShadow=uLightPV*w;gl_Position=uPV*w;}`;
-  const FS = `precision highp float;
-varying vec3 vN,vW;varying vec4 vShadow;
+  const VS = `attribute vec3 aPos; attribute vec3 aNrm; attribute vec2 aUV;
+uniform mat4 uPV,uModel,uLightPV; uniform mat3 uRot; varying vec3 vN,vW; varying vec4 vShadow; varying vec2 vUV;
+void main(){vec4 w=uModel*vec4(aPos,1.0);vW=w.xyz;vN=uRot*aNrm;vUV=aUV;vShadow=uLightPV*w;gl_Position=uPV*w;}`;
+  const FS = `#extension GL_OES_standard_derivatives : enable
+precision highp float;
+varying vec3 vN,vW;varying vec4 vShadow;varying vec2 vUV;
 uniform vec3 uEye,uKey,uFill,uBase,uRimCol,uFadeTo,uSky,uGround;
-uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface;uniform sampler2D uShadow;
+uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface;uniform sampler2D uShadow,uColorTex,uNormalTex,uRoughTex;uniform float uTextured;
 float noise(vec3 p){return fract(sin(dot(floor(p),vec3(12.9898,78.233,37.719)))*43758.5453);}
-float depth(vec2 p){return dot(texture2D(uShadow,p),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0));}
+float depth(vec2 p){return dot(texture2D(uShadow,p),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0))*(255.0/256.0);}
 float shade(vec3 N){if(uShadowOn<0.5)return 1.0;vec3 q=vShadow.xyz/vShadow.w*.5+.5;if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0||q.z>1.0)return 1.0;
- float a=0.0,bias=max(.00023,.00075*(1.0-dot(N,uKey)));for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)a+=step(q.z-bias,depth(q.xy+vec2(float(x),float(y))/1024.0));return .22+.78*a/9.0;}
+ float a=0.0,bias=max(.0008,.0018*(1.0-dot(N,uKey)));for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)a+=step(q.z-bias,depth(q.xy+vec2(float(x),float(y))*2.0/2048.0));return .22+.78*a/9.0;}
 vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.0,1.0);}
 void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 base=uBase;
- if(uSurface>.5&&uSurface<1.5){float row=floor(vW.y*8.0),seam=min(fract(vW.y*8.0),fract(vW.x*1.6+row*.37));float grain=sin(vW.x*280.0+sin(vW.y*28.0)*2.0+noise(vW*70.0)*1.5);base*=.87+.08*grain+.12*noise(vec3(row,0.0,0.0));if(abs(N.z)>.8)base*=mix(.38,1.0,smoothstep(.005,.025,seam));}
- if(uSurface>1.5&&uSurface<2.5)base*=.97+.06*noise(vW*160.0);
- if(uSurface>2.5)base*=.93+.07*sin(vW.x*1500.0)*sin(vW.z*1500.0);
+ if(uTextured>.5){base*=pow(texture2D(uColorTex,vUV).rgb,vec3(2.2));vec3 dp1=dFdx(vW),dp2=dFdy(vW),dp2p=cross(dp2,N),dp1p=cross(N,dp1);vec2 dt1=dFdx(vUV),dt2=dFdy(vUV);vec3 T=dp2p*dt1.x+dp1p*dt2.x,B=dp2p*dt1.y+dp1p*dt2.y;float scale=inversesqrt(max(max(dot(T,T),dot(B,B)),.00001));vec3 mapped=normalize(mix(vec3(0,0,1),texture2D(uNormalTex,vUV).xyz*2.0-1.0,.55));N=normalize(mat3(T*scale,B*scale,N)*mapped);}
+
+ if((uSurface>.5&&uSurface<1.5)||uSurface>3.5){float grain=sin(vW.x*210.0+sin(vW.y*19.0)*2.0)+.35*sin(vW.x*487.0+sin(vW.y*29.0));base*=.95+.025*grain;
+ if(uSurface>3.5&&abs(N.z)>.8){float row=floor(vW.y*6.0),fy=fract(vW.y*6.0),fx=fract(vW.x*1.35+row*.37),seam=min(min(fy,1.0-fy),min(fx,1.0-fx));base*=.96+.07*noise(vec3(row,0,0));base*=mix(.72,1.0,smoothstep(.0,max(.005,fwidth(seam)*1.2),seam));}}
+
+
  float nl=max(dot(N,uKey),0.0),nv=max(dot(N,V),.001),sh=shade(N);vec3 H=normalize(uKey+V);float nh=max(dot(N,H),0.0),vh=max(dot(V,H),0.0);
- float rough=clamp(sqrt(2.0/(uShine+2.0)),.12,.95),a=rough*rough,a2=a*a,den=nh*nh*(a2-1.0)+1.0,D=a2/(3.14159265*den*den+.0001),k=(rough+1.0)*(rough+1.0)/8.0,G=nv/(nv*(1.0-k)+k)*nl/(nl*(1.0-k)+k);
+ float rough=uTextured>.5?clamp(texture2D(uRoughTex,vUV).g,.3,.95):clamp(sqrt(2.0/(uShine+2.0)),.12,.95),a=rough*rough,a2=a*a,den=nh*nh*(a2-1.0)+1.0,D=a2/(3.14159265*den*den+.0001),k=(rough+1.0)*(rough+1.0)/8.0,G=nv/(nv*(1.0-k)+k)*nl/(nl*(1.0-k)+k);
  vec3 F=mix(vec3(.035),vec3(.25),clamp(uSpec*.25,0.0,.6));F=F+(1.0-F)*pow(1.0-vh,5.0);vec3 spec=D*G*F/(4.0*nv*max(nl,.001));
  float hemi=.5+.5*N.z;vec3 ambient=mix(uGround,uSky,hemi);float fill=max(dot(N,uFill),0.0);
- vec3 col=base*(ambient+vec3(1.0,.88,.72)*nl*sh*1.55+vec3(.52,.63,.78)*fill*.22)+spec*nl*sh*min(1.0,uSpec)*.75;
- col=mix(col,base*1.8,uEmit);col=mix(col,uFadeTo,uFade);col=aces(col*1.35);gl_FragColor=vec4(pow(col,vec3(1.0/2.2))*uAlpha,uAlpha);}`;
+ vec3 col=base*(ambient+vec3(1.0,.88,.72)*nl*sh*1.35+vec3(.52,.63,.78)*fill*.22)+spec*nl*sh*min(1.0,uSpec)*.75;
+ col=mix(col,base*1.8,uEmit);col=mix(col,uFadeTo,uFade);col=aces(col*1.15);gl_FragColor=vec4(pow(col,vec3(1.0/2.2))*uAlpha,uAlpha);}`;
   const DEPTH_VS=`attribute vec3 aPos;uniform mat4 uPV,uModel;void main(){gl_Position=uPV*uModel*vec4(aPos,1.0);}`;
-  const DEPTH_FS=`precision highp float;void main(){vec4 d=fract(gl_FragCoord.z*vec4(16777216.0,65536.0,256.0,1.0));d-=d.xxyz*vec4(0.0,1.0/256.0,1.0/256.0,1.0/256.0);gl_FragColor=d;}`;
+  const DEPTH_FS=`precision highp float;void main(){vec4 d=fract(gl_FragCoord.z*vec4(16777216.0,65536.0,256.0,1.0));d-=d.xxyz*vec4(0.0,1.0/256.0,1.0/256.0,1.0/256.0);gl_FragColor=d*(256.0/255.0);}`;
   // sRGB hex (#rgb or #rrggbb) to linear RGB
   function lin(hex, dflt) {
     let h = String(hex || '').trim().replace('#', '');
@@ -284,6 +293,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     ball: { base: lin('#2a78d6'), spec: 0.7, shine: 80, rim: 0.6 },
     ballB: { base: lin('#e9eef5'), spec: 0.7, shine: 80, rim: 0.6 },
     skin: {base:lin('#c89978'),spec:.1,shine:12,rim:.35}, shirt:{base:lin('#547d91'),spec:.12,shine:12,rim:.3}, denim:{base:lin('#33455c'),spec:.1,shine:10,rim:.3}, hair:{base:lin('#382e2b'),spec:.16,shine:14,rim:.3}, shoe:{base:lin('#353b44'),spec:.15,shine:18,rim:.3},
+    floor:{base:lin('#966d49'),spec:.28,shine:45,rim:0},
     wood:{base:lin('#805638'),spec:.18,shine:24,rim:0},plaster:{base:lin('#e2d4b9'),spec:.08,shine:8,rim:0},fabric:{base:[1,1,1],spec:.08,shine:6,rim:0},rug:{base:lin('#706452'),spec:.03,shine:4,rim:0},
     ceramic: { base: lin('#ece8e1'), spec: 0.6, shine: 90, rim: 0.6 },
   };
@@ -297,18 +307,19 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
   function create(canvas) {
     const gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, depth: true });
     if (!gl) return null;
+    gl.getExtension('OES_standard_derivatives');
     const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
     const prog = gl.createProgram();
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface']) U[n] = gl.getUniformLocation(prog, n);
-    const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm');
+    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface','uColorTex','uNormalTex','uRoughTex','uTextured']) U[n] = gl.getUniformLocation(prog, n);
+    const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm'), aUV=gl.getAttribLocation(prog,'aUV');
     const depthProg=gl.createProgram();gl.attachShader(depthProg,sh(gl.VERTEX_SHADER,DEPTH_VS));gl.attachShader(depthProg,sh(gl.FRAGMENT_SHADER,DEPTH_FS));gl.linkProgram(depthProg);
     if(!gl.getProgramParameter(depthProg,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(depthProg));
     const depthPos=gl.getAttribLocation(depthProg,'aPos'),depthPV=gl.getUniformLocation(depthProg,'uPV'),depthModel=gl.getUniformLocation(depthProg,'uModel');
-    const shadow=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,shadow);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1024,1024,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-    const shadowDepth=gl.createRenderbuffer();gl.bindRenderbuffer(gl.RENDERBUFFER,shadowDepth);gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,1024,1024);
+    const shadow=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,shadow);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,2048,2048,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const shadowDepth=gl.createRenderbuffer();gl.bindRenderbuffer(gl.RENDERBUFFER,shadowDepth);gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,2048,2048);
     const shadowFB=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFB);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,shadow,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,shadowDepth);
     const shadowsSupported=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 
@@ -320,13 +331,16 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, m.pos, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, m.nrm, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
-      return { b, n, i, count: m.idx.length, src: m };
+      let uv=null;if(m.uv){uv=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,uv);gl.bufferData(gl.ARRAY_BUFFER,m.uv,gl.STATIC_DRAW);}
+      return { b, n, i, uv, count: m.idx.length, src: m };
     };
-    const free = (g) => { for (const x of [g.b, g.n, g.i]) gl.deleteBuffer(x); };
-    let character=null,characterGPU=[];
+    const free = (g) => { for (const x of [g.b, g.n, g.i,g.uv].filter(Boolean)) gl.deleteBuffer(x); };
+    const pixel=(rgb)=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,1,0,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array(rgb));gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);return t;};
+    let character=null,characterGPU=[],characterTextures=[pixel([255,255,255]),pixel([128,128,255]),pixel([0,180,0])];
     self.characterReady=false;self.characterError=null;
     const assetVersion=new URL(document.querySelector('script[src*="character-core.js"]').src).search;
-    Promise.all([fetch('assets/eli/eli.json'+assetVersion).then(r=>{if(!r.ok)throw new Error('Character metadata '+r.status);return r.json();}),fetch('assets/eli/eli.bin'+assetVersion).then(r=>{if(!r.ok)throw new Error('Character mesh '+r.status);return r.arrayBuffer();})]).then(([meta,buffer])=>{
+    Promise.all([fetch('assets/eli/eli.json'+assetVersion).then(r=>{if(!r.ok)throw new Error('Character metadata '+r.status);return r.json();}),fetch('assets/eli/eli.bin'+assetVersion).then(r=>{if(!r.ok)throw new Error('Character mesh '+r.status);return r.arrayBuffer();})]).then(async([meta,buffer])=>{
+      const maps=await Promise.all(['base','normal','roughness'].map(key=>new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,img);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.generateMipmap(gl.TEXTURE_2D);resolve(texture);};img.onerror=()=>reject(new Error('Character texture '+key));img.src='assets/eli/'+meta.textures[key]+assetVersion;})));for(const t of characterTextures)gl.deleteTexture(t);characterTextures=maps;
       if(self.lost)return;character=Character.load(meta,buffer);characterGPU=character.parts.map(p=>upload(p.mesh));self.characterReady=true;
     }).catch(e=>{self.characterError=e.message;});
     function build(m) {
@@ -381,7 +395,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       gl.useProgram(prog); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.disable(gl.CULL_FACE);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(true); // colours are premultiplied
       gl.uniformMatrix4fv(U.uPV, false, PV); gl.uniform1f(U.uAlpha, 1);
-      gl.uniform3fv(U.uEye, e);gl.uniform1f(U.uShadowOn,0);gl.uniformMatrix4fv(U.uLightPV,false,PV);gl.uniform1i(U.uShadow,0);
+      gl.uniform3fv(U.uEye, e);gl.uniform1f(U.uShadowOn,0);gl.uniformMatrix4fv(U.uLightPV,false,PV);gl.uniform1i(U.uShadow,0);gl.uniform1i(U.uColorTex,1);gl.uniform1i(U.uNormalTex,2);gl.uniform1i(U.uRoughTex,3);gl.uniform1f(U.uTextured,0);for(let i=0;i<characterTextures.length;i++){gl.activeTexture(gl.TEXTURE1+i);gl.bindTexture(gl.TEXTURE_2D,characterTextures[i]);}gl.activeTexture(gl.TEXTURE0);
       const toward = (a, b, c) => unit([r[0] * a + u[0] * b - w[0] * c, r[1] * a + u[1] * b - w[1] * c, r[2] * a + u[2] * b - w[2] * c]);
       gl.uniform3fv(U.uKey, toward(-0.5, 0.75, 0.45)); gl.uniform3fv(U.uFill, toward(0.85, 0.05, 0.3));
       // the lights: the site's violet, saturated and bright in either theme (its dark-theme accent is too pale to glow)
@@ -391,18 +405,20 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       const rimLight = dark ? lin('#d9d4ff') : lin('#55606a');
       let current={base:[1,1,1],emit:0,spec:.2,shine:20,rim:0,fade:0,surface:0};const commands=[];
       const setMat = (mat, fade, tint, exact) => {
-        const M=mats[mat]||mats.shell;current={base:exact||(tint?M.base.map((x,i)=>x*.25+tint[i]*.75):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,rim:0,fade:fade||0,surface:mat==='wood'?1:mat==='plaster'?2:mat==='fabric'||mat==='rug'?3:0};if(mat==='light')current.base=tint||glow;gl.uniform1f(U.uSurface,current.surface);
+        const M=mats[mat]||mats.shell;current={base:exact||(tint?(o.game?tint:M.base.map((x,i)=>x*.25+tint[i]*.75)):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,rim:0,fade:fade||0,surface:mat==='floor'?4:mat==='wood'?1:mat==='plaster'?2:mat==='fabric'||mat==='rug'?3:0};if(mat==='light')current.base=tint||glow;gl.uniform1f(U.uSurface,current.surface);gl.uniform1f(U.uTextured,0);
         if (mat === 'light') { gl.uniform3fv(U.uBase, tint || glow); gl.uniform1f(U.uEmit, 1); gl.uniform1f(U.uSpec, 0); gl.uniform1f(U.uShine, 1); gl.uniform1f(U.uRim, 0); }
         else {
           const M = mats[mat] || mats.shell;
-          gl.uniform3fv(U.uBase, exact || (tint ? M.base.map((x, i) => x * 0.25 + tint[i] * 0.75) : M.base));
+          gl.uniform3fv(U.uBase, exact || (tint ? o.game?tint:M.base.map((x, i) => x * 0.25 + tint[i] * 0.75) : M.base));
           gl.uniform1f(U.uEmit, 0); gl.uniform1f(U.uSpec, M.spec); gl.uniform1f(U.uShine, M.shine); gl.uniform1f(U.uRim, (dark ? 0.42 : 0.32) * M.rim);
         }
         gl.uniform3fv(U.uRimCol, rimLight); gl.uniform1f(U.uFade, fade || 0);
       };
       const flat = (col, fade) => { current={base:col,emit:1,spec:0,shine:1,rim:0,fade:fade||0,surface:0};gl.uniform1f(U.uSurface,0); gl.uniform3fv(U.uBase, col); gl.uniform1f(U.uEmit, 1); gl.uniform1f(U.uSpec, 0); gl.uniform1f(U.uRim, 0); gl.uniform1f(U.uFade, fade || 0); };
+      const uvOf=g=>{if(g.uv){gl.bindBuffer(gl.ARRAY_BUFFER,g.uv);gl.enableVertexAttribArray(aUV);gl.vertexAttribPointer(aUV,2,gl.FLOAT,false,0,0);}else{gl.disableVertexAttribArray(aUV);gl.vertexAttrib2f(aUV,0,0);}};
       const drawG = (g, pose, s) => {
         if(o.game){commands.push({g,pose,s,mat:current});return;}
+        uvOf(g);
         gl.uniformMatrix4fv(U.uModel, false, model4(pose, s)); gl.uniformMatrix3fv(U.uRot, false, rot3(pose.R));
         gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
@@ -457,7 +473,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
             gl.bindBuffer(gl.ARRAY_BUFFER,g.b);gl.bufferData(gl.ARRAY_BUFFER,p.mesh.pos,gl.DYNAMIC_DRAW);
             gl.bindBuffer(gl.ARRAY_BUFFER,g.n);gl.bufferData(gl.ARRAY_BUFFER,p.mesh.nrm,gl.DYNAMIC_DRAW);
             if(o.eyes&&p.name.includes('Head'))continue;
-            setMat(p.material.startsWith('Skin')?'skin':p.material==='Hair'||p.material==='Eyebrows'?'hair':'fabric',0,null,p.color);
+            setMat('fabric',0,null,p.color);current.textured=1;current.surface=0;current.spec=.45;current.shine=35;gl.uniform1f(U.uTextured,1);gl.uniform1f(U.uSurface,0);
             drawG(g,ch);
           }
           keep([-o.m.back,0,L?L.floor:-.975]);keep([0,0,.40]);
@@ -512,11 +528,11 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         const focus=o.props&&o.props.table?o.props.table.t:ch.t,light=unit([-.4,-.55,.9]),eye=C.add(focus,light.map(v=>v*4)),fw=light.map(v=>-v),rt=unit(cross(fw,[0,0,1])),up=cross(rt,fw),row=(v,k,b)=>[v[0]*k,v[1]*k,v[2]*k,-dot(v,eye)*k+(b||0)];
         const rows=[row(rt,1/2.2),row(up,1/2.2),row(fw,1/4,-1),[0,0,0,1]],lightPV=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)lightPV[c*4+r]=rows[r][c];
         const bind=(g,pos,nrm)=>{gl.bindBuffer(gl.ARRAY_BUFFER,g.b);gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,3,gl.FLOAT,false,0,0);if(nrm!==null){gl.bindBuffer(gl.ARRAY_BUFFER,g.n);gl.enableVertexAttribArray(nrm);gl.vertexAttribPointer(nrm,3,gl.FLOAT,false,0,0);}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);};
-        if(shadowsSupported){gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFB);gl.viewport(0,0,1024,1024);gl.clearColor(1,1,1,1);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.BLEND);gl.useProgram(depthProg);gl.uniformMatrix4fv(depthPV,false,lightPV);
+        if(shadowsSupported){gl.disable(gl.DITHER);gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFB);gl.viewport(0,0,2048,2048);gl.clearColor(1,1,1,1);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.BLEND);gl.useProgram(depthProg);gl.uniformMatrix4fv(depthPV,false,lightPV);
           for(const q of commands){gl.uniformMatrix4fv(depthModel,false,model4(q.pose,q.s));bind(q.g,depthPos,null);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);}
         }
-        gl.bindFramebuffer(gl.FRAMEBUFFER,null);clear();gl.useProgram(prog);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.uniformMatrix4fv(U.uPV,false,PV);gl.uniformMatrix4fv(U.uLightPV,false,lightPV);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shadow);gl.uniform1i(U.uShadow,0);gl.uniform1f(U.uShadowOn,shadowsSupported?1:0);gl.uniform3fv(U.uKey,light);gl.uniform1f(U.uAlpha,1);
-        for(const q of commands){const m=q.mat;gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniformMatrix4fv(U.uModel,false,model4(q.pose,q.s));gl.uniformMatrix3fv(U.uRot,false,rot3(q.pose.R));bind(q.g,aPos,aNrm);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);}
+        gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.enable(gl.DITHER);clear();gl.useProgram(prog);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.uniformMatrix4fv(U.uPV,false,PV);gl.uniformMatrix4fv(U.uLightPV,false,lightPV);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shadow);gl.uniform1i(U.uShadow,0);gl.uniform1f(U.uShadowOn,shadowsSupported?1:0);gl.uniform3fv(U.uKey,light);gl.uniform1f(U.uAlpha,1);
+        for(const q of commands){const m=q.mat;gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniform1f(U.uTextured,m.textured||0);uvOf(q.g);gl.uniformMatrix4fv(U.uModel,false,model4(q.pose,q.s));gl.uniformMatrix3fv(U.uRot,false,rot3(q.pose.R));bind(q.g,aPos,aNrm);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);}
       }
       return pts;
     };
@@ -524,5 +540,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     return self;
   }
 
-  return { meshes, actorMeshes, propMeshes, compoundMeshes, clothMesh, create, lin };
+  return { meshes, actorMeshes, propMeshes, compoundMeshes, clothMesh, beveledBox, create, lin };
 });

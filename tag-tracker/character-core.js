@@ -5,18 +5,20 @@
   const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],unit=a=>{const l=Math.hypot(...a)||1;return a.map(v=>v/l);};
   function load(meta,buffer){
     const read=(x,T)=>new T(buffer,x.offset,x.count);
-    return {groups:meta.groups,parts:meta.parts.map(p=>({...p,source:read(p.pos,Float32Array),sourceNormal:read(p.normal,Float32Array),joints:read(p.joints,Uint8Array),weights:read(p.weights,Float32Array),fingers:read(p.fingers,Float32Array),mesh:{pos:new Float32Array(p.pos.count),nrm:new Float32Array(p.normal.count),idx:read(p.indices,Uint16Array)}}))};
+    return {detailed:!!meta.detailed,groups:meta.groups,parts:meta.parts.map(p=>({...p,source:read(p.pos,Float32Array),sourceNormal:read(p.normal,Float32Array),joints:read(p.joints,Uint8Array),weights:read(p.weights,Float32Array),fingers:read(p.fingers,Float32Array),mesh:{pos:new Float32Array(p.pos.count),nrm:new Float32Array(p.normal.count),uv:p.uv?read(p.uv,Float32Array):null,idx:read(p.indices,Uint16Array)}}))};
   }
   function link(a,b){const z=unit(sub(a,b)),x=unit(cross([0,1,0],z)),y=cross(z,x);return {R:[x[0],y[0],z[0],x[1],y[1],z[1],x[2],y[2],z[2]],t:a};}
   function pose(character,m,arms,locomotion,headTilt){
-    const L=locomotion||{floor:-.975,phase:0,speed:0},targets={body:{R:I,t:[-m.back-.04,0,.055],s:[.9,m.half/.151,.8]},head:{R:R.Ry(-(headTilt||0)*Math.PI/180),t:[-m.back-.015,0,m.up+.10],s:[.8,.8,.8]}};
+    const L=locomotion||{floor:-.975,phase:0,speed:0},detailed=character.detailed,targets={body:{R:I,t:[-m.back-.04,0,.055],s:[.9,m.half/.151,.8]},head:{R:R.Ry(-(headTilt||0)*Math.PI/180),t:[-m.back-.015,0,m.up+.10],s:[.8,.8,.8]}};
+    if(detailed){targets.body={R:I,t:[-m.back,0,.10],s:[1,1.05,.95]};targets.head={R:R.Ry(-(headTilt||0)*Math.PI/180),t:[-m.back,0,m.up+.115],s:[.9,.9,.9]};}
     for(const side of [1,-1]){
       const suffix=side===1?'L':'R',a=arms.find(a=>a.side===side)||{q:R.HOME},k=R.fk(m,side,a.q),hand=R.gripper(m);
       targets['upper'+suffix]={R:k.Ru,t:k.shoulder,length:m.upper,width:.95};
       targets['fore'+suffix]={R:k.Rf,t:k.elbow,length:m.fore,width:.85};
-      targets['hand'+suffix]={R:k.R,t:k.wrist,s:[.7,.8,.72],open:a.jaw===undefined?1:Math.min(1,a.jaw/hand.gapMax)};
-      const swing=Math.sin(L.phase+(side===1?0:Math.PI))*Math.min(1,L.speed/.2),hip=[-m.back,side*.09,-.24],foot=[-m.back+.1*swing,side*.09,L.floor+.02+.035*Math.max(0,swing)],d=sub(foot,hip),length=Math.hypot(...d),knee=add(add(hip,d.map(v=>v*.5)),unit([-d[2],0,d[0]]).map(v=>v*Math.sqrt(Math.max(0,.37**2-length**2/4))));
-      targets['thigh'+suffix]={...link(hip,knee),length:.37,width:.85};targets['shin'+suffix]={...link(knee,foot),length:.37,width:.8};targets['foot'+suffix]={R:I,t:foot,s:[.8,.8,.8]};
+      targets['hand'+suffix]={R:k.R,t:k.wrist,s:detailed?[.9,.9,.9]:[.7,.8,.72],open:a.jaw===undefined?1:Math.min(1,a.jaw/hand.gapMax)};
+      const leg=detailed?.30:.37,sole=detailed?character.groups.find(g=>g.name==='foot'+suffix).t[2]*.9:.02;
+      const swing=Math.sin(L.phase+(side===1?0:Math.PI))*Math.min(1,L.speed/.2),hip=[-m.back,side*.09,detailed?-.29:-.24],foot=[-m.back+.1*swing,side*.09,L.floor+sole+.035*Math.max(0,swing)],d=sub(foot,hip),length=Math.hypot(...d),knee=add(add(hip,d.map(v=>v*.5)),unit([-d[2],0,d[0]]).map(v=>v*Math.sqrt(Math.max(0,leg**2-length**2/4))));
+      targets['thigh'+suffix]={...link(hip,knee),length:leg,width:.85};targets['shin'+suffix]={...link(knee,foot),length:leg,width:.8};targets['foot'+suffix]={R:I,t:foot,s:detailed?[.9,.9,.9]:[.8,.8,.8]};
     }
     const palette=character.groups.map(g=>{const p=targets[g.name],s=p.s||[p.width,p.width,p.length/g.length];return {...p,s,rest:g.t,restR:C.tr3(g.R)};});
     for(const part of character.parts){

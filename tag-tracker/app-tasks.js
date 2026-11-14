@@ -62,9 +62,10 @@ function paintTasks(force) {
 }
 function taskPlaced() {
   TASK.stored = false; TASK.moved = false;
+  if(storyMode() && TB.game && TASK.cameraLevel!==TB.game.level.id){TASK.cameraLevel=TB.game.level.id;setHeadTilt(TB.game.level.story.camera_tilt ?? -25);paintGameCamera();}
   if (TB.game && S.settings.robot.view !== 'eyes') {
-    const T = TB.world.table, d = C.mulv(T.R, storyMode() ? [-1.8, -1.8, 1.4] : [0.95, -0.7, 0.65]), dist = C.norm(d);
-    Object.assign(S.view, { target: storyMode() && TASK.nav ? C.add(TASK.nav.anchor.t, [0,0,-.3]) : C.add(T.t, [0, 0, 0.10]), dist: dist * (storyMode() ? 1.3 * Math.max(1, plot.clientHeight / Math.max(1, plot.clientWidth)) : 1), yaw: Math.atan2(d[0], -d[1]), pitch: Math.asin(d[2] / dist), fitted: true, fromCam: false });
+    const T = TB.world.table, d = C.mulv(T.R, storyMode() ? [1.65, -2.0, 1.10] : [0.95, -0.7, 0.65]), dist = C.norm(d);
+    Object.assign(S.view, { target: storyMode() && TASK.nav ? C.add(TASK.nav.anchor.t, [0,0,-.3]) : C.add(T.t, [0, 0, 0.10]), dist: dist * (storyMode() ? 1.15 * Math.max(1, plot.clientHeight / Math.max(1, plot.clientWidth)) : 1), yaw: Math.atan2(d[0], -d[1]), pitch: Math.asin(d[2] / dist), fitted: true, fromCam: false });
   }
   paintTasks(true); paintGameHUD();
 }
@@ -248,24 +249,30 @@ function storyDecoration(bodies,compounds){
   const anchor=TASK.nav.anchor,f=TB.world.floorZ-anchor.t[2],d=currentTask().story.decor;
   const box=(p,h)=>({type:'box',p,h}),cyl=(p,r,h)=>({type:'cylinder',p,r,h});
   const put=(key,pieces,color,material)=>{key='__home_'+key;compounds[key]=pieces;bodies.unshift({key,R:anchor.R,t:anchor.t,color,material});};
-  put('floor',[box([0,0,f-.025],[1.15,1.15,.025])],d.floor,'wood');
-  put('walls',[box([1.17,0,f+.85],[.025,1.2,.85]),box([0,1.17,f+.85],[1.15,.025,.85])],d.wall,'plaster');
-  put('trim',[box([1.138,0,f+.055],[.01,1.15,.055]),box([0,1.138,f+.055],[1.15,.01,.055]),box([1.138,0,f+1.68],[.012,1.15,.02]),box([0,1.138,f+1.68],[1.15,.012,.02])],'#efe5ce','wood');
+  put('floor',[box([0,0,f-.025],[1.15,1.15,.025])],d.floor,'floor');
+  const eye=RB.view?C.mulv(C.tr3(anchor.R),C.sub(RB.view.eye,anchor.t)):[1,-1,1],showX=eye[0]<.4,showY=eye[1]<.4;
+  put('walls',[...(showX?[box([1.17,0,f+.85],[.025,1.2,.85])]:[]),...(showY?[box([0,1.17,f+.85],[1.15,.025,.85])]:[])],d.wall,'plaster');
+  if(showX&&showY)put('trim',[box([1.138,0,f+.055],[.01,1.15,.055]),box([0,1.138,f+.055],[1.15,.01,.055]),box([1.138,0,f+1.68],[.012,1.15,.02]),box([0,1.138,f+1.68],[1.15,.012,.02])],'#efe5ce','wood');
   put('rug',[box([-.38,-.22,f+.004],[.52,.46,.004])],d.rug,'rug');
   put('rugborder',[box([-.38,-.645,f+.009],[.48,.014,.001]),box([-.38,.205,f+.009],[.48,.014,.001]),box([-.865,-.22,f+.009],[.014,.41,.001]),box([.105,-.22,f+.009],[.014,.41,.001])],'#d8bd91','fabric');
+  if(currentTask().id!=='door'){
+    const cushion=(p,h,bevel)=>({...box(p,h),bevel});
+    put('armchair',[cushion([-.78,.83,f+.32],[.18,.19,.06],.05),cushion([-.78,1.025,f+.53],[.20,.055,.24],.05),...[-1,1].map(k=>cushion([-.78+k*.195,.83,f+.40],[.045,.22,.095],.035))],'#a9694f','fabric');
+    put('chairlegs',[-1,1].flatMap(a=>[-1,1].map(b=>box([-.78+a*.14,.83+b*.13,f+.13],[.025,.025,.13]))),'#70482f','wood');
+  }
   // A framed landscape and a little family photograph on the back wall.
-  put('frames',[box([-.52,1.126,f+1.15],[.24,.022,.19]),box([.1,1.126,f+1.21],[.13,.022,.16])],'#6b4932','wood');
+  if(showY){put('frames',[box([-.52,1.126,f+1.15],[.24,.022,.19]),box([.1,1.126,f+1.21],[.13,.022,.16])],'#6b4932','wood');
   put('canvas',[box([-.52,1.1,f+1.15],[.218,.004,.168]),box([.1,1.1,f+1.21],[.108,.004,.138])],'#dccb94','plaster');
-  put('land',[box([-.52,1.09,f+1.08],[.215,.003,.09]),cyl([.1,1.08,f+1.24],.035,.01)],'#718b69','fabric');
+  put('land',[box([-.52,1.09,f+1.08],[.215,.003,.09]),cyl([.1,1.08,f+1.24],.035,.01)],'#718b69','fabric');}
   // Window, deep wooden sill, linen curtains and a low sideboard.
-  put('window',[box([1.13,.64,f+1.12],[.012,.25,.32])],'#b9d9df','plaster');
+  if(showX){put('window',[box([1.13,.64,f+1.12],[.012,.25,.32])],'#b9d9df','plaster');
   put('windowframe',[box([1.107,.64,f+1.12],[.012,.012,.32]),box([1.107,.64,f+1.12],[.012,.25,.012]),box([1.08,.64,f+.79],[.07,.29,.025])],'#f0e4cb','wood');
-  put('curtain',[-1,1].flatMap(k=>Array.from({length:6},(_,i)=>box([1.07+Math.sin(i*1.8)*.016,.64+k*(.205+i*.014),f+1.12],[.018,.014,.37]))),d.curtain,'fabric');
+  put('curtain',[-1,1].flatMap(k=>Array.from({length:6},(_,i)=>box([1.07+Math.sin(i*1.8)*.016,.64+k*(.205+i*.014),f+1.12],[.018,.014,.37]))),d.curtain,'fabric');}
   put('sideboard',[box([.72,1,f+.26],[.34,.13,.22]),box([.72,.99,f+.5],[.36,.15,.025]),...[-1,1].flatMap(a=>[-1,1].map(b=>box([.72+a*.28,1+b*.09,f+.045],[.025,.025,.045])))],'#765138','wood');
   put('drawers',[box([.55,.861,f+.28],[.145,.006,.13]),box([.89,.861,f+.28],[.145,.006,.13])],'#986d49','wood');
   put('knobs',[box([.55,.845,f+.29],[.025,.014,.008]),box([.89,.845,f+.29],[.025,.014,.008])],'#ad9865','metal');
   put('plantpot',[cyl([.97,.96,f+.59],.055,.065)],'#aa6b50','plaster');
-  put('plant',Array.from({length:7},(_,i)=>{const a=i*2.4;return box([.97+Math.cos(a)*.045,.96+Math.sin(a)*.045,f+.7+i*.009],[.035,.022,.028]);}),'#536d45','fabric');
+  put('plant',Array.from({length:7},(_,i)=>{const a=i*2.4;return {type:'ellipsoid',p:[.97+Math.cos(a)*.045,.96+Math.sin(a)*.045,f+.7+i*.009],r:[.04,.025,.075]};}),'#536d45','fabric');
   if(currentTask().id==='dishwasher'){
     const T=TB.world.table,p=C.add(T.t,C.mulv(T.R,[.015,-.16,-.34]));
     compounds.__appliance=[box([0,0,0],[.115,.15,.30]),box([-.121,0,.24],[.009,.15,.035])];bodies.push({key:'__appliance',R:T.R,t:p,color:'#b0b7b3',material:'metal'});

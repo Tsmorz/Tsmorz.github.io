@@ -43,10 +43,11 @@ module.exports = function({check,near}) {
   const m=R.model(),all=GL.actorMeshes(m),meshes=[...all.amr,...all.wheel];
   check(meshes.every(p=>p.mesh.pos.length&&[...p.mesh.pos,...p.mesh.nrm].every(Number.isFinite)&&p.mesh.idx.every(i=>3*i<p.mesh.pos.length)),'AMR base and wheels have finite indexed meshes');
   const fs=require('fs'),Character=require(root+'/tag-tracker/character-core'),meta=JSON.parse(fs.readFileSync(root+'/tag-tracker/assets/eli/eli.json')),bytes=fs.readFileSync(root+'/tag-tracker/assets/eli/eli.bin'),character=Character.load(meta,bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+  check(['base','normal','roughness'].every(k=>fs.existsSync(root+'/tag-tracker/assets/eli/'+meta.textures[k])),'the detailed character has local base-colour, normal and roughness maps');
   for(const phase of [0,1.5,3]){
     const parts=Character.pose(character,m,[{side:1,q:R.HOME,jaw:0},{side:-1,q:R.HOME,jaw:.08}],{floor:-.975,phase,speed:.5},-40);
-    check(parts.length===10&&parts.every(p=>[...p.mesh.pos,...p.mesh.nrm].every(Number.isFinite)&&p.mesh.idx.every(i=>i*3<p.mesh.pos.length)),'Eli’s clothed, skinned mesh stays finite while walking and gripping at phase '+phase);
-    const soles=parts.filter(p=>p.name.includes('Feet')).flatMap(p=>Array.from(p.mesh.pos).filter((v,i)=>i%3===2));
+    check(parts.length===2 && parts.every(p=>p.mesh.uv && p.mesh.uv.length===p.mesh.pos.length/3*2)&&parts.every(p=>[...p.mesh.pos,...p.mesh.nrm].every(Number.isFinite)&&p.mesh.idx.every(i=>i*3<p.mesh.pos.length)),'Eli’s clothed, skinned mesh stays finite while walking and gripping at phase '+phase);
+    const soles=parts.flatMap(p=>Array.from(p.mesh.pos).filter((v,i)=>i%3===2));
     check(Math.min(...soles)>-1.015&&Math.min(...soles)<-.90,'walking soles stay near the physical floor');
   }
   const home={R:I,t:[0,0,0]};check(N.tagInput(home,home).forward===0&&N.tagInput(home,{R:I,t:[.02,0,0]}).forward===0,'body-tag dead zone keeps neutral hands-on work still');
