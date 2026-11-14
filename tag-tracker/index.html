@@ -1,3 +1,6 @@
+---
+layout: null
+---
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -355,6 +358,49 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 @media (max-width:640px){.voice{left:16px;bottom:16px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (forced-colors:active){.sw,.ax i{forced-color-adjust:none}}
+
+/* Teleoperation campaign: the same outlined instruments as the rest of the bench. */
+.task-panel{padding:14px 16px;border-bottom:1px solid var(--rule);background:var(--well)}
+.task-title,.task-brief{display:flex;justify-content:space-between;gap:14px;align-items:start}
+.task-title h3{margin:0;font-size:17px}.task-title p{margin:3px 0 10px}.task-title>span{white-space:nowrap}
+.task-select{display:none}
+.task-levels{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;margin:0 0 12px}
+.task-level{display:flex;flex-direction:column;align-items:start;text-align:left;gap:3px;padding:8px;border:1px solid var(--rule);border-radius:4px;background:var(--panel);color:var(--ink);font:inherit;font-size:12px;cursor:pointer;min-height:72px}
+.task-level[aria-current="step"]{border-color:var(--accent);border-bottom-width:3px}
+.task-level[aria-current="step"] .task-num{font-weight:700;color:var(--accent)}.task-level small{color:var(--muted);font-size:11px}
+.task-brief strong{font-size:16px}.task-brief p{margin:4px 0 8px;font-size:13px;max-width:75ch}
+.task-goals{display:flex;flex-wrap:wrap;gap:5px 16px;font-size:12px;margin-bottom:8px}.task-goals span::before{content:'○';margin-right:6px}.task-goals span[data-done="true"]::before{content:'✓';color:var(--accent)}
+.task-feedback{min-height:32px;font-size:13px}.task-guide{font-size:12px;margin-top:4px}.task-guide p{margin:7px 0;max-width:90ch}
+.robot-controls{align-content:start;padding:8px 16px;border-bottom:1px solid var(--rule);display:grid;gap:8px}.robot-controls .row{flex-wrap:wrap;gap:6px}
+.robot-controls button{min-height:36px;touch-action:manipulation}.robot-controls input[type=range]{width:120px;accent-color:var(--accent)}.robot-controls output{min-width:36px}.robot-controls .hint{font-size:11px;max-width:48ch;margin:0}
+#taskLabels{position:absolute;inset:0;pointer-events:none;overflow:hidden}.task-label{position:absolute;transform:translate(-50%,-100%);color:var(--ink);background:var(--panel);padding:1px 4px;border:1px solid var(--rule);border-radius:2px;font:600 12px Archivo,system-ui,sans-serif}
+@media(max-width:1100px){.task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}.task-level{min-height:64px}}
+@media(max-width:600px){body.teleop-active .card3d{display:flex;flex-direction:column}body.teleop-active #robotPlayControls{order:3}body.teleop-active #taskPanel .task-levels{display:none}body.teleop-active .task-select{display:flex;margin:8px 0}body.teleop-active .task-title p{display:none}body.teleop-active #scaleField,body.teleop-active #forcesField,body.teleop-active .card3d label:has(#frameSel){display:none}.task-panel,.robot-controls{padding:10px}.task-title{flex-wrap:wrap;gap:0}.task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}.task-level{font-size:11px;padding:6px}.robot-controls button{min-height:40px}.task-feedback{flex-wrap:wrap}.task-brief p{font-size:12px}.teleop-active .plot3d .vbtns{left:6px;right:6px;flex-wrap:wrap;gap:4px}.teleop-active .plot3d .vbtns .btn{padding:0 6px;font-size:11px}.teleop-active .plot3d .legend{top:auto;bottom:8px;font-size:11px}.teleop-active .plot3d .vbtns #robotClearBtn,.teleop-active .plot3d .vbtns #resetViewBtn{display:none}}
+
+
+/* Give the task a stage, with the level map beside it and the real camera still available. */
+@media(min-width:1001px){
+ body.teleop-active #stage{min-height:400px;aspect-ratio:auto}body.teleop-active #empty{padding:20px;gap:12px}body.teleop-active #empty h3{font-size:21px}
+ body.teleop-active main{grid-template-columns:minmax(260px,.32fr) minmax(0,1fr);max-width:1900px}
+ body.teleop-active #view-track{position:static;height:auto}
+ body.teleop-active #view-track .card3d{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto 160px minmax(500px,auto);grid-template-areas:"heading heading" "campaign controls" "campaign stage"}
+ body.teleop-active .card3d>.card-h{grid-area:heading}
+ body.teleop-active #taskPanel{grid-area:campaign;border-right:1px solid var(--rule);border-bottom:0}
+ body.teleop-active #robotPlayControls{grid-area:controls}
+ body.teleop-active #view-track .plot3d{grid-area:stage;min-height:max(500px,58vh)}
+ body.teleop-active .task-levels{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.teleop-active .task-title,body.teleop-active .task-brief{display:block}
+ body.teleop-active .task-title h3{font-size:16px}
+ body.teleop-active .task-title>span{display:block;margin-bottom:8px}
+ body.teleop-active .task-brief p{margin-top:8px}
+ body.teleop-active .task-goals{margin-top:10px}
+ body.teleop-active .task-brief strong{font-size:15px}
+ body.teleop-active .task-feedback{flex-wrap:wrap}
+ body.teleop-active .plot3d .vbtns{flex-wrap:wrap;justify-content:flex-end;max-width:calc(100% - 18px)}
+ body.teleop-active .plot3d .legend{top:auto;bottom:36px}
+ body.teleop-active .plot3d .help{max-width:90%;flex-wrap:wrap;gap:3px 12px}
+}
+@media(max-width:1000px){body.teleop-active #view-track{order:-1}body.teleop-active #view-track .plot3d{height:clamp(360px,65vh,600px)}}
 </style>
 </head>
 <body>
@@ -666,8 +712,8 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <label class="field" id="scaleField" title="Teleoperation: the robot's arms move this many times as far as your hands do, from the start pose (below 1 for fine work, above 1 to reach further). The hands still turn exactly as yours do, and the body isn't scaled.">Motion × <select id="robotScale" class="select sm">
             <option value="0.25">0.25</option><option value="0.5">0.5</option><option value="0.75">0.75</option><option value="1">1</option><option value="1.5">1.5</option><option value="2">2</option><option value="3">3</option>
           </select></label>
-          <label class="field" id="propsField" title="Something on a table in front of the robot to push about and pick up. Drag a hand with the mouse to try it without tags.">Table <select id="robotProps" class="select sm">
-            <option value="off">Off</option><option value="ball">Ball</option><option value="cup">Ball and cup</option>
+          <label class="field" id="propsField" title="Something on a table in front of the robot to push about and pick up. Drag a hand with the mouse to try it without tags.">Physics <select id="robotProps" class="select sm">
+            <option value="arcade">Teleoperation arcade</option><option value="off">Off</option><option value="ball">Ball (free play)</option><option value="cup">Ball and cup (free play)</option>
           </select></label>
           <label class="field" id="forcesField" title="Arrows for the forces on the robot's hands: where something pushes on a hand, and at a grip the load its prop puts on the fingers, amber while the grip slips. The Now panel's Forces tab has the numbers.">Forces <select id="robotForces" class="select sm">
             <option value="on">Shown</option><option value="off">Hidden</option>
@@ -675,12 +721,28 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
           <label class="field">Relative to <select id="frameSel" class="select sm"></select></label>
         </div>
       </div>
+      <div id="taskPanel" class="task-panel" hidden>
+        <div class="task-title"><div><h3>{{ site.data.tag_tasks.title }}</h3><p class="hint">{{ site.data.tag_tasks.subtitle }}</p></div><span id="taskOverall" class="small"></span></div>
+        <label class="task-select field">Level <select id="taskSelect" class="select"></select></label>
+        <nav id="taskLevels" class="task-levels" aria-label="Teleoperation levels"></nav>
+        <div class="task-brief"><div><strong id="taskName"></strong><p id="taskBrief"></p></div><span id="taskClock" class="small">0:00</span></div>
+        <div class="task-goals" id="taskGoals" aria-label="Level objectives"></div>
+        <div class="row task-feedback"><span id="taskStatus" role="status" aria-live="polite"></span><span id="taskBest" class="small muted"></span><div class="spacer"></div><button class="btn sm primary" id="taskNext" hidden>Next level</button></div>
+        <details class="task-guide"><summary>How to play</summary><p>{{ site.data.tag_tasks.controls.intro }}</p><p id="taskHint"></p><p>{{ site.data.tag_tasks.controls.keyboard }}</p><p>{{ site.data.tag_tasks.controls.scoring }}</p><p class="hint">{{ site.data.tag_tasks.physics }}</p></details>
+      </div>
+      <div class="robot-controls" id="robotPlayControls">
+        <div class="row"><span class="small">Hand</span><span id="playHands" class="seg sm" role="radiogroup" aria-label="Hand to control"><button role="radio" data-hand="1" aria-checked="true">Left</button><button role="radio" data-hand="-1" aria-checked="false">Right</button><button role="radio" data-hand="both" aria-checked="false">Both</button></span>
+          <button class="btn sm outline" data-nudge="forward">Forward</button><button class="btn sm outline" data-nudge="back">Back</button><button class="btn sm outline" data-nudge="left">Left ←</button><button class="btn sm outline" data-nudge="right">Right →</button><button class="btn sm outline" data-nudge="up">Lift ↑</button><button class="btn sm outline" data-nudge="down">Lower ↓</button>
+          <button class="btn sm outline" id="playGrip">Grip</button><button class="btn sm outline" id="playRelease">Release</button><button class="btn sm outline" data-turn="-1">Tilt −</button><button class="btn sm outline" data-turn="1">Tilt +</button><button class="btn sm outline" data-roll="-1">Roll −</button><button class="btn sm outline" data-roll="1">Roll +</button>
+        </div>
+        <div class="row"><span class="seg sm" id="robotViewControl" role="radiogroup" aria-label="Robot camera"><button role="radio" data-robot-view="orbit" aria-checked="true">Outside view</button><button role="radio" data-robot-view="eyes" aria-checked="false">{{ site.data.tag_tasks.camera.label }}</button></span><label class="field" for="headTilt">Head tilt <input type="range" id="headTilt" min="-80" max="25" value="-40" step="1"><output id="headTiltValue" for="headTilt">−40°</output></label><span class="hint">{{ site.data.tag_tasks.camera.help }}</span></div>
+      </div>
       <div class="plot3d">
         <div class="vbtns">
           <button class="btn sm primary" id="robotCalBtn" title="Stand in the start pose (arms at your sides, forearms forward, palms in), then press this (or C) to line the robot up with you">Calibrate robot</button>
           <button class="btn sm" id="robotClearBtn" hidden title="Forget the robot's calibration: it stands in its start pose again">Clear</button>
           <button class="btn sm" id="tagsDriveBtn" hidden title="Give the hands you moved with the mouse back to their tags">Tags drive</button>
-          <button class="btn sm outline" id="tableResetBtn" title="Put the ball and the cup back where they started (or press T)">Reset table</button>
+          <button class="btn sm outline" id="tableResetBtn" title="Restart the current task or free play (or press T)">Restart task</button>
           <button class="btn sm outline sq" id="soundBtn" aria-pressed="false" aria-label="Sound" title="Sound: hear the table's knocks, rolls and scrapes (or press M)"><svg class="i"><use href="#i-mute"/></svg></button>
           <button class="btn sm outline" id="resetViewBtn" title="Look from camera 1, at the robot or the tags (or press R)"><svg class="i"><use href="#i-reset"/></svg>Reset view</button>
           <button class="btn sm outline" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
@@ -688,6 +750,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         </div>
         <canvas id="plot" tabindex="0" role="img" aria-label="3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view, C to calibrate the robot, T to reset the table, M to turn its sound on or off. Drag a robot hand to move it across the view (Alt for the other way), scroll on it to open and close its gripper (Shift to tilt it), Space to open or close it."></canvas>
         <canvas id="plotGL" aria-hidden="true" hidden></canvas>
+        <div id="taskLabels" aria-hidden="true"></div>
         <div class="legend" id="legend3d"></div>
         <div class="rhint" id="robotHint" role="status" hidden></div>
         <div class="help hide-sm"><span>Drag to orbit</span><span>Shift-drag to pan</span><span>Scroll to zoom</span><span class="rob-only">Drag a hand to move it</span><span class="rob-only">Scroll on it to grip</span></div>
@@ -920,16 +983,20 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
-<script src="tracker-core.js?v=6c0d3fa0"></script>
+<script src="tracker-core.js?v=75a0a819"></script>
 <script src="robot-core.js?v=5767e370"></script>
-<script src="robot-gl.js?v=b5e3f603"></script>
-<script src="physics-core.js?v=6d5e5852"></script>
+<script src="robot-gl.js?v=34d078f0"></script>
+<script src="physics-core.js?v=6e1bd8aa"></script>
+<script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
+<script src="cloth-core.js?v=c8ee1a44"></script>
+<script src="task-core.js?v=a9020190"></script>
 <script src="sound.js?v=4f5ec6ef"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script src="app-state.js?v=4622e9af"></script>
-<script src="app-cameras.js?v=c09d489a"></script>
-<script src="app-plot.js?v=64094755"></script>
-<script src="app-robot.js?v=24df2ad0"></script>
+<script src="app-cameras.js?v=a078f3e2"></script>
+<script src="app-plot.js?v=5a60a807"></script>
+<script src="app-robot.js?v=d24b291d"></script>
+<script src="app-tasks.js?v=d6357641"></script>
 <script src="app-views.js?v=b778539d"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>

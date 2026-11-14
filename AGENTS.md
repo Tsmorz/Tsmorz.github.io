@@ -24,6 +24,7 @@ To change what the site says, edit YAML, not HTML.
 | Services (and the work that shows each), process, contact on /solutions/ | `_data/solutions.yml` |
 | The "Have a look around" tiles under the home hero | `_data/home.yml` |
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
+| Tag tracker teleoperation levels, objectives, hints and scoring targets | `_data/tag_tasks.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Lessons on /controls/, /vision/ or /embedded/ | `_data/labs/controls.yml`, `vision.yml`, `embedded.yml` |
 | Name, bio links, CV button | `_config.yml` |
@@ -327,7 +328,7 @@ itself and moves open tabs to the new address, deleting no caches (the terrain c
 
 ### The tag tracker (`/tag-tracker/`)
 
-`tag-tracker/` is a self-contained tool page (no front matter, so Jekyll copies it as-is) with its own look: an instrument on a
+`tag-tracker/` is a self-contained tool page (`index.html` uses front matter only to render `_data/tag_tasks.yml`, with no site layout) with its own look: an instrument on a
 vision bench. Cool anodised greys and ink with the site's violet (`--accent`, as in main.css) for what is live or pressed, and amber
 only for warnings (never an orange accent on the dark greys: it reads as a certain adult site's branding); panels are plain outlined boxes
 (1 px rule, 4 px corners, no shadows); viewfinder corner marks only on the video (`.reticle`, violet while detecting); flat ink-outlined
@@ -368,6 +369,31 @@ plot and a readout table. Tags, settings and calibrations (keyed by camera label
   with OpenCV.js installed
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.
+
+### Tag tracker teleoperation arcade
+
+The Physics selector keeps Ball and Ball and cup as free play, and defaults to the arcade. Eight levels in
+`_data/tag_tasks.yml` progress from a ball in a wide bowl, precision placement, sorting and stacking to handoff,
+a two-hand tray carry, an open dishwasher rack and folding three towels. `task-core.js` constructs the scenes and
+checks physical poses, released grips and settling (0.75 s), plus handoff, simultaneous lifted grips and cloth folds.
+`app-tasks.js` owns the campaign UI, hand nudges, keyboard controls and per-browser best stars/times
+(`tag-tracker-teleop`). All levels stay available for practice. There is no time limit; target times only earn a star.
+
+`physics-core.js` keeps a 240 Hz fixed-step accumulator, friction-limited grips, contacts and sleep. Compound boxes
+and cylinders share their dimensions with `robot-gl.js`; openings stay hollow. Their mass properties combine each
+piece's analytic inertia and the parallel-axis theorem (small seam overlaps are an approximation). Rack fixtures
+have zero inverse mass. `cloth-core.js` uses small-step XPBD stretch/shear and compliant bending, table friction,
+particle self-contact and contact between towels; this is a coarse cloth model, not a garment simulator. Grippers
+capture cloth patches geometrically. Goals require both hands, aligned opposite edges, a flat fold and a released stack.
+
+Robot eyes switches the main 3D view to a camera attached to the sensor bar, with a −80° to +25° head tilt. The head
+mesh, projection and hand picking use the same pose; Up/Down and vertical background drags tilt the head in that view.
+The outside camera is kept separately. Hand controls work without tags; Both moves both wrist targets together.
+
+`task check:tag-tracker -- 5j` runs `script/tag-tracker/teleop.cjs`: scene stability, objective rejection/completion,
+compound grasp/release, two-hand carrying, real cloth folding, persistence and head projections. After `task build`,
+`task shot -- /tag-tracker/ --eval "$(cat script/tag-tracker/browser.js)"` plays the ball level through IK and physical grips,
+checks saved results and Next, and exercises every level and the head camera. Repeat with `--phone` for narrow layout.
 
 ## When editing, don't
 

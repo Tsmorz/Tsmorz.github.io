@@ -10,7 +10,7 @@
 const POOL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 function spawnWorker() {
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  const w = new Worker(base + 'worker.js?v=337f2721'), slot = { w, ready: false, busy: false, first: !S.pool.length };
+  const w = new Worker(base + 'worker.js?v=99846233'), slot = { w, ready: false, busy: false, first: !S.pool.length };
   S.pool.push(slot);
   w.onmessage = (ev) => onWorker(ev.data, slot);
   w.onerror = (e) => { if (slot.first) status('Detector failed to start', 'bad'); else S.pool = S.pool.filter((x) => x !== slot); console.error(e); };

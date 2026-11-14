@@ -207,6 +207,62 @@
     return makeBody('hand', { m: HAND.mass, Ib: diag(HAND.I), off: scale(HAND.com, -1), sp: handSpheres(G, G.gapMax), bound: HAND.bound, mu: ROBOT_MU, e: 0.1, mat: 'aluminium' });
   }
 
+  // Compound props share their collision geometry with the renderer. All pieces are centred boxes or capped
+  // cylinders; an open bowl/tray is a union of solid pieces, never a convex hull across its opening.
+  function pieceDistance(p, s) {
+    const q = tmulv(s.R || I3, sub(p, s.p || [0, 0, 0]));
+    if (s.type === 'cylinder') {
+      const a = Math.hypot(q[0], q[1]) - s.r, b = Math.abs(q[2]) - s.h;
+      return Math.hypot(Math.max(0, a), Math.max(0, b)) + Math.min(0, Math.max(a, b));
+    }
+    const d = q.map((v, i) => Math.abs(v) - s.h[i]);
+    return norm(d.map((v) => Math.max(0, v))) + Math.min(0, Math.max(...d));
+  }
+  const shapeDistance = (p, pieces) => Math.min(...pieces.map((s) => pieceDistance(p, s)));
+  function shapeNormal(p, pieces) {
+    const e = 1e-5;
+    return unit([0, 1, 2].map((i) => { const a = p.slice(), b = p.slice(); a[i] += e; b[i] -= e; return shapeDistance(a, pieces) - shapeDistance(b, pieces); }));
+  }
+  function compoundBody(spec) {
+    const sp = [], mass = spec.mass || 0.12, pieces = spec.pieces;
+    for (const s of pieces) {
+      const put = (p, r) => sp.push({ p: add(s.p || [0, 0, 0], mulv(s.R || I3, p)), r });
+      if (s.type === 'cylinder') {
+        const r = Math.min(0.004, s.h), z = s.h - r;
+        for (const dz of [-z, z]) {
+          put([0, 0, dz], r);
+          for (let i = 0; i < 24; i++) { const a = i * Math.PI / 12; put([(s.r - r) * Math.cos(a), (s.r - r) * Math.sin(a), dz], r); }
+        }
+      } else {
+        const r = Math.min(0.004, ...s.h), h = s.h.map((v) => v - r), n = h.map((v) => Math.max(1, Math.ceil(2 * v / 0.04)));
+        for (let i = 0; i <= n[0]; i++) for (let j = 0; j <= n[1]; j++) for (let k = 0; k <= n[2]; k++) {
+          if (i && i < n[0] && j && j < n[1] && k && k < n[2]) continue;
+          put([i, j, k].map((v, a) => -h[a] + 2 * h[a] * v / n[a]), r);
+        }
+      }
+    }
+    // Uniform density: sum the pieces' analytic inertia tensors, rotated and shifted by the parallel-axis theorem.
+    // Adjacent pieces overlap slightly at seams; this uses their compound mass approximation consistently.
+    const volumes = pieces.map((s) => s.type === 'cylinder' ? 2 * Math.PI * s.r * s.r * s.h : 8 * s.h[0] * s.h[1] * s.h[2]);
+    const total = volumes.reduce((a, b) => a + b, 0), masses = volumes.map((v) => mass * v / total);
+    let com = [0, 0, 0]; pieces.forEach((s, i) => { com = madd(com, s.p || [0, 0, 0], masses[i] / mass); });
+    const Ib = new Array(9).fill(0);
+    pieces.forEach((s, i) => {
+      const m = masses[i], d = sub(s.p || [0, 0, 0], com), dd = dot(d, d);
+      const local = s.type === 'cylinder' ? [m * (3 * s.r * s.r + 4 * s.h * s.h) / 12, m * (3 * s.r * s.r + 4 * s.h * s.h) / 12, m * s.r * s.r / 2]
+        : s.h.map((v, k) => m * (s.h[(k + 1) % 3] ** 2 + s.h[(k + 2) % 3] ** 2) / 3);
+      const rotated = rMr(s.R || I3, diag(local));
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) Ib[a * 3 + b] += rotated[a * 3 + b] + m * ((a === b ? dd : 0) - d[a] * d[b]);
+    });
+    for (const s of sp) s.p = sub(s.p, com);
+    const bound = Math.max(...sp.map((s) => norm(s.p) + s.r));
+    return makeBody(spec.kind || 'prop', { m: mass, Ib, off: scale(com, -1), sp, sdf: true, pieces,
+      bound, mu: spec.mu || 0.6, e: 0.08, mat: spec.mat || 'wood', crr: 0.004, rollR: bound,
+      fixed: !!spec.fixed, color: spec.color, label: spec.label, key: spec.key });
+  }
+  const bodyDistance = (b, p) => b.pieces ? shapeDistance(p, b.pieces) : cupSdf(p);
+  const bodyNormal = (b, p) => b.pieces ? shapeNormal(p, b.pieces) : cupNormal(p);
+
   // ---- contacts ----
   // Sphere (centre c, radius r) against a box (pose {R, t} at its centre, half sizes h): the distance between them
   // (negative when they overlap) and the normal from the box towards the sphere.
@@ -232,24 +288,25 @@
     const o = opts || {}, G = o.gripper, table = o.table || null;
     const tableBox = table ? { R: table.R, t: add(table.t, mulv(table.R, [0, 0, -(table.thick || 0.03) / 2])), h: [table.size[0] / 2, table.size[1] / 2, (table.thick || 0.03) / 2] } : null;
     const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor, tableMu = table && table.mu !== undefined ? table.mu : TABLE_MU;
-    const W = { bodies: [], hands: {}, time: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0, record: null };
+    const W = { bodies: [], hands: {}, time: 0, carry: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0, record: null, respawns: 0, cloths: [] };
     let prevLinks = new Map(), nextLinks = [], nextHands = [];
     const touching = []; // props touching each other this substep
     let acc = null; // the step's sums for W.record
     const lastTouch = new Map(); // when each pair last touched, for impacts
 
     W.add = function (kind, pos, Rq) {
-      const b = kind === 'ball' ? ballBody() : cupBody();
+      const b = typeof kind === 'object' ? compoundBody(kind) : kind === 'ball' ? ballBody() : cupBody();
       place(b, pos, Rq || I3);
       W.bodies.push(b); W.starts.push({ pos: pos.slice(), R: (Rq || I3).slice() });
       return b;
     };
     // a body's shape frame (the ball's centre, the mug's base) at pos, turned R
-    function place(b, pos, R) { b.R = R.slice(); b.q = qOf(R); b.t = add(pos, mulv(R, scale(b.off, -1))); b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.asleep = false; b.still = 0; b.lost = 0; }
+    function place(b, pos, R) { b.R = R.slice(); b.q = qOf(R); b.t = add(pos, mulv(R, scale(b.off, -1))); b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.asleep = false; b.still = 0; b.lost = 0; b.group = []; }
     W.reset = function () {
       for (const k of Object.keys(W.hands)) W.hands[k].grip = null;
       W.bodies.forEach((b, i) => place(b, W.starts[i].pos, W.starts[i].R));
-      W.warm.clear();
+      W.cloths.forEach((c) => c.reset());
+      W.warm.clear(); W.record = null; lastTouch.clear(); W.respawns = 0; W.carry = 0;
     };
     // where the page draws a body's shape (or a hand's wrist)
     W.poseOf = (b) => ({ R: b.R, t: add(b.t, mulv(b.R, b.off)) });
@@ -270,8 +327,12 @@
     // part ('pad' or 'metal'), for an arm link side and link}.
 
     W.step = function (dt) {
-      const d = Math.min(Math.max(dt || 0, 0), 1 / 15), n = Math.max(1, Math.round(d / H));
+      const d = Math.min(Math.max(dt || 0, 0), 1 / 15);
       if (d <= 0) return;
+      W.carry += d;
+      const n = Math.floor((W.carry + 1e-12) / H);
+      W.carry = Math.max(0, W.carry - n * H);
+      if (!n) return;
       const jump = (a, b) => norm(sub(a, b)) > 0.3; // a recalibration, not a sweep
       const links = nextLinks.map((L) => {
         const p = prevLinks.get(L.id);
@@ -305,7 +366,7 @@
       const props = W.bodies, hb = hands.map((x) => x.h.body);
       // a sleeping prop is still there, but nothing moves it: it meets the others as if it were fixed
       const Z = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-      for (const b of [...props, ...hb]) { b.iW = rMr(b.R, b.invIb); b.Iw = rMr(b.R, b.Ib); b.im = b.asleep ? 0 : b.invM; b.iWe = b.asleep ? Z : b.iW; }
+      for (const b of [...props, ...hb]) { b.iW = rMr(b.R, b.invIb); b.Iw = rMr(b.R, b.Ib); b.im = b.asleep || b.fixed ? 0 : b.invM; b.iWe = b.asleep || b.fixed ? Z : b.iW; }
       // the arm links now (a1) and a moment ago (a0), for their velocities
       const kin = links.map((L) => ({ id: L.id, r: L.r, a: lerp(L.a0, L.a1, a1), b: lerp(L.b0, L.b1, a1), pa: lerp(L.a0, L.a1, a0), pb: lerp(L.b0, L.b1, a0) }));
       // the hands: their jaws, then pulled towards the arm
@@ -337,18 +398,18 @@
         const [T] = clampLen(mulv(b.Iw, add(scale(rotvec(mul3(T1.R, tr3(b.R))), K * K), scale(sub(turnRate(T0.R, T1.R, H), b.w), 2 * K))), HAND.torque);
         b.v = madd(b.v, F, b.invM * H); b.w = madd(b.w, mulv(b.iW, T), H);
       }
-      const awake = props.filter((b) => !b.asleep);
+      const awake = props.filter((b) => !b.asleep && !b.fixed);
       for (const b of awake) b.v = madd(b.v, G0, H);
       // waking a prop wakes what it fell asleep touching
       const wake = (b) => {
-        if (!b.asleep) return;
+        if (!b.asleep || b.fixed) return;
         b.asleep = false; b.still = 0; b.im = b.invM; b.iWe = b.iW; b.v = madd(b.v, G0, H); awake.push(b);
         for (const x of b.group || []) wake(x);
       };
       touching.length = 0;
       // wake what something moving comes near (two props at rest together don't keep waking each other)
       const moving = (x) => norm(x.v) + norm(x.w) * x.bound > SLEEP_V;
-      for (const b of props) if (b.asleep) {
+      for (const b of props) if (b.asleep && !b.fixed) {
         const near = hands.some((x) => (moving(x.h.body) || x.h.jawRate) && norm(sub(x.h.body.t, b.t)) < b.bound + x.h.body.bound + MARGIN)
           || props.some((x) => !x.asleep && x !== b && moving(x) && norm(sub(x.t, b.t)) < b.bound + x.bound + MARGIN)
           || kin.some((L) => sphereCapsule(b.t, b.bound, L.a, L.b, L.r).dist < MARGIN && norm(sub(L.a, L.pa)) + norm(sub(L.b, L.pb)) > SLEEP_V * H);
@@ -363,7 +424,7 @@
         if (!s.flat) return nOut;
         const f = mulv(b.R, s.flat);
         if (dot(nOut, f) > 0.5) {
-          if (other && other.kind !== 'hand' && dist < 0.0015) { const h = hands.find((x) => x.h.body === b).h, k = s.jaw > 0 ? 0 : 1; h.touch[k] = other; h.pads[k].push({ p: s.p, other, dist }); }
+          if (other && !other.fixed && other.kind !== 'hand' && dist < 0.0015) { const h = hands.find((x) => x.h.body === b).h, k = s.jaw > 0 ? 0 : 1; h.touch[k] = other; h.pads[k].push({ p: s.p, other, dist }); }
           return f;
         }
         return nOut;
@@ -381,9 +442,9 @@
           if (b.sdf) {
             // the mug against a link: points along the link against its shape
             for (let k = 0; k <= 8; k++) {
-              const u = k / 8, p = lerp(L.a, L.b, u), pp = lerp(L.pa, L.pb, u), loc = sub(tmulv(b.R, sub(p, b.t)), b.off), d = cupSdf(loc) - L.r;
+              const u = k / 8, p = lerp(L.a, L.b, u), pp = lerp(L.pa, L.pb, u), loc = sub(tmulv(b.R, sub(p, b.t)), b.off), d = bodyDistance(b, loc) - L.r;
               if (d >= MARGIN) continue;
-              const n = scale(mulv(b.R, cupNormal(loc)), -1);
+              const n = scale(mulv(b.R, bodyNormal(b, loc)), -1);
               cs.push(contact(b, -1, null, -1, add(p, scale(n, L.r)), n, d, scale(sub(p, pp), 1 / H), ROBOT_MU, 'L' + L.id + ':' + k));
             }
           } else SS.forEach(({ c, r, s }, i) => {
@@ -410,17 +471,19 @@
           }
           continue;
         }
-        if ((A.asleep || A.kind === 'hand') && (B.asleep || B.kind === 'hand')) continue;
+        if ((A.asleep || A.fixed) && (B.asleep || B.fixed)) continue;
         if (A.sdf) { const x = A; A = B; B = x; }
         if (B.sdf) {
           // A's spheres against the mug B
-          S.get(A).forEach(({ c, r, s }, k) => {
-            const loc = sub(tmulv(B.R, sub(c, B.t)), B.off), d = cupSdf(loc) - r;
+          const sdfContacts = (A, B) => S.get(A).forEach(({ c, r, s }, k) => {
+            const loc = sub(tmulv(B.R, sub(c, B.t)), B.off), d = bodyDistance(B, loc) - r;
             if (d >= MARGIN) return;
-            let n = mulv(B.R, cupNormal(loc));
+            let n = mulv(B.R, bodyNormal(B, loc));
             if (A.kind === 'hand') n = scale(padN(A, s, scale(n, -1), B, d), -1);
             cs.push(contact(A, k, B, -1, sub(c, scale(n, r)), n, d, null, A.kind === 'hand' ? s.mu : Math.sqrt(A.mu * B.mu), 'm' + B.id));
           });
+          sdfContacts(A, B);
+          if (A.sdf) sdfContacts(B, A); // both sides of a face/edge contact on compound props
         } else {
           // sphere against sphere (the ball and a hand): A is the prop
           if (A.kind === 'hand') { const x = A; A = B; B = x; }
@@ -473,12 +536,13 @@
         for (const x of gb) { ga.push(x); group.set(x, ga); }
       }
       for (const g of new Set(group.values())) if (g.every((b) => b.still > SLEEP_T)) for (const b of g) { b.asleep = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.group = g.filter((x) => x !== b); }
-      for (const b of awake) {
-        b._touch = false;
+      for (const b of awake) b._touch = false;
+      for (const b of props) if (!b.fixed) {
         // fallen off: back where it started after 2 s on the floor
-        if (W.table && b.t[2] < W.table.t[2] - 0.15) { b.lost += H; if (b.lost > 2) { for (const x of hands) if (x.h.grip && x.h.grip.body === b) x.h.grip = null; place(b, W.starts[props.indexOf(b)].pos, W.starts[props.indexOf(b)].R); } }
+        if (W.table && b.t[2] < W.table.t[2] - 0.15) { b.lost += H; if (b.lost > 2) { for (const x of hands) if (x.h.grip && x.h.grip.body === b) x.h.grip = null; place(b, W.starts[props.indexOf(b)].pos, W.starts[props.indexOf(b)].R); W.respawns++; } }
         else b.lost = 0;
       }
+      for (const c of W.cloths) c.step(H, W);
     }
 
     // A grip on prop P, from the pad spheres touching it (in the hand's body frame): the pinch is their middle, halfway
@@ -636,6 +700,7 @@
         return { kind: 'arm', link, side: isFinite(side) ? side : null, mat: 'aluminium' };
       }
       const o = { kind: b.kind, id: b.id, mat: (s && s.mat) || b.mat };
+      if (b.fixed) o.fixed = true;
       if (b.kind === 'hand') { o.side = b.side; o.part = s && s.jaw ? 'pad' : 'metal'; }
       return o;
     }
@@ -794,7 +859,7 @@
     let shift = [0, 0, 0];
     if (!h) return shift;
     for (const x of h.contacts) {
-      if (!['table', 'floor', 'arm', 'hand'].includes(x.other.kind)) continue;
+      if (!x.other.fixed && !['table', 'floor', 'arm', 'hand'].includes(x.other.kind)) continue;
       const F = norm(x.f);
       if (F < 1e-6) continue;
       const n = scale(x.f, 1 / F), depth = dot(sub(at, add(want, shift)), n);
@@ -809,5 +874,5 @@
   // How far a body is tipped from upright (rad), for the tests.
   const tilt = (b) => Math.acos(Math.max(-1, Math.min(1, b.R[8])));
 
-  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, MATERIALS, IMPACT, PRESS, haptics, holdBack, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, tilt, qOf, rOf, rotvec };
+  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, MATERIALS, IMPACT, PRESS, haptics, holdBack, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, pieceDistance, shapeDistance, shapeNormal, bodyDistance, bodyNormal, tilt, qOf, rOf, rotvec };
 });

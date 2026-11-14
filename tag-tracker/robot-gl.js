@@ -123,6 +123,7 @@
       part(blob([hx + 0.078, -0.048, hz], [0.002, 0.006, 0.006], 1, 1, { nu: 12, nv: 8 }), 'light'),
       part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'dark'),
     ];
+    out.head = out.body.splice(16); // sensor bar pivots at its centre; neck and torso stay in the chest frame
     bars(m, out);
     const L1 = m.upper, L2 = m.fore, G = RC.gripper(m);
     out.upper = [
@@ -190,6 +191,37 @@
     // a soft shadow: a disc of radius 1, drawn a few times, wider and fainter
     out.shadow = surface((u, v) => [v * Math.cos(TAU * u), v * Math.sin(TAU * u), 0], 32, 1, () => [0, 0, 1]);
     return out;
+  }
+
+  function compoundMeshes(pieces) {
+    const result = [];
+    for (const s of pieces) {
+      const R = s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1], p = s.p || [0, 0, 0];
+      const meshes = [];
+      if (s.type === 'cylinder') {
+        meshes.push(surface((u, v) => [s.r * Math.cos(TAU * u), s.r * Math.sin(TAU * u), (v * 2 - 1) * s.h], 32, 2, (p) => [p[0], p[1], 0]));
+        for (const sign of [-1, 1]) meshes.push(surface((u, v) => [s.r * v * Math.cos(TAU * u), s.r * v * Math.sin(TAU * u), sign * s.h], 32, 2, () => [0, 0, sign]));
+      } else {
+        for (let a = 0; a < 3; a++) for (const sign of [-1, 1]) {
+          const b = (a + 1) % 3, c = (a + 2) % 3;
+          meshes.push(surface((u, v) => { const p = [0, 0, 0]; p[a] = sign * s.h[a]; p[b] = (u * 2 - 1) * s.h[b]; p[c] = (v * 2 - 1) * s.h[c]; return p; }, 1, 1, () => { const n = [0, 0, 0]; n[a] = sign; return n; }));
+        }
+      }
+      for (const m of meshes) {
+        for (let i = 0; i < m.pos.length; i += 3) { m.pos.set(C.add(C.mulv(R, [...m.pos.slice(i, i + 3)]), p), i); m.nrm.set(C.mulv(R, [...m.nrm.slice(i, i + 3)]), i); }
+        result.push(part(m, 'ceramic'));
+      }
+    }
+    return result;
+  }
+  function clothMesh(c) {
+    const pos = new Float32Array(c.nodes.flatMap((n) => n.p)), nrm = new Float32Array(pos.length), idx = new Uint16Array(c.triangles);
+    for (let i = 0; i < idx.length; i += 3) {
+      const [a, b, d] = [...idx.slice(i, i + 3)], n = cross(sub(c.nodes[b].p, c.nodes[a].p), sub(c.nodes[d].p, c.nodes[a].p));
+      for (const k of [a, b, d]) for (let j = 0; j < 3; j++) nrm[k * 3 + j] += n[j];
+    }
+    for (let i = 0; i < nrm.length; i += 3) nrm.set(unit([...nrm.slice(i, i + 3)]) || [0, 0, 1], i);
+    return { pos, nrm, idx };
   }
 
   // Every mesh of the robot for the lengths m.
@@ -278,7 +310,7 @@ void main() {
       const M = meshes(m), gpu = [];
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
       built = {
-        M, gpu, body: up(M.body), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
+        M, gpu, body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
         hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },
         tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
       };
@@ -298,11 +330,13 @@ void main() {
       if (props) for (const g of props.gpu) free(g);
       const M = propMeshes(d), gpu = [];
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
-      props = { gpu, table: up(M.table), ball: up(M.ball), cup: up(M.cup), shadow: upload(M.shadow) };
+      props = { gpu, table: up(M.table), ball: up(M.ball), cup: up(M.cup), shadow: upload(M.shadow), extra: {} };
+      for (const [key, pieces] of Object.entries(d.compounds || {})) props.extra[key] = up(compoundMeshes(pieces));
       gpu.push(props.shadow);
       propsKey = key;
       return props;
     }
+    const clothGPU = new Map();
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
     // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach, jaw: the gripper's gap (m),
     // hot: 1 the pointer can take its gripper, 2 it is being dragged}], body,
@@ -373,10 +407,24 @@ void main() {
           drawG(PR.shadow, { R: sh.R, t: C.add(sh.t, C.mulv(sh.R, [0, 0, 0.0008])) }, sh.r * k);
         }
         gl.uniform1f(U.uAlpha, 1); gl.depthMask(true);
-        for (const b of o.props.bodies) drawList(PR[b.kind] || [], b, 0);
+        for (const b of o.props.bodies) drawList(PR.extra[b.key] || PR[b.kind] || [], b, 0, b.color ? lin(b.color) : null);
+        const liveCloths = new Set();
+        for (const c of o.props.cloths || []) {
+          liveCloths.add(c.key);
+          const mesh = clothMesh(c);
+          let g = clothGPU.get(c.key);
+          if (!g) { g = upload(mesh); clothGPU.set(c.key, g); }
+          else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
+          setMat('top', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
+        }
+        for (const [k, g] of clothGPU) if (!liveCloths.has(k)) { free(g); clothGPU.delete(k); }
       }
       if (o.body) {
         drawList(B.body, ch, o.fadeBody || 0);
+        if (!o.eyes) {
+          const pivot = [-o.m.back + 0.02, 0, o.m.up + 0.17], R = RC.Ry(-(o.headTilt || 0) * Math.PI / 180);
+          drawList(B.head, at(R, C.sub(pivot, C.mulv(R, pivot))), o.fadeBody || 0);
+        }
         for (const p of B.M.extent) keep(p);
       } else if (o.mount === 'bar') drawList(B.bar, ch, 0);
       else if (o.mount === 1 || o.mount === -1) drawList(B.mount[o.mount], ch, 0);
@@ -421,5 +469,5 @@ void main() {
     return self;
   }
 
-  return { meshes, propMeshes, create, lin };
+  return { meshes, propMeshes, compoundMeshes, clothMesh, create, lin };
 });

@@ -36,6 +36,7 @@ function fitView() {
 $('fitBtn').onclick = fitView;
 // Reset view: from camera 1's position, looking at what is plotted (or, where camera 1 isn't known, the start angle)
 function resetView() {
+  setRobotView('orbit');
   Object.assign(S.view, view0()); fitView();
   const cam = cameraInPlot(), d = cam && C.sub(cam, S.view.target), r = d ? C.norm(d) : 0;
   if (r > 0.05) Object.assign(S.view, { yaw: Math.atan2(d[0], -d[1]), pitch: Math.asin(Math.max(-1, Math.min(1, d[2] / r))), dist: r });
@@ -178,6 +179,7 @@ function draw3d() {
     const prev = pts.get(e.pointerId), dx = e.clientX - prev[0], dy = e.clientY - prev[1];
     pts.set(e.pointerId, [e.clientX, e.clientY]);
     const V = S.view;
+    if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes') { setHeadTilt(S.settings.robot.headTilt - dy * 0.18); return; }
     if (pts.size === 2) {
       const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
       if (pinch) V.dist = Math.min(50, Math.max(0.1, V.dist * pinch / d));
@@ -189,10 +191,14 @@ function draw3d() {
   const up = (e) => { safely(handDrop, e); pts.delete(e.pointerId); pinch = 0; };
   plot.addEventListener('pointerup', up); plot.addEventListener('pointercancel', up);
   plot.addEventListener('contextmenu', (e) => e.preventDefault());
-  plot.addEventListener('wheel', (e) => { e.preventDefault(); if (safely(handWheel, e)) return; S.view.dist = Math.min(50, Math.max(0.1, S.view.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
+  plot.addEventListener('wheel', (e) => { e.preventDefault(); if (safely(handWheel, e)) return; if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes') { setHeadTilt(S.settings.robot.headTilt - Math.sign(e.deltaY) * 2); return; } S.view.dist = Math.min(50, Math.max(0.1, S.view.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
   plot.addEventListener('dblclick', fitView);
   plot.addEventListener('keydown', (e) => {
     const V = S.view, k = e.key;
+    if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes' && k.startsWith('Arrow')) {
+      if (k === 'ArrowUp' || k === 'ArrowDown') { setHeadTilt(S.settings.robot.headTilt + (k === 'ArrowUp' ? 3 : -3)); saveSettings(); }
+      e.preventDefault(); return;
+    }
     if (k === 'ArrowLeft') V.yaw += 0.1; else if (k === 'ArrowRight') V.yaw -= 0.1;
     else if (k === 'ArrowUp') V.pitch = Math.min(1.5, V.pitch + 0.1); else if (k === 'ArrowDown') V.pitch = Math.max(-1.5, V.pitch - 0.1);
     else if (k === '+' || k === '=') V.dist *= 0.9; else if (k === '-') V.dist /= 0.9;

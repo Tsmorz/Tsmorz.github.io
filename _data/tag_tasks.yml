@@ -1,0 +1,480 @@
+# Teleoperation level content and physical goal tolerances (metres, seconds). Edit here, not in markup.
+---
+title: Teleoperation arcade
+subtitle: Start small. Build steady hands. Finish the housework.
+levels:
+- id: bowl
+  name: Ball in the bowl
+  hands: 1
+  skill: First grasp
+  brief: Pick up the blue ball and release it inside the wide bowl. Take your time.
+  hint: Close around the ball, lift, move over the opening, then release. A settled
+    ball counts.
+  par: 90
+  objects:
+  - key: ball
+    kind: ball
+    at:
+    - -0.09
+    - 0.18
+    - 0.02
+    label: Ball
+    color: "#2a78d6"
+  - key: bowl
+    kind: bowl
+    at:
+    - 0.04
+    - -0.17
+    - 0
+    label: Bowl
+    color: "#168a73"
+    mass: 0.22
+  goals:
+  - type: inside
+    object: ball
+    target: bowl
+    label: Release the ball in the bowl
+- id: precision
+  name: A smaller target
+  hands: 1
+  skill: Precision
+  brief: Put the ball inside the mug. The opening is only a little wider than the
+    ball.
+  hint: Look down through the head camera to line up the opening. Motion × 0.5 helps
+    with tags.
+  par: 120
+  objects:
+  - key: ball
+    kind: ball
+    at:
+    - -0.09
+    - 0.18
+    - 0.02
+    label: Ball
+    color: "#2a78d6"
+  - key: cup
+    kind: cup
+    at:
+    - 0.03
+    - -0.18
+    - 0
+    label: Mug
+    color: "#2a78d6"
+  goals:
+  - type: inside
+    object: ball
+    target: cup
+    label: Release the ball in the mug
+- id: sort
+  name: Sort the delivery
+  hands: 1
+  skill: Placement
+  brief: Move each labelled block to its matching outline. All three must stay there
+    together.
+  hint: Lift clear of the other blocks. Letters identify the targets as well as colour.
+  par: 150
+  objects:
+  - key: a
+    kind: block
+    at:
+    - -0.12
+    - 0.25
+    - 0.025
+    label: A
+    color: "#2a78d6"
+    mass: 0.09
+  - key: b
+    kind: block
+    at:
+    - -0.12
+    - 0
+    - 0.025
+    label: B
+    color: "#168a73"
+    mass: 0.09
+  - key: c
+    kind: block
+    at:
+    - -0.12
+    - -0.25
+    - 0.025
+    label: C
+    color: "#8574d6"
+    mass: 0.09
+  goals:
+  - label: A in its outline
+    object: a
+    type: place
+    at:
+    - 0.1
+    - 0.25
+    - 0.025
+    tolerance:
+    - 0.028
+    - 0.028
+    - 0.01
+    upright: true
+  - label: B in its outline
+    object: b
+    type: place
+    at:
+    - 0.1
+    - 0
+    - 0.025
+    tolerance:
+    - 0.028
+    - 0.028
+    - 0.01
+    upright: true
+  - label: C in its outline
+    object: c
+    type: place
+    at:
+    - 0.1
+    - -0.25
+    - 0.025
+    tolerance:
+    - 0.028
+    - 0.028
+    - 0.01
+    upright: true
+- id: tower
+  name: Build a tower
+  hands: 1
+  skill: Balance
+  brief: Stack A, B, then C on the marked base. Release each block without toppling
+    the stack.
+  hint: Place the bottom block first. Lower gently; the blocks collide and can slide
+    or fall.
+  par: 210
+  objects:
+  - key: a
+    kind: block
+    at:
+    - -0.12
+    - 0.23
+    - 0.025
+    label: A
+    color: "#2a78d6"
+    mass: 0.09
+  - key: b
+    kind: block
+    at:
+    - -0.12
+    - 0
+    - 0.025
+    label: B
+    color: "#168a73"
+    mass: 0.09
+  - key: c
+    kind: block
+    at:
+    - -0.12
+    - -0.23
+    - 0.025
+    label: C
+    color: "#8574d6"
+    mass: 0.09
+  goals:
+  - label: A in the tower
+    object: a
+    type: place
+    at:
+    - 0.08
+    - 0
+    - 0.025
+    tolerance:
+    - 0.018
+    - 0.018
+    - 0.008
+    upright: true
+  - label: B in the tower
+    object: b
+    type: place
+    at:
+    - 0.08
+    - 0
+    - 0.075
+    tolerance:
+    - 0.018
+    - 0.018
+    - 0.008
+    upright: true
+  - label: C in the tower
+    object: c
+    type: place
+    at:
+    - 0.08
+    - 0
+    - 0.125
+    tolerance:
+    - 0.018
+    - 0.018
+    - 0.008
+    upright: true
+- id: handoff
+  name: Pass it on
+  hands: 2
+  skill: Hand coordination
+  brief: Grasp the ball with each hand in turn, then put it in the bowl.
+  hint: The receiving hand closes before the other opens. With one mouse, switch Left
+    / Right between moves.
+  par: 180
+  objects:
+  - key: ball
+    kind: ball
+    at:
+    - -0.09
+    - 0.18
+    - 0.02
+    label: Ball
+    color: "#2a78d6"
+  - key: bowl
+    kind: bowl
+    at:
+    - 0.05
+    - -0.2
+    - 0
+    label: Bowl
+    color: "#168a73"
+    mass: 0.22
+  goals:
+  - type: inside
+    object: ball
+    target: bowl
+    handoff: true
+    label: Both hands grasped the ball; ball in bowl
+- id: tray
+  name: Room service
+  hands: 2
+  skill: Carry together
+  brief: Lift the loaded tray with both hands, carry it to the outline, and set it
+    down with the ball aboard.
+  hint: Pinch opposite rims, then choose Both to move the hands together. Keep the
+    tray level.
+  par: 240
+  objects:
+  - key: tray
+    kind: tray
+    at:
+    - -0.105
+    - 0
+    - 0.006
+    label: Tray
+    color: "#168a73"
+    mass: 0.35
+  - key: ball
+    kind: ball
+    at:
+    - -0.105
+    - 0
+    - 0.038
+    label: Ball
+    color: "#2a78d6"
+  goals:
+  - label: Tray carried with both hands and set down
+    object: tray
+    type: place
+    at:
+    - 0.115
+    - 0
+    - 0.006
+    tolerance:
+    - 0.026
+    - 0.035
+    - 0.012
+    dual: true
+    upright: true
+  - label: Ball still on the tray
+    object: ball
+    type: place
+    at:
+    - 0.115
+    - 0
+    - 0.038
+    tolerance:
+    - 0.07
+    - 0.16
+    - 0.025
+- id: dishwasher
+  name: Load the dishwasher
+  hands: 2
+  skill: Orient and insert
+  brief: Load three plates upright into the open dishwasher rack. Fit one plate into
+    each slot.
+  hint: Pinch a plate near its rim. Roll the wrist 90° so the plate faces across
+    the rack slots, then lower and release.
+  par: 360
+  objects:
+  - key: rack
+    kind: rack
+    at:
+    - 0.11
+    - -0.16
+    - 0
+    label: Dishwasher rack
+    color: "#168a73"
+    fixed: true
+    mass: 1
+    mat: aluminium
+  - key: plate0
+    kind: plate
+    at:
+    - -0.11
+    - 0.18
+    - 0.006
+    label: '1'
+    color: "#2a78d6"
+    mass: 0.12
+    mat: ceramic
+  - key: plate1
+    kind: plate
+    at:
+    - -0.11
+    - 0.18
+    - 0.022
+    label: '2'
+    color: "#168a73"
+    mass: 0.12
+    mat: ceramic
+  - key: plate2
+    kind: plate
+    at:
+    - -0.11
+    - 0.18
+    - 0.038
+    label: '3'
+    color: "#8574d6"
+    mass: 0.12
+    mat: ceramic
+  goals:
+  - label: Plate 1 upright in slot 1
+    object: plate0
+    type: place
+    at:
+    - 0.11
+    - -0.23
+    - 0.073
+    tolerance:
+    - 0.028
+    - 0.022
+    - 0.012
+    upright: false
+  - label: Plate 2 upright in slot 2
+    object: plate1
+    type: place
+    at:
+    - 0.11
+    - -0.16
+    - 0.073
+    tolerance:
+    - 0.028
+    - 0.022
+    - 0.012
+    upright: false
+  - label: Plate 3 upright in slot 3
+    object: plate2
+    type: place
+    at:
+    - 0.11
+    - -0.09
+    - 0.073
+    tolerance:
+    - 0.028
+    - 0.022
+    - 0.012
+    upright: false
+- id: laundry
+  name: Fold the laundry pile
+  hands: 2
+  skill: Deformable objects
+  brief: Take each towel from the pile, fold it in half, and place the three folded
+    towels on the marked stack.
+  hint: Use both hands on opposite corners of an edge. Lift that edge over the far
+    edge, lower, release, then stack. The whole edge must line up.
+  par: 600
+  objects: []
+  goals:
+  - type: fold
+    object: towel0
+    label: Towel 1 folded and stacked
+    at:
+    - 0.1
+    - -0.22
+    - 0.018
+    tolerance:
+    - 0.07
+    - 0.07
+    - 0.045
+  - type: fold
+    object: towel1
+    label: Towel 2 folded and stacked
+    at:
+    - 0.1
+    - -0.22
+    - 0.018
+    tolerance:
+    - 0.07
+    - 0.07
+    - 0.045
+  - type: fold
+    object: towel2
+    label: Towel 3 folded and stacked
+    at:
+    - 0.1
+    - -0.22
+    - 0.018
+    tolerance:
+    - 0.07
+    - 0.07
+    - 0.045
+  cloths:
+  - key: towel0
+    label: Towel 1
+    at:
+    - -0.075
+    - 0.16
+    - 0.0
+    width: 0.2
+    height: 0.24
+    color: "#2a78d6"
+  - key: towel1
+    label: Towel 2
+    at:
+    - -0.075
+    - 0.16
+    - 0.008
+    width: 0.2
+    height: 0.24
+    color: "#168a73"
+  - key: towel2
+    label: Towel 3
+    at:
+    - -0.075
+    - 0.16
+    - 0.016
+    width: 0.2
+    height: 0.24
+    color: "#8574d6"
+  markers:
+  - at:
+    - 0.1
+    - -0.22
+    - 0.001
+    size:
+    - 0.16
+    - 0.28
+    label: Folded stack
+controls:
+  intro: Play with tags, drag the grippers, or use the hand controls. There is no
+    time limit. All levels are available to practise.
+  keyboard: W/S forward/back; A/D sideways; Q/E lift/lower; Space grip; J/K tilt; U/O roll.
+    Use Left, Right or Both below.
+  scoring: One star for finishing, one for the target time, one for no dropped props.
+    Best results stay in this browser.
+camera:
+  label: Robot eyes
+  help: A camera mounted on the robot’s head. Tilt up/down with the slider or ↑/↓
+    while the 3D view is focused.
+physics: Rigid props collide and grips can slip. Towels use a coarse deformable mesh
+  with self-contact; fabric is an approximation.
