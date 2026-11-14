@@ -129,7 +129,8 @@ plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') &
 // The robot this frame: the chest's pose and each arm's joint angles. With no tracks yet it is a preview, standing
 // in its start pose a little way in front of the camera.
 function robotReady(m,side){
-  const ready=typeof currentTask==='function'&&gameView()&&currentTask().ready;if(!ready)return RCORE.HOME;
+  // every task starts from the same pose (tag_tasks.yml `ready`); elsewhere the arms hang in HOME
+  const ready=typeof gameView==='function'&&gameView()&&TASK_DATA.ready;if(!ready)return RCORE.HOME;
   const key=JSON.stringify([m,ready]),cached=RB.ready.get(side);if(cached?.key===key)return cached.q;
   const home=RCORE.fk(m,side,RCORE.HOME),d=ready.offset;
   const target={R:RCORE.Ry((ready.pitch||0)*Math.PI/180),t:C.add(home.wrist,[d[0],side*d[1],d[2]])};
@@ -536,7 +537,7 @@ function driveOf(a) {
   if (!d) {
     const sc = RB.scene, k = RCORE.fk(sc.m, a.side, a.q);
     d = { R: C.mul3(sc.chest.R, k.R), t: RCORE.place(sc.chest, k.wrist), open: a.open === undefined ? 1 : a.open, frame: S.settings.frame };
-    TB.drive.set(a.side, d); if(gameView()&&currentTask().ready)RB.prev.set('drive'+a.side,{q:a.q.slice(),elbow:k.elbow,psi:0,side:a.side}); paintRobotBtns();
+    TB.drive.set(a.side, d); if(gameView()&&TASK_DATA.ready)RB.prev.set('drive'+a.side,{q:a.q.slice(),elbow:k.elbow,psi:0,side:a.side}); paintRobotBtns();
   }
   TB.lastSide = a.side;
   return d;

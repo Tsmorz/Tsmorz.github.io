@@ -427,6 +427,10 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 .workbench-guide details{margin:12px 0;font-size:13px;line-height:1.5}.workbench-guide summary{cursor:pointer;font-weight:600}.workbench-guide ol,.workbench-guide ul{padding-left:21px}.workbench-guide li{margin:7px 0}.workbench-guide .guide-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.workbench-guide .hint{font-size:12px}
 .game-actions{position:absolute;top:16px;right:16px;display:flex;gap:8px;align-items:center;pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:6px}.game-actions input{width:90px;accent-color:var(--accent)}.game-actions button{min-height:40px}.game-actions label{display:flex;align-items:center}
 #taskLabels .task-label[data-active=true]{border-color:var(--accent);color:var(--accent);font-weight:700}
+#taskLabels .task-label[data-pin]{transform:translate(-50%,calc(-100% - 22px))}
+#taskLabels .task-label[data-pin]::after{content:'';position:absolute;left:50%;top:100%;width:2px;height:22px;margin-left:-1px;background:var(--accent)}
+#taskLabels .task-label[data-pin]::before{content:'';position:absolute;left:50%;top:calc(100% + 22px);width:10px;height:10px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--accent);border:2px solid var(--panel)}
+#taskLabels .task-label[data-pin=target]::before{background:var(--panel);border-color:var(--accent)}
 #gameSettings{width:min(850px,calc(100vw - 24px));max-height:90dvh;background:var(--panel);color:var(--ink);padding:0;border:1px solid var(--rule2);border-radius:4px}#gameSettings::backdrop{background:var(--well);opacity:.85}
 #gameSettings>.card-h{position:sticky;top:0;background:var(--panel);z-index:2}#gameSettingsTools{padding:10px}#gameSettingsTools #taskPanel{max-width:none;border:0}#gameSettingsTools #robotPlayControls{padding:12px}#gameSettingsTools .task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}#gameSettingsTools .task-select{display:flex}#gameSettingsTools .vbtns{display:flex;gap:6px;flex-wrap:wrap;padding:12px}#gameSettingsTools>.card-h{display:block;padding:12px}#gameSettingsTools>.card-h .toolbar{margin-top:10px}#gameSettingsTools .seg:has([data-show3d]),#gameSettingsTools #propsField{display:none}
 @media(max-width:720px){body.game-screen main{padding:10px}#gameHUD{inset:10px}body.game-screen #view-track .plot3d{inset:0 0 40%;height:60%!important}.workbench-guide{top:60%;left:0;right:0;bottom:0;width:auto;height:40%;padding:12px;border-radius:0 0 4px 4px}.workbench-guide .task-times{flex-direction:row;align-items:baseline;gap:10px;margin:6px 0}.workbench-guide .task-times time{font-size:18px}.workbench-guide #guideGoals{font-size:11px;line-height:1.2}.workbench-guide h1{font-size:18px;margin:4px 0 6px}.workbench-guide #gameObjective,.workbench-guide #gameChapter{display:none}.workbench-guide #guideGoals{margin:7px 0}.workbench-guide #guideGoals li{padding:2px 0;margin:0}.workbench-guide .live-guide{padding:8px 0;margin:8px 0}.workbench-guide .live-guide p{font-size:13px}.workbench-guide .select{margin-bottom:9px}.game-actions{top:8px;right:8px;gap:5px;padding:4px}.game-actions input{width:65px}.game-actions .btn{font-size:12px;padding:0 9px}#gameSettingsTools .task-levels{display:none}}
@@ -1035,12 +1039,12 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
      run `task versions` (check:fast fails until you do) -->
 <script src="tracker-core.js?v=96749a42"></script>
 <script src="robot-core.js?v=5767e370"></script>
-<script src="robot-gl.js?v=21da22ae"></script>
+<script src="robot-gl.js?v=ed14160f"></script>
 <script src="physics-core.js?v=4ff41ba7"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
 <script src="cable-core.js?v=2ad7bd56"></script>
 <script src="haptic-core.js?v=d1c04643"></script>
-<script src="cloth-core.js?v=8c195efd"></script>
+<script src="cloth-core.js?v=96b51383"></script>
 <script src="controller-link.js?v=829d5a6d"></script>
 <script src="score-core.js?v=e43f050f"></script>
 <script src="charging-core.js?v=6ab3f06c"></script>
@@ -1050,8 +1054,8 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 <script src="app-state.js?v=8b0769d9"></script>
 <script src="app-cameras.js?v=4caf5a11"></script>
 <script src="app-plot.js?v=ced3cea6"></script>
-<script src="app-robot.js?v=c553b2d3"></script>
-<script src="app-tasks.js?v=0d53efdf"></script>
+<script src="app-robot.js?v=70b586c4"></script>
+<script src="app-tasks.js?v=1d71b744"></script>
 <script src="app-views.js?v=7ae2c0a4"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>

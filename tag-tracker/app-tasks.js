@@ -100,13 +100,14 @@ function paintTaskLabels(o,w,h){
   }
   for(const cloth of W.cloths)if(cloth.kind==='towel'&&TB.game.level.goals.some(r=>r.type==='fold'&&r.folds===2)){
     const second=cloth.foldStage===1,state=TASK.guide?.state,names=TB.game.level.guide.labels;
-    if(state!=='done'&&state!=='settle'&&state!=='towel_release')for(const handle of ClothCore.handles(cloth)){
-      labels.push({p:C.add(handle.point,C.mulv(W.table.R,[0,0,.026])),text:second?names.second:names.first,active:true});
-      labels.push({p:C.add(handle.target,C.mulv(W.table.R,[0,0,.012])),text:names.target,active:false});
-    }
+    // One marker per corner still to take, on its exact grab point; destinations only once both are held.
+    const up=C.mulv(W.table.R,[0,0,cloth.halfThickness+cloth.pile]);
+    if(['towel_first_grab','towel_second_grab','towel_layers','towel_tidy'].includes(state))for(const handle of ClothCore.handles(cloth))if(!cloth.pins.has(String(handle.side)))labels.push({p:C.add(handle.point,up),text:second?names.second:names.first,active:true,pin:'grab'});
+    if(['towel_first_move','towel_second_move'].includes(state))for(const handle of ClothCore.handles(cloth))labels.push({p:C.add(handle.target,up),text:names.target,active:true,pin:'target'});
   }
-  for(const r of markerList())labels.push({p:C.add(W.table.t,C.mulv(W.table.R,[r.at[0],r.at[1]-r.size[1]/2-.02,.004])),text:r.label,active:TASK.guide&&TASK.guide.at&&Math.hypot(r.at[0]-TASK.guide.at[0],r.at[1]-TASK.guide.at[1])<.025});
-  el.innerHTML=labels.map(l=>{const p=o.project(l.p);return p&&p[0]>0&&p[0]<w&&p[1]>0&&p[1]<h?`<span class="task-label" data-active="${!!l.active}" style="left:${p[0].toFixed(1)}px;top:${p[1].toFixed(1)}px">${escapeHtml(l.text)}</span>`:'';}).join('');
+  // While the towel's corner markers show, they are the only thing to aim at: the pad's own label would cover one.
+  if(!labels.some(l=>l.pin))for(const r of markerList())labels.push({p:C.add(W.table.t,C.mulv(W.table.R,[r.at[0],r.at[1]-r.size[1]/2-.02,.004])),text:r.label,active:TASK.guide&&TASK.guide.at&&Math.hypot(r.at[0]-TASK.guide.at[0],r.at[1]-TASK.guide.at[1])<.025});
+  el.innerHTML=labels.map(l=>{const p=o.project(l.p);return p&&p[0]>0&&p[0]<w&&p[1]>0&&p[1]<h?`<span class="task-label" data-active="${!!l.active}"${l.pin?` data-pin="${l.pin}"`:''} style="left:${p[0].toFixed(1)}px;top:${p[1].toFixed(1)}px">${escapeHtml(l.text)}</span>`:'';}).join('');
 }
 function chosenHands() {
   const sc = RB.scene;

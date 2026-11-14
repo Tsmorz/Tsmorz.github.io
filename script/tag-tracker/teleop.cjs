@@ -5,13 +5,14 @@ module.exports = function ({ check, near }) {
   const P = require(root + '/tag-tracker/physics-core'), T = require(root + '/tag-tracker/task-core'), Cloth = require(root + '/tag-tracker/cloth-core'), GL = require(root + '/tag-tracker/robot-gl');
   const data = spawnSync('ruby', ['-ryaml', '-rjson', '-e', 'puts JSON.generate(YAML.load_file(ARGV[0]))', path.join(root, '_data/tag_tasks.yml')], { encoding: 'utf8' });
   if (data.status !== 0) throw new Error(data.stderr);
-  const levels = JSON.parse(data.stdout).levels, I = [1,0,0,0,1,0,0,0,1], model = R.model(), G = R.gripper(model);
+  const taskData = JSON.parse(data.stdout), levels = taskData.levels, I = [1,0,0,0,1,0,0,0,1], model = R.model(), G = R.gripper(model);
   const table = { R: I, t: [0,0,0], size: [.5,.9], thick: .03 };
   const run = (W, n = 60) => { for (let i = 0; i < n; i++) W.step(1/60); };
   const create = (id) => T.create(levels.find((l) => l.id === id), table, G);
   const put = (W, b, at, rot = I) => { b.R = rot.slice(); b.q = P.qOf(rot); b.t = C.sub(at, C.mulv(rot, b.off)); b.v = [0,0,0]; b.w = [0,0,0]; b.asleep = false; b.still = 0; };
   const finish = (g, n = 60) => { for (let i = 0; i < n; i++) { g.world.step(1/60); T.update(g,1/60,true); } };
   check(levels.map(l=>l.id).join(',')==='bowl,sort,tray,cable,laundry'&&levels.slice(0,2).every(l=>l.hands===1)&&levels.slice(2).every(l=>l.hands===2), 'exactly five tasks progress from a first grasp to two-handed balance, charging and a towel');
+  check(taskData.ready&&taskData.ready.offset.length===3&&levels.every(l=>!l.ready&&!(l.guided&&l.guided.ready)), 'every task starts from the one shared ready pose; no task carries its own');
   check(levels.find(l=>l.id==='sort').objects.length===2&&T.mission(levels.find(l=>l.id==='sort'),'guided').objects.length===2,'both modes offer exactly two blocks');
   for (const l of levels) {
     const g = create(l.id), W = g.world, keys = new Set([...W.bodies, ...W.cloths].map((b) => b.key));
@@ -95,7 +96,7 @@ module.exports = function ({ check, near }) {
   W.reset();const N=cloth.N;
   for(let j=0;j<N;j++)for(let i=0;i<N;i++)cloth.nodes[j*N+i].p=[Math.abs((i/(N-1)-.5)*.2), (j/(N-1)-.5)*.24, .005+(i<N/2?.005:0)];
   check(Cloth.folded(cloth).x && !Cloth.folded(cloth).y && Cloth.folded(cloth).compact, 'aligned opposite edges detect a half fold');
-  const mesh=GL.clothMesh(cloth);check([...mesh.pos,...mesh.nrm].every(Number.isFinite) && mesh.idx.length===(N-1)**2*6, 'the cloth surface has finite normals and two triangles per cell');
+  const mesh=GL.clothMesh(cloth);check([...mesh.pos,...mesh.nrm].every(Number.isFinite) && mesh.idx.length===(3*(N-1))**2*6 && Math.max(...mesh.idx)*3<mesh.pos.length, 'the towel is drawn through a three-times finer smooth surface with finite normals and two triangles per cell');
   W.reset();check(cloth.pins.size===0 && cloth.touched.size===0 && near(cloth.nodes[0].p,[-.1,-.12,Cloth.radius],1e-12), 'restart restores cloth, releases patches and clears hand history');
   g=create('laundry');const towel=g.world.cloths[0];for(const n of towel.nodes)n.p=[.1,-.22,.01];towel.touched=new Set([1,-1]);T.update(g,1,true);
   check(!g.steps[0], 'a crumpled point cannot pass as a twice-folded towel');

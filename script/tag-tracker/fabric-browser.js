@@ -17,7 +17,7 @@
     const starts=[1,-1].map(side=>{const pin=c.pins.get(String(side)),row=side===1?c.N-1:0,from=g.local(C.add(W.handPose(side).t,C.mulv(W.handPose(side).R,pin.local))),edge=g.local(C.add(c.nodes[row*c.N].p,c.nodes[row*c.N+c.N-1].p).map(v=>v/2)),crease=g.local(c.nodes[row*c.N+Math.floor(c.N/2)].p);return {side,pin,from,shift:second?crease[0]-from[0]:-distance};});
     await motion(6,t=>{for(const {side,pin,from,shift}of starts){const d=drives[side];d.R=C.mul3(T.R,[1,0,0,0,1,0,0,0,1]);const p=C.add(from,[shift*.5*(1-Math.cos(Math.PI*t)),0,rise*Math.sin(Math.PI*t)+(second?.04:.025)*t]);d.t=C.sub(at(p),C.mulv(d.R,pin.local));if(c.pins.get(String(side))!==pin)throw Error('fabric grip slipped: '+JSON.stringify({second,t,side,target:d,hand:W.handPose(side),pin,pins:[...c.pins].map(([s,p])=>[s,p.i,p.layers]),load:c.reactions[side]}));}});
   };
-  assert(c.kind==='towel'&&c.halfThickness===.003&&$('taskLabels').textContent.includes('First fold corner'),'the task displays a thick towel and first-fold corner labels');
+  assert(c.kind==='towel'&&c.halfThickness===.003&&$('taskLabels').textContent.includes(TASK_DATA.levels.find(l=>l.id==='laundry').guide.labels.first),'the task displays a thick towel and first-fold corner labels');
   for(const [side,i]of [[1,c.N*c.N-1],[-1,c.N-1]])await pinch(side,i);
   await fold(c.width,c.width/2);assert(!g.complete,'one held fold cannot finish');
   for(const d of Object.values(drives))d.open=1;await physicsWait(4);for(const d of Object.values(drives))d.t=C.add(d.t,vec([0,0,.16]));await wait(900);

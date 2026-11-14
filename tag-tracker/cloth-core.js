@@ -26,7 +26,7 @@
   const radius = 0.0025, N = 9, ITER = 5;
   function towel(spec, table) {
     const shirt = spec.kind === 'shirt', N = spec.resolution || (shirt ? 21 : 9), iterations = spec.iterations || (shirt ? 8 : ITER);
-    const bendCompliance=spec.bend_compliance ?? .5, radius=Math.max(.001,Math.min(.012,(spec.thickness || .005)/2));
+    const bendCompliance=spec.bend_compliance ?? .5,bendMemory=spec.bend_memory||0, radius=Math.max(.001,Math.min(.012,(spec.thickness || .005)/2));
     const width = spec.width || (shirt ? .28 : .20), height = spec.height || (shirt ? .50 : .24), rows = shirt ? Math.round((N-1)*height/width)+1 : N;
     const start = [], material = [], edges = [], triangles = [], pins = new Map(), grid = new Map();
     const bodySpan = spec.body_span || .18;
@@ -55,7 +55,7 @@
     const linked = new Set(), neighbours = start.map((_,i)=>new Set([i]));
     const link = (a,b,compliance) => {
       const key = Math.min(a,b)+':'+Math.max(a,b); if(linked.has(key))return;linked.add(key);
-      edges.push({a,b,rest:len(sub(start[a],start[b])),compliance,lambda:0});
+      const rest=len(sub(start[a],start[b]));edges.push({a,b,rest,rest0:rest,compliance,lambda:0});
       if(compliance<1e-6){neighbours[a].add(b);neighbours[b].add(a);}
     };
     for(let j=0;j<rows;j++)for(let i=0;i<N;i++) {
@@ -79,15 +79,17 @@
       sleeves:[material.flatMap((p,i)=>p[1]>bodySpan/2+.005?[i]:[]),material.flatMap((p,i)=>p[1]<-bodySpan/2-.005?[i]:[])]
     }:null;
     const c = { layerCompliance:spec.pile ? .005 : 0,foldAxes:spec.fold_axes||'xy',halfThickness:radius,pile:spec.pile||0,foldStage:0,firstHands:new Set(),foldHands:new Set(),restTime:0, key:spec.key,kind:shirt?'shirt':'towel',color:spec.color,label:spec.label,N,rows,width,height,bodySpan,triangles,edges,pins,material,landmarks,table,weights,reactions:{},nodes:[],folds:new Set(),touched:new Set() };
-    c.reset = () => { c.nodes = start.map((p) => ({ p:p.slice(),v:[0,0,0] }));pins.clear();c.folds.clear();c.touched.clear();c.reactions={};c.restTime=0;c.foldStage=0;c.firstHands.clear();c.foldHands.clear(); };
+    c.reset = () => { c.nodes = start.map((p) => ({ p:p.slice(),v:[0,0,0] }));pins.clear();c.folds.clear();c.touched.clear();c.reactions={};c.restTime=0;c.foldStage=0;c.firstHands.clear();c.foldHands.clear();for(const e of edges)e.rest=e.rest0; };
     c.reset();
     c.step = (dt, W) => {
       const ns = c.nodes;
       // Both jaws must surround a patch. Closing captures it, opening releases it; no cursor-to-cloth teleport.
       for (const [side, h] of Object.entries(W.hands)) {
         const pose = W.handPose(side), pin = pins.get(side), gap = h.gap;
+        if (h.target > 0.012) h.clothSlip = false;
         if (pin && (h.target > 0.012 || h.grip)) { pins.delete(side); continue; }
-        if (!pin && !h.grip && h.target < 0.012 && h.gap < .018 && !W.cloths.some((q) => q !== c && q.pins.has(side))) {
+        // Jaws that lost their patch while closed stay empty until reopened, rather than taking whatever is nearest.
+        if (!pin && !h.grip && !h.clothSlip && h.target < 0.012 && h.gap < .018 && !W.cloths.some((q) => q !== c && q.pins.has(side))) {
           let best = null;
           for (const cloth of W.cloths) cloth.nodes.forEach((n, i) => {
             if ([...cloth.pins.values()].some((p) => p.points.some(q=>q.ids.includes(i)))) return;
@@ -152,7 +154,11 @@
       for (const e of edges) e.lambda = 0;
       const collide = (n, i) => {
         if (W.tableBox) {
-          const k = P.sphereBox(n.p, radius, W.tableBox, W.tableBox.h);
+          const B=W.tableBox,l=mt(B.R,sub(n.p,B.t));
+          // Fabric pressed into the slab from above leaves through the top, never the nearest face: a grip
+          // lowering a corner onto the table must not pop it out underneath.
+          if(Math.abs(l[0])<B.h[0]&&Math.abs(l[1])<B.h[1]&&Math.abs(l[2])<B.h[2]&&mt(B.R,sub(old[i],B.t))[2]>=-B.h[2])n.p=add(n.p,mv(B.R,[0,0,B.h[2]-l[2]]));
+          const k = P.sphereBox(n.p, radius, B, B.h);
           if (k.dist < 0) {
             n.p = add(n.p, mul(k.n, -k.dist)); normalAt(i,k.n);
             if (mt(table.R, k.n)[2] > 0.9) tablePush.set(i, (tablePush.get(i) || 0) - k.dist);
@@ -245,6 +251,10 @@
       applyPins();ns.forEach(collide);
       // Recompute velocities after all contact projections, rather than feeding a late correction into the next step.
       ns.forEach((n,i)=>{n.v=mul(sub(n.p,old[i]),Math.exp(-.9*dt)/dt);for(const normal of contactNormals.get(i)||[])n.v=sub(n.v,mul(normal,.85*dot(n.v,normal)));if(hits.has(i)){const v=mt(table.R,n.v);v[0]*=.82;v[1]*=.82;n.v=mv(table.R,v);}const speed=len(n.v);if(speed>2)n.v=mul(n.v,2/speed);});
+      // Fabric keeps a crease: once released, where both ends of a bending link lie against something (table
+      // or another layer), its rest length creeps toward the current shape, so a fold drapes smoothly while
+      // moving yet stays folded. Held or hanging fabric takes no set; stretch and shear never creep.
+      if(bendMemory&&!pins.size)for(const e of edges)if(e.compliance>=1e-6&&hits.has(e.a)&&hits.has(e.b)){const L=len(sub(ns[e.a].p,ns[e.b].p));e.rest=Math.max(e.rest0*.2,Math.min(e.rest0,e.rest+(L-e.rest)*Math.min(1,bendMemory*dt)));}
       c.reactions = {};const rollTorque={};
       for (const a of attachments) {
         const force=mul(a.lambda,1/(dt*dt)),onHand=mul(force,-1),point=a.ids.reduce((p,i,k)=>add(p,mul(ns[i].p,a.w[k])),[0,0,0]);
@@ -256,7 +266,7 @@
       // Unresolved bending inside a terry pad patch yields under the measured contact moment.
       // Translation and sideways twist remain constrained; no fabric node follows a task target.
       if(c.pile)for(const [side,pin]of pins){const torque=rollTorque[side]||0,rate=Math.sign(torque)*Math.min(3,600*Math.max(0,Math.abs(torque)-.0004));pin.roll+=rate*dt;}
-      for(const [side,pin] of pins){const pose=W.handPose(side);const centre=pin.points.filter((_,i)=>i%3===0).reduce((p,q)=>add(p,mul(ns[q.ids[0]].p,1/pin.layers)),[0,0,0]);if(len(sub(centre,add(pose.t,mv(pose.R,pin.local))))>.035)pins.delete(side);}
+      for(const [side,pin] of pins){const pose=W.handPose(side);const centre=pin.points.filter((_,i)=>i%3===0).reduce((p,q)=>add(p,mul(ns[q.ids[0]].p,1/pin.layers)),[0,0,0]);if(len(sub(centre,add(pose.t,mv(pose.R,pin.local))))>.035){pins.delete(side);W.hands[side].clothSlip=true;}}
       if (ns.every((n) => n.p[2] < table.t[2] - 0.15) && pins.size === 0) { c.reset(); W.respawns++; }
     };
     return c;

@@ -54,4 +54,33 @@ module.exports = function ({check}) {
   for(const side of Object.keys(poses))delete poses[side];W.setRobot({hands:[]});W.step(1/60);
   for(const [i,n]of c.nodes.entries()){const p=c.material[i];n.p=[-.21+Math.abs(p[0]),p[1],.005+(p[0]<0?.01:0)];n.v=[0,0,0];}
   pinch(1,c.N-1);check(c.pins.get('1').layers>=2&&c.pins.get('1').points.length>=6,'closed pads clamp both actual layers of a doubled edge, with one finite patch per layer');
+  // A player's first fold: pinch the marked corners, lift straight up, carry them over the near corners, lower, release.
+  const fresh=()=>{const game=T.create(T.mission(raw,'guided'),table,G);return {game,W:game.world,c:game.world.cloths[0],poses:{}};};
+  const play=(s,lift,speed,lower=lift-.01)=>{
+    const tick=()=>{s.W.setRobot({hands:Object.entries(s.poses).map(([side,p])=>({side:+side,pose:{R:I,t:p.t},opening:p.open}))});s.W.step(1/60);T.update(s.game,1/60,true);};
+    const move=(d,seconds)=>{const from=Object.fromEntries(Object.entries(s.poses).map(([k,p])=>[k,p.t]));const n=Math.max(1,Math.round(seconds*60));for(let i=1;i<=n;i++){for(const k in from)s.poses[k].t=C.add(from[k],d.map(v=>v*i/n));tick();}};
+    const N=s.c.N,corner={1:N*N-1,[-1]:N-1},near={1:(N-1)*N,[-1]:0};
+    for(const side of [1,-1])s.poses[side]={t:C.add(s.c.nodes[corner[side]].p,[0,0,.2]),open:1};for(let i=0;i<30;i++)tick();
+    for(const side of [1,-1])s.poses[side].t=C.add(s.c.nodes[corner[side]].p,[0,0,.105]);for(let i=0;i<40;i++)tick();
+    for(const side of [1,-1])s.poses[side].open=0;for(let i=0;i<40;i++)tick();
+    const held=s.c.pins.size;move([0,0,lift],lift/speed);
+    const dx=[1,-1].reduce((sum,side)=>sum+(s.c.nodes[near[side]].p[0]-s.c.nodes[corner[side]].p[0])/2,0);move([dx,0,0],Math.abs(dx)/speed);
+    move([0,0,-lower],lower/speed);return {held,tick,move};
+  };
+  {const s=fresh(),p=play(s,.08,.2);check(p.held===2&&s.c.pins.size===2,'a player can pinch both marked corners and carry them across without the grip slipping');
+    for(const side of [1,-1])s.poses[side].open=1;for(let i=0;i<10;i++)p.tick();p.move([0,0,.12],.5);for(let i=0;i<150;i++)p.tick();
+    const f=Cloth.folded(s.c),bottom=Math.min(...s.c.nodes.map(n=>n.p[2]));
+    check(f.x&&f.compact&&s.c.foldStage===1&&T.guidance(s.game).state==='towel_second_grab'&&bottom>0,'a straight lift, carry, lower and release over the near corners registers the first fold: '+JSON.stringify({edges:f.edges,span:f.span,bottom,stage:s.c.foldStage}));
+    check(s.c.edges.some(e=>e.compliance>=1e-6&&e.rest<e.rest0*.8),'a released fold keeps its crease: bending rest lengths remember the fold');
+    s.game.reset();check(s.c.edges.every(e=>e.rest===e.rest0),'restart forgets the crease along with the fold');}
+  {const s=fresh(),p=play(s,.04,.2,.15);const below=s.c.nodes.filter(n=>n.p[2]<s.c.halfThickness*.5).length;
+    check(below===0,'pressing a held corner down into the table leaves every node on top of it, never popped out underneath: '+below);}
+  {const s=fresh(),N=s.c.N;s.poses[1]={t:C.add(s.c.nodes[N*N-1].p,[0,0,.105]),open:1};const tick=()=>{s.W.setRobot({hands:Object.entries(s.poses).map(([side,p])=>({side:+side,pose:{R:I,t:p.t},opening:p.open}))});s.W.step(1/60);};
+    for(let i=0;i<30;i++)tick();s.poses[1].open=0;for(let i=0;i<40;i++)tick();const first=s.c.pins.get('1');
+    for(const n of s.c.nodes)n.p=C.add(n.p,[0,-.06,0]);for(const n of s.c.nodes)n.v=[0,0,0];for(let i=0;i<4;i++)tick();
+    check(first&&!s.c.pins.has('1')&&s.W.hands[1].clothSlip,'fabric pulled out of closed jaws slips free: '+JSON.stringify({held:!!first,still:s.c.pins.has('1')}));
+    s.poses[1].t=C.add(s.poses[1].t,[0,0,.1]);for(let i=0;i<90;i++)tick();s.poses[1].t=C.add(s.c.nodes[N*N-1].p,[0,0,.105]);for(let i=0;i<60;i++)tick();
+    const between=C.mulv(C.tr3(s.W.handPose(1).R),C.sub(s.c.nodes[N*N-1].p,s.W.handPose(1).t));
+    check(Math.abs(between[0])<.022&&Math.abs(between[1])<.012&&between[2]<-.055&&between[2]>-.13&&!s.c.pins.has('1'),'closed jaws that lost the fabric stay empty rather than taking another patch: '+JSON.stringify({between,regrabbed:s.c.pins.has('1')}));
+    s.poses[1].open=1;for(let i=0;i<30;i++)tick();s.poses[1].open=0;for(let i=0;i<40;i++)tick();check(s.c.pins.has('1'),'reopening and closing again grasps normally');}
 };

@@ -21,7 +21,7 @@
     d.t=C.sub(C.add(at,[0,0,.013]),offset);await wait(1400);
     assert(TASK.guide.state==='release','the held block on its outline still needs to be released');d.open=1;
     await until(()=>g.steps[g.level.goals.findIndex(r=>r.object===key)],'a released '+key+' settles on its own target');
-    if(key==='a'){await until(()=>TASK.guide.state==='clear','the release hint prevents knocking A while reaching for B');d.t=C.add(d.t,[0,0,.12]);await wait(1200);await until(()=>TASK.guide.object==='b'&&$('guideText').textContent.includes('B'),'after clearing A, the hint explicitly advances to B');}
+    if(key==='a'){await until(()=>TASK.guide.state==='clear','the release hint prevents knocking A while reaching for B');await until(()=>W.hands[1].gap>G.gapMax-.002,'the jaws open fully before the retreat');for(let i=0;i<24;i++){d.t=C.add(d.t,[0,0,.005]);await wait(40);}await wait(400);await until(()=>TASK.guide.object==='b'&&$('guideText').textContent.includes('B'),'after clearing A, the hint explicitly advances to B');}
   }
   await until(()=>g.complete,'one gripper completes the two-block placement');
   assert(g.heldBy.get('a').size===1&&g.heldBy.get('b').size===1&&g.heldBy.get('a').has(1)&&g.heldBy.get('b').has(1)&&TASK.guide.state==='done','both blocks used the same physical gripper and receive a clear completion cue');

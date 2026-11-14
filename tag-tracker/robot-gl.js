@@ -230,25 +230,47 @@
     }
     return result;
   }
+  // Catmull-Rom through four points (the cable centreline uses the same spline).
+  const spline=(p0,p1,p2,p3,t)=>[0,1,2].map(j=>.5*(2*p1[j]+(-p0[j]+p2[j])*t+(2*p0[j]-5*p1[j]+4*p2[j]-p3[j])*t*t+(-p0[j]+3*p1[j]-3*p2[j]+p3[j])*t*t*t));
+  // A whole-grid towel is drawn through a 3x finer spline surface, so folds read as rounded fabric rather than
+  // the physics grid's flat facets. Only the picture is smoothed: contacts and checks use the actual nodes.
+  function clothSurface(c) {
+    if(c.kind!=='towel'||c.nodes.length!==c.N*c.rows)return {p:c.nodes.map(n=>n.p),N:c.N,rows:c.rows,triangles:c.triangles};
+    const S=3,N=(c.N-1)*S+1,rows=(c.rows-1)*S+1,at=(i,j)=>{
+      // past an edge, continue straight on so the hem doesn't curl
+      const ci=Math.max(0,Math.min(c.N-1,i)),cj=Math.max(0,Math.min(c.rows-1,j)),p=c.nodes[cj*c.N+ci].p;
+      if(ci===i&&cj===j)return p;
+      const q=c.nodes[Math.max(0,Math.min(c.rows-1,cj+(cj-j)))*c.N+Math.max(0,Math.min(c.N-1,ci+(ci-i)))].p;
+      return [2*p[0]-q[0],2*p[1]-q[1],2*p[2]-q[2]];
+    };
+    const across=[];
+    for(let j=-1;j<=c.rows;j++){const row=[];for(let i=0;i<c.N-1;i++)for(let k=0;k<S;k++)row.push(spline(at(i-1,j),at(i,j),at(i+1,j),at(i+2,j),k/S));row.push(at(c.N-1,j));across.push(row);}
+    const p=[];
+    for(let j=0;j<c.rows-1;j++)for(let k=0;k<S;k++)for(let i=0;i<N;i++)p.push(spline(across[j][i],across[j+1][i],across[j+2][i],across[j+3][i],k/S));
+    for(let i=0;i<N;i++)p.push(across[c.rows][i]);
+    const triangles=[];
+    for(let j=0;j<rows-1;j++)for(let i=0;i<N-1;i++){const a=j*N+i,b=a+1,d=a+N,e=d+1;triangles.push(...((i+j)%2?[a,b,d,b,e,d]:[a,b,e,a,e,d]));}
+    return {p,N,rows,triangles,S};
+  }
   function clothMesh(c) {
-    const count=c.nodes.length,normals=c.nodes.map(()=>[0,0,0]);
-    for(let t=0;t<c.triangles.length;t+=3){const ids=c.triangles.slice(t,t+3),n=cross(sub(c.nodes[ids[1]].p,c.nodes[ids[0]].p),sub(c.nodes[ids[2]].p,c.nodes[ids[0]].p));for(const i of ids)normals[i]=C.add(normals[i],n);}
+    const surf=clothSurface(c),count=surf.p.length,normals=surf.p.map(()=>[0,0,0]);
+    for(let t=0;t<surf.triangles.length;t+=3){const ids=surf.triangles.slice(t,t+3),n=cross(sub(surf.p[ids[1]],surf.p[ids[0]]),sub(surf.p[ids[2]],surf.p[ids[0]]));for(const i of ids)normals[i]=C.add(normals[i],n);}
     for(let i=0;i<count;i++)normals[i]=unit(normals[i])||[0,0,1];
-    if(!c.pile)return {pos:new Float32Array(c.nodes.flatMap(n=>n.p)),nrm:new Float32Array(normals.flat()),idx:new Uint16Array(c.triangles)};
+    if(!c.pile)return {pos:new Float32Array(surf.p.flat()),nrm:new Float32Array(normals.flat()),idx:new Uint16Array(surf.triangles)};
     // Closed, rounded-depth terry shell follows the same deforming midsurface and contact thickness.
-    const pos=[],nrm=[],idx=[],edges=new Map(),half=c.halfThickness;
+    const pos=[],nrm=[],idx=[],edges=new Map(),half=c.halfThickness,S=surf.S||1;
     for(const side of [1,-1])for(let i=0;i<count;i++){
-      const x=i%c.N,y=Math.floor(i/c.N),hem=Math.min(x,y,c.N-1-x,c.rows-1-y),round=hem===0?.55:1;
-      const loft=half*round+c.pile*(.75+.25*Math.sin(i*7.13)),point=C.add(c.nodes[i].p,normals[i].map(v=>v*side*loft));
+      const x=i%surf.N,y=Math.floor(i/surf.N),hem=Math.min(x,y,surf.N-1-x,surf.rows-1-y),round=hem===0?.55:1;
+      const loft=half*round+c.pile*(.75+.25*Math.sin(x/S*7.13)*Math.sin(y/S*3.7)),point=C.add(surf.p[i],normals[i].map(v=>v*side*loft));
       const local=C.mulv(C.tr3(c.table.R),C.sub(point,c.table.t));if(Math.abs(local[0])<c.table.size[0]/2&&Math.abs(local[1])<c.table.size[1]/2&&local[2]<.0002){local[2]=.0002;point.splice(0,3,...C.add(c.table.t,C.mulv(c.table.R,local)));}
       pos.push(...point);nrm.push(...normals[i].map(v=>v*side));
     }
-    for(let t=0;t<c.triangles.length;t+=3){
-      const [a,b,d]=c.triangles.slice(t,t+3);idx.push(a,b,d,d+count,b+count,a+count);
+    for(let t=0;t<surf.triangles.length;t+=3){
+      const [a,b,d]=surf.triangles.slice(t,t+3);idx.push(a,b,d,d+count,b+count,a+count);
       for(const [i,j]of [[a,b],[b,d],[d,a]]){const key=Math.min(i,j)+':'+Math.max(i,j);if(edges.has(key))edges.delete(key);else edges.set(key,[i,j]);}
     }
     for(const [a,b]of edges.values()){
-      const first=pos.length/3,normal=unit(cross(sub(c.nodes[b].p,c.nodes[a].p),C.add(normals[a],normals[b])))||[1,0,0];
+      const first=pos.length/3,normal=unit(cross(sub(surf.p[b],surf.p[a]),C.add(normals[a],normals[b])))||[1,0,0];
       for(const i of [a,b,b+count,a+count]){pos.push(...pos.slice(i*3,i*3+3));nrm.push(...normal);}
       idx.push(first,first+2,first+1,first,first+3,first+2);
     }

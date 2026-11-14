@@ -1,6 +1,11 @@
 # Robot tasks and guidance. Metres and seconds.
 title: Robot tasks
 subtitle: Five tasks, from a first grasp to two-handed precision and soft fabric.
+# Every task starts with both idle arms here: each wrist moved from the home pose (m, robot frame,
+# y mirrored for the right arm) with the grippers pitched (degrees) from pointing straight down.
+ready:
+  offset: [0.04, 0.02, 0.12]
+  pitch: 0
 levels:
 - id: bowl
   name: Ball in the bowl
@@ -425,9 +430,6 @@ levels:
   name: Fold a fluffy towel
   hands: 2
   skill: Two folds in soft fabric
-  ready:
-    offset: [0.04, 0.02, 0.12]
-    pitch: 0
   brief: Fold the far edge toward you and release it. Regrip both layers of the aligned
     open edge, fold them back onto the crease and release a four-layer stack.
   hint: Release between folds. On the second grasp, centre the pads around both aligned
@@ -449,7 +451,8 @@ levels:
     mass: 0.06
     thickness: 0.006
     pile: 0.0025
-    bend_compliance: 20.0
+    bend_compliance: 15.0
+    bend_memory: 3
     color: "#c5b49a"
     fold_axes: xx
   goals:
@@ -505,9 +508,9 @@ levels:
     - 0.65
   guide:
     plan:
-    - Pinch the two labelled far corners, one per gripper. Lift them and bring the
+    - Pinch the two marked far corners, one per gripper. Lift them and bring the
       far edge toward you onto the near edge. Lower and release both grippers.
-    - Lift the open grippers clear. Regrip both layers at each labelled end of the
+    - Lift the open grippers clear. Regrip both layers at each marked end of the
       aligned open edge. Centre the pads between the two layers.
     - Lift the doubled open edge and bring it back onto the crease, keeping the grippers
       facing down. Lower gently and release to leave four layers on the pad.
@@ -516,20 +519,20 @@ levels:
     tips:
     - The towel has a soft fabric core, a thick plush nap and clearly visible edges. Aim
       the pads around its edge, with the palm above the table.
-    - For the second fold, the grab labels sit between the two open edges. Centre
+    - For the second fold, the grab markers sit where the two open corners meet. Centre
       the gripper there so it catches both layers, not just the top corner.
     - Keep the jaws facing down for both folds. Select 3 to move both hands together;
       use Q/E to lift and lower. You can complete this task without turning the wrists.
     - Release and regrip between folds. If an edge slips, open the jaws, centre the
       doubled edge and close again.
     labels:
-      target: Line up here
-      first: First fold corner
-      second: Second fold corner
+      target: Bring it here
+      first: Grab this corner
+      second: Grab both layers
     stages:
       towel_first_grab:
         title: Pinch the two far corners
-        text: Use one gripper at each labelled corner of the far edge. Close around
+        text: Use one gripper at each marked corner of the far edge. Close around
           a small patch and keep the palm above the towel.
       towel_first_move:
         title: Bring the far edge toward you
@@ -541,11 +544,11 @@ levels:
           the towel folded in half.
       towel_second_grab:
         title: Grip both aligned open edges
-        text: Pinch both towel layers at each labelled end of the open edge. Centre
+        text: Pinch both towel layers at each marked end of the open edge. Centre
           the pads between the layers before closing.
       towel_second_move:
         title: Bring the doubled edge back to the crease
-        text: Lift both layers of the open edge and bring them back onto the labelled
+        text: Lift both layers of the open edge and bring them back onto the marked
           crease. Keep the jaws down, lower gently and open both grippers.
       towel_release:
         title: Release the four-layer towel
@@ -553,7 +556,7 @@ levels:
           stack must stay compact and settle on its pad.
       towel_tidy:
         title: Line up the final fold
-        text: Regrip both layers at the labelled open edge and bring them onto the crease.
+        text: Regrip both layers at the marked open edge and bring them onto the crease.
           Lower gently, release and let the four layers settle.
       towel_repair:
         title: Line up the first fold again

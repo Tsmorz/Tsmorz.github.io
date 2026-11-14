@@ -76,16 +76,16 @@ Keep fixed 240 Hz substeps, contact friction, warm starting, sleeping and bounde
 AprilTags remain the default input. Mouse drag moves a gripper; scroll closes/opens it, Space toggles,
 Shift-scroll tilts and Alt-drag changes plane. 1/2/3 select left/right/both. Q/E lift/lower; J/K tilt,
 I/P tilt sideways, U/O roll. In Robot eyes, arrow keys move the selected hand; tilt stays on the slider.
-Task `ready` poses apply only to idle arms, never to AprilTag input. Preserve the existing elbow when
-mouse control takes a ready hand. Stationary real body/wrist tags auto-calibrate after 0.8 s.
+Every task starts idle arms in the one top-level `ready` pose in `tag_tasks.yml` (grippers down); no
+task carries its own. It never overrides AprilTag input. Preserve the elbow when the mouse takes a ready
+hand. Stationary real body/wrist tags auto-calibrate after 0.8 s.
 
 ## The five tasks
 
 The catalogue is exactly `bowl`, `sort`, `tray`, `cable`, `laundry`, freely selectable in that order.
 Both placement variants contain two blocks. Removed IDs fall back to `bowl`; don't add progression
 locks. `TaskCore.mission` must not mutate its full variant. Keep small/full records separate.
-Changed objectives need new revisions: old shirt, single-fold and fixed-socket times cannot compete
-with the new towel or phone tasks. Timers use monotonic elapsed time, not capped physics time.
+Changed objectives need new revisions so old times can't compete. Timers use monotonic elapsed time.
 
 Guidance reads actual constraints and goals; it never moves props or awards success. After placing A,
 keep the empty-gripper retreat before picking B with the same gripper. Show wrong-prop, missing-hand
@@ -95,24 +95,26 @@ and missing-layer hints. Keep guidance, destinations and objectives visible.
 A rim hit or lost load invalidates the attempt until restart. Require both a clean elevated two-hand
 hold and released set-down. Test actual contacts, not just a ball parked at its final coordinates.
 
-The towel has a fabric core, plush nap, layer contact and a closed render shell. `halfThickness` is
-its contact radius: do not name it `radius`, which identifies cables in rendering. Keep loft visible
-and table clearance real. GPU buffers must rebuild when deformable topology changes. Plush sleep
-tolerates a few (≤3%) chattering corner nodes: requiring every node still leaves a folded towel
-awake, and its `settle` unmet, for tens of seconds on some platforms' floating point.
+The towel has a fabric core, plush nap, layer contact and a closed shell drawn through `clothSurface`,
+a spline 3× finer than the physics grid (never smooth the nodes themselves). `halfThickness` is its
+contact radius: `radius` identifies cables in rendering. GPU buffers rebuild when topology changes.
+Plush sleep tolerates ≤3% chattering corner nodes, or a folded towel stays awake on some platforms.
+`bend_memory` sets creases only while released and where both link ends touch something: a set taken
+while held or hanging props up arches and fails `compact`. Bending stiffer than `bend_compliance` 15
+springs the first fold open. Fabric pressed into the table leaves through its top, never the bottom.
 
 Grips use finite barycentric material patches; a single pinned vertex permits free spinning. Clamp
-both actual material halves at the doubled open edge; neighbouring points on one ply are insufficient.
-Bound the total force across captured layers. Plush patches may yield in bending under measured
-contact moment, retaining a shared grip centre and sideways twist constraint. Keep their reactions.
-Solve layer contact and accumulated table friction with stretch; late projections leave artificial
-strain. Preserve contact side across a substep rather than pushing a crossed layer further through.
+both actual halves at the doubled open edge. Jaws that lose a patch while closed stay empty until
+reopened (`clothSlip`). Grab markers show only during grab states, destinations once both are held.
+Bound total force across captured layers. Plush patches may yield in bending under measured moment,
+keeping a shared grip centre, sideways twist constraint and reactions. Solve layer contact and table
+friction with stretch (late projections leave strain); keep a contact's side across a substep.
 
 The `xx` objective requires a released first-fold checkpoint, both second grasps, overlapping material
 quarters, a spread footprint and released settling. Loose fluffy corners are allowed; one fold or a
 crushed bundle is not. First fold toward the robot, then return the doubled open edge to the crease.
-Keep grippers down so this is playable without wrist inversion. Geometry and forces are representative,
-not calibrated fabric FEM. Waking a resting towel must still permit a real grasp.
+Keep grippers down so this is playable without wrist inversion. Waking a resting
+towel must still permit a real grasp.
 
 ## Charging and controller contracts
 
@@ -153,7 +155,6 @@ Setup choices apply only through Next/Print/phone actions, never merely by closi
 ## Regression entry points
 
 `teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `fabric.cjs` (5o), `advanced.cjs` (5l),
-`controller-link.cjs` (5m), `charging.cjs` (5n), `voice.cjs` (5p). Browser counterparts exercise actual
-IK, motor slew, physical grasps and release: `guided-browser.js`, `balance-browser.js`,
-`fabric-browser.js`, `charging-browser.js`, `serial-browser.js`, `voice-browser.js` and
-`workbench-browser.js`. Repeat responsive checks on a phone. State what has not run on real hardware.
+`controller-link.cjs` (5m), `charging.cjs` (5n), `voice.cjs` (5p). The `*-browser.js` counterparts run
+actual IK, motor slew, grasps and release; move hands as a player does (open fully, then retreat
+smoothly). Repeat responsive checks on a phone. State what has not run on real hardware.
