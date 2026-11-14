@@ -33,10 +33,15 @@ plugins:
 
 exclude:
   - .github
+  - AGENTS.md                  # agent guides (AGENTS.md, with CLAUDE.md stubs that import them), not served
   - CLAUDE.md
-  - tag-tracker/CLAUDE.md      # area guides for Claude Code, not served
+  - tag-tracker/AGENTS.md
+  - tag-tracker/CLAUDE.md
   - glide-path/ARTWORK.md
+  - glide-path/AGENTS.md
   - glide-path/CLAUDE.md
+  - haptography/AGENTS.md
+  - haptography/CLAUDE.md
   - Gemfile
   - Gemfile.lock
   - README.md
