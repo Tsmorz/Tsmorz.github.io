@@ -151,8 +151,9 @@ async function btFailure(e) {
 async function connectDevice(device) {
   const id = idOf(device);
   let b = S.boards.find((x) => x.id === id);
-  if (b && ['connecting', 'pairing', 'live'].includes(b.state)) return;
+  if (b && ['connecting', 'pairing', 'live'].includes(b.state) && !b.serialLink) return;
   if (!b) b = newBoard(id, device.name || 'nrf-controller-' + id);
+  if(b.serialLink){b.serialLink.detach(b.id);b.hapticCharacteristic=null;b.hapticBusy=false;b.hapticRateHz=10;b.transport=null;b.serialRtt=null;b.actuatorDelayMs=null;b.act=null;b.actT=0;b.clock=new C.BoardClock();b.buf=[];b.lastSeq=null;}
   b.device = device; b.state = 'connecting'; b.err = ''; b.closing = false;
   renderBoards();
   if (!b.listening) { device.addEventListener('gattserverdisconnected', () => boardGone(b)); b.listening = true; }
@@ -225,7 +226,7 @@ function renderBoards() {
     row.querySelector('[data-a=use]').onclick = () => { b.use = !b.use; boardStore.save(b); renderBoards(); };
     row.querySelector('[data-a=relearn]').onclick = () => { b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; b.learn = ''; boardStore.save(b); renderBoards(); };
     const rm = row.querySelector('[data-a=rm]');
-    if (rm) rm.onclick = () => { b.closing = true; if (b.device && b.device.gatt.connected) b.device.gatt.disconnect(); S.boards = S.boards.filter((x) => x !== b); renderBoards(); };
+    if (rm) rm.onclick = () => { b.closing = true; if (b.serialLink) b.serialLink.close().catch(()=>{});if (b.device && b.device.gatt.connected) b.device.gatt.disconnect(); S.boards = S.boards.filter((x) => x !== b); renderBoards(); };
     for (const [a, k] of [['gopen', 'open'], ['gclosed', 'closed']]) {
       const g = row.querySelector(`[data-a=${a}]`);
       if (g) g.onclick = () => { const p = C.gripPermille(b.act); if (p === null) return; b.grip = Object.assign({}, b.grip, { [k]: p }); boardStore.save(b); paintBoards(); };
@@ -247,11 +248,12 @@ function paintBoards() {
     if (!st) continue;
     const live = b.state === 'live';
     st.classList.toggle('on', live && b.rate > 50);
-    st.lastElementChild.textContent = live ? `${b.rate.toFixed(0)} Hz${b.lost ? `, ${b.lost} lost` : ''}` : { connecting: 'Connecting…', pairing: 'Pairing: if asked, enter the code the board prints on its USB console', lost: 'Disconnected, trying again…', saved: 'Not connected', error: b.err }[b.state] || '';
+    st.lastElementChild.textContent = live ? `${b.rate.toFixed(0)} Hz${b.lost ? `, ${b.lost} lost` : ''}` : { connecting: 'Connecting…', pairing: 'Pairing: if asked, enter the code the board prints on its USB console', lost: b.serialLink ? (b.serialLink.closed?TASK_DATA.link.closed:TASK_DATA.link.missing) : 'Disconnected, trying again…', saved: 'Not connected', error: b.err }[b.state] || '';
     ln.textContent = !live ? '' : b.track === null ? 'Choose what it’s fixed to.'
       : !b.M ? `Learning how it sits: turn it slowly about different axes while a camera sees it (${b.pairs.length} poses${b.learn === 'turn' ? ', needs more turning' : b.learn === 'fit' ? ', poses disagree: is it fixed firmly?' : ''})`
       : !b.W ? 'Finding its heading…'
       : `Lined up${b.fit != null ? `, within ${deg(b.fit)}°` : ''}${!b.use ? ', not used' : S.settings.pose !== 'filtered' ? '; used by Filtered poses' : ''}`;
+    if(live&&b.transport)ln.textContent=(b.transport==='esb'?TASK_DATA.link.esb:TASK_DATA.link.serial)+(Number.isFinite(b.serialRtt)?`, ${b.serialRtt.toFixed(1)} ms ${TASK_DATA.link.rtt}`:'')+(Number.isFinite(b.actuatorDelayMs)?`, ${b.actuatorDelayMs.toFixed(1)} ms ${TASK_DATA.link.drive_delay}`:'')+(b.linkDropped||b.radioDropped?`, ${b.linkDropped||0} / ${b.radioDropped||0} ${TASK_DATA.link.dropped}`:'')+'; '+ln.textContent;
     const gl = $('bg-' + b.id);
     if (gl) {
       const fresh = b.act && now - b.actT < 500, p = fresh ? C.gripPermille(b.act) : null, g = fresh ? C.gripOpening(b.act, b.grip) : null;

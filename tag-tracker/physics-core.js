@@ -228,7 +228,7 @@
     for (const s of pieces) {
       const put = (p, r) => sp.push({ p: add(s.p || [0, 0, 0], mulv(s.R || I3, p)), r });
       if (s.type === 'cylinder') {
-        const r = Math.min(0.004, s.h), z = s.h - r;
+        const r = Math.min(0.004, s.h, s.r), z = s.h - r;
         for (const dz of [-z, z]) {
           put([0, 0, dz], r);
           for (let i = 0; i < 24; i++) { const a = i * Math.PI / 12; put([(s.r - r) * Math.cos(a), (s.r - r) * Math.sin(a), dz], r); }

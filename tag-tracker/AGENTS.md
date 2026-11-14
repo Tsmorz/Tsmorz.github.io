@@ -252,3 +252,54 @@ success, not proof that an actuator moved. Real controller feel and physical mat
 cable tension and stretch, folds the finer towel with both physical grippers, and checks TacHammer packets,
 routing, capability/stale/off guards and in-flight writes with mocked GATT. `advanced-browser.js` repeats USB
 insertion through actual robot IK/motor slew and the rendered page; it never moves a prop directly. `fabric-browser.js` folds the small towel through both actual robot arms and checks released completion.
+
+
+## Local leaderboards, charging and serial/ESB controllers
+
+`score-core.js` ranks each named player's best completion time on this device, separately by task,
+small/full mode and task revision. The UI keeps an elapsed timer and best time visible; player name
+lives in Task settings, rankings in the Leaderboard disclosure. It uses monotonic real elapsed time
+from the first action, including dropped rendering time, rather than the physics accumulator's capped
+step count. Old personal bests remain visible as previous results but are not attributed to a player.
+The changed phone task is revision 2, so the old fixed-socket time cannot compete with it.
+
+`charging-core.js` adds the household cable task: a two-pin wall charger must seat and be released,
+then one gripper holds a raised Samsung Galaxy-style phone while the other inserts USB-C. The cable
+plug must be released while the phone remains held and both connections stay seated. At least 0.1 s
+of simultaneous opposing grips during insertion is required; a pre-connected or table-supported
+phone cannot pass. The phone's hollow socket is a frame on its free rigid body. Sleeve contacts and
+equal-and-opposite insertion reactions affect both hands; no phone or connector is snapped/locked.
+A simpler fixed-socket exercise remains `connector`. Content and hints stay in `_data/tag_tasks.yml`.
+The phone screen, frame and rear cameras have separate materials, and a charging indicator follows
+its physical pose. The wall fixture represents a simulated outlet, not electrical circuit physics.
+
+The household cable has 65 nodes, stretch, vector-curvature XPBD bending, table/prop/self contact,
+friction and two moving rigid endpoints. Its flexural stiffness is a representative model parameter,
+not a calibrated cable measurement. Rendering uses a parallel-transport tube frame, smooth centreline
+interpolation and tapered strain relief. Deformable GPU buffers rebuild when topology changes (e.g.
+65-node charging cable → 33-node practice cable; single towel → full pile). Small cylinder samples
+must use radius no larger than their actual cylinder radius, including 2 mm charger pins.
+
+`controller-link.js` implements bounded COBS + CRC TP/1 frames; `app-serial.js` attaches Web Serial or a
+XIAO ESB receiver to the existing board rows, source-clock fit, camera alignment, Filtered pose inputs,
+gripper feedback and TacHammer dispatcher. Firmware belongs in `../nrf-controller/teleop/`, with pure
+wire/freshness policies in `src/teleop_wire.*` and `teleop_policy.*`, documented in `docs/teleop.md`.
+Connect USB / ESB uses 1 Mbaud by default. Multiple wireless controllers are addressed independently.
+Selecting USB for an existing board replaces its BLE connection. Never open a serial console on the
+same port while the page owns it. Normal BLE firmware has no TP/1 input and must be replaced with
+the separate teleop build for this route. The regular BLE firmware stays unchanged.
+
+The controller targets 416 Hz VQF samples and ESB 2 Mbit/s. The gateway holds only the latest command
+per pipe and flushes it after ACK/50 ms expiry; source boards refuse commands whose echoed ACT stamp
+is over 100 ms old. Feedback writes have finite waveforms and no backlog, with 120 ms ACK timeouts.
+Serial/ESB supports changing cues up to 25 Hz (BLE stays at 10 Hz), capped at 45% TacHammer only.
+Transient serial failures back off and retry; disconnect and stale readiness suppress output.
+Board rows show measured source rate, command RTT and reported accepted-command → I2S-start delay.
+Those metrics are not interchangeable: an ACK alone does not prove motion. Actual radio latency,
+SAMD11 throughput and actuator feel have not been hardware-verified; only builds and mocked I/O pass.
+
+`task check:tag-tracker -- 5m 5n` covers ranking, real-time clocks, stream fragmentation/corruption,
+C/JS wire parity, ACK/timeout/disconnect, and a genuine two-gripper charger/phone completion. After
+building, `serial-browser.js` verifies the actual USB adapter with fake streams and real table contact;
+`charging-browser.js` completes the full sequence through robot IK and checks the saved ranking.
+`guided-browser.js` still checks sequential two-block manipulation; repeat with `--phone`.

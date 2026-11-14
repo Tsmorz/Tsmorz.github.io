@@ -2,6 +2,7 @@
 'use strict';
 const TASK_DATA=JSON.parse($('teleopData').textContent);
 const taskCatalog=()=>TASK_DATA.levels;
+const SCORE={rows:TaskScores.clean(store.get('task-scores',[])),player:TaskScores.player(store.get('task-player','Player 1'))};
 const TASK={saved:{},records:{guided:{},practice:{}},painted:'',hand:'1',stored:false,moved:false,guide:null};
 for(const mode of ['guided','practice'])try{
   const key=mode==='practice'?'tag-tracker-teleop':'tag-tracker-guided',raw=localStorage.getItem(key)||(mode==='guided'?localStorage.getItem('tag-tracker-story'):null);
@@ -51,14 +52,15 @@ function taskPlaced(){
     const T=TB.world.table,d=C.mulv(T.R,TB.game.level.camera?.offset||[1.05,-.95,.78]),dist=C.norm(d);
     Object.assign(S.view,{target:C.add(T.t,C.mulv(T.R,TB.game.level.camera?.at||[0,0,.09])),dist:dist*Math.max(1,plot.clientHeight/Math.max(1,plot.clientWidth)),yaw:Math.atan2(d[0],-d[1]),pitch:Math.asin(d[2]/dist),fitted:true,fromCam:false});
   }
-  paintTasks(true);paintGameHUD();
+  paintTasks(true);paintGameHUD();paintLeaderboard();
 }
 function stepTask(dt){
   const g=TB.game,tagMovement=RB.scene&&RB.scene.arms.some(a=>a.live&&!a.idle&&!RB.scene.preview&&RB.cal);
-  TaskCore.update(g,dt,TASK.moved||!!tagMovement||Object.values(g.world.hands).some(h=>!!h.grip));
+  TaskCore.update(g,dt,TASK.moved||!!tagMovement||Object.values(g.world.hands).some(h=>!!h.grip),performance.now()/1000);
+  $('gameClock').textContent=TaskScores.format(g.elapsed);
   TASK.guide=TaskCore.guidance(g);
   if(g.complete&&!TASK.stored){
-    TASK.stored=true;TASK.saved[g.level.id]=TaskCore.best(TASK.saved[g.level.id],g);
+    TASK.stored=true;SCORE.rows=TaskScores.record(SCORE.rows,g.level,S.settings.robot.playMode,SCORE.player,g.elapsed);store.set('task-scores',SCORE.rows);paintLeaderboard();TASK.saved[g.level.id]=TaskCore.best(TASK.saved[g.level.id],g);
     try{localStorage.setItem(S.settings.robot.playMode==='practice'?'tag-tracker-teleop':'tag-tracker-guided',JSON.stringify(TASK.saved));}catch(_){robotSay('Task complete. This browser could not save the result.',true);}
   }
   paintTasks();paintGameHUD();
@@ -204,3 +206,17 @@ function sendTaskHaptics(W,sc,now){
   $('taskHapticStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;
 }
 window.addEventListener('blur',()=>TASK_HAPTIC.reset());
+
+$('taskPlayer').value=SCORE.player;
+$('taskPlayer').onchange=()=>{SCORE.player=TaskScores.player($('taskPlayer').value);$('taskPlayer').value=SCORE.player;store.set('task-player',SCORE.player);paintLeaderboard();};
+function paintLeaderboard(){
+  const rows=TaskScores.ranking(SCORE.rows,currentTask(),S.settings.robot.playMode);
+  $('leaderboardRows').innerHTML=rows.length?rows.map((r,i)=>`<tr${r.player===SCORE.player?' aria-current="true"':''}><td>${i+1}</td><th scope="row">${escapeHtml(r.player)}</th><td>${TaskScores.format(r.seconds)}</td></tr>`).join(''):`<tr><td colspan="3">${escapeHtml(TASK_DATA.scores.empty)}</td></tr>`;
+  const previous=TASK.saved[currentTask().id];$('taskFastest').textContent=rows.length?`${TASK_DATA.scores.best} ${TaskScores.format(rows[0].seconds)}`:previous?`${TASK_DATA.scores.previous} ${TaskScores.format(previous.time)}`:TASK_DATA.scores.empty;
+}
+
+// Display geometry stays in the phone's body frame and follows its physical pose.
+function phoneScreen(b){
+  const box=(p,h,material)=>({type:'box',p,h,material});
+  return [box([.03,0,.0053],[.014,.010,.0001],'shell'),box([.03,0,.0055],[.012,.008,.0001],'glass'),box([.03,-.002,.0057],[.010,.005,.0001],b.charging?'light':'dark'),box([.045,0,.0053],[.001,.003,.0001],'shell')];
+}

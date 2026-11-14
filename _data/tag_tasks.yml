@@ -661,8 +661,8 @@ levels:
     full_tips:
     - Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the rack slots, then lower
       and release.
-- id: cable
-  name: Plug in USB-C
+- id: connector
+  name: Connector practice
   hands: 2
   skill: Cable routing and insertion
   brief: Support the flexible cable with one gripper. Use the other to align and seat the USB-C plug in
@@ -753,6 +753,161 @@ levels:
       settings and map each controller to its wrist or hand.
     - Hold Shift with W/A/S/D/Q/E for 0.2 mm steps, or with J/K/U/O for fine wrist angles. Motion × 0.1
       reduces AprilTag translation for this precision task.
+  legacy_id: cable
+- id: cable
+  revision: 2
+  name: Charge the Samsung phone
+  hands: 2
+  skill: Two-handed cable assembly
+  brief: Plug the charger into the outlet. Then hold the Samsung phone in one gripper and connect its
+    USB-C cable with the other.
+  hint: Use the right gripper for the charger and USB-C housing, and the left for the phone. Keep a loose
+    cable loop; align the connector with the phone’s bottom edge.
+  par: 300
+  objects:
+  - key: charger
+    kind: charger
+    at:
+    - -0.045
+    - -0.2
+    - 0.029
+    mass: 0.085
+    label: Phone charger
+    color: '#e3e5e7'
+    mat: aluminium
+    slop: 5.0e-05
+  - key: outlet
+    kind: outlet
+    at:
+    - 0.06
+    - -0.22
+    - 0.1
+    mass: 0.3
+    fixed: true
+    label: Power outlet
+    color: '#b7bdc4'
+    mat: aluminium
+    slop: 5.0e-05
+    show_label: true
+  - key: phone
+    kind: phone
+    at:
+    - 0.005
+    - 0.18
+    - 0.0445
+    mass: 0.185
+    label: Samsung Galaxy phone
+    color: '#252b32'
+    mat: aluminium
+    slop: 5.0e-05
+    show_label: true
+  - key: plug
+    kind: usb-plug
+    at:
+    - -0.07
+    - -0.025
+    - 0.0675
+    label: USB-C plug
+    color: '#30363e'
+    mass: 0.025
+    mat: rubber
+    slop: 5.0e-05
+  - key: rest
+    kind: plug-rest
+    at:
+    - -0.07
+    - -0.025
+    - 0
+    fixed: true
+    label: Cable cradle
+    color: '#6f7985'
+    mat: aluminium
+  - key: phone-rest
+    kind: phone-rest
+    at:
+    - 0.005
+    - 0.18
+    - 0
+    fixed: true
+    label: Phone cradle
+    color: '#6f7985'
+    mat: aluminium
+  cables:
+  - key: wire
+    label: Phone charging cable
+    plug: plug
+    anchor_body: charger
+    anchor_local:
+    - -0.02
+    - 0
+    - -0.018
+    length: 0.6
+    mass: 0.025
+    radius: 0.0016
+    resolution: 65
+    bend_stiffness: 2.0e-05
+    color: '#242a32'
+    loop_direction: -1
+  goals:
+  - type: power
+    object: charger
+    target: outlet
+    label: Seat and release the charger in the outlet
+    destination: the power outlet
+  - type: charge
+    object: plug
+    target: phone
+    label: Connect USB-C while holding the phone in the other gripper
+    destination: the phone’s USB-C socket
+  charging:
+    charger: charger
+    outlet: outlet
+    phone: phone
+    plug: plug
+    socket_at:
+    - -0.078
+    - 0
+    - 0
+  camera:
+    at:
+    - 0
+    - 0
+    - 0.14
+    offset:
+    - 0.8
+    - -0.75
+    - 0.55
+  markers: []
+  guide:
+    plan:
+    - Use the right gripper to grasp the charger body. Lift it, align both round pins with the outlet
+      and push straight in. Open the gripper once it seats.
+    - Use the left gripper around the lower half of the Samsung phone on its cradle. Lift it clear and
+      keep its screen facing up.
+    - With the right gripper, pinch the rear half of the USB-C housing on its cradle. Lift it without
+      pulling the cable taut.
+    - Bring the plug straight toward the socket in the phone’s bottom edge. Hold the phone steady with
+      the left gripper and adjust the right wrist in fine steps.
+    - Once connected, open the plug gripper while continuing to hold the phone. Keep both connections
+      still until the charging objective completes.
+    tips:
+    - Lift the phone straight up and keep it toward the left shoulder while the right gripper picks up
+      the cable. Lift the empty cable gripper clear before moving sideways.
+    - The socket moves with the phone. Insertion force pushes back on both hands; a phone left on the
+      table cannot satisfy the two-handed objective.
+    - Both cable ends move with their attached objects. The jacket bends, drags, collides and develops
+      tension; move the objects closer if the cable pulls them off axis.
+    - Keep the phone screen up and its bottom edge toward the robot. Leave room between both grippers
+      for the metal connector nose.
+    - Shift + W/A/S/D/Q/E moves in 0.2 mm steps. Shift + J/K/U/O turns the wrist finely. Motion × 0.1
+      helps with AprilTags.
+    - TacHammer pulses indicate impacts and changes in load. One knock marks a seating event. This is
+      a simulated outlet and charger.
+    stages:
+      done:
+        title: Phone charging complete
+        text: Both connections are seated. You connected USB-C while holding the phone with the other
+          gripper. You can set the phone down or try again.
 - id: laundry
   name: Fold the laundry pile
   hands: 2
@@ -1029,6 +1184,38 @@ guidance:
       title: Release the cable support
       text: The plug is seated and released. Open the other gripper to let go of the cable, then leave
         the connector still.
+    charger_outlet:
+      title: Plug the charger into the outlet
+      text: Grasp the charger body with the right gripper. Lift it, line up both round pins with the outlet
+        holes and advance straight in. Keep a slack loop of cable.
+    charger_release:
+      title: Release the seated charger
+      text: The charger pins are seated. Open the right gripper and leave the charger supported by the
+        outlet.
+    phone_pickup:
+      title: Pick up the Samsung phone
+      text: Use the left gripper around the lower half of the phone. Lift it clear of the table, keep
+        the screen facing up, and leave the bottom USB-C socket exposed.
+    phone_insert:
+      title: Hold the phone and line up USB-C
+      text: Hold the phone steady with the left gripper. Use the right gripper on the cable housing, line
+        up the flat nose with the phone’s bottom socket, and insert slowly.
+    phone_release:
+      title: Release the connected USB-C plug
+      text: The connector is seated. Open the gripper holding the cable plug. Continue holding the phone
+        in the other gripper.
+    phone_regrasp:
+      title: Connect while the phone is held
+      text: This task needs both hands during insertion. Withdraw the plug slightly, hold the raised phone
+        with one gripper, then seat the plug using the other.
+    phone_hold:
+      title: Keep the connected phone steady
+      text: Keep holding the phone with the cable gripper open. The charger must stay in the outlet and
+        the USB-C connector must remain seated.
+    phone_seat_wait:
+      title: Keep both grips for a moment
+      text: Hold the phone and connector steady as the plug seats. Then the guide will ask you to open
+        the cable gripper.
 haptics:
   label: TacHammer task feedback
   strength: Strength
@@ -1048,3 +1235,29 @@ haptics:
   ready: TacHammer ready. Move a mapped hand into contact.
   sent: TacHammer command acknowledged
   error: A controller write failed. Reconnect the controller.
+scores:
+  title: Leaderboard
+  scope: Best completion times on this device. Small tasks and full challenges are ranked separately.
+    Set your player name in Task settings.
+  empty: No completed times yet
+  best: Best time
+  rank: Rank
+  player: Player
+  time: Time
+  previous: Previous best
+link:
+  connect: Connect USB / ESB
+  ble: Connect BLE
+  baud: Baud
+  help: Use BLE, a direct USB controller, or a USB-connected XIAO ESB receiver. USB and ESB require TP/1
+    teleop firmware; its default is 1,000,000 baud. Both routes send motion into Filtered tracking and
+    return TacHammer cues.
+  unsupported: Web Serial needs Chrome or Edge on a computer and HTTPS or localhost.
+  closed: Serial controller disconnected. Connect USB / ESB to choose the port again.
+  waiting: Port open. Waiting for controller identity and motion…
+  serial: USB serial
+  esb: USB → ESB
+  rtt: command round trip
+  dropped: USB / radio drops
+  drive_delay: accepted → I2S start
+  missing: Controller stopped streaming. Check its power and connection.

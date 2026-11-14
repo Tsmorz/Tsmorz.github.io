@@ -1,7 +1,7 @@
 // Manipulation through the actual robot IK, motor slew, grips and deformable physics. No prop poses are set.
 (async()=>{
   const wait=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,msg)=>{if(!ok)throw new Error(msg);},until=async(fn,msg,ms=5000)=>{const t=performance.now();while(!fn()&&performance.now()-t<ms)await wait(35);assert(fn(),msg);};
-  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setCampaignMode('guided');taskLevel('cable');await wait(500);
+  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setCampaignMode('guided');taskLevel('connector');await wait(500);
   const W=TB.world,g=TB.game,plug=g.byKey.get('plug'),port=W.poseOf(g.byKey.get('port')).t,arm=RB.scene.arms.find(a=>a.side===-1),d=driveOf(arm),I=[1,0,0,0,1,0,0,0,1];
   const vec=p=>C.mulv(W.table.R,p);const start=W.poseOf(plug).t.slice();d.open=1;d.t=C.add(d.t,vec([0,0,.24]));await wait(1500);d.R=W.table.R.slice();await wait(1000);d.t=C.add(start,vec([-.012,0,.19]));await wait(1700);d.t=C.add(start,vec([-.012,0,.0925]));await wait(1700);d.open=0;
   await until(()=>W.hands[-1].grip?.body===plug,'the right robot gripper can reach and physically pinch the USB housing: '+JSON.stringify({hand:W.handPose(-1),plug:W.poseOf(plug),reach:RB.scene.arms.find(a=>a.side===-1).reach}));

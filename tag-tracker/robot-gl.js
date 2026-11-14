@@ -214,7 +214,7 @@
       } else meshes.push(...beveledBox(s.h,s.bevel===0?.00001:Math.min(s.bevel||.009,...s.h.map(h=>h*(s.bevel?.95:.28)))));
       for (const m of meshes) {
         for (let i = 0; i < m.pos.length; i += 3) { m.pos.set(C.add(C.mulv(R, [...m.pos.slice(i, i + 3)]), p), i); m.nrm.set(C.mulv(R, [...m.nrm.slice(i, i + 3)]), i); }
-        result.push(part(m, 'ceramic'));
+        result.push(part(m,s.material||'ceramic',{keepMaterial:!!s.material}));
       }
     }
     return result;
@@ -230,17 +230,25 @@
   }
 
   function cableMesh(c) {
-    const pos=[],nrm=[],idx=[],sides=8;
-    for(let i=0;i<c.nodes.length;i++){
-      const p=c.nodes[i].p,t=unit(sub(c.nodes[Math.min(i+1,c.nodes.length-1)].p,c.nodes[Math.max(0,i-1)].p))||[1,0,0];
-      const u=unit(cross(t,Math.abs(t[2])<.9?[0,0,1]:[0,1,0])),v=cross(t,u);
+    // Catmull-Rom interpolation only smooths the rendered centreline. Physics always uses the actual rod nodes.
+    const points=[],nodes=c.nodes.map(n=>n.p),steps=c.bend?3:2,sides=12;
+    for(let i=0;i<nodes.length-1;i++)for(let k=0;k<steps;k++){
+      const t=k/steps,p0=nodes[Math.max(0,i-1)],p1=nodes[i],p2=nodes[i+1],p3=nodes[Math.min(nodes.length-1,i+2)];
+      points.push([0,1,2].map(j=>.5*(2*p1[j]+(-p0[j]+p2[j])*t+(2*p0[j]-5*p1[j]+4*p2[j]-p3[j])*t*t+(-p0[j]+3*p1[j]-3*p2[j]+p3[j])*t*t*t)));
+    }points.push(nodes.at(-1));
+    const pos=[],nrm=[],idx=[];let previous=null,u=null;
+    for(let i=0;i<points.length;i++){
+      const p=points[i],t=unit(sub(points[Math.min(i+1,points.length-1)],points[Math.max(0,i-1)]))||previous||[1,0,0];
+      if(!u)u=unit(cross(t,Math.abs(t[2])<.9?[0,0,1]:[0,1,0]));
+      else {const axis=cross(previous,t),sine=Math.hypot(...axis);if(sine>1e-9)u=C.mulv(C.rodrigues(axis.map(x=>x*Math.atan2(sine,dot(previous,t))/sine)),u);u=unit(sub(u,t.map(x=>x*dot(u,t))))||[0,1,0];}
+      previous=t;const v=cross(t,u);
       for(let j=0;j<sides;j++){
         const a=j*TAU/sides,n=C.add(u.map(x=>x*Math.cos(a)),v.map(x=>x*Math.sin(a)));
-        pos.push(...C.add(p,n.map(x=>x*c.radius)));nrm.push(...n);
-        if(i<c.nodes.length-1){const k=i*sides+j,l=i*sides+(j+1)%sides;idx.push(k,l,k+sides,l,l+sides,k+sides);}
+        const distance=Math.min(i,points.length-1-i)*(c.nodes.length>1?C.norm(sub(nodes[1],nodes[0]))/steps:0),boot=1+Math.max(0,1-distance/.012)*.8;
+        pos.push(...C.add(p,n.map(x=>x*c.radius*boot)));nrm.push(...n);
+        if(i<points.length-1){const k=i*sides+j,l=i*sides+(j+1)%sides;idx.push(k,l,k+sides,l,l+sides,k+sides);}
       }
-    }
-    return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
+    }return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
   }
 
   // Every mesh of the robot for the lengths m.
@@ -425,7 +433,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
       };
-      const drawList = (list, pose, fade, tint, override) => { for (const p of list) { setMat(override||p.mat, fade, tint); drawG(p.g, pose); } };
+      const drawList = (list, pose, fade, tint, override) => { for (const p of list) { setMat(override||p.mat, fade, p.keepMaterial?null:tint); drawG(p.g, pose); } };
       const ch = o.chest, at = (R, t) => ({ R: C.mul3(ch.R, R), t: RC.place(ch, t) });
       const pts = [];
       const keep = (p) => pts.push(RC.place(ch, p));
@@ -459,7 +467,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
           liveCloths.add(c.key);
           const mesh = c.radius ? cableMesh(c) : clothMesh(c);
           let g = clothGPU.get(c.key);
-          if (!g) { g = upload(mesh); clothGPU.set(c.key, g); }
+          if (!g || g.count !== mesh.idx.length) { if(g)free(g); g = upload(mesh); clothGPU.set(c.key, g); }
           else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
           setMat('top', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }

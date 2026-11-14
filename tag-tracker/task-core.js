@@ -1,15 +1,19 @@
 // Robot workbench: scene construction, physical objectives, progress and a robot-mounted camera. No DOM.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./physics-core.js'), require('./cloth-core.js'), require('./cable-core.js'));
-  else root.TaskCore = factory(root.TagCore, root.PhysicsCore, root.ClothCore, root.CableCore);
-})(typeof self !== 'undefined' ? self : this, function (C, P, Cloth, Cable) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./physics-core.js'), require('./cloth-core.js'), require('./cable-core.js'), require('./charging-core.js'));
+  else root.TaskCore = factory(root.TagCore, root.PhysicsCore, root.ClothCore, root.CableCore, root.ChargingCore);
+})(typeof self !== 'undefined' ? self : this, function (C, P, Cloth, Cable, Charging) {
   'use strict';
   const I = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   const box = (p, h) => ({ type: 'box', p, h });
   const cyl = (p, r, h) => ({ type: 'cylinder', p, r, h });
   const rz = (a) => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
   function geometry(kind) {
-    if (kind === 'plug-rest') return [box([0,0,.004],[.028,.024,.004]),box([0,0,.035],[.018,.003,.027])];
+    if(kind==='phone-rest')return [box([0,0,.004],[.082,.044,.004]),box([0,0,.024],[.058,.008,.016])];
+    if(kind==='charger')return [{...box([0,0,0],[.020,.025,.029]),material:'shell'},...[-1,1].map(sign=>({...cyl([.0295,sign*.0095,0],.002,.0095),R:[0,0,1,0,1,0,-1,0,0],material:'metal'}))];
+    if(kind==='outlet')return [box([.029,0,-.03],[.009,.042,.070]),box([.010,0,.019],[.010,.04,.0163]),box([.010,0,-.019],[.010,.04,.0163]),box([.010,0,0],[.010,.0068,.0027]),...[-1,1].map(sign=>box([.010,sign*.0261,0],[.010,.0139,.0027]))];
+    if(kind==='phone')return [{...box([.006,0,0],[.072,.035,.0045]),material:'metal'},...[-1,1].flatMap(sign=>[{...box([-.072,sign*.0198,0],[.006,.0152,.0045]),material:'metal'},{...box([-.072,0,sign*.003],[.006,.0046,.0015]),material:'metal'}]),{...box([-.072,0,0],[.004,.0028,.0003]),material:'dark'},{...box([.006,0,.0048],[.067,.032,.0003]),material:'glass'},...[-.042,-.022,-.002].flatMap(x=>[{...cyl([x,-.024,-.0055],.0055,.001),material:'metal'},{...cyl([x,-.024,-.0066],.0043,.00015),material:'glass'}])];
+    if (kind === 'plug-rest') return [box([0,0,.004],[.028,.024,.004]),box([0,0,.035],[.020,.005,.027])];
     if (kind === 'usb-plug') return [box([0,0,0],[.020,.007,.0055]),box([.024,0,.00115],[.004,.0042,.00015]),box([.024,0,-.00115],[.004,.0042,.00015]),box([.024,.004,0],[.004,.0002,.001]),box([.024,-.004,0],[.004,.0002,.001])];
     if (kind === 'usb-port') return [box([.005,0,.0035],[.005,.008,.002]),box([.005,0,-.0035],[.005,.008,.002]),box([.005,.0062,0],[.005,.0016,.0015]),box([.005,-.0062,0],[.005,.0016,.0015]),box([.006,0,0],[.004,.0028,.0003]),box([.011,0,0],[.001,.008,.006]),box([.012,0,-.034],[.012,.022,.028])];
     if (kind === 'book') return [box([0,0,0],[.045,.065,.012])];
@@ -54,7 +58,7 @@
       Object.assign(b, { key: s.key, color: s.color, label: s.label }); byKey.set(s.key, b);
     }
     for (const s of level.cloths || []) { const c = Cloth.towel(s, table); W.cloths.push(c); byKey.set(s.key, c); }
-    for (const s of level.cables || []) { const c = Cable.cable(s, table, byKey.get(s.plug)); W.cables.push(c); byKey.set(s.key,c); }
+    for (const s of level.cables || []) { const c = Cable.cable(s, table, byKey.get(s.plug),s.anchor_body?byKey.get(s.anchor_body):null); W.cables.push(c); byKey.set(s.key,c); }
     for (const r of level.goals.filter(r=>r.type==='insert')) {
       const plug=byKey.get(r.object),port=byKey.get(r.target);
       W.contactGenerators.push(()=>Cable.sleeveContacts(W,plug,port));
@@ -62,11 +66,12 @@
     }
     const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0, gripper };
     game.local = (p) => C.mulv(C.tr3(table.R), C.sub(p, table.t));
-    game.reset = () => { W.reset(); game.elapsed = 0; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; };
+    game.reset = () => { W.reset(); game.elapsed = 0; game.clockStart = null; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; };
+    if(level.charging)Charging.attach(game);
     return game;
   }
   const within = (p, q, tolerance) => p.every((v, i) => Math.abs(v - q[i]) < tolerance[i]);
-  function update(g, dt, active) {
+  function update(g, dt, active, clock) {
     if (g.complete) return g;
     const W = g.world, holds = new Map();
     for (const [side, h] of Object.entries(W.hands)) if (h.grip) {
@@ -78,11 +83,16 @@
       if (p[2] > 0.04) g.dual.add(key);
     }
     if (active || holds.size || W.cloths.some(c=>c.pins.size) || W.cables.some(c=>c.pins.size)) g.started = true;
-    if (g.started) g.elapsed += dt;
+    if (g.started) {
+      if(Number.isFinite(clock)){if(g.clockStart==null)g.clockStart=clock-g.elapsed;g.elapsed=Math.max(g.elapsed,clock-g.clockStart);}
+      else g.elapsed+=dt;
+    }
     const released = (b) => !holds.has(b.key);
     const settled = (b) => C.norm(b.v) < 0.04 && C.norm(b.w) < 0.25;
     g.steps = g.level.goals.map((r) => {
       const b = g.byKey.get(r.object);
+      if(r.type==='power')return g.charging.wallDwell>.3;
+      if(r.type==='charge')return Charging.complete(g);
       if (r.type === 'fold') {
         const f = Cloth.folded(b), ps = b.nodes.map((n) => g.local(n.p)), mid = [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
         const span = [0, 1].map((i) => Math.max(...ps.map((p) => p[i])) - Math.min(...ps.map((p) => p[i])));
@@ -114,6 +124,7 @@
     const W=g.world,goals=g.level.goals,held=Object.values(W.hands).filter(h=>h.grip);
     let index=goals.findIndex((r,i)=>!g.steps[i]);
     if(g.complete)return {state:'done',index:0,object:goals[0].object};
+    if(g.charging){const state=Charging.guidance(g),first=g.charging.wallDwell<.3,s=g.level.charging,object=first?s.charger:state==='phone_pickup'?s.phone:s.plug,target=first?s.outlet:s.phone;return {state,index:first?0:1,object,target,at:g.local(W.poseOf(g.byKey.get(target)).t)};}
     const selected=goals.findIndex((r,i)=>!g.steps[i]&&held.some(h=>h.grip.body.key===r.object));
     if(selected>=0)index=selected;
     if(index<0)index=0;
@@ -169,13 +180,14 @@
     const out = {};
     if (!raw || typeof raw !== 'object') return out;
     for (const l of levels) {
-      const p = raw[l.id];
-      if (p && Number.isFinite(p.time) && p.time >= 0 && Number.isInteger(p.stars) && p.stars >= 1 && p.stars <= 3) out[l.id] = { stars: p.stars, time: p.time };
+      const legacy=l.legacy_id&&raw[l.legacy_id];
+      const p = raw[l.id] || (legacy&&!legacy.revision?legacy:null);
+      if (p && (!l.revision||p.revision===l.revision) && Number.isFinite(p.time) && p.time >= 0 && Number.isInteger(p.stars) && p.stars >= 1 && p.stars <= 3) out[l.id] = { stars: p.stars, time: p.time, ...(l.revision?{revision:l.revision}:{}) };
     }
     return out;
   }
   function best(previous, game) {
-    return { stars: Math.max(previous ? previous.stars : 0, game.stars), time: Math.min(previous ? previous.time : Infinity, game.elapsed) };
+    return { stars: Math.max(previous ? previous.stars : 0, game.stars), time: Math.min(previous ? previous.time : Infinity, game.elapsed), ...(game.level?.revision?{revision:game.level.revision}:{}) };
   }
   function headCamera(chest, m, tilt, w, h) {
     const a = Math.max(-80, Math.min(25, Number.isFinite(tilt) ? tilt : -40)) * Math.PI / 180;

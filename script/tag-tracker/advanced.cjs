@@ -3,7 +3,7 @@ module.exports=async function({check}){
   const path=require('path'),root=path.resolve(__dirname,'../..'),{execFileSync}=require('child_process');
   const C=require(root+'/tag-tracker/tracker-core'),R=require(root+'/tag-tracker/robot-core'),P=require(root+'/tag-tracker/physics-core'),T=require(root+'/tag-tracker/task-core'),Cable=require(root+'/tag-tracker/cable-core'),GL=require(root+'/tag-tracker/robot-gl'),H=require(root+'/tag-tracker/haptic-core');
   const data=JSON.parse(execFileSync('ruby',['-ryaml','-rjson','-e','puts JSON.generate(YAML.load_file(ARGV[0]))',root+'/_data/tag_tasks.yml'])),I=[1,0,0,0,1,0,0,0,1],G=R.gripper(R.model()),table={R:I,t:[0,0,0],size:[.5,.9],thick:.03};
-  const g=T.create(data.levels.find(l=>l.id==='cable'),table,G),W=g.world,plug=g.byKey.get('plug'),wire=W.cables[0];
+  const g=T.create(data.levels.find(l=>l.id==='connector'),table,G),W=g.world,plug=g.byKey.get('plug'),wire=W.cables[0];
   const socket=g.byKey.get('port'),portAt=W.poseOf(socket).t;
   let orient=I,wrist=C.add(W.poseOf(plug).t,[-.012,0,.0925]),opening=1;
   const frame=()=>{W.setRobot({hands:[{side:1,pose:{R:orient,t:wrist},opening}]});W.step(1/60);T.update(g,1/60,true);};

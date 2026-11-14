@@ -453,7 +453,7 @@ function tableDraw() {
   if (!W) return null;
   const T = W.table, up = tableUp(), Rt = C.tr3(T.R), shadows = [];
   const bodies = W.bodies.map((b) => Object.assign({ kind: b.kind, key: b.key, color: b.color }, W.poseOf(b)));
-  const compounds = Object.fromEntries(W.bodies.filter((b) => b.pieces).map((b) => [b.key, b.pieces]));
+  const compounds = Object.fromEntries(W.bodies.filter((b) => b.pieces).map((b) => [b.key, b.kind==='phone'?[...b.pieces,...phoneScreen(b)]:b.pieces]));
   taskMarkers(bodies, compounds);
   benchDecoration(bodies, compounds);
   for (const b of W.bodies) {
@@ -485,6 +485,7 @@ function tableFlat(face, seg, ball) {
     }
     else seg(p.t, C.add(p.t, C.mulv(p.R, [0, 0, PHYS.CUP.H])), PHYS.CUP.R, K.surface, K.text, 1);
   }
+  for (const cable of W.cables) for(let i=1;i<cable.nodes.length;i++)seg(cable.nodes[i-1].p,cable.nodes[i].p,cable.radius,cable.color,cable.color,1);
   for (const cloth of W.cloths) for (let i = 0; i < cloth.triangles.length; i += 3) face(cloth.triangles.slice(i, i + 3).map((k) => cloth.nodes[k].p), cloth.color, 1);
 }
 $('robotProps').value = S.settings.robot.props;

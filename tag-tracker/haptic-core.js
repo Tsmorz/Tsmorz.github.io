@@ -39,15 +39,18 @@
           const c=cue(world,side);if(c.seatEvent&&c.seatEvent!==s.seatEvent){s.seatAt=now;s.seatEvent=c.seatEvent;}
           const click=s.seatAt!=null&&now-s.seatAt<150,impact=c.event&&s.event!==c.event;
           if(c.load<.12&&!click&&!impact)continue;
-          const interval=click||impact?100:Math.max(120,420-100*Math.log1p(c.load));
-          if(b.hapticBusy||b.hapticError||now-s.last<interval)continue;
-          s.last=now;s.event=c.event;s.seatAt=null;b.hapticBusy=true;
+          const minimum=1000/Math.min(25,Math.max(10,b.hapticRateHz||10));
+          const changed=s.load!=null&&Math.abs(c.load-s.load)>Math.max(.3,s.load*.2);
+          const interval=click||impact||changed?minimum:Math.max(minimum,420-100*Math.log1p(c.load));
+          if(b.hapticError&&b.hapticRetryAfter&&now>=b.hapticRetryAfter){b.hapticError=null;b.hapticRetryAfter=null;}
+          if(b.hapticCharacteristic.busy||b.hapticBusy||b.hapticError||now-s.last<interval)continue;
+          s.last=now;s.load=c.load;s.event=c.event;s.seatAt=null;b.hapticBusy=true;
           const level=Math.min(45,Math.max(3,(click?42:8+12*Math.log1p(c.load))*Math.max(0,Math.min(1,Number.isFinite(strength)?strength:.6))));
           const bytes=packet(level,click||impact?3:1),ch=b.hapticCharacteristic;
           try{
             const write=ch.writeValueWithResponse?ch.writeValueWithResponse(bytes):ch.writeValue(bytes);
-            Promise.resolve(write).then(()=>{b.hapticLast={at:now,side,reason:click?'connector seated':c.reason,level:bytes[3]};},e=>{b.hapticError=String(e.message||e);}).finally(()=>{b.hapticBusy=false;});
-          }catch(e){b.hapticError=String(e.message||e);b.hapticBusy=false;}
+            Promise.resolve(write).then(()=>{if(b.hapticCharacteristic!==ch)return;b.hapticLast={at:now,side,reason:click?'connector seated':c.reason,level:bytes[3]};},e=>{if(b.hapticCharacteristic!==ch)return;b.hapticError=String(e.message||e);b.hapticRetryAfter=ch.transient?now+250:null;}).finally(()=>{if(b.hapticCharacteristic===ch)b.hapticBusy=false;});
+          }catch(e){b.hapticError=String(e.message||e);b.hapticRetryAfter=ch.transient?now+250:null;b.hapticBusy=false;}
         }
       }
     };
