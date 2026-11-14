@@ -24,16 +24,21 @@
   assert($('coverage-bins').textContent.includes('mm/s'), 'speed coverage available');
   $('inspect-take').click();
   await wait(() => $('stroke-list').querySelector('button'), 'stroke detection');
-  assert(document.body.dataset.workspace === 'inspect', 'Inspect workspace');
+  assert(document.body.dataset.workspace === 'collect' && document.body.dataset.mode === 'replay', 'a take replays in Record');
+  assert(!$('selection-tools').hidden && !$('transport').hidden, 'replay tools shown');
+  assert(getComputedStyle(document.querySelector('.score-section')).display !== 'none', 'replayed take shows its quality');
   $('stroke-list').querySelector('button').click();
-  await wait(() => !$('create-target').disabled, 'selection ready');
+  await wait(() => !$('create-target').disabled && !$('play-board').disabled, 'selection ready');
+  // Demo has no actuator: the selection plays on the speakers.
+  $('play-board').click();
+  await wait(() => $('replay-status').textContent.includes('speakers'), 'selection played on speakers');
   assert(Number($('selection-end').value) > Number($('selection-start').value), 'selection is editable');
   $('exclude-selection').click(); await new Promise(r => setTimeout(r, 150));
   assert($('spans').textContent.includes('bad'), 'exclusion preserved as a label');
   $('undo-label').click(); await new Promise(r => setTimeout(r, 150));
   assert(!$('spans').textContent.includes('bad'), 'exclusion can be undone');
   $('create-target').click();
-  assert(document.body.dataset.workspace === 'tune', 'selection becomes tuning source');
+  assert(document.body.dataset.workspace === 'recreate', 'selection opens in Recreate');
   assert($('signal-kind').value === 'recording', 'recorded target source');
   assert($('signal-summary').textContent.includes('Uncalibrated'), 'uncalibrated status is explicit');
   const before = $('signal-strength').value;
@@ -44,15 +49,15 @@
   await wait(() => $('profile-state').textContent.includes('Simulated') && !$('play-actuators').disabled, 'actuator profile', 20000);
   assert($('signal-summary').textContent.includes('Profile-compensated'), 'profile applied');
   $('play-actuators').click();
-  await wait(() => document.body.dataset.workspace === 'compare' && !$('save-variant').disabled, 'playback and comparison');
+  await wait(() => !$('comparison-panel').hidden && !$('save-variant').disabled && $('stop-actuators').disabled, 'playback and comparison');
   assert($('metric-band').textContent !== '—', 'recording comparison has a band error');
   assert($('measurement-kind').textContent === 'Simulated response', 'simulated response labelled');
   assert($('variants').querySelectorAll('li').length === 1, 'round saved');
   $('refine-drive').click();
-  assert(document.body.dataset.workspace === 'tune', 'refinement returns to Tune');
+  assert(document.body.dataset.workspace === 'recreate' && $('comparison-panel').hidden, 'refinement clears the old measurement');
   assert($('signal-summary').textContent.includes('not yet played'), 'refinement clears stale measurement state');
   $('play-actuators').click();
-  await wait(() => document.body.dataset.workspace === 'compare' && !$('save-variant').disabled, 'corrected measurement');
+  await wait(() => $('variants').querySelectorAll('li').length === 2 && !$('save-variant').disabled && $('stop-actuators').disabled, 'corrected measurement');
   assert($('variants').querySelectorAll('li').length === 2, 'both rounds retained');
   $('duplicate-variant').click();
   await wait(() => $('variants').querySelectorAll('li').length === 3, 'duplicate');
@@ -84,11 +89,43 @@
   const saved = await new Promise((resolve, reject) => { const r = db.transaction('studio').objectStore('studio').get('studio'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
   assert(saved.variants.length === 6 && saved.variants.some(v => v.notes === 'Less sharp'), 'experiment persisted');
   db.close();
+  // Library: the catalog, favorites (kept in IndexedDB), speaker playback in Demo, saved versions, export.
+  $('tab-library').click();
+  assert(!document.querySelector('.waveforms-section').hidden && document.querySelector('.studio-section').hidden, 'Library workspace');
+  const cards = () => $('waveform-grid').querySelectorAll('.wave-card');
+  assert(cards().length >= 30, 'catalog tiles');
+  await new Promise(r => setTimeout(r, 100));
+  const spark = cards()[0].querySelector('canvas');
+  assert(spark.width > 0 && spark.width === Math.round(spark.clientWidth * devicePixelRatio), 'sparkline buffer follows its CSS size');
+  cards()[0].querySelector('.star').click(); cards()[3].querySelector('.star').click();
+  document.querySelector('input[name=lib-filter][value=favorites]').click();
+  assert(cards().length === 2, 'favorites filter');
+  cards()[0].querySelector('.wave-play').click();
+  await wait(() => $('lib-play-status').textContent.includes('speakers'), 'library tile plays on the speakers in Demo');
+  $('speakers').click();
+  cards()[0].querySelector('.wave-play').click();
+  assert($('lib-play-status').className.includes('bad'), 'with Speakers off and no board, it says how to hear it');
+  $('speakers').click();
+  document.querySelector('input[name=lib-filter][value=recordings]').click();
+  assert(cards().length === 6, 'saved Recreate versions are in the Library');
+  cards()[0].querySelector('.star').click();
+  document.querySelector('input[name=lib-filter][value=impacts]').click();
+  assert([...cards()].every(c => !c.dataset.id.startsWith('v:')) && cards().length >= 5, 'group filter');
+  exports.clear();
+  $('lib-export').click();
+  await wait(() => exports.has('library.json') && exports.size === 4, 'favorites export');
+  const lib = JSON.parse(exports.get('library.json'));
+  assert(lib.format === 'haptography-library/1' && lib.waveforms.length === 3 && lib.waveforms.some(w => w.source === 'recording'), 'export lists catalog and recorded favorites');
+  await new Promise(r => setTimeout(r, 300));
+  const db2 = await new Promise((resolve, reject) => { const r = indexedDB.open('haptography'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+  const favs = await new Promise((resolve, reject) => { const r = db2.transaction('studio').objectStore('studio').get('library'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+  assert(favs.favorites.length === 3, 'favorites persisted');
+  db2.close();
   // All workspaces fit horizontally at the test viewport.
-  for (const name of ['collect', 'inspect', 'tune', 'compare']) {
+  for (const name of ['collect', 'library', 'recreate']) {
     $('tab-' + name).click();
     assert(document.documentElement.scrollWidth <= innerWidth, name + ' does not overflow horizontally');
   }
-  $('tab-compare').click();
-  return { result: 'PASS', takes: $('takes').querySelectorAll('.take').length, variants: saved.variants.length, bandError: $('metric-band').textContent };
+  $('tab-library').click(); document.querySelector('input[name=lib-filter][value=all]').click();
+  return { result: 'PASS', takes: $('takes').querySelectorAll('.take').length, variants: saved.variants.length, bandError: $('metric-band').textContent, waveforms: cards().length };
 })()

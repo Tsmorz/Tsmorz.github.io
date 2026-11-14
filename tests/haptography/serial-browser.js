@@ -47,7 +47,7 @@
   $('record').click(); await sleep(1300); $('record').click();
   await wait(() => !$('after-record').hidden, 'serial recording saved');
   assert($('takes').querySelectorAll('.take').length === 1, 'recording reaches library');
-  $('tab-tune').click(); $('signal-kind').value = 'sine'; $('signal-kind').dispatchEvent(new Event('change', { bubbles: true }));
+  $('tab-recreate').click(); $('signal-kind').value = 'sine'; $('signal-kind').dispatchEvent(new Event('change', { bubbles: true }));
   $('signal-seconds').value = '0.3'; $('signal-seconds').dispatchEvent(new Event('change', { bubbles: true }));
   $('signal-strength').value = '20'; $('signal-strength').dispatchEvent(new Event('change', { bubbles: true }));
   await wait(() => !$('play-actuators').disabled, 'protocol 5 playback enabled');
@@ -56,6 +56,12 @@
   assert(commands.includes(0x41) && commands.includes(0x42) && commands.includes(0x43), 'clip upload and playback commands');
   assert(commands.at(-1) === 0x46, 'playback finishes with STOP');
   assert(!commands.includes(0x45) && !commands.includes(0x47), 'no ERM effect or pulse');
+  // A Library tile uploads its own clip to the connected board.
+  commands.length = 0; $('tab-library').click();
+  $('waveform-grid').querySelector('[data-id=double-click] .wave-play').click();
+  await wait(() => $('lib-play-status').textContent.includes('TacHammer') && commands.includes(0x43) && $('stop-actuators').disabled, 'library tile on the board');
+  assert(commands.includes(0x41) && commands.at(-1) === 0x46, 'library clip uploaded, played and stopped');
+  assert(!$('lib-play-status').className.includes('bad'), $('lib-play-status').textContent);
   $('tab-collect').click(); $('connect').click(); await sleep(150);
   $('connect').click(); await wait(() => $('link-lamp').textContent === 'Connected', 'reconnect');
   assert(chooserCalls === 0, 'reconnect reuses authorized XIAO');

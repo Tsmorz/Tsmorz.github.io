@@ -2,23 +2,18 @@ collect_intro: Keep grip and contact pressure consistent between takes.
 coach_label: Recording status
 labels:
   record: Recording
-  waveform: Waveform
-  comparison: Comparison
-  variants: Variants
+  takes: Recordings
+  waveform: Recreate
+  variants: Saved versions
 workspaces:
-  - { id: collect, name: Record, hint: Record a surface }
-  - { id: inspect, name: Inspect, hint: Find a good stroke }
-  - { id: tune, name: Waveform, hint: Shape the signal }
-  - { id: compare, name: Compare, hint: Measure and refine }
+  - { id: collect, name: Record, hint: Record a surface and replay it }
+  - { id: library, name: Library, hint: Common waveforms; star your favorites }
+  - { id: recreate, name: Recreate, hint: Turn a recording into a waveform }
 speed_bands:
   - { name: "Slow · 0–100 mm/s", low: 0, high: 100 }
   - { name: "Medium · 100–200 mm/s", low: 100, high: 200 }
   - { name: "Fast · 200–300 mm/s", low: 200, high: 300 }
   - { name: "Very fast · 300+ mm/s", low: 300, high: 500 }
-presets:
-  - { name: Soft pulse, kind: pulse, frequency: 8, width: 8, seconds: 1, strength: 25 }
-  - { name: Fine texture, kind: noise, low: 80, high: 350, seconds: 2, strength: 30 }
-  - { name: Frequency sweep, kind: sweep, frequency: 30, endFrequency: 400, seconds: 2, strength: 25 }
 sources:
   - { id: recording, name: Selected recording }
   - { id: sine, name: Sine wave }
@@ -36,3 +31,61 @@ controls:
   - { id: attack, name: Attack, unit: ms, min: 0, max: 200, step: 1, value: 20 }
   - { id: release, name: Release, unit: ms, min: 0, max: 200, step: 1, value: 20 }
   - { id: ermShare, name: ERM envelope share, unit: "%", min: 0, max: 100, step: 1, value: 30, hint: The ERM follows the slow envelope; the TacHammer carries the waveform. }
+
+# The Library tab. Each waveform is drawn by library-core.js from these parameters (all times in ms):
+#   knock: a half-sine push `ms` wide, a reversed `brake` pulse (0-1) and an optional ringing tail
+#          at `ring` Hz that dies away over `decay` ms at `tail` level: clicks and impacts.
+#   tone:  a sine at `hz` (sweeping to `to`), `ms` long, `shape` flat/up/down/swell, `wobble` Hz.
+#   noise: noise from `low` to `high` Hz, `ms` long, with `grain` Hz bumps or `stick` Hz stick-slip.
+# Any entry: `repeat` hits, `gap` ms between their starts (one number or a list), `levels` per hit,
+# and `level` (0-1) for the whole thing. The drive is then held inside the actuator's safe limits.
+library_groups:
+  - { id: clicks, name: Clicks }
+  - { id: impacts, name: Impacts }
+  - { id: alerts, name: Buzzes & alerts }
+  - { id: ramps, name: Ramps & sweeps }
+  - { id: textures, name: Textures }
+library:
+  - { id: click, group: clicks, name: Click, feel: A crisp mouse-button tap, kind: knock, ms: 4, brake: 0.7 }
+  - { id: sharp-click, group: clicks, name: Sharp click, feel: Shorter and harder, kind: knock, ms: 2.5, brake: 1 }
+  - { id: soft-click, group: clicks, name: Soft click, feel: A muffled tap, kind: knock, ms: 9, brake: 0.3, level: 0.6 }
+  - { id: double-click, group: clicks, name: Double click, kind: knock, ms: 4, brake: 0.7, repeat: 2, gap: 90 }
+  - { id: triple-click, group: clicks, name: Triple click, kind: knock, ms: 4, brake: 0.7, repeat: 3, gap: 75 }
+  - { id: tick, group: clicks, name: Tick, feel: The lightest touch, kind: knock, ms: 2, brake: 0.5, level: 0.45 }
+  - { id: detent, group: clicks, name: Detent, feel: A scroll wheel notch, kind: knock, ms: 3, brake: 0.3, ring: 220, decay: 8, tail: 0.3, level: 0.5 }
+  - { id: button-press, group: clicks, name: Button press, feel: "Press, then a softer release", kind: knock, ms: 5, brake: 0.7, repeat: 2, gap: 140, levels: [1, 0.5] }
+  - { id: toggle, group: clicks, name: Toggle, feel: A switch flipping over, kind: knock, ms: 6, brake: 0.5, repeat: 2, gap: 35, levels: [0.6, 1] }
+  - { id: wood-knock, group: impacts, name: Wood knock, kind: knock, ms: 5, brake: 0.5, ring: 180, decay: 25, tail: 0.6 }
+  - { id: metal-ping, group: impacts, name: Metal ping, feel: A long ring, kind: knock, ms: 2, brake: 0.4, ring: 420, decay: 140, tail: 0.8 }
+  - { id: glass-tap, group: impacts, name: Glass tap, kind: knock, ms: 1.5, brake: 0.6, ring: 600, decay: 40, tail: 0.7, level: 0.7 }
+  - { id: plastic-clack, group: impacts, name: Plastic clack, kind: knock, ms: 3, brake: 0.6, ring: 300, decay: 15, tail: 0.5 }
+  - { id: rubber-thud, group: impacts, name: Rubber thud, feel: Soft and heavy, kind: knock, ms: 18, brake: 0.2, ring: 70, decay: 40, tail: 0.4 }
+  - { id: bump, group: impacts, name: Bump, feel: A gentle nudge, kind: knock, ms: 25, brake: 0, level: 0.5 }
+  - { id: collision, group: impacts, name: Collision, feel: A hard hit that shakes, kind: knock, ms: 6, brake: 0.8, ring: 120, decay: 120, tail: 0.9 }
+  - { id: heavy-drop, group: impacts, name: Heavy drop, feel: "Lands, then two small bounces", kind: knock, ms: 14, brake: 0.4, ring: 90, decay: 60, tail: 0.7, repeat: 3, gap: [220, 140], levels: [1, 0.35, 0.12] }
+  - { id: ball-bounce, group: impacts, name: Ball bounce, kind: knock, ms: 4, brake: 0.6, ring: 250, decay: 20, tail: 0.5, repeat: 5, gap: [300, 220, 160, 115], levels: [1, 0.7, 0.5, 0.35, 0.25] }
+  - { id: buzz-50, group: alerts, name: Buzz 50 Hz, feel: Felt more than heard, kind: tone, hz: 50, ms: 400 }
+  - { id: buzz-150, group: alerts, name: Buzz 150 Hz, kind: tone, hz: 150, ms: 400 }
+  - { id: buzz-250, group: alerts, name: Buzz 250 Hz, feel: "A thin, bright buzz", kind: tone, hz: 250, ms: 300 }
+  - { id: long-buzz, group: alerts, name: Long buzz, kind: tone, hz: 175, ms: 1200 }
+  - { id: pulsing, group: alerts, name: Pulsing, kind: tone, hz: 170, ms: 120, repeat: 4, gap: 240 }
+  - { id: notification, group: alerts, name: Notification, feel: Three quick taps of buzz, kind: tone, hz: 200, ms: 60, repeat: 3, gap: 110 }
+  - { id: heartbeat, group: alerts, name: Heartbeat, kind: knock, ms: 14, brake: 0.3, ring: 60, decay: 40, tail: 0.5, repeat: 4, gap: [190, 620, 190], levels: [1, 0.6, 1, 0.6] }
+  - { id: siren, group: alerts, name: Siren, kind: tone, hz: 120, to: 300, ms: 450, repeat: 2, gap: 500 }
+  - { id: engine, group: alerts, name: Engine idle, feel: A lumpy low rumble, kind: tone, hz: 45, ms: 1500, wobble: 9 }
+  - { id: purr, group: alerts, name: Purr, kind: tone, hz: 32, ms: 1200, wobble: 24, level: 0.8 }
+  - { id: ramp-up, group: ramps, name: Ramp up, kind: tone, hz: 170, ms: 800, shape: up }
+  - { id: ramp-down, group: ramps, name: Ramp down, kind: tone, hz: 170, ms: 800, shape: down }
+  - { id: swell, group: ramps, name: Swell, feel: "Builds, holds, fades", kind: tone, hz: 150, ms: 1200, shape: swell }
+  - { id: sweep-up, group: ramps, name: Sweep up, kind: tone, hz: 40, to: 400, ms: 900 }
+  - { id: sweep-down, group: ramps, name: Sweep down, kind: tone, hz: 400, to: 40, ms: 900 }
+  - { id: charge-up, group: ramps, name: Charge up, feel: Rising pitch and strength, kind: tone, hz: 60, to: 300, ms: 1000, shape: up }
+  - { id: power-down, group: ramps, name: Power down, kind: tone, hz: 300, to: 40, ms: 1000, shape: down }
+  - { id: sandpaper, group: textures, name: Sandpaper, feel: "Fine, even grit", kind: noise, low: 150, high: 450, ms: 1000, level: 0.8 }
+  - { id: gravel, group: textures, name: Gravel, feel: "Coarse, uneven bumps", kind: noise, low: 40, high: 200, ms: 1000, grain: 18 }
+  - { id: fabric, group: textures, name: Fabric rub, kind: noise, low: 80, high: 220, ms: 1000, wobble: 4, level: 0.5 }
+  - { id: smooth-slide, group: textures, name: Smooth slide, kind: noise, low: 60, high: 120, ms: 1000, level: 0.35 }
+  - { id: stick-slip, group: textures, name: Stick-slip, feel: Rubber dragged on glass, kind: noise, low: 80, high: 300, ms: 1000, stick: 11 }
+  - { id: rolling, group: textures, name: Rolling, feel: A wheel over seams, kind: noise, low: 50, high: 150, ms: 1200, grain: 9 }
+  - { id: scrape, group: textures, name: Metal scrape, kind: noise, low: 220, high: 330, ms: 900, stick: 25 }
+  - { id: rumble, group: textures, name: Rumble, kind: noise, low: 25, high: 70, ms: 1200, shape: swell }

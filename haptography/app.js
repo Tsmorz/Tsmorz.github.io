@@ -16,8 +16,11 @@ import { healthSummary, diagnostics, downloadDiagnostics, encodeProfile } from "
 import { bindProfileEditor } from "./profile-view.js";
 import { DeviceClient, COMMAND, openBoardPort } from "./device.js";
 import { mountStudio } from "./studio.js";
+import { mountLibrary } from "./library.js";
+import { bindSpeakers } from "./speakers.js";
 
 let studio = null;
+let library = null;
 let deviceClient = null;
 const labelUndo = [];
 let coverageTick = 0;
@@ -593,7 +596,7 @@ async function stopRecording(why) {
   $("storage-note").textContent = store.persistent ? "Saved locally · not exported" : "Memory only · export to keep";
   $("after-record").hidden = false;
   $("coach-state").textContent = "Take saved";
-  $("coach-detail").textContent = "Record another take or select a stroke in Inspect.";
+  $("coach-detail").textContent = "Record another take, or replay this one and pick a stroke.";
   studio?.refresh();
 }
 
@@ -609,7 +612,7 @@ $("restart-still").addEventListener("click", async () => {
 });
 $("record-another").addEventListener("click", startRecording);
 $("retry-take").addEventListener("click", startRecording);
-$("inspect-take").addEventListener("click", () => studio?.workspace("inspect", true));
+$("inspect-take").addEventListener("click", () => { studio?.workspace("collect"); setMode("replay"); renderStrokes(); });
 for (const id of ["rec-dataset", "rec-label", "rec-notes", "rec-setup"]) {
   $(id).value = recall(id);
   $(id).addEventListener("change", () => remember(id, $(id).value));
@@ -716,13 +719,13 @@ function renderLibrary() {
 
 $("takes").addEventListener("click", (event) => {
   const li = event.target.closest(".take");
-  if (li) select(li.dataset.id, { replay: !rec }).then(() => !rec && studio?.workspace("inspect"));
+  if (li) select(li.dataset.id, { replay: !rec });
 });
 $("takes").addEventListener("keydown", (event) => {
   const li = event.target.closest(".take");
   if (li && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
-    select(li.dataset.id, { replay: !rec }).then(() => !rec && studio?.workspace("inspect"));
+    select(li.dataset.id, { replay: !rec });
   }
 });
 $("lib-dataset").addEventListener("change", () => {
@@ -922,7 +925,7 @@ function renderScore() {
     badge.className = `badge big ${s.grade}`;
     $("quality-number").textContent = `${s.score}/100`;
     const issues = s.checks.filter((c) => c.status !== "pass" && c.status !== "good" && c.points < c.max);
-    $("quality-summary").textContent = issues.length ? `${s.grade === "poor" ? "Check this take" : "Usable recording"} · ${issues[0].name}: ${issues[0].detail}` : "Clean recording. Inspect a stroke to create an actuator signal.";
+    $("quality-summary").textContent = issues.length ? `${s.grade === "poor" ? "Check this take" : "Usable recording"} · ${issues[0].name}: ${issues[0].detail}` : "Clean recording. Pick a stroke to play it on the actuator or recreate it.";
     $("take-title").textContent = t.label || "(unlabelled)";
     $("take-sub").textContent = `${t.simulated ? "Simulated · " : ""}${t.repetition ? `Take ${t.repetition} · ` : ""}${fmtDate(t.created)} · ${t.seconds.toFixed(1)} s · board ${t.board ?? "?"} · ${fmtMB(t.bytes)}`;
     $("checks").replaceChildren(...s.checks.map((c) => {
@@ -1136,7 +1139,9 @@ function setMode(next) {
   $("view-as").hidden = mode === "spectrum";
   $("xyz-legend").hidden = mode === "spectrum" || viewAs === "spectrogram";
   $("compare-wrap").hidden = mode !== "spectrum";
-  $("selection-tools").hidden = mode !== "replay" || document.body.dataset.workspace !== "inspect";
+  $("selection-tools").hidden = mode !== "replay";
+  document.body.dataset.mode = mode;
+  $("scope-heading").textContent = mode === "live" ? "Live signals" : mode === "replay" ? "Recording" : "Spectra";
   if (mode === "live") stopAudio();
   hover = null;
   updateEmpty();
@@ -1158,14 +1163,14 @@ function updateEmpty() {
   const empty = $("scope-empty");
   const specEmpty = $("spectra-empty");
   specEmpty.hidden = mode !== "spectrum" || (spectrumOf === "live" ? Boolean(source) : Boolean(loaded && loaded.id === selectedId));
-  specEmpty.textContent = spectrumOf === "live" ? "Connect the board or start the Demo for live spectra." : "Pick a take in the Library to see its spectra.";
+  specEmpty.textContent = spectrumOf === "live" ? "Connect the board or start the Demo for live spectra." : "Pick a recording to see its spectra.";
   if (mode === "spectrum") return;
   if (mode === "live") {
     empty.hidden = Boolean(source);
     empty.textContent = "Connect the board or start the Demo to see it live.";
   } else {
     empty.hidden = Boolean(loaded && loaded.id === selectedId);
-    empty.textContent = "Pick a take in the Library to replay it.";
+    empty.textContent = "Pick a recording on the left to replay it.";
   }
 }
 
@@ -1315,11 +1320,13 @@ function drawOverlays() {
     if (selection && document.activeElement !== $(id)) $(id).value = selection[index].toFixed(3);
   }
   $("create-target").disabled = !selection || studio?.busy();
+  $("play-board").disabled = !selection || studio?.busy();
+  for (const id of ["create-target", "play-board"]) $(id).title = selection ? "" : "Select a stroke first";
   $("exclude-selection").disabled = !selection;
 }
 
 function frame(now) {
-  if (document.body.dataset.workspace === "tune" || document.body.dataset.workspace === "compare") {
+  if (document.body.dataset.workspace !== "collect") {
     requestAnimationFrame(frame);
     return;
   }
@@ -1613,7 +1620,7 @@ function stopAudio() {
       /* already ended */
     }
   }
-  $("play").textContent = "Listen on computer";
+  $("play").textContent = "Listen";
 }
 
 function seek(t) {
@@ -1643,7 +1650,7 @@ addEventListener("keydown", (event) => {
   if (event.key === "r" || event.key === "R") {
     if (rec) stopRecording().catch(recordingError);
     else if (source) startRecording();
-  } else if (event.key === " " && mode === "replay" && document.body.dataset.workspace === "inspect") {
+  } else if (event.key === " " && mode === "replay" && document.body.dataset.workspace === "collect") {
     event.preventDefault();
     audio.source ? stopAudio() : play();
   } else if (event.key === "Escape") {
@@ -1667,7 +1674,17 @@ async function reanalyseOld() {
   renderScore();
 }
 
+$("play-board").addEventListener("click", async () => {
+  stopAudio();
+  setStatus("replay-status", "Playing the selection…");
+  try {
+    const where = await studio.playSelection();
+    setStatus("replay-status", where === "actuator" ? "Played on the actuator. Recreate it to shape and measure the drive." : "Played on the speakers (no board connected). Recreate it to shape the drive.");
+  } catch (err) { setStatus("replay-status", err.message, "bad"); }
+});
+
 async function start() {
+  bindSpeakers();
   store = await openStore();
   if (!store.persistent) $("storage-note").textContent = "this browser won't keep takes: export them";
   try { await store.importBench?.(); }
@@ -1683,7 +1700,13 @@ async function start() {
     recording: () => Boolean(rec), loaded: () => loaded?.id === selectedId ? loaded : null,
     take: () => takes.get(selectedId), selection: () => selection,
     stopAudio, setMode, redraw: () => { dirty = true; },
-    selectionStatus: (text) => setStatus("lib-status", text, "bad"),
+    selectionStatus: (text) => setStatus("replay-status", text, "bad"),
+    workspaceChanged: (next) => { if (next === "library") library?.refresh(); },
+  });
+  library = await mountLibrary({
+    store: () => store, source: () => source, variants: () => studio.variants(), stopAudio,
+    canPlay: () => studio.boardReady() && !studio.busy(),
+    playOnce: (...args) => studio.playOnce(...args),
   });
   requestAnimationFrame(frame);
   unsaved = await store.spooled().catch(() => []);

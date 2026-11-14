@@ -26,7 +26,7 @@ To change what the site says, edit YAML, not HTML.
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Tag tracker robot tasks, instructions and hints | `_data/tag_tasks.yml` |
 | DynaSoar aircraft presets, branding, weather copy and landmarks | `_data/glide.yml` |
-| Haptography workspaces, collection guidance, signal controls and presets | `_data/haptography.yml` |
+| Haptography workspaces, collection guidance, signal controls and the waveform library | `_data/haptography.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Lessons on /controls/, /vision/ or /embedded/ | `_data/labs/controls.yml`, `vision.yml`, `embedded.yml` |
 | Name, bio links, CV button | `_config.yml` |
