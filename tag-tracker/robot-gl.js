@@ -234,6 +234,30 @@
     return out;
   }
 
+  // A clothed, stylised teenage helper uses the same FK and contact poses as the robot. Geometry stays local.
+  function actorMeshes(m) {
+    const b=(p,r,mat)=>part(blob(p,r,0.7,0.8,{nu:24,nv:16}),mat), hz=m.up+.17, hx=-m.back+.02;
+    const human={
+      body:[b([-.055,0,-.075],[.085,.155,.19],'shirt'), b([-.055,0,-.25],[.075,.13,.07],'denim'), b([-.055,0,.12],[.035,.04,.065],'skin'), b([-.10,0,.11],[.05,.12,.04],'shirt')],
+      head:[b([hx,0,hz],[.079,.082,.102],'skin'),b([hx-.012,0,hz+.073],[.083,.087,.047],'hair'),b([hx+.055,0,hz+.065],[.034,.08,.027],'hair'),b([hx+.078,0,hz-.005],[.018,.016,.021],'skin')],
+      upper:[b([0,0,-m.upper*.42],[.041,.043,m.upper*.54],'shirt')],
+      fore:[b([0,0,-m.fore*.50],[.028,.03,m.fore*.5],'skin'),b([0,0,-.025],[.032,.034,.04],'shirt')],
+      palm:[b([0,0,-.042],[.027,.043,.028],'skin')],
+      finger:{1:[], '-1':[]},
+      shoulder:[b([0,0,0],[.043,.045,.043],'shirt')],elbow:[b([0,0,0],[.029,.032,.03],'skin')],knee:[b([0,0,0],[.042,.045,.043],'denim')],
+      thigh:[b([0,0,-.18],[.052,.055,.19],'denim')], shin:[b([0,0,-.18],[.039,.043,.185],'denim')],
+      shoe:[b([.025,0,0],[.09,.043,.04],'shoe'),b([.025,0,-.027],[.09,.044,.012],'ceramic')],
+    };
+    for(const side of [-1,1]){
+      human.head.push(b([hx+.072,side*.033,hz+.019],[.009,.01,.012],'dark'),b([hx,side*.082,hz-.008],[.019,.013,.03],'skin'));
+      for(const x of side===1?[-.014,-.005,.004,.013]:[0]) human.finger[side].push(b([x,side*.008,-.093],[side===1?.0055:.012,.01,.026],'skin'));
+    }
+    human.head.push(b([hx+.076,0,hz-.044],[.004,.025,.003],'hair'));
+    const amr=[b([-.065,0,.115],[.18,.19,.055],'metal'),b([-.065,0,.17],[.145,.16,.018],'dark'),b([-.075,0,.35],[.027,.027,.21],'metal'),b([.112,0,.12],[.004,.105,.009],'light')];
+    const wheel=[b([0,0,0],[.07,.025,.07],'dark'),b([0,.026,0],[.045,.004,.045],'metal'),b([0,.031,0],[.04,.005,.006],'dark')];
+    return {human,amr,wheel};
+  }
+
   // ---- drawing ----
   const VS = `attribute vec3 aPos; attribute vec3 aNrm;
 uniform mat4 uPV, uModel; uniform mat3 uRot; varying vec3 vN, vW;
@@ -273,6 +297,7 @@ void main() {
     top: { base: lin('#6b737c'), spec: 0.25, shine: 24, rim: 0.5 },
     ball: { base: lin('#2a78d6'), spec: 0.7, shine: 80, rim: 0.6 },
     ballB: { base: lin('#e9eef5'), spec: 0.7, shine: 80, rim: 0.6 },
+    skin: {base:lin('#c89978'),spec:.1,shine:12,rim:.35}, shirt:{base:lin('#547d91'),spec:.12,shine:12,rim:.3}, denim:{base:lin('#33455c'),spec:.1,shine:10,rim:.3}, hair:{base:lin('#382e2b'),spec:.16,shine:14,rim:.3}, shoe:{base:lin('#353b44'),spec:.15,shine:18,rim:.3},
     ceramic: { base: lin('#ece8e1'), spec: 0.6, shine: 90, rim: 0.6 },
   };
   // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
@@ -307,10 +332,13 @@ void main() {
       const key = JSON.stringify(m);
       if (key === builtKey) return built;
       if (built) for (const g of built.gpu) free(g);
-      const M = meshes(m), gpu = [];
+      const M = meshes(m), A = actorMeshes(m), gpu = [];
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
+      const H = A.human, human = {};
+      for(const key of ['body','head','upper','fore','palm','thigh','shin','shoe','shoulder','elbow','knee']) human[key]=up(H[key]);
+      human.finger={1:up(H.finger[1]),'-1':up(H.finger[-1])};
       built = {
-        M, gpu, body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
+        M, gpu, human, amr:up(A.amr), wheel:up(A.wheel), body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
         hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },
         tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
       };
@@ -419,7 +447,20 @@ void main() {
         }
         for (const [k, g] of clothGPU) if (!liveCloths.has(k)) { free(g); clothGPU.delete(k); }
       }
-      if (o.body) {
+      const teen=o.actor==='teen', L=o.locomotion;
+      if(o.body && teen){
+        drawList(B.human.body,ch,0);
+        if(!o.eyes){const pivot=[-o.m.back+.02,0,o.m.up+.17],R=RC.Ry(-(o.headTilt||0)*Math.PI/180);drawList(B.human.head,at(R,C.sub(pivot,C.mulv(R,pivot))),0);}
+        const floor=L?L.floor:-.975, activity=L?Math.min(1,L.speed/.2):0;
+        const link=(a,b)=>{const z=unit(sub(a,b)),x=unit(cross([0,1,0],z)),y=cross(z,x);return at([x[0],y[0],z[0],x[1],y[1],z[1],x[2],y[2],z[2]],a);};
+        for(const side of [-1,1]){
+          const swing=Math.sin((L?L.phase:0)+(side===1?0:Math.PI))*activity,hip=[-.055,side*.085,-.235],foot=[-.055+.1*swing,side*.085,floor+.04+.035*Math.max(0,swing)];
+          const d=sub(foot,hip),length=Math.hypot(...d),middle=C.add(hip,d.map(v=>v*.5)),bend=Math.sqrt(Math.max(0,.37*.37-length*length/4));
+          const direction=unit([d[2]*-1,0,d[0]]),knee=C.add(middle,direction.map(v=>v*bend));
+          drawList(B.human.thigh,link(hip,knee),0);drawList(B.human.knee,at([1,0,0,0,1,0,0,0,1],knee),0);drawList(B.human.shin,link(knee,foot),0);drawList(B.human.shoe,at([1,0,0,0,1,0,0,0,1],foot),0);keep(foot);
+        }
+      } else if (o.body) {
+        if(L){drawList(B.amr,at([1,0,0,0,1,0,0,0,1],[0,0,L.floor]),0);for(const side of [-1,1])drawList(B.wheel,at(RC.Ry((L.distance||0)/.07),[-.065,side*.19,L.floor+.075]),0);}
         drawList(B.body, ch, o.fadeBody || 0);
         if (!o.eyes) {
           const pivot = [-o.m.back + 0.02, 0, o.m.up + 0.17], R = RC.Ry(-(o.headTilt || 0) * Math.PI / 180);
@@ -430,15 +471,16 @@ void main() {
       else if (o.mount === 1 || o.mount === -1) drawList(B.mount[o.mount], ch, 0);
       for (const a of o.arms) {
         const k = RC.fk(o.m, a.side, a.q), fade = a.idle ? 0.62 : a.live ? 0 : 0.45;
-        drawList(B.upper, at(k.Ru, k.shoulder), fade);
-        drawList(B.fore, at(k.Rf, k.elbow), fade);
+        if(teen){drawList(B.human.shoulder,at(k.Ru,k.shoulder),0);drawList(B.human.elbow,at(k.Rf,k.elbow),0);}
+        drawList(teen?B.human.upper:B.upper, at(k.Ru, k.shoulder), teen?0:fade);
+        drawList(teen?B.human.fore:B.fore, at(k.Rf, k.elbow), teen?0:fade);
         // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
-        if (!a.reach || (a.live && !a.idle)) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
+        if (!teen && (!a.reach || (a.live && !a.idle))) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
         // a gripper the pointer can take (a.hot 1) is tinted violet, more so while it is dragged (2)
         const hot = a.hot ? glow.map((x) => x * (a.hot > 1 ? 1.25 : 1)) : null;
-        drawList(B.hand[a.side], at(k.R, k.wrist), fade, hot);
+        drawList(teen?B.human.palm:B.hand[a.side], at(k.R, k.wrist), teen?0:fade, hot);
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
-        for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), fade, hot);
+        for (const j of [1, -1]) drawList(teen?B.human.finger[j]:B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), teen?0:fade, hot);
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       // the force arrows (o.forces: [{a: tail, b: tip, warn}]), over everything: they are often inside a gripper
@@ -469,5 +511,5 @@ void main() {
     return self;
   }
 
-  return { meshes, propMeshes, compoundMeshes, clothMesh, create, lin };
+  return { meshes, actorMeshes, propMeshes, compoundMeshes, clothMesh, create, lin };
 });

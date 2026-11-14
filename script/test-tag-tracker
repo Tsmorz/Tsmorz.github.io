@@ -1229,6 +1229,11 @@ if (run('5j')) {
   require('./tag-tracker/teleop.cjs')({ check, near });
 }
 
+if (run('5k')) {
+  console.log('5k. tiny-room story, walking, AMR collision and character meshes');
+  require('./tag-tracker/story.cjs')({ check, near });
+}
+
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
 function testBridge() {
   const { spawnSync, spawn } = require('child_process'), dgram = require('dgram'), net = require('net');

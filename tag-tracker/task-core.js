@@ -29,6 +29,20 @@
     }
     throw new Error('Unknown task geometry: ' + kind);
   }
+  // Story rooms keep only one small job. Practice retains the original full-size challenges and saved results.
+  function mission(level, mode) {
+    if (mode !== 'story' || !level.story) return level;
+    const l = JSON.parse(JSON.stringify(level)), s = l.story;
+    l.name = s.title; l.brief = s.brief; l.par = s.par; l.travel = s.travel;
+    l.objects = (l.objects || []).filter((o) => s.keep.includes(o.key));
+    l.cloths = (l.cloths || []).filter((o) => s.keep.includes(o.key));
+    for (const o of l.objects) if (s.placements && s.placements[o.key]) o.at = s.placements[o.key];
+    l.goals = s.goal_indices ? s.goal_indices.map((i) => l.goals[i]) : l.goals.slice(0, s.goal_count);
+    if (s.goal_x !== undefined) { for (const r of l.goals) if (r.at) r.at[0] = s.goal_x; for (const m of l.markers || []) m.at[0] = s.goal_x; }
+    if (s.delivery) for (const r of l.goals) { r.at[0] = s.delivery.at[0]; r.at[1] = s.delivery.at[1]; if (r.object === 'tray') r.carry = s.delivery.carry; }
+    return l;
+  }
+  function unlocked(levels, saved) { const i = levels.findIndex((l) => !saved[l.id]); return i < 0 ? levels.length - 1 : i; }
   function create(level, table, gripper) {
     const W = P.world({ table, gripper }), byKey = new Map();
     const at = (p) => C.add(table.t, C.mulv(table.R, p));
@@ -37,9 +51,14 @@
       Object.assign(b, { key: s.key, color: s.color, label: s.label }); byKey.set(s.key, b);
     }
     for (const s of level.cloths || []) { const c = Cloth.towel(s, table); W.cloths.push(c); byKey.set(s.key, c); }
-    const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0 };
+    if (level.travel && level.story.delivery) {
+      const [x,y] = level.story.delivery.at, pieces = [box([x,y,-.015],[.21,.16,.015])];
+      for (const a of [-1,1]) for (const b of [-1,1]) pieces.push(box([x+a*.18,y+b*.13,-.39],[.012,.012,.36]));
+      W.add({kind:'serving',key:'serving',label:'Serving table',fixed:true,mass:1,pieces,color:'#70858c'}, table.t, table.R);
+    }
+    const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0, arrived: false, carryMeters: 0 };
     game.local = (p) => C.mulv(C.tr3(table.R), C.sub(p, table.t));
-    game.reset = () => { W.reset(); game.elapsed = 0; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; };
+    game.reset = () => { W.reset(); game.elapsed = 0; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; game.arrived = false; game.carryMeters = 0; };
     return game;
   }
   const within = (p, q, tolerance) => p.every((v, i) => Math.abs(v - q[i]) < tolerance[i]);
@@ -79,9 +98,10 @@
       }
       if (r.handoff && (g.heldBy.get(r.object) || new Set()).size !== 2) return false;
       if (r.dual && !g.dual.has(r.object)) return false;
+      if (r.carry && g.carryMeters < r.carry) return false;
       return true;
     });
-    const all = g.started && g.steps.every(Boolean);
+    const all = g.started && (!g.level.travel || g.arrived) && g.steps.every(Boolean);
     g.dwell = all ? g.dwell + dt : 0;
     if (g.dwell >= 0.75) { g.complete = true; g.stars = 1 + (g.elapsed <= g.level.par ? 1 : 0) + (W.respawns === 0 ? 1 : 0); }
     return g;
@@ -107,5 +127,5 @@
     return { eye, fwd, right, up, fov, project(p) { const d = C.sub(p, eye), z = d.reduce((s, v, i) => s + v * fwd[i], 0); if (z < 0.001) return null;
       return [w / 2 + f * d.reduce((s, v, i) => s + v * right[i], 0) / z, h / 2 - f * d.reduce((s, v, i) => s + v * up[i], 0) / z, z]; } };
   }
-  return { geometry, create, update, progress, best, headCamera };
+  return { geometry, mission, unlocked, create, update, progress, best, headCamera };
 });

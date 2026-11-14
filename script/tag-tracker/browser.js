@@ -4,7 +4,7 @@
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   const until = async (fn, message, timeout = 3500) => { const t = performance.now(); while (!fn() && performance.now() - t < timeout) await wait(50); assert(fn(), message); };
   document.querySelectorAll('dialog[open]').forEach((d) => d.close());
-  taskLevel('bowl'); await wait(400);
+  setCampaignMode('practice'); taskLevel('bowl'); await wait(400);
   assert(TASK_DATA.levels.length >= 8 && $('taskLevels').children.length === TASK_DATA.levels.length, 'all levels are available');
   assert(!robotGL().lost, 'WebGL robot renderer is available');
   // The actual on-screen buttons move the selected hand, and Both preserves the hand spacing in free air.

@@ -383,7 +383,7 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
  body.teleop-active #stage{min-height:400px;aspect-ratio:auto}body.teleop-active #empty{padding:20px;gap:12px}body.teleop-active #empty h3{font-size:21px}
  body.teleop-active main{grid-template-columns:minmax(260px,.32fr) minmax(0,1fr);max-width:1900px}
  body.teleop-active #view-track{position:static;height:auto}
- body.teleop-active #view-track .card3d{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto 160px minmax(500px,auto);grid-template-areas:"heading heading" "campaign controls" "campaign stage"}
+ body.teleop-active #view-track .card3d{display:grid;grid-template-columns:220px minmax(0,1fr);grid-template-rows:auto 260px minmax(500px,auto);grid-template-areas:"heading heading" "campaign controls" "campaign stage"}
  body.teleop-active .card3d>.card-h{grid-area:heading}
  body.teleop-active #taskPanel{grid-area:campaign;border-right:1px solid var(--rule);border-bottom:0}
  body.teleop-active #robotPlayControls{grid-area:controls}
@@ -401,6 +401,10 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
  body.teleop-active .plot3d .help{max-width:90%;flex-wrap:wrap;gap:3px 12px}
 }
 @media(max-width:1000px){body.teleop-active #view-track{order:-1}body.teleop-active #view-track .plot3d{height:clamp(360px,65vh,600px)}}
+
+#campaignMode{margin:8px 0}.travel-controls{display:grid;gap:5px}.travel-controls p{margin:0!important}#storyBeat{padding-left:9px;border-left:2px solid var(--accent);line-height:1.45}.task-level:disabled{opacity:.5;cursor:not-allowed}
+#robotPlayControls{align-self:start}#robotPlayControls>#handControls{padding-top:4px}#travelStatus{min-height:17px}
+@media(min-width:1001px){body.teleop-active .robot-controls{padding-bottom:10px}body.teleop-active #taskPanel{max-width:240px}}
 </style>
 </head>
 <body>
@@ -722,16 +726,20 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
         </div>
       </div>
       <div id="taskPanel" class="task-panel" hidden>
-        <div class="task-title"><div><h3>{{ site.data.tag_tasks.title }}</h3><p class="hint">{{ site.data.tag_tasks.subtitle }}</p></div><span id="taskOverall" class="small"></span></div>
+        <div class="task-title"><div><h3 id="taskTitle">{{ site.data.tag_tasks.title }}</h3><p class="hint" id="taskSubtitle">{{ site.data.tag_tasks.subtitle }}</p></div><span id="taskOverall" class="small"></span></div>
+        <div class="seg sm" id="campaignMode" role="radiogroup" aria-label="Campaign mode"><button role="radio" data-campaign-mode="story" aria-checked="true">Story</button><button role="radio" data-campaign-mode="practice" aria-checked="false">Practice</button></div>
+        <p id="storyBeat" class="hint"></p>
         <label class="task-select field">Level <select id="taskSelect" class="select"></select></label>
         <nav id="taskLevels" class="task-levels" aria-label="Teleoperation levels"></nav>
         <div class="task-brief"><div><strong id="taskName"></strong><p id="taskBrief"></p></div><span id="taskClock" class="small">0:00</span></div>
         <div class="task-goals" id="taskGoals" aria-label="Level objectives"></div>
         <div class="row task-feedback"><span id="taskStatus" role="status" aria-live="polite"></span><span id="taskBest" class="small muted"></span><div class="spacer"></div><button class="btn sm primary" id="taskNext" hidden>Next level</button></div>
-        <details class="task-guide"><summary>How to play</summary><p>{{ site.data.tag_tasks.controls.intro }}</p><p id="taskHint"></p><p>{{ site.data.tag_tasks.controls.keyboard }}</p><p>{{ site.data.tag_tasks.controls.scoring }}</p><p class="hint">{{ site.data.tag_tasks.physics }}</p></details>
+        <details class="task-guide"><summary>How to play</summary><p id="campaignIntro" hidden></p><p>{{ site.data.tag_tasks.story.navigation }}</p><p>{{ site.data.tag_tasks.controls.intro }}</p><p id="taskHint"></p><p>{{ site.data.tag_tasks.controls.keyboard }}</p><p>{{ site.data.tag_tasks.controls.scoring }}</p><p class="hint">{{ site.data.tag_tasks.physics }}</p></details>
       </div>
       <div class="robot-controls" id="robotPlayControls">
-        <div class="row"><span class="small">Hand</span><span id="playHands" class="seg sm" role="radiogroup" aria-label="Hand to control"><button role="radio" data-hand="1" aria-checked="true">Left</button><button role="radio" data-hand="-1" aria-checked="false">Right</button><button role="radio" data-hand="both" aria-checked="false">Both</button></span>
+        <div class="row"><label class="field">Play as <select class="select sm" id="playActor">{% for actor in site.data.tag_tasks.story.actors %}<option value="{{ actor.id }}">{{ actor.name }}</option>{% endfor %}</select></label><span id="actorDescription" class="hint"></span></div>
+        <div class="travel-controls" id="travelControls" hidden><div class="row"><span class="seg sm" id="inputMode" role="radiogroup" aria-label="Control mode"><button role="radio" data-input-mode="move" aria-checked="true">Move</button><button role="radio" data-input-mode="hands" aria-checked="false">Hands</button></span><button class="btn sm outline" data-travel="forward">Forward ↑</button><button class="btn sm outline" data-travel="back">Back ↓</button><button class="btn sm outline" data-travel="left">Turn left ↶</button><button class="btn sm outline" data-travel="right">Turn right ↷</button><button class="btn sm outline" id="travelStop">Stop</button></div><p class="hint" id="travelStatus" role="status"></p></div>
+        <div class="row" id="handControls"><span class="small">Hand</span><span id="playHands" class="seg sm" role="radiogroup" aria-label="Hand to control"><button role="radio" data-hand="1" aria-checked="true">Left</button><button role="radio" data-hand="-1" aria-checked="false">Right</button><button role="radio" data-hand="both" aria-checked="false">Both</button></span>
           <button class="btn sm outline" data-nudge="forward">Forward</button><button class="btn sm outline" data-nudge="back">Back</button><button class="btn sm outline" data-nudge="left">Left ←</button><button class="btn sm outline" data-nudge="right">Right →</button><button class="btn sm outline" data-nudge="up">Lift ↑</button><button class="btn sm outline" data-nudge="down">Lower ↓</button>
           <button class="btn sm outline" id="playGrip">Grip</button><button class="btn sm outline" id="playRelease">Release</button><button class="btn sm outline" data-turn="-1">Tilt −</button><button class="btn sm outline" data-turn="1">Tilt +</button><button class="btn sm outline" data-roll="-1">Roll −</button><button class="btn sm outline" data-roll="1">Roll +</button>
         </div>
@@ -983,20 +991,21 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
-<script src="tracker-core.js?v=75a0a819"></script>
+<script src="tracker-core.js?v=b9ca2df8"></script>
 <script src="robot-core.js?v=5767e370"></script>
-<script src="robot-gl.js?v=34d078f0"></script>
+<script src="robot-gl.js?v=9e99c23e"></script>
 <script src="physics-core.js?v=6e1bd8aa"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
 <script src="cloth-core.js?v=c8ee1a44"></script>
-<script src="task-core.js?v=a9020190"></script>
+<script src="travel-core.js?v=ac3385e5"></script>
+<script src="task-core.js?v=b197a968"></script>
 <script src="sound.js?v=4f5ec6ef"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script src="app-state.js?v=4622e9af"></script>
-<script src="app-cameras.js?v=a078f3e2"></script>
+<script src="app-cameras.js?v=56c176e1"></script>
 <script src="app-plot.js?v=5a60a807"></script>
-<script src="app-robot.js?v=d24b291d"></script>
-<script src="app-tasks.js?v=d6357641"></script>
+<script src="app-robot.js?v=bffc35cc"></script>
+<script src="app-tasks.js?v=370a6a18"></script>
 <script src="app-views.js?v=b778539d"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>

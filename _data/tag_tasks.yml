@@ -1,4 +1,4 @@
-# Teleoperation level content and physical goal tolerances (metres, seconds). Edit here, not in markup.
+# Teleoperation levels and the tiny-room story. Coordinates in metres, times in seconds.
 ---
 title: Teleoperation arcade
 subtitle: Start small. Build steady hands. Finish the housework.
@@ -34,6 +34,39 @@ levels:
     object: ball
     target: bowl
     label: Release the ball in the bowl
+  story:
+    room: Welcome bench
+    title: A tiny first delivery
+    brief: Pip found a loose ball on the welcome bench. Put it in the bowl before
+      the first visitors arrive.
+    outro: One ball, one bowl. That is the first room ready.
+    keep:
+    - ball
+    - bowl
+    goal_count: 1
+    par: 90
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+    placements:
+      bowl:
+      - 0
+      - 0.03
+      - 0
 - id: precision
   name: A smaller target
   hands: 1
@@ -65,6 +98,39 @@ levels:
     object: ball
     target: cup
     label: Release the ball in the mug
+  story:
+    room: Tea corner
+    title: A place for everything
+    brief: Eli is setting up the tea corner. Guide the ball into the little mug as
+      a reminder to handle the real cups carefully.
+    outro: The tea corner is ready. Next, the delivery needs sorting.
+    keep:
+    - ball
+    - cup
+    goal_count: 1
+    par: 90
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+    placements:
+      cup:
+      - 0
+      - 0.03
+      - 0
 - id: sort
   name: Sort the delivery
   hands: 1
@@ -138,6 +204,35 @@ levels:
     - 0.028
     - 0.01
     upright: true
+  story:
+    room: Delivery nook
+    title: Sort two parcels
+    brief: Two colour-coded parts arrived for the workshop. Match the letters to their
+      marked places.
+    outro: Two parcels sorted. Nothing left on the loading bench.
+    keep:
+    - a
+    - b
+    goal_count: 2
+    par: 105
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+    goal_x: 0.015
 - id: tower
   name: Build a tower
   hands: 1
@@ -212,6 +307,34 @@ levels:
     - 0.018
     - 0.008
     upright: true
+  story:
+    room: Build bench
+    title: A tiny landmark
+    brief: Build a two-block sign stand so visitors can find the workshop table.
+    outro: The little stand is standing. Time to practise working together.
+    keep:
+    - a
+    - b
+    goal_count: 2
+    par: 147
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+    goal_x: 0.015
 - id: handoff
   name: Pass it on
   hands: 2
@@ -244,6 +367,39 @@ levels:
     target: bowl
     handoff: true
     label: Both hands grasped the ball; ball in bowl
+  story:
+    room: Team corner
+    title: Pass it on
+    brief: A good helper can use either hand. Pass the ball between hands, then leave
+      it in the bowl.
+    outro: Both hands on the job. The next delivery needs both at once.
+    keep:
+    - ball
+    - bowl
+    goal_count: 1
+    par: 125
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+    placements:
+      bowl:
+      - 0
+      - -0.03
+      - 0
 - id: tray
   name: Room service
   hands: 2
@@ -296,14 +452,54 @@ levels:
     - 0.07
     - 0.16
     - 0.025
+  story:
+    room: Serving nook
+    title: Room service
+    brief: Carry the little tray to the second table. Both hands hold the rims while
+      you walk or drive over.
+    outro: Delivery made. Only the kitchen and the laundry corner remain.
+    keep:
+    - tray
+    - ball
+    goal_count: 2
+    par: 168
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+      - - 0.43
+        - 0.72
+        - 0.21
+        - 0.16
+    delivery:
+      at:
+      - 0
+      - 0.72
+      dock:
+      - -0.06
+      - 0.72
+      carry: 0.35
 - id: dishwasher
   name: Load the dishwasher
   hands: 2
   skill: Orient and insert
   brief: Load three plates upright into the open dishwasher rack. Fit one plate into
     each slot.
-  hint: Pinch a plate near its rim. Roll the wrist 90° so the plate faces across
-    the rack slots, then lower and release.
+  hint: Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the
+    rack slots, then lower and release.
   par: 360
   objects:
   - key: rack
@@ -384,6 +580,42 @@ levels:
     - 0.022
     - 0.012
     upright: false
+  story:
+    room: Kitchen corner
+    title: One last plate
+    brief: The last plate is waiting beside the open dishwasher rack. Turn it upright
+      and lower it into its slot.
+    outro: The kitchen is ready. One towel is all that is left.
+    keep:
+    - rack
+    - plate2
+    goal_count: 1
+    par: 251
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+    goal_indices:
+    - 2
+    placements:
+      rack:
+      - 0.015
+      - -0.16
+      - 0
+    goal_x: 0.015
 - id: laundry
   name: Fold the laundry pile
   hands: 2
@@ -465,16 +697,61 @@ levels:
     - 0.16
     - 0.28
     label: Folded stack
+  story:
+    room: Laundry corner
+    title: The finishing touch
+    brief: Fold one towel in half and leave it on the outline. Then the workshop can
+      open.
+    outro: The doors can open. Thanks for helping Eli and Pip.
+    keep:
+    - towel0
+    goal_count: 1
+    par: 420
+    travel:
+      half:
+      - 1.15
+      - 1.15
+      start:
+      - -0.78
+      - -0.42
+      - 0
+      dock:
+      - -0.06
+      - 0
+      minimum: 0.45
+      obstacles:
+      - - 0.43
+        - 0
+        - 0.25
+        - 0.45
+    goal_x: 0.015
 controls:
   intro: Play with tags, drag the grippers, or use the hand controls. There is no
     time limit. All levels are available to practise.
-  keyboard: W/S forward/back; A/D sideways; Q/E lift/lower; Space grip; J/K tilt; U/O roll.
-    Use Left, Right or Both below.
+  keyboard: 'Hands: W/S forward/back; A/D sideways; Q/E lift/lower; Space grip; J/K
+    tilt; U/O roll. Move: I/K forward/back; J/L turn. Choose Left, Right or Both.'
   scoring: One star for finishing, one for the target time, one for no dropped props.
     Best results stay in this browser.
 camera:
-  label: Robot eyes
-  help: A camera mounted on the robot’s head. Tilt up/down with the slider or ↑/↓
-    while the 3D view is focused.
+  label: First person
+  help: Look through your character’s eyes. Tilt up/down with the slider or ↑/↓ while
+    the 3D view is focused.
 physics: Rigid props collide and grips can slip. Towels use a coarse deformable mesh
   with self-contact; fabric is an approximation.
+story:
+  title: Before the doors open
+  subtitle: Eight tiny rooms. One small job at a time.
+  intro: The neighbourhood workshop opens in an hour. Eli and Pip have eight little
+    jobs to finish. Choose who helps, find the workbench, and leave each room ready
+    for the next visitor.
+  ending: Ready for opening day. Eight small jobs, one workshop brought to life.
+  navigation: Move with W/S or I/K; turn with A/D or J/L. Stop at the outlined work
+    spot, then choose Hands to reach and grip. Hold the floor controls on a touch
+    screen.
+  actors:
+  - id: robot
+    name: Pip, the robot
+    description: Drive a compact AMR base. The grippers do the careful work.
+  - id: teen
+    name: Eli, the teenage helper
+    description: Walk between workbenches. Steady hands finish each little job.

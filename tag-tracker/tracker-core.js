@@ -1322,7 +1322,7 @@
     show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
     // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
     // RobotCore.MODEL), whether the elbows prefer to sit out and below the hands, and whether the joint angles show.
-    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1, props: 'arcade', level: 'bowl', view: 'orbit', headTilt: -40, forces: true, sound: false },
+    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1, props: 'arcade', actor: 'robot', playMode: 'story', level: 'bowl', view: 'orbit', headTilt: -40, forces: true, sound: false },
     setup: true, // show the Setup guide when the page opens
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored
@@ -1363,6 +1363,8 @@
     r.elbows = !!r.elbows; delete r.joints; // (joint angles are a tab of the Now panel now, not a switch)
     delete r.style; delete r.look; // the robot had four looks once; it is the Machine now, the only one
     if (!['off', 'ball', 'cup', 'arcade'].includes(r.props)) r.props = DEFAULTS.robot.props;
+    if (!['robot', 'teen'].includes(r.actor)) r.actor = 'robot';
+    if (!['story', 'practice'].includes(r.playMode)) r.playMode = 'story';
     if (typeof r.level !== 'string') r.level = DEFAULTS.robot.level;
     if (!['orbit', 'eyes'].includes(r.view)) r.view = 'orbit';
     r.headTilt = r.headTilt !== null && Number.isFinite(Number(r.headTilt)) ? Math.min(25, Math.max(-80, Number(r.headTilt))) : -40;

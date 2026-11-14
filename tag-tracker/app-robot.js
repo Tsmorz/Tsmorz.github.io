@@ -27,7 +27,7 @@ function setSound(on) {
 if (SND && S.settings.robot.sound) SND.set({ on: true }); // (the browser lets it play once the page is clicked)
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => { if (SND) SND.resume(); }, { capture: true });
 document.addEventListener('visibilitychange', () => duckSound());
-function robotReset() { RB.cal = null; RB.last.clear(); RB.seen.clear(); RB.prev.clear(); RB.jhist.clear(); RB.slew.clear(); RB.autoDone = false; RB.fitSig = ''; paintRobotBtns(); }
+function robotReset() { RB.cal = null; RB.last.clear(); RB.seen.clear(); RB.prev.clear(); RB.jhist.clear(); RB.slew.clear(); RB.autoDone = false; RB.fitSig = ''; if (typeof stopTravel === 'function') { stopTravel(); TASK.nav = null; } paintRobotBtns(); }
 const refKeyNow = () => (S.settings.frame === 'camera' ? null : parseKey(S.settings.frame));
 // the newest plotted pose of every track, untared; a track out of view keeps its last one
 function robotTake() {
@@ -95,6 +95,7 @@ function calibrateRobot(quiet) {
   }
   RB.cal = { cal: robotCalibrate(roles, RCORE.model(S.settings.robot)), roles, sig: robotSig() };
   RB.prev.clear(); TB.drive.clear(); TB.n++; paintRobotBtns();
+  if (storyMode()) { stopTravel(); TASK.nav = null; }
   if (!quiet) robotSay('Calibrated. The robot follows you now; calibrate again whenever it drifts.');
   return 'Robot calibrated';
 }
@@ -111,7 +112,7 @@ function paintRobotBtns() {
   $('soundBtn').title = snd ? 'Sound is on: the table\'s knocks, rolls and scrapes. Turn it off (or press M)' : 'Sound is off. Turn it on to hear the table\'s knocks, rolls and scrapes (or press M)';
   document.querySelectorAll('.help .rob-only').forEach((x) => { x.hidden = !on; });
   $('robotCalBtn').classList.toggle('primary', !RB.cal); $('robotCalBtn').classList.toggle('outline', !!RB.cal);
-  $('robotCalBtn').textContent = RB.cal ? 'Calibrate again' : 'Calibrate robot';
+  $('robotCalBtn').textContent = RB.cal ? 'Calibrate again' : S.settings.robot.actor === 'teen' ? 'Calibrate pose' : 'Calibrate robot';
   if (typeof paintTaskVisibility === 'function') paintTaskVisibility();
 }
 $('robotCalBtn').onclick = () => calibrateRobot();
@@ -148,6 +149,7 @@ function robotUpdate(now) {
   const poses = { body: roles.body !== null ? RB.last.get(roles.body) : null, arms: {} };
   for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
   const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
+  tg.chest = travelPose(tg.chest, m, now);
   const arms = tg.arms.map((a) => {
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev : null, { prefer });
     RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, side: a.side });
@@ -157,7 +159,7 @@ function robotUpdate(now) {
     return { key: a.key, side: a.side, q: s.q, reach: s.reach, gap: s.gap, live: fresh(a.key) };
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
-  const withBody = preview || roles.body !== null;
+  const withBody = preview || roles.body !== null || storyMode() || S.settings.robot.actor === 'teen';
   if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) arms.push({ key: null, side, q: RCORE.HOME, reach: true, gap: 0, live: false, idle: true });
   // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it). It was put
   // there in the world (by the table), so it stays there when the body moves: the arm reaches to keep it
@@ -177,7 +179,7 @@ function robotUpdate(now) {
     RB.slew.set(a.side, next); a.q = next.q;
   }
   for (const a of arms) a.open = gripOf(a);
-  RB.scene = { m, chest: tg.chest, body: withBody, bodyKey: roles.body, bodyLive: preview || fresh(roles.body), arms, preview, roles };
+  RB.scene = { m, chest: tg.chest, anchor: TASK.nav ? TASK.nav.anchor : null, body: withBody, bodyKey: roles.body, bodyLive: preview || fresh(roles.body), arms, preview, roles };
   const fitSig = (preview ? 'p' : '') + [roles.body, ...roles.arms.map((a) => a.key)].join(',');
   if (fitSig !== RB.fitSig) { RB.fitSig = fitSig; S.view.fitted = false; }
 }
@@ -233,7 +235,8 @@ function drawRobotGL(gl, o, w, h, now) {
     mount: sc.body ? null : sc.arms.length === 2 ? 'bar' : sc.arms.length === 1 ? sc.arms[0].side : null,
     tags: robotTags(now).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
     theme: { accent: K.accent, warn: K.warn, bg: K.surface, dark: isDark() },
-    props: tableDraw(), eyes: S.settings.robot.view === 'eyes', headTilt: S.settings.robot.headTilt,
+    props: tableDraw(), eyes: S.settings.robot.view === 'eyes', headTilt: S.settings.robot.headTilt, actor: S.settings.robot.actor,
+    locomotion: TB.world ? { floor: TB.world.floorZ - sc.chest.t[2], phase: TASK.nav ? TASK.nav.state.phase : 0, speed: TASK.nav ? Math.abs(TASK.nav.state.v) : 0, distance: TASK.nav ? TASK.nav.state.roll : 0 } : null,
     forces: forceArrows(),
   });
 }
@@ -338,10 +341,11 @@ function drawRobotFlat(c, o, h, now) {
 // and on each calibration, and stays put in the world while the body moves. Each frame the arms' links and grippers
 // (their pose, and how open the operator wants them: a hand moved with the mouse, else the servo on the board fixed to
 // that hand's track, else open) go to the physics, which steps by the time since the last frame.
-const tableSig = (sc) => [S.settings.robot.props, S.settings.robot.level, S.settings.frame, TB.n, sc.preview ? 'p' : '', JSON.stringify(sc.m)].join('|');
+const tableSig = (sc) => [S.settings.robot.props, S.settings.robot.playMode, S.settings.robot.level, S.settings.frame, TB.n, sc.preview ? 'p' : '', JSON.stringify(sc.m)].join('|');
 function placeTable(sc) {
   const m = sc.m, G = RCORE.gripper(m), w = RCORE.fk(m, 1, RCORE.HOME).wrist, tip = w[0] + 0.07 + G.fl;
-  const R = RCORE.upright([sc.chest.R[0], sc.chest.R[3], sc.chest.R[6]]), ch = { R, t: sc.chest.t };
+  const anchor = sc.anchor || sc.chest;
+  const R = RCORE.upright([anchor.R[0], anchor.R[3], anchor.R[6]]), ch = { R, t: anchor.t };
   // the top just under the fingers in the start pose, its near edge under the wrists
   const cx = w[0] - 0.03 + TABLE.size[0] / 2, table = { R, t: RCORE.place(ch, [cx, 0, w[2] - 0.045]), size: TABLE.size, thick: TABLE.thick };
   const kind = S.settings.robot.props;
@@ -355,6 +359,7 @@ function placeTable(sc) {
 function resetTable() {
   if (S.settings.robot.props === 'off') return 'The table is off';
   if (TB.game) TB.game.reset(); else if (TB.world) TB.world.reset();
+  if (storyMode()) { stopTravel(); TASK.nav = null; TB.n++; }
   taskPlaced();
   TB.drive.clear(); TB.grab = null; RB.prev.clear(); RB.slew.clear(); paintRobotBtns();
   return 'Task restarted';
@@ -447,6 +452,7 @@ function tableDraw() {
   const bodies = W.bodies.map((b) => Object.assign({ kind: b.kind, key: b.key, color: b.color }, W.poseOf(b)));
   const compounds = Object.fromEntries(W.bodies.filter((b) => b.pieces).map((b) => [b.key, b.pieces]));
   taskMarkers(bodies, compounds);
+  storyDecoration(bodies, compounds);
   for (const b of W.bodies) {
     const d = C.sub(b.t, T.t), hgt = d[0] * up[0] + d[1] * up[1] + d[2] * up[2], l = C.mulv(Rt, d);
     if (hgt < 0 || Math.abs(l[0]) > T.size[0] / 2 || Math.abs(l[1]) > T.size[1] / 2) continue;
