@@ -372,38 +372,48 @@ plot and a readout table. Tags, settings and calibrations (keyed by camera label
 
 ### Tag tracker teleoperation arcade
 
-The Physics selector opens the arcade. **Story** defaults to “Before the doors open”: Eli, a teenage helper, and
-Pip, an AMR-mounted robot, prepare a neighbourhood workshop. Eight 2.3 × 2.3 m rooms have one small job each:
-a ball in a bowl, a mug target, two parcels, two stacked blocks, a handoff, a tray delivery, one dishwasher plate and
-one towel. Finish a room to unlock the next. **Practice** keeps the original larger challenges, with all levels open.
-Content and room geometry are in `_data/tag_tasks.yml`; `TaskCore.mission` derives story variants without mutating
-practice data. Story and practice results are separate (`tag-tracker-story` and `tag-tracker-teleop`). No time limit;
-target times only earn a star. The character switch preserves the scene, navigation and live physical grips.
+The Physics selector opens the arcade. **Story** is “Grandma’s little helper”: Eli visits Grandma and Pip can
+help on an AMR base. Eight 2.3 × 2.3 m rooms progress through knocking, tidying a ball, setting a cup on its
+coaster, sorting two toys, stacking two books, carrying tea with both hands, loading one dishwasher plate and
+folding a towel. A completed chore unlocks the next and earns candy, a biscuit, a coin or pocket money. Rewards
+are derived from saved completions, so replaying does not duplicate them. Content, room colours and rewards
+live in `_data/tag_tasks.yml`; `story.order` and `story.prologue` are separate from the eight original **Practice**
+challenges. `TaskCore.mission` derives small story scenes without mutating practice data. Saves are separate
+(`tag-tracker-story` and `tag-tracker-teleop`). There is no time limit. Switching character preserves the scene,
+navigation and live physical grips.
 
-`travel-core.js` is DOM-free locomotion: accelerated differential-drive steering, conservative swept circles against
-room bounds and furniture, braking, distance and gait/wheel phase. Move mode uses W/S or I/K to advance/reverse and
-A/D or J/L to turn; Hands mode keeps the reaching keys. The page transforms the tracked body and manual wrist
-targets together while the workbenches stay fixed. Held props travel through the original grip constraints.
-Walking/driving to the work spot is required; the tray also needs 0.35 m of travel held in both hands and has a
-second physical table. Focus loss stops motion. New rooms and calibration reset navigation. Room transitions are
-small separate scenes, not an open-world map. `robot-gl.js` builds Eli's clothed mesh and walking legs, plus Pip's
-AMR and rolling wheels. Both use the same arm FK and physical pinch; human fingers are a visual approximation.
+The default game stage hides the tracking panels and command bars. Settings contains the original controls,
+level chooser and help; Camera & AprilTags opens the full instrument and setup guide. Mouse hand dragging,
+scroll-to-grip and Shift-scroll-to-tilt remain active in the stage. AprilTags drive arms by default. One stationary
+initial set of body/wrist tags auto-calibrates after 0.8 s in the start pose; recalibration remains available in setup.
+A calibrated body tag steers by forward/back lean and shoulder heading, with dead zones and stale-track stopping.
+Double-clicking free floor drives toward a destination; W/S and A/D remain a fallback. Focus loss and setup stop
+travel. `travel-core.js` is DOM-free accelerated motion, swept-circle furniture collision, steering and gait phase.
+The page transforms the body and mouse wrist targets together while tables stay fixed. Held props travel through
+physical grip constraints. Reaching the work spot is required; the tray also needs 0.35 m held by both hands and
+has a second physical table. Each room is a separate small scene, not an open-world map.
 
-`physics-core.js` runs a 240 Hz fixed-step accumulator, friction-limited grips, contacts and sleep. Compound boxes
-and cylinders share their dimensions with the renderer; openings stay hollow. Mass properties combine analytic
-piece inertia and the parallel-axis theorem (small seam overlaps are an approximation). `cloth-core.js` uses
-small-step XPBD stretch/shear, compliant bending, table friction and particle self-contact. This is coarse cloth,
-not garment simulation. Objectives require released, settled props (0.75 s); handoffs, two-hand lifts and aligned
-cloth edges have extra checks. Story tutorial targets are brought closer to stay comfortably inside arm reach.
+`character-core.js` CPU-skins a CC0 Quaternius mesh to the same RobotCore FK and physical hands. The compact
+mesh, source credit and rebuild instructions are in `tag-tracker/assets/eli/`; the offline extractor is
+`script/tag-tracker/prepare-character.py`. Human fingers are a visual approximation of the physical pinch.
+`robot-gl.js` renders the character, AMR and wheels with a packed-depth shadow pass, soft shadow sampling,
+hemisphere/directional lighting, specular materials, tone mapping and procedural wood/plaster/fabric. Cutaway
+home furnishings are visual scenery outside the chore path. First person attaches to the head with −80° to +25°
+tilt and a fixed 70° horizontal field of view; projection and hand picking use the same camera.
 
-First person attaches to the character's head, with −80° to +25° tilt and a fixed 70° horizontal field of view.
-The mesh, projection and hand picking use the same pose. The outside camera is kept separately.
+`physics-core.js` runs a 240 Hz accumulator, friction-limited grips, contacts and sleep. Compound boxes and
+cylinders share dimensions with rendering; openings stay hollow. Mass properties combine analytic piece inertia
+and the parallel-axis theorem (seam overlaps are an approximation). `cloth-core.js` uses small-step XPBD stretch,
+shear, compliant bending, table friction and particle self-contact: coarse towel cloth, not garment simulation.
+Objectives require released, settled props (0.75 s), with extra checks for handoffs, two-hand lifts and aligned
+cloth edges. The door has no invisible table; three hand impacts above 0.04 m/s, spaced 0.25 s apart, count as
+knocks. It opens on completion and its collider follows the visible panel. Restart clears knock history.
 
-`task check:tag-tracker -- 5j 5k` tests both challenge sizes, physical grasps and cloth folds, locomotion collision,
-unlocks, persistence, reachability, character meshes and head projections (`script/tag-tracker/`). After building,
-`task shot -- /tag-tracker/ --eval "$(cat script/tag-tracker/story-browser.js)"` drives to the first bench, performs
-a physical grasp, changes character while holding, finishes the job and checks the next room, walking, focus loss
-and separate practice saves. `browser.js` in the same folder covers the full practice mode. Repeat with `--phone`.
+`task check:tag-tracker -- 5j 5k` covers physical grasps/folds/knocks, scene content, locomotion, dead zones,
+unlocks, character skinning and head projections (`script/tag-tracker/`). After building,
+`task shot -- /tag-tracker/ --eval "$(cat script/tag-tracker/story-browser.js)"` walks to the door, physically knocks,
+earns a peppermint, finishes the ball chore through IK and physical grips, and checks unlocks, actor switching,
+head camera and separate practice saves. `browser.js` covers practice. Repeat with `--phone`.
 
 ## When editing, don't
 

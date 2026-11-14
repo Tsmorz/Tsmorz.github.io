@@ -432,7 +432,7 @@
       for (const b of [...awake, ...hb]) {
         const SS = S.get(b), isHand = b.kind === 'hand';
         SS.forEach(({ c, r, s }, i) => {
-          if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
+          if (tableBox && !W.hideTable) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
           if (c[2] - r - floorZ < MARGIN) cs.push(contact(b, i, null, -1, [c[0], c[1], c[2] - r], [0, 0, 1], c[2] - r - floorZ, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'F'));
         });
         for (const L of kin) {

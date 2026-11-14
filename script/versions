@@ -8,7 +8,7 @@ const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..');
 const DIRS = ['tag-tracker'];
 // A script that loads others passes its own ?v= on to them, so its version covers them too.
-const DEPS = { 'tag-tracker/worker.js': ['tag-tracker/tracker-core.js'] };
+const DEPS = { 'tag-tracker/character-core.js': ['tag-tracker/assets/eli/eli.json', 'tag-tracker/assets/eli/eli.bin'], 'tag-tracker/worker.js': ['tag-tracker/tracker-core.js'] };
 const RE = /([\w./-]+\.js)\?v=([\w-]+)/g;
 
 const hashOf = (rel) => {

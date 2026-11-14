@@ -1,5 +1,4 @@
-# Teleoperation levels and the tiny-room story. Coordinates in metres, times in seconds.
----
+# Teleoperation practice and Grandma’s tiny-home campaign. Metres and seconds.
 title: Teleoperation arcade
 subtitle: Start small. Build steady hands. Finish the housework.
 levels:
@@ -8,8 +7,7 @@ levels:
   hands: 1
   skill: First grasp
   brief: Pick up the blue ball and release it inside the wide bowl. Take your time.
-  hint: Close around the ball, lift, move over the opening, then release. A settled
-    ball counts.
+  hint: Close around the ball, lift, move over the opening, then release. A settled ball counts.
   par: 90
   objects:
   - key: ball
@@ -19,7 +17,7 @@ levels:
     - 0.18
     - 0.02
     label: Ball
-    color: "#2a78d6"
+    color: '#2a78d6'
   - key: bowl
     kind: bowl
     at:
@@ -27,7 +25,7 @@ levels:
     - -0.17
     - 0
     label: Bowl
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.22
   goals:
   - type: inside
@@ -35,11 +33,10 @@ levels:
     target: bowl
     label: Release the ball in the bowl
   story:
-    room: Welcome bench
-    title: A tiny first delivery
-    brief: Pip found a loose ball on the welcome bench. Put it in the bowl before
-      the first visitors arrive.
-    outro: One ball, one bowl. That is the first room ready.
+    room: Sitting room
+    title: A toy left behind
+    brief: “Mind that little ball by the table, love. Pop it in the bowl for me.”
+    outro: “Lovely. Have a boiled sweet from the tin.”
     keep:
     - ball
     - bowl
@@ -67,14 +64,20 @@ levels:
       - 0
       - 0.03
       - 0
+    reward:
+      label: A wrapped sweet
+      kind: candy
+    decor:
+      wall: '#e3d1b3'
+      floor: '#916340'
+      rug: '#9a4f4e'
+      curtain: '#b4b68c'
 - id: precision
   name: A smaller target
   hands: 1
   skill: Precision
-  brief: Put the ball inside the mug. The opening is only a little wider than the
-    ball.
-  hint: Look down through the head camera to line up the opening. Motion × 0.5 helps
-    with tags.
+  brief: Put the ball inside the mug. The opening is only a little wider than the ball.
+  hint: Look down through the head camera to line up the opening. Motion × 0.5 helps with tags.
   par: 120
   objects:
   - key: ball
@@ -84,7 +87,7 @@ levels:
     - 0.18
     - 0.02
     label: Ball
-    color: "#2a78d6"
+    color: '#2a78d6'
   - key: cup
     kind: cup
     at:
@@ -92,7 +95,7 @@ levels:
     - -0.18
     - 0
     label: Mug
-    color: "#2a78d6"
+    color: '#2a78d6'
   goals:
   - type: inside
     object: ball
@@ -100,12 +103,10 @@ levels:
     label: Release the ball in the mug
   story:
     room: Tea corner
-    title: A place for everything
-    brief: Eli is setting up the tea corner. Guide the ball into the little mug as
-      a reminder to handle the real cups carefully.
-    outro: The tea corner is ready. Next, the delivery needs sorting.
+    title: A place for the cup
+    brief: “Put my favourite cup on its coaster, would you? Gently does it.”
+    outro: “Just right. There’s a biscuit for you.”
     keep:
-    - ball
     - cup
     goal_count: 1
     par: 90
@@ -128,15 +129,44 @@ levels:
         - 0.45
     placements:
       cup:
+      - -0.1
+      - 0.17
       - 0
+    reward:
+      label: A shortbread biscuit
+      kind: cookie
+    decor:
+      wall: '#e3d1b3'
+      floor: '#916340'
+      rug: '#9a4f4e'
+      curtain: '#b4b68c'
+    goals:
+    - type: place
+      object: cup
+      label: Cup upright on the coaster
+      at:
+      - 0.015
+      - -0.05
+      - 0
+      tolerance:
       - 0.03
-      - 0
+      - 0.03
+      - 0.012
+      upright: true
+    markers:
+    - at:
+      - 0.015
+      - -0.05
+      - 0.001
+      size:
+      - 0.1
+      - 0.1
+      label: Coaster
 - id: sort
   name: Sort the delivery
   hands: 1
   skill: Placement
-  brief: Move each labelled block to its matching outline. All three must stay there
-    together.
+  brief: Move each labelled block to its matching outline. All three must stay there together.
   hint: Lift clear of the other blocks. Letters identify the targets as well as colour.
   par: 150
   objects:
@@ -147,7 +177,7 @@ levels:
     - 0.25
     - 0.025
     label: A
-    color: "#2a78d6"
+    color: '#2a78d6'
     mass: 0.09
   - key: b
     kind: block
@@ -156,7 +186,7 @@ levels:
     - 0
     - 0.025
     label: B
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.09
   - key: c
     kind: block
@@ -165,7 +195,7 @@ levels:
     - -0.25
     - 0.025
     label: C
-    color: "#8574d6"
+    color: '#8574d6'
     mass: 0.09
   goals:
   - label: A in its outline
@@ -205,11 +235,10 @@ levels:
     - 0.01
     upright: true
   story:
-    room: Delivery nook
-    title: Sort two parcels
-    brief: Two colour-coded parts arrived for the workshop. Match the letters to their
-      marked places.
-    outro: Two parcels sorted. Nothing left on the loading bench.
+    room: Play corner
+    title: Tidy the toys
+    brief: “The little ones left their blocks out. Can you put these two in their places?”
+    outro: “A tidy table! Here’s another sweet for the walk home.”
     keep:
     - a
     - b
@@ -233,14 +262,20 @@ levels:
         - 0.25
         - 0.45
     goal_x: 0.015
+    reward:
+      label: A strawberry sweet
+      kind: candy
+    decor:
+      wall: '#e3d1b3'
+      floor: '#916340'
+      rug: '#9a4f4e'
+      curtain: '#b4b68c'
 - id: tower
   name: Build a tower
   hands: 1
   skill: Balance
-  brief: Stack A, B, then C on the marked base. Release each block without toppling
-    the stack.
-  hint: Place the bottom block first. Lower gently; the blocks collide and can slide
-    or fall.
+  brief: Stack A, B, then C on the marked base. Release each block without toppling the stack.
+  hint: Place the bottom block first. Lower gently; the blocks collide and can slide or fall.
   par: 210
   objects:
   - key: a
@@ -250,7 +285,7 @@ levels:
     - 0.23
     - 0.025
     label: A
-    color: "#2a78d6"
+    color: '#2a78d6'
     mass: 0.09
   - key: b
     kind: block
@@ -259,7 +294,7 @@ levels:
     - 0
     - 0.025
     label: B
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.09
   - key: c
     kind: block
@@ -268,7 +303,7 @@ levels:
     - -0.23
     - 0.025
     label: C
-    color: "#8574d6"
+    color: '#8574d6'
     mass: 0.09
   goals:
   - label: A in the tower
@@ -308,10 +343,10 @@ levels:
     - 0.008
     upright: true
   story:
-    room: Build bench
-    title: A tiny landmark
-    brief: Build a two-block sign stand so visitors can find the workshop table.
-    outro: The little stand is standing. Time to practise working together.
+    room: Reading nook
+    title: Stack the books
+    brief: “My stories are all over the table. Stack these two books for me.”
+    outro: “Now I can find my stories. Keep this shiny coin.”
     keep:
     - a
     - b
@@ -335,13 +370,74 @@ levels:
         - 0.25
         - 0.45
     goal_x: 0.015
+    reward:
+      label: A shiny coin
+      kind: coin
+    decor:
+      wall: '#e3d1b3'
+      floor: '#916340'
+      rug: '#9a4f4e'
+      curtain: '#b4b68c'
+    objects:
+    - key: a
+      kind: book
+      at:
+      - -0.1
+      - 0.22
+      - 0.012
+      label: Story book
+      color: '#944f48'
+      mass: 0.12
+    - key: b
+      kind: book
+      at:
+      - -0.1
+      - -0.2
+      - 0.012
+      label: Garden book
+      color: '#4e7770'
+      mass: 0.12
+    goals:
+    - type: place
+      object: a
+      at:
+      - 0.015
+      - 0
+      - 0.012
+      tolerance:
+      - 0.025
+      - 0.035
+      - 0.009
+      upright: true
+      label: First book flat on the mat
+    - type: place
+      object: b
+      at:
+      - 0.015
+      - 0
+      - 0.036
+      tolerance:
+      - 0.025
+      - 0.035
+      - 0.009
+      upright: true
+      label: Second book stacked on top
+    markers:
+    - at:
+      - 0.015
+      - 0
+      - 0.001
+      size:
+      - 0.11
+      - 0.15
+      label: Books
 - id: handoff
   name: Pass it on
   hands: 2
   skill: Hand coordination
   brief: Grasp the ball with each hand in turn, then put it in the bowl.
-  hint: The receiving hand closes before the other opens. With one mouse, switch Left
-    / Right between moves.
+  hint: The receiving hand closes before the other opens. With one mouse, switch Left / Right between
+    moves.
   par: 180
   objects:
   - key: ball
@@ -351,7 +447,7 @@ levels:
     - 0.18
     - 0.02
     label: Ball
-    color: "#2a78d6"
+    color: '#2a78d6'
   - key: bowl
     kind: bowl
     at:
@@ -359,7 +455,7 @@ levels:
     - -0.2
     - 0
     label: Bowl
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.22
   goals:
   - type: inside
@@ -370,8 +466,7 @@ levels:
   story:
     room: Team corner
     title: Pass it on
-    brief: A good helper can use either hand. Pass the ball between hands, then leave
-      it in the bowl.
+    brief: A good helper can use either hand. Pass the ball between hands, then leave it in the bowl.
     outro: Both hands on the job. The next delivery needs both at once.
     keep:
     - ball
@@ -404,10 +499,9 @@ levels:
   name: Room service
   hands: 2
   skill: Carry together
-  brief: Lift the loaded tray with both hands, carry it to the outline, and set it
-    down with the ball aboard.
-  hint: Pinch opposite rims, then choose Both to move the hands together. Keep the
-    tray level.
+  brief: Lift the loaded tray with both hands, carry it to the outline, and set it down with the ball
+    aboard.
+  hint: Pinch opposite rims, then choose Both to move the hands together. Keep the tray level.
   par: 240
   objects:
   - key: tray
@@ -417,7 +511,7 @@ levels:
     - 0
     - 0.006
     label: Tray
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.35
   - key: ball
     kind: ball
@@ -426,7 +520,7 @@ levels:
     - 0
     - 0.038
     label: Ball
-    color: "#2a78d6"
+    color: '#2a78d6'
   goals:
   - label: Tray carried with both hands and set down
     object: tray
@@ -453,11 +547,10 @@ levels:
     - 0.16
     - 0.025
   story:
-    room: Serving nook
-    title: Room service
-    brief: Carry the little tray to the second table. Both hands hold the rims while
-      you walk or drive over.
-    outro: Delivery made. Only the kitchen and the laundry corner remain.
+    room: Sitting room
+    title: Tea for Grandma
+    brief: “Bring my tray to the little table. Two hands, love. Don’t spill the tea.”
+    outro: “Thank you, darling. Sit down for a moment and have a chocolate.”
     keep:
     - tray
     - ball
@@ -492,14 +585,65 @@ levels:
       - -0.06
       - 0.72
       carry: 0.35
+    reward:
+      label: A chocolate caramel
+      kind: candy
+    decor:
+      wall: '#e3d1b3'
+      floor: '#916340'
+      rug: '#9a4f4e'
+      curtain: '#b4b68c'
+    objects:
+    - key: tray
+      kind: tray
+      at:
+      - -0.105
+      - 0
+      - 0.006
+      label: Tray
+      color: '#168a73'
+      mass: 0.35
+    - key: cup
+      kind: cup
+      at:
+      - -0.105
+      - 0
+      - 0.015
+      label: Teacup
+      color: '#e3c6a5'
+    goals:
+    - label: Tray carried with both hands and set down
+      object: tray
+      type: place
+      at:
+      - 0.115
+      - 0
+      - 0.006
+      tolerance:
+      - 0.026
+      - 0.035
+      - 0.012
+      dual: true
+      upright: true
+    - type: place
+      object: cup
+      at:
+      - 0
+      - 0.72
+      - 0.015
+      tolerance:
+      - 0.06
+      - 0.14
+      - 0.02
+      upright: true
+      label: Teacup still on the tray
 - id: dishwasher
   name: Load the dishwasher
   hands: 2
   skill: Orient and insert
-  brief: Load three plates upright into the open dishwasher rack. Fit one plate into
-    each slot.
-  hint: Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the
-    rack slots, then lower and release.
+  brief: Load three plates upright into the open dishwasher rack. Fit one plate into each slot.
+  hint: Pinch a plate near its rim. Roll the wrist 90° so the plate faces across the rack slots, then
+    lower and release.
   par: 360
   objects:
   - key: rack
@@ -509,7 +653,7 @@ levels:
     - -0.16
     - 0
     label: Dishwasher rack
-    color: "#168a73"
+    color: '#168a73'
     fixed: true
     mass: 1
     mat: aluminium
@@ -520,7 +664,7 @@ levels:
     - 0.18
     - 0.006
     label: '1'
-    color: "#2a78d6"
+    color: '#2a78d6'
     mass: 0.12
     mat: ceramic
   - key: plate1
@@ -530,7 +674,7 @@ levels:
     - 0.18
     - 0.022
     label: '2'
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.12
     mat: ceramic
   - key: plate2
@@ -540,7 +684,7 @@ levels:
     - 0.18
     - 0.038
     label: '3'
-    color: "#8574d6"
+    color: '#8574d6'
     mass: 0.12
     mat: ceramic
   goals:
@@ -581,11 +725,10 @@ levels:
     - 0.012
     upright: false
   story:
-    room: Kitchen corner
-    title: One last plate
-    brief: The last plate is waiting beside the open dishwasher rack. Turn it upright
-      and lower it into its slot.
-    outro: The kitchen is ready. One towel is all that is left.
+    room: Kitchen
+    title: After tea
+    brief: “One last plate for the dishwasher. Turn it on its edge and slide it into the rack.”
+    outro: “That’s the washing-up sorted. A little pocket money for your trouble.”
     keep:
     - rack
     - plate2
@@ -616,14 +759,22 @@ levels:
       - -0.16
       - 0
     goal_x: 0.015
+    reward:
+      label: Some pocket money
+      kind: cash
+    decor:
+      wall: '#e3d1b3'
+      floor: '#916340'
+      rug: '#9a4f4e'
+      curtain: '#b4b68c'
 - id: laundry
   name: Fold the laundry pile
   hands: 2
   skill: Deformable objects
-  brief: Take each towel from the pile, fold it in half, and place the three folded
-    towels on the marked stack.
-  hint: Use both hands on opposite corners of an edge. Lift that edge over the far
-    edge, lower, release, then stack. The whole edge must line up.
+  brief: Take each towel from the pile, fold it in half, and place the three folded towels on the marked
+    stack.
+  hint: Use both hands on opposite corners of an edge. Lift that edge over the far edge, lower, release,
+    then stack. The whole edge must line up.
   par: 600
   objects: []
   goals:
@@ -669,7 +820,7 @@ levels:
     - 0.0
     width: 0.2
     height: 0.24
-    color: "#2a78d6"
+    color: '#2a78d6'
   - key: towel1
     label: Towel 2
     at:
@@ -678,7 +829,7 @@ levels:
     - 0.008
     width: 0.2
     height: 0.24
-    color: "#168a73"
+    color: '#168a73'
   - key: towel2
     label: Towel 3
     at:
@@ -687,7 +838,7 @@ levels:
     - 0.016
     width: 0.2
     height: 0.24
-    color: "#8574d6"
+    color: '#8574d6'
   markers:
   - at:
     - 0.1
@@ -699,10 +850,9 @@ levels:
     label: Folded stack
   story:
     room: Laundry corner
-    title: The finishing touch
-    brief: Fold one towel in half and leave it on the outline. Then the workshop can
-      open.
-    outro: The doors can open. Thanks for helping Eli and Pip.
+    title: The last fold
+    brief: “Fold this towel in half, then leave it on the little mat. We’re nearly done.”
+    outro: “Beautiful. You’ve earned a rest and a little something in an envelope.”
     keep:
     - towel0
     goal_count: 1
@@ -725,33 +875,128 @@ levels:
         - 0.25
         - 0.45
     goal_x: 0.015
+    reward:
+      label: Grandma’s envelope
+      kind: cash
+    decor:
+      wall: '#e3d1b3'
+      floor: '#916340'
+      rug: '#9a4f4e'
+      curtain: '#b4b68c'
 controls:
-  intro: Play with tags, drag the grippers, or use the hand controls. There is no
-    time limit. All levels are available to practise.
-  keyboard: 'Hands: W/S forward/back; A/D sideways; Q/E lift/lower; Space grip; J/K
-    tilt; U/O roll. Move: I/K forward/back; J/L turn. Choose Left, Right or Both.'
-  scoring: One star for finishing, one for the target time, one for no dropped props.
-    Best results stay in this browser.
+  intro: AprilTags drive the hands. Drag either hand or gripper with the mouse to take over; scroll on
+    it to grip and release. Resume AprilTags gives control back to the tags.
+  keyboard: 'Hands: W/S forward/back; A/D sideways; Q/E lift/lower; Space grip; J/K tilt; U/O roll. Move:
+    I/K forward/back; J/L turn. Choose Left, Right or Both.'
+  scoring: One star for finishing, one for the target time, one for no dropped props. Best results stay
+    in this browser.
 camera:
   label: First person
-  help: Look through your character’s eyes. Tilt up/down with the slider or ↑/↓ while
-    the 3D view is focused.
-physics: Rigid props collide and grips can slip. Towels use a coarse deformable mesh
-  with self-contact; fabric is an approximation.
+  help: Look through your character’s eyes. Tilt up/down with the slider or ↑/↓ while the 3D view is focused.
+physics: Rigid props collide and grips can slip. Towels use a coarse deformable mesh with self-contact;
+  fabric is an approximation.
 story:
-  title: Before the doors open
-  subtitle: Eight tiny rooms. One small job at a time.
-  intro: The neighbourhood workshop opens in an hour. Eli and Pip have eight little
-    jobs to finish. Choose who helps, find the workbench, and leave each room ready
-    for the next visitor.
-  ending: Ready for opening day. Eight small jobs, one workshop brought to life.
-  navigation: Move with W/S or I/K; turn with A/D or J/L. Stop at the outlined work
-    spot, then choose Hands to reach and grip. Hold the floor controls on a touch
-    screen.
+  title: Grandma’s little helper
+  subtitle: A visit, a few chores, and a pocketful of treats.
+  intro: Eli is visiting Grandma for the afternoon. Knock on her door, help around her cosy home, and
+    leave with a few of her favourite thank-yous. Pip can help too.
+  ending: “All done! Come sit with me, love. There’s a little something in this envelope for you.”
+  navigation: Lean your calibrated body tag forward or back to walk or drive; turn your shoulders to steer.
+    Stand neutrally to stop. Double-click the floor to travel with the mouse, or use W/S and A/D. Drag
+    either hand to reach; scroll on it to grip, Shift-scroll to tilt, Space to release. Settings contains
+    camera setup and practice.
   actors:
   - id: robot
     name: Pip, the robot
-    description: Drive a compact AMR base. The grippers do the careful work.
+    description: Pip visits Grandma. Drive an AMR base and help with both grippers.
   - id: teen
     name: Eli, the teenage helper
-    description: Walk between workbenches. Steady hands finish each little job.
+    description: Eli visits Grandma. Walk to each little chore and lend a hand.
+  order:
+  - door
+  - bowl
+  - precision
+  - sort
+  - tower
+  - tray
+  - dishwasher
+  - laundry
+  ui:
+    settings: Game settings
+    chapter: Chore
+    grandma: Grandma
+    next: Next chore
+    finish: An afternoon well spent
+    reward: Grandma gave you
+    pocket: In your pocket
+    setup: Camera & AprilTags
+    return: Back to the game
+    retry: Try this chore again
+    help: How to play
+    view: View
+    outside: Room
+    eyes: Through their eyes
+    tilt: Look up / down
+    tags: Resume AprilTags
+    empty: Your pocket is empty… for now.
+    loading: Loading Eli…
+  prologue:
+    id: door
+    name: Knock, knock
+    hands: 1
+    skill: First touch
+    brief: Knock on Grandma’s front door three times.
+    hint: Move a hand forward to tap the door, pull it back, then knock again. A resting hand is not another
+      knock.
+    par: 60
+    objects:
+    - key: door
+      kind: door
+      at:
+      - 0.08
+      - 0
+      - -0.75
+      fixed: true
+      mass: 1
+      mat: wood
+      color: '#698574'
+      label: Front door
+    goals:
+    - type: knock
+      object: door
+      count: 3
+      label: Three knocks on the door
+    story:
+      title: Knock, knock
+      room: Front porch
+      brief: “Is that you, love? Give the door a little knock!”
+      outro: “There you are! Come in. I’ve kept a peppermint for you.”
+      keep:
+      - door
+      goal_count: 1
+      par: 60
+      travel:
+        half:
+        - 1.15
+        - 1.15
+        start:
+        - -0.78
+        - -0.42
+        - 0
+        dock:
+        - -0.06
+        - 0
+        minimum: 0.45
+        obstacles:
+        - - 0.51
+          - 0
+          - 0.03
+          - 0.4
+      reward:
+        label: A peppermint
+        kind: candy
+      decor:
+        wall: '#d9cbb6'
+        floor: '#987757'
+        rug: '#596f60'
+        curtain: '#b4b68c'

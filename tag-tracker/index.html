@@ -405,6 +405,31 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 #campaignMode{margin:8px 0}.travel-controls{display:grid;gap:5px}.travel-controls p{margin:0!important}#storyBeat{padding-left:9px;border-left:2px solid var(--accent);line-height:1.45}.task-level:disabled{opacity:.5;cursor:not-allowed}
 #robotPlayControls{align-self:start}#robotPlayControls>#handControls{padding-top:4px}#travelStatus{min-height:17px}
 @media(min-width:1001px){body.teleop-active .robot-controls{padding-bottom:10px}body.teleop-active #taskPanel{max-width:240px}}
+
+#rewardToken{display:inline-block;width:30px;height:22px;background:#bd4d63;transform:rotate(-12deg);border:3px solid #e6b7a5;margin-right:14px;position:relative}#rewardToken::before,#rewardToken::after{content:'';position:absolute;top:2px;border:7px solid transparent;border-left-color:#bd4d63;left:-15px}#rewardToken::after{left:auto;right:-15px;transform:rotate(180deg)}#rewardToken[data-kind="coin"],#rewardToken[data-kind="cookie"]{border-radius:50%;background:#d3a54e;border-color:#b88635;width:28px;height:28px}#rewardToken[data-kind="cookie"]{background:radial-gradient(circle at 35% 30%,#85502c 2px,transparent 3px),radial-gradient(circle at 65% 70%,#85502c 2px,#d6ab6d 3px);border-color:#bd8e58}#rewardToken[data-kind="cash"]{background:#99ad77;border-color:#5c7452;width:42px}#rewardToken[data-kind="coin"]::before,#rewardToken[data-kind="coin"]::after,#rewardToken[data-kind="cookie"]::before,#rewardToken[data-kind="cookie"]::after,#rewardToken[data-kind="cash"]::before,#rewardToken[data-kind="cash"]::after{display:none}
+/* The game is a stage; the instrument panels remain in the setup drawer. */
+body.game-screen{overflow:hidden;background:#c8c0ad}
+body.game-screen>header,body.game-screen main>.col:first-child,body.game-screen #nowCard,body.game-screen footer,body.game-screen .voice{display:none!important}
+body.game-screen main{display:block!important;max-width:none!important;margin:0;padding:0}
+body.game-screen #view-track{display:block;position:fixed;inset:0;height:100dvh}
+body.game-screen #view-track .card3d{display:block!important;height:100%;border:0;border-radius:0}
+body.game-screen #view-track .plot3d{position:absolute;inset:0;height:100%!important;min-height:0!important;margin:0;background:radial-gradient(ellipse at 45% 35%,#e4dccc,#b6b7a7)}
+body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen .plot3d #robotHint,body.game-screen #taskLabels{display:none!important}
+#gameHUD{position:fixed;inset:0;pointer-events:none;z-index:5;color:#f5eee0;font-family:Archivo,system-ui,sans-serif}
+.game-top{position:absolute;top:24px;left:28px;right:28px;display:flex;justify-content:space-between;gap:16px;align-items:start}
+.game-chore{padding:14px 18px;background:#292e29e8;border-left:3px solid #cfb57d;max-width:540px}
+.game-chore small{font-size:12px;letter-spacing:.07em;color:#d6cfbd}.game-chore h1{font-size:clamp(22px,3vw,32px);line-height:1.15;margin:6px 0;font-weight:600}.game-chore p{margin:0;font-size:13px;color:#ded9cc}
+.game-actions{display:flex;gap:8px;pointer-events:auto;align-items:center}.game-actions button{background:#292e29e8;color:#f5eee0;border:1px solid #b9b09a;font:inherit;padding:9px 13px;min-height:42px;border-radius:4px;cursor:pointer}
+.game-actions input{width:90px;accent-color:#b09667}.game-actions button[aria-pressed=true]{background:#615a45}
+.game-dialogue{position:absolute;bottom:26px;left:28px;max-width:480px;padding:18px 22px;background:#faf2dfee;color:#39362e;border-left:3px solid #957947;pointer-events:auto}
+.game-dialogue small{font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#76603f}.game-dialogue p{font-size:clamp(15px,1.6vw,18px);line-height:1.5;margin:7px 0}.game-dialogue #gameReward{font-size:13px;font-weight:600;color:#69562e}
+.game-dialogue button{background:#515f49;color:#fff8e8;border:0;padding:10px 18px;font:inherit;cursor:pointer;min-height:42px}
+.game-pocket{position:absolute;bottom:28px;right:28px;max-width:250px;padding:12px 15px;background:#292e29e8;pointer-events:auto;font-size:12px;line-height:1.5}.game-pocket summary{cursor:pointer;font-size:13px}.game-pocket p{margin:8px 0 0;color:#ded9cc}
+#gameSettings{width:min(850px,calc(100vw - 24px));max-height:90dvh;background:var(--panel);color:var(--ink);padding:0;border:1px solid var(--rule2);border-radius:4px}#gameSettings::backdrop{background:#18221bd4}
+#gameSettings>.card-h{position:sticky;top:0;background:var(--panel);z-index:2}#gameSettingsTools{padding:10px}#gameSettingsTools #taskPanel{max-width:none;border:0}#gameSettingsTools #robotPlayControls{padding:12px}#gameSettingsTools .task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}#gameSettingsTools .task-select{display:flex}#gameSettingsTools .vbtns{display:flex;gap:6px;flex-wrap:wrap;padding:12px}#gameSettingsTools>.card-h{display:block;padding:12px}#gameSettingsTools>.card-h .toolbar{margin-top:10px}
+#backToGame{position:fixed;bottom:18px;right:18px;z-index:40}
+@media(max-width:600px){.game-top{left:12px;right:12px;top:12px;flex-wrap:wrap;gap:8px}.game-chore{padding:10px 13px;max-width:calc(100% - 50px)}.game-chore h1{font-size:22px}.game-chore small{font-size:10px}.game-chore p{font-size:12px}.game-actions{gap:5px}.game-actions button{padding:7px 10px;font-size:12px}.game-actions input{width:70px}.game-dialogue{bottom:16px;left:12px;right:12px;padding:12px 15px;max-width:none}.game-dialogue p{font-size:14px}.game-pocket{bottom:185px;right:12px;max-width:175px;padding:8px 10px}.game-pocket p{max-height:100px;overflow:auto}#gameSettingsTools .task-levels{display:none}}
+
 </style>
 </head>
 <body>
@@ -797,6 +822,16 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
     </section>
   </div>
 </main>
+<div id="gameHUD" hidden>
+  <div class="game-top"><div class="game-chore"><small id="gameChapter"></small><h1 id="gameTitle"></h1><p id="gameObjective"></p></div>
+    <div class="game-actions"><span id="characterStatus" hidden></span><button id="gameEyes" aria-pressed="false">{{ site.data.tag_tasks.story.ui.eyes }}</button><label title="{{ site.data.tag_tasks.story.ui.tilt }}"><span class="sr">{{ site.data.tag_tasks.story.ui.tilt }}</span><input id="gameTilt" type="range" min="-80" max="25" value="-40" aria-label="{{ site.data.tag_tasks.story.ui.tilt }}"></label><button id="gameTags" hidden>{{ site.data.tag_tasks.story.ui.tags }}</button><button id="gameSettingsBtn" aria-haspopup="dialog" aria-label="{{ site.data.tag_tasks.story.ui.settings }}" title="{{ site.data.tag_tasks.story.ui.settings }}"><svg class="i"><use href="#i-gear"/></svg></button></div>
+  </div>
+  <div class="game-dialogue"><small id="grandmaName"></small><p id="grandmaLine"></p><span id="rewardToken" aria-hidden="true" hidden></span><p id="gameReward" role="status" hidden></p><button id="gameNext" hidden>{{ site.data.tag_tasks.story.ui.next }}</button></div>
+  <details class="game-pocket"><summary>{{ site.data.tag_tasks.story.ui.pocket }}</summary><p id="gamePocket"></p></details>
+</div>
+<button class="btn primary" id="backToGame" hidden>{{ site.data.tag_tasks.story.ui.return }}</button>
+<dialog id="gameSettings" aria-labelledby="gameSettingsTitle"><div class="card-h"><h2 id="gameSettingsTitle">{{ site.data.tag_tasks.story.ui.settings }}</h2><div class="spacer"></div><button class="btn" id="gameSetupBtn">{{ site.data.tag_tasks.story.ui.setup }}</button><button class="btn" id="gameSettingsClose">{{ site.data.tag_tasks.story.ui.return }}</button></div><div id="gameSettingsTools"></div></dialog>
+
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
   <form method="dialog" id="printForm" novalidate>
     <div class="dlg-h"><h2 id="h-print">Print tags and the board</h2><button type="button" class="btn sm sq" data-close aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button></div>
@@ -991,21 +1026,22 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
-<script src="tracker-core.js?v=b9ca2df8"></script>
+<script src="tracker-core.js?v=5bc902a4"></script>
 <script src="robot-core.js?v=5767e370"></script>
-<script src="robot-gl.js?v=9e99c23e"></script>
-<script src="physics-core.js?v=6e1bd8aa"></script>
+<script src="character-core.js?v=0ff1145d"></script>
+<script src="robot-gl.js?v=ac2daf46"></script>
+<script src="physics-core.js?v=b4b05456"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
 <script src="cloth-core.js?v=c8ee1a44"></script>
-<script src="travel-core.js?v=ac3385e5"></script>
-<script src="task-core.js?v=b197a968"></script>
+<script src="travel-core.js?v=7f9bbe6e"></script>
+<script src="task-core.js?v=05804b61"></script>
 <script src="sound.js?v=4f5ec6ef"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script src="app-state.js?v=4622e9af"></script>
-<script src="app-cameras.js?v=56c176e1"></script>
-<script src="app-plot.js?v=5a60a807"></script>
-<script src="app-robot.js?v=bffc35cc"></script>
-<script src="app-tasks.js?v=370a6a18"></script>
+<script src="app-cameras.js?v=768f8da8"></script>
+<script src="app-plot.js?v=2eb29cf3"></script>
+<script src="app-robot.js?v=88328a5c"></script>
+<script src="app-tasks.js?v=b6bb68a5"></script>
 <script src="app-views.js?v=b778539d"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>
@@ -1023,7 +1059,7 @@ listCameras();
 startWorker();
 paintPaper(); paintSetupSw();
 routeHash(); // opened from a board or tags link: show it
-if (S.settings.setup && $('boardView').hidden) openSetup(0); // first visit (until turned off): the setup guide
+if (S.settings.setup && $('boardView').hidden && !gameView()) openSetup(0); // first visit (until turned off): the setup guide
 requestAnimationFrame(frame);
 window.addEventListener('resize', () => layoutTiles());
 </script>

@@ -1,0 +1,9 @@
+Eli character geometry: Casual Character, Ultimate Modular Men Pack, by Quaternius.
+Source: https://poly.pizza/m/kZ3DmIoGip
+Original GLB: https://static.poly.pizza/90a9e2d4-053f-42f1-99a2-8f5e1180ea7f.glb
+Retrieved 2026-11-14. The source model page labels this download Public Domain (CC0 1.0).
+License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Changes: extracted rest mesh and skin weights, reduced the rig to teleoperation segments,
+retargeted to the site's physical hands, recoloured clothing and cropped the hair. No source animations retained.
+Rebuild: python3 script/tag-tracker/prepare-character.py /path/to/source.glb tag-tracker/assets/eli
