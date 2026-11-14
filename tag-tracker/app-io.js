@@ -247,34 +247,43 @@ paintRecUi();
 // mono (an OfflineAudioContext resamples it) and speech-worker.js turns it into text with Whisper tiny.en, on this
 // computer. An utterance that is a command as a whole (TagCore.voiceCommand) runs it; anything else becomes a note.
 // The model downloads on first use (you can speak meanwhile: the take waits for it), then comes from the cache.
-const SR = 16000, MAX_TAKE_S = 60, SILENCE_RMS = 0.004;
-const V = { worker: null, ready: false, failed: '', progress: 0, rec: null, stream: null, chunks: [], at: null, pressAt: 0, none: false, ctx: null, raf: 0, stopT: 0, hideT: 0, job: 0, pending: new Map(), opening: false };
-const voiceOk = window.isSecureContext && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && 'MediaRecorder' in window && 'OfflineAudioContext' in window;
-const VOICE_ACTIONS = {
-  track: () => { setMode('track'); return 'Track tab'; },
-  calib: () => { setMode('calib'); return 'Calibrate tab'; },
-  stream: () => { setMode('track'); $('streamCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); return 'Stream'; },
-  record: () => (REC.on ? 'Already recording' : recStart() ? 'Recording' : 'Kept the last recording'),
-  stop: () => (REC.on ? (recStop(), 'Recording stopped') : 'Not recording'),
-  tare: () => { tareNow(); return 'Orientation tared'; },
-  untare: () => { clearTare(); return 'Tare cleared'; },
-  fit: () => { if (S.tab !== 'track') setMode('track'); fitView(); return 'View fitted'; },
-  reset: () => { if (S.tab !== 'track') setMode('track'); resetView(); return 'View reset'; },
-  robot: () => { if (S.tab !== 'track') setMode('track'); if (S.settings.show3d !== 'robot') document.querySelector('[data-show3d="robot"]').click(); return calibrateRobot(); },
-  settings: () => { openSettings(); return 'Settings'; },
-  table: () => { if (S.tab !== 'track') setMode('track'); return resetTable(); },
-  sound: () => setSound(true),
-  mute: () => setSound(false),
+const SR=16000,MAX_TAKE_S=60,SILENCE_RMS=.004;
+const V={worker:null,ready:false,failed:'',progress:0,rec:null,stream:null,chunks:[],at:null,pressAt:0,none:false,ctx:null,raf:0,stopT:0,hideT:0,job:0,pending:new Map(),opening:false,processing:false,boardTake:null,buttonOwner:null,stopRequested:false,epoch:0};
+const voiceOk=window.isSecureContext&&!!navigator.mediaDevices?.getUserMedia&&'MediaRecorder' in window&&'OfflineAudioContext' in window;
+const VOICE_ACTIONS={
+  track:()=>{setMode('track');return 'Tracking tab';},
+  tasks:()=>{setMode('tasks');return 'Tasks tab';},
+  calib:()=>{setMode('calib');return 'Calibrate tab';},
+  stream:()=>{setMode('track');$('streamCard').scrollIntoView({behavior:'smooth',block:'start'});return 'Stream';},
+  record:()=>(REC.on?'Already recording':recStart()?'Recording':'Kept the last recording'),
+  stop:()=>(REC.on?(recStop(),'Recording stopped'):'Not recording'),
+  tare:()=>{tareNow();return 'Orientation tared';},untare:()=>{clearTare();return 'Tare cleared';},
+  fit:()=>{if(S.tab==='calib')setMode('track');fitView();return 'View fitted';},
+  reset:()=>{if(S.tab==='calib')setMode('track');resetView();return 'View reset';},
+  robot:()=>{if(S.tab==='calib')setMode('track');if(S.settings.show3d!=='robot')document.querySelector('[data-show3d="robot"]').click();return calibrateRobot();},
+  settings:()=>{if(gameView())$('gameSettings').showModal();else openSettings();return 'Settings';},
+  table:()=>{if(S.tab==='calib')setMode('track');return resetTable();},
+  eyes:()=>{if(S.tab==='calib')setMode('track');setRobotView('eyes');return 'Robot eyes';},
+  outside:()=>{if(S.tab==='calib')setMode('track');setRobotView('orbit');return 'Outside view';},
+  next:()=>{if(!gameView())return 'Open Tasks first';if(!TB.game?.complete)return 'Finish the current task first';if($('taskNext').hidden)return 'This is the last task';$('taskNext').click();return 'Next task';},
+  tags:()=>{if(TB.drive.size)$('tagsDriveBtn').click();return 'AprilTags drive the robot';},
+  sound:()=>setSound(true),mute:()=>setSound(false),
 };
-function voiceSay(state, text, hold) {
-  const el = $('voice');
-  el.dataset.state = state; $('voiceText').textContent = text; el.hidden = false;
-  clearTimeout(V.hideT);
-  if (hold) V.hideT = setTimeout(() => { el.hidden = true; el.dataset.state = 'idle'; }, hold);
-  const on = state === 'listening';
-  for (const id of ['voiceBtn', 'dictBtn']) { $(id).setAttribute('aria-pressed', String(on)); $(id).disabled = state === 'processing'; }
-  duckSound();
-  $('dictBtn').querySelector('span').textContent = on ? 'Stop' : 'Dictate';
+function paintVoiceSources(){
+  const selected=store.get('voice-source','auto'),el=$('voiceSource'),list=(S.boards||[]).filter(b=>!b.sim&&b.state==='live'&&b.audioCommand);
+  const options=[['auto',TASK_DATA.voice.auto],['computer',TASK_DATA.voice.computer],...list.map(b=>[b.id,b.name])];
+  if(!options.some(([id])=>id===selected))options.push([selected,selected+' (disconnected)']);
+  el.replaceChildren(...options.map(([id,label])=>new Option(label,id,false,id===selected)));
+  el.disabled=!!(V.rec||V.opening||V.boardTake||V.processing);
+}
+$('voiceSource').onchange=()=>store.set('voice-source',$('voiceSource').value);
+function voiceSay(state,text,hold){
+  const el=$('voice');el.dataset.state=state;$('voiceText').textContent=text;el.hidden=false;clearTimeout(V.hideT);
+  if(hold)V.hideT=setTimeout(()=>{el.hidden=true;el.dataset.state='idle';},hold);
+  const active=!!(V.rec||V.opening||V.boardTake);
+  for(const id of ['voiceBtn','dictBtn']){$(id).setAttribute('aria-pressed',String(active));$(id).disabled=V.processing;}
+  $('dictBtn').querySelector('span').textContent=active?'Stop':'Dictate';$('voiceStop').hidden=!active;
+  paintVoiceSources();duckSound();
 }
 function speechWorker() {
   if (V.worker) return;
@@ -302,101 +311,152 @@ function transcribe(audio) {
     V.worker.postMessage({ type: 'transcribe', id, audio }, [audio.buffer]);
   });
 }
-const rmsOf = (a) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * a[i]; return Math.sqrt(s / (a.length || 1)); };
-async function voiceStart() {
-  if (V.rec || V.opening || $('voice').dataset.state === 'processing') return;
-  if (!voiceOk) { voiceSay('error', 'This browser can’t record audio here: it needs HTTPS and MediaRecorder.', 6000); return; }
-  if (V.failed) { V.worker.terminate(); V.worker = null; V.failed = ''; V.ready = false; } // try again
-  speechWorker();
-  V.opening = true;
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch (e) {
-    V.opening = false;
-    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
-    voiceSay('error', denied ? 'Microphone access was blocked. Allow it in the address bar and try again.' : `No microphone (${e.message}).`, 6000);
-    return;
-  }
-  V.opening = false;
-  V.stream = stream; V.chunks = []; V.at = null; V.none = false; V.pressAt = performance.now();
-  V.rec = new MediaRecorder(stream);
-  V.rec.ondataavailable = (e) => { if (e.data.size) V.chunks.push(e.data); };
-  V.rec.onstop = voiceFinish;
-  V.rec.start();
-  listen(stream);
-  V.stopT = setTimeout(voiceStop, MAX_TAKE_S * 1000);
-  const say = 'say a command (“Calibrate robot”, “Start recording”, “Tare”) or a note';
-  voiceSay('listening', V.ready ? `Listening: ${say}…` : `Listening: ${say} (the speech model downloads meanwhile)…`);
+const rmsOf=a=>Math.sqrt(a.reduce((s,v)=>s+v*v,0)/(a.length||1));
+function prepareSpeech(){if(V.failed){V.worker?.terminate();V.worker=null;V.failed='';V.ready=false;V.sawTotal=false;}speechWorker();}
+function voiceSelectedBoard(){
+  const id=store.get('voice-source','auto');if(id==='computer')return null;
+  const boards=(S.boards||[]).filter(b=>!b.sim&&b.state==='live'&&b.audioCommand&&b.device?.gatt?.connected);
+  if(id==='auto')return boards[0]||null;
+  const board=boards.find(b=>b.id===id);if(!board)throw Error('Connect the selected controller microphone, or choose Computer microphone in Settings');return board;
 }
-// The level meter, and the gate that ends the take after a pause.
-function listen(stream) {
-  const ctx = new AudioContext(), an = ctx.createAnalyser();
-  an.fftSize = 1024;
-  ctx.createMediaStreamSource(stream).connect(an);
-  const buf = new Float32Array(an.fftSize), gate = new C.VoiceGate();
-  gate.reset(performance.now());
-  V.ctx = ctx;
-  const tick = () => {
-    an.getFloatTimeDomainData(buf);
-    const level = rmsOf(buf), ev = gate.step(level, performance.now());
-    $('voiceMeter').style.transform = `scaleX(${Math.min(1, level * 6)})`;
-    if (ev === 'start') V.at = gate.start;
-    if (ev === 'end' || ev === 'none') { V.none = ev === 'none'; voiceStop(); return; }
-    V.raf = requestAnimationFrame(tick);
-  };
-  tick();
+async function voiceStart(board=null,held=false){
+  if(V.rec||V.opening||V.boardTake||V.processing||document.hidden)return;
+  try{board=board||voiceSelectedBoard();}catch(e){voiceSay('error',e.message,6000);return;}
+  if(board)return voiceStartBoard(board,held);
+  if(!voiceOk){voiceSay('error','This browser needs HTTPS and microphone recording support.',6000);return;}
+  prepareSpeech();V.opening=true;V.stopRequested=false;const epoch=++V.epoch;let stream;
+  voiceSay('listening','Opening the computer microphone…');
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
+  catch(e){if(epoch!==V.epoch)return;V.opening=false;voiceSay('error',e.name==='NotAllowedError'?'Microphone access was blocked. Allow it in the address bar and try again.':`No microphone (${e.message}).`,6000);return;}
+  if(epoch!==V.epoch||V.stopRequested){stream.getTracks().forEach(t=>t.stop());if(epoch===V.epoch){V.opening=false;voiceSay('done','Voice input cancelled.',2500);}return;}
+  V.opening=false;V.stream=stream;V.chunks=[];V.at=null;V.none=false;V.pressAt=performance.now();
+  try{
+    V.rec=new MediaRecorder(stream);V.rec.ondataavailable=e=>{if(e.data.size)V.chunks.push(e.data);};
+    V.rec.onstop=()=>voiceFinish(epoch);V.rec.start();listen(stream);V.stopT=setTimeout(voiceStop,MAX_TAKE_S*1000);
+    voiceSay('listening','Listening through the computer microphone. Say a command, then pause or press Stop.');
+  }catch(e){voiceCancel(`Could not record the microphone (${e.message}).`);}
 }
-function voiceStop() {
-  clearTimeout(V.stopT); cancelAnimationFrame(V.raf);
-  if (V.rec && V.rec.state !== 'inactive') V.rec.stop();
+function listen(stream){
+  const ctx=new AudioContext(),an=ctx.createAnalyser();an.fftSize=1024;ctx.createMediaStreamSource(stream).connect(an);
+  const buf=new Float32Array(an.fftSize),gate=new C.VoiceGate();gate.reset(performance.now());V.ctx=ctx;
+  const tick=()=>{an.getFloatTimeDomainData(buf);const level=rmsOf(buf),ev=gate.step(level,performance.now());$('voiceMeter').style.transform=`scaleX(${Math.min(1,level*6)})`;if(ev==='start')V.at=gate.start;if(ev==='end'||ev==='none'){V.none=ev==='none';voiceStop();return;}V.raf=requestAnimationFrame(tick);};tick();
 }
-async function voiceFinish() {
-  cancelAnimationFrame(V.raf); $('voiceMeter').style.transform = 'scaleX(0)';
-  if (V.ctx) { V.ctx.close(); V.ctx = null; }
-  V.stream.getTracks().forEach((t) => t.stop());
-  const blob = new Blob(V.chunks, { type: V.rec.mimeType }), at = (V.at === null ? V.pressAt : V.at) / 1000, none = V.none;
-  V.rec = null; V.stream = null; V.chunks = [];
-  if (none) { voiceSay('done', 'Didn’t hear anything. Try again a little closer to the microphone.', 4000); return; }
-  voiceSay('processing', V.ready ? 'Turning speech into text…' : `Downloading the speech model${V.progress ? `, ${Math.round(V.progress)}%` : ''} (only the first time)…`);
-  try {
-    const audio = await toMono16k(blob);
-    // Whisper invents words in silence, so a quiet take is dropped
-    if (rmsOf(audio) < SILENCE_RMS) { voiceSay('done', 'Didn’t hear anything. Try again a little closer to the microphone.', 4000); return; }
-    const text = C.tidySpeech(await transcribe(audio));
-    if (!text) { voiceSay('done', 'No words recognised. Try again.', 4000); return; }
-    const c = C.voiceCommand(text);
-    if (c && c.cmd !== 'note') voiceSay('done', `“${text.replace(/[.!?]$/, '')}”: ${VOICE_ACTIONS[c.cmd]()}.`, 4000);
-    else {
-      const note = c ? c.text : text;
-      addNote(note, at);
-      voiceSay('done', `${REC.on ? 'Note at ' + C.fmtStamp(Math.max(0, at - REC.t0)) : 'Note'}: “${note}”`, 5000);
-    }
-  } catch (e) {
-    voiceSay('error', `Couldn’t turn that into text (${e.message}).`, 7000);
-  }
+function voiceStop(){
+  if(V.opening){V.stopRequested=true;return;}
+  clearTimeout(V.stopT);cancelAnimationFrame(V.raf);
+  if(V.boardTake){void voiceFinishBoard(V.boardTake);return;}
+  if(V.rec&&V.rec.state!=='inactive')V.rec.stop();
 }
-// Whatever the recorder made (webm/opus, mp4/aac), decoded at 16 kHz, which resamples it, and mixed down to one channel.
-async function toMono16k(blob) {
-  const buf = await new OfflineAudioContext(1, SR, SR).decodeAudioData(await blob.arrayBuffer());
-  if (buf.numberOfChannels === 1) return buf.getChannelData(0).slice();
-  const out = new Float32Array(buf.length);
-  for (let c = 0; c < buf.numberOfChannels; c++) { const ch = buf.getChannelData(c); for (let i = 0; i < out.length; i++) out[i] += ch[i] / buf.numberOfChannels; }
-  return out;
+async function voiceFinish(epoch){
+  cancelAnimationFrame(V.raf);$('voiceMeter').style.transform='scaleX(0)';V.ctx?.close();V.ctx=null;
+  V.stream?.getTracks().forEach(t=>t.stop());const blob=new Blob(V.chunks,{type:V.rec.mimeType}),at=(V.at??V.pressAt)/1000,none=V.none;
+  V.rec=null;V.stream=null;V.chunks=[];
+  if(none){voiceSay('done','Didn’t hear speech. Try again closer to the microphone.',4000);return;}
+  V.processing=true;voiceSay('processing','Turning speech into text…');
+  try{await voiceProcess(await toMono16k(blob),at,epoch);}catch(e){if(epoch===V.epoch)voiceSay('error',`Couldn’t turn that into text (${e.message}).`,7000);}
+  finally{if(epoch===V.epoch){V.processing=false;paintVoiceSources();$('voiceBtn').disabled=$('dictBtn').disabled=false;}}
 }
-const voiceToggle = () => { if (V.rec) voiceStop(); else voiceStart(); };
-$('voiceBtn').onclick = voiceToggle;
-$('dictBtn').onclick = voiceToggle;
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && V.rec) { voiceStop(); return; }
-  if ((e.key !== 'v' && e.key !== 'V') || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable], dialog[open]')) return;
-  if (!$('boardView').hidden) return;
-  e.preventDefault(); voiceToggle();
+async function voiceProcess(audio,at,epoch){
+  if(epoch!==V.epoch)return;
+  if(audio.length<SR*.3||rmsOf(audio)<SILENCE_RMS){voiceSay('done','Didn’t hear speech. Try again closer to the microphone.',4000);return;}
+  V.processing=true;voiceSay('processing',V.ready?'Turning speech into text…':'Loading Whisper and turning speech into text (the model downloads only once)…');
+  const text=C.tidySpeech(await transcribe(audio));if(epoch!==V.epoch)return;
+  if(!text){voiceSay('done','No words recognised. Try again.',4000);return;}
+  const command=C.voiceCommand(text);
+  if(command&&command.cmd!=='note')voiceSay('done',`“${text.replace(/[.!?]$/,'')}”: ${VOICE_ACTIONS[command.cmd]()}.`,5000);
+  else{const note=command?command.text:text;addNote(note,at);voiceSay('done',`Note: “${note}”`,5000);}
+}
+async function toMono16k(blob){const buf=await new OfflineAudioContext(1,SR,SR).decodeAudioData(await blob.arrayBuffer()),out=new Float32Array(buf.length);for(let c=0;c<buf.numberOfChannels;c++){const ch=buf.getChannelData(c);for(let i=0;i<out.length;i++)out[i]+=ch[i]/buf.numberOfChannels;}return out;}
+async function writeBoardAudio(b,bytes){
+  const start=performance.now();while(b.hapticBusy&&performance.now()-start<1000)await new Promise(r=>setTimeout(r,20));
+  if(!b.device?.gatt?.connected||!b.audioCommand)throw Error('Controller disconnected');
+  if(b.hapticBusy)throw Error('Controller is busy; try again');
+  if(b.audioCommand.writeValueWithResponse)await b.audioCommand.writeValueWithResponse(bytes);else await b.audioCommand.writeValue(bytes);
+}
+function stopControllerTake(take){
+  if(take.stopPromise)return take.stopPromise;
+  if(!take.startWrite)return take.stopPromise=Promise.resolve();
+  const b=take.board;
+  const stopping=(async()=>{try{await take.startWrite;}catch(_){return;}await writeBoardAudio(b,ControllerVoice.stop());})();
+  take.stopPromise=stopping;b.audioClosing=stopping;
+  const clear=()=>{if(b.audioClosing===stopping)b.audioClosing=null;};stopping.then(clear,clear);return stopping;
+}
+async function voiceStartBoard(b,held=false){
+  if(V.rec||V.opening||V.boardTake||V.processing||document.hidden)return;
+  if(!b.audioCommand||b.state!=='live'){voiceSay('error','This controller has no Bluetooth microphone stream. Choose Computer microphone in Settings.',6000);return;}
+  const rate=b.info?.micRateHz||SR;if(!Number.isInteger(rate)||rate<8000||rate>48000){voiceSay('error','Unsupported controller microphone rate.',6000);return;}
+  prepareSpeech();const id=Math.floor(Math.random()*65536),epoch=++V.epoch,now=performance.now();
+  const take={board:b,track:new ControllerVoice.Take(id,rate),gate:new C.VoiceGate(),held,epoch,at:now/1000,lastChunk:now,timer:null,finishing:false};
+  take.gate.reset(0);V.boardTake=take;V.buttonOwner=held?b:null;V.opening=true;V.stopRequested=false;
+  voiceSay('listening',`Opening ${b.name}’s microphone…`);
+  try{
+    await b.audioClosing?.catch(()=>{});
+    if(V.boardTake!==take||epoch!==V.epoch)return;
+    take.startWrite=writeBoardAudio(b,ControllerVoice.start(id));await take.startWrite;
+    if(V.boardTake!==take||epoch!==V.epoch){await stopControllerTake(take).catch(()=>{});return;}
+    V.opening=false;
+    if(V.stopRequested){await voiceFinishBoard(take);return;}
+    voiceSay('listening',`Listening through ${b.name}. ${held?'Release the joystick button to send.':'Pause or press Stop to send.'}`);
+    V.stopT=setTimeout(voiceStop,ControllerVoice.AUDIO.maxSeconds*1000);
+    take.timer=setInterval(()=>{if(V.boardTake!==take)return;const t=performance.now();if(t-take.lastChunk>2500||held&&t-b.actT>1500)voiceCancel('Controller audio or button status was interrupted. Try again.');},250);
+  }catch(e){if(V.boardTake===take){V.boardTake=null;V.opening=false;V.buttonOwner=null;voiceSay('error',`Controller microphone: ${e.message}.`,6000);}}
+}
+function controllerAudioChunk(b,view){
+  const take=V.boardTake;if(!take||take.board!==b||take.finishing)return;
+  try{
+    const audio=take.track.add(view);if(!audio)return;take.lastChunk=performance.now();const level=rmsOf(audio);$('voiceMeter').style.transform=`scaleX(${Math.min(1,level*6)})`;
+    const ev=take.gate.step(level,take.track.seconds*1000);
+    if(take.track.full||!take.held&&(ev==='end'||ev==='none')){if(V.opening)V.stopRequested=true;else voiceStop();}
+  }catch(e){voiceCancel(e.message);}
+}
+async function voiceFinishBoard(take){
+  if(take.finishing||V.boardTake!==take)return;take.finishing=true;clearInterval(take.timer);clearTimeout(V.stopT);V.processing=true;
+  voiceSay('processing','Finishing controller audio…');
+  try{
+    await stopControllerTake(take);
+    if(V.boardTake!==take||take.epoch!==V.epoch)return;
+    V.boardTake=null;V.buttonOwner=null;V.opening=false;take.board.lastSeq=null;
+    await voiceProcess(take.track.finish(),take.at,take.epoch);
+  }catch(e){if(take.epoch===V.epoch)voiceSay('error',`Controller audio: ${e.message}.`,6000);}
+  finally{if(V.boardTake===take)V.boardTake=null;if(take.epoch===V.epoch||!V.boardTake&&!V.rec&&!V.opening){V.processing=false;V.buttonOwner=null;$('voiceMeter').style.transform='scaleX(0)';paintVoiceSources();$('voiceBtn').disabled=$('dictBtn').disabled=false;duckSound();}}
+}
+function voiceCancel(message=''){
+  const take=V.boardTake;++V.epoch;clearTimeout(V.stopT);cancelAnimationFrame(V.raf);clearInterval(take?.timer);
+  V.boardTake=null;V.buttonOwner=null;V.stopRequested=true;V.opening=false;
+  if(take&&!take.finishing)void stopControllerTake(take).catch(()=>{});
+  if(V.rec){V.rec.onstop=null;if(V.rec.state!=='inactive')V.rec.stop();}V.rec=null;
+  if(V.processing&&!take){V.worker?.terminate();V.worker=null;V.ready=false;V.processing=false;for(const f of V.pending.values())f({error:'Voice input cancelled'});V.pending.clear();}
+  V.stream?.getTracks().forEach(t=>t.stop());V.stream=null;V.chunks=[];V.ctx?.close();V.ctx=null;
+  $('voiceMeter').style.transform='scaleX(0)';voiceSay(message?'error':'done',message||'Voice input cancelled.',message?6000:2000);
+}
+function onBoardVoiceKeys(b,keys){
+  if(b.sim)return;const pressed=!!(keys&ControllerVoice.AUDIO.stick),before=b.voicePressed;b.voicePressed=pressed;
+  // A first status is a baseline; a stick held before connection does not open a microphone.
+  if(before==null||before===pressed)return;
+  if(pressed){if(!V.rec&&!V.boardTake&&!V.opening&&!V.processing)void voiceStartBoard(b,true);}
+  else if(V.buttonOwner===b)voiceStop();
+}
+async function connectBoardVoice(b,server){
+  const generation=b.audioGeneration=(b.audioGeneration||0)+1;b.audioCommand=null;
+  try{
+    const service=await server.getPrimaryService(ControllerVoice.AUDIO.service),command=await service.getCharacteristic(ControllerVoice.AUDIO.command),stream=await service.getCharacteristic(ControllerVoice.AUDIO.stream);
+    if(!command.writeValueWithResponse&&!command.writeValue)return;
+    stream.addEventListener('characteristicvaluechanged',e=>{if(b.audioGeneration===generation)controllerAudioChunk(b,e.target.value);});await stream.startNotifications();
+    if(b.audioGeneration===generation&&b.device?.gatt?.connected)b.audioCommand=command;
+  }catch(_){/* Older firmware keeps its motion/gripper connection. */}
+  paintVoiceSources();
+}
+function voiceBoardGone(b){
+  b.audioGeneration=(b.audioGeneration||0)+1;b.audioCommand=null;b.voicePressed=null;if(V.boardTake?.board===b)voiceCancel('Controller disconnected; voice input cancelled.');paintVoiceSources();
+}
+const voiceToggle=()=>{if(V.rec||V.boardTake||V.opening)voiceStop();else void voiceStart();};
+$('voiceBtn').onclick=voiceToggle;$('dictBtn').onclick=voiceToggle;$('voiceStop').onclick=voiceStop;
+$('voiceCancel').onclick=()=>{voiceCancel();$('voice').hidden=true;};
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&(V.rec||V.boardTake||V.opening||V.processing)){voiceCancel();return;}
+  if(e.key.toLowerCase()!=='v'||e.repeat||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.target.closest?.('input,textarea,select,[contenteditable],dialog[open]')||!$('boardView').hidden)return;
+  e.preventDefault();voiceToggle();
 });
-window.addEventListener('pagehide', () => {
-  if (!V.rec) return;
-  V.rec.onstop = null; voiceStop();
-  if (V.stream) V.stream.getTracks().forEach((t) => t.stop());
-  if (V.ctx) V.ctx.close();
-});
+window.addEventListener('pagehide',()=>voiceCancel());
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&(V.rec||V.boardTake||V.opening||V.processing))voiceCancel();});

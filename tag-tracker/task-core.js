@@ -20,10 +20,15 @@
     if (kind === 'block') return [box([0, 0, 0], [0.025, 0.025, 0.025])];
     if (kind === 'plate') return [cyl([0, 0, 0], 0.06, 0.006)];
     if (kind === 'bowl') {
-      const parts = [cyl([0, 0, 0.005], 0.088, 0.005)];
-      for (let i = 0; i < 20; i++) {
-        const a = i * Math.PI / 10;
-        parts.push({ ...box([0.084 * Math.cos(a), 0.084 * Math.sin(a), 0.027], [0.004, 0.014, 0.022]), R: rz(a) });
+      // A flared ceramic shell: a solid foot and overlapping, tilted wall segments.
+      // The renderer revolves the same cross-section instead of drawing the collision seams.
+      const profile = [[0,0],[.064,0],[.073,.002],[.077,.007],[.092,.044],[.093,.048],[.092,.051],[.089,.052],[.087,.050],[.085,.044],[.071,.012],[.067,.008],[0,.008]];
+      const parts = [{ ...cyl([0, 0, 0.004], 0.076, 0.004), bowlProfile: profile }];
+      const dr = .016, dz = .041, len = Math.hypot(dr, dz), tilt = Math.atan2(dr, dz);
+      for (let i = 0; i < 32; i++) {
+        const a = i * Math.PI / 16;
+        const ry = [Math.cos(tilt),0,Math.sin(tilt),0,1,0,-Math.sin(tilt),0,Math.cos(tilt)];
+        parts.push({ ...box([.082 * Math.cos(a), .082 * Math.sin(a), .0285], [.003, .082 * Math.tan(Math.PI / 32) * 1.04, len / 2 + .001]), R: C.mul3(rz(a), ry) });
       }
       return parts;
     }
@@ -96,7 +101,7 @@
       if (r.type === 'fold') {
         const f = Cloth.folded(b), ps = b.nodes.map((n) => g.local(n.p)), mid = [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
         const span = [0, 1].map((i) => Math.max(...ps.map((p) => p[i])) - Math.min(...ps.map((p) => p[i])));
-        return (f.x || f.y) && f.compact && Math.max(...span) > Math.min(b.width, b.height) * 0.75 && b.pins.size === 0 && b.touched.size === 2
+        return (b.kind==='shirt' ? f.complete : (f.x || f.y) && f.compact && Math.max(...span) > Math.min(b.width, b.height) * 0.75) && b.pins.size === 0 && b.touched.size === 2
           && within(mid, r.at, r.tolerance) && b.nodes.every((n) => C.norm(n.v) < 0.05);
       }
       const pose = W.poseOf(b), p = g.local(pose.t);
@@ -140,6 +145,13 @@
     const r=goals[index],b=g.byKey.get(r.object),holds=held.filter(h=>h.grip.body===b),base={index,object:r.object,target:r.target||null};
     const result=state=>({...base,state});
     if(r.type==='fold'){
+      if(b.kind==='shirt'){
+        const f=Cloth.folded(b);
+        if([...b.pins.values()].some(p=>{const y=b.material[p.i][1];return y>b.bodySpan/2&&f.sleeves[0]||y<-b.bodySpan/2&&f.sleeves[1];}))return result('shirt_sleeve_release');
+        if(!f.sleeves[0])return result('shirt_left');
+        if(!f.sleeves[1])return result('shirt_right');
+        return result(f.complete?(b.pins.size?'shirt_release':'settle'):b.pins.size>=2?'shirt_fold':'shirt_hem');
+      }
       if(b.pins.size===1)return result('fold_second');
       if(b.pins.size){const f=Cloth.folded(b);return result((f.x||f.y)&&f.compact?'fold_release':'fold_move');}
       return result(b.touched.size===2&&(Cloth.folded(b).x||Cloth.folded(b).y)&&Cloth.folded(b).compact?'settle':'fold_grab');
@@ -193,8 +205,8 @@
     const a = Math.max(-80, Math.min(25, Number.isFinite(tilt) ? tilt : -40)) * Math.PI / 180;
     const eye = C.add(chest.t, C.mulv(chest.R, [-m.back + 0.02 + 0.078 * Math.cos(a), 0, m.up + 0.17 + 0.078 * Math.sin(a)]));
     const fwd = C.mulv(chest.R, [Math.cos(a), 0, Math.sin(a)]), right = C.mulv(chest.R, [0, -1, 0]), up = C.mulv(chest.R, [-Math.sin(a), 0, Math.cos(a)]);
-    // Fixed 70° horizontal field of view: portrait screens still show both hands instead of cropping them away.
-    const f = w / (2 * Math.tan(35 * Math.PI / 180)), fov = 2 * Math.atan(h / (2 * f)) * 180 / Math.PI;
+    // At least 90° across and 60° vertically: both hands and the table fit even in a wide viewport.
+    const f = Math.min(w / 2, h / (2 * Math.tan(Math.PI / 6))), fov = 2 * Math.atan(h / (2 * f)) * 180 / Math.PI;
     return { eye, fwd, right, up, fov, project(p) { const d = C.sub(p, eye), z = d.reduce((s, v, i) => s + v * fwd[i], 0); if (z < 0.001) return null;
       return [w / 2 + f * d.reduce((s, v, i) => s + v * right[i], 0) / z, h / 2 - f * d.reduce((s, v, i) => s + v * up[i], 0) / z, z]; } };
   }

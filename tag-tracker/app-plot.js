@@ -197,7 +197,6 @@ function draw3d() {
   plot.addEventListener('keydown', (e) => {
     const V = S.view, k = e.key;
     if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes' && k.startsWith('Arrow')) {
-      if (k === 'ArrowUp' || k === 'ArrowDown') { setHeadTilt(S.settings.robot.headTilt + (k === 'ArrowUp' ? 3 : -3)); saveSettings(); }
       e.preventDefault(); return;
     }
     if (k === 'ArrowLeft') V.yaw += 0.1; else if (k === 'ArrowRight') V.yaw -= 0.1;

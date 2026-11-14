@@ -41,7 +41,7 @@
   assert(S.settings.robot.headTilt === -42, 'up arrow tilts the robot head up');
   // Exercise every new mesh and objective view in a live browser.
   for (const l of TASK_DATA.levels) { taskLevel(l.id); await wait(l.id === 'laundry' ? 700 : 120); assert(TB.world && TB.game.level.id === l.id, l.id + ' scene loads'); }
-  assert(TB.world.cloths.length === 3 && TB.world.cloths.every((c) => c.nodes.every((n) => n.p.every(Number.isFinite))), 'the laundry pile simulates and renders');
+  assert(TB.world.cloths.length === 1 && TB.world.cloths.every((c) => c.nodes.every((n) => n.p.every(Number.isFinite))), 'the long-sleeve shirt simulates and renders');
   assert(document.documentElement.scrollWidth <= innerWidth + 1, 'the layout has no horizontal page overflow');
   const campaign = $('taskPanel').getBoundingClientRect(), stage = $('plot').getBoundingClientRect();
   assert(innerWidth < 1001 || $('taskPanel').lastElementChild.getBoundingClientRect().bottom <= campaign.bottom + 1, 'campaign content stays inside its card');

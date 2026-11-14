@@ -248,7 +248,8 @@ let frameErr = false;
 function frame() {
   requestAnimationFrame(frame);
   try {
-    if (S.tab === 'track') { draw3d(); drawTplot(); }
+    if (S.tab !== 'calib') draw3d();
+    if (S.tab === 'track') drawTplot();
     if (S.mode === 'track') drawTable();
     if (S.tab === 'track') paintStream();
     if (REC.on) paintRec();
@@ -259,12 +260,21 @@ function frame() {
 }
 
 // ---------------- modes ----------------
-// S.tab is the tab shown; S.mode what the detector does: 'calib' looks for the board, 'track' (Track and Stream) for tags.
+// S.tab chooses Calibrate, Tracking or Tasks; S.mode chooses board or tag detection.
 function setMode(m) {
+  if (!TABS.includes(m)) return;
+  stopTaskInput();
+  if (m === 'tasks') {
+    if (S.tab !== 'tasks') TASK.trackingView = S.settings.show3d;
+    S.settings.show3d = 'robot'; S.settings.robot.props = 'arcade';
+  } else if (S.tab === 'tasks' && TASK.trackingView) S.settings.show3d = TASK.trackingView;
+  $('robotProps').value = S.settings.robot.props;
+  document.querySelectorAll('[data-show3d]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.show3d === S.settings.show3d)));
   S.tab = m; S.mode = m === 'calib' ? 'calib' : 'track';
-  for (const t of TABS) $('tab-' + t).setAttribute('aria-selected', String(m === t));
+  for (const t of TABS) { const b = $('tab-' + t); b.setAttribute('aria-selected', String(m === t)); b.tabIndex = m === t ? 0 : -1; }
   if (m !== 'track') setFull(false);
-  $('view-track').hidden = m !== 'track';
+  $('view-track').hidden = m === 'calib';
+  $('view-track').setAttribute('aria-labelledby', 'tab-' + (m === 'tasks' ? 'tasks' : 'track'));
   $('tagsCard').hidden = m === 'calib';
   $('nowCard').hidden = m !== 'track';
   $('calibCard').hidden = m !== 'calib';
@@ -276,15 +286,18 @@ function setMode(m) {
     document.querySelector('main').appendChild($('calibCard'));
     renderCalib();
   } else document.querySelector('.col').appendChild($('calibCard'));
-  clearOverlays(); renderRig();
+  paintRobotBtns(); clearOverlays(); renderRig();
 }
-const TABS = ['track', 'calib'];
+function stopTaskInput() { TB.grab = null; TB.ptr = null; TASK_HAPTIC.reset(); }
+const TABS = ['calib', 'track', 'tasks'];
 TABS.forEach((t, i) => {
   const b = $('tab-' + t);
   b.onclick = () => setMode(t);
   b.addEventListener('keydown', (e) => {
     const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); const b = $('tab-' + TABS[e.key === 'Home' ? 0 : TABS.length - 1]); b.click(); b.focus(); return; }
     if (!d) return;
+    e.preventDefault();
     const other = $('tab-' + TABS[(i + d + TABS.length) % TABS.length]); other.click(); other.focus();
   });
 });

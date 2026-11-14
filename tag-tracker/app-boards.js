@@ -130,7 +130,7 @@ async function addBoard() {
   }
   boardNote('Choose your board in the browser’s Bluetooth list. No list? Open this page in Chrome or Edge itself, not an app’s built-in browser.', false);
   let device;
-  try { device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: C.IMU.namePrefix }], optionalServices: [C.IMU.service, C.ACT.service] }); } catch (e) {
+  try { device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: C.IMU.namePrefix }], optionalServices: [C.IMU.service, C.ACT.service, ControllerVoice.AUDIO.service] }); } catch (e) {
     boardNote(await btFailure(e));
     return;
   }
@@ -171,9 +171,10 @@ async function connectDevice(device) {
     // for its telemetry service has to be connected again from Connect for that)
     try {
       const ach = await (await server.getPrimaryService(C.ACT.service)).getCharacteristic(C.ACT.status);
-      ach.addEventListener('characteristicvaluechanged', (e) => { const st = C.decodeActuatorStatus(e.target.value); if (st) { b.act = st; b.actT = performance.now(); } });
+      ach.addEventListener('characteristicvaluechanged', (e) => { const st = C.decodeActuatorStatus(e.target.value); if (st) { b.act = st; b.actT = performance.now(); onBoardVoiceKeys(b,st.keys); } });
       await ach.startNotifications(); b.actOk = true; b.hapticCharacteristic = ach; b.hapticError = null;
     } catch (e) { b.actOk = false; }
+    await connectBoardVoice(b,server);
   } catch (e) {
     b.state = 'error'; b.err = e && e.message ? e.message : String(e);
     if (device.gatt.connected) device.gatt.disconnect();
@@ -181,6 +182,7 @@ async function connectDevice(device) {
   renderBoards();
 }
 function boardGone(b) {
+  voiceBoardGone(b);
   if (b.closing || b.state === 'error') { if (b.closing) b.state = 'saved'; paintBoards(); return; }
   b.state = 'lost'; b.retries = (b.retries || 0) + 1; paintBoards();
   if (b.retries <= 5) setTimeout(() => { if (b.state === 'lost' && S.boards.includes(b)) connectDevice(b.device); }, 1500 * b.retries);
@@ -226,7 +228,7 @@ function renderBoards() {
     row.querySelector('[data-a=use]').onclick = () => { b.use = !b.use; boardStore.save(b); renderBoards(); };
     row.querySelector('[data-a=relearn]').onclick = () => { b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; b.learn = ''; boardStore.save(b); renderBoards(); };
     const rm = row.querySelector('[data-a=rm]');
-    if (rm) rm.onclick = () => { b.closing = true; if (b.serialLink) b.serialLink.close().catch(()=>{});if (b.device && b.device.gatt.connected) b.device.gatt.disconnect(); S.boards = S.boards.filter((x) => x !== b); renderBoards(); };
+    if (rm) rm.onclick = () => { voiceBoardGone(b); b.closing = true; if (b.serialLink) b.serialLink.close().catch(()=>{});if (b.device && b.device.gatt.connected) b.device.gatt.disconnect(); S.boards = S.boards.filter((x) => x !== b); renderBoards(); };
     for (const [a, k] of [['gopen', 'open'], ['gclosed', 'closed']]) {
       const g = row.querySelector(`[data-a=${a}]`);
       if (g) g.onclick = () => { const p = C.gripPermille(b.act); if (p === null) return; b.grip = Object.assign({}, b.grip, { [k]: p }); boardStore.save(b); paintBoards(); };
@@ -237,7 +239,7 @@ function renderBoards() {
   }
   list.dataset.keys = keys.join('|');
   if (S.boards.length) $('boardsHint').hidden = true;
-  paintBoards();
+  paintBoards();paintVoiceSources();
 }
 function paintBoards() {
   if ($('boardList').dataset.keys !== trackKeys().join('|')) { renderBoards(); return; }

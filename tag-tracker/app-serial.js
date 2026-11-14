@@ -11,7 +11,7 @@ async function addSerialBoard(){
       let b=boards.get(id);
       if(!b){
         const previous=S.boards.find(q=>q.id===id&&!q.sim);
-        if(previous){previous.closing=true;previous.device?.gatt?.disconnect();if(previous.serialLink?.detach)previous.serialLink.detach(id);else previous.serialLink?.close().catch(()=>{});S.boards=S.boards.filter(q=>q!==previous);}
+        if(previous){voiceBoardGone(previous);previous.closing=true;previous.device?.gatt?.disconnect();if(previous.serialLink?.detach)previous.serialLink.detach(id);else previous.serialLink?.close().catch(()=>{});S.boards=S.boards.filter(q=>q!==previous);}
         b=newBoard(id,'nrf-controller-'+id,{transport:'serial',serialLink:link,state:'live',hapticRateHz:25});boards.set(id,b);
         b.hapticCharacteristic={transient:true,get busy(){return !!link.writing;},writeValueWithResponse:bytes=>link.command(f.board,b.pipe,bytes)};
       }

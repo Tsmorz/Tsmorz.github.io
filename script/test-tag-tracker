@@ -1234,6 +1234,16 @@ if (run('5k')) {
   require('./tag-tracker/guidance.cjs')({ check, near });
 }
 
+if (run('5p')) {
+  console.log('5p. controller microphone streams and voice commands');
+  require('./tag-tracker/voice.cjs')({check,near});
+}
+
+if (run('5o')) {
+  console.log('5o. finite cloth patches, surface contact and long-sleeve shirt folding');
+  require('./tag-tracker/fabric.cjs')({ check, near });
+}
+
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
 function testBridge() {
   const { spawnSync, spawn } = require('child_process'), dgram = require('dgram'), net = require('net');

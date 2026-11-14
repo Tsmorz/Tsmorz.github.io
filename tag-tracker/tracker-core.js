@@ -571,7 +571,7 @@
   };
   function decodeBoardInfo(v) {
     if (v.byteLength !== IMU.infoBytes || v.getUint8(0) !== IMU.version) return null;
-    return { boardId: v.getUint16(1, true).toString(16).toUpperCase().padStart(4, '0'), imuRateHz: v.getUint16(3, true), gyroDpsPerLsb: v.getFloat32(5, true), accelGPerLsb: v.getFloat32(9, true), imuDropped: v.getUint32(16, true) };
+    return { boardId: v.getUint16(1, true).toString(16).toUpperCase().padStart(4, '0'), imuRateHz: v.getUint16(3, true), gyroDpsPerLsb: v.getFloat32(5, true), accelGPerLsb: v.getFloat32(9, true), micRateHz: v.getUint16(13,true), imuDropped: v.getUint32(16, true) };
   }
   function decodeImuBatch(v) {
     if (v.byteLength < IMU.header || v.getUint8(0) !== IMU.version) return null;
@@ -831,6 +831,11 @@
   // and the like are taken off), so a note that merely mentions a tab is still a note. "Note ..." is always a note.
   const VOICE_COMMANDS = {
     track: ['track', 'tracking', 'tracks', 'tracker'],
+    tasks: ['tasks', 'robot tasks', 'workbench'],
+    eyes: ['robot eyes', 'first person', 'first person view', 'head camera'],
+    outside: ['outside view', 'orbit view', 'external view'],
+    next: ['next task', 'next exercise'],
+    tags: ['resume april tags', 'resume apriltags', 'tags drive'],
     calib: ['calibrate', 'calibration', 'calibrating', 'calibrate camera', 'calibrate the camera', 'calibrate cameras'],
     stream: ['stream', 'streaming', 'streams'],
     record: ['record', 'start recording', 'start a recording', 'start the recording', 'start record', 'new recording', 'begin recording'],
@@ -840,7 +845,7 @@
     fit: ['fit', 'fit view', 'fit the view', 'zoom to fit'],
     reset: ['reset view', 'reset the view'],
     robot: ['calibrate robot', 'calibrate the robot', 'zero robot', 'zero the robot'],
-    table: ['reset table', 'reset the table', 'reset ball', 'reset the ball', 'new ball', 'reset cup', 'reset the cup'],
+    table: ['restart task', 'reset task', 'restart the task', 'reset the task', 'restart exercise', 'reset table', 'reset the table', 'reset ball', 'reset the ball', 'new ball', 'reset cup', 'reset the cup'],
     sound: ['sound on', 'sounds on', 'turn the sound on', 'turn sound on', 'unmute', 'unmute sound'],
     mute: ['mute', 'mute sound', 'sound off', 'sounds off', 'turn the sound off', 'turn sound off', 'quiet'],
     settings: ['settings', 'setting', 'preferences'],
