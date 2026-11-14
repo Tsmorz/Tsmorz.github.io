@@ -40,5 +40,14 @@
     const [x,y]=room.half;
     return [box([0,0,floor-.02],[x,y,.02]),box([x,0,floor+.22],[.018,y,.22]),box([0,y,floor+.22],[x,.018,.22])];
   }
-  return {create,step,clear,transform,docked,roomGeometry,rz,I};
+  function tagInput(neutral,pose) {
+    const d=C.mulv(C.tr3(neutral.R),C.sub(pose.t,neutral.t)), R=C.mul3(C.tr3(neutral.R),pose.R);
+    const dead=(x,lo,hi)=>Math.sign(x)*Math.min(1,Math.max(0,(Math.abs(x)-lo)/(hi-lo)));
+    return {forward:dead(d[0],.035,.16),turn:dead(Math.atan2(R[3],R[0]),.12,.65)};
+  }
+  function destination(s,p){
+    const dx=p[0]-s.x,dy=p[1]-s.y,dist=Math.hypot(dx,dy),error=Math.atan2(Math.sin(Math.atan2(dy,dx)-s.yaw),Math.cos(Math.atan2(dy,dx)-s.yaw));
+    return {forward:dist<.045?0:Math.abs(error)>.5?0:Math.min(.7,dist*3),turn:dist<.045?0:Math.max(-1,Math.min(1,error*2))};
+  }
+  return {create,step,clear,transform,docked,roomGeometry,tagInput,destination,rz,I};
 });

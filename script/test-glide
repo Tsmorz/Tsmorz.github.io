@@ -242,6 +242,145 @@ console.log('6b. contours');
   check([10, 11, 12, 13, 14].map(sti).join() === '500,250,200,80,40', `imperial: ${[10, 11, 12, 13, 14].map(sti).join(', ')} ft`);
 }
 
+console.log('6c. plan values, serialization and destination diagnosis');
+{
+  const GP = require('../glide-path/glide-plan.js');
+  const throws = fn => { try { fn(); return false; } catch { return true; } };
+  const p = GP.parameters({ gr: 17.3, va: 11.27, agl: 123.456, ws: 2.15, vis: 777, mg: 23.4, sl: 11.5, wd: -10, pb: 721, curve: true });
+  const before = JSON.stringify(p);
+  for (const k of Object.keys(GP.SPEC)) for (const unit of ['metric', 'imperial']) {
+    const displayed = GP.display(k, p[k], unit), recovered = GP.inputValue(k, displayed, unit);
+    check(Math.abs(recovered - p[k]) <= 0.00051 / GP.factor(k, unit), `${k} numeric display round trip (${unit})`);
+  }
+  check(JSON.stringify(p) === before, 'rendering either unit system never mutates SI flight values');
+  check(p.wd === 350 && p.pb === 1, 'numeric bearings wrap through north');
+  check(throws(() => GP.inputValue('va', NaN, 'metric')) && throws(() => GP.inputValue('gr', 0, 'metric')), 'invalid exact values rejected');
+  // A legacy imperial value can be outside the metric slider's visual limits; opening the page preserves it.
+  near(GP.parameters({ agl: 1000 / G.FT }).agl, 1000 / G.FT, 1e-12, 'imperial max remains intact');
+  const plan = { version: 1, launch: { lat: 44.08, lon: -103.25 }, params: p, target: { lat: 44.081, lon: -103.249 }, units: 'imperial' };
+  const restored = GP.decode(GP.encode(plan));
+  check(GP.samePlan(plan, restored) && restored.units === 'imperial', 'shared links preserve launch, all settings, destination and display units');
+  check(GP.samePlan(plan, { ...restored, units: 'metric' }), 'changing display units is not an edited flight plan');
+  check(!GP.samePlan(plan, { ...restored, target: null }), 'clearing the destination changes a plan');
+  check(!GP.samePlan(plan, { ...restored, launch: { lat: 44.09, lon: -103.25 } }), 'moving the launch changes a plan');
+  check(GP.differences(p, { ...p, ws: p.ws + 1 }).join() === 'ws', 'changed settings identify the modified field');
+  check(throws(() => GP.decode('%broken')) && throws(() => GP.decode('x'.repeat(12001))) && throws(() => GP.encode({ ...plan, version: 2 })), 'malformed, oversized and unsupported plans rejected');
+  check(throws(() => GP.encode({ ...plan, launch: { lat: 90, lon: 0 } })) && throws(() => GP.encode({ ...plan, params: { ...p, va: Infinity } })), 'invalid coordinates and model values rejected');
+  check(JSON.stringify(GP.aircraft(p)) === JSON.stringify({ gr: p.gr, va: p.va, vis: p.vis }), 'aircraft preset only includes aircraft parameters');
+  const params = GP.parameters({ agl: 120, vis: 1000 }), W = 11, cell = 20, terr = new Float32Array(W * W);
+  const result = G.reachGrid({ cell, si: 5, sj: 5, h0: 120, margin: params.mg, Va: params.va, GR: params.gr, windSpeed: 0, windFromDeg: 0, maxR: params.vis }, terr, W, W);
+  const input = { params, grid: { terr, GW: W, cell }, result, index: 5 * W + 8, distance: 60, bearing: Math.PI / 2, ground: 0, slope: 4 };
+  const info = GP.inspect(input);
+  check(info.reachable && info.potential && info.kind === 'potential', 'reachable ground within the slope limit is potential landing ground');
+  near(info.arrival, 116, 1e-4, 'destination arrival AGL');
+  near(info.routeDistance, 60, 1e-4, 'route distance');
+  near(info.clearance, 116, 1e-4, 'minimum clearance on the path');
+  check(GP.inspect({ ...input, slope: NaN }).kind === 'slope', 'missing slope is distinct from steep ground');
+  check(GP.inspect({ ...input, slope: 20 }).kind === 'steep', 'steep destinations keep route and arrival information');
+  check(GP.inspect({ ...input, distance: 1001 }).kind === 'sight', 'destination beyond sight gets a specific reason');
+  check(GP.inspect({ ...input, ground: NaN }).kind === 'missing', 'missing destination terrain is explicit');
+  check(GP.inspect({ ...input, result: null }).kind === 'pending', 'old or absent search results show a pending diagnosis');
+  const blocked = { ...result, alt: new Float32Array(W * W).fill(-Infinity) };
+  check(GP.inspect({ ...input, result: blocked }).kind === 'blocked', 'terrain/clearance failure diagnosed');
+  check(GP.inspect({ ...input, result: blocked, missing: true }).kind === 'incomplete', 'missing coverage is distinguished from blocked terrain');
+  check(GP.inspect({ ...input, result: blocked, params: { ...params, ws: 15, wd: 90 } }).kind === 'wind', 'wind with no forward progress diagnosed');
+  const rays = G.castRays({ ...base, h0: 120 }, flat); rays.h0 = 120;
+  const direct = GP.inspect({ ...input, params: { ...params, curve: false }, rays });
+  check(direct.reachable && !direct.cells.length && direct.routeDistance === 60, 'straight-only inspection works without a route search');
+  near(direct.arrival, 116, 1e-4, 'straight-only arrival AGL');
+  const heights = new Float32Array(W * W).fill(100), ground = new Float32Array(W * W);
+  heights[5 * W + 5] = 120; ground[5 * W + 6] = 89;
+  const intermediate = GP.routeStats([5 * W + 5, 6 * W + 7], heights, ground, W, 20);
+  near(intermediate.clearance, 21, 1e-6, 'minimum clearance includes terrain crossed between knight-move endpoints');
+}
+
+console.log('6d. lee-ridge screening and local model wind');
+{
+  const S = require('../glide-path/soaring-core.js'), W=121, cell=10, mid=60;
+  const make = fn => Float32Array.from({length:W*W},(_,i)=>fn((i%W-mid)*cell,(Math.floor(i/W)-mid)*cell));
+  const o={cell,si:mid,sj:mid,maxR:450,windSpeed:8,windFromDeg:270};
+  const ridge=make(x=>200-Math.abs(x)*(x<0?.12:.6));
+  const found=S.scan(o,ridge,W);
+  check(found.state==='candidates' && found.candidates.length>0,'sharp crest with an exposed rise and steep lee is a candidate');
+  check(found.candidates.every(c=>c.distance<=450 && c.rise>=15 && c.drop>=15 && c.leeAngle>=8),'candidate evidence satisfies stated geometry thresholds inside sight');
+  check(found.candidates.every((a,i)=>found.candidates.slice(i+1).every(b=>Math.hypot(a.x-b.x,a.y-b.y)*cell>=160)),'neighbouring crest cells become separated sites, not a cloud of duplicate pins');
+  check(S.scan({...o,windFromDeg:90},ridge,W).state==='none','reversing wind rejects this ridge because its new lee is too shallow');
+  check(S.scan({...o,windFromDeg:0},ridge,W).state==='none','wind along the ridge does not produce a cross-ridge candidate');
+  check(S.scan(o,make(()=>100),W).state==='none','flat ground never qualifies');
+  check(S.scan(o,make(x=>100+x*.4),W).state==='none','a slope without a crest never qualifies');
+  check(S.scan({...o,windSpeed:0},ridge,W).state==='calm','calm air has no directional lee-side inference');
+  check(S.scan({...o,cell:55},ridge,W).state==='coarse','coarse terrain does not assert fine ridge geometry');
+  check(S.scan(o,make(()=>NaN),W).state==='missing','missing terrain is reported and cannot qualify');
+  const gap=ridge.slice();for(let y=0;y<W;y++)for(let x=mid-1;x<=mid+1;x++)gap[y*W+x]=NaN;
+  check(!S.scan(o,gap,W).candidates.length,'missing crest cells cannot be interpolated into a candidate');
+  const p=S.section(found.candidates[0],ridge,W,W,cell);
+  check(p.d.length===p.ground.length && p.d.every((d,i)=>!i||d>p.d[i-1]),'wind-aligned profile has an ordered distance axis');
+  check(p.xy[0][0]<p.xy.at(-1)[0] && Math.abs(p.xy[0][1]-p.xy.at(-1)[1])<1e-6,'westerly wind profile runs west to east, upwind to lee');
+  const peak=Math.max(...p.ground);check(Math.abs(peak-found.candidates[0].height)<2,'the profile crosses the selected crest');
+  const before=Array.from(ridge);S.scan(o,ridge,W);check(before.every((v,i)=>v===ridge[i]),'screening leaves the glide terrain unchanged');
+  const a=S.flow(0),b=S.flow(90);check(Math.abs(a.x)<1e-8 && a.y===1 && b.x===-1 && Math.abs(b.y)<1e-8,'meteorological FROM bearings produce south/west flow in grid rows');
+  const url=new URL(S.windURL(44.077964,-103.245844));check(url.searchParams.get('wind_speed_unit')==='ms' && url.searchParams.get('timeformat')==='unixtime' && url.searchParams.get('current').includes('wind_speed_10m'),'forecast request explicitly selects SI wind, 10 m height and UTC time');
+  const now=1794622500000,data={current_units:{time:'unixtime',wind_speed_10m:'m/s',wind_direction_10m:'°',wind_gusts_10m:'m/s'},current:{time:now/1000,wind_speed_10m:8.2,wind_direction_10m:270,wind_gusts_10m:11.3}};
+  const wind=S.parseWind(data,now);check(wind.speed===8.2 && wind.from===270 && wind.gust===11.3 && wind.time===now,'forecast parser preserves mean, FROM direction, gust and valid time separately');
+  const bad=fn=>{try{fn();return false;}catch{return true;}};
+  check(bad(()=>S.parseWind({...data,current_units:{...data.current_units,wind_speed_10m:'km/h'}},now)),'unexpected provider units are rejected');
+  check(bad(()=>S.parseWind({...data,current:{...data.current,wind_speed_10m:null}},now)),'missing mean wind is not interpreted as calm');
+  check(bad(()=>S.parseWind(data,now+3*3600000)) && bad(()=>S.parseWind(data,now-3600000)),'old or implausibly future wind cannot replace current manual wind');
+  let screenReply;
+  const ctx={SoaringCore:S,GlideCore:G,Float32Array,Int32Array,performance,importScripts(){},postMessage(m){screenReply=m;}};
+  vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'../glide-path/glide-worker.js'),'utf8'),ctx);
+  ctx.onmessage({data:{screenGrid:{id:4,terr:ridge,W}}});ctx.onmessage({data:{screen:{...o,key:'first'},screenGridId:4}});
+  check(screenReply.screen && screenReply.key==='first' && screenReply.result.candidates.length>0,'worker returns independent ridge-screen results tagged with their parameter key');
+  ctx.onmessage({data:{screen:{...o,key:'old'},screenGridId:3}});check(screenReply.result.state==='stale','a stale terrain job still replies so the UI queue can advance');
+  const siteData=JSON.parse(require('child_process').execFileSync('ruby',['-ryaml','-rjson','-e',"puts JSON.generate(YAML.safe_load_file('_data/glide.yml'))"],{cwd:path.join(__dirname,'..'),encoding:'utf8'}));
+  check(siteData.name==='Dyna-soar' && siteData.landmark.lat===44.077964 && siteData.landmark.lon===-103.245844,'Dyna-soar defaults to the surveyed Dinosaur Park statue coordinates');
+}
+
+console.log('6e. mass-consistent terrain wind and spatial glide integration');
+{
+ const W=require('../glide-path/wind-core.js'),nx=32,cell=20,centre=(nx-1)/2;
+ const terrain=fn=>Float32Array.from({length:nx*nx},(_,i)=>fn((i%nx-centre)*cell,(Math.floor(i/nx)-centre)*cell));
+ const options={nx,ny:nx,cell,x0:-nx*cell/2,y0:nx*cell/2,lat:44,lon:-103,height:30,roughness:.03,fallback:{east:6,north:0},terrain:terrain(()=>100)};
+ const flat=W.solve(options),flatAt=W.at(flat,0,0,30);
+ near(flatAt.up,0,1e-6,'flat terrain has no inferred vertical air');
+ check(flat.diagnostics.divergence<1e-7 && flat.diagnostics.converged,'flat uniform wind already satisfies mass conservation');
+ const samples=[{lat:44,lon:-103.1,speed:6,from:359,time:1},{lat:44,lon:-102.9,speed:6,from:1,time:1}];
+ const v=W.regional(W.anchors(samples),44,-103,10,.03);check(v.north< -5.9&&Math.abs(v.east)<1e-8,'regional bearings interpolate across north as vectors, not 180 degrees');
+ const h=W.regional(W.anchors([{...samples[0],speed80:12,from80:270}]),44,-103.1,80,.03);near(h.east,12,1e-8,'80 m forecast is retained as a separate wind layer');
+ const hill=terrain(x=>100+35*Math.exp(-1*(x/100)**2)),before=Array.from(hill),t=performance.now();
+ const f=W.solve({...options,terrain:hill}),elapsed=performance.now()-t;
+ check(f.state==='terrain'&&f.diagnostics.converged&&f.diagnostics.divergence<f.diagnostics.initialDivergence*.025,'ridge solve reduces divergence by at least 97.5%');
+ const up=W.at(f,-100,0,30),lee=W.at(f,100,0,30),crest=W.at(f,0,0,30);
+ check(up.up>.2&&lee.up<-.2,'ridge gives upflow on its windward side and downflow on its lee');
+ check(crest.east>flatAt.east,'terrain produces crest speed-up');
+ const reversed=W.solve({...options,terrain:hill,fallback:{east:-6,north:0}});
+ check(W.at(reversed,-100,0,30).up<-.2&&W.at(reversed,100,0,30).up>.2,'reversing the ambient wind reverses lift and sink sides');
+ check(before.every((v,i)=>v===hill[i]),'terrain solve does not mutate source heights');
+ const missing=hill.slice();missing[100]=NaN;const failedField=W.solve({...options,terrain:missing});
+ check(failedField.state==='missing'&&!failedField.east,'missing terrain cannot invent local flow');
+ const outside=W.at(f,100000,0,30);check(outside.mode==='regional'&&outside.up===0,'outside terrain-model bounds falls back explicitly to regional horizontal wind');
+ const layer=W.compact(f),poison={...layer,up:new Float32Array(nx*nx).fill(100)};
+ const baseRun={cell,si:16,sj:16,h0:220,margin:20,Va:10,GR:15,windSpeed:0,windFromDeg:0,maxR:250};
+ const a=G.reachGrid({...baseRun,wind:layer},new Float32Array(nx*nx),nx,nx),b=G.reachGrid({...baseRun,wind:poison},new Float32Array(nx*nx),nx,nx);
+ check(a.alt.every((v,i)=>v===b.alt[i]),'arbitrary vertical air never extends reach: route search uses horizontal wind only');
+ const rayOptions={n:8,h0:220,margin:20,Va:10,GR:15,windSpeed:0,windFromDeg:0,ds:2,maxD:7000};
+ const uniformWind={east:5,north:0},uniform=G.castRays({...rayOptions,windSpeed:5,windFromDeg:270},()=>0),spatial=G.castRays({...rayOptions,windAt:()=>uniformWind},()=>0);
+ check(spatial.dmax.every((v,i)=>Math.abs(v-uniform.dmax[i])<=2),'constant spatial vectors reproduce legacy uniform ray reaches');
+ const split=G.castRays({...rayOptions,windAt:(e)=>({east:e<500?5:-5,north:0})},()=>0);
+ near(G.reachAltitude(split,Math.PI/2,1000),220-500/(15*1.5)-500/(15*.5),.01,'straight arrival integrates changing headwind/tailwind over the path');
+ const profile=G.glideAlong({...rayOptions,windAt:(e)=>({east:e<500?5:-5,north:0})},()=>0,Math.PI/2);
+ const k=profile.d.indexOf(1000);near(profile.glide[k],G.reachAltitude(split,Math.PI/2,1000),.001,'profile and ray arrival share the same spatial wind integration');
+ const stop=G.castRays({...rayOptions,windAt:e=>({east:e<500?5:-15,north:0})},()=>0);check(stop.kind[2]===2&&stop.dmax[2]<=502,'unflyable wind later in a track stops that ray');
+ const gc={nx:2,ny:2,cell:10000,x0:-5000,y0:5000,height:10,east:new Float32Array(4).fill(5),north:new Float32Array(4),samples:[],roughness:.03,fallback:{east:5,north:0},lat:44,lon:-103};
+ const r0=G.reachGrid({...baseRun,windSpeed:5,windFromDeg:270},new Float32Array(nx*nx),nx,nx),r1=G.reachGrid({...baseRun,wind:gc},new Float32Array(nx*nx),nx,nx);
+ check(r0.alt.every((v,i)=>v===r1.alt[i]),'constant gridded wind reproduces the uniform route search');
+ const gp=require('../glide-path/glide-plan.js'),plan={version:1,launch:{lat:44,lon:-103},params:gp.parameters(),target:null,units:'metric',windModel:{enabled:true,height:80,roughness:.3,samples:W.anchors(samples)}};
+ check(gp.samePlan(plan,gp.decode(gp.encode(plan))),'saved/shared plans preserve wind-model settings and forecast anchors');
+ check(!gp.samePlan(plan,{...plan,windModel:{...plan.windModel,height:30}}),'changing the assumed wind layer marks a plan changed');
+ const legacy=gp.validatePlan({...plan,windModel:undefined});check(legacy.windModel.enabled===false,'legacy plans retain their original uniform wind assumption');
+ check(elapsed<2500,`ridge solve runs off-thread in a bounded time (${elapsed.toFixed(0)} ms for 32×32×24)`);
+}
+
 console.log('7. service worker');
 (async () => {
   // Minimal Cache Storage, fetch and service-worker globals, enough for sw.js.
@@ -268,7 +407,15 @@ console.log('7. service worker');
   const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
 
   await run('install', {});
-  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 19, 'install caches the page, its script and styles, the core, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
+  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 26, 'install caches the page, its script and styles, the core, the planning logic, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
+  let verification;
+  await run('message', { data: { type: 'verify-shell' }, ports: [{ postMessage: r => { verification = r; } }] });
+  check(verification.present === 26 && verification.total === 26, 'offline verification checks every installed page file');
+  const shellCache = await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx));
+  await shellCache.delete('glide-plan.js');
+  await run('message', { data: { type: 'verify-shell' }, ports: [{ postMessage: r => { verification = r; } }] });
+  check(verification.present === 25 && verification.total === 26, 'verification detects an evicted planning script');
+  await shellCache.put('glide-plan.js', resp('shell:glide-plan.js'));
   const shellFiles = vm.runInContext('SHELL_FILES', ctx).filter(f => f !== './');
   const missing = shellFiles.filter(f => !fs.existsSync(path.join(__dirname, '..', 'glide-path', f)));
   check(!missing.length, `every file in SHELL_FILES exists${missing.length ? ' (missing: ' + missing.join(', ') + ')' : ''}`);

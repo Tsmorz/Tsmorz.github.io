@@ -25,6 +25,7 @@ To change what the site says, edit YAML, not HTML.
 | The "Have a look around" tiles under the home hero | `_data/home.yml` |
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Tag tracker teleoperation levels, objectives, hints and scoring targets | `_data/tag_tasks.yml` |
+| Glide Path aircraft presets and destination/input labels | `_data/glide.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Lessons on /controls/, /vision/ or /embedded/ | `_data/labs/controls.yml`, `vision.yml`, `embedded.yml` |
 | Name, bio links, CV button | `_config.yml` |
@@ -277,10 +278,10 @@ test runs (kept in IndexedDB, compared as overlays, exported as CSV, log or a Ma
 cursors and an ESP-IDF/Zephyr device-clock time axis. It has a Demo stream and opens saved logs, so it works without a board.
 The same file is also published as a Claude artifact; edit it here and copy it there, not the other way round.
 
-### Glide Path (`/glide-path/`)
+### Dyna-soar (`/glide-path/`)
 
-`glide-path/` is a self-contained page like the serial plotter (no front matter, its own look, outside the layouts):
-`index.html` is markup only, `glide.css` the styles, `glide-app.js` the page, `glide-core.js` the maths (no DOM) and
+`glide-path/` has its own look outside the site layouts (`layout: null` front matter renders `_data/glide.yml`):
+`index.html` is markup, `glide.css` the styles, `glide-app.js` the page, `glide-plan.js` the pure plan/units/destination logic, `glide-core.js` the maths (no DOM) and
 `glide-worker.js` the route search. Pick a launch point and set glide ratio, airspeed, launch height, wind, a terrain margin,
 the steepest slope you would land on and **how far away you can still see the glider**. It loads a 7 × 7 block of Terrarium
 terrain tiles (AWS Terrain Tiles) round the launch and works out the reach two ways: 720 straight glides (`castRays`,
@@ -298,14 +299,14 @@ including the service worker in a mock.
 
 **No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
 rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or
-imperial (`Units` in the core; `SPEC` in glide-app.js gives each slider its range in both systems; `P` always holds metric values).
+imperial (`Units` in the core; `SPEC` in glide-plan.js gives each slider its range in both systems; `P` always holds metric values).
 
 **Redraws stay cheap**: the reach is painted straight into a canvas that Leaflet positions like an image (`CanvasOverlay`,
 no PNG encode), each grid cell's ray and distance are cached until the launch or the terrain changes (`geometry()`), and theme
 colours are read once per theme change (`COL`).
 
 Layout: controls on the left; the map with the cross-section strip under it on the right (on a phone, or any screen under
-520 px tall: header with the status line, map, cross-section, controls). The header shows an "Offline" badge only when offline.
+520 px tall: header, map, destination readout, collapsible cross-section and a bottom settings drawer). The header shows an "Offline" badge only when offline.
 The map has its own locate button and a key that folds away on small maps (a `<details>` Leaflet control). Long-press is a
 touch timer of its own (550 ms, held within 10 px), not just Leaflet's `contextmenu`, so it behaves the same on iOS and Android
 and never also moves the launch. Inputs are 16 px so iOS doesn't zoom in on them; touch targets are at least 40 px. Colours are
@@ -313,6 +314,12 @@ the colour-blind-safe set validated with the dataviz skill (blue `#2a78d6` landa
 hatching** landable only by curving, orange `#eb6834` where a straight glide hits steep ground, grey too steep); keep identity
 off colour alone. Tokens are defined three times like main.css, and the page follows the site's `theme` in `localStorage` and
 has its own light/dark switch.
+
+Planning: the map defaults to **Inspect destination**; **Move launch** is a one-shot mode that returns to inspection after a tap, with Undo for the last 20 launch moves. The launch is a square L and the destination a circle. Dragging L always moves the launch; long-press always inspects. Selected destinations survive a launch move, a parameter change and an unreachable result. Their readout includes arrival AGL, flown distance, minimum grid clearance (including cells crossed between route vertices), slope and sight distance. A route maximizes predicted arrival height, not minimum distance. Potential landing ground only considers slope; it does not assess obstacles or land cover.
+
+Each slider has an exact numeric input; wind and profile bearings also accept degrees. Named aircraft store glide ratio, airspeed and sight distance, leaving launch height and wind unchanged. Named plans store launch, all settings, destination and units in `glide-reach-plans`; aircraft use `glide-reach-aircraft`. Matching names update the saved item. Modified controls are marked against the loaded plan. **Copy plan link** serializes the same validated SI data into `#plan=`; a shared plan overrides local defaults on load. Malformed links report an error and retain local defaults. `tests/glide/browser.js` exercises these flows via `task shot -- /glide-path/ --eval-file tests/glide/browser.js` (also `--phone`), after `task build`.
+
+Calculation states distinguish loading, updating (previous overlay explicitly labelled), ready, incomplete terrain and missing terrain. Old worker results never repaint an overlay for new settings. Offline areas report actual cached tile counts; Verify saved terrain also asks the active service worker to check its own complete shell file list. Coverage at the current launch counts all 277 required terrain tiles across zoom levels, rather than trusting a saved-area name.
 
 It works offline. `sw.js` keeps the page and every terrain tile it has fetched (a capped `glide-terrain-runtime` cache), and
 "Save this area" stores 9 × 9 zoom-13 tiles round the launch plus 7 × 7 at each of zooms 12 to 9 (277 tiles) in
@@ -372,38 +379,51 @@ plot and a readout table. Tags, settings and calibrations (keyed by camera label
 
 ### Tag tracker teleoperation arcade
 
-The Physics selector opens the arcade. **Story** defaults to “Before the doors open”: Eli, a teenage helper, and
-Pip, an AMR-mounted robot, prepare a neighbourhood workshop. Eight 2.3 × 2.3 m rooms have one small job each:
-a ball in a bowl, a mug target, two parcels, two stacked blocks, a handoff, a tray delivery, one dishwasher plate and
-one towel. Finish a room to unlock the next. **Practice** keeps the original larger challenges, with all levels open.
-Content and room geometry are in `_data/tag_tasks.yml`; `TaskCore.mission` derives story variants without mutating
-practice data. Story and practice results are separate (`tag-tracker-story` and `tag-tracker-teleop`). No time limit;
-target times only earn a star. The character switch preserves the scene, navigation and live physical grips.
+The Physics selector opens the arcade. **Story** is “Grandma’s little helper”: Eli visits Grandma and Pip can
+help on an AMR base. Eight 2.3 × 2.3 m rooms progress through knocking, tidying a ball, setting a cup on its
+coaster, sorting two toys, stacking two books, carrying tea with both hands, loading one dishwasher plate and
+folding a towel. A completed chore unlocks the next and earns candy, a biscuit, a coin or pocket money. Rewards
+are derived from saved completions, so replaying does not duplicate them. Content, room colours and rewards
+live in `_data/tag_tasks.yml`; `story.order` and `story.prologue` are separate from the eight original **Practice**
+challenges. `TaskCore.mission` derives small story scenes without mutating practice data. Saves are separate
+(`tag-tracker-story` and `tag-tracker-teleop`). There is no time limit. Switching character preserves the scene,
+navigation and live physical grips.
 
-`travel-core.js` is DOM-free locomotion: accelerated differential-drive steering, conservative swept circles against
-room bounds and furniture, braking, distance and gait/wheel phase. Move mode uses W/S or I/K to advance/reverse and
-A/D or J/L to turn; Hands mode keeps the reaching keys. The page transforms the tracked body and manual wrist
-targets together while the workbenches stay fixed. Held props travel through the original grip constraints.
-Walking/driving to the work spot is required; the tray also needs 0.35 m of travel held in both hands and has a
-second physical table. Focus loss stops motion. New rooms and calibration reset navigation. Room transitions are
-small separate scenes, not an open-world map. `robot-gl.js` builds Eli's clothed mesh and walking legs, plus Pip's
-AMR and rolling wheels. Both use the same arm FK and physical pinch; human fingers are a visual approximation.
+The default game stage hides the tracking panels and command bars. Settings contains the original controls,
+level chooser and help; Camera & AprilTags opens the full instrument and setup guide. Mouse hand dragging,
+scroll-to-grip and Shift-scroll-to-tilt remain active in the stage. AprilTags drive arms by default. One stationary
+initial set of body/wrist tags auto-calibrates after 0.8 s in the start pose; recalibration remains available in setup.
+A calibrated body tag steers by forward/back lean and shoulder heading, with dead zones and stale-track stopping.
+Double-clicking free floor drives toward a destination; W/S and A/D remain a fallback. Focus loss and setup stop
+travel. `travel-core.js` is DOM-free accelerated motion, swept-circle furniture collision, steering and gait phase.
+The page transforms the body and mouse wrist targets together while tables stay fixed. Held props travel through
+physical grip constraints. Reaching the work spot is required; the tray also needs 0.35 m held by both hands and
+has a second physical table. Each room is a separate small scene, not an open-world map.
 
-`physics-core.js` runs a 240 Hz fixed-step accumulator, friction-limited grips, contacts and sleep. Compound boxes
-and cylinders share their dimensions with the renderer; openings stay hollow. Mass properties combine analytic
-piece inertia and the parallel-axis theorem (small seam overlaps are an approximation). `cloth-core.js` uses
-small-step XPBD stretch/shear, compliant bending, table friction and particle self-contact. This is coarse cloth,
-not garment simulation. Objectives require released, settled props (0.75 s); handoffs, two-hand lifts and aligned
-cloth edges have extra checks. Story tutorial targets are brought closer to stay comfortably inside arm reach.
+`character-core.js` CPU-skins a detailed, textured CC0 Grab3D boy to the same RobotCore FK and physical hands. The compact
+mesh, source credit and rebuild instructions are in `tag-tracker/assets/eli/`; the offline extractor is
+`script/tag-tracker/prepare-character.py`; `simplify-character.mjs` uses meshoptimizer 1.3.0 offline to derive the
+60k-triangle web LOD. Original base-colour, normal and roughness maps are local and cache-versioned. The source
+license and AI-assisted origin are included beside the asset. Human fingers approximate the physical pinch.
+`robot-gl.js` renders the character, AMR and wheels with a packed-depth shadow pass, soft shadow sampling,
+hemisphere/directional lighting, specular materials, tone mapping and procedural wood/plaster/fabric. Cutaway
+home furnishings have rounded edges and the chair participates in navigation collision. Camera-facing walls
+cut away to keep the face and chore visible. First person attaches to the head with −80° to +25°
+tilt and a fixed 70° horizontal field of view; projection and hand picking use the same camera.
 
-First person attaches to the character's head, with −80° to +25° tilt and a fixed 70° horizontal field of view.
-The mesh, projection and hand picking use the same pose. The outside camera is kept separately.
+`physics-core.js` runs a 240 Hz accumulator, friction-limited grips, contacts and sleep. Compound boxes and
+cylinders share dimensions with rendering; openings stay hollow. Mass properties combine analytic piece inertia
+and the parallel-axis theorem (seam overlaps are an approximation). `cloth-core.js` uses small-step XPBD stretch,
+shear, compliant bending, table friction and particle self-contact: coarse towel cloth, not garment simulation.
+Objectives require released, settled props (0.75 s), with extra checks for handoffs, two-hand lifts and aligned
+cloth edges. The door has no invisible table; three hand impacts above 0.04 m/s, spaced 0.25 s apart, count as
+knocks. It opens on completion and its collider follows the visible panel. Restart clears knock history.
 
-`task check:tag-tracker -- 5j 5k` tests both challenge sizes, physical grasps and cloth folds, locomotion collision,
-unlocks, persistence, reachability, character meshes and head projections (`script/tag-tracker/`). After building,
-`task shot -- /tag-tracker/ --eval "$(cat script/tag-tracker/story-browser.js)"` drives to the first bench, performs
-a physical grasp, changes character while holding, finishes the job and checks the next room, walking, focus loss
-and separate practice saves. `browser.js` in the same folder covers the full practice mode. Repeat with `--phone`.
+`task check:tag-tracker -- 5j 5k` covers physical grasps/folds/knocks, scene content, locomotion, dead zones,
+unlocks, character skinning and head projections (`script/tag-tracker/`). After building,
+`task shot -- /tag-tracker/ --eval "$(cat script/tag-tracker/story-browser.js)"` walks to the door, physically knocks,
+earns a peppermint, finishes the ball chore through IK and physical grips, and checks unlocks, actor switching,
+head camera and separate practice saves. `browser.js` covers practice. Repeat with `--phone`.
 
 ## When editing, don't
 
@@ -411,3 +431,26 @@ and separate practice saves. `browser.js` in the same folder covers the full pra
 - Hardcode a project into a page's HTML.
 - Add a JS dependency for something 20 lines of vanilla JS already does in `site.js`.
 - Add a LICENSE: the site is all rights reserved on purpose (README, "License"). Vendored libraries keep their own.
+
+### Dyna-soar ridge screen and local wind
+
+The name is **Dyna-soar**; the URL remains `/glide-path/`, and existing `glide-reach-*` storage, shared plans and terrain caches are retained. The exact Dinosaur Park statue location (44.077964, −103.245844; Library of Congress survey) is the default when no launch or shared plan is saved. Its launch button never snaps to a neighbouring peak. Aircraft, branding, weather copy, screening explanations and landmark coordinates live in `_data/glide.yml`. `dyna-soar.png` is the generated cartoon; `glide-path/ARTWORK.md` records the reference and generation prompt.
+
+`soaring-core.js` is pure geometry and weather parsing; `soaring-ui.js` owns ridge marks and the wind-aligned profile; `wind-ui.js` owns regional forecasts, the terrain-flow worker, map vectors and the separate vertical-flow overlay. A ridge needs a local crest, ≥15 m rise/drop over roughly 140 m along the wind, and ≥8° lee angle. These are explicit screening choices, not validated flight thresholds. Calm ≤0.5 m/s has no directional screen. Terrain cells >40 m are rejected. Missing terrain never forms a candidate. Six separated candidates are shown with **DS?** labels and dashed lee outlines, independent of the reach palette. Profiles run from upwind through the crest to the lee; there is no resolved separated shear layer or energy-gaining flight path. **Fly it** is hidden for this terrain-only view. Glide reach uses one selected fixed-AGL horizontal layer of the spatial wind field, with no credit for vertical air motion or soaring energy gain.
+
+The existing worker keeps independent `screenGrid` terrain for `SoaringCore.scan`, tagged by terrain ID and a launch/wind/sight key. Its replies do not complete a route-search job. Screening retains zoom-13 terrain when reach steps to a coarser zoom; if necessary it loads a bounded local mosaic sized to the sight distance. Only the latest matching screen paints. Its markings and selected profile also work in 3D.
+
+**Load local wind** requests a centre and eight surrounding Open-Meteo forecasts covering the loaded map, at 10 and (when available) 80 m. Forecast vectors, rather than compass angles, are interpolated; the UI reports distinct provider grid points and the valid time. Mean wind drives the plan; gust remains informational. Editing reference wind clears the regional scenario. An old-area forecast is labelled and is not extrapolated into another area. Failed, malformed, outdated or late responses do not overwrite edited wind. Manual/reference wind and cached snapshots still work offline; no snapshot is described as current observations.
+
+`wind-core.js` implements a diagnostic finite-volume mass projection, `U = U₀ − ∇φ`, on a local 56 × 56 × 24 Cartesian fluid grid. Terrain cells have zero normal flux; the top and lateral boundaries are open (`φ = 0`). Red/black SOR solves the Poisson equation to a residual target; `diagnostics` records convergence, initial/final divergence and maximum speed. This solves mass conservation, not momentum, turbulence, atmospheric stability or separated lee eddies. The input terrain stays at zoom 13 even if glide calculations change zoom. Missing terrain yields regional wind only; it cannot generate local lift/sink. Resolution is reported in the panel.
+
+`wind-worker.js` computes the volume independently of the route/screen worker. Only the newest matching key may apply. Wind at the selected 10–150 m AGL layer is compacted for reach. Regional vectors outside the local terrain solve are cached on a 33 × 33 grid, with exact regional interpolation beyond that grid. A logarithmic neutral profile and explicit roughness assumption supply heights not covered by the forecast. These assumptions are saved/shared as `windModel`, including the forecast samples; legacy plans without `windModel` retain uniform reference wind. Unit changes never alter SI inputs.
+
+Straight glides integrate local along-track ground speed step by step and retain cumulative altitude profiles for destination interpolation. Curved paths use the same fixed-layer field, positive height loss only, and distinct first/second half-edge losses; intermediate terrain checks and `midAlt` retain the correct halfway altitude. `GlideCore.reachAltitude` and the cross-section share those integrated results. Changing wind, roughness or layer recomputes the whole envelope and all arrivals. Vertical velocity is never included in the ray or route height update.
+
+Wind arrows are available in 2D and 3D. Optional teal upflow/red-hatched downflow shading is separate from reach classification. The ridge strip shows estimated flow paths projected into its vertical section, not a 3-D glider trajectory; its cursor reports horizontal wind, estimated vertical air and the 10–80 m vector difference. Neither these differences nor candidate marks confirm a flyable dynamic-soaring shear layer.
+
+`task check:glide` includes asymmetric ridge fixtures, wind reversal/along-ridge rejection, missing terrain, screening separation, wind-aligned sections, forecast units/times and worker message checks. After `task build`, `task shot -- /glide-path/ --eval-file tests/glide/soaring.js --console` checks the actual Dinosaur Park terrain, mock forecasts, a full-map wind reversal, candidate selection, profile and weather failure/staleness. Repeat with `--phone`; the existing `tests/glide/browser.js` still checks saved plans, unit invariance and offline coverage.
+
+
+Wind checks in `task check:glide` cover flat flow, ridge speed-up, windward lift/lee sink, wind reversal, mass residual reduction, missing data, vector interpolation across north, separate 80 m inputs, uniform-field parity, changing wind along a path, integrated arrival/profile agreement, positive-loss routing without vertical energy, and wind-model plan round trips. `tests/glide/soaring.js` checks regional requests, actual Dinosaur Park terrain, converged flow, whole-map reversal, assumed-height changes, independent shading and late forecast protection.

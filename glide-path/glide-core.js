@@ -14,10 +14,10 @@
 //   gliderMesh    a sailplane as triangles, for the 3D fly-by
 //   contours / contourStep   contour lines of a height grid (marching squares), and their spacing per zoom
 (function (root, factory) {
-  const core = factory();
+  const core = factory(typeof module !== 'undefined' && module.exports ? require('./wind-core.js') : root.WindCore);
   if (typeof module !== 'undefined' && module.exports) module.exports = core;
   else root.GlideCore = core;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (Wind) {
   const D2R = Math.PI / 180;
   const TS = 256;
   const EARTH_C = 40075016.686; // equatorial circumference, m
@@ -35,59 +35,55 @@
     return vg > 0 ? vg : 0;
   }
 
-  // Cast o.n rays. elevAt(eastM, northM) gives terrain height or NaN outside the data.
-  // o: { n, h0 (start altitude, m), margin, Va, GR, windSpeed, windFromDeg, ds (step, m), maxD }
-  // kind per ray: 0 = met the terrain, 1 = ran off the data, 2 = track not flyable in this wind
+  function windSpeedAt(o, brg, e, n) {
+    const v=o.windAt?o.windAt(e,n):o.wind?Wind.sampleLayer(o.wind,e,n):null;
+    if(v){const x=Math.sin(brg),y=Math.cos(brg),along=v.east*x+v.north*y,cross=v.east*y-v.north*x;if(Math.abs(cross)>=o.Va)return 0;return Math.max(0,Math.sqrt(o.Va*o.Va-cross*cross)+along);}
+    return groundSpeed(brg,o.Va,o.windSpeed,o.windFromDeg*D2R);
+  }
+  // Spatial wind is integrated step-by-step; uniform-wind callers retain their original exact path.
   function castRays(o, elevAt) {
-    const n = o.n, sink = o.Va / o.GR;
-    const dmax = new Float32Array(n), kind = new Uint8Array(n), grg = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const brg = (i / n) * 2 * Math.PI;
-      const vg = groundSpeed(brg, o.Va, o.windSpeed, o.windFromDeg * D2R);
-      if (vg <= 0) { kind[i] = 2; continue; }
-      const g = vg / sink; grg[i] = g;
-      const ux = Math.sin(brg), uy = Math.cos(brg);
-      let last = 0, k = 1, h = o.h0;
-      const dh = o.ds / g;
-      for (let d = o.ds; d <= o.maxD; d += o.ds) {
-        h -= dh;
-        const t = elevAt(ux * d, uy * d);
-        if (t !== t) { k = 1; break; }
-        if (h - o.margin <= t) { k = 0; break; }
-        last = d;
+    const n=o.n,sink=o.Va/o.GR,dmax=new Float32Array(n),kind=new Uint8Array(n),grg=new Float32Array(n),variable=!!(o.wind||o.windAt),profiles=variable?[]:null;
+    for(let i=0;i<n;i++){
+      const brg=i/n*2*Math.PI,ux=Math.sin(brg),uy=Math.cos(brg),vg=windSpeedAt(o,brg,0,0);
+      if(vg<=0){kind[i]=2;if(profiles)profiles.push(new Float32Array([o.h0]));continue;}
+      const g=vg/sink;grg[i]=g;let last=0,k=1,h=o.h0;const heights=variable?[h]:null;
+      for(let d=o.ds;d<=o.maxD;d+=o.ds){
+        const t=elevAt(ux*d,uy*d);if(!Number.isFinite(t)){k=1;break;}
+        const speed=variable?windSpeedAt(o,brg,ux*(d-o.ds/2),uy*(d-o.ds/2)):vg;
+        if(speed<=0){k=2;break;}
+        h-=o.ds*sink/speed;
+        if(h-o.margin<=t){k=0;break;}
+        last=d;if(heights)heights.push(h);
       }
-      dmax[i] = last; kind[i] = k;
+      dmax[i]=last;kind[i]=k;if(profiles)profiles.push(Float32Array.from(heights));
     }
-    return { dmax, kind, grg, n };
+    return {dmax,kind,grg,n,h0:o.h0,ds:o.ds,profiles};
   }
-
-  // One straight glide along bearing brg (rad), step by step: distance, ground and glider height until it meets the
-  // ground (or the data ends), then the ground on for `extra` metres more. Same rules as castRays.
-  function glideAlong(o, elevAt, brg, extra = 0) {
-    const vg = groundSpeed(brg, o.Va, o.windSpeed, o.windFromDeg * D2R), ux = Math.sin(brg), uy = Math.cos(brg);
-    const d = [0], ground = [elevAt(0, 0)], glide = [o.h0];
-    if (vg <= 0) return { d, ground, glide, end: 0, kind: 2, g: 0 };
-    const g = vg / (o.Va / o.GR), dh = o.ds / g;
-    let h = o.h0, kind = 1, end = 0, stopAt = Infinity;
-    for (let s = o.ds; s <= o.maxD && s <= stopAt; s += o.ds) {
-      const t = elevAt(ux * s, uy * s);
-      if (t !== t) break;
-      d.push(s); ground.push(t);
-      if (stopAt === Infinity) {
-        h -= dh;
-        if (h - o.margin <= t) { kind = 0; glide.push(NaN); stopAt = s + extra; continue; }
-        glide.push(h); end = d.length - 1;
-      } else glide.push(NaN);
-    }
-    return { d, ground, glide, end, kind, g };
+  function glideAlong(o,elevAt,brg,extra=0){
+    const vg=windSpeedAt(o,brg,0,0),ux=Math.sin(brg),uy=Math.cos(brg),d=[0],ground=[elevAt(0,0)],glide=[o.h0];
+    if(vg<=0)return {d,ground,glide,end:0,kind:2,g:0};
+    const sink=o.Va/o.GR,g=vg/sink;let h=o.h0,kind=1,end=0,stopAt=Infinity;
+    for(let s=o.ds;s<=o.maxD&&s<=stopAt;s+=o.ds){
+      const t=elevAt(ux*s,uy*s);if(!Number.isFinite(t))break;d.push(s);ground.push(t);
+      if(stopAt===Infinity){const speed=windSpeedAt(o,brg,ux*(s-o.ds/2),uy*(s-o.ds/2));
+        if(speed<=0){kind=2;glide.push(NaN);stopAt=s+extra;continue;}
+        h-=o.ds*sink/speed;if(h-o.margin<=t){kind=0;glide.push(NaN);stopAt=s+extra;continue;}
+        glide.push(h);end=d.length-1;
+      }else glide.push(NaN);
+    }return {d,ground,glide,end,kind,g};
   }
-
-  // Ground glide ratio if the point is reachable, else 0. Takes the shorter of the two neighbouring rays.
-  function reachAt(R, brg, dist) {
-    let f = (brg / (2 * Math.PI)) * R.n; if (f < 0) f += R.n;
-    const i0 = Math.floor(f) % R.n, i1 = (i0 + 1) % R.n;
-    const dm = Math.min(R.dmax[i0], R.dmax[i1]);
-    return dist <= dm ? (R.grg[i0] + R.grg[i1]) / 2 : 0;
+  function reachAltitude(R,brg,dist){
+    const f=((brg/(2*Math.PI)*R.n)%R.n+R.n)%R.n,i0=Math.floor(f),i1=(i0+1)%R.n;
+    if(dist>Math.min(R.dmax[i0],R.dmax[i1]))return NaN;
+    if(!R.profiles)return R.h0-dist/((R.grg[i0]+R.grg[i1])/2);
+    const at=i=>{const p=R.profiles[i],x=dist/R.ds,k=Math.min(p.length-1,Math.floor(x)),j=Math.min(k+1,p.length-1);return p[k]+(p[j]-p[k])*(x-k);};
+    return Math.min(at(i0),at(i1));
+  }
+  function reachAt(R,brg,dist){
+    let f=brg/(2*Math.PI)*R.n;if(f<0)f+=R.n;const i0=Math.floor(f)%R.n,i1=(i0+1)%R.n;
+    if(dist>Math.min(R.dmax[i0],R.dmax[i1]))return 0;
+    if(!R.profiles)return (R.grg[i0]+R.grg[i1])/2;
+    const h=reachAltitude(R,brg,dist);return dist>0&&R.h0>h?dist/(R.h0-h):(R.grg[i0]+R.grg[i1])/2;
   }
 
   function lonLatToPx(lon, lat, z) {
@@ -136,17 +132,18 @@
   const MOVES = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1],
     [2, 1], [1, 2], [-1, 2], [-2, 1], [-2, -1], [-1, -2], [1, -2], [2, -1]];
   function reachGrid(o, terr, W, H) {
-    const N = W * H, alt = new Float32Array(N).fill(-Infinity), parent = new Int32Array(N).fill(-1), done = new Uint8Array(N);
+    const N = W * H, alt = new Float32Array(N).fill(-Infinity), parent = new Int32Array(N).fill(-1), midAlt = new Float32Array(N).fill(NaN), done = new Uint8Array(N);
     const sink = o.Va / o.GR, wf = o.windFromDeg * D2R;
+    const variable=!!o.wind;
     const moves = MOVES.map(([dx, dy]) => {
       const vg = groundSpeed(Math.atan2(dx, -dy), o.Va, o.windSpeed, wf);
       const sx = Math.sign(dx), sy = Math.sign(dy);
       const mids = Math.abs(dx) === 2 ? [[sx, 0], [sx, sy]] : Math.abs(dy) === 2 ? [[0, sy], [sx, sy]] : dx && dy ? [[sx, 0], [0, sy]] : [];
-      return { dx, dy, loss: vg > 0 ? Math.hypot(dx, dy) * o.cell * sink / vg : Infinity, mids };
-    }).filter(m => m.loss < Infinity);
+      return { dx, dy, brg: Math.atan2(dx,-dy), length: Math.hypot(dx,dy)*o.cell, loss: vg > 0 ? Math.hypot(dx, dy) * o.cell * sink / vg : Infinity, mids };
+    }).filter(m => variable || m.loss < Infinity);
     let edge = false;
     const s = o.sj * W + o.si, r2 = o.maxR !== undefined ? (o.maxR / o.cell) ** 2 : Infinity;
-    if (o.si < 0 || o.sj < 0 || o.si >= W || o.sj >= H || !(o.h0 >= terr[s])) return { alt, parent, edge };
+    if (o.si < 0 || o.sj < 0 || o.si >= W || o.sj >= H || !(o.h0 >= terr[s])) return { alt, parent, midAlt, edge };
     // binary max-heap of (cell, height), lazy deletion
     let cap = 1 << 16, hi = new Int32Array(cap), hk = new Float32Array(cap), n = 0;
     const push = (i, k) => {
@@ -179,16 +176,22 @@
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
         if ((nx - o.si) ** 2 + (ny - o.sj) ** 2 > r2) continue;
         const j = ny * W + nx;
-        const h2 = Math.fround(h - m.loss); // compare in float32, as stored
+        let loss=m.loss,firstLoss=m.loss/2;
+        if(variable){
+          const speed=t=>windSpeedAt(o,m.brg,(x-o.si+m.dx*t)*o.cell,(o.sj-y-m.dy*t)*o.cell);
+          const a=speed(.25),b=speed(.75);if(a<=0||b<=0||speed(0)<=0||speed(1)<=0)continue;
+          firstLoss=m.length*.5*sink/a;loss=firstLoss+m.length*.5*sink/b;
+        }
+        const h2 = Math.fround(h - loss); // compare in float32, as stored
         if (done[j] || !(h2 - o.margin >= terr[j])) continue;
         if (h2 <= alt[j]) continue;
         let ok = true;
-        for (const [mx, my] of m.mids) if (!(h - m.loss / 2 - o.margin >= terr[(y + my) * W + x + mx])) { ok = false; break; }
+        for (const [mx, my] of m.mids) if (!(h - firstLoss - o.margin >= terr[(y + my) * W + x + mx])) { ok = false; break; }
         if (!ok) continue;
-        alt[j] = h2; parent[j] = i; push(j, h2);
+        alt[j] = h2; midAlt[j]=h-firstLoss; parent[j] = i; push(j, h2);
       }
     }
-    return { alt, parent, edge };
+    return { alt, parent, midAlt, edge };
   }
 
   // The best route to cell j as a list of cell indices from the start, or [] if j is unreachable.
@@ -388,5 +391,5 @@
     return area.filter(k => !keep.has(k));
   }
 
-  return { groundSpeed, castRays, glideAlong, reachAt, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, gliderMesh, TS, D2R };
+  return { groundSpeed, castRays, glideAlong, reachAt, reachAltitude, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, gliderMesh, TS, D2R };
 });

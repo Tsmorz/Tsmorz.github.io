@@ -1,18 +1,21 @@
+---
+layout: null
+---
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Glide Path: where can the glider still land?</title>
-<meta name="description" content="Pick a launch point, set the glide ratio and wind, and see where an RC glider can reach and land, round the terrain in the way, in sight and under the height limit. Works offline once an area is saved.">
+<title>{{ site.data.glide.name }} — {{ site.data.glide.tagline }}</title>
+<meta name="description" content="{{ site.data.glide.description }}">
 <meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="dyna-soar.png" type="image/png">
+<link rel="apple-touch-icon" href="dyna-soar.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=STIX+Two+Text:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="lib/leaflet/leaflet.css">
 <link rel="stylesheet" href="glide.css">
 <script>try { const t = localStorage.getItem('theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
@@ -21,11 +24,14 @@
 <div id="app">
   <header id="head">
     <div class="title">
-      <h1>Glide Path</h1>
+      <h1 class="brand"><img src="dyna-soar.png" alt="" width="54" height="44">{{ site.data.glide.name }}</h1>
+      <span id="calcState" class="calc-state" role="status">Loading terrain</span>
+      <span id="planChanged" class="plan-changed">Unsaved plan</span>
+      <button id="sharePlan" class="btn sm" type="button">Copy plan link</button>
       <span id="net" class="chip off" role="status" hidden>Offline</span>
       <div class="seg" role="group" aria-label="Units">
-        <button type="button" data-units="metric" aria-pressed="true">m</button>
-        <button type="button" data-units="imperial" aria-pressed="false">ft</button>
+        <button type="button" data-units="metric" aria-pressed="true">Metric</button>
+        <button type="button" data-units="imperial" aria-pressed="false">Imperial</button>
       </div>
       <button id="btnGuide" class="icon-btn" type="button" aria-label="Quick start" title="Quick start">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5C4.7 20 4 19.3 4 18.5zM20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5z"/></svg>
@@ -34,25 +40,34 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
       </button>
     </div>
-    <p class="lede">Where can the glider still land from here, with the hills in the way? <a href="/">tsmorz.github.io</a></p>
-    <div id="status" class="status" role="status" aria-live="polite">Loading…</div>
+    <div class="status-line"><div id="status" class="status" role="status" aria-live="polite">Loading…</div><button id="retryTerrain" class="btn sm" type="button" hidden>Retry terrain</button></div>
   </header>
 
-  <div id="map" role="application" aria-label="Map. Tap to move the launch; long-press or right-click a spot for the best route there."></div>
+  <div id="map" role="application" aria-label="Map. Choose Move launch or Inspect destination before tapping. Long-press also inspects a destination."></div>
 
+  <div id="mapTools" class="map-tools" role="group" aria-label="Map interaction">
+    <button id="modeLaunch" type="button" aria-pressed="false">Move launch</button><button id="modeInspect" type="button" aria-pressed="true">Inspect destination</button><button id="undoLaunch" type="button" disabled>Undo move</button>
+    <span id="resultNotice" role="status"></span><span id="terrainDetail" class="terrain-detail"></span>
+  </div>
+  <section id="destination" class="destination" aria-labelledby="destTitle" hidden>
+    <div class="destination-head"><h2 id="destTitle">Destination</h2><strong id="destState" role="status"></strong><span id="destCoords"></span><button id="clearDestination" type="button" class="btn sm">Clear</button></div>
+    <dl id="destStats" class="destination-stats"></dl><p id="destReason"></p>
+  </section>
   <section id="prof" aria-labelledby="prof-h">
     <div class="prof-head">
-      <h2 id="prof-h">Cross-section</h2>
+      <div class="profile-views" role="group" aria-label="Cross-section view"><button type="button" data-profile="glide" aria-pressed="true">Glide</button><button type="button" data-profile="soaring" aria-pressed="false">Ridge &amp; wind</button></div>
+      <h2 id="prof-h"><button id="profileToggle" type="button" aria-expanded="true" aria-controls="profileContent">Cross-section <span aria-hidden="true">⌄</span></button></h2>
       <span id="profWhat" class="prof-what"></span>
-      <button id="profBack" class="link" type="button" hidden>Back to the bearing</button>
+      <button id="profBack" class="link" type="button" hidden>Clear destination</button>
       <button id="btnFly" class="btn sm fly" type="button" title="Fly this glide in 3D"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M7 5v14l11-7z" fill="currentColor"/></svg>Fly it</button>
+      <label class="bearing-input" for="bearingValue">Bearing <input id="bearingValue" type="number" min="0" max="359.9" step="0.1" value="180">°</label>
       <div class="prof-keys" aria-hidden="true">
         <span><i id="profKeyLine"></i>Glider</span><span><i id="profKeyMargin" class="m"></i>Glider − margin</span><span><i class="t"></i>Ground</span>
       </div>
     </div>
-    <div class="prof-body">
-      <canvas id="profile" role="img" aria-label="Height of the glider and the ground along the cross-section"></canvas>
-      <div id="profTip" class="tip" hidden></div>
+    <div id="profileContent" class="prof-body">
+      <canvas id="profile" role="img" tabindex="0" aria-label="Cross-section: glider and ground height. Use left and right arrow keys to inspect, Home and End to jump."></canvas>
+      <div id="profTip" class="tip" hidden></div><output id="cursorStatus" class="sr-only" role="status"></output>
     </div>
     <div class="prof-side">
       <div id="pbDial" class="dial" aria-label="Cross-section bearing"></div>
@@ -60,39 +75,66 @@
     </div>
   </section>
 
-  <aside id="panel">
+  <aside id="panel" aria-labelledby="settingsHeading">
+    <div class="drawer-head"><h2 id="settingsHeading">Flight settings</h2><button type="button" id="expandDrawer" class="btn sm">Expand</button><button type="button" id="closeDrawer" class="btn sm">Close</button></div>
     <details class="group" data-sec="launch" open>
       <summary><h2>Launch</h2><span class="sum" id="sumLaunch"></span></summary>
       <div class="btns">
         <button id="btnGeo" class="btn primary" type="button">Use my location</button>
-        <button id="btnMHill" class="btn" type="button">Example: M Hill, Rapid City</button>
+        <button id="btnMHill" class="btn" type="button">{{ site.data.glide.landmark.name }}</button>
       </div>
-      <p class="hint">Or tap the map, or drag the pin. Long-press (right-click) any spot to see the best route there.</p>
+      <p class="hint">Choose Move launch, then tap the map. Dragging the L marker also moves it.</p>
+      <details class="launch-coords"><summary>Enter coordinates</summary><div class="coordinates"><label for="launchLat">Latitude<input id="launchLat" type="number" min="-85.05112878" max="85.05112878" step="any"></label><label for="launchLon">Longitude<input id="launchLon" type="number" min="-180" max="180" step="any"></label><button type="button" id="setCoordinates" class="btn sm">Set launch</button></div></details>
     </details>
 
     <details class="group" data-sec="glider" open>
-      <summary><h2>Glider</h2><span class="sum" id="sumGlider"></span></summary>
-      <div class="row"><label for="gr">Glide ratio <output id="v_gr" for="gr"></output></label><input id="gr" type="range"></div>
-      <div class="row"><label for="va">Best-glide airspeed <output id="v_va" for="va"></output></label><input id="va" type="range"></div>
-      <div class="row"><label for="agl">Launch height above you <output id="v_agl" for="agl"></output></label><input id="agl" type="range"></div>
+      <summary><h2>Aircraft</h2><span class="sum" id="sumGlider"></span></summary>
+      <label class="preset-label" for="aircraftPreset">Preset <select id="aircraftPreset"><option value="">Custom settings</option>{% for aircraft in site.data.glide.aircraft %}<option value="{{ aircraft.id }}">{{ aircraft.name }}</option>{% endfor %}</select></label>
+      <div class="save-row"><input type="text" id="aircraftName" placeholder="Aircraft name" aria-label="Custom aircraft name"><button id="saveAircraft" type="button" class="btn sm">Save aircraft</button><button id="deleteAircraft" type="button" class="btn sm" disabled>Delete</button></div><p id="aircraftStatus" class="hint" role="status"></p>
+      <div class="row"><label for="gr">{% assign control = site.data.glide.controls | where: "id", "gr" | first %}{{ control.name }} <output id="v_gr" for="gr"></output></label><div class="input-pair"><input id="gr" type="range"><input id="n_gr" type="number" step="any" aria-label="gr exact value"></div></div>
+      <div class="row"><label for="va">{% assign control = site.data.glide.controls | where: "id", "va" | first %}{{ control.name }} <output id="v_va" for="va"></output></label><div class="input-pair"><input id="va" type="range"><input id="n_va" type="number" step="any" aria-label="va exact value"></div></div>
+      <div class="row"><label for="agl">{% assign control = site.data.glide.controls | where: "id", "agl" | first %}{{ control.name }} <output id="v_agl" for="agl"></output></label><div class="input-pair"><input id="agl" type="range"><input id="n_agl" type="number" step="any" aria-label="agl exact value"></div></div>
+    </details>
+
+    <details class="group soaring-group" data-sec="soaring" open>
+      <summary><h2>{{ site.data.glide.soaring.title }}</h2><span id="sumSoaring" class="sum"></span></summary>
+      <p class="hint">{{ site.data.glide.soaring.intro }}</p>
+      <div class="wind-fetch"><button id="fetchWind" type="button" class="btn">{{ site.data.glide.weather.button }}</button><button id="retryScreen" type="button" class="btn sm" hidden>Retry terrain</button></div>
+      <p id="windSource" class="hint" role="status">{{ site.data.glide.weather.manual }}</p>
+      <label class="switch"><input id="terrainWind" type="checkbox" checked> {{ site.data.glide.flow.enabled }}</label>
+      <div class="flow-settings"><label for="windHeight">{{ site.data.glide.flow.height }} <span id="windHeightUnit"></span><input id="windHeight" type="number" step="any" value="30"></label><label for="roughness">{{ site.data.glide.flow.roughness }}<select id="roughness"><option value="0.003">{{ site.data.glide.flow.smooth }}</option><option value="0.03">{{ site.data.glide.flow.grass }}</option><option value="0.3">{{ site.data.glide.flow.rough }}</option></select></label></div>
+      <p id="flowStatus" class="hint" role="status"></p>
+      <label class="switch"><input id="windArrows" type="checkbox" checked> {{ site.data.glide.flow.arrows }}</label>
+      <label class="switch"><input id="ridgeShading" type="checkbox"> {{ site.data.glide.flow.shading }}</label>
+      <p class="hint">{{ site.data.glide.flow.key }}</p>
+      <label class="switch"><input id="dsEnabled" type="checkbox" checked> Show candidate lee ridges</label>
+      <p id="dsStatus" class="hint" role="status"></p><ol id="dsCandidates" class="ds-candidates"></ol>
+      <p class="hint ds-caveat">{{ site.data.glide.soaring.caveat }}</p>
+      <details class="ds-method"><summary>How this screen works</summary><p class="hint">{{ site.data.glide.soaring.method }}</p><p class="hint">{{ site.data.glide.weather.note }}</p><p class="hint">{{ site.data.glide.flow.method }}</p><p class="hint"><a href="https://ninjastorm.firelab.org/windninja/faq.html">Terrain wind: diagnostic-model limitations</a></p><p class="hint"><a href="{{ site.data.glide.soaring.source }}">Dynamic soaring: Richardson, WHOI</a> · <a href="{{ site.data.glide.weather.source }}">Wind: Open-Meteo</a> · <a href="https://open-meteo.com/en/licence">CC BY 4.0</a></p></details>
     </details>
 
     <details class="group" data-sec="wind">
-      <summary><h2>Wind</h2><span class="sum" id="sumWind"></span></summary>
+      <summary><h2>{{ site.data.glide.flow.reference }}</h2><span class="sum" id="sumWind"></span></summary>
       <div class="wind">
-        <div class="row" style="margin:0"><label for="ws">Speed <output id="v_ws" for="ws"></output></label><input id="ws" type="range">
+        <div class="row" style="margin:0"><label for="ws">{% assign control = site.data.glide.controls | where: "id", "ws" | first %}{{ control.name }} <output id="v_ws" for="ws"></output></label><div class="input-pair"><input id="ws" type="range"><input id="n_ws" type="number" step="any" aria-label="ws exact value"></div>
           <p id="windWords" class="hint"></p></div>
-        <div><div id="wdDial" class="dial" aria-label="Wind direction (where it blows from)"></div><div class="dial-cap">From</div></div>
+        <div><div id="wdDial" class="dial" aria-label="Wind direction (where it blows from)"></div><label class="direction-input" for="windBearing">From <input id="windBearing" type="number" min="0" max="359.9" step="0.1" value="270">°</label></div>
       </div>
     </details>
 
     <details class="group" data-sec="rules">
       <summary><h2>Sight and margins</h2><span class="sum" id="sumRules"></span></summary>
-      <div class="row"><label for="vis">How far away you can still see it <output id="v_vis" for="vis"></output></label><input id="vis" type="range">
+      <div class="row"><label for="vis">{% assign control = site.data.glide.controls | where: "id", "vis" | first %}{{ control.name }} <output id="v_vis" for="vis"></output></label><div class="input-pair"><input id="vis" type="range"><input id="n_vis" type="number" step="any" aria-label="vis exact value"></div>
         <p class="hint">You have to keep it in sight. About 500–800 m for a 2 m glider, less for a small one.</p></div>
-      <div class="row"><label for="mg">Clearance over terrain <output id="v_mg" for="mg"></output></label><input id="mg" type="range"></div>
-      <div class="row"><label for="sl">Steepest ground you'd land on <output id="v_sl" for="sl"></output></label><input id="sl" type="range"></div>
+      <div class="row"><label for="mg">{% assign control = site.data.glide.controls | where: "id", "mg" | first %}{{ control.name }} <output id="v_mg" for="mg"></output></label><div class="input-pair"><input id="mg" type="range"><input id="n_mg" type="number" step="any" aria-label="mg exact value"></div></div>
+      <div class="row"><label for="sl">{% assign control = site.data.glide.controls | where: "id", "sl" | first %}{{ control.name }} <output id="v_sl" for="sl"></output></label><div class="input-pair"><input id="sl" type="range"><input id="n_sl" type="number" step="any" aria-label="sl exact value"></div></div>
       <label class="switch"><input id="curve" type="checkbox" checked> Let the glide curve round hills</label>
+    </details>
+
+    <details class="group plans-group" data-sec="plans"><summary><h2>Saved plans</h2></summary>
+      <div class="btns"><select id="savedPlan" aria-label="Saved flight plan"><option value="">Choose a plan</option></select><button type="button" id="loadPlan" class="btn sm" disabled>Load</button><button type="button" id="deletePlan" class="btn sm" disabled>Delete</button></div>
+      <div class="save-row"><input type="text" id="planName" placeholder="Plan name" aria-label="Plan name"><button type="button" id="savePlan" class="btn sm">Save</button></div>
+      <p id="planStatus" class="hint" role="status"></p><input id="shareLink" type="text" readonly aria-label="Flight-plan link" hidden>
     </details>
 
     <details class="group" data-sec="result" open>
@@ -103,51 +145,49 @@
     <details class="group" data-sec="offline">
       <summary><h2>Offline areas</h2><span class="sum" id="sumOffline"></span></summary>
       <p class="hint">Save the terrain round the launch while you have signal. The reach, the cross-section and a shaded terrain map then work with no connection.</p>
-      <div class="row"><input id="areaName" type="text" placeholder="Name, e.g. M Hill" aria-label="Name for this area (optional)"></div>
-      <div class="btns"><button id="btnSave" class="btn" type="button">Save this area</button></div>
+      <div class="row"><input id="areaName" type="text" placeholder="Name, e.g. Dinosaur Park" aria-label="Name for this area (optional)"></div>
+      <div class="btns"><button id="btnSave" class="btn" type="button">Save this area</button><button id="verifyAreas" class="btn" type="button">Verify saved terrain</button></div>
       <div id="saveStatus" class="status" role="status" aria-live="polite"></div>
+      <p id="offlineReady" class="hint" role="status"></p>
       <ul id="areas"></ul>
       <div class="meter" aria-hidden="true"><div id="meterBar"></div></div>
       <p id="storage" class="hint"></p>
     </details>
 
-    <p class="note">Glides at best L/D in steady wind, checked against the terrain every few metres; curving routes are searched on a grid. No lift, sink or turn losses, and "landable" only looks at slope, not trees, buildings or water. Check your local rules, height limits and airspace before you fly. For planning, not for safety.
+    <p class="note">Glides at best L/D through the selected horizontal wind layer, checked against terrain every few metres; curving routes use the same wind field. Estimated lift and sink are shown separately and add no height to a glide. No turn losses, and potential landing ground only considers slope, not trees, buildings or water. Check your local rules, height limits and airspace before you fly. For planning, not for safety.
       Terrain: <a href="https://registry.opendata.aws/terrain-tiles/">AWS Terrain Tiles</a> (USGS, SRTM and others). Street map © OpenStreetMap contributors, online only. <a href="https://github.com/Tsmorz/Tsmorz.github.io/tree/main/glide-path">Source</a></p>
   </aside>
+  <button type="button" id="settingsToggle" class="settings-toggle" aria-expanded="false" aria-controls="panel"><b>Flight settings</b><span id="settingsSummary"></span><span aria-hidden="true">⌃</span></button>
 </div>
 <dialog id="guide" class="guide" aria-labelledby="guideH">
   <div class="g-head"><h2 id="guideH">Quick start</h2><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
     <button type="button" class="icon-btn sm" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
-  <div class="g-body">
+  <div class="g-body"><div class="guide-brand"><img src="dyna-soar.png" width="176" height="132" alt="{{ site.data.glide.landmark.alt }}"><div><b>{{ site.data.glide.name }}</b><p>{{ site.data.glide.tagline }}</p></div></div>
     <section data-step="0">
       <h3>1. Where do you launch?</h3>
-      <p>Glide Path shows where your glider can still land from a launch: round the hills in the way, with the wind, and within sight.</p>
-      <div class="btns"><button type="button" class="btn primary" data-g="geo">Use my location</button><button type="button" class="btn" data-g="example">Try M Hill, Rapid City</button><button type="button" class="btn" data-g="tap">I'll tap the map</button></div>
+      <p>{{ site.data.glide.name }} shows where your glider can still land from a launch: round the hills in the way, with the wind, and within sight.</p>
+      <div class="btns"><button type="button" class="btn primary" data-g="geo">Use my location</button><button type="button" class="btn" data-g="example">Try {{ site.data.glide.landmark.name }}</button><button type="button" class="btn" data-g="tap">I'll tap the map</button></div>
     </section>
     <section data-step="1" hidden>
       <h3>2. Your glider</h3>
-      <p>Pick the nearest; every number can be fine-tuned later under Glider.</p>
+      <p>Pick the nearest; every number can be fine-tuned later under Aircraft.</p>
       <div class="presets" role="radiogroup" aria-label="Glider">
-        <button type="button" role="radio" aria-checked="false" data-glider="foam"><b>Small foam glider</b><span>8:1 at 8 m/s, seen to 400 m</span></button>
-        <button type="button" role="radio" aria-checked="false" data-glider="two"><b>2 m sailplane</b><span>15:1 at 10 m/s, seen to 600 m</span></button>
-        <button type="button" role="radio" aria-checked="false" data-glider="scale"><b>Large scale glider</b><span>25:1 at 14 m/s, seen to 1 km</span></button>
+        {% for aircraft in site.data.glide.aircraft %}<button type="button" role="radio" aria-checked="false" data-glider="{{ aircraft.id }}"><b>{{ aircraft.name }}</b><span></span></button>{% endfor %}
       </div>
       <p class="g-lab">How high does it start?</p>
       <div class="presets" role="radiogroup" aria-label="Launch height">
-        <button type="button" role="radio" aria-checked="false" data-height="20"><b>Hand launch</b><span>about 20 m</span></button>
-        <button type="button" role="radio" aria-checked="false" data-height="120"><b>Winch or bungee</b><span>about 120 m</span></button>
-        <button type="button" role="radio" aria-checked="false" data-height="300"><b>Aerotow or a thermal</b><span>about 300 m</span></button>
+        {% for preset in site.data.glide.launch_heights %}<button type="button" role="radio" aria-checked="false" data-height="{{ preset.height }}"><b>{{ preset.name }}</b><span></span></button>{% endfor %}
       </div>
     </section>
     <section data-step="2" hidden>
       <h3>3. Reading the map</h3>
       <ul class="g-key">
-        <li><span class="key k-straight"></span>Landable on a straight glide</li>
-        <li><span class="key k-curve"></span>Landable by curving round a hill</li>
+        <li><span class="key k-straight"></span>Potential landing ground, straight glide</li>
+        <li><span class="key k-curve"></span>Potential landing ground, curving route</li>
         <li><span class="key k-steep"></span>Reachable, but too steep to land</li>
         <li><span class="key k-ring"></span>As far as you can still see it</li>
       </ul>
-      <p>The strip under the map is a cross-section: drag its dial to turn it. Long-press (or right-click) a spot for the best route there, then press <b>Fly it</b> to follow the glide in 3D. Set the wind under Wind: the reach leans downwind.</p>
+      <p>The strip under the map is a cross-section: drag its dial to turn it. Select Inspect destination, then tap a spot for the route with the highest predicted arrival height, then press <b>Fly it</b> to follow the glide in 3D. Set the wind under Wind: the reach leans downwind.</p>
     </section>
   </div>
   <div class="g-foot">
@@ -158,7 +198,13 @@
   </div>
 </dialog>
 <script src="lib/leaflet/leaflet.js"></script>
+<script src="wind-core.js"></script>
 <script src="glide-core.js"></script>
+<script src="glide-plan.js"></script>
+<script src="soaring-core.js"></script>
+<script type="application/json" id="glide-content">{{ site.data.glide | jsonify }}</script>
 <script src="glide-app.js"></script>
+<script src="soaring-ui.js"></script>
+<script src="wind-ui.js"></script>
 </body>
 </html>

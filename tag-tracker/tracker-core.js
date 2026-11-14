@@ -1322,7 +1322,7 @@
     show3d: 'robot', // the 3D view: robot (driven by the tags) or tags (their trails and axes)
     // The robot: which track is the body and which the arms ('auto', 'none' or a track key), its lengths (m; see
     // RobotCore.MODEL), whether the elbows prefer to sit out and below the hands, and whether the joint angles show.
-    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1, props: 'arcade', actor: 'robot', playMode: 'story', level: 'bowl', view: 'orbit', headTilt: -40, forces: true, sound: false },
+    robot: { body: 'auto', left: 'auto', right: 'auto', elbows: true, scale: 1, props: 'arcade', actor: 'teen', playMode: 'story', level: 'door', view: 'orbit', headTilt: -40, forces: true, sound: false },
     setup: true, // show the Setup guide when the page opens
   };
   // Image pixels to screen pixels for a vw × vh picture shown in a W × H box with object-fit: contain, mirrored

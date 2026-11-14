@@ -59,6 +59,7 @@ function draw3d() {
   const V = S.view, o = C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w, h });
   const line = (a, b, col, lw) => { const p = o.project(a), q = o.project(b); if (!p || !q) return; c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); };
   const label = (P, txt, col, dx, dy, weight) => { const p = o.project(P); if (!p) return; c.fillStyle = col; c.font = `${weight || 500} 12px Archivo, system-ui, sans-serif`; c.textBaseline = 'middle'; c.fillText(txt, p[0] + (dx || 0), p[1] + (dy || 0)); };
+  if (gameView()) { drawRobot(c, o, w, h, performance.now() / 1000); return; }
   // ground grid in the z = 0 plane, around the target
   const step = C.niceStep(V.dist * 1.2, 8), n = 6;
   const gx = Math.round(V.target[0] / step) * step, gy = Math.round(V.target[1] / step) * step;
@@ -192,7 +193,7 @@ function draw3d() {
   plot.addEventListener('pointerup', up); plot.addEventListener('pointercancel', up);
   plot.addEventListener('contextmenu', (e) => e.preventDefault());
   plot.addEventListener('wheel', (e) => { e.preventDefault(); if (safely(handWheel, e)) return; if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes') { setHeadTilt(S.settings.robot.headTilt - Math.sign(e.deltaY) * 2); return; } S.view.dist = Math.min(50, Math.max(0.1, S.view.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
-  plot.addEventListener('dblclick', fitView);
+  plot.addEventListener('dblclick', (e) => { if(gameView() && storyMode()) travelClick(e); else fitView(); });
   plot.addEventListener('keydown', (e) => {
     const V = S.view, k = e.key;
     if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes' && k.startsWith('Arrow')) {

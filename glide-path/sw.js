@@ -4,13 +4,13 @@
 //   - everything else (OpenStreetMap, OpenTopoMap) is left to the browser: their tile policies don't allow
 //     offline storage, so offline the page switches to the shaded-terrain map drawn from the saved terrain.
 // Bump VERSION when the list of SHELL files changes.
-const VERSION = 'v5';
+const VERSION = 'v8';
 const SHELL = 'glide-shell-' + VERSION;
 const SAVED = 'glide-terrain-saved';     // written by the page's "Save this area"; only the page deletes from it
 const RUNTIME = 'glide-terrain-runtime'; // tiles fetched while browsing, capped
 const RUNTIME_MAX = 600;                 // about 30–60 MB of terrain
 const SHELL_FILES = [
-  './', 'glide.css', 'glide-app.js', 'glide-core.js', 'glide-worker.js', 'glide-3d.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
+  './', 'glide.css', 'glide-app.js', 'glide-core.js', 'glide-plan.js', 'wind-core.js', 'wind-ui.js', 'wind-worker.js', 'soaring-core.js', 'soaring-ui.js', 'dyna-soar.png', 'glide-worker.js', 'glide-3d.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png',
   'lib/leaflet/leaflet.js', 'lib/leaflet/leaflet.css', 'lib/maplibre/maplibre-gl.js', 'lib/maplibre/maplibre-gl.css',
   'lib/leaflet/images/marker-icon.png', 'lib/leaflet/images/marker-icon-2x.png', 'lib/leaflet/images/marker-shadow.png',
   'lib/leaflet/images/layers.png', 'lib/leaflet/images/layers-2x.png'
@@ -67,3 +67,13 @@ async function shell(req) {
   // Weak signal at the field: wait at most 3 s for the network when a copy is on hand.
   return Promise.race([net.catch(() => cached), new Promise(r => setTimeout(() => r(cached), 3000))]);
 }
+
+// An explicit offline check uses the worker's own file list, so UI and installer cannot drift.
+self.addEventListener('message', e => {
+  if (e.data?.type !== 'verify-shell' || !e.ports?.[0]) return;
+  e.waitUntil((async () => {
+    const cache = await caches.open(SHELL);
+    const present = await Promise.all(SHELL_FILES.map(f => cache.match(f)));
+    e.ports[0].postMessage({ present: present.filter(Boolean).length, total: SHELL_FILES.length });
+  })());
+});

@@ -1,4 +1,4 @@
-// Glide Path in 3D: the same map tilted, drawn by MapLibre GL (vendored in lib/maplibre/), loaded by glide-app.js the
+// Dyna-soar in 3D: the same map tilted, drawn by MapLibre GL (vendored in lib/maplibre/), loaded by glide-app.js the
 // first time 3D is opened. The mountains are the same Terrarium tiles the reach is worked out on (to zoom 13), so the
 // reach colours, drawn into the page's own canvas, lie exactly on the ground they describe. Everything else is read
 // from the 2D map's layers on each change (`mark`), so the 2D map stays the one source of truth.
@@ -39,6 +39,10 @@ function Glide3D(env) {
       line('profLine', 'lines', { 'line-color': C.line, 'line-width': 3, 'line-opacity': 0.95 }),
       line('routeCase', 'lines', { 'line-color': C.casing, 'line-width': 7, 'line-opacity': 0.9 }),
       line('routeLine', 'lines', { 'line-color': C.route, 'line-width': 4 }),
+      line('windCase','lines',{'line-color':C.casing,'line-width':5}),
+      line('windLine','lines',{'line-color':C.line,'line-width':1.5}),
+      line('dsCase', 'lines', { 'line-color': C.casing, 'line-width': 6 }),
+      line('dsLine', 'lines', { 'line-color': C.line, 'line-width': 2, 'line-dasharray': [3, 3] }),
       { id: 'ticks', type: 'circle', source: 'points', filter: is('tick'), paint: { 'circle-radius': 3.5, 'circle-color': C.casing,
         'circle-stroke-color': C.line, 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } },
       { id: 'routeEnd', type: 'circle', source: 'points', filter: is('routeEnd'), paint: { 'circle-radius': 7, 'circle-color': C.route,
@@ -49,6 +53,7 @@ function Glide3D(env) {
   };
 
   let m = null, ready = false, open = false, queued = false, reachDirty = true, lastLaunch = null, marker = null;
+  let dsMarkers = [], dsKey = null;
   const ll = a => [a.lng, a.lat];
   // a Leaflet polyline's points as one line, or several (hitLines holds pairs)
   function lineFeature(k, lls) {
@@ -65,6 +70,7 @@ function Glide3D(env) {
     const set = (id, prop, v) => m.setPaintProperty(id, prop, v);
     set('outline', 'line-color', C.line); set('hit', 'line-color', C.hit); set('ring', 'line-color', C.ring);
     set('profCase', 'line-color', C.casing); set('profPast', 'line-color', C.line); set('profLine', 'line-color', C.line);
+    set('windCase','line-color',C.casing);set('windLine','line-color',C.line);set('dsCase', 'line-color', C.casing); set('dsLine', 'line-color', C.line);
     set('routeCase', 'line-color', C.casing); set('routeLine', 'line-color', C.route);
     set('ticks', 'circle-color', C.casing); set('ticks', 'circle-stroke-color', C.line);
     set('routeEnd', 'circle-color', C.route); set('routeEnd', 'circle-stroke-color', C.casing);
@@ -91,6 +97,18 @@ function Glide3D(env) {
       add(lineFeature('ring', env.circle(c.lat, c.lng, r, 128).map(([lat, lng]) => ({ lat, lng }))));
     }
     for (const k of ['profCase', 'profPast', 'profLine', 'routeCase', 'routeLine']) add(lineFeature(k, layers[k].getLatLngs()));
+    add(lineFeature('windCase',env.wind?.()||[]));add(lineFeature('windLine',env.wind?.()||[]));
+    const ds = env.soaring?.() || { key: '', items: [] };
+    for (const c of ds.items) { add(lineFeature('dsCase', c.outline)); add(lineFeature('dsLine', c.outline)); }
+    if (ds.key !== dsKey) {
+      dsKey = ds.key; dsMarkers.forEach(pin => pin.remove()); dsMarkers = [];
+      for (const c of ds.items) {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'ds-pin ds-3d-pin' + (c.selected ? ' selected' : '');
+        button.innerHTML = `<span>DS? ${c.index + 1}</span>`; button.setAttribute('aria-label', `Inspect candidate ridge ${c.index + 1}`);
+        button.onclick = e => { e.stopPropagation(); env.onSoaring(c.index); };
+        dsMarkers.push(new maplibregl.Marker({ element: button }).setLngLat(ll(c.point)).addTo(m));
+      }
+    }
     m.getSource('lines').setData({ type: 'FeatureCollection', features: lines });
 
     const pts = layers.profTicks.getLayers().map(t => point('tick', t.getLatLng()));
@@ -120,6 +138,11 @@ function Glide3D(env) {
       if (JSON.stringify(src.coordinates) !== JSON.stringify(corners)) src.setCoordinates(corners);
       if (reachDirty) { src.play(); m.once('render', () => src.pause()); } // copy the canvas once, then hold it
     }
+    const wind=env.windShade?.();
+    if(wind){const b=wind.bounds,coordinates=[[b.getWest(),b.getNorth()],[b.getEast(),b.getNorth()],[b.getEast(),b.getSouth()],[b.getWest(),b.getSouth()]];let source=m.getSource('airflow');
+      if(!source){m.addSource('airflow',{type:'canvas',canvas:wind.canvas,coordinates,animate:false});m.addLayer({id:'airflow',type:'raster',source:'airflow',paint:{'raster-opacity':.65,'raster-fade-duration':0}},'outline');source=m.getSource('airflow');}
+      else{source.setCoordinates(coordinates);m.setLayoutProperty('airflow','visibility','visible');}source.play();m.once('render',()=>source.pause());
+    }else if(m.getLayer('airflow'))m.setLayoutProperty('airflow','visibility','none');
     reachDirty = false;
   }
 
@@ -134,7 +157,7 @@ function Glide3D(env) {
                              maxPitch: 80, attributionControl: { compact: true } });
     m.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
     marker = new maplibregl.Marker({ draggable: true, color: '#6459d3' }).setLngLat([c.lng, c.lat]).addTo(m);
-    marker.on('dragend', () => { const p = marker.getLngLat(); onTap(p.lat, p.lng); });
+    marker.on('dragend', () => { const p = marker.getLngLat(); (env.onMoveLaunch || onTap)(p.lat, p.lng); });
     m.on('click', e => onTap(e.lngLat.lat, e.lngLat.lng));
     m.on('load', () => {
       ready = true; reachDirty = true; sync();

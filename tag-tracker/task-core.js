@@ -9,6 +9,8 @@
   const cyl = (p, r, h) => ({ type: 'cylinder', p, r, h });
   const rz = (a) => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
   function geometry(kind) {
+    if (kind === 'door') return [box([0,0,.72],[.024,.38,.72]),box([-.032,-.25,.74],[.018,.055,.016])];
+    if (kind === 'book') return [box([0,0,0],[.045,.065,.012])];
     if (kind === 'block') return [box([0, 0, 0], [0.025, 0.025, 0.025])];
     if (kind === 'plate') return [cyl([0, 0, 0], 0.06, 0.006)];
     if (kind === 'bowl') {
@@ -34,17 +36,21 @@
     if (mode !== 'story' || !level.story) return level;
     const l = JSON.parse(JSON.stringify(level)), s = l.story;
     l.name = s.title; l.brief = s.brief; l.par = s.par; l.travel = s.travel;
-    l.objects = (l.objects || []).filter((o) => s.keep.includes(o.key));
-    l.cloths = (l.cloths || []).filter((o) => s.keep.includes(o.key));
+    l.objects = (l.objects || []).filter((o) => (s.keep || []).includes(o.key));
+    l.cloths = (l.cloths || []).filter((o) => (s.keep || []).includes(o.key));
     for (const o of l.objects) if (s.placements && s.placements[o.key]) o.at = s.placements[o.key];
     l.goals = s.goal_indices ? s.goal_indices.map((i) => l.goals[i]) : l.goals.slice(0, s.goal_count);
     if (s.goal_x !== undefined) { for (const r of l.goals) if (r.at) r.at[0] = s.goal_x; for (const m of l.markers || []) m.at[0] = s.goal_x; }
+    if (s.objects) l.objects = s.objects;
+    if (s.goals) l.goals = s.goals;
+    if (s.markers) l.markers = s.markers;
     if (s.delivery) for (const r of l.goals) { r.at[0] = s.delivery.at[0]; r.at[1] = s.delivery.at[1]; if (r.object === 'tray') r.carry = s.delivery.carry; }
     return l;
   }
   function unlocked(levels, saved) { const i = levels.findIndex((l) => !saved[l.id]); return i < 0 ? levels.length - 1 : i; }
   function create(level, table, gripper) {
     const W = P.world({ table, gripper }), byKey = new Map();
+    W.hideTable = level.id === 'door';
     const at = (p) => C.add(table.t, C.mulv(table.R, p));
     for (const s of level.objects || []) {
       const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, pieces: geometry(s.kind) }, at(s.at), C.mul3(table.R, s.R || I));
@@ -56,14 +62,21 @@
       for (const a of [-1,1]) for (const b of [-1,1]) pieces.push(box([x+a*.18,y+b*.13,-.39],[.012,.012,.36]));
       W.add({kind:'serving',key:'serving',label:'Serving table',fixed:true,mass:1,pieces,color:'#70858c'}, table.t, table.R);
     }
-    const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0, arrived: false, carryMeters: 0 };
+    const game = { level, world: W, byKey, elapsed: 0, complete: false, dwell: 0, heldBy: new Map(), dual: new Set(), steps: [], started: false, stars: 0, arrived: false, carryMeters: 0, knocks: 0, lastKnock: -Infinity };
     game.local = (p) => C.mulv(C.tr3(table.R), C.sub(p, table.t));
-    game.reset = () => { W.reset(); game.elapsed = 0; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; game.arrived = false; game.carryMeters = 0; };
+    game.reset = () => { W.reset(); game.elapsed = 0; game.complete = false; game.dwell = 0; game.heldBy.clear(); game.dual.clear(); game.started = false; game.stars = 0; game.steps = []; game.arrived = false; game.carryMeters = 0; game.knocks = 0; game.lastKnock = -Infinity; game.open = 0; };
     return game;
   }
   const within = (p, q, tolerance) => p.every((v, i) => Math.abs(v - q[i]) < tolerance[i]);
   function update(g, dt, active) {
-    if (g.complete) return g;
+    if (g.complete) {
+      if (g.level.id === 'door') {
+        const b=g.byKey.get('door');g.doorClosed=g.doorClosed||g.world.poseOf(b);g.open=Math.min(1,(g.open||0)+dt*1.2);
+        const closed=g.doorClosed,pivot=C.add(closed.t,C.mulv(closed.R,[0,.38,0])),R=C.mul3(closed.R,rz(g.open*1.2)),origin=C.sub(pivot,C.mulv(R,[0,.38,0]));
+        b.R=R;b.q=P.qOf(R);b.t=C.sub(origin,C.mulv(R,b.off));
+      }
+      return g;
+    }
     const W = g.world, holds = new Map();
     for (const [side, h] of Object.entries(W.hands)) if (h.grip) {
       const key = h.grip.body.key; if (!holds.has(key)) holds.set(key, new Set()); holds.get(key).add(+side);
@@ -79,6 +92,13 @@
     const settled = (b) => C.norm(b.v) < 0.04 && C.norm(b.w) < 0.25;
     g.steps = g.level.goals.map((r) => {
       const b = g.byKey.get(r.object);
+      if (r.type === 'knock') {
+        for (const e of W.record && W.record.events || []) {
+          const hit = e.a.id === b.id && e.b.kind === 'hand' || e.b.id === b.id && e.a.kind === 'hand';
+          if (hit && e.speed >= .04 && e.t - g.lastKnock > .25) { g.knocks++; g.lastKnock = e.t; }
+        }
+        return g.knocks >= r.count;
+      }
       if (r.type === 'fold') {
         const f = Cloth.folded(b), ps = b.nodes.map((n) => g.local(n.p)), mid = [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
         const span = [0, 1].map((i) => Math.max(...ps.map((p) => p[i])) - Math.min(...ps.map((p) => p[i])));

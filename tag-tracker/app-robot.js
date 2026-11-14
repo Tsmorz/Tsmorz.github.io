@@ -95,11 +95,11 @@ function calibrateRobot(quiet) {
   }
   RB.cal = { cal: robotCalibrate(roles, RCORE.model(S.settings.robot)), roles, sig: robotSig() };
   RB.prev.clear(); TB.drive.clear(); TB.n++; paintRobotBtns();
-  if (storyMode()) { stopTravel(); TASK.nav = null; }
+  if (storyMode()) { stopTravel(); TASK.nav = null; TASK.tagNeutral = null; }
   if (!quiet) robotSay('Calibrated. The robot follows you now; calibrate again whenever it drifts.');
   return 'Robot calibrated';
 }
-function clearRobotCal() { RB.cal = null; RB.prev.clear(); paintRobotBtns(); }
+function clearRobotCal() { TASK.tagNeutral = null; RB.cal = null; RB.prev.clear(); paintRobotBtns(); }
 function paintRobotBtns() {
   const on = S.settings.show3d === 'robot';
   $('robotCalBtn').hidden = !on; $('robotClearBtn').hidden = !on || !RB.cal; $('scaleField').hidden = !on;
@@ -141,6 +141,11 @@ function robotUpdate(now) {
     RB.autoDone = true; calibrateRobot(true);
     return robotUpdate(now);
   }
+  if (!S.demo && gameView() && !RB.cal && !RB.autoDone && roles.body !== null && roles.arms.length && [roles.body,...roles.arms.map(a=>a.key)].every(fresh)) {
+    const keys=[roles.body,...roles.arms.map(a=>a.key)],snapshot=keys.map(k=>RB.last.get(k));
+    if(!RB.still || RB.still.keys!==keys.join(',') || snapshot.some((p,i)=>C.norm(C.sub(p.t,RB.still.poses[i].t))>.012 || C.norm(C.so3Log(C.mul3(p.R,C.tr3(RB.still.poses[i].R))))>.1)) RB.still={keys:keys.join(','),poses:snapshot,time:now};
+    if(now-RB.still.time>.8){RB.autoDone=true;calibrateRobot(true);return robotUpdate(now);}
+  } else RB.still=null;
   let cal = RB.cal && RB.cal.cal;
   if (!cal && preview) {
     const at = S.settings.frame === 'camera' ? [0, 1.6, 0] : [0, -0.6, 0];
@@ -188,7 +193,7 @@ function robotUpdate(now) {
 // flat on the plot's own canvas instead.
 let RGL; // made on first use; null: no WebGL
 function robotGL() {
-  if (RGL === undefined) { try { RGL = window.RobotGL ? RobotGL.create($('plotGL')) : null; } catch (e) { RGL = null; } }
+  if (RGL === undefined) { try { RGL = window.RobotGL ? RobotGL.create($('plotGL')) : null; } catch (e) { RGL = null; RB.renderError=e.message; } }
   if (RGL && RGL.lost) RGL = null;
   return RGL;
 }
@@ -231,13 +236,13 @@ const hotOf = (a) => (TB.hover === a.side ? (TB.grab ? 2 : 1) : 0);
 function drawRobotGL(gl, o, w, h, now) {
   const sc = RB.scene;
   RB.pts = gl.draw({
-    w, h, dpr: devicePixelRatio || 1, cam: o, fov: o.fov || 45, chest: sc.chest, m: sc.m, arms: sc.arms.map((a) => Object.assign({}, a, { hot: hotOf(a) })), body: sc.body, fadeBody: sc.bodyLive ? 0 : 0.45,
+    w, h, dpr: devicePixelRatio || 1, cam: o, fov: o.fov || 45, chest: sc.chest, m: sc.m, arms: sc.arms.map((a) => Object.assign({}, a, { hot: hotOf(a) })), body: sc.body, fadeBody: gameView() || sc.bodyLive ? 0 : 0.45,
     mount: sc.body ? null : sc.arms.length === 2 ? 'bar' : sc.arms.length === 1 ? sc.arms[0].side : null,
-    tags: robotTags(now).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
+    tags: (gameView() ? [] : robotTags(now)).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
     theme: { accent: K.accent, warn: K.warn, bg: K.surface, dark: isDark() },
-    props: tableDraw(), eyes: S.settings.robot.view === 'eyes', headTilt: S.settings.robot.headTilt, actor: S.settings.robot.actor,
+    game: gameView(), props: tableDraw(), eyes: S.settings.robot.view === 'eyes', headTilt: S.settings.robot.headTilt, actor: S.settings.robot.actor,
     locomotion: TB.world ? { floor: TB.world.floorZ - sc.chest.t[2], phase: TASK.nav ? TASK.nav.state.phase : 0, speed: TASK.nav ? Math.abs(TASK.nav.state.v) : 0, distance: TASK.nav ? TASK.nav.state.roll : 0 } : null,
-    forces: forceArrows(),
+    forces: gameView() ? [] : forceArrows(),
   });
 }
 // Drawn flat: outlined solids, painted far to near: capsules for the links, balls for the joints, a box for the torso.
@@ -461,7 +466,7 @@ function tableDraw() {
   }
   return {
     dims: { table: { size: T.size, thick: TABLE.thick, legs: TABLE.legs }, ball: { r: PHYS.BALL.r }, cup: { R: PHYS.CUP.R, Ri: PHYS.CUP.Ri, H: PHYS.CUP.H, floor: PHYS.CUP.floor, handle: PHYS.CUP.handle }, compounds },
-    table: { R: T.R, t: T.t }, bodies, shadows, cloths: W.cloths,
+    table: W.hideTable ? null : { R: T.R, t: T.t }, bodies, shadows, cloths: W.cloths,
   };
 }
 // drawn flat (no WebGL): the table's top, the ball, the cup as a fat stroke from its base to its rim

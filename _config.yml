@@ -35,11 +35,13 @@ exclude:
   - .github
   - CLAUDE.md
   - tag-tracker/CLAUDE.md      # area guides for Claude Code, not served
+  - glide-path/ARTWORK.md
   - glide-path/CLAUDE.md
   - Gemfile
   - Gemfile.lock
   - README.md
   - vendor
   - script
+  - tests
   - assets/models/swingup-tqc-fixture.json   # test data for script/test-swingup, not served
   - "*.gemspec"

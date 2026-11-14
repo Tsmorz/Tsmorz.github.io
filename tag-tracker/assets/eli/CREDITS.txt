@@ -1,0 +1,15 @@
+Eli: Teenager rigged model, Grab3D, released under CC0 1.0.
+Source: https://grab3d.com/models/characters/teen-character/
+Original: https://grab3d.com/dl/teen-character-rigged/teen-character-rigged.glb
+License: https://grab3d.com/dl/teen-character/LICENSE.txt
+Retrieved 2026-11-14. Original source is AI-assisted (Meshy), cleaned and rigged by Grab3D.
+The source license discloses this origin. No real person or brand is represented.
+
+Changes: web LOD (300,000 -> 59,994 triangles), compacted mesh, 14-segment teleoperation
+retarget, procedural finger curl; original base-colour, normal and roughness maps retained.
+The skinned hands share RobotCore's physical wrist targets. Fingers approximate its pinch.
+
+Offline rebuild (not a site build step):
+  npm install --prefix /tmp/eli-tools meshoptimizer@1.3.0
+  node script/tag-tracker/simplify-character.mjs source.glb /tmp/eli-indices.bin /tmp/eli-tools/node_modules/meshoptimizer/index.js
+  python3 script/tag-tracker/prepare-character.py source.glb tag-tracker/assets/eli /tmp/eli-indices.bin

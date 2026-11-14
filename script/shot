@@ -10,6 +10,7 @@
 //   --click SEL       wait (up to 30 s) until the element exists and is enabled, then click it; repeatable, in order
 //                     with --eval. The tag tracker's demo: --click '#emptyDemo' --wait 8000
 //   --eval JS         run in the page after load; repeatable; a returned value is printed; may return a promise
+//   --eval-file FILE  run a JavaScript file in the page (same as --eval)
 //   --full            the whole page, not just the viewport
 //   --console         print every console message, not only warnings and errors
 // Self-contained pages (no front matter: tag-tracker, glide-path, serial-plotter, ...) are served from the repo as they
@@ -30,6 +31,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--light') opt.scheme = 'light';
   else if (a === '--wait') opt.wait = Number(args[++i]);
   else if (a === '--eval') opt.evals.push(args[++i]);
+  else if (a === '--eval-file') opt.evals.push(fs.readFileSync(path.resolve(args[++i]), 'utf8'));
   else if (a === '--click') {
     const sel = JSON.stringify(args[++i]);
     opt.evals.push(`new Promise((ok, no) => { const t0 = Date.now(), t = setInterval(() => { const b = document.querySelector(${sel});
