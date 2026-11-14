@@ -234,7 +234,7 @@
           for (let i = 0; i < 24; i++) { const a = i * Math.PI / 12; put([(s.r - r) * Math.cos(a), (s.r - r) * Math.sin(a), dz], r); }
         }
       } else {
-        const r = Math.min(0.004, ...s.h), h = s.h.map((v) => v - r), n = h.map((v) => Math.max(1, Math.ceil(2 * v / 0.04)));
+        const r = Math.min(0.004, ...s.h), h = s.h.map((v) => v - r), n = h.map((v) => Math.max(1, Math.ceil(2 * v / (s.spacing || 0.04))));
         for (let i = 0; i <= n[0]; i++) for (let j = 0; j <= n[1]; j++) for (let k = 0; k <= n[2]; k++) {
           if (i && i < n[0] && j && j < n[1] && k && k < n[2]) continue;
           put([i, j, k].map((v, a) => -h[a] + 2 * h[a] * v / n[a]), r);
@@ -258,7 +258,7 @@
     const bound = Math.max(...sp.map((s) => norm(s.p) + s.r));
     return makeBody(spec.kind || 'prop', { m: mass, Ib, off: scale(com, -1), sp, sdf: true, pieces,
       bound, mu: spec.mu || 0.6, e: 0.08, mat: spec.mat || 'wood', crr: 0.004, rollR: bound,
-      fixed: !!spec.fixed, color: spec.color, label: spec.label, key: spec.key });
+      slop: spec.slop, fixed: !!spec.fixed, color: spec.color, label: spec.label, key: spec.key });
   }
   const bodyDistance = (b, p) => b.pieces ? shapeDistance(p, b.pieces) : cupSdf(p);
   const bodyNormal = (b, p) => b.pieces ? shapeNormal(p, b.pieces) : cupNormal(p);
@@ -288,7 +288,7 @@
     const o = opts || {}, G = o.gripper, table = o.table || null;
     const tableBox = table ? { R: table.R, t: add(table.t, mulv(table.R, [0, 0, -(table.thick || 0.03) / 2])), h: [table.size[0] / 2, table.size[1] / 2, (table.thick || 0.03) / 2] } : null;
     const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor, tableMu = table && table.mu !== undefined ? table.mu : TABLE_MU;
-    const W = { bodies: [], hands: {}, time: 0, carry: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0, record: null, respawns: 0, cloths: [] };
+    const W = { bodies: [], hands: {}, time: 0, carry: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0, record: null, respawns: 0, cloths: [], cables: [], mechanisms: [], contactGenerators: [] };
     let prevLinks = new Map(), nextLinks = [], nextHands = [];
     const touching = []; // props touching each other this substep
     let acc = null; // the step's sums for W.record
@@ -301,11 +301,11 @@
       return b;
     };
     // a body's shape frame (the ball's centre, the mug's base) at pos, turned R
-    function place(b, pos, R) { b.R = R.slice(); b.q = qOf(R); b.t = add(pos, mulv(R, scale(b.off, -1))); b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.asleep = false; b.still = 0; b.lost = 0; b.group = []; }
+    function place(b, pos, R) { b.R = R.slice(); b.q = qOf(R); b.t = add(pos, mulv(R, scale(b.off, -1))); b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.asleep = false; b.still = 0; b.lost = 0; b.group = []; b.externalImpulse = null; b.insertion = null; }
     W.reset = function () {
       for (const k of Object.keys(W.hands)) W.hands[k].grip = null;
       W.bodies.forEach((b, i) => place(b, W.starts[i].pos, W.starts[i].R));
-      W.cloths.forEach((c) => c.reset());
+      W.cloths.forEach((c) => c.reset()); W.cables.forEach(c => c.reset());
       W.warm.clear(); W.record = null; lastTouch.clear(); W.respawns = 0; W.carry = 0;
     };
     // where the page draws a body's shape (or a hand's wrist)
@@ -366,7 +366,11 @@
       const props = W.bodies, hb = hands.map((x) => x.h.body);
       // a sleeping prop is still there, but nothing moves it: it meets the others as if it were fixed
       const Z = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-      for (const b of [...props, ...hb]) { b.iW = rMr(b.R, b.invIb); b.Iw = rMr(b.R, b.Ib); b.im = b.asleep || b.fixed ? 0 : b.invM; b.iWe = b.asleep || b.fixed ? Z : b.iW; }
+      for (const b of [...props, ...hb]) { b.iW = rMr(b.R, b.invIb); b.Iw = rMr(b.R, b.Ib);
+        // Staggered deformable coupling: consume endpoint impulses before solving contacts, so a supported
+        // cable/cloth load is balanced by the same substep's contacts rather than left as a false final velocity.
+        if (b.externalImpulse && !b.fixed) { b.v = madd(b.v,b.externalImpulse.linear,b.invM); b.w = add(b.w,mulv(b.iW,b.externalImpulse.angular)); b.externalImpulse = null; }
+        b.im = b.asleep || b.fixed ? 0 : b.invM; b.iWe = b.asleep || b.fixed ? Z : b.iW; }
       // the arm links now (a1) and a moment ago (a0), for their velocities
       const kin = links.map((L) => ({ id: L.id, r: L.r, a: lerp(L.a0, L.a1, a1), b: lerp(L.b0, L.b1, a1), pa: lerp(L.a0, L.a1, a0), pb: lerp(L.b0, L.b1, a0) }));
       // the hands: their jaws, then pulled towards the arm
@@ -432,7 +436,7 @@
       for (const b of [...awake, ...hb]) {
         const SS = S.get(b), isHand = b.kind === 'hand';
         SS.forEach(({ c, r, s }, i) => {
-          if (tableBox && !W.hideTable) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
+          if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
           if (c[2] - r - floorZ < MARGIN) cs.push(contact(b, i, null, -1, [c[0], c[1], c[2] - r], [0, 0, 1], c[2] - r - floorZ, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'F'));
         });
         for (const L of kin) {
@@ -497,6 +501,8 @@
           }
         }
       }
+      for (const generate of W.contactGenerators) for (const c of generate())
+        cs.push(contact(c.A,-1,c.B,-1,c.p,c.n,c.dist,null,c.mu,c.key));
       for (const ct of cs) {
         if (ct.A.kind === 'hand' && ct.sA && ct.sA.jaw) ct.eA = jawExt(ct.A, ct.sA);
         if (ct.B && ct.B.kind === 'hand' && ct.sB && ct.sB.jaw) ct.eB = jawExt(ct.B, ct.sB);
@@ -543,6 +549,8 @@
         else b.lost = 0;
       }
       for (const c of W.cloths) c.step(H, W);
+      for (const c of W.cables) c.step(H, W);
+      for (const step of W.mechanisms) step(H);
     }
 
     // A grip on prop P, from the pad spheres touching it (in the hand's body frame): the pinch is their middle, halfway
@@ -650,7 +658,7 @@
         const [l] = clampLen(scale(j.l, 0.9), j.capL), [a] = capTurn(j, scale(j.a, 0.9));
         j.l = l; j.a = a; applyJoint(j, l, a);
       }
-      for (let it = 0; it < ITER; it++) {
+      for (let it = 0; it < (W.bodies.some(b=>b.slop<SLOP)?24:ITER); it++) {
         for (const j of js) solveJoint(j);
         for (const ct of cs) {
           if (ct.ln > 0) {
@@ -677,10 +685,11 @@
           const vn = dot(relVel(ct), ct.n), ln = Math.max(0, ct.ln + ct.mn * (ct.target - vn));
           apply(ct, scale(ct.n, ln - ct.ln)); ct.ln = ln;
           // and the overlap, pushed out by pseudo-velocities that are dropped after this step
-          if (ct.dist < -SLOP) {
+          const slop = Math.min(SLOP, ct.A.slop ?? SLOP, ct.B?.slop ?? SLOP);
+          if (ct.dist < -slop) {
             const A = ct.A, B = ct.B, vpa = add(A.vp || [0, 0, 0], cross(A.wp || [0, 0, 0], ct.rA));
             const vpb = B ? add(B.vp || [0, 0, 0], cross(B.wp || [0, 0, 0], ct.rB)) : [0, 0, 0];
-            const want = (BETA * (-ct.dist - SLOP)) / H, lp = Math.max(0, ct.lp + ct.mn * (want - dot(sub(vpa, vpb), ct.n)));
+            const want = (BETA * (-ct.dist - slop)) / H, lp = Math.max(0, ct.lp + ct.mn * (want - dot(sub(vpa, vpb), ct.n)));
             applyP(ct, scale(ct.n, lp - ct.lp)); ct.lp = lp;
           }
         }

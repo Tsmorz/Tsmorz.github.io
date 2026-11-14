@@ -377,53 +377,81 @@ plot and a readout table. Tags, settings and calibrations (keyed by camera label
   (`npm i --no-save @techstark/opencv-js@4.12.0-release.1`) it also renders a board and tags with a known camera and checks
   that calibration recovers the camera and poses come back within millimetres.
 
-### Tag tracker teleoperation arcade
+### Tag tracker robot tasks
 
-The Physics selector opens the arcade. **Story** is “Grandma’s little helper”: Eli visits Grandma and Pip can
-help on an AMR base. Eight 2.3 × 2.3 m rooms progress through knocking, tidying a ball, setting a cup on its
-coaster, sorting two toys, stacking two books, carrying tea with both hands, loading one dishwasher plate and
-folding a towel. A completed chore unlocks the next and earns candy, a biscuit, a coin or pocket money. Rewards
-are derived from saved completions, so replaying does not duplicate them. Content, room colours and rewards
-live in `_data/tag_tasks.yml`; `story.order` and `story.prologue` are separate from the eight original **Practice**
-challenges. `TaskCore.mission` derives small story scenes without mutating practice data. Saves are separate
-(`tag-tracker-story` and `tag-tracker-teleop`). There is no time limit. Switching character preserves the scene,
-navigation and live physical grips.
+The Physics selector opens a robot workbench. **Small tasks** is the default: a ball in a bowl, a cup on a coaster,
+two blocks in separate outlines, two stacked books, using each gripper for a ball, a loaded tray, one dishwasher
+plate, a USB-C cable insertion and one folded towel. **Full challenges** retains the original larger tasks. Every task is selectable;
+there are no story rooms, human avatars, rewards, navigation requirements or level locks. Keep all task content,
+variant definitions, instructions and hints in `_data/tag_tasks.yml`. `TaskCore.mission(level, 'guided')` applies
+`guided` overrides without mutating the full challenge. Results use `tag-tracker-guided` and `tag-tracker-teleop`;
+old story results can seed guided results, and old human/door settings migrate to the robot and first task.
 
-The default game stage hides the tracking panels and command bars. Settings contains the original controls,
-level chooser and help; Camera & AprilTags opens the full instrument and setup guide. Mouse hand dragging,
-scroll-to-grip and Shift-scroll-to-tilt remain active in the stage. AprilTags drive arms by default. One stationary
-initial set of body/wrist tags auto-calibrates after 0.8 s in the start pose; recalibration remains available in setup.
-A calibrated body tag steers by forward/back lean and shoulder heading, with dead zones and stale-track stopping.
-Double-clicking free floor drives toward a destination; W/S and A/D remain a fallback. Focus loss and setup stop
-travel. `travel-core.js` is DOM-free accelerated motion, swept-circle furniture collision, steering and gait phase.
-The page transforms the body and mouse wrist targets together while tables stay fixed. Held props travel through
-physical grip constraints. Reaching the work spot is required; the tray also needs 0.35 m held by both hands and
-has a second physical table. Each room is a separate small scene, not an open-world map.
+`TaskCore.guidance` is DOM-free. It reads actual grip constraints, prop pose, destination tolerance and objective
+state to choose an action: line up, close, retry empty jaws, lift, move, orient, lower, release or settle. It detects
+holding the wrong prop, a tray missing its second gripper and a towel missing its second corner. After placing
+one prop, a low nearby empty gripper must lift clear before the next pick; otherwise it can knock the placed
+prop out of its outline. Guidance never moves props or awards completion. The one-gripper two-block exercise
+means **place A, release, lift the open gripper clear, then place B with the same gripper**. It never asks the user
+to hold both blocks at once. A release cue uses a conservative fraction of the actual target tolerance.
 
-`character-core.js` CPU-skins a detailed, textured CC0 Grab3D boy to the same RobotCore FK and physical hands. The compact
-mesh, source credit and rebuild instructions are in `tag-tracker/assets/eli/`; the offline extractor is
-`script/tag-tracker/prepare-character.py`; `simplify-character.mjs` uses meshoptimizer 1.3.0 offline to derive the
-60k-triangle web LOD. Original base-colour, normal and roughness maps are local and cache-versioned. The source
-license and AI-assisted origin are included beside the asset. Human fingers approximate the physical pinch.
-`robot-gl.js` renders the character, AMR and wheels with a packed-depth shadow pass, soft shadow sampling,
-hemisphere/directional lighting, specular materials, tone mapping and procedural wood/plaster/fabric. Cutaway
-home furnishings have rounded edges and the chair participates in navigation collision. Camera-facing walls
-cut away to keep the face and chore visible. First person attaches to the head with −80° to +25°
-tilt and a fixed 70° horizontal field of view; projection and hand picking use the same camera.
+The workbench keeps the active action, objective checkmarks and labelled destinations visible beside the scene.
+Step-by-step instructions open automatically for the two-block task. Extra hints and mouse/keyboard help fold
+away. Setup/manual command bars are in Task settings; Camera & AprilTags opens the instrument and setup guide.
+AprilTags remain the default input. Drag either gripper with the mouse, scroll on it to close/open, Space toggles
+it, Shift-scroll tilts and Alt-drag changes the movement plane. Q/E lift/lower the selected gripper. One stationary
+initial set of body/wrist tags auto-calibrates after 0.8 s in the start pose; setup retains explicit recalibration.
 
-`physics-core.js` runs a 240 Hz accumulator, friction-limited grips, contacts and sleep. Compound boxes and
-cylinders share dimensions with rendering; openings stay hollow. Mass properties combine analytic piece inertia
-and the parallel-axis theorem (seam overlaps are an approximation). `cloth-core.js` uses small-step XPBD stretch,
-shear, compliant bending, table friction and particle self-contact: coarse towel cloth, not garment simulation.
-Objectives require released, settled props (0.75 s), with extra checks for handoffs, two-hand lifts and aligned
-cloth edges. The door has no invisible table; three hand impacts above 0.04 m/s, spaced 0.25 s apart, count as
-knocks. It opens on completion and its collider follows the visible panel. Restart clears knock history.
+The robot and AMR meshes are local code in `robot-gl.js`; no human mesh or textures are loaded. The robot head
+camera tilts −80° to +25°, with a fixed 70° horizontal field of view. Projection and hand picking share that camera.
+The renderer retains material lighting, tone mapping, soft sampled shadows and beveled rigid-prop visuals.
+`physics-core.js` runs a 240 Hz accumulator, friction-limited grasps, contacts and sleep. Compound collision boxes
+and cylinders share dimensions with rendering; openings stay hollow. Mass properties use analytic piece inertia
+and the parallel-axis theorem (seam overlaps are an approximation). `cloth-core.js` is coarse XPBD towel cloth,
+with stretch/shear, compliant bending, table friction and particle self-contact. The small towel uses a 13 × 13 mesh; the full pile keeps 9 × 9 per towel. The small towel folds in place on a pad. It is a physical approximation, not garment FEM. Props
+must be released and settled for 0.75 s; handoff, two-gripper lifts and folding have additional checks.
 
-`task check:tag-tracker -- 5j 5k` covers physical grasps/folds/knocks, scene content, locomotion, dead zones,
-unlocks, character skinning and head projections (`script/tag-tracker/`). After building,
-`task shot -- /tag-tracker/ --eval "$(cat script/tag-tracker/story-browser.js)"` walks to the door, physically knocks,
-earns a peppermint, finishes the ball chore through IK and physical grips, and checks unlocks, actor switching,
-head camera and separate practice saves. `browser.js` covers practice. Repeat with `--phone`.
+`task check:tag-tracker -- 5j 5k` covers physical manipulation and guidance (`script/tag-tracker/teleop.cjs` and
+`guidance.cjs`), including an actual sequential A/B placement with one gripper and the empty-gripper retreat.
+After building, `task shot -- /tag-tracker/ --eval-file script/tag-tracker/guided-browser.js` performs the same
+exercise through IK and motor slew, checks live hints, mode changes, all task views and the head camera.
+`browser.js` covers the full challenges. Repeat browser checks with `--phone`.
+
+
+#### Cable insertion and tactile output
+
+The USB-C task starts the plug on a narrow cradle so the robot's bulky fingers can pinch its housing without
+hitting the table. The right gripper takes the plug; the left can lift cable slack. The cable is a 33-node XPBD
+elastic rod with stretch, compliant bending, gravity, table friction, self-contact and rigid-body collision.
+Its endpoint reactions act back on the plug and optional cable-pinching hand. Cloth pin reactions similarly
+act back on the hands. These impulses are consumed before the next rigid contact solve, so a supported
+load does not leave a false final velocity. They reset with the scene.
+
+The metal plug is a hollow shell. The fixed socket has real walls and a centre tongue. A clipped shell-edge
+manifold covers the sleeve continuously between the general engine's surface samples, with 0.05 mm slop
+and 24 solver iterations for precision bodies. Axial friction and a damped spring detent are force laws;
+no pose snapping or locking is used. Release and settle remain required. Geometry and forces are
+representative approximations, not USB compliance or measured connector calibration. Cable torsion,
+individual conductors and electrical contacts are not modelled. Shift + movement keys gives 0.2 mm
+steps; Shift + wrist keys gives fine turns. AprilTag translation supports Motion × 0.1.
+
+`haptic-core.js` uses the existing nrf-controller actuator characteristic (`TagCore.ACT.status`, read/notify/write),
+matching `src/dashboard_wire.h`: six bytes `version=2, command=2, waveform=1 or 3, level, value_le16=0`.
+Firmware acquires its power rail on play; readiness does not require the rail already on. Only finite TacHammer CLICK (6 ms) and KNOCK (12 ms including brake) are sent, capped at 45 percent and
+10 writes/s or less. Contact impacts, slip, fabric tension, cable tension and the seating edge drive the cues.
+**No ERM, servo or STOP_ALL writes**: STOP_ALL would also release the gripper servo. This is tactile vibration,
+not calibrated force feedback. Each write self-terminates in firmware; no sustained-output stop command is needed.
+
+Boards route automatically from live wrist-tag assignments, or explicitly to Left/Right/Off for mouse practice.
+Unmapped, simulated, disconnected, unready or stale-status (>500 ms) boards get no output. A busy GATT
+characteristic drops new cues, never queues old commands. Task changes, off, blur and hidden pages reset cues.
+Settings expose enable/strength and connection/acknowledgement status. Acknowledgement means GATT write
+success, not proof that an actuator moved. Real controller feel and physical material calibration remain unverified.
+
+`task check:tag-tracker -- 5l` (`script/tag-tracker/advanced.cjs`) performs real grasp/lift/insert/release, checks
+cable tension and stretch, folds the finer towel with both physical grippers, and checks TacHammer packets,
+routing, capability/stale/off guards and in-flight writes with mocked GATT. `advanced-browser.js` repeats USB
+insertion through actual robot IK/motor slew and the rendered page; it never moves a prop directly. `fabric-browser.js` folds the small towel through both actual robot arms and checks released completion.
 
 ## When editing, don't
 
