@@ -203,6 +203,17 @@
     return out;
   }
   function compoundMeshes(pieces) {
+    const profile = pieces.find(s => s.bowlProfile)?.bowlProfile;
+    if (profile) {
+      // One continuous, smoothly shaded surface through the foot, outside, rounded lip and hollow inside.
+      const point = (v) => {
+        const t = v * (profile.length - 1), i = Math.min(profile.length - 2, Math.floor(t)), f = t - i;
+        const at = (n) => profile[Math.max(0, Math.min(profile.length - 1, n))];
+        const [a,b,c,d] = [at(i-1),at(i),at(i+1),at(i+2)];
+        return [0,1].map(k => Math.max(0, .5*((2*b[k])+(-a[k]+c[k])*f+(2*a[k]-5*b[k]+4*c[k]-d[k])*f*f+(-a[k]+3*b[k]-3*c[k]+d[k])*f*f*f)));
+      };
+      return [part(surface((u,v) => { const [r,z] = point(v); return [r*Math.cos(TAU*u),r*Math.sin(TAU*u),z]; }, 96, 96, () => [0,0,0]), 'ceramic')];
+    }
     const result = [];
     for (const s of pieces) {
       const R = s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1], p = s.p || [0, 0, 0];
@@ -309,6 +320,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     dark: { base: lin('#24282e'), spec: 0.55, shine: 60, rim: 1 },
     glass: { base: lin('#07080c'), spec: 1.3, shine: 220, rim: 1.4 },
     shell: { base: lin('#c9ced4'), spec: 0.3, shine: 30, rim: 0.8 },
+    fabric: { base: lin('#7398c4'), spec: .08, shine: 3, rim: .3 },
     top: { base: lin('#6b737c'), spec: 0.25, shine: 24, rim: 0.5 },
     ball: { base: lin('#2a78d6'), spec: 0.7, shine: 80, rim: 0.6 },
     ballB: { base: lin('#e9eef5'), spec: 0.7, shine: 80, rim: 0.6 },
@@ -469,7 +481,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
           let g = clothGPU.get(c.key);
           if (!g || g.count !== mesh.idx.length) { if(g)free(g); g = upload(mesh); clothGPU.set(c.key, g); }
           else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
-          setMat('top', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
+          setMat(c.radius?'top':'fabric', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
         for (const [k, g] of clothGPU) if (!liveCloths.has(k)) { free(g); clothGPU.delete(k); }
       }

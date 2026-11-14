@@ -4,7 +4,7 @@
 # `links:` takes any label/url pairs — GitHub, paper, demo video, write-up, etc.
 
 
-- name: Dyna-soar
+- name: DynaSoar
   image: /glide-path/dyna-soar.png
   image_style: illustration
   image_alt: Dinosaur Park’s green brontosaurus watching a white model sailplane.

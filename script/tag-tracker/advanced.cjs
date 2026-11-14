@@ -41,17 +41,7 @@ module.exports=async function({check}){
   }
   Object.assign(plug,saved);g.reset();
   check(!g.complete&&wire.pins.size===0&&wire.nodes.every(n=>n.v.every(v=>v===0))&&!plug.externalImpulse,'restart clears the cable, results and pending reaction impulses');
-  const fabric=T.create(T.mission(data.levels.find(l=>l.id==='laundry'),'guided'),table,G),cloth=fabric.world.cloths[0];
-  check(cloth.N===13&&cloth.nodes.length===169,'the small folding task has a finer deformable mesh');
-  const startX=cloth.nodes[0].p[0];let x=startX,z=.11;
-  const foldFrame=open=>{fabric.world.setRobot({hands:[1,-1].map(side=>({side,pose:{R:I,t:[x,side*.12,z]},opening:open}))});fabric.world.step(1/60);};
-  for(let i=0;i<25;i++)foldFrame(1);for(let i=0;i<45;i++)foldFrame(0);
-  check(cloth.pins.size===2&&T.guidance(fabric).state==='fold_move','both actual corner pinches prompt moving the edge rather than releasing a flat towel');
-  let reaction=0;
-  for(let i=0;i<=180;i++){const t=i/180;x=startX+.2*t;z=.11+.065*Math.sin(Math.PI*t);foldFrame(0);reaction=Math.max(reaction,...Object.values(cloth.reactions).map(r=>r.load));}
-  for(let i=0;i<120;i++)foldFrame(1);
-  const folded=require(root+'/tag-tracker/cloth-core').folded(cloth);
-  check(folded.x&&folded.compact&&cloth.pins.size===0&&reaction>.02&&fabric.world.capped===0,'two real grippers fold and release the finer fabric while transmitting physical tension');
+  // Fabric patch rotation and the complete shirt fold are covered separately by section 5o.
   // Wire packets, per-hand routing, unavailable/stale/off guards, rate limits and no asynchronous backlog.
   check([...H.packet(99,3)].join(',')==='2,2,3,45,0,0','TacHammer command is version 2 / play / knock / capped strength / zero value');
   const status=C.decodeActuatorStatus(new DataView(C.encodeActuatorStatus({railOn:true,tachammerReady:true,ermReady:true}).buffer));

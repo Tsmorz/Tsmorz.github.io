@@ -1,11 +1,11 @@
-// Dyna-soar in 3D: the same map tilted, drawn by MapLibre GL (vendored in lib/maplibre/), loaded by glide-app.js the
+// DynaSoar in 3D: the same map tilted, drawn by MapLibre GL (vendored in lib/maplibre/), loaded by glide-app.js the
 // first time 3D is opened. The mountains are the same Terrarium tiles the reach is worked out on (to zoom 13), so the
 // reach colours, drawn into the page's own canvas, lie exactly on the ground they describe. Everything else is read
 // from the 2D map's layers on each change (`mark`), so the 2D map stays the one source of truth.
 'use strict';
 function Glide3D(env) {
   const { lmap, el, L: layers, terrUrl, tiles, onTap } = env;
-  let C = env.pal(); // the colours in use: they follow the base map, as on the 2D map
+  let C = env.pal(), colourKey = JSON.stringify(C); // the colours in use: they follow the base map, as on the 2D map
   const ras = (urls, maxzoom, attribution) => ({ type: 'raster', tiles: urls, tileSize: 256, maxzoom, attribution });
   const dem = () => ({ type: 'raster-dem', tiles: [terrUrl], tileSize: 256, encoding: 'terrarium', maxzoom: 13, attribution: 'Terrain: AWS Terrain Tiles' });
   const empty = { type: 'FeatureCollection', features: [] };
@@ -36,7 +36,7 @@ function Glide3D(env) {
       line('ring', 'lines', { 'line-color': C.ring, 'line-width': 2, 'line-dasharray': [4, 3] }),
       line('profCase', 'lines', { 'line-color': C.casing, 'line-width': 6, 'line-opacity': 0.85 }),
       line('profPast', 'lines', { 'line-color': C.line, 'line-width': 2, 'line-opacity': 0.85, 'line-dasharray': [3, 3] }),
-      line('profLine', 'lines', { 'line-color': C.line, 'line-width': 3, 'line-opacity': 0.95 }),
+      line('profLine', 'lines', { 'line-color': C.flight, 'line-width': 3, 'line-opacity': 0.95 }),
       line('routeCase', 'lines', { 'line-color': C.casing, 'line-width': 7, 'line-opacity': 0.9 }),
       line('routeLine', 'lines', { 'line-color': C.route, 'line-width': 4 }),
       line('windCase','lines',{'line-color':C.casing,'line-width':5}),
@@ -72,7 +72,7 @@ function Glide3D(env) {
   function paintColours() {
     const set = (id, prop, v) => m.setPaintProperty(id, prop, v);
     set('outline', 'line-color', C.line); set('hit', 'line-color', C.hit); set('ring', 'line-color', C.ring);
-    set('profCase', 'line-color', C.casing); set('profPast', 'line-color', C.line); set('profLine', 'line-color', C.line);
+    set('profCase', 'line-color', C.casing); set('profPast', 'line-color', C.line); set('profLine', 'line-color', C.flight);
     set('windCase','line-color',C.casing);set('windLine','line-color',C.line);set('dsArea','fill-color',C.line); set('dsCrestCase','line-color',C.casing); set('dsCrest','line-color',C.line);set('dsCase', 'line-color', C.casing); set('dsLine', 'line-color', C.line);
     set('routeCase', 'line-color', C.casing); set('routeLine', 'line-color', C.route);
     set('ticks', 'circle-color', C.casing); set('ticks', 'circle-stroke-color', C.line);
@@ -80,10 +80,61 @@ function Glide3D(env) {
     set('probe', 'circle-color', C.line); set('probe', 'circle-stroke-color', C.casing);
   }
 
+  // Absolute MSL trajectory, depth-tested against terrain; ground traces remain normal map layers.
+  // Rebase vertices at the launch before converting to float32 to preserve sub-metre precision.
+  let airData=null,airVersion=0,airProfile,airColour;
+  function updateAir() {
+    const p=env.profile?.(),color=env.profileColour();
+    if(p===airProfile&&color===airColour)return;
+    airProfile=p;airColour=color;
+    if(!p||p.end<1){airData=null;airVersion++;return;}
+    const origin=maplibregl.MercatorCoordinate.fromLngLat(ll(p.lls[0]),0),vertices=[];
+    const coord=k=>{const v=maplibregl.MercatorCoordinate.fromLngLat(ll(p.lls[k]),p.glide[k]);return [v.x-origin.x,v.y-origin.y,v.z];};
+    for(let k=1;k<=p.end;k++) {
+      if(!Number.isFinite(p.glide[k-1])||!Number.isFinite(p.glide[k]))continue;
+      const a=coord(k-1),b=coord(k);
+      for(const [end,side] of [[0,-1],[1,-1],[1,1],[0,-1],[1,1],[0,1]])vertices.push(...a,...b,end,side);
+    }
+    airData={origin,vertices:new Float32Array(vertices),color};airVersion++;
+  }
+  const airLayer={id:'air-trajectory',type:'custom',renderingMode:'3d',
+    onAdd(map,gl){
+      const shader=(type,source)=>{const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
+      this.program=gl.createProgram();
+      const vs=shader(gl.VERTEX_SHADER,`attribute vec3 a,b; attribute vec2 edge; uniform mat4 matrix; uniform vec2 viewport; uniform float width;
+        void main(){vec4 p=matrix*vec4(a,1.0),q=matrix*vec4(b,1.0);vec4 v=mix(p,q,edge.x);
+          vec2 delta=(q.xy/q.w-p.xy/p.w)*viewport;vec2 normal=vec2(-delta.y,delta.x)/max(length(delta),0.00001);
+          v.xy+=normal*edge.y*width/viewport*v.w;gl_Position=v;}`);
+      const fs=shader(gl.FRAGMENT_SHADER,`precision mediump float;uniform vec3 color;void main(){gl_FragColor=vec4(color,1.0);}`);
+      gl.attachShader(this.program,vs);gl.attachShader(this.program,fs);gl.linkProgram(this.program);
+      gl.deleteShader(vs);gl.deleteShader(fs);
+      if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(this.program));
+      this.buffer=gl.createBuffer();this.vao=gl.createVertexArray();this.version=-1;
+    },
+    render(gl,args){
+      if(!airData||!airData.vertices.length)return;
+      gl.bindVertexArray(this.vao);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);
+      if(this.version!==airVersion){gl.bufferData(gl.ARRAY_BUFFER,airData.vertices,gl.DYNAMIC_DRAW);this.version=airVersion;}
+      gl.useProgram(this.program);
+      for(const [name,size,offset] of [['a',3,0],['b',3,12],['edge',2,24]]){const at=gl.getAttribLocation(this.program,name);gl.enableVertexAttribArray(at);gl.vertexAttribPointer(at,size,gl.FLOAT,false,32,offset);}
+      const matrix=Array.from(args.defaultProjectionData.mainMatrix),o=airData.origin;
+      for(let r=0;r<4;r++)matrix[12+r]+=matrix[r]*o.x+matrix[4+r]*o.y;
+      const uniform=name=>gl.getUniformLocation(this.program,name);
+      gl.uniformMatrix4fv(uniform('matrix'),false,matrix);gl.uniform2f(uniform('viewport'),gl.drawingBufferWidth,gl.drawingBufferHeight);
+      gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.depthMask(false);gl.disable(gl.CULL_FACE);gl.disable(gl.BLEND);
+      const rgb=hex=>[1,3,5].map(k=>parseInt(hex.slice(k,k+2),16)/255),dpr=window.devicePixelRatio||1;
+      for(const [color,width] of [[C.casing,6],[airData.color,3]]){gl.uniform3fv(uniform('color'),rgb(color));gl.uniform1f(uniform('width'),width*dpr);gl.drawArrays(gl.TRIANGLES,0,airData.vertices.length/8);}
+      gl.bindVertexArray(null);
+    },
+    onRemove(map,gl){gl.deleteBuffer(this.buffer);gl.deleteProgram(this.program);gl.deleteVertexArray(this.vao);}
+  };
+
   function sync() {
     queued = false;
     if (!open || !ready) return;
-    if (env.pal() !== C) { C = env.pal(); paintColours(); }
+    if (JSON.stringify(env.pal()) !== colourKey) { C = env.pal(); colourKey=JSON.stringify(C); paintColours(); }
+    updateAir();
+    if(!m.getLayer('air-trajectory'))m.addLayer(airLayer);
     const on = l => lmap.hasLayer(l);
     // the base map: whatever the 2D layers menu says
     const base = env.base();
@@ -198,7 +249,7 @@ function Glide3D(env) {
     while (k < d.length - 2 && d[k + 1] < s) k++;
     const f = d[k + 1] > d[k] ? Math.min(1, Math.max(0, (s - d[k]) / (d[k + 1] - d[k]))) : 0, a = path.lls[k], b = path.lls[k + 1] || a;
     const lerp = (x, y) => x + (y - x) * f;
-    return { k: f > 0.5 ? k + 1 : k, lat: lerp(a.lat, b.lat), lng: lerp(a.lng, b.lng), h: lerp(path.h[k], path.h[k + 1] ?? path.h[k]),
+    return { segment:k, k: f > 0.5 ? k + 1 : k, lat: lerp(a.lat, b.lat), lng: lerp(a.lng, b.lng), h: lerp(path.h[k], path.h[k + 1] ?? path.h[k]),
              g: lerp(path.g[k], path.g[k + 1] ?? path.g[k]) };
   }
   // the track's direction (radians clockwise from north) at s, over ±half metres
@@ -206,6 +257,16 @@ function Glide3D(env) {
   function trackAt(path, s, half) {
     const total = path.d[path.d.length - 1], a = at(path, Math.max(0, s - half)), b = at(path, Math.min(total, s + half));
     return Math.atan2((b.lng - a.lng) * Math.cos(a.lat * Math.PI / 180), b.lat - a.lat);
+  }
+  function airState(path,s) {
+    const p=at(path,s),chi=trackAt(path,s,20),i=p.segment;
+    const w=path.wind?.[i]||{east:-Math.sin(path.wd*Math.PI/180)*path.ws,north:-Math.cos(path.wd*Math.PI/180)*path.ws};
+    const vertical=path.sink?.[i+1]??GlideCore.steadyGlide(path.Va,path.gr).sink;
+    const horizontal=Math.sqrt(Math.max(0.01,path.Va*path.Va-vertical*vertical));
+    const cross=(w.east*Math.cos(chi)-w.north*Math.sin(chi))/horizontal;
+    const heading=chi-Math.asin(Math.max(-1,Math.min(1,cross)));
+    const speed=GlideCore.groundSpeed(chi,horizontal,Math.hypot(w.east,w.north),Math.atan2(-w.east,-w.north));
+    return {heading,horizontal,vertical,speed};
   }
   function hud(html, buttons) {
     let box = el.querySelector('.fly-hud');
@@ -309,7 +370,10 @@ function Glide3D(env) {
     const frame = now => {
       if (!flight) return;
       if (flight.t0 === null) flight.t0 = now;
-      const u = Math.min(1, (now - flight.t0) / dur), s = total * u, p = at(path, s), q = at(path, Math.min(total, s + 80));
+      const u = Math.min(1, (now - flight.t0) / dur);
+      let s=total*u;
+      if(path.time?.at(-1)>0){const t=u*path.time.at(-1);let k=0;while(k<path.time.length-2&&path.time[k+1]<t)k++;const f=(t-path.time[k])/Math.max(1e-9,path.time[k+1]-path.time[k]);s=path.d[k]+(path.d[k+1]-path.d[k])*f;}
+      const p = at(path, s), q = at(path, Math.min(total, s + 80));
       const cos = Math.cos(p.lat * Math.PI / 180), ex = (q.lng - p.lng) * cos, ny = q.lat - p.lat, len = Math.hypot(ex, ny);
       if (len > 1e-9) { ux = ex / len; uy = ny / len; }
       const g = gliderView();
@@ -320,15 +384,13 @@ function Glide3D(env) {
       m.jumpTo(m.calculateCameraOptionsFromTo([fromLng, fromLat], camAlt, [p.lng, p.lat], p.h));
       // the glider's attitude: its track here, the turn (bank for a coordinated turn at its airspeed), crab into the wind
       const dt = flight.last ? Math.min(0.1, (now - flight.last) / 1000) : 0; flight.last = now;
-      const chi = trackAt(path, s, 20), camChi = Math.atan2(ux, uy);
-      const turn = wrapPi(trackAt(path, Math.min(total, s + 35), 20) - trackAt(path, Math.max(0, s - 35), 20)) / Math.max(1, Math.min(total, s + 35) - Math.max(0, s - 35));
-      const bankTo = Math.max(-0.8, Math.min(0.8, Math.atan(path.Va * path.Va * turn / 9.81)));
-      flight.bank += (bankTo - flight.bank) * Math.min(1, dt / 0.6);
-      const windTo = (path.wd + 180) * Math.PI / 180, cross = path.ws * Math.sin(windTo - chi) / path.Va;
-      const heading = chi - Math.asin(Math.max(-0.9, Math.min(0.9, cross)));
-      const air = now / 1000; // a little life in the air
-      if (g) g.draw({ look: Math.atan2(camAlt - p.h, camera.back), scale: camera.distance / Math.hypot(camera.back, camAlt-p.h), yaw: -wrapPi(heading - camChi) + 0.01 * Math.sin(air * 0.9),
-                      pitch: Math.atan(1 / path.gr) + 0.012 * Math.sin(air * 1.7), bank: flight.bank + 0.02 * Math.sin(air * 1.3) + 0.01 * Math.sin(air * 3.1) });
+      const camChi = Math.atan2(ux, uy),state=airState(path,s),before=Math.max(0,s-20),after=Math.min(total,s+20);
+      const headingRate=wrapPi(airState(path,after).heading-airState(path,before).heading)/Math.max(.01,after-before)*state.speed;
+      const bankTo=Math.max(-.8,Math.min(.8,Math.atan(state.horizontal*headingRate/9.81)));
+      flight.bank+=(bankTo-flight.bank)*Math.min(1,dt/.6);
+      const heading=state.heading,pitch=Math.asin(Math.min(.99,state.vertical/path.Va));
+      if (g) g.draw({ look: Math.atan2(camAlt - p.h, camera.back), scale: camera.distance / Math.hypot(camera.back, camAlt-p.h), yaw: -wrapPi(heading - camChi),
+                      pitch, bank: flight.bank });
       onAt(p.k);
       if (u < 1) {
         hud(`${U.d(s)} out, ${U.h(Math.max(0, p.h - p.g))} above the ground`, [['Stop', stop]]);
@@ -336,7 +398,7 @@ function Glide3D(env) {
       } else {
         endFlight(true);
         const left = path.h[path.h.length - 1] - path.g[path.g.length - 1]; // a route ends at the spot picked, maybe still high
-        hud(left > 5 ? `At the spot after ${U.d(total)}, ${U.h(left)} above the ground` : `Down after ${U.d(total)}`, [['Fly again', () => fly(path, onAt, onEnd)], ['Done', () => { const b = el.querySelector('.fly-hud'); if (b) b.remove(); }]]);
+        hud(`Preview ends after ${U.d(total)}, ${U.h(Math.max(0,left))} above the ground`, [['Fly again', () => fly(path, onAt, onEnd)], ['Done', () => { const b = el.querySelector('.fly-hud'); if (b) b.remove(); }]]);
       }
     };
     flight.raf = requestAnimationFrame(frame);
@@ -344,6 +406,7 @@ function Glide3D(env) {
 
   return {
     fly,
+    get trajectory() { return airData ? { vertices:airData.vertices.length/8, color:airData.color } : null; },
     get flying() { return !!flight; },
     project(point) { return m.project(ll(point)); },
     unproject(point) { return m.unproject(point); },
@@ -362,7 +425,7 @@ function Glide3D(env) {
       const c = lmap.getCenter(), options = { bearing: camera.bearing, pitch: camera.pitch };
       if (!wasOpen) { options.center = [c.lng, c.lat]; options.zoom = lmap.getZoom() - 1; }
       if (camera.center) options.center = ll(camera.center);
-      if (Number.isFinite(camera.zoom)) options.zoom = Math.max(options.zoom ?? m.getZoom(), camera.zoom);
+      if (Number.isFinite(camera.zoom)) options.zoom = camera.zoom;
       m.jumpTo(options);
       reachDirty = true; mark();
     },

@@ -112,12 +112,12 @@ errors << "glide.yml: needs aircraft presets" if aircraft.empty?
 aircraft.each do |a|
   label = "glide.yml aircraft #{a["id"]}"
   errors << "#{label}: needs a unique id and name" if a["id"].to_s.empty? || a["name"].to_s.strip.empty? || aircraft.count { |b| b["id"] == a["id"] } > 1
-  %w[gr va vis].each { |k| errors << "#{label}: needs positive #{k}" unless a[k].is_a?(Numeric) && a[k].positive? }
+  %w[gr va vis dsink].each { |k| errors << "#{label}: needs positive #{k}" unless a[k].is_a?(Numeric) && a[k].positive? }
 end
 %w[pending potential slope steep sight missing incomplete blocked wind unknown].each do |kind|
   errors << "glide.yml: missing destination label #{kind}" if glide.fetch("destination", {})[kind].to_s.strip.empty?
 end
-errors << "glide.yml: exact input labels must cover all controls" unless Array(glide["controls"]).map { |c| c["id"] }.sort == %w[gr va agl ws vis mg sl].sort
+errors << "glide.yml: exact input labels must cover all controls" unless Array(glide["controls"]).map { |c| c["id"] }.sort == %w[gr va agl ws vis mg sl dsink].sort
 
 %w[loading updating ready partial missing].each do |phase|
   errors << "glide.yml: missing calculation label #{phase}" if glide.fetch("calculation", {})[phase].to_s.strip.empty?
@@ -126,12 +126,12 @@ Array(glide["launch_heights"]).each do |preset|
   errors << "glide.yml: invalid launch height preset" unless preset["height"].is_a?(Numeric) && preset["height"].between?(0, 300) && !preset["name"].to_s.strip.empty?
 end
 
-errors << "glide.yml: needs Dyna-soar branding and a valid default landmark" unless glide["name"] == "Dyna-soar" && glide.dig("landmark", "lat").is_a?(Numeric) && glide.dig("landmark", "lon").is_a?(Numeric) && glide.dig("landmark", "lat").abs < 85.05112878 && glide.dig("landmark", "lon").abs <= 180
+errors << "glide.yml: needs DynaSoar branding and a valid default landmark" unless glide["name"] == "DynaSoar" && glide.dig("landmark", "lat").is_a?(Numeric) && glide.dig("landmark", "lon").is_a?(Numeric) && glide.dig("landmark", "lat").abs < 85.05112878 && glide.dig("landmark", "lon").abs <= 180
 %w[off loading updating calm coarse missing none candidates].each do |state|
   errors << "glide.yml: missing ridge-screen state #{state}" if glide.fetch("soaring", {}).fetch("states", {})[state].to_s.strip.empty?
 end
 errors << "glide.yml: needs screening and weather limitations" if glide.dig("soaring", "caveat").to_s.strip.empty? || glide.dig("weather", "note").to_s.strip.empty?
-errors << "Dyna-soar: missing illustration" unless file_present?("glide-path/dyna-soar.png")
+errors << "DynaSoar: missing illustration" unless file_present?("glide-path/dyna-soar.png")
 
 %w[enabled height roughness key ready updating disabled missing method].each do |label|
   errors << "glide.yml: missing terrain-wind label #{label}" if glide.fetch("flow", {})[label].to_s.strip.empty?

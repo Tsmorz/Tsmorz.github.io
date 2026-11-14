@@ -111,7 +111,7 @@ main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px;
 .card-h h2{font-size:16px;font-weight:700;font-stretch:118%;margin:0 6px 0 0;letter-spacing:-.005em}
 .card-b{padding:10px 12px}
 @media (max-width:1000px){main{grid-template-columns:minmax(0,1fr)}.cam .select{max-width:150px}.hide-sm{display:none!important}}
-@media (max-width:640px){.topbar{flex-wrap:wrap;height:auto;padding:10px 12px;row-gap:10px;column-gap:12px}.brand .bt{font-size:16px}.logo,.logo svg{width:22px;height:22px}.tabs{gap:12px}.tabs button{font-size:14px}.tabs{align-self:auto}.tabs button{padding:6px 0}#themeBtn{order:2}.brk{flex-basis:100%;height:0;order:3}.cam{order:4;flex:1 1 auto}.cam .select{flex:1;max-width:none}#status{order:5}main{padding:14px 10px;gap:16px}}
+@media (max-width:640px){.topbar{flex-wrap:wrap;height:auto;padding:10px 12px;row-gap:10px;column-gap:10px}#voiceBtn{width:30px;padding:0;justify-content:center}#voiceBtn span{display:none}.brand .bt{font-size:16px}.logo,.logo svg{width:22px;height:22px}.tabs{gap:18px;order:3;flex-basis:100%;align-self:auto}.tabs button{font-size:14px}.tabs button{padding:6px 0}#themeBtn{order:2}.brk{flex-basis:100%;height:0;order:3}.cam{order:4;flex:1 1 auto}.cam .select{flex:1;max-width:none}#status{order:5}main{padding:14px 10px;gap:16px}}
 .brk{display:none}@media (max-width:640px){.brk{display:block}}
 
 /* video */
@@ -347,6 +347,8 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 .rec-b{display:flex;flex-direction:column;gap:8px;padding:2px 12px 12px}
 .rec-b textarea{font:inherit;color:inherit;display:block;width:100%;height:auto;min-height:6.5em;resize:vertical;padding:7px 10px;line-height:1.5;font-size:13.5px}
 .voice{position:fixed;left:18px;bottom:18px;z-index:30;display:flex;align-items:center;gap:10px;max-width:min(480px,calc(100vw - 32px));padding:9px 12px;background:var(--panel);border:1px solid var(--ink);border-radius:2px;color:var(--ink);font-size:13px;line-height:1.4}
+.voice-source{display:grid;white-space:normal;gap:6px}.voice-source .select{min-width:0;max-width:100%}
+.voice .voice-message{min-width:0;overflow-wrap:anywhere}.voice .btn{flex:none}.voice select{max-width:100%}
 .voice .dot{width:9px;height:9px;background:var(--muted);flex:none}
 .voice[data-state=listening] .dot{background:var(--accent);animation:blink 1s steps(2,start) infinite}
 .voice[data-state=loading] .dot,.voice[data-state=processing] .dot{background:var(--accent)}
@@ -403,19 +405,21 @@ footer{max-width:1680px;margin:0 auto;padding:0 18px 28px;color:var(--muted);fon
 @media(max-width:1000px){body.teleop-active #view-track{order:-1}body.teleop-active #view-track .plot3d{height:clamp(360px,65vh,600px)}}
 
 #campaignMode{margin:8px 0}.travel-controls{display:grid;gap:5px}.travel-controls p{margin:0!important}#storyBeat{padding-left:9px;border-left:2px solid var(--accent);line-height:1.45}.task-level:disabled{opacity:.5;cursor:not-allowed}
-#robotPlayControls{align-self:start}#robotPlayControls>#handControls{padding-top:4px}#travelStatus{min-height:17px}
+#robotPlayControls{align-self:start}#travelStatus{min-height:17px}
 @media(min-width:1001px){body.teleop-active .robot-controls{padding-bottom:10px}body.teleop-active #taskPanel{max-width:240px}}
 
-/* Task workbench: instructions beside the scene, setup commands in the drawer. */
-body.game-screen{overflow:hidden;background:var(--well)}
-body.game-screen>header,body.game-screen main>.col:first-child,body.game-screen #nowCard,body.game-screen footer,body.game-screen .voice{display:none!important}
-body.game-screen main{display:block!important;max-width:none!important;margin:0;padding:0}
-body.game-screen #view-track{display:block;position:fixed;inset:0;height:100dvh}
-body.game-screen #view-track .card3d{display:block!important;height:100%;border:0;border-radius:0}
-body.game-screen #view-track .plot3d{position:absolute;inset:0 0 0 320px;height:100%!important;min-height:0!important;margin:0;background:var(--well)}
+/* The shared header stays visible in every tab; the workbench fills the space below it. */
+body.game-screen{display:flex;flex-direction:column;height:100dvh;overflow:hidden;background:var(--well)}
+body.game-screen>header{flex:none}
+body.game-screen .topbar .cam,body.game-screen .topbar .brk{display:none}
+body.game-screen main>.col:first-child,body.game-screen #nowCard,body.game-screen footer{display:none!important}
+body.game-screen main{display:block!important;position:relative;flex:1;min-height:0;width:100%;max-width:none!important;margin:0;padding:16px}
+body.game-screen #view-track{display:block;position:relative;top:0;height:100%}
+body.game-screen #view-track .card3d{display:block!important;height:100%;padding:0;border:1px solid var(--rule2);border-radius:4px;overflow:hidden}
+body.game-screen #view-track .plot3d{position:absolute;inset:0 0 0 304px;height:100%!important;min-height:0!important;margin:0;background:var(--well)}
 body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen .plot3d #robotHint{display:none!important}
-#gameHUD{position:fixed;inset:0;pointer-events:none;z-index:5;color:var(--ink)}
-.workbench-guide{position:absolute;top:16px;bottom:16px;left:16px;width:288px;box-sizing:border-box;overflow:auto;padding:16px;background:var(--panel);border:1px solid var(--rule);border-radius:4px;pointer-events:auto;scrollbar-width:thin}
+#gameHUD{position:absolute;inset:16px;pointer-events:none;z-index:5;color:var(--ink)}
+.workbench-guide{position:absolute;top:0;bottom:0;left:0;width:304px;box-sizing:border-box;overflow:auto;padding:16px;background:var(--panel);border:1px solid var(--rule2);border-radius:4px 0 0 4px;pointer-events:auto;scrollbar-width:thin}
 .workbench-guide>label{display:block;font-size:12px;color:var(--muted)}.workbench-guide .select{width:100%;margin:5px 0 15px;min-width:0;font-size:14px}.workbench-guide small{color:var(--muted);font-size:12px}.workbench-guide h1{font-size:23px;line-height:1.2;margin:6px 0 10px}.workbench-guide p{font-size:14px;line-height:1.5;margin:0 0 14px}
 .workbench-guide .live-guide{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:14px 0;margin:14px 0}.live-guide h2{color:var(--accent);font-size:17px;line-height:1.3;margin:6px 0}.live-guide p{margin:0}
 #guideGoals{list-style:none;padding:0;font-size:13px;line-height:1.5;margin:14px 0}#guideGoals li{padding:4px 0}#guideGoals li::before{content:'○';display:inline-block;width:20px}#guideGoals li[data-done=true]::before{content:'✓';color:var(--accent)}#guideGoals li[data-active=true]{font-weight:600}
@@ -424,9 +428,8 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 .game-actions{position:absolute;top:16px;right:16px;display:flex;gap:8px;align-items:center;pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:6px}.game-actions input{width:90px;accent-color:var(--accent)}.game-actions button{min-height:40px}.game-actions label{display:flex;align-items:center}
 #taskLabels .task-label[data-active=true]{border-color:var(--accent);color:var(--accent);font-weight:700}
 #gameSettings{width:min(850px,calc(100vw - 24px));max-height:90dvh;background:var(--panel);color:var(--ink);padding:0;border:1px solid var(--rule2);border-radius:4px}#gameSettings::backdrop{background:var(--well);opacity:.85}
-#gameSettings>.card-h{position:sticky;top:0;background:var(--panel);z-index:2}#gameSettingsTools{padding:10px}#gameSettingsTools #taskPanel{max-width:none;border:0}#gameSettingsTools #robotPlayControls{padding:12px}#gameSettingsTools .task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}#gameSettingsTools .task-select{display:flex}#gameSettingsTools .vbtns{display:flex;gap:6px;flex-wrap:wrap;padding:12px}#gameSettingsTools>.card-h{display:block;padding:12px}#gameSettingsTools>.card-h .toolbar{margin-top:10px}
-#backToGame{position:fixed;bottom:18px;right:18px;z-index:40}
-@media(max-width:720px){body.game-screen #view-track .plot3d{inset:0 0 38dvh;height:62dvh!important}.workbench-guide{top:auto;left:8px;right:8px;bottom:8px;width:auto;height:calc(38dvh - 16px);padding:12px}.workbench-guide .task-times{flex-direction:row;align-items:baseline;gap:10px;margin:6px 0}.workbench-guide .task-times time{font-size:18px}.workbench-guide #guideGoals{font-size:11px;line-height:1.2}.workbench-guide h1{font-size:18px;margin:4px 0 6px}.workbench-guide #gameObjective,.workbench-guide #gameChapter{display:none}.workbench-guide #guideGoals{margin:7px 0}.workbench-guide #guideGoals li{padding:2px 0;margin:0}.workbench-guide .live-guide{padding:8px 0;margin:8px 0}.workbench-guide .live-guide p{font-size:13px}.workbench-guide .select{margin-bottom:9px}.game-actions{top:8px;right:8px;gap:5px;padding:4px}.game-actions input{width:65px}.game-actions .btn{font-size:12px;padding:0 9px}#gameSettingsTools .task-levels{display:none}}
+#gameSettings>.card-h{position:sticky;top:0;background:var(--panel);z-index:2}#gameSettingsTools{padding:10px}#gameSettingsTools #taskPanel{max-width:none;border:0}#gameSettingsTools #robotPlayControls{padding:12px}#gameSettingsTools .task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}#gameSettingsTools .task-select{display:flex}#gameSettingsTools .vbtns{display:flex;gap:6px;flex-wrap:wrap;padding:12px}#gameSettingsTools>.card-h{display:block;padding:12px}#gameSettingsTools>.card-h .toolbar{margin-top:10px}#gameSettingsTools .seg:has([data-show3d]),#gameSettingsTools #propsField{display:none}
+@media(max-width:720px){body.game-screen main{padding:10px}#gameHUD{inset:10px}body.game-screen #view-track .plot3d{inset:0 0 40%;height:60%!important}.workbench-guide{top:60%;left:0;right:0;bottom:0;width:auto;height:40%;padding:12px;border-radius:0 0 4px 4px}.workbench-guide .task-times{flex-direction:row;align-items:baseline;gap:10px;margin:6px 0}.workbench-guide .task-times time{font-size:18px}.workbench-guide #guideGoals{font-size:11px;line-height:1.2}.workbench-guide h1{font-size:18px;margin:4px 0 6px}.workbench-guide #gameObjective,.workbench-guide #gameChapter{display:none}.workbench-guide #guideGoals{margin:7px 0}.workbench-guide #guideGoals li{padding:2px 0;margin:0}.workbench-guide .live-guide{padding:8px 0;margin:8px 0}.workbench-guide .live-guide p{font-size:13px}.workbench-guide .select{margin-bottom:9px}.game-actions{top:8px;right:8px;gap:5px;padding:4px}.game-actions input{width:65px}.game-actions .btn{font-size:12px;padding:0 9px}#gameSettingsTools .task-levels{display:none}}
 </style>
 </head>
 <body>
@@ -464,8 +467,9 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
     <span class="logo" aria-hidden="true"><svg viewBox="0 0 8 8" shape-rendering="crispEdges"><rect width="8" height="8" fill="currentColor"/><g fill="var(--page)"><rect x="3" y="1" width="1" height="1"/><rect x="2" y="2" width="2" height="1"/><rect x="5" y="2" width="1" height="1"/><rect x="4" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="4" y="4" width="2" height="1"/><rect x="1" y="5" width="1" height="1"/><rect x="3" y="5" width="3" height="1"/><rect x="1" y="6" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="5" y="6" width="2" height="1"/></g></svg></span><span class="bt">Tag Tracker</span>
   </a>
   <div class="tabs" role="tablist" aria-label="Mode">
-    <button role="tab" id="tab-track" aria-selected="true" aria-controls="view-track">Track</button>
-    <button role="tab" id="tab-calib" aria-selected="false" aria-controls="calibCard">Calibrate</button>
+    <button role="tab" id="tab-calib" aria-selected="false" tabindex="-1" aria-controls="calibCard">{{ site.data.tag_tasks.navigation.calibrate }}</button>
+    <button role="tab" id="tab-track" aria-selected="false" tabindex="-1" aria-controls="view-track">{{ site.data.tag_tasks.navigation.tracking }}</button>
+    <button role="tab" id="tab-tasks" aria-selected="true" aria-controls="view-track">{{ site.data.tag_tasks.navigation.tasks }}</button>
   </div>
   <div class="spacer"></div>
   <div class="brk"></div>
@@ -481,7 +485,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
     <button id="startBtn" class="btn primary"><svg class="i"><use href="#i-cam"/></svg><span>Start</span></button>
   </div>
   <span id="status" class="pill busy" role="status" aria-live="polite"><span class="dot"></span><span id="statusText">Loading detector…</span></span>
-  <button id="voiceBtn" class="btn mic" aria-pressed="false" title="Voice (or press V): speak a command, such as “Calibrate robot”, “Start recording”, “Tare” or “Fit”, or anything else to add it as a note. Speech is turned into text on this computer."><svg class="i"><use href="#i-mic"/></svg><span>Voice</span></button>
+  <button id="voiceBtn" class="btn mic" aria-pressed="false" title="{{ site.data.tag_tasks.voice.help | escape }}"><svg class="i"><use href="#i-mic"/></svg><span>Voice</span></button>
   <button id="helpBtn" class="btn sq" aria-label="Setup guide" aria-haspopup="dialog" title="Setup guide: the camera, your tags, the lens and the robot's start pose"><svg class="i"><use href="#i-book"/></svg></button>
   <button id="settingsBtn" class="btn sq" aria-label="Settings" aria-haspopup="dialog" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
   <button id="themeBtn" class="btn sq" aria-label="Switch to dark theme" title="Theme"><svg class="i"><use href="#i-moon"/></svg></button>
@@ -646,7 +650,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
     </section>
 
     <!-- Calibrate mode: the steps -->
-    <section class="card" id="calibCard" role="tabpanel" aria-labelledby="h-calib" hidden>
+    <section class="card" id="calibCard" role="tabpanel" aria-labelledby="tab-calib" hidden>
       <div class="card-h"><h2 id="h-calib">Calibrate this camera</h2><div class="spacer"></div><span class="small muted" id="calibFor"></span></div>
       <div class="steps">
         <div class="step">
@@ -760,10 +764,6 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
         <details class="task-guide"><summary>How to play</summary><p>{{ site.data.tag_tasks.controls.intro }}</p><p id="taskHint"></p><p>{{ site.data.tag_tasks.controls.keyboard }}</p><p>{{ site.data.tag_tasks.controls.scoring }}</p><p class="hint">{{ site.data.tag_tasks.physics }}</p></details>
       </div>
       <div class="robot-controls" id="robotPlayControls">
-        <div class="row" id="handControls"><span class="small">Hand</span><span id="playHands" class="seg sm" role="radiogroup" aria-label="Hand to control"><button role="radio" data-hand="1" aria-checked="true">Left</button><button role="radio" data-hand="-1" aria-checked="false">Right</button><button role="radio" data-hand="both" aria-checked="false">Both</button></span>
-          <button class="btn sm outline" data-nudge="forward">Forward</button><button class="btn sm outline" data-nudge="back">Back</button><button class="btn sm outline" data-nudge="left">Left ←</button><button class="btn sm outline" data-nudge="right">Right →</button><button class="btn sm outline" data-nudge="up">Lift ↑</button><button class="btn sm outline" data-nudge="down">Lower ↓</button>
-          <button class="btn sm outline" id="playGrip">Grip</button><button class="btn sm outline" id="playRelease">Release</button><button class="btn sm outline" data-turn="-1">Tilt −</button><button class="btn sm outline" data-turn="1">Tilt +</button><button class="btn sm outline" data-roll="-1">Roll −</button><button class="btn sm outline" data-roll="1">Roll +</button>
-        </div>
         <div class="row"><span class="seg sm" id="robotViewControl" role="radiogroup" aria-label="Robot camera"><button role="radio" data-robot-view="orbit" aria-checked="true">Outside view</button><button role="radio" data-robot-view="eyes" aria-checked="false">{{ site.data.tag_tasks.camera.label }}</button></span><label class="field" for="headTilt">Head tilt <input type="range" id="headTilt" min="-80" max="25" value="-40" step="1"><output id="headTiltValue" for="headTilt">−40°</output></label><span class="hint">{{ site.data.tag_tasks.camera.help }}</span></div>
       </div>
       <div class="plot3d">
@@ -777,7 +777,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
           <button class="btn sm outline" id="fitBtn" title="Fit the view to the tags (or double-click the plot, or press F)"><svg class="i"><use href="#i-fit"/></svg>Fit</button>
           <button class="btn sm outline sq" id="fullBtn" aria-label="Full screen" title="Full screen (Esc to leave)"><svg class="i"><use href="#i-full"/></svg></button>
         </div>
-        <canvas id="plot" tabindex="0" role="img" aria-label="3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit, F to fit, R to reset the view, C to calibrate the robot, T to reset the table, M to turn its sound on or off. Drag a robot hand to move it across the view (Alt for the other way), scroll on it to open and close its gripper (Shift to tilt it), Space to open or close it."></canvas>
+        <canvas id="plot" tabindex="0" role="img" aria-label="{{ site.data.tag_tasks.controls.scene_label }}"></canvas>
         <canvas id="plotGL" aria-hidden="true" hidden></canvas>
         <div id="taskLabels" aria-hidden="true"></div>
         <div class="legend" id="legend3d"></div>
@@ -817,7 +817,6 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
       <div class="tplot" id="tplotWrap"><canvas id="tplot" role="img" aria-label="x, y and z of the chosen tag over the history, in centimetres"></canvas><div class="tip" id="tip" hidden></div></div>
     </section>
   </div>
-</main>
 <div id="gameHUD" hidden>
   <section class="workbench-guide" aria-labelledby="gameTitle">
     <label for="workbenchTask">{{ site.data.tag_tasks.ui.picker }}</label><select class="select" id="workbenchTask"></select>
@@ -833,7 +832,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
   </section>
   <div class="game-actions"><button class="btn sm outline" id="gameEyes" aria-pressed="false">{{ site.data.tag_tasks.ui.eyes }}</button><label title="{{ site.data.tag_tasks.ui.tilt }}"><span class="sr">{{ site.data.tag_tasks.ui.tilt }}</span><input id="gameTilt" type="range" min="-80" max="25" value="-40" aria-label="{{ site.data.tag_tasks.ui.tilt }}"></label><button class="btn sm" id="gameTags" hidden>{{ site.data.tag_tasks.ui.tags }}</button><button class="btn sm sq" id="gameSettingsBtn" aria-haspopup="dialog" aria-label="{{ site.data.tag_tasks.ui.settings }}" title="{{ site.data.tag_tasks.ui.settings }}"><svg class="i"><use href="#i-gear"/></svg></button></div>
 </div>
-<button class="btn primary" id="backToGame" hidden>{{ site.data.tag_tasks.ui.return }}</button>
+</main>
 <dialog id="gameSettings" aria-labelledby="gameSettingsTitle"><div class="card-h"><h2 id="gameSettingsTitle">{{ site.data.tag_tasks.ui.settings }}</h2><div class="spacer"></div><button class="btn" id="gameSetupBtn">{{ site.data.tag_tasks.ui.setup }}</button><button class="btn" id="gameSettingsClose">{{ site.data.tag_tasks.ui.return }}</button></div><section style="padding:16px"><label>{{ site.data.tag_tasks.scores.player }} <input class="input sm" id="taskPlayer" maxlength="32" autocomplete="nickname"></label><br><label><input type="checkbox" id="taskHaptics"> {{ site.data.tag_tasks.haptics.label }}</label> <label>{{ site.data.tag_tasks.haptics.strength }} <input type="range" id="taskHapticStrength" min="0.1" max="1" step="0.1"></label><p>{{ site.data.tag_tasks.haptics.help }}</p><p>{{ site.data.tag_tasks.haptics.routing_help }}</p><div class="row"><button class="btn sm" id="taskSerial">{{ site.data.tag_tasks.link.connect }}</button><button class="btn sm outline" id="taskBluetooth">{{ site.data.tag_tasks.link.ble }}</button></div><p class="hint">{{ site.data.tag_tasks.link.help }}</p><p id="taskHapticStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p></section><div id="gameSettingsTools"></div></dialog>
 
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
@@ -876,6 +875,10 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
   <div class="drawer-in">
     <div class="card-h"><h2 id="h-settings">Settings</h2><span class="small muted">Kept in this browser.</span><div class="spacer"></div><button type="button" class="btn sm sq" id="settingsClose" aria-label="Close settings" title="Close (Esc)"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="steps">
+      <div class="step"><h3>{{ site.data.tag_tasks.voice.title }}</h3>
+        <label class="field voice-source">{{ site.data.tag_tasks.voice.source }} <select id="voiceSource" class="select"></select></label>
+        <p>{{ site.data.tag_tasks.voice.help }}</p><p>{{ site.data.tag_tasks.voice.commands }}</p><p class="hint">{{ site.data.tag_tasks.voice.transport }}</p>
+      </div>
       <div class="step">
         <h3>Robot</h3>
         <p>Which track drives what. Auto takes the tag or object named Body (or Chest) as the body, and the others as the arms, each on the side of the body it is on.</p>
@@ -1021,7 +1024,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
     <div class="row"><button class="btn sm primary" id="bvFull">Full screen</button><button class="btn sm outline" id="bvClose">Close</button></div>
   </div>
 </div>
-<div class="voice" id="voice" data-state="idle" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="voiceText"></span><span class="meter" aria-hidden="true"><i id="voiceMeter"></i></span></div>
+<div class="voice" id="voice" data-state="idle" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="voiceText" class="voice-message"></span><span class="meter" aria-hidden="true"><i id="voiceMeter"></i></span><button id="voiceStop" class="btn sm" hidden>{{ site.data.tag_tasks.voice.stop }}</button><button id="voiceCancel" class="btn sm sq" aria-label="{{ site.data.tag_tasks.voice.cancel }}" title="{{ site.data.tag_tasks.voice.cancel }}"><svg class="i"><use href="#i-x"/></svg></button></div>
 <footer>
   <span>Positions are in centimetres. Camera frame: x right, y away from the camera, z up. Relative to a tag: x along the tag, z up the tag, −y out of its face. Orientations are unit quaternions (w, x, y, z) in the same frame.</span>
   <span class="spacer"></span>
@@ -1030,37 +1033,39 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
-<script src="tracker-core.js?v=d97fd48c"></script>
+<script src="tracker-core.js?v=96749a42"></script>
 <script src="robot-core.js?v=5767e370"></script>
-<script src="robot-gl.js?v=c8a40cf3"></script>
-<script src="physics-core.js?v=a5c08ecd"></script>
+<script src="robot-gl.js?v=a3128f30"></script>
+<script src="physics-core.js?v=4ff41ba7"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
 <script src="cable-core.js?v=2ad7bd56"></script>
 <script src="haptic-core.js?v=d1c04643"></script>
-<script src="cloth-core.js?v=9599d904"></script>
+<script src="cloth-core.js?v=d4038d8c"></script>
 <script src="controller-link.js?v=829d5a6d"></script>
 <script src="score-core.js?v=e43f050f"></script>
 <script src="charging-core.js?v=6ab3f06c"></script>
-<script src="task-core.js?v=2c31740a"></script>
+<script src="task-core.js?v=01e55481"></script>
 <script src="sound.js?v=4f5ec6ef"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
-<script src="app-state.js?v=4622e9af"></script>
-<script src="app-cameras.js?v=5f4da7b1"></script>
-<script src="app-plot.js?v=56bdb92c"></script>
-<script src="app-robot.js?v=0be7011f"></script>
-<script src="app-tasks.js?v=a9897bdf"></script>
-<script src="app-views.js?v=b778539d"></script>
+<script src="app-state.js?v=8b0769d9"></script>
+<script src="app-cameras.js?v=4caf5a11"></script>
+<script src="app-plot.js?v=ced3cea6"></script>
+<script src="app-robot.js?v=92580818"></script>
+<script src="app-tasks.js?v=ae4f95ef"></script>
+<script src="app-views.js?v=7ae2c0a4"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>
-<script src="app-io.js?v=d4354267"></script>
-<script src="app-boards.js?v=12df2a70"></script>
-<script src="app-serial.js?v=bdb81f24"></script>
+<script src="voice-core.js?v=452722f2"></script>
+<script src="app-io.js?v=2b3c9f3d"></script>
+<script src="app-boards.js?v=ad40d99e"></script>
+<script src="app-serial.js?v=16b64948"></script>
 <script src="app-demo.js?v=f40e920f"></script>
 <script>
 'use strict';
 // ---------------- boot ----------------
 rememberBoards();
-paintThemeBtn();
+paintThemeBtn();paintVoiceSources();
+setMode('tasks');
 renderCalibCams(); renderRig();
 renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
 listCameras();

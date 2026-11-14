@@ -15,12 +15,13 @@ simulated humanoid robot and a tabletop physics scene from them. Tags, settings 
 | `robot-core.js` | `RobotCore`, no DOM: the humanoid, IK, calibration, joint slew, demo path |
 | `robot-gl.js` | `RobotGL`: the shaded robot; `meshes()` has no DOM |
 | `physics-core.js` | `PhysicsCore`, no DOM: the table, props, hands, grip, contact record, haptic events |
-| `cloth-core.js` | small-step XPBD towel cloth and gripper reactions, no DOM |
+| `cloth-core.js` | small-step XPBD fabric, cut-pattern shirt and gripper reactions, no DOM |
 | `cable-core.js` | elastic cable, endpoint reactions, continuous USB-C sleeve contacts and spring detent, no DOM |
 | `haptic-core.js` | finite TacHammer cue mapping and BLE write dispatcher, no DOM |
 | `task-core.js` | `TaskCore`, no DOM: the robot workbench's scenes, physical objectives, progress, `guidance`, the head camera |
 | `sound.js` | `ContactSound`: Web Audio contact sounds |
 | `speech-worker.js` | speech to text (Whisper tiny.en through Transformers.js) |
+| `voice-core.js` | `ControllerVoice`, no DOM: nrf-controller audio packets, IMA ADPCM and bounded 16 kHz takes |
 | `udp-bridge.py` | WebSocket → UDP bridge for Stream (Python standard library, served for download) |
 | `lib/qrcode-generator/` | 1.4.4, MIT, vendored unchanged |
 
@@ -73,7 +74,8 @@ generic: like no company's robot. Without WebGL it is drawn flat (`drawRobotFlat
 
 ## Layout
 
-Two tabs, Track and Calibrate, the camera column the same width on both. `S.tab` is the tab shown; `S.mode` is what the detector
+Three tabs, Calibrate → Tracking → Tasks, always in the shared header. Tracking and Calibrate share the camera column.
+Tasks alone mounts `#gameHUD`; switching tabs must preserve the physical scene and active task. `S.tab` is the tab shown; `S.mode` is what the detector
 looks for (`calib` or `track`). **Settings** (`#settingsDlg`, the gear) holds what is set once: robot roles and lengths, detector
 and pose options, Tags-view options, default paper, the setup-guide switch. The top bar's status shows only while there is
 something to say (`status('')` hides it). On a wide screen the right column (3D plot, then the **Now** panel) is sticky and fills
@@ -167,8 +169,12 @@ over the air: **never change them**. Read by force arrows (`forceArrows`, `o.for
   Filtered mode only (`boardFuse`: `updateRate`, `updateTilt`); a board never starts a track or keeps one alive past `imuFor`.
 - **Recording** (`recTick`, in memory, capped): CSV or JSON (`tag-tracker-recording/1`); notes with `TagCore.fmtStamp` /
   `parseNotes`.
-- **Voice** (V): `TagCore.VoiceGate` ends the clip; `speech-worker.js` transcribes on the computer; whole-utterance commands
-  (`voiceCommand`, `VOICE_COMMANDS`, `VOICE_ACTIONS`), else a note (`tidySpeech`, `insertSpeech`).
+- **Voice** (V): `speech-worker.js` transcribes locally; whole-utterance commands (`voiceCommand`, `VOICE_ACTIONS`), else a note.
+  BLE audio follows nrf-controller's `src/audio_wire.h` and `src/adpcm.c`; `voice.cjs` (section 5p) checks that contract.
+  Joystick push-to-talk uses actuator status `keys`, **not data events**, which firmware pauses during audio. Keep start/stop
+  writes ordered and cancellation scoped to the take's epoch and controller; `voice-browser.js` exercises those races.
+  The Bluetooth chooser must grant the optional audio service. USB/ESB teleoperation firmware has no microphone stream;
+  computer-microphone input remains available. Commands must preserve Tasks unless they explicitly select another tab.
 - **Tare** (`TagCore.tared`, `S.tare`, `retare`): plotted orientations only; the video overlay always shows true poses.
 - **Print** dialog: tags and the ChArUco board at true size on A4 or Letter (`TagCore.PAPER`, `paperFor`, `paper`); it refuses
   sizes that wouldn't fit (`maxTagSize`, `maxBoardSquare`), since fit-to-page would shrink them.
@@ -179,43 +185,39 @@ over the air: **never change them**. Read by force arrows (`forceArrows`, `o.for
 
 ## Robot tasks
 
-The Physics selector opens a robot workbench. **Small tasks** is the default: a ball in a bowl, a cup on a coaster,
-two blocks in separate outlines, two stacked books, using each gripper for a ball, a loaded tray, one dishwasher
-plate, a USB-C cable insertion and one folded towel. **Full challenges** retains the original larger tasks. Every task is selectable;
-there are no story rooms, human avatars, rewards, navigation requirements or level locks. Keep all task content,
-variant definitions, instructions and hints in `_data/tag_tasks.yml`. `TaskCore.mission(level, 'guided')` applies
-`guided` overrides without mutating the full challenge. Results use `tag-tracker-guided` and `tag-tracker-teleop`;
-old story results can seed guided results, and old human/door settings migrate to the robot and first task.
+Keep task content, variants, instructions and hints in `_data/tag_tasks.yml`; no story rooms, avatars or
+progression locks. `TaskCore.mission(level, 'guided')` applies overrides without mutating the full challenge.
+Results use `tag-tracker-guided` and `tag-tracker-teleop`; legacy human/door settings migrate to the robot.
 
-`TaskCore.guidance` is DOM-free. It reads actual grip constraints, prop pose, destination tolerance and objective
-state to choose an action: line up, close, retry empty jaws, lift, move, orient, lower, release or settle. It detects
-holding the wrong prop, a tray missing its second gripper and a towel missing its second corner. After placing
-one prop, a low nearby empty gripper must lift clear before the next pick; otherwise it can knock the placed
-prop out of its outline. Guidance never moves props or awards completion. The one-gripper two-block exercise
-means **place A, release, lift the open gripper clear, then place B with the same gripper**. It never asks the user
-to hold both blocks at once. A release cue uses a conservative fraction of the actual target tolerance.
+`TaskCore.guidance` is DOM-free and must read actual grip constraints and objective state: it never moves
+props or awards completion. Keep the empty-gripper retreat after release; otherwise the next pick can knock
+a placed prop out of its outline. The one-gripper two-block task must place A, release, lift clear, then place B
+with the same gripper. Wrong props, missing tray grips and missing fabric grips need explicit guidance.
 
-The workbench keeps the active action, objective checkmarks and labelled destinations visible beside the scene.
-Step-by-step instructions open automatically for the two-block task. Extra hints and mouse/keyboard help fold
-away. Setup/manual command bars are in Task settings; Camera & AprilTags opens the instrument and setup guide.
+Keep active guidance, objectives and destinations visible. Task settings holds setup and device options,
+not a manual hand command bar. Camera & AprilTags opens Tracking and the setup guide.
 AprilTags remain the default input. Drag either gripper with the mouse, scroll on it to close/open, Space toggles
-it, Shift-scroll tilts and Alt-drag changes the movement plane. Q/E lift/lower the selected gripper. One stationary
-initial set of body/wrist tags auto-calibrates after 0.8 s in the start pose; setup retains explicit recalibration.
+it, Shift-scroll tilts and Alt-drag changes the movement plane. Q/E lift/lower the selected gripper. In Robot eyes,
+↑/↓ lift/lower and ←/→ move sideways; head tilt stays on the slider. I/P tilts the wrist sideways for sleeve
+folds. 1/2/3 select left/right/both grippers. Stationary body/wrist tags auto-calibrate after 0.8 s in the start pose.
 
-The robot and AMR meshes are local code in `robot-gl.js`; no human mesh or textures are loaded. The robot head
-camera tilts −80° to +25°, with a fixed 70° horizontal field of view. Projection and hand picking share that camera.
-The renderer retains material lighting, tone mapping, soft sampled shadows and beveled rigid-prop visuals.
-`physics-core.js` runs a 240 Hz accumulator, friction-limited grasps, contacts and sleep. Compound collision boxes
+Projection and hand picking must share the robot head camera. Compound collision boxes
 and cylinders share dimensions with rendering; openings stay hollow. Mass properties use analytic piece inertia
-and the parallel-axis theorem (seam overlaps are an approximation). `cloth-core.js` is coarse XPBD towel cloth,
-with stretch/shear, compliant bending, table friction and particle self-contact. The small towel uses a 13 × 13 mesh; the full pile keeps 9 × 9 per towel. The small towel folds in place on a pad. It is a physical approximation, not garment FEM. Props
-must be released and settled for 0.75 s; handoff, two-gripper lifts and folding have additional checks.
+and the parallel-axis theorem (seam overlaps are an approximation). `cloth-core.js` uses a cut-pattern, single-layer
+shirt mesh; do not fill the neckline or bridge missing sleeve cells. Finite 8 mm gripper patches use three barycentric
+material points solved together: a single pinned vertex permits free spinning. Keep bounded attachment forces,
+reaction torque, vertex/face layer contact and Coulomb friction together. Solve layer contact with stretch
+constraints; a late contact projection can leave artificial strain and prevent settling.
+`shirtFolded` must require both sleeves, aligned hem/shoulders, a non-crumpled footprint, release and settling.
+The laundry task is revision 2; old towel times must not compete with shirt results. This is a fabric-sheet
+approximation, not a sewn volumetric garment or garment FEM. Props must be released and settled for 0.75 s; handoff, two-gripper lifts and folding have additional checks.
 
 `task check:tag-tracker -- 5j 5k` covers physical manipulation and guidance (`script/tag-tracker/teleop.cjs` and
 `guidance.cjs`), including an actual sequential A/B placement with one gripper and the empty-gripper retreat.
 After building, `task shot -- /tag-tracker/ --eval-file script/tag-tracker/guided-browser.js` performs the same
 exercise through IK and motor slew, checks live hints, mode changes, all task views and the head camera.
-`browser.js` covers the full challenges. Repeat browser checks with `--phone`.
+`browser.js` covers the full challenges. `workbench-browser.js` checks persistent tabs, task preservation and eye-view
+arrow controls. Repeat browser checks with `--phone`.
 
 
 ### Cable insertion and tactile output
@@ -249,19 +251,17 @@ Settings expose enable/strength and connection/acknowledgement status. Acknowled
 success, not proof that an actuator moved. Real controller feel and physical material calibration remain unverified.
 
 `task check:tag-tracker -- 5l` (`script/tag-tracker/advanced.cjs`) performs real grasp/lift/insert/release, checks
-cable tension and stretch, folds the finer towel with both physical grippers, and checks TacHammer packets,
+cable tension and stretch, and checks TacHammer packets,
 routing, capability/stale/off guards and in-flight writes with mocked GATT. `advanced-browser.js` repeats USB
-insertion through actual robot IK/motor slew and the rendered page; it never moves a prop directly. `fabric-browser.js` folds the small towel through both actual robot arms and checks released completion.
+insertion through actual robot IK/motor slew and the rendered page; it never moves a prop directly. `task check:tag-tracker -- 5o` (`fabric.cjs`) checks patch twist/release, surface contacts and the full shirt fold.
+`fabric-browser.js` folds both sleeves and the body through actual robot IK and checks released completion; repeat with `--phone`.
 
 
 ## Local leaderboards, charging and serial/ESB controllers
 
-`score-core.js` ranks each named player's best completion time on this device, separately by task,
-small/full mode and task revision. The UI keeps an elapsed timer and best time visible; player name
-lives in Task settings, rankings in the Leaderboard disclosure. It uses monotonic real elapsed time
-from the first action, including dropped rendering time, rather than the physics accumulator's capped
-step count. Old personal bests remain visible as previous results but are not attributed to a player.
-The changed phone task is revision 2, so the old fixed-socket time cannot compete with it.
+`score-core.js` must separate task revisions and small/full mode. Use monotonic real elapsed time,
+including dropped rendering time, rather than the physics accumulator's capped step count.
+Never attribute old unnamed personal bests to a player; fixed-socket times cannot compete with the phone task.
 
 `charging-core.js` adds the household cable task: a two-pin wall charger must seat and be released,
 then one gripper holds a raised Samsung Galaxy-style phone while the other inserts USB-C. The cable
@@ -270,14 +270,13 @@ of simultaneous opposing grips during insertion is required; a pre-connected or 
 phone cannot pass. The phone's hollow socket is a frame on its free rigid body. Sleeve contacts and
 equal-and-opposite insertion reactions affect both hands; no phone or connector is snapped/locked.
 A simpler fixed-socket exercise remains `connector`. Content and hints stay in `_data/tag_tasks.yml`.
-The phone screen, frame and rear cameras have separate materials, and a charging indicator follows
-its physical pose. The wall fixture represents a simulated outlet, not electrical circuit physics.
+The wall fixture represents a simulated outlet, not electrical circuit physics.
 
 The household cable has 65 nodes, stretch, vector-curvature XPBD bending, table/prop/self contact,
 friction and two moving rigid endpoints. Its flexural stiffness is a representative model parameter,
 not a calibrated cable measurement. Rendering uses a parallel-transport tube frame, smooth centreline
 interpolation and tapered strain relief. Deformable GPU buffers rebuild when topology changes (e.g.
-65-node charging cable → 33-node practice cable; single towel → full pile). Small cylinder samples
+65-node charging cable → 33-node practice cable; rectangular cloth → cut-pattern shirt). Small cylinder samples
 must use radius no larger than their actual cylinder radius, including 2 mm charger pins.
 
 `controller-link.js` implements bounded COBS + CRC TP/1 frames; `app-serial.js` attaches Web Serial or a

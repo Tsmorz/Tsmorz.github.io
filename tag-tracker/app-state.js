@@ -27,7 +27,7 @@ const S = {
   quality: store.get('quality', 'precise'),
   res: store.get('res', '1280x720'),
   camId: store.get('camId', ''),
-  mode: 'track', tab: 'track',
+  mode: 'track', tab: 'tasks',
   worker: null, ready: false, familyCount: 587,
   // the running cameras (see "cameras" below); the first is camera 1, whose frame the rig and the plot use
   cams: [], running: false, demo: null, firstKey: null, calibCam: 0, calibFor: '',

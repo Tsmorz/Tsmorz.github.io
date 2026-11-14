@@ -27,6 +27,12 @@ module.exports = function ({ check, near }) {
   const clocks=[60,144,300].map((hz)=>{const w=P.world();for(let i=0;i<hz*2;i++)w.step(1/hz);return w.time;});
   check(clocks.every(t=>Math.abs(t-2)<P.H), 'fixed-step accumulation keeps physics time independent of 60, 144 and 300 Hz rendering');
   check(P.shapeDistance([0,0,.03],T.geometry('bowl')) > .015 && P.shapeDistance([.084,0,.03],T.geometry('bowl')) < 0, 'the wide bowl is hollow, with a solid rim and bottom');
+  const bowlMesh = GL.compoundMeshes(T.geometry('bowl'));
+  check(bowlMesh.length === 1 && bowlMesh[0].mesh.pos.length > 20000 && [...bowlMesh[0].mesh.nrm].every(Number.isFinite), 'the bowl has one continuous smooth ceramic shell instead of visible collision segments');
+  for (const z of [.018,.03,.043]) {
+    const r = .082 + (z-.0285)*.016/.041;
+    check(P.shapeDistance([r,0,z],T.geometry('bowl')) < 0 && P.shapeDistance([r-.015,0,z],T.geometry('bowl')) > .008, 'the flared bowl has a solid wall and hollow interior at '+z+' m');
+  }
   let g = create('bowl'), W = g.world;
   put(W,g.byKey.get('ball'),[.04,-.17,.03]); finish(g);
   check(g.complete && g.stars === 3, 'a ball released inside a physically settled bowl completes the easy level');
@@ -81,28 +87,31 @@ module.exports = function ({ check, near }) {
   ch(1);run(W,80);
   check(took && high>.06 && stretch<1.15 && cloth.pins.size===0 && cloth.nodes.every((n)=>n.p[2]>-.002), `a cloth patch can be pinched, lifted and released; stretch stays bounded (${stretch.toFixed(3)}×) and the table stays solid`);
   check(!Cloth.folded(cloth).x && !Cloth.folded(cloth).y, 'an unfolded towel does not count as folded');
-  W.reset(); let x=-.1; z=.11;
-  const foldingHands=(opening)=>W.setRobot({hands:[1,-1].map(side=>({side,pose:{R:I,t:[x,side*.12,z]},opening}))});
+  W.reset(); z=.13;
+  const foldingHands=(opening)=>W.setRobot({hands:[1,-1].map(side=>({side,pose:{R:I,t:[-.1,side*.12,z]},opening}))});
   foldingHands(1);run(W,25);foldingHands(0);run(W,45);
-  for(let i=0;i<=160;i++){const t=i/160;x=-.1+.2*t;z=.11+.065*Math.sin(Math.PI*t);foldingHands(0);W.step(1/60);}
-  foldingHands(1);run(W,120);
-  check(Cloth.folded(cloth).x && Cloth.folded(cloth).compact && cloth.touched.size===2, 'two physical grippers can carry an edge over and leave a released half-folded towel');
-  const foldedNodes=cloth.nodes.map(n=>n.p.slice());
-  g=create('laundry');
-  for(let j=0;j<g.world.cloths.length;j++){
-    const c=g.world.cloths[j];c.touched=new Set([1,-1]);
-    c.nodes.forEach((n,i)=>{n.p=C.add(foldedNodes[i],[0,-.22,.006*j]);n.v=[0,0,0];});
+  const foldPins=[1,-1].map(side=>({side,pin:cloth.pins.get(String(side))}));let foldedHands=[];
+  check(foldPins.every(p=>p.pin),'both towel corners can be pinched before folding');
+  if(foldPins.every(p=>p.pin))for(let i=0;i<=160;i++){
+    const t=i/160,rot=R.Ry(-Math.PI*t);
+    foldedHands=foldPins.map(({side,pin})=>({side,pose:{R:rot,t:C.sub([-.1+.2*t,side*.12,.0025+.16*Math.sin(Math.PI*t/2)],C.mulv(rot,pin.local))},opening:0}));W.setRobot({hands:foldedHands});W.step(1/60);
   }
-  finish(g,90);
-  check(g.complete && g.steps.every(Boolean), 'three genuinely folded towels, released in the stack, complete the laundry level');
-
+  W.setRobot({hands:foldedHands.map(h=>({...h,opening:1}))});run(W,150);
+  check(Cloth.folded(cloth).x && Cloth.folded(cloth).compact && cloth.touched.size===2, 'two physical grippers turn their finite fabric patches through a towel fold and release: '+JSON.stringify(Cloth.folded(cloth)));
+  g=create('laundry');
+  const shirt=g.world.cloths[0];shirt.touched=new Set([1,-1]);
+  shirt.nodes.forEach((n,i)=>{const p=shirt.material[i],sleeve=Math.abs(p[1])>shirt.bodySpan/2,y=sleeve?Math.sign(p[1])*(shirt.bodySpan-Math.abs(p[1])):p[1];n.p=[Math.abs(p[0])-.055,y,.0025+(sleeve?.006:0)+(p[0]<0?.006:0)];n.v=[0,0,0];});
+  const cuff=shirt.nodes[shirt.landmarks.cuffs[0]],savedCuff=cuff.p.slice();cuff.p[1]=.24;T.update(g,1,true);
+  check(!g.complete,'folding only the body cannot bypass an extended shirt sleeve');cuff.p=savedCuff;
+  T.update(g,1,true);check(g.complete, 'a released, aligned shirt with both sleeves and its body folded passes the garment objective');
   W.reset();const N=cloth.N;
   for(let j=0;j<N;j++)for(let i=0;i<N;i++)cloth.nodes[j*N+i].p=[Math.abs((i/(N-1)-.5)*.2), (j/(N-1)-.5)*.24, .005+(i<N/2?.005:0)];
   check(Cloth.folded(cloth).x && !Cloth.folded(cloth).y && Cloth.folded(cloth).compact, 'aligned opposite edges detect a half fold');
   const mesh=GL.clothMesh(cloth);check([...mesh.pos,...mesh.nrm].every(Number.isFinite) && mesh.idx.length===(N-1)**2*6, 'the cloth surface has finite normals and two triangles per cell');
   W.reset();check(cloth.pins.size===0 && cloth.touched.size===0 && near(cloth.nodes[0].p,[-.1,-.12,Cloth.radius],1e-12), 'restart restores cloth, releases patches and clears hand history');
   g=create('laundry');const towel=g.world.cloths[0];for(const n of towel.nodes)n.p=[.1,-.22,.01];towel.touched=new Set([1,-1]);T.update(g,1,true);
-  check(!g.steps[0], 'a crumpled point cannot pass the laundry task as a folded towel');
+  check(!g.steps[0], 'a crumpled point cannot pass as a folded shirt');
+  check(!T.progress({laundry:{stars:3,time:10}},levels).laundry,'old towel results do not seed the revised shirt task');
   const p = T.progress({bowl:{stars:3,time:40},laundry:{stars:99,time:-1},other:{stars:1,time:1}},levels);
   check(Object.keys(p).join() === 'bowl' && T.best(p.bowl,{stars:2,elapsed:60}).time===40 && T.best(p.bowl,{stars:2,elapsed:60}).stars===3, 'saved progress validates input and preserves the best time and stars independently');
   // Head camera follows the body, keeps an orthonormal basis, and projects what the robot looks towards at centre.
@@ -110,6 +119,11 @@ module.exports = function ({ check, near }) {
     const chest={R:C.rodrigues([.2,-.1,.8]),t:[.4,-.2,1]}, cam=T.headCamera(chest,model,angle,800,600), centre=cam.project(C.add(cam.eye,cam.fwd));
     const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
     check(near(centre.slice(0,2),[400,300],1e-8) && near([C.norm(cam.right),C.norm(cam.up),C.norm(cam.fwd)],[1,1,1],1e-10) && Math.abs(dot(cam.right,cam.up))<1e-10 && cam.project(C.sub(cam.eye,cam.fwd))===null, `robot-eye camera at ${angle}° is attached, orthonormal and rejects points behind it`);
+  }
+  for (const [w,h] of [[1000,400],[390,500]]) {
+    const cam=T.headCamera({R:I,t:[0,0,0]},model,-40,w,h),at=(x,y)=>C.add(cam.eye,C.add(cam.fwd,C.add(cam.right.map(v=>v*x),cam.up.map(v=>v*y))));
+    const sides=[cam.project(at(-1,0)),cam.project(at(1,0))],vertical=[cam.project(at(0,-Math.tan(Math.PI/6))),cam.project(at(0,Math.tan(Math.PI/6)))];
+    check(sides.every(p=>p[0]>=-1e-8&&p[0]<=w+1e-8)&&vertical.every(p=>p[1]>=-1e-8&&p[1]<=h+1e-8),'robot eyes show at least 90 degrees across and 60 vertically at '+w+' × '+h);
   }
   const s=C.clampSettings({robot:{props:'arcade',level:'laundry',view:'eyes',headTilt:-200}});
   check(s.robot.props==='arcade' && s.robot.level==='laundry' && s.robot.view==='eyes' && s.robot.headTilt===-80 && C.clampSettings({robot:{headTilt:NaN}}).robot.headTilt===-40, 'campaign, camera and bounded tilt survive settings validation');

@@ -909,164 +909,106 @@ levels:
         text: Both connections are seated. You connected USB-C while holding the phone with the other
           gripper. You can set the phone down or try again.
 - id: laundry
-  name: Fold the laundry pile
+  revision: 2
+  name: Fold a long-sleeve shirt
   hands: 2
   skill: Deformable objects
-  brief: Take each towel from the pile, fold it in half, and place the three folded towels on the marked
-    stack.
-  hint: Use both hands on opposite corners of an edge. Lift that edge over the far edge, lower, release,
-    then stack. The whole edge must line up.
+  brief: Fold each long sleeve across the torso, then bring the hem up to the shoulders. Release the shirt on the folding pad.
+  hint: Fold one sleeve at a time. Keep the shoulders on the table, then use both grippers for the hem.
   par: 600
   objects: []
+  cloths:
+  - key: shirt
+    kind: shirt
+    label: Long-sleeve shirt
+    at: [-0.055, 0, 0]
+    width: 0.28
+    height: 0.5
+    body_span: 0.18
+    resolution: 17
+    iterations: 8
+    mass: 0.11
+    color: '#547fbc'
   goals:
   - type: fold
-    object: towel0
-    label: Towel 1 folded and stacked
-    at:
-    - 0.1
-    - -0.22
-    - 0.018
-    tolerance:
-    - 0.07
-    - 0.07
-    - 0.045
-    destination: the towel stack
-  - type: fold
-    object: towel1
-    label: Towel 2 folded and stacked
-    at:
-    - 0.1
-    - -0.22
-    - 0.018
-    tolerance:
-    - 0.07
-    - 0.07
-    - 0.045
-    destination: the towel stack
-  - type: fold
-    object: towel2
-    label: Towel 3 folded and stacked
-    at:
-    - 0.1
-    - -0.22
-    - 0.018
-    tolerance:
-    - 0.07
-    - 0.07
-    - 0.045
-    destination: the towel stack
-  cloths:
-  - key: towel0
-    label: Towel 1
-    at:
-    - -0.075
-    - 0.16
-    - 0.0
-    width: 0.2
-    height: 0.24
-    color: '#2a78d6'
-  - key: towel1
-    label: Towel 2
-    at:
-    - -0.075
-    - 0.16
-    - 0.008
-    width: 0.2
-    height: 0.24
-    color: '#168a73'
-  - key: towel2
-    label: Towel 3
-    at:
-    - -0.075
-    - 0.16
-    - 0.016
-    width: 0.2
-    height: 0.24
-    color: '#8574d6'
+    object: shirt
+    label: Both sleeves tucked in, body folded and released
+    at: [0.015, 0, 0.018]
+    tolerance: [0.045, 0.045, 0.04]
+    destination: the folding pad
   markers:
-  - at:
-    - 0.1
-    - -0.22
-    - 0.001
-    size:
-    - 0.16
-    - 0.28
-    label: Folded stack
+  - at: [0.015, 0, 0.001]
+    size: [0.18, 0.22]
+    label: Folded shirt
   guided:
-    keep:
-    - towel0
-    goal_count: 1
-    par: 420
-    goal_x: 0.015
-    name: Fold a towel
-    brief: Pinch two corners of the near edge. Fold that edge onto the opposite edge and release the towel
-      on the marked pad.
-    cloths:
-    - key: towel0
-      label: Towel 1
-      at:
-      - -0.075
-      - 0
-      - 0
-      width: 0.2
-      height: 0.24
-      color: '#2a78d6'
-      resolution: 13
-      iterations: 7
-      mass: 0.08
+    name: Fold a long-sleeve shirt
+    brief: Bring the left sleeve across the torso, then the right sleeve. Fold the hem up to the shoulders and release both grippers.
+    par: 600
     goals:
     - type: fold
-      object: towel0
-      label: Towel folded and released on the pad
-      at:
-      - -0.025
-      - 0
-      - 0.018
-      tolerance:
-      - 0.07
-      - 0.07
-      - 0.045
+      object: shirt
+      label: Both sleeves tucked in, body folded and released
+      at: [0.015, 0, 0.018]
+      tolerance: [0.07, 0.06, 0.045]
       destination: the folding pad
-    markers:
-    - at:
-      - -0.025
-      - 0
-      - 0.001
-      size:
-      - 0.16
-      - 0.28
-      label: Folding pad
   guide:
     plan:
-    - Pinch the two corners of the same edge, one with each gripper.
-    - Lift that edge and carry it across to the opposite edge. Keep the corners aligned.
-    - Lower and release both corners. In the small task, fold directly onto the marked pad; no extra carry
-      is needed.
+    - Pinch the left cuff. Lift it slightly and turn the wrist as you lay the sleeve across the torso. Release it.
+    - Repeat with the right cuff. Keep both sleeves inside the sides of the torso.
+    - Pinch the two hem corners, one with each gripper. Lift and fold the hem up to the shoulders, turning both wrists with the fabric.
+    - Lower, open both grippers and lift clear. The sleeves and body must stay folded on the pad.
     tips:
-    - Use both hands on opposite corners of an edge. Lift that edge over the far edge, lower, release,
-      then stack. The whole edge must line up.
-    - If the jaws close without gripping, open them and centre the prop between both pads before trying
-      again.
-    - Fabric weight and stretch pull back on the grippers. TacHammer pulses grow with simulated tension;
-      open the jaws to release a patch.
+    - A closed gripper holds a small patch of fabric, including its direction. Turn the wrist with the fold; fabric no longer swivels freely on a single point.
+    - Work just above the table so the rest of the shirt stays supported. Lift higher if a sleeve catches underneath.
+    - Click a gripper or press 1 / 2 to select it. Q/E raise/lower, J/K tilt forward/back, I/P tilt sideways and U/O turn the wrist. Press 3 to move both hem corners together.
+    - Open the jaws and regrip to change which part of the shirt you hold. A very hard pull can slip out of the pads.
     full_plan:
-    - Use both grippers to pinch two corners of one towel edge.
-    - Fold that edge across to the opposite edge, then lower and release both corners on the stack.
-    - Repeat for each towel in the pile.
+    - Fold the left sleeve across the torso, release, then repeat with the right sleeve.
+    - Take both hem corners, turn the wrists and fold the body up to the shoulders.
+    - Release the shirt inside the smaller target and let it settle.
     full_tips:
-    - Use both hands on opposite corners of an edge. Lift that edge over the far edge, lower, release,
-      then stack. The whole edge must line up.
+    - The full challenge uses a tighter placement tolerance. Both sleeves and the hem must stay folded after release.
+    labels:
+      left_cuff: Left cuff
+      right_cuff: Right cuff
+      hem: Hem corner
+    stages:
+      shirt_sleeve_release:
+        title: Release the tucked sleeve
+        text: Open the gripper holding this sleeve and lift clear. The sleeve should stay inside the torso before the next fold.
+      shirt_left:
+        title: Fold the left sleeve in
+        text: Pinch the left cuff, lift it just clear of the table and lay the long sleeve across the torso. Turn your wrist with the fabric, then release.
+      shirt_right:
+        title: Fold the right sleeve in
+        text: The left sleeve is tucked in. Fold the right cuff across the torso and release it, keeping both sleeves within the sides of the shirt.
+      shirt_hem:
+        title: Take both hem corners
+        text: Both sleeves are in. Pinch the two bottom corners of the torso, one with each gripper.
+      shirt_fold:
+        title: Bring the hem to the shoulders
+        text: Lift the hem and fold it up to the shoulder edge. Turn both wrists with the fabric and lower onto the pad.
+      shirt_release:
+        title: Release the folded shirt
+        text: Open both grippers and lift clear. Both sleeves and the body must remain folded and settle on the pad.
+navigation:
+  calibrate: Calibrate
+  tracking: Tracking
+  tasks: Tasks
 controls:
+  scene_label: >-
+    3D view: the robot the tags drive, or each tag's recent positions and orientations. Drag to orbit, scroll to zoom, arrow keys to orbit (in Robot eyes: up/down lift/lower the selected gripper, left/right move it sideways), 1/2/3 select left/right/both grippers, F to fit, R to reset the view, C to calibrate the robot, T to reset the table, M to turn its sound on or off. Drag a robot hand to move it across the view (Alt for the other way), scroll on it to open and close its gripper (Shift to tilt it), Space to open or close it.
   intro: AprilTags drive the grippers. You can also drag a gripper with the mouse. Scroll down on it to
     close, up to open; Space toggles the selected gripper.
-  keyboard: W/S forward/back, A/D sideways, Q/E lift/lower. Space opens/closes. J/K tilt and U/O roll
-    the wrist. Alt-drag changes the mouse movement plane. Hold Shift for 0.2 mm steps and fine wrist turns.
+  keyboard: Click a gripper to select it, or press 1 for left, 2 for right, 3 for both. W/S forward/back,
+    A/D sideways, Q/E lift/lower. In Robot eyes, ↑/↓ lift/lower and ←/→ move sideways. Space opens/closes.
+    J/K tilt forward/back, I/P tilt sideways and U/O roll the wrist. Alt-drag changes the mouse movement plane. Hold Shift for 0.2 mm steps and fine wrist turns.
   scoring: One star for finishing, one for the target time, one for no dropped props. Best results stay
     in this browser.
 camera:
   label: First person
-  help: Look through the robot’s head camera. Tilt with the slider or the up/down arrows while the view
-    has focus.
+  help: Look through the robot’s wide head camera. Tilt with the slider. With the view focused, ↑/↓ lift/lower
+    the selected gripper and ←/→ move it sideways.
 physics: Rigid contacts, friction-limited grasps, deformable XPBD fabric and an elastic cable run at 240
   Hz. Cable and fabric loads pull back on the grippers. These are physical approximations; connector forces
   are representative, not measured hardware calibration.
@@ -1261,3 +1203,14 @@ link:
   dropped: USB / radio drops
   drive_delay: accepted → I2S start
   missing: Controller stopped streaming. Check its power and connection.
+
+voice:
+  title: Voice commands
+  source: Microphone
+  auto: Automatic (controller, then computer)
+  computer: Computer microphone
+  help: Press Voice or V, speak a command, then pause or press again to stop. With a Bluetooth controller, hold its joystick button to talk and release to send. Audio is transcribed locally with Whisper.
+  commands: 'Try “Tasks”, “Tracking”, “Calibrate robot”, “Robot eyes”, “Outside view”, “Restart task”, “Next task”, “Fit view” or “Resume AprilTags”. Other speech becomes a note.'
+  transport: Controller audio uses the normal Bluetooth firmware. The separate USB / ESB teleoperation image has no microphone stream. Reconnect with Connect Bluetooth if an earlier connection did not grant the audio service.
+  stop: Stop listening
+  cancel: Cancel voice input

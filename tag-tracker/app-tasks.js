@@ -3,14 +3,14 @@
 const TASK_DATA=JSON.parse($('teleopData').textContent);
 const taskCatalog=()=>TASK_DATA.levels;
 const SCORE={rows:TaskScores.clean(store.get('task-scores',[])),player:TaskScores.player(store.get('task-player','Player 1'))};
-const TASK={saved:{},records:{guided:{},practice:{}},painted:'',hand:'1',stored:false,moved:false,guide:null};
+const TASK={saved:{},records:{guided:{},practice:{}},painted:'',hand:'1',trackingView:S.settings.show3d,stored:false,moved:false,guide:null};
 for(const mode of ['guided','practice'])try{
   const key=mode==='practice'?'tag-tracker-teleop':'tag-tracker-guided',raw=localStorage.getItem(key)||(mode==='guided'?localStorage.getItem('tag-tracker-story'):null);
   TASK.records[mode]=TaskCore.progress(JSON.parse(raw||'{}'),taskCatalog());
 }catch(_){/* storage unavailable */}
 TASK.saved=TASK.records[S.settings.robot.playMode];
 if(!taskCatalog().some(l=>l.id===S.settings.robot.level))S.settings.robot.level='bowl';
-const gameView=()=>S.settings.show3d==='robot'&&S.settings.robot.props==='arcade'&&!TASK.tools;
+const gameView=()=>S.settings.show3d==='robot'&&S.settings.robot.props==='arcade'&&S.tab==='tasks';
 const currentTask=()=>TaskCore.mission(taskCatalog().find(l=>l.id===S.settings.robot.level)||taskCatalog()[0],S.settings.robot.playMode);
 const taskTime=t=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0')}`;
 function taskLevel(id){
@@ -21,9 +21,9 @@ function taskLevel(id){
 }
 function paintTaskVisibility(){
   const robot=S.settings.show3d==='robot';
-  $('taskPanel').hidden=!robot||S.settings.robot.props!=='arcade';$('robotPlayControls').hidden=!robot;
-  document.body.classList.toggle('teleop-active',robot&&S.settings.robot.props==='arcade');document.body.classList.toggle('game-screen',gameView());
-  $('gameHUD').hidden=!gameView();$('backToGame').hidden=gameView()||!TASK.tools;
+  $('taskPanel').hidden=!gameView();$('robotPlayControls').hidden=!robot;
+  document.body.classList.toggle('teleop-active',gameView());document.body.classList.toggle('game-screen',gameView());
+  $('gameHUD').hidden=!gameView();
   if(!robot)$('taskLabels').replaceChildren();
   if(TASK.controlHomes){mountGameControls();paintGameHUD();paintGameCamera();}
 }
@@ -93,6 +93,11 @@ function paintTaskLabels(o,w,h){
   const el=$('taskLabels');if(!TB.game){if(el.childElementCount)el.replaceChildren();return;}
   const W=TB.world,labels=[];
   for(const b of W.bodies)if(b.label&&(TB.game.level.goals.some(r=>r.object===b.key)||(TB.game.level.objects||[]).some(s=>s.key===b.key&&s.show_label)))labels.push({p:C.add(W.poseOf(b).t,[0,0,b.kind==='cup'?.11:b.kind==='rack'?.15:b.kind==='bowl'?.08:.045]),text:b.label,active:TASK.guide&&TASK.guide.object===b.key});
+  for(const cloth of W.cloths)if(cloth.kind==='shirt'){
+    const state=TASK.guide?.state,names=TB.game.level.guide.labels;
+    const points=state==='shirt_left'?[[cloth.landmarks.cuffs[0],names.left_cuff]]:state==='shirt_right'?[[cloth.landmarks.cuffs[1],names.right_cuff]]:['shirt_hem','shirt_fold'].includes(state)?cloth.landmarks.hem.map(i=>[i,names.hem]):[];
+    for(const [i,text] of points)labels.push({p:C.add(cloth.nodes[i].p,C.mulv(W.table.R,[0,0,.018])),text,active:true});
+  }
   for(const r of markerList())labels.push({p:C.add(W.table.t,C.mulv(W.table.R,[r.at[0],r.at[1]-r.size[1]/2-.02,.004])),text:r.label,active:TASK.guide&&TASK.guide.at&&Math.hypot(r.at[0]-TASK.guide.at[0],r.at[1]-TASK.guide.at[1])<.025});
   el.innerHTML=labels.map(l=>{const p=o.project(l.p);return p&&p[0]>0&&p[0]<w&&p[1]>0&&p[1]<h?`<span class="task-label" data-active="${!!l.active}" style="left:${p[0].toFixed(1)}px;top:${p[1].toFixed(1)}px">${escapeHtml(l.text)}</span>`:'';}).join('');
 }
@@ -125,24 +130,12 @@ function playNudge(name,fine=false) {
   TASK.moved = true; plot.focus({preventScroll:true});
 }
 function playGrasp(open) { for (const a of chosenHands()) driveOf(a).open = open; TASK.moved = true; plot.focus({preventScroll:true}); }
-function playTurn(sign,fine=false) { for (const a of chosenHands()) { const d = driveOf(a); d.R = C.mul3(d.R, RCORE.Ry(sign * (fine?.002:Math.PI/36))); } TASK.moved = true; plot.focus({preventScroll:true}); }
+function playTurn(sign,fine=false,sideways=false) { for (const a of chosenHands()) { const d = driveOf(a); d.R = C.mul3(d.R, RCORE[sideways?'Rx':'Ry'](sign * (fine?.002:Math.PI/36))); } TASK.moved = true; plot.focus({preventScroll:true}); }
 function playRoll(sign,fine=false) { for (const a of chosenHands()) { const d = driveOf(a); d.R = C.mul3(d.R, C.rodrigues([0, 0, sign * (fine?.002:Math.PI/36)])); } TASK.moved = true; plot.focus({preventScroll:true}); }
 function selectPlayHand(hand) {
   TASK.hand = hand;
   document.querySelectorAll('[data-hand]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.hand === hand)));
 }
-$('playHands').onclick = (e) => { const b = e.target.closest('[data-hand]'); if (b) { selectPlayHand(b.dataset.hand); plot.focus({preventScroll:true}); } };
-$('playGrip').onclick = () => playGrasp(0); $('playRelease').onclick = () => playGrasp(1);
-// A held key repeats at a controlled rate. All ways to lose a pointer or focus stop it.
-let playRepeat = null;
-function stopPlayRepeat() { clearInterval(playRepeat); playRepeat = null; }
-for (const b of document.querySelectorAll('[data-nudge],[data-turn],[data-roll]')) {
-  const act = () => b.dataset.nudge ? playNudge(b.dataset.nudge) : b.dataset.roll ? playRoll(+b.dataset.roll) : playTurn(+b.dataset.turn);
-  b.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; e.preventDefault(); stopPlayRepeat(); act(); b.setPointerCapture(e.pointerId); playRepeat = setInterval(act, 100); });
-  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, stopPlayRepeat);
-  b.addEventListener('click', (e) => { if (e.detail === 0) act(); });
-}
-window.addEventListener('blur', stopPlayRepeat); document.addEventListener('visibilitychange', () => { if (document.hidden) stopPlayRepeat(); });
 function setHeadTilt(degrees) {
   S.settings.robot.headTilt = Math.min(25, Math.max(-80, degrees));
   $('gameTilt').value = S.settings.robot.headTilt; $('headTilt').value = S.settings.robot.headTilt; $('headTiltValue').textContent = `${Math.round(S.settings.robot.headTilt)}°`;
@@ -159,9 +152,12 @@ $('robotViewControl').onclick = (e) => { const b = e.target.closest('[data-robot
 setRobotView(S.settings.robot.view);
 plot.addEventListener('keydown', (e) => {
   if (S.settings.show3d !== 'robot' || e.ctrlKey || e.metaKey || e.altKey) return;
-  const name = { w: 'forward', s: 'back', a: 'left', d: 'right', q: 'up', e: 'down' }[e.key.toLowerCase()];
+  const arrows = S.settings.robot.view === 'eyes' ? { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' } : {};
+  const name = arrows[e.key] || { w: 'forward', s: 'back', a: 'left', d: 'right', q: 'up', e: 'down' }[e.key.toLowerCase()];
+  if (['1', '2', '3'].includes(e.key)) { e.preventDefault(); selectPlayHand({ 1: '1', 2: '-1', 3: 'both' }[e.key]); }
   if (name) { e.preventDefault(); playNudge(name,e.shiftKey); }
   else if (e.key.toLowerCase() === 'u' || e.key.toLowerCase() === 'o') { e.preventDefault(); playRoll(e.key.toLowerCase() === 'u' ? -1 : 1,e.shiftKey); }
+  else if (e.key.toLowerCase() === 'i' || e.key.toLowerCase() === 'p') { e.preventDefault(); playTurn(e.key.toLowerCase() === 'i' ? -1 : 1,e.shiftKey,true); }
   else if (e.key.toLowerCase() === 'j' || e.key.toLowerCase() === 'k') { e.preventDefault(); playTurn(e.key.toLowerCase() === 'j' ? -1 : 1,e.shiftKey); }
 });
 function paintCampaignMode(){document.querySelectorAll('[data-campaign-mode]').forEach(b=>b.setAttribute('aria-checked',String(b.dataset.campaignMode===S.settings.robot.playMode)));}
@@ -177,13 +173,12 @@ function paintGameHUD(){
   $('gameTitle').textContent=l.name;$('gameObjective').textContent=l.brief;
   $('guideTitle').textContent=format(text.title);$('guideText').textContent=format(text.text);
   $('guideGoals').innerHTML=l.goals.map((r,i)=>`<li data-done="${!!(g&&g.steps[i])}" data-active="${i===guide.index}">${escapeHtml(r.label)}</li>`).join('');
-  const planKey=l.id+S.settings.robot.playMode;if(TASK.planKey!==planKey){TASK.planKey=planKey;$('guidePlanList').innerHTML=(S.settings.robot.playMode==='practice'&&l.guide.full_plan||l.guide.plan).map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guideTipsList').innerHTML=(S.settings.robot.playMode==='practice'&&l.guide.full_tips||l.guide.tips).map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guidePlan').open=l.id==='sort';}
+  const planKey=l.id+S.settings.robot.playMode;if(TASK.planKey!==planKey){TASK.planKey=planKey;$('guidePlanList').innerHTML=(S.settings.robot.playMode==='practice'&&l.guide.full_plan||l.guide.plan).map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guideTipsList').innerHTML=(S.settings.robot.playMode==='practice'&&l.guide.full_tips||l.guide.tips).map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guidePlan').open=l.id==='sort'||l.id==='laundry';}
   $('gameNext').hidden=$('taskNext').hidden;$('gameTags').hidden=!TB.drive.size||!RB.cal;
 }
 $('gameNext').onclick=()=>$('taskNext').click();$('guideRestart').onclick=()=>$('tableResetBtn').click();$('gameTags').onclick=()=>$('tagsDriveBtn').click();
 $('gameSettingsBtn').onclick=()=>$('gameSettings').showModal();$('gameSettingsClose').onclick=()=>$('gameSettings').close();
-$('gameSetupBtn').onclick=()=>{$('gameSettings').close();TASK.tools=true;paintTaskVisibility();openSetup(0);};
-$('backToGame').onclick=()=>{TASK.tools=false;paintTaskVisibility();taskPlaced();};
+$('gameSetupBtn').onclick=()=>{$('gameSettings').close();setMode('track');openSetup(0);};
 $('gameEyes').onclick=()=>setRobotView(S.settings.robot.view==='eyes'?'orbit':'eyes');
 $('gameTilt').onchange=()=>saveSettings();$('gameTilt').oninput=()=>setHeadTilt(+$('gameTilt').value);
 function paintGameCamera(){$('gameEyes').textContent=S.settings.robot.view==='eyes'?TASK_DATA.ui.outside:TASK_DATA.ui.eyes;$('gameEyes').setAttribute('aria-pressed',String(S.settings.robot.view==='eyes'));$('gameTilt').value=S.settings.robot.headTilt;}
@@ -200,7 +195,7 @@ $('taskHaptics').checked=taskHapticSettings.enabled!==false;$('taskHapticStrengt
 $('taskHaptics').onchange=()=>{taskHapticSettings.enabled=$('taskHaptics').checked;store.set('task-haptics',taskHapticSettings);TASK_HAPTIC.reset();};
 $('taskHapticStrength').oninput=()=>{taskHapticSettings.strength=+$('taskHapticStrength').value;store.set('task-haptics',taskHapticSettings);};
 function sendTaskHaptics(W,sc,now){
-  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,strength:taskHapticSettings.strength,active:!document.hidden&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('gameSettings').open&&!$('setupDlg').open});
+  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,strength:taskHapticSettings.strength,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('gameSettings').open&&!$('setupDlg').open});
   if(now-taskHapticPaint<250)return;taskHapticPaint=now;
   const live=S.boards.filter(b=>!b.sim&&b.state==='live'),ready=live.filter(b=>b.act?.tachammerReady&&now-b.actT<500),last=ready.map(b=>b.hapticLast).filter(x=>x&&now-x.at<750),text=!taskHapticSettings.enabled?TASK_DATA.haptics.off:!live.length?TASK_DATA.haptics.disconnected:!ready.length?TASK_DATA.haptics.unavailable:last.length?TASK_DATA.haptics.sent:TASK_DATA.haptics.ready;
   $('taskHapticStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;

@@ -17,7 +17,7 @@ const TB = { world: null, game: null, sig: '', t: 0, n: 0, drive: new Map(), gra
 // The table's contacts as sound (sound.js), off until turned on (the speaker button, M, or "sound on"). It goes quiet
 // while the microphone listens for a voice command or note, and while the page is hidden.
 const SND = window.ContactSound ? ContactSound.create() : null;
-function duckSound() { if (SND) SND.set({ duck: document.hidden || !!V.rec || V.opening }); }
+function duckSound() { if (SND) SND.set({ duck: document.hidden || !!V.rec || !!V.boardTake || V.opening }); }
 function setSound(on) {
   S.settings.robot.sound = !!on; saveSettings();
   if (SND) SND.set({ on: !!on });
@@ -489,7 +489,7 @@ function tableFlat(face, seg, ball) {
   for (const cloth of W.cloths) for (let i = 0; i < cloth.triangles.length; i += 3) face(cloth.triangles.slice(i, i + 3).map((k) => cloth.nodes[k].p), cloth.color, 1);
 }
 $('robotProps').value = S.settings.robot.props;
-$('robotProps').onchange = () => { S.settings.robot.props = $('robotProps').value; saveSettings(); paintRobotBtns(); };
+$('robotProps').onchange = () => { S.settings.robot.props = $('robotProps').value; saveSettings(); if (S.settings.robot.props === 'arcade') setMode('tasks'); paintRobotBtns(); };
 $('robotForces').value = S.settings.robot.forces ? 'on' : 'off';
 $('robotForces').onchange = () => { S.settings.robot.forces = $('robotForces').value === 'on'; saveSettings(); };
 $('soundBtn').onclick = () => setSound(!S.settings.robot.sound);

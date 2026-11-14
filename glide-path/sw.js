@@ -4,7 +4,7 @@
 //   - everything else (OpenStreetMap, OpenTopoMap) is left to the browser: their tile policies don't allow
 //     offline storage, so offline the page switches to the shaded-terrain map drawn from the saved terrain.
 // Bump VERSION when the list of SHELL files changes.
-const VERSION = 'v8';
+const VERSION = 'v9';
 const SHELL = 'glide-shell-' + VERSION;
 const SAVED = 'glide-terrain-saved';     // written by the page's "Save this area"; only the page deletes from it
 const RUNTIME = 'glide-terrain-runtime'; // tiles fetched while browsing, capped

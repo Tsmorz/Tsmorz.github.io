@@ -26,7 +26,7 @@ To change what the site says, edit YAML, not HTML.
 | The "Have a look around" tiles under the home hero | `_data/home.yml` |
 | The Hardware design photos and text on /projects/ | `_data/hardware.yml` |
 | Tag tracker robot tasks, instructions and hints | `_data/tag_tasks.yml` |
-| Dyna-soar aircraft presets, branding, weather copy and landmarks | `_data/glide.yml` |
+| DynaSoar aircraft presets, branding, weather copy and landmarks | `_data/glide.yml` |
 | Haptography workspaces, collection guidance, signal controls and presets | `_data/haptography.yml` |
 | Recipes, and the Recipes nav dropdown | `_data/recipes.yml` |
 | Lessons on /controls/, /vision/ or /embedded/ | `_data/labs/controls.yml`, `vision.yml`, `embedded.yml` |
@@ -92,7 +92,7 @@ there.**
 | Working on | Guide |
 | --- | --- |
 | `/tag-tracker/` | `tag-tracker/AGENTS.md` |
-| `/glide-path/` (Dyna-soar) | `glide-path/AGENTS.md` |
+| `/glide-path/` (DynaSoar) | `glide-path/AGENTS.md` |
 | `/haptography/` | `haptography/AGENTS.md` |
 | `/controls/`, `/vision/`, `/embedded/` lab template and lessons | `.agents/guides/labs.md` |
 | `/controls/swingup/` | `.agents/guides/swingup.md` |

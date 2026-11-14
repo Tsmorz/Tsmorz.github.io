@@ -31,9 +31,9 @@
   assert(C.norm(C.sub(eye,expected))<1e-8,'the tilting robot head camera is retained');setRobotView('orbit');
   setCampaignMode('practice');await wait(250);assert(TB.game.level.objects.length===3&&$('guidePlanList').textContent.includes('C'),'the full three-block challenge and matching instructions remain');
   for(const l of TASK_DATA.levels){taskLevel(l.id);await wait(l.id==='laundry'?450:100);assert(TB.game.level.id===l.id&&TASK.guide&&$('guideTitle').textContent,'each full task loads with guidance');}
-  assert(TB.world.cloths.length===3,'the full laundry pile is preserved');
+  assert(TB.world.cloths.length===1,'the full challenge contains the long-sleeve shirt');
   setCampaignMode('guided');taskLevel('sort');await wait(300);assert(TB.game.level.objects.length===2&&!TB.game.complete,'switching back restores the small two-block exercise');
-  $('gameSettingsBtn').click();assert($('gameSettings').contains($('handControls')),'manual command bars stay in settings');$('gameSettingsClose').click();
+  $('gameSettingsBtn').click();assert(!$('handControls')&&!document.querySelector('[data-nudge]'),'the obsolete hand command bar is removed');$('gameSettingsClose').click();
   assert(document.documentElement.scrollWidth<=innerWidth+1,'the layout fits the viewport');
   return {passed:true,robotOnly:true,twoBlocksOneGripper:true,liveHints:true,headCamera:true,fullChallenges:true,viewport:[innerWidth,innerHeight]};
 })()

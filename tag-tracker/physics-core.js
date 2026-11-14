@@ -95,7 +95,7 @@
   const G0 = [0, 0, -9.81];
   // Friction. The table's (a rubber mat) is above the mug's radius over its height, so a push near its rim tips it over and
   // one at its foot slides it; the robot's metal is slippery; its pads are rubber.
-  const TABLE_MU = 0.7, ROBOT_MU = 0.15, PAD_MU = 0.9, SPIN_R = 0.002; // SPIN_R: the contact patch's radius, for spin friction
+  const TABLE_MU = 0.7, ROBOT_MU = 0.15, PAD_MU = 0.85, SPIN_R = 0.002; // SPIN_R: the contact patch's radius, for spin friction
   // The props (m, kg). Rolling resistance crr: the torque against rolling is crr × the contact force × rollR.
   const BALL = { r: 0.02, mass: 0.03, mu: 0.6, e: 0.5, crr: 0.03 };
   // A mug: walls from Ri to R, a floor `floor` thick, a lip rounded over the wall's thickness, the outer bottom edge
@@ -114,7 +114,7 @@
   // other axis); a sphere touching makes a patch `patch` across. It lets go when neither pad has held the prop for `free`
   // s, or when the pinch is `drop` from the pads. `beta`: how much of a drift it puts right each step.
   // The jaws take it once both pads are within `touch` of it (m, the two together).
-  const GRIP = { force: 15, k: 1000, minF: 0.3, mu: 0.8, patch: 0.003, touch: 0.0005, free: 0.05, drop: 0.01, beta: 0.2 };
+  const GRIP = { force: 15, k: 1000, minF: 0.3, mu: 0.75, patch: 0.003, touch: 0.0005, free: 0.025, drop: 0.008, beta: 0.2 };
   const JAW_SPEED = 0.25;
   // a prop never turns faster than this (rad/s): a guard against a solver blow-up, never reached in the tests
   const W_MAX = 60;

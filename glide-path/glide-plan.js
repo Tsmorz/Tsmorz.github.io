@@ -8,6 +8,7 @@
   const SPEC = {
     gr:  { metric: [1, 30, 0.5, ':1'], imperial: [1, 30, 0.5, ':1'], k: 1, def: 15 },
     va:  { metric: [5, 25, 0.5, 'm/s'], imperial: [10, 55, 1, 'mph'], k: G.MPH, def: 10 },
+    dsink: { metric: [0, 8, 0.1, 'm/s'], imperial: [0, 26, 0.5, 'ft/s'], k: G.FT, def: 2 },
     agl: { metric: [0, 300, 5, 'm'], imperial: [0, 1000, 10, 'ft'], k: G.FT, def: 120 },
     ws:  { metric: [0, 40, 0.5, 'm/s'], imperial: [0, 90, 1, 'mph'], k: G.MPH, def: 0 },
     vis: { metric: [100, 3000, 50, 'm'], imperial: [300, 10000, 100, 'ft'], k: G.FT, def: 600 },
@@ -27,7 +28,7 @@
   function parameters(input = {}, strict = false) {
     const out = {};
     for (const [k, s] of Object.entries(SPEC)) {
-      const [lo, hi] = bounds(k), v = input[k];
+      const [lo, hi] = bounds(k), v = k === 'dsink' && input[k] === undefined && strict ? 0 : input[k];
       if (strict && (!Number.isFinite(v) || v < lo || v > hi)) throw new Error(`Invalid flight parameter: ${k}.`);
       out[k] = Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : s.def;
     }
@@ -45,7 +46,7 @@
     return { lat: p.lat, lon };
   }
   function validatePlan(data) {
-    if (!data || data.version !== 1) throw new Error('This is not a supported Dyna-soar plan.');
+    if (!data || data.version !== 1) throw new Error('This is not a supported DynaSoar plan.');
     const out = { version: 1, launch: coordinates(data.launch), params: parameters(data.params, true),
       target: data.target ? coordinates(data.target) : null, units: data.units === 'imperial' ? 'imperial' : 'metric',windModel:Wind.inputs(data.windModel||{enabled:false}) };
     return out;
@@ -59,7 +60,7 @@
   const close = (a, b) => typeof a === 'boolean' ? a === b : Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= 1e-8 * Math.max(1, Math.abs(a), Math.abs(b));
   function differences(a, b) {
     if (!a || !b) return [];
-    return Object.keys(parameters()).filter(k => !close(a[k], b[k]));
+    return Object.keys(parameters()).filter(k => !close(k==='dsink'?(a[k]??0):a[k], k==='dsink'?(b[k]??0):b[k]));
   }
   function samePlan(a, b) {
     if (!a || !b || differences(a.params, b.params).length || JSON.stringify(Wind.inputs(a.windModel||{enabled:false}))!==JSON.stringify(Wind.inputs(b.windModel||{enabled:false}))) return false;
@@ -68,7 +69,9 @@
   }
   function aircraft(value) {
     if (!value || !['gr', 'va', 'vis'].every(k => Number.isFinite(value[k]) && value[k] >= bounds(k)[0] && value[k] <= bounds(k)[1])) throw new Error('Invalid aircraft settings.');
-    return { gr: value.gr, va: value.va, vis: value.vis };
+    const dsink=value.dsink??0;
+    if(!Number.isFinite(dsink)||dsink<bounds('dsink')[0]||dsink>bounds('dsink')[1])throw new Error('Invalid descent sink.');
+    return { gr: value.gr, va: value.va, vis: value.vis, dsink };
   }
   function routeStats(cells, alt, terr, width, cell, midAlt) {
     let distance = 0, clearance = Infinity;

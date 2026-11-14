@@ -11,7 +11,7 @@ module.exports=function({check,near}){
     const before=JSON.stringify(raw),l=T.mission(raw,'guided'),g=T.create(l,table,G);
     check(JSON.stringify(raw)===before&&T.mission(raw,'practice')===raw,'small '+l.id+' does not change the full challenge');
     check(!l.travel&&!l.story&&l.guide.plan.length>=3&&l.guide.tips.length&&l.goals.every(r=>g.byKey.has(r.object)&&(!r.target||g.byKey.has(r.target))),l.id+' has a stationary task, valid objectives and useful instructions');
-    const hint=T.guidance(g);check(data.guidance.stages[hint.state]&&g.byKey.has(hint.object),l.id+' begins with a valid contextual hint');
+    const hint=T.guidance(g);check((l.guide.stages?.[hint.state]||data.guidance.stages[hint.state])&&g.byKey.has(hint.object),l.id+' begins with a valid contextual hint');
   }
   const homeScene=T.create(T.mission(data.levels.find(l=>l.id==='sort'),'guided'),{R:I,t:[.43,0,-.225],size:[.5,.9],thick:.03},G),homeWorld=homeScene.world,starts=homeWorld.bodies.map(b=>homeWorld.poseOf(b).t.slice());
   homeWorld.setRobot({hands:[1,-1].map(side=>({side,pose:{R:R.fk(R.model(),side,R.HOME).R,t:R.fk(R.model(),side,R.HOME).wrist},opening:1}))});
@@ -46,8 +46,8 @@ module.exports=function({check,near}){
   check(T.guidance(tray).state==='dual','one held tray rim prompts using the second gripper');
   const handoff=create('handoff');handoff.world.hands[1]={grip:{body:handoff.byKey.get('ball')}};handoff.heldBy.set('ball',new Set([1]));
   check(T.guidance(handoff).state==='handoff','the handoff task explains transferring to the other gripper');
-  const cloth=create('laundry'),towel=cloth.byKey.get('towel0');towel.pins.set(1,{i:0});
-  check(T.guidance(cloth).state==='fold_second','one pinned cloth corner prompts pinching the other corner');
+  const cloth=create('laundry'),towel=cloth.byKey.get('shirt');towel.pins.set(1,{i:0});
+  check(T.guidance(cloth).state==='shirt_left','a shirt starts by folding a sleeve rather than folding the body first');
   const meshes=GL.actorMeshes(R.model());check([...meshes.amr,...meshes.wheel].every(p=>p.mesh.pos.every(Number.isFinite)),'robot AMR meshes remain available');
   const html=fs.readFileSync(root+'/tag-tracker/index.html','utf8');
   check(!/playActor|grandmaLine|character-core|travel-core|rewardToken/.test(html),'the page loads no boy, story, home rewards or travel scripts');

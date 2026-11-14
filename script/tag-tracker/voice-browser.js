@@ -1,0 +1,60 @@
+// Actual page handlers with mock BLE audio/status notifications and a deterministic speech worker.
+(async()=>{
+  const wait=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,msg)=>{if(!ok)throw Error(msg);};
+  const until=async(fn,msg)=>{const start=performance.now();while(!fn()&&performance.now()-start<4000)await wait(20);assert(fn(),msg);};
+  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');
+  const originalWorker=window.Worker,transcripts=[],jobs=[];let workerCount=0;
+  window.Worker=class{constructor(url,options){if(!String(url).includes('speech-worker'))return new originalWorker(url,options);workerCount++;}postMessage(d){if(d.type==='load')queueMicrotask(()=>this.onmessage?.({data:{type:'ready'}}));else{jobs.push(d.audio.slice());const text=transcripts.shift()||'';queueMicrotask(()=>this.onmessage?.({data:{type:'result',id:d.id,text}}));}}terminate(){}};
+  const bytes=v=>new Uint8Array(v.buffer,v.byteOffset,v.byteLength),info=C.encodeBoardInfo(0xface,208,.07,.000244);info.setUint16(13,16000,true);
+  const writes=[];let blockStart=null;
+  const characteristic=(value=null)=>({listeners:[],readValue:async()=>value,addEventListener(_,fn){this.listeners.push(fn);},startNotifications:async()=>{},notify(view){for(const fn of this.listeners)fn({target:{value:view}});}});
+  const imu=characteristic(),act=characteristic(),audio=characteristic(),command=characteristic();
+  command.writeValueWithResponse=async data=>{writes.push([...data]);if(data[1]===2&&blockStart)await blockStart;};
+  let granted=true,pickerOptions=null;
+  const server={getPrimaryService:async uuid=>{
+    if(uuid===C.IMU.service)return {getCharacteristic:async id=>id===C.IMU.info?characteristic(info):imu};
+    if(uuid===C.ACT.service)return {getCharacteristic:async()=>act};
+    if(uuid===ControllerVoice.AUDIO.service&&granted)return {getCharacteristic:async id=>id===ControllerVoice.AUDIO.command?command:audio};
+    throw Error('Unsupported service');
+  }};
+  const dev={name:'nrf-controller-FACE',id:'voice-fake',listeners:[],addEventListener(_,fn){this.listeners.push(fn);},gatt:{connected:false,connect:async()=>{dev.gatt.connected=true;return server;},disconnect(){this.connected=false;for(const fn of dev.listeners)fn();}}};
+  if(HAS_BT){Object.defineProperty(navigator,'bluetooth',{configurable:true,value:{requestDevice:async opts=>{pickerOptions=opts;granted=opts.optionalServices.includes(ControllerVoice.AUDIO.service);return dev;}}});await addBoard();}else await connectDevice(dev);
+  await until(()=>S.boards.some(b=>b.id==='FACE'&&b.audioCommand),'the real connection discovers the optional controller audio service');
+  const b=S.boards.find(b=>b.id==='FACE');assert(!HAS_BT||pickerOptions.optionalServices.includes(ControllerVoice.AUDIO.service),'the Bluetooth picker grants the audio service');
+  const status=keys=>act.notify(C.encodeActuatorStatus({keys,railOn:true,tachammerReady:true}));status(0);
+  const feed=(count=30,silent=false,id=V.boardTake.track.id)=>{for(let i=0;i<count;i++){const v=new DataView(new ArrayBuffer(170));v.setUint8(0,1);v.setUint16(1,id,true);v.setUint32(3,i*320,true);v.setInt16(7,silent?0:1800,true);v.setUint8(9,0);new Uint8Array(v.buffer).fill(silent?0:0x11,10);audio.notify(v);}};
+  transcripts.push('Robot eyes.');status(16);await until(()=>V.boardTake&&!V.opening,'the joystick press starts controller audio');
+  assert($('voiceBtn').getAttribute('aria-pressed')==='true'&&getComputedStyle($('voice')).display!=='none','listening feedback remains visible in Tasks');
+  feed(2,false,(V.boardTake.track.id+1)&65535);assert(V.boardTake.track.next===0,'unsolicited audio from another stream is ignored');feed();
+  const other={id:'BEEF',name:'other',state:'live',voicePressed:true};onBoardVoiceKeys(other,0);assert(V.boardTake?.board===b,'another controller cannot end the active utterance');
+  status(0);await until(()=>!V.processing&&!V.boardTake,'release stops and transcribes controller audio');
+  assert(jobs.length===1&&jobs[0].length===9600&&S.tab==='tasks'&&S.settings.robot.view==='eyes','decoded controller speech reaches the command handler without leaving Tasks');
+  assert(writes.filter(x=>x[1]===2).length===1&&writes.filter(x=>x[1]===3).length===1,'one press/release sends exactly one stream start and stop');
+  status(0);assert(jobs.length===1,'repeated button status cannot repeat a command');
+  transcripts.push('Outside view.');$('voiceBtn').click();await until(()=>V.boardTake&&!V.opening,'the on-page button automatically selects the controller microphone');feed();$('voiceStop').click();await until(()=>!V.processing&&!V.boardTake,'on-page Stop completes controller input');
+  assert(S.settings.robot.view==='orbit'&&S.tab==='tasks'&&workerCount===1,'controller button and on-page button share one local speech worker and task command path');
+  let release;blockStart=new Promise(r=>release=r);status(16);await until(()=>V.opening&&V.boardTake,'start is pending');status(0);release();blockStart=null;
+  await until(()=>!V.opening&&!V.boardTake&&!V.processing,'a release during startup stops as soon as the write finishes');assert(jobs.length===2,'a very short button press cannot invent a command');
+  $('voiceBtn').click();await until(()=>V.boardTake&&!V.opening,'another take starts');feed(30,true);$('voiceStop').click();await until(()=>!V.processing&&!V.boardTake,'silent take stops');assert(jobs.length===2,'silence is dropped before reaching Whisper');
+  blockStart=new Promise(r=>release=r);$('voiceBtn').click();await until(()=>V.boardTake?.startWrite&&V.opening,'cancellation test has a pending start');
+  const startsBefore=writes.filter(x=>x[1]===2).length,stopsBefore=writes.filter(x=>x[1]===3).length;
+  voiceCancel();const closing=b.audioClosing;$('voiceBtn').click();await until(()=>V.boardTake&&V.opening,'a replacement waits for the previous stop');voiceCancel();
+  assert(b.audioClosing===closing,'cancelling a take before its start preserves the earlier pending stop');release();blockStart=null;await until(()=>!b.audioClosing,'cancelled stream stop completes');await wait(20);
+  assert(!V.opening&&!V.boardTake&&jobs.length===2&&writes.filter(x=>x[1]===2).length===startsBefore&&writes.filter(x=>x[1]===3).length===stopsBefore+1,'cancelled startup cannot reopen the mic, send a duplicate stop or transcribe');
+  $('voiceBtn').click();await until(()=>V.boardTake&&!V.opening,'disconnect test starts');feed();b.closing=true;dev.gatt.disconnect();await wait(80);
+  assert(!V.boardTake&&!V.opening&&jobs.length===2,'disconnect cancels partial speech without executing it');
+  // The computer microphone uses the same worker and actions when explicitly selected.
+  const recorder=window.MediaRecorder,media=navigator.mediaDevices.getUserMedia,oldListen=listen,oldMono=toMono16k;let stopped=0;
+  window.MediaRecorder=class{constructor(){this.state='inactive';this.mimeType='audio/webm';}start(){this.state='recording';}stop(){this.state='inactive';this.ondataavailable?.({data:new Blob(['mock microphone'])});queueMicrotask(()=>this.onstop?.());}};
+  navigator.mediaDevices.getUserMedia=async()=>({getTracks:()=>[{stop(){stopped++;}}]});listen=()=>{};toMono16k=async()=>new Float32Array(9600).fill(.1);
+  store.set('voice-source','computer');paintVoiceSources();transcripts.push('Restart task.');TASK.moved=true;
+  plot.focus();plot.dispatchEvent(new KeyboardEvent('keydown',{key:'v',bubbles:true,cancelable:true}));await until(()=>V.rec,'V starts the computer microphone');$('voiceBtn').click();await until(()=>!V.rec&&!V.processing,'the computer microphone transcribes');
+  assert(jobs.length===3&&stopped===1&&S.tab==='tasks'&&!TASK.moved,'computer-button speech runs Restart task and preserves Tasks');
+  let resolveMic;navigator.mediaDevices.getUserMedia=()=>new Promise(r=>resolveMic=r);$('voiceBtn').click();await until(()=>V.opening,'microphone permission is pending');$('voiceStop').click();resolveMic({getTracks:()=>[{stop(){stopped++;}}]});
+  await until(()=>!V.opening,'stopping before microphone permission returns releases the eventual stream');assert(stopped===2&&jobs.length===3,'a late microphone permission response cannot start an abandoned take');
+  navigator.mediaDevices.getUserMedia=async()=>({getTracks:()=>[{stop(){stopped++;}}]});transcripts.push('Robot eyes.');$('voiceBtn').click();await until(()=>V.rec,'final computer-microphone command starts');$('voiceStop').click();await until(()=>!V.rec&&!V.processing,'final command completes');
+  window.MediaRecorder=recorder;navigator.mediaDevices.getUserMedia=media;listen=oldListen;toMono16k=oldMono;
+  assert(S.tab==='tasks'&&S.settings.robot.view==='eyes'&&!$('voice').hidden&&document.documentElement.scrollWidth<=innerWidth+1,'command feedback and the task layout fit the viewport');
+  window.Worker=originalWorker;
+  return {passed:true,controllerMicrophone:true,joystickPushToTalk:true,pageButton:true,computerMicrophone:true,startReleaseRace:true,disconnect:true,commandsInTasks:true,viewport:[innerWidth,innerHeight]};
+})()

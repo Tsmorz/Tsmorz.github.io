@@ -1,8 +1,8 @@
 description: Explore glide reach and candidate dynamic-soaring ridges with local model wind, terrain profiles and saved offline areas.
 aircraft:
-  - { id: foam, name: Small foam glider, gr: 8, va: 8, vis: 400 }
-  - { id: two, name: 2 m sailplane, gr: 15, va: 10, vis: 600 }
-  - { id: scale, name: Large scale glider, gr: 25, va: 14, vis: 1000 }
+  - { id: foam, name: Small foam glider, gr: 8, va: 8, vis: 400, dsink: 2 }
+  - { id: two, name: 2 m sailplane, gr: 15, va: 10, vis: 600, dsink: 2 }
+  - { id: scale, name: Large scale glider, gr: 25, va: 14, vis: 1000, dsink: 2 }
 destination:
   pending: Updating destination
   potential: Potential landing ground
@@ -17,6 +17,7 @@ destination:
 controls:
   - { id: gr, name: Glide ratio }
   - { id: va, name: Best-glide airspeed }
+  - { id: dsink, name: Maximum descent sink (0 = best glide only) }
   - { id: agl, name: Height above launch ground }
   - { id: ws, name: Wind speed at 10 m }
   - { id: vis, name: Sight distance }
@@ -33,7 +34,7 @@ calculation:
   partial: Terrain incomplete
   missing: Terrain unavailable
   timeout: Terrain request timed out. Retry terrain when the connection improves.
-name: Dyna-soar
+name: DynaSoar
 tagline: Glides, ridges and the wind.
 landmark:
   name: Dinosaur Park, Rapid City
@@ -95,3 +96,25 @@ orientation:
   crest: Crest
   direction: Wind →
   guide: The strip under the map is a cross-section. Changing its heading turns the map too. Tap the map to inspect a destination, then use Fly it to follow the glide in 3D. Set speed and direction under Wind. Use the map’s turn arrows to rotate, or North up to reset.
+
+search:
+  label: Find a city
+  placeholder: City or postal code
+  button: Search
+  loading: Searching cities…
+  empty: No matching city. Try a nearby city or add the country.
+  failed: City search unavailable. Try again online, or enter coordinates.
+  short: Enter at least two characters.
+  selected: Map moved. Choose Move launch to set a launch here.
+  attribution: City search · Open-Meteo / GeoNames
+trajectory:
+  routeKey: Selected route and approach
+  sinkNote: Effective sink ceiling (at least natural sink, at most 80% of airspeed) ·
+  arrival: Planned approach AGL
+  unavailable: Unavailable
+  blocked: The sampled approach cannot satisfy terrain, wind and clearance constraints. Try another destination or more launch height.
+  method: Steady glides resolve true airspeed into horizontal speed and sink, with wind sampled along the track. A selected destination can use extra drag up to your descent sink limit (initially an assumed 2 m/s) to approach the terrain clearance height; 0 keeps best glide only. The solver preserves clearance over intervening ridges. This is a quasi-steady track model, without aircraft drag-polar validation, stall, acceleration, turn-radius or flare dynamics. Curved reach remains an optimistic height envelope with instantaneous grid turns. Terrain wind enforces mass conservation but does not resolve turbulence or separated flow.
+  approach: Approach reaches the selected terrain clearance. No touchdown or flare is modelled.
+  limited: Excess height remains at this destination within the descent limit and terrain constraints.
+  disabled: Best-glide arrival. Set a measured descent sink limit under Aircraft to plan a steeper approach.
+  legend: Solid path in the air; matching trace on the ground.

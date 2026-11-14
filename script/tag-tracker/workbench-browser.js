@@ -1,0 +1,61 @@
+// task shot -- /tag-tracker/ --eval-file script/tag-tracker/workbench-browser.js (also --phone)
+(async () => {
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const assert = (ok, message) => { if (!ok) throw new Error(message); };
+  const visible = el => !!el && el.getBoundingClientRect().height > 0 && getComputedStyle(el).display !== 'none';
+  const key = (el, value, shiftKey = false) => el.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true }));
+  const tabs = [...document.querySelectorAll('.tabs [role=tab]')];
+  assert(tabs.map(b => b.textContent.trim()).join(',') === 'Calibrate,Tracking,Tasks', 'tabs follow the setup, tracking, task workflow');
+  assert(S.tab === 'tasks' && gameView(), 'the initial workbench is the selected Tasks tab');
+  await wait(300);
+  const world = TB.world, game = TB.game;
+  for (const mode of ['calib', 'track', 'tasks']) {
+    $('tab-' + mode).click(); await wait(120);
+    assert(S.tab === mode && $('tab-' + mode).getAttribute('aria-selected') === 'true', mode + ' selects the correct tab');
+    assert(tabs.every(visible), 'all navigation stays visible in ' + mode);
+    assert(visible($('calibCard')) === (mode === 'calib') && visible($('gameHUD')) === (mode === 'tasks'), 'only the current panel is visible in ' + mode);
+    assert(document.documentElement.scrollWidth <= innerWidth + 1, mode + ' fits the viewport');
+  }
+  const stage = plot.getBoundingClientRect(), hud = $('gameHUD').getBoundingClientRect();
+  assert(Math.abs(stage.top-hud.top) < 1 && stage.bottom <= innerHeight, 'the task stage stays aligned below the header without inheriting the sticky Tracking offset');
+  assert(TB.world === world && TB.game === game, 'switching tabs preserves the task and physical scene');
+  key($('tab-tasks'), 'Home'); assert(S.tab === 'calib' && document.activeElement === $('tab-calib'), 'Home selects and focuses Calibrate');
+  key($('tab-calib'), 'ArrowRight'); assert(S.tab === 'track', 'Right arrow advances to Tracking');
+  key($('tab-track'), 'End'); assert(S.tab === 'tasks', 'End returns to Tasks');
+  assert(!document.querySelector('#handControls,[data-nudge],#playGrip,#playRelease'), 'the old hand command bar is removed entirely');
+  setRobotView('eyes'); await wait(120);
+  key(plot, '1');
+  const arm = chosenHands()[0], drive = driveOf(arm), start = drive.t.slice(), tilt = S.settings.robot.headTilt, axis = C.mulv(TB.world.table.R, [0,0,1]);
+  key(plot, 'ArrowUp');
+  assert(C.norm(C.sub(C.sub(drive.t,start),axis.map(v=>v*.012))) < 1e-8, 'Up raises the selected gripper by 12 mm');
+  key(plot, 'ArrowDown');
+  assert(C.norm(C.sub(drive.t,start)) < 1e-8 && S.settings.robot.headTilt === tilt, 'Down lowers the gripper without tilting the head');
+  key(plot, 'ArrowUp', true);
+  assert(C.norm(C.sub(C.sub(drive.t,start),axis.map(v=>v*.0002))) < 1e-8, 'Shift+Up provides the fine 0.2 mm lift');
+  key(plot, 'ArrowDown', true);
+  key(plot, 'ArrowLeft'); key(plot, 'ArrowRight');
+  assert(C.norm(C.sub(drive.t,start)) < 1e-8, 'Left and Right move the gripper sideways');
+  const before = TB.world.handPose(1).t.slice();
+  for (let i=0;i<3;i++) key(plot, 'ArrowUp');
+  await wait(850);
+  const physicalRise = C.sub(TB.world.handPose(1).t,before).reduce((sum,v,i)=>sum+v*axis[i],0);
+  assert(physicalRise > .02, 'arrow-key lift moves the physical gripper through IK and motor slew');
+  for (let i=0;i<3;i++) key(plot, 'ArrowDown');
+  const wristRotation=drive.R.slice();key(plot,'i');
+  assert(C.norm(C.so3Log(C.mul3(C.tr3(wristRotation),drive.R)))>.08,'sideways wrist tilt is directly available for sleeve folding');key(plot,'p');
+  assert(C.norm(C.so3Log(C.mul3(C.tr3(wristRotation),drive.R)))<1e-8,'opposite sideways wrist keys return to the same orientation');
+  key(plot, '2'); assert(TASK.hand === '-1', '2 selects the right gripper');
+  key(plot, '3'); assert(chosenHands().length === 2, '3 selects both grippers');
+  key(plot, '1');
+  $('gameSettingsBtn').click();
+  assert($('gameSettings').open && !$('handControls'), 'task settings open without the obsolete command bar');
+  $('gameSettingsClose').click();
+  $('gameTilt').value = -45; $('gameTilt').dispatchEvent(new Event('input'));
+  assert(S.settings.robot.headTilt === -45, 'the head slider still tilts the wide camera');
+  setRobotView('orbit');
+  $('tab-track').click(); document.querySelector('[data-show3d="tags"]').click();
+  $('tab-tasks').click(); assert(S.settings.show3d === 'robot' && gameView(), 'Tasks always shows the robot');
+  $('tab-track').click(); assert(S.settings.show3d === 'tags' && document.querySelector('[data-show3d="tags"]').getAttribute('aria-checked') === 'true', 'Tracking restores its saved Tags view and selected control');
+  $('tab-tasks').click();
+  return { passed: true, persistentTabs: true, preservedTask: true, eyeArrowControls: true, viewport: [innerWidth,innerHeight] };
+})()
