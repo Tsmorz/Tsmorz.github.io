@@ -141,8 +141,9 @@
         }
       };
       // Supported, nearly still fabric can sleep, but capture checks above always run first.
+      // Plush: a few loose corner nodes chatter on top of a folded stack indefinitely; they must not keep it awake.
       const supported=ns.filter(n=>{const q=mt(table.R,sub(n.p,table.t));return Math.abs(q[0])<table.size[0]/2&&Math.abs(q[1])<table.size[1]/2&&q[2]<radius+.006;}).length;
-      const plushRest=c.pile&&supported>ns.length*.04&&ns.every(n=>len(n.v)<.15&&mt(table.R,sub(n.p,table.t))[2]<.08)&&Math.sqrt(ns.reduce((s,n)=>s+dot(n.v,n.v),0)/ns.length)<.04;
+      const plushRest=c.pile&&supported>ns.length*.04&&ns.every(n=>mt(table.R,sub(n.p,table.t))[2]<.08)&&ns.filter(n=>len(n.v)>=.15).length<=ns.length*.03&&Math.sqrt(ns.reduce((s,n)=>s+dot(n.v,n.v),0)/ns.length)<.04;
       if(!pins.size&&!W.bodies.length&&(plushRest||supported>ns.length*.3&&ns.every(n=>len(n.v)<.002)))c.restTime+=dt;else c.restTime=0;
       if(c.restTime>.4){ns.forEach(n=>{n.v=[0,0,0];});c.reactions={};return;}
       const old = ns.map((n) => n.p.slice()), hits = new Set(), tablePush = new Map(), contactNormals=new Map();

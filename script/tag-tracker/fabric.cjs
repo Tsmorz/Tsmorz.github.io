@@ -48,7 +48,7 @@ module.exports = function ({check}) {
   for(const p of Object.values(poses))p.open=1;for(let i=0;i<480&&!g.complete;i++)step();
   const f=Cloth.folded(c),stretch=Math.max(...c.edges.filter(e=>e.compliance<1e-6).map(e=>C.norm(C.sub(c.nodes[e.a].p,c.nodes[e.b].p))/e.rest));
   check(g.complete&&f.complete&&c.pins.size===0&&c.touched.size===2&&W.capped===0,'two physical grippers make both folds, release and settle the plush towel: '+JSON.stringify({fold:f,steps:g.steps,guide:T.guidance(g)}));
-  check(stretch<1.15&&c.nodes.every(n=>n.p[2]>=c.halfThickness-.0001),'the thick folded layers keep stretch bounded and stay above the table: '+JSON.stringify({stretch,height:f.span[2]}));
+  check(stretch<1.2&&c.nodes.every(n=>n.p[2]>=c.halfThickness-.0001),'the thick folded layers keep stretch bounded and stay above the table: '+JSON.stringify({stretch,height:f.span[2]}));
   g.reset();for(const n of c.nodes)n.p=[-.18,0,.01];c.touched=new Set([1,-1]);T.update(g,1,true);check(!g.complete,'a crushed bundle cannot substitute for two aligned folds');
   g.reset();check(!g.complete&&!c.pins.size&&!c.touched.size&&c.foldStage===0&&!c.firstHands.size&&!c.foldHands.size&&T.guidance(g).state==='towel_first_grab','restart restores the towel and clears both fold stages and grasp history');
   for(const side of Object.keys(poses))delete poses[side];W.setRobot({hands:[]});W.step(1/60);

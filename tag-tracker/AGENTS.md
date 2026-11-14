@@ -97,7 +97,9 @@ hold and released set-down. Test actual contacts, not just a ball parked at its 
 
 The towel has a fabric core, plush nap, layer contact and a closed render shell. `halfThickness` is
 its contact radius: do not name it `radius`, which identifies cables in rendering. Keep loft visible
-and table clearance real. GPU buffers must rebuild when deformable topology changes.
+and table clearance real. GPU buffers must rebuild when deformable topology changes. Plush sleep
+tolerates a few (≤3%) chattering corner nodes: requiring every node still leaves a folded towel
+awake, and its `settle` unmet, for tens of seconds on some platforms' floating point.
 
 Grips use finite barycentric material patches; a single pinned vertex permits free spinning. Clamp
 both actual material halves at the doubled open edge; neighbouring points on one ply are insufficient.
