@@ -108,6 +108,8 @@ export function sessionFiles(raw, session, take, extra = {}, summary = null) {
     bad_packets: session.bad,
     written: { imu: imu.t_us.length, mic_blocks: mic.blocks.length / 4, tof: tof.t_us.length },
     device_stats: session.stats.at(-1) ?? null,
+    ...(session.health && { health: session.health }),
+    ...(session.profile && { profile: session.profile }),
     ...extra,
   };
   files["info.json"] = JSON.stringify(infoJson, null, 2) + "\n";

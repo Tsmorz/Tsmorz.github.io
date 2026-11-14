@@ -344,7 +344,7 @@
   .h2-key + .h2-key { margin-left: 0; }
 
   /* Settings and Replay keys, lit while their drawer or view is open. */
-  #settings, #mouse-toggle, #motion-wake, #notify, #replay-key, #whats-new-key { display: inline-flex; align-items: center; gap: 6px; }
+  #settings, #mouse-toggle, #motion-wake, #ir-toggle, #notify, #replay-key, #whats-new-key { display: inline-flex; align-items: center; gap: 6px; }
   /* What's new: the key's lamp lights while there's something this browser hasn't seen. */
   #whats-new-key::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
   #whats-new-key.unseen::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
@@ -359,8 +359,8 @@
   .whats-new-list .fw-note { margin: 4px 0 0; font: 11.5px var(--mono); color: var(--text-2); }
   #settings[aria-expanded="true"], #replay-key[aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-ink); box-shadow: inset 0 -1px 0 var(--key-shadow), 0 0 8px var(--pressed-glow); }
   /* Mouse switch: a lamp that lights while the selected board sends mouse reports. */
-  #mouse-toggle::before, #motion-wake::before, #notify::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
-  #mouse-toggle[aria-checked="true"]::before, #motion-wake[aria-checked="true"]::before, #notify[aria-checked="true"]::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+  #mouse-toggle::before, #motion-wake::before, #ir-toggle::before, #notify::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3); }
+  #mouse-toggle[aria-checked="true"]::before, #motion-wake[aria-checked="true"]::before, #ir-toggle[aria-checked="true"]::before, #notify[aria-checked="true"]::before { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
   /* Each connected board's radio clock: its name, then what it is doing. */
   .clock-boards { list-style: none; margin: 8px 0 0; padding: 0; font: 11.5px var(--mono); color: var(--text-2); }
   .clock-boards li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
@@ -558,6 +558,12 @@
     input[type=range]::-webkit-slider-thumb { width: 18px; height: 30px; margin-top: -13px; }
     input[type=range]::-moz-range-thumb { width: 18px; height: 30px; }
   }
+  .device-health-panel { font-size: 12px; overflow-wrap: anywhere; }
+  .device-health-panel [data-state="attention"] { color: var(--bad); }
+  .device-health-panel fieldset { display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; margin-top: 8px; }
+  .device-health-panel fieldset > p, .device-health-panel fieldset > div { flex-basis: 100%; }
+  .device-health-panel input[type="number"] { width: 8ch; max-width: 100%; }
+  .device-health-panel label { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -595,6 +601,21 @@
     </div>
     <p class="pair-prompt" id="pair-prompt" hidden><b>New board?</b> Double-press its USER button (it flashes cyan), then pick it within 2 minutes. Not in the list? Press USER once to wake it or bring it back.</p>
     <p class="status-line muted" id="status">No boards connected.</p>
+    <div class="device-health-panel">
+      <p id="device-health" role="status">No board selected.</p>
+      <button id="export-diagnostics" type="button">Export diagnostics</button>
+      <div id="hardware-profile"></div>
+      <details><summary>Endurance test</summary>
+        <p>Tests only the selected board with finite 10% clicks. Keep the wired controller clear. A reconnect may need a USER press.</p>
+        <label>Streaming and haptics (s) <input id="endurance-seconds" type="number" min="5" max="3600" value="60"></label>
+        <label><input id="endurance-reconnect" type="checkbox" checked> Test disconnect/reconnect</label>
+        <label><input id="endurance-update" type="checkbox"> Update the selected board using the image chosen in Firmware</label>
+        <button id="endurance-start" type="button">Run selected board test</button>
+        <button id="endurance-stop" type="button" disabled>Stop test</button>
+        <p id="endurance-status" role="status"></p>
+      </details>
+    </div>
+
     <div class="info-pop" id="boards-info" popover>
       <p>Add each board in turn; pick one to see it below. Drag a board by its ID to move it in the list. Labels and the order are remembered per board in this browser, and the label names its folder in recordings.</p>
       <p>Pairing: a board pairs only within 2 minutes of a double press of its USER button, a phone held to it, or while it's paired with nothing. Your computer then asks for a 6-digit code: it's in the board's USB console (<code>task monitor</code>), and a phone held to the board opens this page showing it. A new code follows every pairing.</p>
@@ -755,7 +776,7 @@
   <section>
     <h2>Sync <span class="muted">to every connected board</span></h2>
     <div class="row">
-      <button id="settings-sync" disabled title="Copies this board's mouse speed, joystick curve, IMU ranges and wake on motion to every connected board. Each keeps its own mouse on or off and its clock role.">Sync all boards</button>
+      <button id="settings-sync" disabled title="Copies this board's mouse speed, joystick curve, IMU ranges, wake on motion and tracking LED level to every connected board. Each keeps its own mouse and tracking LEDs on or off and its clock role.">Sync all boards</button>
       <span class="muted" id="settings-sync-status"></span>
     </div>
   </section>
@@ -793,6 +814,16 @@
     </div>
     <p class="hint" id="act-summary">Connect a board to test its actuators.</p>
     <div class="info-pop" id="act-info" popover><p>A controller board drives a TacHammer through an I2S amp, a pancake vibration motor through a DRV2605L, and a feedback servo, and reads a joystick and four buttons. Test plays each one's library of waveforms by hand and shows what comes back.</p><p>The board finds out at start-up which parts answer. A bare board still lists what its firmware can drive, and the parts' readouts stay empty.</p></div>
+  </section>
+  <section>
+    <h2>Tracking LEDs <span class="muted">saved on the board</span><button type="button" class="info" popovertarget="ir-info" aria-label="About the tracking LEDs"></button></h2>
+    <div class="row">
+      <button id="ir-toggle" type="button" role="switch" aria-checked="false" disabled title="Connect a board to choose">On</button>
+      <label>Level <input type="range" id="ir-level" min="1" max="100" step="1" value="50" disabled>
+        <span class="num" id="ir-level-value">50%</span></label>
+    </div>
+    <p class="hint" id="ir-status">Connect a board to switch its tracking LEDs.</p>
+    <div class="info-pop" id="ir-info" popover><p>Five 850 nm infrared LEDs on the controller, for a camera to follow. Eyes can't see them; most phone cameras show them faintly purple.</p><p>The level is an average current, which the board holds steady as the battery runs down, so they look the same to a camera from a full charge to nearly empty. At 100% they take about 300 mA, so a full battery lasts under 7 hours with them on.</p><p>They go off while the board sleeps and come back as saved when it wakes.</p></div>
   </section>
   <section>
     <h2>Clock sync <span class="muted">radio, saved on the boards</span><button type="button" class="info" popovertarget="clock-info" aria-label="About radio clock sync"></button></h2>

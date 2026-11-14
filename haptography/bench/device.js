@@ -1,6 +1,6 @@
 // Capture v3/v4 commands over the same full-duplex stream as the recordings. No ERM dependency.
 import { ACK, PLAYBACK, INFO_TACHAMMER_OK, encodePacket } from "./wire.js";
-export const CMD = { BEGIN: 0x41, DATA: 0x42, PLAY: 0x43, STOP: 0x46 };
+export const CMD = { BEGIN: 0x41, DATA: 0x42, PLAY: 0x43, STOP: 0x46, SET_PROFILE: 0x48 };
 const STATUS = ["ok", "bad command", "no actuator", "busy", "not ready", "too long", "gap", "bad value", "failed"];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(promise, ms) {
