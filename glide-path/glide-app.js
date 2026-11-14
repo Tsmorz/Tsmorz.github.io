@@ -1,12 +1,14 @@
-// Glide Path: the page. The maths is in glide-core.js (no DOM); the route search runs in glide-worker.js.
+// Dyna-soar: the page. The maths is in glide-core.js (no DOM); the route search runs in glide-worker.js.
 'use strict';
-const G = GlideCore;
+const G = GlideCore, GP = GlidePlan;
+const CONTENT = JSON.parse(document.getElementById("glide-content").textContent);
 const TS = 256, RT = 3;                   // compute on a 7 × 7 block of terrain tiles round the launch
 const Z_MAX = 13, Z_MIN = 9;              // zoom 13 is ~14 m per pixel here; long glides drop to coarser zooms
 const SAVE_R = RT + 1, SAVE_R_LOW = RT;   // a saved area: 9 × 9 tiles at zoom 13, 7 × 7 at zooms 12 to 9
 const SAVED = 'glide-terrain-saved', RUNTIME = 'glide-terrain-runtime';
 const terrUrl = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
-const M_HILL = { lat: 44.0860, lon: -103.2490, snap: 200 };
+const M_HILL = { ...CONTENT.landmark, snap: 0 }; // Exact landmark location; never snap a launch onto another peak.
+let soaringUI = null, windUI = null;
 // Map overlay colours: the site's chart palette (violet, teal, red, gold), checked with the dataviz validator for colour-blind
 // separation. `light` for the street, topo and shaded maps; `img` (mid-tone steps, with light lines on dark casings) over
 // satellite imagery, where each region also gets a solid outline. `C` is the one in use (restyle()).
@@ -25,10 +27,21 @@ const compass = (d, long) => (long ? COMPASS : SHORT)[Math.round(d / 45) % 8];
 
 const LS = {
   get(k, d) { try { const v = localStorage.getItem('glide-reach-' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('glide-reach-' + k, JSON.stringify(v)); } catch (e) {} }
+  set(k, v) { try { localStorage.setItem('glide-reach-' + k, JSON.stringify(v)); return true; } catch (e) { return false; } }
 };
 const $ = id => document.getElementById(id);
 const setStatus = html => { $('status').innerHTML = html; };
+let hadResult = false;
+function markCalc(phase, text) {
+  $('app').dataset.calc = phase;
+  const pending = phase === 'loading' || phase === 'updating';
+  $('map').setAttribute('aria-busy', String(pending));
+  $('retryTerrain').hidden = !M?.failed && phase !== 'missing';
+  $('calcState').textContent = text || CONTENT.calculation[phase];
+  $('resultNotice').textContent = pending && hadResult ? 'Previous result shown' : '';
+  $('prof').classList.toggle('stale', pending && hadResult);
+  if (pending) $('btnFly').disabled = true;
+}
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('sw.js').catch(() => {});
 
@@ -51,49 +64,56 @@ $('theme').onclick = () => {
 
 // ---------- Units: sliders work in the chosen system; P always holds metric values ----------
 // [min, max, step, unit] per system, and k: the factor from metric to imperial; read-outs come from GlideCore.Units.
-const SPEC = {
-  gr:  { metric: [1, 30, 0.5, ':1'], imperial: [1, 30, 0.5, ':1'], k: 1, def: 15 },
-  va:  { metric: [5, 25, 0.5, 'm/s'], imperial: [10, 55, 1, 'mph'], k: G.MPH, def: 10 },
-  agl: { metric: [0, 300, 5, 'm'], imperial: [0, 1000, 10, 'ft'], k: G.FT, def: 120 },
-  ws:  { metric: [0, 15, 0.5, 'm/s'], imperial: [0, 35, 1, 'mph'], k: G.MPH, def: 0 },
-  vis: { metric: [100, 3000, 50, 'm'], imperial: [300, 10000, 100, 'ft'], k: G.FT, def: 600 },
-  mg:  { metric: [0, 60, 5, 'm'], imperial: [0, 200, 10, 'ft'], k: G.FT, def: 20 },
-  sl:  { metric: [2, 30, 1, '°'], imperial: [2, 30, 1, '°'], k: 1, def: 12 },
-};
-let units = LS.get('units', (navigator.language || '').toLowerCase() === 'en-us' ? 'imperial' : 'metric');
+const SPEC = GP.SPEC;
+let sharedPlan = null, shareError = '';
+try { if (location.hash.startsWith('#plan=')) sharedPlan = GP.decode(location.hash.slice(6)); }
+catch (err) { shareError = err.message; }
+let units = sharedPlan?.units || LS.get('units', (navigator.language || '').toLowerCase() === 'en-us' ? 'imperial' : 'metric');
+if (!['metric', 'imperial'].includes(units)) units = 'metric';
 let U = G.Units[units];
-const saved = LS.get('params', {});
-const P = {};
-// a saved value outside today's range (the glide ratio once went to 40) is brought inside it
-const lo = k => Math.min(SPEC[k].metric[0], SPEC[k].imperial[0] / SPEC[k].k), hi = k => Math.max(SPEC[k].metric[1], SPEC[k].imperial[1] / SPEC[k].k);
-for (const k of Object.keys(SPEC)) P[k] = saved[k] != null ? Math.min(hi(k), Math.max(lo(k), saved[k])) : SPEC[k].def;
-P.wd = saved.wd != null ? saved.wd : 270;
-P.pb = saved.pb != null ? saved.pb : 180;
-P.curve = saved.curve !== false;
+const P = GP.parameters(sharedPlan?.params || LS.get('params', {}));
+let selectedPlan = null, selectedAircraft = null;
+let pendingTarget = sharedPlan ? sharedPlan.target : undefined;
 $('curve').checked = P.curve;
 
 const factor = k => units === 'imperial' ? SPEC[k].k : 1; // metric value × factor = what the slider shows
 function setSliders() {
-  for (const [k, s] of Object.entries(SPEC)) {
-    const [min, max, step] = s[units], el = $(k);
+  for (const [k, spec] of Object.entries(SPEC)) {
+    const [min, max, step] = spec[units], el = $(k), num = $('n_' + k);
     el.min = min; el.max = max; el.step = step;
-    el.value = Math.min(max, Math.max(min, Math.round(P[k] * factor(k) / step) * step));
+    el.value = P[k] * factor(k); // the slider thumb may snap; it never writes back on a unit change
+    const [lo, hi] = GP.bounds(k);
+    num.min = lo * factor(k); num.max = hi * factor(k); num.step = 'any';
+    num.value = GP.display(k, P[k], units); num.setCustomValidity('');
+    num.setAttribute('aria-label', `${CONTENT.controls.find(c => c.id === k).name} (${spec[units][3]})`);
     showValue(k);
   }
+  $('windBearing').value = +P.wd.toFixed(1); $('bearingValue').value = +(route?.bearing ?? P.pb).toFixed(1);
   document.querySelectorAll('[data-units]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.units === units)));
 }
-function showValue(k) {
-  const s = SPEC[k], unit = s[units][3], v = +$(k).value;
-  $('v_' + k).textContent = unit === ':1' ? `${v}:1` : unit === '°' ? `${v}°` : `${v} ${unit}`;
-}
+function showValue(k) { $('v_' + k).textContent = SPEC[k][units][3]; }
 function save() { LS.set('params', P); }
-for (const k of Object.keys(SPEC)) $(k).addEventListener('input', () => {
-  P[k] = +$(k).value / factor(k); showValue(k); save(); afterParams(); schedule('all');
-});
-$('curve').addEventListener('change', () => { P.curve = $('curve').checked; save(); afterParams(); schedule('all'); });
+function parameterChanged() {
+  save(); afterParams(); markCalc('updating'); schedule('all');
+}
+for (const k of Object.keys(SPEC)) {
+  $(k).addEventListener('input', () => {
+    P[k] = +$(k).value / factor(k); $('n_' + k).setCustomValidity(''); $('n_' + k).value = GP.display(k, P[k], units); showValue(k); parameterChanged();
+  });
+  $('n_' + k).addEventListener('change', () => {
+    try {
+      if (!$('n_' + k).value.trim()) throw new Error('Enter a number.');
+      P[k] = GP.inputValue(k, Number($('n_' + k).value), units);
+      $('n_' + k).setCustomValidity(''); $(k).value = P[k] * factor(k); parameterChanged();
+    } catch (err) { $('n_' + k).setCustomValidity(err.message); $('n_' + k).reportValidity(); }
+  });
+  $('n_' + k).addEventListener('input', () => $('n_' + k).setCustomValidity(''));
+}
+$('curve').addEventListener('change', () => { P.curve = $('curve').checked; parameterChanged(); });
 document.querySelectorAll('[data-units]').forEach(b => b.onclick = () => {
   units = b.dataset.units; U = G.Units[units]; LS.set('units', units);
-  setSliders(); for (const k of Object.keys(SPEC)) P[k] = +$(k).value / factor(k); save(); afterParams(); if (launch) placeStatus(); schedule('all');
+  setSliders(); afterParams(); if (launch) placeStatus(); drawProfile(); if (route) refreshRoute();
+  if (R) drawOverlay();
   if (map.hasLayer(contours)) contours.redraw();
   contourKey();
 });
@@ -103,7 +123,12 @@ function afterParams() {
   $('windWords').textContent = P.ws ? `From the ${compass(P.wd, true)}, blowing ${compass((P.wd + 180) % 360, true)}.` : 'Calm.';
   const kc = document.getElementById('keyCurve'); if (kc) kc.hidden = !P.curve;
   windBadge();
+  soaringUI?.parameters();
+  windUI?.parameters();
   summaries();
+  updatePlanState();
+  $('settingsSummary').textContent = `${P.gr}:1 · ${U.h(P.agl)} · ${P.ws ? `${U.v(P.ws)} from ${compass(P.wd)}` : 'calm'}`;
+  $('windBearing').value = +P.wd.toFixed(1); $('bearingValue').value = +(route?.bearing ?? P.pb).toFixed(1);
 }
 // a folded section says what it's set to, so the panel can stay short
 function summaries() {
@@ -121,11 +146,11 @@ document.querySelectorAll('details.group').forEach(d => {
 });
 // the wind on the map: an arrow the way it blows (north is always up), its speed and where it comes from
 function windBadge() {
-  const box = document.getElementById('windMap'); if (!box) return;
-  box.classList.toggle('calm', !P.ws);
-  box.querySelector('.wind-arrow').style.transform = `rotate(${(P.wd + 180) % 360}deg)`;
-  box.querySelector('.wind-text').innerHTML = P.ws ? `<b>${U.v(P.ws)}</b> from ${compass(P.wd)}` : '<b>Calm</b>';
-  box.setAttribute('aria-label', P.ws ? `Wind ${U.v(P.ws)} from the ${compass(P.wd, true)}` : 'No wind');
+  const box=document.getElementById('windMap');if(!box)return;
+  const local=windUI?.layer&&launch?windUI.atLatLng(launch):null,speed=local?Math.hypot(local.east,local.north):P.ws,from=local?WindCore.bearing(local.east,local.north):P.wd;
+  box.classList.toggle('calm',speed<.05);box.querySelector('.wind-arrow').style.transform=`rotate(${(from+180)%360}deg)`;
+  box.querySelector('.wind-text').innerHTML=(speed>=.05?`<b>${U.v(speed)}</b> from ${compass(from)}`:'<b>Calm</b>')+`<small>${local?`${U.h(windUI.height)} AGL`:'10 m reference'}</small>`;
+  box.setAttribute('aria-label',`Wind at ${local?U.h(windUI.height)+' above ground':'10 metre reference'}: ${U.v(speed)} from ${compass(from,true)}`);
 }
 
 // ---------- Terrain tiles: one decoder for the calculation and the shaded map ----------
@@ -149,20 +174,20 @@ function loadTerrTile(url) {
   return p;
 }
 
-async function loadMosaic(lat, lon, z, onProgress) {
+async function loadMosaic(lat, lon, z, onProgress, radius = RT) {
   const [px, py] = G.lonLatToPx(lon, lat, z);
-  const tx = Math.floor(px / TS), ty = Math.floor(py / TS), W = (2 * RT + 1) * TS;
+  const tx = Math.floor(px / TS), ty = Math.floor(py / TS), W = (2 * radius + 1) * TS;
   const data = new Float32Array(W * W).fill(NaN);
   let done = 0, failed = 0; const jobs = [];
-  for (let j = -RT; j <= RT; j++) for (let i = -RT; i <= RT; i++) {
+  for (let j = -radius; j <= radius; j++) for (let i = -radius; i <= radius; i++) {
     jobs.push(loadTerrTile(terrUrl(z, tx + i, ty + j)).then(t => {
-      const ox = (i + RT) * TS, oy = (j + RT) * TS;
+      const ox = (i + radius) * TS, oy = (j + radius) * TS;
       for (let y = 0; y < TS; y++) data.set(t.subarray(y * TS, y * TS + TS), (oy + y) * W + ox);
     }).catch(() => { failed++; }).finally(() => onProgress(++done, jobs.length)));
   }
   await Promise.all(jobs);
   let minT = Infinity; for (const v of data) if (v < minT) minT = v;
-  return { z, x0: (tx - RT) * TS, y0: (ty - RT) * TS, W, data, failed, total: jobs.length, minT, mpp: G.mppAt(lat, z) };
+  return { z, x0: (tx - radius) * TS, y0: (ty - radius) * TS, W, data, failed, total: jobs.length, minT, mpp: G.mppAt(lat, z) };
 }
 
 function sample(x, y) { // bilinear on the loaded block; x, y in its pixels, pixel centres at .5
@@ -277,7 +302,9 @@ const CanvasOverlay = L.ImageOverlay.extend({
 // ---------- Map ----------
 let M = null, SL = null, GRID = null, gridId = 0, launch = null, lpx = 0, lpy = 0, groundAtLaunch = NaN, R = null, loading = false;
 let Gres = null, route = null, fitNext = false, GEO = null;
-const start = LS.get('launch', null) || M_HILL;
+const start = sharedPlan?.launch || LS.get('launch', null) || M_HILL;
+let mapMode = 'inspect', pendingLaunch = null, placingLaunch = false;
+const launchHistory = [];
 const map = L.map('map', { zoomControl: true }).setView([start.lat, start.lon], 13);
 const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' });
 const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)' });
@@ -320,16 +347,17 @@ const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
   const box = L.DomUtil.create('details', 'legend-box');
   box.open = map.getSize().x >= 560 && map.getSize().y >= 420;
   box.innerHTML = '<summary>Key</summary>';
-  const ul = L.DomUtil.create('ul', 'legend', box);
-  ul.innerHTML = '<li><span class="key k-straight"></span>Landable, straight glide</li>' +
-    '<li id="keyCurve"><span class="key k-curve"></span>Landable by curving round a hill</li>' +
+  const ul = L.DomUtil.create('div', 'legend-content', box);
+  ul.innerHTML = '<ul class="legend"><li><span class="key k-straight"></span>Potential landing, straight</li>' +
+    '<li><span class="key k-ds">DS?</span>Lee-ridge candidate (unconfirmed)</li>' +
+    '<li id="keyCurve"><span class="key k-curve"></span>Potential landing, curving</li>' +
     '<li><span class="key k-steep"></span>Reachable, too steep to land</li>' +
-    '<li><span class="key k-out"></span>Reachable, but out of sight</li>' +
+    '</ul><details class="legend-extra"><summary>Other map symbols</summary><ul class="legend"><li><span class="key k-out"></span>Reachable, but out of sight</li>' +
     '<li><span class="key k-ring"></span>As far as you can see it</li>' +
     '<li><span class="key k-hit"></span>Straight glide hits a slope</li>' +
     '<li><span class="key k-line"></span>Cross-section (dots: its distance marks)</li>' +
-    '<li><span class="key k-route"></span>Best route to a spot (long-press)</li>' +
-    '<li id="keyContour" hidden><span class="key k-contour"></span><span></span></li>';
+    '<li><span class="key k-route"></span>Highest-arrival route</li>' +
+    '<li id="keyContour" hidden><span class="key k-contour"></span><span></span></li></ul></details>';
   L.DomEvent.disableClickPropagation(box);
   return box;
 } });
@@ -384,14 +412,36 @@ function restyle() {
 }
 restyle();
 const areaBoxes = L.layerGroup().addTo(map);
-const marker = L.marker([start.lat, start.lon], { draggable: true, title: 'Launch', alt: 'Launch' }).addTo(map);
+const marker = L.marker([start.lat, start.lon], { draggable: true, title: 'Launch (drag to move)', alt: 'Launch', icon: L.divIcon({ className: 'launch-pin', html: '<span>L</span>', iconSize: [40, 40], iconAnchor: [20, 20] }) }).addTo(map);
 marker.on('dragend', () => setLaunch(marker.getLatLng().lat, marker.getLatLng().lng));
 let suppressTap = 0;
+function setMapMode(mode) {
+  mapMode = mode; $('app').dataset.mapMode = mode;
+  $('modeLaunch').setAttribute('aria-pressed', String(mode === 'launch'));
+  $('modeInspect').setAttribute('aria-pressed', String(mode === 'inspect'));
+}
+function mapTap(lat, lon) {
+  if (mapMode === 'launch') {
+    setLaunch(lat, lon); setMapMode('inspect');
+    if (guideAfterTap) { guideAfterTap = false; openGuide(1); }
+  } else showRoute(L.latLng(lat, lon));
+}
 map.on('click', e => {
   if (Date.now() - suppressTap < 700) return;
-  setLaunch(e.latlng.lat, e.latlng.lng);
-  if (guideAfterTap) { guideAfterTap = false; openGuide(1); }
+  mapTap(e.latlng.lat, e.latlng.lng);
 });
+$('modeLaunch').onclick = () => setMapMode('launch');
+$('modeInspect').onclick = () => setMapMode('inspect');
+$('undoLaunch').onclick = () => {
+  const previous = launchHistory.pop(); if (!previous) return;
+  setLaunch(previous.lat, previous.lon, 0, { history: false }); updateLaunchUndo();
+};
+function updateLaunchUndo() {
+  $('undoLaunch').disabled = !launchHistory.length;
+  $('mapTools').classList.toggle('has-history', launchHistory.length > 0);
+}
+setMapMode('inspect');
+
 let lastRouteAt = 0;
 const routeAt = ll => { if (Date.now() - lastRouteAt < 800) return; lastRouteAt = Date.now(); showRoute(ll); };
 map.on('contextmenu', e => routeAt(e.latlng));
@@ -414,7 +464,7 @@ const mark3d = what => { if (view3d && is3d) view3d.mark(what); };
 const el3d = L.DomUtil.create('div', 'map3d', map.getContainer());
 el3d.hidden = true;
 el3d.setAttribute('role', 'application');
-el3d.setAttribute('aria-label', '3D map. Drag to move it; right-drag, Ctrl-drag or two fingers to tilt and turn; tap to move the launch.');
+el3d.setAttribute('aria-label', '3D map. Drag to move it; right-drag, Ctrl-drag or two fingers to tilt and turn; use Move launch or Inspect destination before tapping.');
 // the 2D map underneath must not pan, zoom, set the launch or start a route from what happens in 3D
 for (const t of ['mousedown', 'pointerdown', 'touchstart', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown']) el3d.addEventListener(t, e => e.stopPropagation());
 const hint3d = L.DomUtil.create('div', 'hint3d', el3d);
@@ -434,7 +484,9 @@ function load3d() {
       tiles: { street: osm._url, streetAttr: osm.options.attribution, topo: topo._url, topoAttr: topo.options.attribution,
                sat: sat._url, satAttr: sat.options.attribution },
       base: () => baseName(base), overlay: () => overlay, canvas: overlayCanvas, circle: G.circle,
-      onTap: (lat, lon) => setLaunch(lat, lon)
+      wind:()=>windUI?.features()||[], windShade:()=>windUI?.shade()||null,
+      soaring: () => soaringUI?.features() || { key: '', items: [] }, onSoaring: index => soaringUI?.selectIndex(index),
+      onTap: mapTap, onMoveLaunch: (lat, lon) => setLaunch(lat, lon)
     });
   })();
   loading3d.catch(() => { loading3d = null; });
@@ -514,8 +566,8 @@ function makeDial(el, { mode, get, set, step }) {
   render();
   return { render };
 }
-makeDial($('wdDial'), { mode: 'from', step: 5, get: () => P.wd, set: v => { P.wd = v; save(); afterParams(); schedule('all'); } });
-const pbDial = makeDial($('pbDial'), { mode: 'to', step: 1, get: () => P.pb, set: v => { P.pb = v; save(); clearRoute(false); schedule('profile'); } });
+const wdDial = makeDial($('wdDial'), { mode: 'from', step: 5, get: () => P.wd, set: v => { P.wd = v; parameterChanged(); } });
+const pbDial = makeDial($('pbDial'), { mode: 'to', step: 1, get: () => P.pb, set: v => { P.pb = v; save(); clearRoute(false); afterParams(); schedule('profile'); } });
 
 let pending = null;
 function schedule(what) {
@@ -529,11 +581,12 @@ let worker = null, runId = 0, busy = false, queued = null, inflightKey = null;
 try {
   worker = new Worker('glide-worker.js');
   worker.onmessage = e => {
+    if (e.data.screen) { soaringUI?.onMessage(e.data); return; }
     busy = false;
-    if (e.data.gridId === gridId) { Gres = { ...e.data, key: inflightKey }; onGrid(); }
-    if (queued) { const q = queued; queued = null; send(q); }
+    if (!e.data.error && e.data.gridId === gridId) { Gres = { ...e.data, key: e.data.key||inflightKey }; onGrid(); }
+    if (queued) { const q = queued; queued = null; if(q.key===runKey())send(q);else runGrid(); }
   };
-  worker.onerror = () => { worker = null; busy = false; runGrid(); }; // e.g. opened from a file: run on the page instead
+  worker.onerror = () => { worker = null; busy = false; soaringUI?.workerFailed(); runGrid(); }; // e.g. opened from a file: run on the page instead
 } catch (e) { worker = null; }
 function send(run) {
   if (!worker) {
@@ -545,37 +598,42 @@ function send(run) {
   worker.postMessage({ run, id: ++runId, gridId });
 }
 function postGrid() { if (worker) worker.postMessage({ grid: { id: gridId, terr: GRID.terr.slice(), W: GRID.GW } }); }
-function runKey() { return [lpx, lpy, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, P.vis, gridId].join(); }
+function runKey() { return [lpx, lpy, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, P.vis, gridId, windUI?.revision||0].join(); }
 function runGrid() {
   if (!P.curve || !GRID) { Gres = null; drawOverlay(); return; }
   const key = runKey();
   if (Gres && Gres.key === key && Gres.gridId === gridId) return;
   send({ key, cell: 2 * M.mpp, si: Math.floor((lpx - M.x0) / 2), sj: Math.floor((lpy - M.y0) / 2), h0: groundAtLaunch + P.agl,
-         margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd, maxR: P.vis });
+         margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd, maxR: P.vis, wind:windUI?.layer||null });
 }
 function onGrid() {
   drawOverlay();
-  if (route) refreshRoute();
+  if (!loading && Gres && Gres.key === runKey()) { if (route) refreshRoute(); drawProfile(); }
   checkZoom();
 }
 
 // ---------- Launch, terrain and the calculation ----------
 async function useMosaic(lat, lon, z) {
-  loading = true; setStatus('Loading terrain…');
-  try { M = await loadMosaic(lat, lon, z, (d, n) => setStatus(`Loading terrain ${d} of ${n}…`)); }
+  loading = true; markCalc('loading'); setStatus('Loading terrain…');
+  try { M = await loadMosaic(lat, lon, z, (d, n) => { setStatus(`Loading terrain ${d} of ${n}…`); markCalc('loading', `Terrain ${d}/${n}`); }); }
   finally { loading = false; }
   SL = slopeGrid(); GRID = poolGrid(); gridId++; Gres = null; GEO = null; postGrid();
+  soaringUI?.terrain(M);
 }
 
-async function setLaunch(lat, lon, snapRadius = 0) {
-  if (loading) return;
+async function setLaunch(lat, lon, snapRadius = 0, options = {}) {
+  try { GP.coordinates({ lat, lon }); } catch (err) { setStatus(err.message); return; }
+  markCalc('loading');
+  if (loading || placingLaunch) { pendingLaunch = [lat, lon, snapRadius, options]; return; }
+  placingLaunch = true;
+  const previous = launch && { lat: launch.lat, lon: launch.lng };
   const z = M ? M.z : Z_MAX;
   const far = () => {
     if (!M) return true;
     const [x, y] = G.lonLatToPx(lon, lat, M.z);
     return Math.abs(x - (M.x0 + M.W / 2)) > TS * 1.2 || Math.abs(y - (M.y0 + M.W / 2)) > TS * 1.2;
   };
-  if (far()) await useMosaic(lat, lon, z);
+  if (options.reload || far()) await useMosaic(lat, lon, z);
   if (snapRadius > 0) { // move to the highest point within snapRadius metres
     const [x, y] = G.lonLatToPx(lon, lat, M.z), r = snapRadius / M.mpp;
     let best = -1e9, bx = x, by = y;
@@ -586,10 +644,15 @@ async function setLaunch(lat, lon, snapRadius = 0) {
     }
     [lon, lat] = G.pxToLonLat(bx, by, M.z);
   }
-  fineGround = { lat, lon, h: await groundAt13(lat, lon) };
+  fineGround = { lat, lon, h: await groundAt13(lat, lon).catch(() => NaN) };
+  if (previous && options.history !== false && (Math.abs(previous.lat - lat) > 1e-9 || Math.abs(previous.lon - lon) > 1e-9)) { launchHistory.push(previous); if (launchHistory.length > 20) launchHistory.shift(); }
+  const target = pendingTarget !== undefined ? pendingTarget : route?.target; pendingTarget = undefined;
   placeLaunch(lat, lon);
-  afterParams();
-  compute();
+  if (target) { route = { target: L.latLng(target.lat, target.lon ?? target.lng) }; routeEnd.setLatLng(route.target).addTo(map); }
+  updateLaunchUndo(); afterParams(); compute();
+  if (route) refreshRoute();
+  placingLaunch = false;
+  if (pendingLaunch) { const next = pendingLaunch; pendingLaunch = null; await setLaunch(...next); }
 }
 
 // The ground at the launch always comes from zoom-13 terrain. A long glide works on coarser terrain, which smooths a
@@ -611,6 +674,7 @@ function placeLaunch(lat, lon) {
   marker.setLatLng(launch);
   ring.setLatLng(launch);
   LS.set('launch', { lat, lon });
+  $('launchLat').value = +lat.toFixed(6); $('launchLon').value = +lon.toFixed(6);
   GEO = null;
   clearRoute(false);
   placeStatus();
@@ -618,6 +682,7 @@ function placeLaunch(lat, lon) {
 }
 function placeStatus() {
   if (groundAtLaunch !== groundAtLaunch) {
+    markCalc('missing');
     setStatus(`<span class="warn">No terrain here. ${navigator.onLine ? 'It failed to download; try again.' : 'This spot is outside your saved areas.'}</span>`);
   } else if (M.failed) {
     setStatus(`<span class="warn">${M.failed} of ${M.total} terrain tiles are missing${navigator.onLine ? '' : ' (outside the saved area)'}, so the reach stops short there.</span>`);
@@ -635,20 +700,21 @@ let zoomTimer = null, zoomKey = null;
 function checkZoom() {
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(async () => {
-    if (!M || loading || groundAtLaunch !== groundAtLaunch) return;
+    if (!M || loading || placingLaunch || groundAtLaunch !== groundAtLaunch) return;
     const lat = launch.lat;
-    const range = Math.max(0, groundAtLaunch + P.agl - P.mg - M.minT) * P.gr * (P.va + P.ws) / P.va;
+    const range = Math.max(0, groundAtLaunch + P.agl - P.mg - M.minT) * P.gr * (P.va + Math.max(P.ws,windUI?.maxSpeed||0)) / P.va;
     let want = G.chooseZoom(range, lat, RT, Z_MAX, Z_MIN);
     const edge = (R && R.kind.some(k => k === 1)) || (Gres && Gres.edge);
     if (edge && want >= M.z && M.z > Z_MIN) want = M.z - 1; // lower ground just outside the block
-    const key = [lat, launch.lng, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, P.vis, P.curve].join();
+    const key = [lat, launch.lng, P.agl, P.mg, P.va, P.gr, P.ws, P.wd, P.vis, P.curve,windUI?.scenarioKey||''].join();
     const same = key === zoomKey; zoomKey = key;
     if (want === M.z || (same && want > M.z)) return;
     await useMosaic(lat, launch.lng, want);
     const keep = route && route.target; // the route asked for (even while loading) stays, worked out again on the new terrain
     placeLaunch(lat, launch.lng);
-    if (keep) route = { target: keep };
+    if (keep) { route = { target: keep }; routeEnd.setLatLng(keep).addTo(map); }
     compute();
+    if (pendingLaunch) { const next = pendingLaunch; pendingLaunch = null; setLaunch(...next); }
   }, 350);
 }
 
@@ -656,31 +722,38 @@ const elevAtENU = (e, n) => sample(lpx + e / M.mpp - M.x0, lpy - n / M.mpp - M.y
 const pxLatLng = (x, y) => { const [lo, la] = G.pxToLonLat(x, y, M.z); return L.latLng(la, lo); };
 const enuToLatLng = (e, n) => pxLatLng(lpx + e / M.mpp, lpy - n / M.mpp);
 const cellLatLng = i => { const GW = GRID.GW; return pxLatLng(M.x0 + 2 * (i % GW) + 1, M.y0 + 2 * Math.floor(i / GW) + 1); };
-const glideOpts = () => ({ n: 720, h0: groundAtLaunch + P.agl, margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd,
+const glideOpts = () => ({ n: 720, h0: groundAtLaunch + P.agl, margin: P.mg, Va: P.va, GR: P.gr, windSpeed: P.ws, windFromDeg: P.wd, wind:windUI?.layer||null,
                            ds: M.mpp / 2, maxD: M.W * M.mpp });
 
 function compute() {
-  if (!M || !launch) return;
-  if (groundAtLaunch !== groundAtLaunch) { clearResult(); return; }
+  if (!M || !launch || loading) return;
+  if (groundAtLaunch !== groundAtLaunch) { clearResult(); soaringUI?.run(); return; }
+  soaringUI?.run();
+  if(windUI&&!windUI.prepare()){markCalc('updating',CONTENT.flow.updating);return;}
   const t0 = performance.now();
   R = G.castRays(glideOpts(), elevAtENU);
-  R.h0 = groundAtLaunch + P.agl; R.ms = performance.now() - t0;
+  R.h0 = groundAtLaunch + P.agl; R.key = runKey(); R.ms = performance.now() - t0;
   ring.setRadius(P.vis); if (!map.hasLayer(ring)) ring.addTo(map);
   mark3d();
   drawOverlay();
   drawProfile();
   runGrid();
+  soaringUI?.run();
+  if (route) refreshRoute();
+  updatePlanState();
   checkZoom();
 }
 
 function clearResult() {
-  R = null; Gres = null;
-  outline.setLatLngs([]); hitLines.setLatLngs([]); clearTrace(); ring.remove(); clearRoute(false);
+  R = null; Gres = null; markCalc('missing');
+  outline.setLatLngs([]); hitLines.setLatLngs([]); clearTrace(); ring.remove(); routeCase.setLatLngs([]); routeLine.setLatLngs([]);
+  if (route) refreshRoute();
   if (overlay) { map.removeLayer(overlay); overlay = null; }
   mark3d();
   $('stats').innerHTML = '';
   const c = $('profile'); c.getContext('2d').clearRect(0, 0, c.width, c.height);
   $('profWhat').textContent = '';
+  $('btnFly').disabled = true;
 }
 
 // Each grid cell's ray and distance from the launch only change when the launch or the terrain block does,
@@ -699,6 +772,7 @@ function geometry() {
 let lastOverlayMs = 0;
 function drawOverlay() {
   if (!R) return;
+  if (loading || R.key !== runKey() || (P.curve && (!Gres || Gres.key !== runKey() || Gres.gridId !== gridId))) { markCalc(loading ? 'loading' : 'updating'); return; }
   const t0 = performance.now();
   const GW = GRID.GW, mpp = M.mpp, cellA = (2 * mpp) ** 2 / 1e6, geo = geometry(), n = R.n, dmax = R.dmax, vis = P.vis, slMax = P.sl;
   const useG = Gres && Gres.gridId === gridId && P.curve, galt = useG ? Gres.alt : null, slope = GRID.slope;
@@ -764,93 +838,134 @@ function drawOverlay() {
   const rows = [
     ['Glider starts at', `${U.h(R.h0)} above sea level`],
     ['Farthest straight glide', `${U.d(maxD)} toward ${compass(maxB * 180 / Math.PI)}`],
-    ['Landable ground in sight', U.a(landA)],
+    ['Potential landing ground in sight', U.a(landA)],
   ];
   if (P.curve) rows.push(['Gained by curving round hills', useG ? `+${U.a(curveLandA)}` : 'working…']);
   if (outA > 0) rows.push(['Reachable but out of sight', U.a(outA)]);
   rows.push(['Directions where a slope stops the glide in sight', `${Math.round(100 * steepHits / n)}%`]);
   rows.push(['Terrain detail', `${U.h(mpp)} per point${M.z < Z_MAX ? ' (coarser, for a long glide)' : ''}`]);
   $('stats').innerHTML = rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  hadResult = true; markCalc(M.failed ? 'partial' : 'ready');
+  $('terrainDetail').textContent = `Terrain spacing ${U.h(M.mpp)}${M.failed ? ` · ${M.failed} missing tiles` : ''}`;
 }
 
 // ---------- Routes round terrain ----------
 function showRoute(ll) {
-  if (!Gres || Gres.gridId !== gridId || !P.curve) { setStatus('Turn on curving round hills to see routes.'); return; }
+  soaringUI?.setView('glide', false);
   route = { target: ll };
-  refreshRoute();
+  refreshRoute(); updatePlanState();
 }
 function refreshRoute() {
+  if (!route || !M || !GRID || !launch) return;
   const GW = GRID.GW, [x, y] = G.lonLatToPx(route.target.lng, route.target.lat, M.z);
   const gx = Math.floor((x - M.x0) / 2), gy = Math.floor((y - M.y0) / 2);
-  const cells = gx >= 0 && gy >= 0 && gx < GW && gy < GW ? G.routeTo(Gres.parent, Gres.alt, gy * GW + gx) : [];
-  route.cells = cells;
-  if (!cells.length) {
-    const far = launch.distanceTo(route.target) > P.vis;
-    clearRoute(true);
-    setStatus(`<span class="warn">${far ? `That spot is more than ${U.d(P.vis)} away, out of sight.` : 'The glider can\'t reach that spot from this launch.'}</span>`);
-    return;
+  const index = gx >= 0 && gy >= 0 && gx < GW && gy < GW ? gy * GW + gx : -1;
+  const e = (x - lpx) * M.mpp, n = (lpy - y) * M.mpp, bearing = Math.atan2(e, n);
+  const result = !loading && Gres?.gridId === gridId && Gres.key === runKey() ? Gres : null;
+  const info = GP.inspect({ params: P, rays: !loading && R?.key === runKey() ? R : null, grid: { ...GRID, cell: 2 * M.mpp }, result, index,
+    distance: Math.hypot(e, n), bearing, ground: index < 0 ? NaN : GRID.terr[index],
+    slope: index < 0 ? NaN : GRID.slope[index], missing: M.failed > 0 });
+  if (loading) { info.kind = 'pending'; info.reason = 'Loading terrain for this destination…'; info.cells = []; info.arrival = info.clearance = info.routeDistance = null; }
+  if (!Number.isFinite(groundAtLaunch)) { info.kind = 'missing'; info.reason = 'Terrain is missing at the launch. Arrival and clearance cannot be calculated.'; info.cells = []; info.arrival = info.clearance = info.routeDistance = null; info.reachable = false; }
+  if (!P.curve && info.reachable) {
+    const p = G.glideAlong(glideOpts(), elevAtENU, bearing, 0);
+    let min = Infinity;
+    for (let k = 0; k <= p.end && p.d[k] <= info.distance; k++) min = Math.min(min, p.glide[k] - p.ground[k]);
+    info.clearance = Math.min(min, info.arrival);
   }
-  const pts = cells.map(cellLatLng);
+  route.cells = info.cells; route.info = info; route.bearing = GP.wrap(bearing * 180 / Math.PI);
+  const pts = info.cells.length ? info.cells.map(cellLatLng) : (!P.curve && info.reachable ? [launch, route.target] : []);
   routeCase.setLatLngs(pts); routeLine.setLatLngs(pts);
-  routeEnd.setLatLng(pts[pts.length - 1]).addTo(map);
+  routeEnd.setLatLng(route.target).addTo(map);
+  $('destination').hidden = false;
+  $('destination').classList.toggle('pending', info.kind === 'pending');
+  $('destState').textContent = CONTENT.destination[info.kind];
+  $('destCoords').textContent = `${route.target.lat.toFixed(5)}, ${route.target.lng.toFixed(5)}`;
+  const value = (v, f) => Number.isFinite(v) ? f(v) : '—';
+  const rows = [['Arrival AGL', value(info.arrival, U.h)], ['Route', value(info.routeDistance, U.d)],
+    ['Min. terrain clearance', value(info.clearance, U.h)], ['Ground slope', value(info.slope, v => `${v.toFixed(1)}°`)],
+    ['Sight', `${U.d(info.distance)} / ${U.d(P.vis)}`]];
+  if(windUI?.ready){const v=windUI.atLatLng(route.target);rows.push([`Wind @ ${U.h(windUI.height)} AGL`,`${U.v(Math.hypot(v.east,v.north))} from ${compass(WindCore.bearing(v.east,v.north))}`]);}
+  $('destStats').replaceChildren(...rows.map(([label, text]) => {
+    const div = document.createElement('div'), dt = document.createElement('dt'), dd = document.createElement('dd');
+    dt.textContent = label; dd.textContent = text; div.append(dt, dd); return div;
+  }));
+  $('destReason').textContent = info.reason + (info.reachable && P.curve ? ' Route maximizes predicted arrival height on the terrain grid.' : '');
   $('profBack').hidden = false;
-  drawProfile();
+  $('prof').classList.add('has-route'); $('bearingValue').disabled = true; $('bearingValue').value = +route.bearing.toFixed(1);
+  drawProfile(); map.invalidateSize();
 }
 function clearRoute(redraw) {
   route = null; routeCase.setLatLngs([]); routeLine.setLatLngs([]); routeEnd.remove();
-  $('profBack').hidden = true;
-  if (redraw) drawProfile();
+  $('profBack').hidden = true; $('destination').hidden = true;
+  $('prof').classList.remove('has-route'); $('bearingValue').disabled = false; $('bearingValue').value = +P.pb.toFixed(1);
+  if (redraw) { updatePlanState(); drawProfile(); map.invalidateSize(); }
 }
-$('profBack').onclick = () => clearRoute(true);
+$('profBack').onclick = $('clearDestination').onclick = () => clearRoute(true);
 
 // ---------- Cross-section ----------
 let PROF = null; // what's drawn, for the touch / hover read-out
 function profileData() {
-  if (route && route.cells && route.cells.length > 1) {
-    const GW = GRID.GW, cell = 2 * M.mpp, d = [0], ground = [], glide = [];
-    route.cells.forEach((c, k) => {
-      if (k) { const p = route.cells[k - 1], dx = c % GW - p % GW, dy = Math.floor(c / GW) - Math.floor(p / GW); d.push(d[k - 1] + Math.hypot(dx, dy) * cell); }
-      ground.push(GRID.terr[c]); glide.push(Gres.alt[c]);
+  if (route && route.cells && route.cells.length > 1 && Gres?.key === runKey()) {
+    const GW=GRID.GW,cell=2*M.mpp,d=[],ground=[],glide=[],lls=[];
+    let distance=0;
+    route.cells.forEach((c,k)=>{
+      const at=cellLatLng(c);
+      if(k){const prev=route.cells[k-1],dx=c%GW-prev%GW,dy=Math.floor(c/GW)-Math.floor(prev/GW),len=Math.hypot(dx,dy)*cell,sx=Math.sign(dx),sy=Math.sign(dy);
+        const mids=Math.abs(dx)===2?[[sx,0],[sx,sy]]:Math.abs(dy)===2?[[0,sy],[sx,sy]]:dx&&dy?[[sx,0],[0,sy]]:[];
+        const h=Number.isFinite(Gres.midAlt?.[c])?Gres.midAlt[c]:(Gres.alt[prev]+Gres.alt[c])/2;
+        const midGround=mids.length?Math.max(...mids.map(([mx,my])=>GRID.terr[prev+my*GW+mx])):(GRID.terr[prev]+GRID.terr[c])/2;
+        const before=cellLatLng(prev);d.push(distance+len/2);ground.push(midGround);glide.push(h);lls.push(L.latLng((before.lat+at.lat)/2,(before.lng+at.lng)/2));distance+=len;
+      }
+      d.push(distance);ground.push(GRID.terr[c]);glide.push(Gres.alt[c]);lls.push(at);
     });
-    const last = route.cells[route.cells.length - 1], arrive = Gres.alt[last] - GRID.terr[last];
-    return { d, ground, glide, end: d.length - 1, hit: false, curve: true, lls: route.cells.map(cellLatLng),
-             what: `Best route to the spot you picked: ${U.d(d[d.length - 1])} flown, arriving ${U.h(arrive)} above the ground.` };
+    const last=route.cells.at(-1),arrive=Gres.alt[last]-GRID.terr[last];
+    return {d,ground,glide,end:d.length-1,hit:false,curve:true,lls,what:`Highest predicted arrival height: ${U.d(distance)} flown, arriving ${U.h(arrive)} above the ground.`};
   }
-  const b = P.pb * Math.PI / 180;
+  const bearing = route?.bearing ?? P.pb, b = bearing * Math.PI / 180;
   const first = G.glideAlong(glideOpts(), elevAtENU, b, 0), dEnd0 = first.d[first.end] || 0;
-  const span = Math.max(dEnd0 * 1.4, Math.min(P.vis * 1.1, M.W * M.mpp / 2), 800);
+  const targetDistance = route?.info?.distance;
+  const span = Number.isFinite(targetDistance) ? Math.max(targetDistance * 1.15, 100) : Math.max(dEnd0 * 1.4, Math.min(P.vis * 1.1, M.W * M.mpp / 2), 800);
   const p = G.glideAlong(glideOpts(), elevAtENU, b, Math.max(0, span - dEnd0)); // the same glide, with the ground on past its end
   const dEnd = p.d[p.end] || 0;
   const d = [], ground = [], glide = [];
   for (let k = 0; k < p.d.length && p.d[k] <= span; k++) { d.push(p.d[k]); ground.push(p.ground[k]); glide.push(p.glide[k]); }
   const lls = d.map(s => enuToLatLng(Math.sin(b) * s, Math.cos(b) * s));
-  const what = p.kind === 2 ? `Straight toward ${P.pb}°: the wind is too strong to fly this way.`
-    : `Straight toward ${P.pb}° (${compass(P.pb, true)}): ${p.kind === 0 ? 'meets the ground' : 'leaves the loaded terrain'} after ${U.d(dEnd)}` +
+  const what = p.kind === 2 ? `Straight toward ${+bearing.toFixed(1)}°: the wind is too strong to fly this way.`
+    : `Straight toward ${+bearing.toFixed(1)}° (${compass(bearing, true)}): ${p.kind === 0 ? 'meets the ground' : 'leaves the loaded terrain'} after ${U.d(dEnd)}` +
       (dEnd > P.vis ? `, but it's out of sight after ${U.d(P.vis)}.` : '.');
-  return { d, ground, glide, end: Math.min(p.end, d.length - 1), hit: p.kind === 0, curve: false, lls, what };
+  let end = Math.min(p.end, d.length - 1), hit = p.kind === 0;
+  if (route?.info?.reachable && !P.curve) {
+    while (end > 0 && d[end] > targetDistance) end--;
+    hit = false;
+  }
+  return { d, ground, glide, end, hit, curve: false, lls, what: route ? `${CONTENT.destination[route.info?.kind || 'pending']}: ${U.d(targetDistance || 0)} from launch.` : what };
 }
 
 function drawProfile() {
+  if (soaringUI?.view === 'soaring') { soaringUI.drawProfile(); return; }
   const cv = $('profile');
   if (!R || !M) return;
+  const p = profileData();
+  $('profWhat').textContent = p.what;
+  if ($('app').classList.contains('profile-off')) { drawTrace(p, []); PROF = { ...p }; $('btnFly').disabled = !(p.end > 0) || ['loading', 'updating', 'missing'].includes($('app').dataset.calc); return; }
   const dpr = window.devicePixelRatio || 1, Wc = cv.clientWidth, Hc = cv.clientHeight;
   if (!Wc || !Hc) return;
   if (cv.width !== Math.round(Wc * dpr) || cv.height !== Math.round(Hc * dpr)) { cv.width = Math.round(Wc * dpr); cv.height = Math.round(Hc * dpr); }
   const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, Wc, Hc);
-  const p = profileData();
-  $('profWhat').textContent = p.what;
   const series = p.curve ? COL.curve : COL.straight;
   $('profKeyLine').style.borderTopColor = series; $('profKeyMargin').style.borderTopColor = series;
   if (p.d.length < 2) { PROF = null; clearTrace(); $('btnFly').disabled = true; return; }
   const dMax = p.d[p.d.length - 1];
   let lo = Infinity, hi = -Infinity;
-  for (let k = 0; k < p.d.length; k++) { lo = Math.min(lo, p.ground[k]); hi = Math.max(hi, p.ground[k], p.glide[k] || -Infinity); }
+  for (let k = 0; k < p.d.length; k++) { if (Number.isFinite(p.ground[k])) { lo = Math.min(lo, p.ground[k]); hi = Math.max(hi, p.ground[k]); } if (Number.isFinite(p.glide[k])) hi = Math.max(hi, p.glide[k]); }
+  if (!Number.isFinite(lo)) { PROF = null; clearTrace(); $('btnFly').disabled = true; $('profWhat').textContent = 'Terrain is missing along this cross-section.'; return; }
   hi = Math.max(hi, R.h0);
   const pad = (hi - lo) * 0.1 + 5; lo -= pad; hi += pad;
   const L0 = 52, B0 = 22, T0 = 8, R0 = 14, isMetric = units === 'metric', hk = isMetric ? 1 : G.FT;
   const X = d => L0 + (d / dMax) * (Wc - L0 - R0), Y = h => T0 + (1 - (h - lo) / (hi - lo)) * (Hc - T0 - B0);
   PROF = { ...p, X, Y, L0, R0, Wc, Hc, B0, T0, dMax };
-  $('btnFly').disabled = !(p.end > 0 && p.glide[0] === p.glide[0]);
+  $('btnFly').disabled = !(p.end > 0 && p.glide[0] === p.glide[0]) || ['loading', 'updating', 'missing'].includes($('app').dataset.calc);
 
   // recessive grid: a few height lines (in the chosen unit) and distance ticks
   c.font = '12px system-ui, sans-serif'; c.fillStyle = COL.muted; c.strokeStyle = COL.line; c.lineWidth = 1;
@@ -861,7 +976,7 @@ function drawProfile() {
     c.fillText(U.h(h), L0 - 6, Y(h));
   }
   const dUnit = isMetric ? (dMax > 2500 ? 1000 : 1) : (dMax > 0.5 * G.MI ? G.MI : 1 / G.FT);
-  const dStep = niceStep(dMax / dUnit / 5) * dUnit;
+  const dStep = niceStep(dMax / dUnit / Math.max(1, Math.floor((Wc - L0 - R0) / 85))) * dUnit;
   c.textAlign = 'center'; c.textBaseline = 'alphabetic';
   const dLabel = d => isMetric ? (dUnit === 1000 ? `${+(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`) : (dUnit === G.MI ? `${+(d / G.MI).toFixed(1)} mi` : `${Math.round(d * G.FT)} ft`);
   const ticks = [];
@@ -872,11 +987,16 @@ function drawProfile() {
     c.fillStyle = COL.line; c.globalAlpha = 0.5; c.fillRect(X(P.vis), T0, Wc - R0 - X(P.vis), Hc - T0 - B0); c.globalAlpha = 1;
     c.fillStyle = COL.ink2; c.textAlign = 'left'; c.fillText('Out of sight', X(P.vis) + 6, T0 + 14);
   }
-  // ground
-  c.beginPath(); c.moveTo(X(0), Hc - B0);
-  for (let k = 0; k < p.d.length; k++) c.lineTo(X(p.d[k]), Y(p.ground[k]));
-  c.lineTo(X(dMax), Hc - B0); c.closePath();
-  c.fillStyle = COL.terrain; c.fill(); c.strokeStyle = COL.terrainEdge; c.lineWidth = 1.5; c.stroke();
+  // Ground is drawn in separate runs so missing terrain stays a gap.
+  c.fillStyle = COL.terrain; c.strokeStyle = COL.terrainEdge; c.lineWidth = 1.5;
+  let start = 0;
+  while (start < p.d.length) {
+    while (start < p.d.length && !Number.isFinite(p.ground[start])) start++;
+    if (start === p.d.length) break;
+    let end = start; c.beginPath(); c.moveTo(X(p.d[start]), Hc - B0);
+    while (end < p.d.length && Number.isFinite(p.ground[end])) { c.lineTo(X(p.d[end]), Y(p.ground[end])); end++; }
+    c.lineTo(X(p.d[end - 1]), Hc - B0); c.closePath(); c.fill(); c.stroke(); start = end;
+  }
   // glider − margin (dashed, faint), then the glider (solid)
   const line = (off, color, width, dash) => {
     c.beginPath(); let on = false;
@@ -928,7 +1048,7 @@ function showCursor(k, from) {
   c.putImageData(PROF.img, 0, 0);
   c.strokeStyle = COL.ink2; c.lineWidth = 1; c.beginPath(); c.moveTo(X + .5, PROF.T0); c.lineTo(X + .5, PROF.Hc - PROF.B0); c.stroke();
   const g = PROF.ground[k], v = PROF.glide[k], tip = $('profTip');
-  tip.innerHTML = `<b>${U.d(PROF.d[k])}</b> out<br>Ground ${U.h(g)}` + (v === v && k <= PROF.end ? `<br>Glider ${U.h(v)}, ${U.h(v - g)} above it` : '');
+  tip.innerHTML = PROF.kind === 'soaring' ? soaringUI.tip(k) : `<b>${U.d(PROF.d[k])}</b> from launch<br>Ground MSL ${U.h(g)}` + (v === v && k <= PROF.end ? `<br>Glider AGL ${U.h(v - g)}<br>Clearance above margin ${U.h(v - g - P.mg)}` : '<br>Beyond predicted glide');
   tip.hidden = false;
   tip.style.left = Math.min(Math.max(4, X + 12), cv.clientWidth - tip.offsetWidth - 4) + 'px';
   tip.style.top = '10px';
@@ -945,7 +1065,7 @@ function hideCursor() {
 }
 // on the cross-section: the cursor follows the pointer (or finger), and the probe shows the same spot on the map
 function profHover(e) {
-  if (!PROF) return;
+  if (!PROF?.X) return;
   const r = $('profile').getBoundingClientRect(), x = e.clientX - r.left;
   if (x < PROF.L0 || x > PROF.Wc - PROF.R0) { hideCursor(); return; }
   const dq = (x - PROF.L0) / (PROF.Wc - PROF.L0 - PROF.R0) * PROF.dMax;
@@ -953,6 +1073,19 @@ function profHover(e) {
   if (k < PROF.d.length - 1 && dq - PROF.d[k] > PROF.d[k + 1] - dq) k++;
   showCursor(k, 'profile');
 }
+$('profile').addEventListener('keydown', e => {
+  if (!PROF?.img) return;
+  const step = e.shiftKey ? 10 : 1;
+  let next = cursorK ?? 0;
+  if (e.key === 'ArrowRight') next += step;
+  else if (e.key === 'ArrowLeft') next -= step;
+  else if (e.key === 'Home') next = 0;
+  else if (e.key === 'End') next = PROF.d.length - 1;
+  else if (e.key === 'Escape') { hideCursor(); return; }
+  else return;
+  e.preventDefault(); showCursor(Math.max(0, Math.min(PROF.d.length - 1, next)), 'profile');
+  $('cursorStatus').textContent = $('profTip').innerText.replace(/\n/g, '. ');
+});
 $('profile').addEventListener('pointermove', profHover);
 $('profile').addEventListener('pointerdown', profHover);
 $('profile').addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideCursor(); });
@@ -971,6 +1104,7 @@ map.on('mousemove', e => {
 map.on('mouseout', () => { if (cursorFrom === 'map') hideCursor(); });
 
 // ---------- Saved areas ----------
+let cachedAreaKeys = new Set();
 const areas = () => LS.get('areas', []);
 const areaKeys = a => G.areaTiles(a.lat, a.lon, Z_MAX, SAVE_R, Z_MIN, SAVE_R_LOW).map(([z, x, y]) => terrUrl(z, x, y));
 const fmtMB = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
@@ -988,7 +1122,9 @@ async function saveArea() {
               name: $('areaName').value.trim() || `Near ${launch.lat.toFixed(3)}, ${launch.lng.toFixed(3)}`, date: new Date().toLocaleDateString('en-CA') };
   const keys = areaKeys(a);
   $('btnSave').disabled = true;
-  const savedC = await caches.open(SAVED), runtime = await caches.open(RUNTIME);
+  let savedC, runtime;
+  try { savedC = await caches.open(SAVED); runtime = await caches.open(RUNTIME); }
+  catch { $('saveStatus').textContent = 'This browser could not open offline storage.'; $('btnSave').disabled = false; return; }
   let done = 0, bytes = 0, failed = 0, next = 0;
   const pull = async () => {
     while (next < keys.length) {
@@ -1008,9 +1144,10 @@ async function saveArea() {
   };
   await Promise.all(Array.from({ length: 6 }, pull));
   a.bytes = bytes;
-  if (failed) { $('saveStatus').innerHTML = `<span class="warn">${failed} tiles didn't download. Check the connection and save again.</span>`; }
+  if (failed) { $('saveStatus').textContent = `Incomplete: ${keys.length - failed}/${keys.length} tiles saved. Retry Save this area to fetch the missing tiles.`; }
   else {
-    LS.set('areas', [a, ...areas()]);
+    a.tiles = keys.length;
+    if (!LS.set('areas', [a, ...areas()])) { $('saveStatus').textContent = 'Terrain downloaded, but the area list could not be saved. Free browser storage and retry.'; $('btnSave').disabled = false; return; }
     $('areaName').value = '';
     let persisted = false;
     try { persisted = await navigator.storage.persist(); } catch (e) {}
@@ -1018,7 +1155,7 @@ async function saveArea() {
       (persisted ? '' : ' The browser may clear it if space runs low; on iPhone, add this page to your Home Screen to keep it.');
   }
   $('btnSave').disabled = !navigator.onLine;
-  renderAreas();
+  await renderAreas();
 }
 
 async function deleteArea(id) {
@@ -1035,12 +1172,17 @@ async function deleteArea(id) {
 async function renderAreas() {
   const list = areas(), ul = $('areas');
   summaries();
+  try { cachedAreaKeys = new Set((await (await caches.open(SAVED)).keys()).map(r => r.url)); } catch { cachedAreaKeys = new Set(); }
   ul.innerHTML = ''; areaBoxes.clearLayers();
   for (const a of list) {
     const li = document.createElement('li');
     li.innerHTML = `<div class="nm"></div><button class="btn" type="button" data-go>Go</button><button class="btn" type="button" data-del>Delete</button>`;
     li.querySelector('.nm').textContent = a.name;
     const sub = document.createElement('span'); sub.textContent = `${fmtMB(a.bytes || 0)}, saved ${fmtDate(a.date)}`; li.querySelector('.nm').appendChild(sub);
+    const state = document.createElement('span'), keys = areaKeys(a), count = keys.filter(k => cachedAreaKeys.has(k)).length;
+    state.className = 'area-state' + (count < keys.length ? ' area-incomplete' : '');
+    state.textContent = `${count}/${keys.length} terrain tiles${count === keys.length ? ' · complete' : ' · incomplete, save again to repair'}`;
+    li.querySelector('.nm').appendChild(state);
     li.querySelector('[data-go]').setAttribute('aria-label', `Go to ${a.name}`);
     li.querySelector('[data-del]').setAttribute('aria-label', `Delete ${a.name}`);
     li.querySelector('[data-go]').onclick = () => { fitNext = true; map.setView([a.lat, a.lon], 13); setLaunch(a.lat, a.lon); };
@@ -1049,6 +1191,7 @@ async function renderAreas() {
     L.rectangle(areaBounds(a), { color: C.line, weight: 1, dashArray: '2 5', opacity: .6, fill: false, interactive: false }).addTo(areaBoxes);
   }
   if (!list.length) ul.innerHTML = '<li class="hint">No saved areas yet.</li>';
+  updateCoverage();
   const savedBytes = list.reduce((s, a) => s + (a.bytes || 0), 0); // the browser's own figure can lag a fresh save
   try {
     const { usage, quota } = await navigator.storage.estimate();
@@ -1059,7 +1202,38 @@ async function renderAreas() {
   } catch (e) { $('storage').textContent = savedBytes ? `Saved areas use ${fmtMB(savedBytes)}.` : ''; }
 }
 
+// Verify what is actually present, including the shell, rather than trusting a previous save's metadata.
+function updateCoverage() {
+  if (!launch) return;
+  const keys = areaKeys({ lat: launch.lat, lon: launch.lng }), count = keys.filter(k => cachedAreaKeys.has(k)).length;
+  $('offlineReady').textContent = `Current launch coverage: ${count}/${keys.length} required terrain tiles saved. ` +
+    (count === keys.length ? 'Terrain complete; verify the page files before going offline.' : 'Save this area for full offline terrain coverage.');
+}
+async function verifyOffline() {
+  const b = $('verifyAreas'); b.disabled = true; $('saveStatus').textContent = 'Checking saved terrain and page files…';
+  await renderAreas();
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration?.active) throw new Error('The offline page is not installed yet. Wait for installation, then verify again.');
+    const reply = await new Promise((resolve, reject) => {
+      const channel = new MessageChannel(), timer = setTimeout(() => reject(new Error('The offline page did not respond. Reload online and verify again.')), 4000);
+      channel.port1.onmessage = e => { clearTimeout(timer); channel.port1.close(); resolve(e.data); };
+      registration.active.postMessage({ type: 'verify-shell' }, [channel.port2]);
+    });
+    const count = launch ? areaKeys({ lat: launch.lat, lon: launch.lng }).filter(k => cachedAreaKeys.has(k)).length : 0;
+    $('saveStatus').textContent = `${reply.present}/${reply.total} page files verified; ${count}/277 terrain tiles at this launch. ` +
+      (reply.present === reply.total && count === 277 ? 'Ready for offline planning at this launch.' : 'Incomplete: reload online for page files, or save this area for terrain.');
+  } catch (err) { $('saveStatus').textContent = err.message; }
+  finally { b.disabled = false; }
+}
+$('verifyAreas').onclick = verifyOffline;
+
 // ---------- Buttons ----------
+$('retryTerrain').onclick = async () => {
+  const b = $('retryTerrain'); b.disabled = true;
+  try { await setLaunch(launch?.lat ?? start.lat, launch?.lng ?? start.lon, 0, { reload: true, history: false }); }
+  finally { b.disabled = false; }
+};
 $('btnSave').onclick = saveArea;
 $('btnMHill').onclick = () => { fitNext = true; setLaunch(M_HILL.lat, M_HILL.lon, M_HILL.snap); };
 $('btnGeo').onclick = () => locate();
@@ -1097,7 +1271,7 @@ const showPanelCtl = new ShowPanel().addTo(map);
 setPanel(LS.get('panel', true) !== false);
 
 // ---------- Quick start: three steps, on a first visit (until switched off) and from the book in the header ----------
-const GLIDERS = { foam: { gr: 8, va: 8, vis: 400 }, two: { gr: 15, va: 10, vis: 600 }, scale: { gr: 25, va: 14, vis: 1000 } };
+const GLIDERS = Object.fromEntries(CONTENT.aircraft.map(a => [a.id, GP.aircraft(a)]));
 let gStep = 0, guideAfterTap = false;
 function paintGuide() {
   for (const b of document.querySelectorAll('[data-glider]')) {
@@ -1131,17 +1305,154 @@ $('guide').querySelector('[data-close]').onclick = () => $('guide').close();
 $('guide').addEventListener('click', e => { if (e.target === $('guide')) $('guide').close(); }); // a click on the backdrop
 $('guide').querySelector('[data-g=geo]').onclick = () => { locate(); guideStep(1); };
 $('guide').querySelector('[data-g=example]').onclick = () => { fitNext = true; setLaunch(M_HILL.lat, M_HILL.lon, M_HILL.snap); guideStep(1); };
-$('guide').querySelector('[data-g=tap]').onclick = () => { guideAfterTap = true; $('guide').close(); setStatus('Tap the map where you launch.'); };
+$('guide').querySelector('[data-g=tap]').onclick = () => { guideAfterTap = true; setMapMode('launch'); $('guide').close(); setStatus('Tap the map where you launch.'); };
 const applyPreset = vals => {
-  Object.assign(P, vals); save(); setSliders(); afterParams(); schedule('all'); paintGuide();
+  Object.assign(P, vals); save(); setSliders(); afterParams(); markCalc('updating'); schedule('all'); paintGuide();
 };
 document.querySelectorAll('[data-glider]').forEach(b => { b.onclick = () => applyPreset(GLIDERS[b.dataset.glider]); });
 document.querySelectorAll('[data-height]').forEach(b => { b.onclick = () => applyPreset({ agl: +b.dataset.height }); });
 
+// ---------- Aircraft and reusable flight plans ----------
+const storedList = key => { const value = LS.get(key, []); return Array.isArray(value) ? value : []; };
+const plans = () => storedList('plans').filter(a => {
+  try { GP.validatePlan(a.plan); return typeof a.id === 'string' && typeof a.name === 'string'; } catch { return false; }
+});
+const customAircraft = () => storedList('aircraft').filter(a => {
+  try { GP.aircraft(a); return typeof a.id === 'string' && typeof a.name === 'string'; } catch { return false; }
+});
+const idFor = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function currentPlan() {
+  return launch ? GP.validatePlan({ version: 1, launch, params: P, target: route?.target || pendingTarget, units, windModel:windUI?.snapshot() }) : null;
+}
+function renderPlans() {
+  const select = $('savedPlan'), choice = select.value;
+  select.replaceChildren(new Option('Choose a plan', ''), ...plans().map(a => new Option(a.name, a.id)));
+  select.value = plans().some(a => a.id === choice) ? choice : '';
+  $('loadPlan').disabled = $('deletePlan').disabled = !select.value;
+}
+function renderAircraft() {
+  $('aircraftPreset').replaceChildren(new Option('Custom settings', ''),
+    ...CONTENT.aircraft.map(a => new Option(a.name, a.id)), ...customAircraft().map(a => new Option(a.name, a.id)));
+}
+function updatePlanState() {
+  const now = currentPlan(), changed = selectedPlan && now ? GP.differences(selectedPlan.plan.params, P) : [];
+  const dirty = selectedPlan && !GP.samePlan(now, selectedPlan.plan);
+  $('planChanged').textContent = selectedPlan ? `${selectedPlan.name}${dirty ? ' · changed' : ' · saved'}` : 'Unsaved plan';
+  const base = selectedPlan?.plan.params;
+  for (const k of Object.keys(SPEC)) $(k).closest('.row').classList.toggle('changed', !!base && changed.includes(k));
+  if (selectedPlan) $('planStatus').textContent = dirty ? `${changed.length} setting${changed.length === 1 ? '' : 's'} changed${!GP.samePlan({ ...now, params: selectedPlan.plan.params }, selectedPlan.plan) ? '; launch, destination or wind model changed' : ''}. Save to update this plan.` : 'Matches the saved plan.';
+  const aircraft = [...CONTENT.aircraft, ...customAircraft()].find(a => ['gr', 'va', 'vis'].every(k => Math.abs(P[k] - a[k]) < 1e-8));
+  selectedAircraft = aircraft || null;
+  $('aircraftPreset').value = aircraft?.id || '';
+  $('deleteAircraft').disabled = !aircraft || !customAircraft().some(a => a.id === aircraft.id);
+  $('sharePlan').disabled = !launch || loading;
+  if (typeof updateCoverage === 'function') updateCoverage();
+}
+$('savedPlan').onchange = () => { $('loadPlan').disabled = $('deletePlan').disabled = !$('savedPlan').value; };
+$('savePlan').onclick = () => {
+  const plan = currentPlan(), name = $('planName').value.trim().slice(0, 80);
+  if (!name || !plan) { $('planStatus').textContent = 'Enter a name and set a launch before saving.'; $('planName').focus(); return; }
+  const all = plans(), previous = all.find(a => a.name === name), record = { id: previous?.id || idFor(), name, plan };
+  if (!LS.set('plans', [record, ...all.filter(a => a.id !== record.id)])) { $('planStatus').textContent = 'Browser storage is full. This plan was not saved; copy its link instead.'; return; }
+  selectedPlan = record; renderPlans(); $('savedPlan').value = record.id; $('savedPlan').onchange(); updatePlanState();
+};
+$('loadPlan').onclick = async () => {
+  const record = plans().find(a => a.id === $('savedPlan').value); if (!record) return;
+  selectedPlan = record; $('planName').value = record.name;
+  const p = GP.validatePlan(record.plan);
+  Object.assign(P, p.params); windUI?.restore(p.windModel); units = p.units; U = G.Units[units]; LS.set('units', units);
+  $('curve').checked = P.curve; pendingTarget = p.target;
+  save(); setSliders(); wdDial.render(); pbDial.render();
+  fitNext = true; await setLaunch(p.launch.lat, p.launch.lon);
+  afterParams();
+};
+$('deletePlan').onclick = () => {
+  const id = $('savedPlan').value;
+  LS.set('plans', plans().filter(a => a.id !== id));
+  if (selectedPlan?.id === id) { selectedPlan = null; $('planName').value = ''; }
+  renderPlans(); updatePlanState(); $('planStatus').textContent = 'Saved plan deleted. Current settings are still open.';
+};
+$('aircraftPreset').onchange = () => {
+  const a = [...CONTENT.aircraft, ...customAircraft()].find(a => a.id === $('aircraftPreset').value);
+  if (!a) return;
+  $('aircraftName').value = customAircraft().some(x => x.id === a.id) ? a.name : '';
+  applyPreset(GP.aircraft(a)); wdDial.render();
+  $('aircraftStatus').textContent = 'Aircraft sets glide ratio, airspeed and sight distance. Launch height and wind stay as set.';
+};
+$('saveAircraft').onclick = () => {
+  const name = $('aircraftName').value.trim().slice(0, 80);
+  if (!name) { $('aircraftStatus').textContent = 'Enter an aircraft name.'; $('aircraftName').focus(); return; }
+  const all = customAircraft(), a = { id: all.find(x => x.name === name)?.id || 'custom-' + idFor(), name, ...GP.aircraft(P) };
+  if (!LS.set('aircraft', [a, ...all.filter(x => x.id !== a.id)])) { $('aircraftStatus').textContent = 'Browser storage is full; aircraft was not saved.'; return; }
+  renderAircraft(); updatePlanState(); $('aircraftStatus').textContent = `Saved ${name}.`;
+};
+$('deleteAircraft').onclick = () => {
+  LS.set('aircraft', customAircraft().filter(a => a.id !== selectedAircraft?.id));
+  renderAircraft(); updatePlanState(); $('aircraftName').value = ''; $('aircraftStatus').textContent = 'Aircraft preset deleted. Current values are still open.';
+};
+$('sharePlan').onclick = async () => {
+  const plan = currentPlan(); if (!plan) return;
+  const url = new URL(location.href); url.hash = 'plan=' + GP.encode(plan);
+  try { await navigator.clipboard.writeText(url.href); $('planStatus').textContent = 'Plan link copied, including launch, settings and destination.'; $('sharePlan').textContent = 'Link copied'; setTimeout(() => { $('sharePlan').textContent = 'Copy plan link'; }, 3000); }
+  catch {
+    document.querySelector('[data-sec=plans]').open = true;
+    if (compact.matches) setDrawer(true); else setPanel(true);
+    $('shareLink').hidden = false; $('shareLink').value = url.href;
+    $('shareLink').focus(); $('shareLink').select(); $('shareLink').scrollIntoView({ block: 'nearest' });
+    $('planStatus').textContent = 'Copy the selected plan link.';
+  }
+};
+$('setCoordinates').onclick = () => {
+  const lat = $('launchLat'), lon = $('launchLon');
+  if (!lat.value || !lon.value || !lat.reportValidity() || !lon.reportValidity()) return;
+  try { const p = GP.coordinates({ lat: +lat.value, lon: +lon.value }); fitNext = true; setLaunch(p.lat, p.lon); }
+  catch (err) { setStatus(err.message); }
+};
+function numericBearing(id, key, dial, isFlight) {
+  $(id).addEventListener('input', () => $(id).setCustomValidity(''));
+  $(id).addEventListener('change', () => {
+    const el = $(id), v = Number(el.value);
+    if (!el.value || !Number.isFinite(v)) { el.setCustomValidity('Enter a bearing in degrees.'); el.reportValidity(); return; }
+    el.setCustomValidity(''); P[key] = GP.wrap(v); el.value = +P[key].toFixed(1); dial.render();
+    if (isFlight) parameterChanged();
+    else { clearRoute(false); save(); afterParams(); schedule('profile'); map.invalidateSize(); }
+  });
+}
+numericBearing('windBearing', 'wd', wdDial, true);
+numericBearing('bearingValue', 'pb', pbDial, false);
+
+// The phone's drawer sits over part of the map; it never replaces the planning view.
+const compact = matchMedia('(max-width: 820px), (max-height: 520px)');
+function setDrawer(open) {
+  $('app').classList.toggle('drawer-open', open);
+  if (!open) $('app').classList.remove('drawer-full');
+  $('settingsToggle').setAttribute('aria-expanded', String(open));
+  $('panel').inert = compact.matches && !open;
+  $('expandDrawer').textContent = 'Expand';
+}
+$('settingsToggle').onclick = () => setDrawer(!$('app').classList.contains('drawer-open'));
+$('closeDrawer').onclick = () => { setDrawer(false); $('settingsToggle').focus(); };
+$('expandDrawer').onclick = () => { const full = $('app').classList.toggle('drawer-full'); $('expandDrawer').textContent = full ? 'Reduce' : 'Expand'; };
+function setProfile(open, persist = true) {
+  $('app').classList.toggle('profile-off', !open);
+  $('profileToggle').setAttribute('aria-expanded', String(open));
+  $('profileToggle').querySelector('span').textContent = open ? '⌄' : '⌃';
+  if (persist) LS.set('profile', open);
+  map.invalidateSize(); drawProfile();
+}
+$('profileToggle').onclick = () => setProfile($('app').classList.contains('profile-off'));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('app').classList.contains('drawer-open')) { setDrawer(false); $('settingsToggle').focus(); } });
+compact.addEventListener('change', () => { setDrawer(false); setProfile(LS.get('profile', !compact.matches), false); });
+renderPlans(); renderAircraft();
+setDrawer(false); setProfile(LS.get('profile', !compact.matches), false);
+if (sharedPlan) { selectedPlan = { name: 'Shared plan', plan: sharedPlan }; $('planStatus').textContent = 'Opened a shared plan. Give it a name to keep it on this device.'; }
+if (shareError) { document.querySelector('[data-sec=plans]').open = true; $('planStatus').textContent = shareError; if (compact.matches) setDrawer(true); }
+
 // ---------- Fly it: the camera follows the glide (the straight one, or the route) in 3D ----------
 async function flyIt() {
   const p = PROF;
-  if (!p || !(p.end > 0)) return;
+  if (soaringUI?.view === 'soaring') return;
+  if (!p || !(p.end > 0) || ['loading', 'updating', 'missing'].includes($('app').dataset.calc)) return;
   if (!is3d) await set3d(true);
   if (!is3d || !view3d) return;
   const n = p.end + 1;
@@ -1159,4 +1470,4 @@ const first = (!navigator.onLine && areas().length && !LS.get('launch', null)) ?
 fitNext = true;
 setLaunch(first.lat, first.lon, first === M_HILL ? M_HILL.snap : 0);
 if (LS.get('view3d', false)) set3d(true);
-if (LS.get('guide', true)) openGuide(0);
+if (!sharedPlan && LS.get('guide', true)) openGuide(0);

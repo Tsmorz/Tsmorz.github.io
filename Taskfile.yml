@@ -158,6 +158,11 @@ tasks:
       - task: check:js
       - task: check:links
 
+  ci:
+    desc: Local copy of CI (the same checks, build and links as task check)
+    cmds:
+      - task: check
+
   clean:
     desc: Remove the built site and Jekyll cache
     cmds:

@@ -1,0 +1,79 @@
+description: Explore glide reach and candidate dynamic-soaring ridges with local model wind, terrain profiles and saved offline areas.
+aircraft:
+  - { id: foam, name: Small foam glider, gr: 8, va: 8, vis: 400 }
+  - { id: two, name: 2 m sailplane, gr: 15, va: 10, vis: 600 }
+  - { id: scale, name: Large scale glider, gr: 25, va: 14, vis: 1000 }
+destination:
+  pending: Updating destination
+  potential: Potential landing ground
+  slope: Ground slope unavailable
+  steep: Reachable, ground too steep
+  sight: Outside sight distance
+  missing: Terrain unavailable
+  incomplete: Terrain coverage incomplete
+  blocked: No route found
+  wind: Wind blocks progress
+  unknown: Select a destination
+controls:
+  - { id: gr, name: Glide ratio }
+  - { id: va, name: Best-glide airspeed }
+  - { id: agl, name: Height above launch ground }
+  - { id: ws, name: Wind speed at 10 m }
+  - { id: vis, name: Sight distance }
+  - { id: mg, name: Terrain clearance }
+  - { id: sl, name: Maximum landing slope }
+launch_heights:
+  - { height: 20, name: Hand launch }
+  - { height: 120, name: Winch or bungee }
+  - { height: 300, name: Aerotow or a thermal }
+calculation:
+  loading: Loading terrain
+  updating: Updating reach
+  ready: Ready
+  partial: Terrain incomplete
+  missing: Terrain unavailable
+name: Dyna-soar
+tagline: Glides, ridges and the wind.
+landmark:
+  name: Dinosaur Park, Rapid City
+  lat: 44.077964
+  lon: -103.245844
+  alt: Cartoon of the green Dinosaur Park brontosaurus watching a white sailplane fly overhead.
+  source: https://tile.loc.gov/storage-services/master/pnp/habshaer/sd/sd0400/sd0422/data/sd0422data.pdf
+soaring:
+  title: Dynamic soaring
+  intro: Screen nearby ridges for a wind-facing rise and a steep lee drop. Select a DS? mark to inspect the terrain along the wind.
+  caveat: Candidates and diagnostic airflow estimates, not confirmed soaring sites. Flow separation, turbulence and room to turn are not resolved. Vertical air motion and dynamic-soaring energy add no reach.
+  method: The screen looks for at least 15 m of rise and drop over roughly 140 m along the wind, a lee angle of at least 8°, and a local crest. These are screening choices, not flight limits.
+  source: https://www2.whoi.edu/staff/prichardson/wp-content/uploads/sites/75/2018/11/Richardson-2012-RCSD-High-speed-Dynamic-Soaring.pdf
+  states:
+    'off': Ridge screening is off.
+    loading: Loading detailed terrain for ridge screening…
+    updating: Screening ridges for this wind…
+    calm: Set wind above 0.5 m/s, or load local model wind, to choose the lee side. This cutoff only avoids screening an undefined direction in calm air.
+    coarse: Terrain is too coarse for this screen. Detailed terrain is needed.
+    missing: Detailed terrain is unavailable. Connect and retry, or save this area before going offline.
+    none: No ridges met these geometry thresholds within the sight distance. This does not rule out dynamic soaring here.
+    candidates: Candidate lee ridges within sight. Select one to inspect its profile.
+weather:
+  button: Load local wind
+  note: Regional Open-Meteo vectors at 10 and, when available, 80 m initialise the estimate. Values are interpolated as vectors, not compass angles. One model grid point may cover several requested locations. Forecast wind is not an on-site measurement.
+  source: https://open-meteo.com/en/docs
+  manual: Manual 10 m reference wind. Load regional model wind or edit speed and direction below.
+  loading: Loading regional model wind…
+flow:
+  reference: Reference wind · 10 m
+  enabled: Use terrain-adjusted horizontal wind for reach
+  height: Wind layer
+  roughness: Surface assumption
+  smooth: Smooth / z₀ 0.003 m
+  grass: Open grass / z₀ 0.03 m
+  rough: Rough ground / z₀ 0.3 m
+  arrows: Show wind arrows
+  shading: Shade estimated lift / sink
+  key: Arrows show horizontal flow. Teal shows estimated upflow; red hatching shows downflow. Lift and sink do not extend glide reach.
+  ready: Terrain wind estimate ready.
+  updating: Computing terrain wind…
+  disabled: Uniform reference wind for reach. Terrain-flow estimate is off.
+  missing: Regional wind only; terrain coverage is incomplete. No local lift or sink is inferred.
+  method: A finite-volume diagnostic projection enforces mass conservation and zero flow into the terrain. It does not solve momentum, turbulence or separated flow. The selected fixed AGL wind layer drives both straight glides and route search; the outer field blends to regional wind. Below 10 m and without an 80 m forecast, a neutral logarithmic profile uses the selected roughness assumption. Profile flow lines project the estimated 3-D wind into the selected vertical section; crosswind motion leaves that plane. Terrain is resolved on a local grid, so sharper ridges and shear layers remain uncertain.
