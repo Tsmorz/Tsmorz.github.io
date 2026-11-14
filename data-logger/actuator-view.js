@@ -7,6 +7,7 @@ import {
   ERM_PRESETS, ERM_ROM_EFFECT_MAX, KEYS, RUMBLE_MS, SERVO_PATTERNS, SERVO_PULSE_US, ServoTrace, TACHAMMER_WAVEFORMS, feedbackFraction,
   heldKeys, pulseToDegrees, stickPoint,
 } from "./actuators.js";
+import { CONTROL_STATES } from "./control.js";
 import { ACTUATOR_COMMANDS } from "./wire.js";
 
 const $ = (id) => document.getElementById(id);
@@ -44,6 +45,12 @@ function fillSelect(select, entries) {
 }
 
 // ---- the board the dialog follows ---------------------------------------------------------------
+function onControlResult(event) {
+  const report = event.detail;
+  const state = Object.entries(CONTROL_STATES).find(([, value]) => value === report.state)?.[0] ?? "unknown";
+  say(`Command ${report.requestId}: ${state}${report.error ? ` (${report.error})` : ""}.`, report.state >= CONTROL_STATES.failed);
+}
+
 function onStatus() {
   if (!shown?.actuators) return;
   trace.add(performance.now(), shown.actuators);
@@ -54,11 +61,15 @@ function follow(board) {
   if (shown === board) return;
   if (shown) {
     shown.removeEventListener("actuators", onStatus);
+    shown.removeEventListener("control-result", onControlResult);
     shown.watchActuators(false).catch(() => {});
   }
   shown = board;
   trace.clear();
-  if (shown) shown.addEventListener("actuators", onStatus);
+  if (shown) {
+    shown.addEventListener("actuators", onStatus);
+    shown.addEventListener("control-result", onControlResult);
+  }
 }
 
 function open() {
@@ -77,6 +88,7 @@ function closed() {
   if (board?.connected && board.hasActuators) {
     board.actuatorCommand({ command: ACTUATOR_COMMANDS.stopAll }).catch(() => {});
   }
+  board?.control?.stopHeartbeats();
   follow(null);
 }
 

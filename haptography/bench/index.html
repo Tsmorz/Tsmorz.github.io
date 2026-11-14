@@ -266,6 +266,12 @@
   code { font: 11.5px var(--mono); padding: 0 4px; border-radius: 2px; background: var(--inset); border: 1px solid var(--line-strong); }
   .empty-note { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
   .ds-name { font: 500 11px var(--mono); color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .device-health-panel { font-size: 12px; overflow-wrap: anywhere; }
+  .device-health-panel [data-state="attention"] { color: var(--bad); }
+  .device-health-panel fieldset { display: flex; flex-wrap: wrap; gap: 8px 16px; min-width: 0; margin-top: 8px; }
+  .device-health-panel fieldset > p, .device-health-panel fieldset > div { flex-basis: 100%; }
+  .device-health-panel input[type="number"] { width: 8ch; max-width: 100%; }
+  .device-health-panel label { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -288,6 +294,11 @@
     <div class="row">
       <button class="primary" id="connect" type="button">Connect board</button>
       <button id="demo" type="button" title="A simulated board: still for 5 s, then strokes over a texture">Demo</button>
+    </div>
+    <div class="device-health-panel">
+      <p id="device-health" role="status">No board selected.</p>
+      <button id="export-diagnostics" type="button">Export diagnostics</button>
+      <div id="hardware-profile"></div>
     </div>
     <div class="fields" style="margin-top: 10px">
       <label for="rec-dataset">Dataset</label>

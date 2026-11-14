@@ -1,3 +1,5 @@
+import { decodeHealth, decodeProfile, encodeProfile } from "./device-health.js";
+import { TELEMETRY_HEALTH, TELEMETRY_PROFILE } from "./wire.js";
 // One connected board: its Bluetooth connection, the streams it sends, what the page shows of
 // them, and its share of a recording. app.js keeps one of these per board and renders whichever
 // is selected. Fires "change" (something to redraw), "seen" (a checklist item was seen working)
@@ -9,12 +11,14 @@ import {
   LOG_COMMAND, LOG_DATA, LOG_SERVICE, LOG_STATUS,
   TELEMETRY_BATTERY, TELEMETRY_CLOCK, TELEMETRY_IMU_RANGES, TELEMETRY_MOTION_WAKE, TELEMETRY_LATENCY, TELEMETRY_LED, TELEMETRY_MOUSE, TELEMETRY_POWER, TELEMETRY_TEMPERATURE_OFFSET, TELEMETRY_IMU_CALIBRATION,
   TELEMETRY_ACTUATORS, TELEMETRY_JOYSTICK, TELEMETRY_SERVICE, decodeActuatorStatus, encodeActuatorCommand, keyFromEvent,
-  decodeJoystickTuning, encodeJoystickTuning, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
+  decodeJoystickTuning, encodeJoystickTuning, TELEMETRY_IR_LEDS, decodeIrLeds, encodeIrLeds, crc32, decodeImuRanges, encodeImuRanges, temperatureFromEvent,
   decodeBattery, decodeBoardInfo, decodeEnvelopeBatch, decodeLedColor,
   decodeAudioChunk, decodeClockPair, decodeClockStatus, decodeEvent, decodeImuBatch, decodeMotionWake, decodeLatencyReport, decodeLogChunk, decodeLogStatus, decodeMouseSettings, decodeSpectrumBatch, decodeTemperatureOffset, decodeImuCalibration, encodeImuCalibration,
   encodeClockRole, encodeStreamStart, encodeStreamStop, encodeLatencyReset, encodeLedColor, encodeMotionWake, encodeTemperatureOffset, encodeLogErase, encodeLogRead, encodeLogStart, encodeLogStop,
   encodeMouseSettings, encodeSleep, missedSince,
 } from "./wire.js";
+import { ControlClient } from "./control.js";
+import { TELEMETRY_CONTROL } from "./wire.js";
 import { applyCalibration } from "./imu-calibration.js";
 import { RateMeter } from "./rate-meter.js";
 import { TimeUnwrapper, restartedSince } from "./recording.js";
@@ -102,6 +106,7 @@ export class Board extends EventTarget {
     this.actuators = null; // the actuators' and inputs' status (wire.js), if this firmware has them
     this.actuatorsWatched = false; // whether its status notifications are on (watchActuators())
     this.joystickTuning = null; // { deadzonePercent, slowGain, fastGain } (wire.js), if this firmware has the joystick mouse
+    this.irLeds = null; // { on, levelPercent } (wire.js), if this firmware drives IR tracking LEDs
     // Each clock source's times wrap too, on its own clock: one unwrapper per source board.
     this.sourceUnwraps = continueFrom?.sourceUnwraps ?? new Map();
     this.seen = new Set();
@@ -213,7 +218,10 @@ export class Board extends EventTarget {
     await this.connectImuCalibration(control);
     await this.connectClock(control, subscribe);
     await this.connectActuators(control);
+    await this.connectControl(control, subscribe);
+    await this.connectHealth(control);
     await this.connectJoystickTuning(control);
+    await this.connectIrLeds(control);
 
     await this.connectLog(server, subscribe);
     await this.connectAudio(server, subscribe);
@@ -347,6 +355,56 @@ export class Board extends EventTarget {
     this.imuCalibration = decodeImuCalibration(await this.chars.imuCalibration.readValue());
   }
 
+  async connectHealth(control) {
+    for (const [name, uuid] of [["health", TELEMETRY_HEALTH], ["profile", TELEMETRY_PROFILE]]) {
+      try { this.chars[name] = await control.getCharacteristic(uuid); }
+      catch { /* Older firmware can still stream and record. */ }
+    }
+    await this.refreshHealth();
+    if (this.chars.profile) this.hardwareProfile = decodeProfile(await this.chars.profile.readValue());
+  }
+  async refreshHealth() {
+    if (!this.connected || !this.chars.health) return;
+    if (this.healthReading) return this.healthReading;
+    this.healthReading = this.queue(() => this.chars.health.readValue()).then(view => {
+      const report = decodeHealth(view);
+      if (report) { this.health = report; this.healthReceivedMs = performance.now(); }
+    }).finally(() => { this.healthReading = null; });
+    return this.healthReading;
+  }
+  async setHardwareProfile(profile) {
+    const bytes = encodeProfile(profile);
+    if (!bytes || !this.chars.profile) throw Error("This firmware cannot save that hardware profile");
+    if (profile.wiring !== this.hardwareProfile?.wiring) throw Error("Wiring is fixed by the firmware");
+    await this.write(this.chars.profile, bytes);
+    for (let attempt = 0; attempt < 30; attempt++) {
+      await this.refreshHealth();
+      if (this.health?.profileError === 0) {
+        const actual = decodeProfile(await this.queue(() => this.chars.profile.readValue()));
+        if (JSON.stringify(actual) !== JSON.stringify(profile)) throw Error("Profile read-back differs: save was not confirmed");
+        this.hardwareProfile = actual; this.changed(); return actual;
+      }
+      if (this.health?.profileError !== -115) throw Error(`Profile save failed (${this.health?.profileError})`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw Error("Profile save was not confirmed; reconnect and read it back");
+  }
+
+  async connectControl(control, subscribe) {
+    let characteristic;
+    try { characteristic = await control.getCharacteristic(TELEMETRY_CONTROL); }
+    catch { return; }
+    this.chars.control = characteristic;
+    this.control = new ControlClient((bytes) => this.write(characteristic, bytes), {
+      onResult: (report) => {
+        this.lastControlResult = report;
+        this.dispatchEvent(new CustomEvent("control-result", { detail: report }));
+      },
+    });
+    this.listen(characteristic, (event) => this.control?.receive(event.target.value));
+    await characteristic.startNotifications();
+  }
+
   async connectActuators(control) {
     try {
       this.chars.actuators = await control.getCharacteristic(TELEMETRY_ACTUATORS);
@@ -389,6 +447,26 @@ export class Board extends EventTarget {
     this.joystickTuning = decodeJoystickTuning(await this.chars.joystick.readValue());
   }
 
+  async connectIrLeds(control) {
+    try {
+      this.chars.irLeds = await control.getCharacteristic(TELEMETRY_IR_LEDS);
+    } catch {
+      return;
+    }
+    this.irLeds = decodeIrLeds(await this.chars.irLeds.readValue());
+  }
+
+  /** Switches the IR tracking LEDs and saves the choice on the board, then reads it back. */
+  async setIrLeds(settings) {
+    const bytes = encodeIrLeds(settings);
+    if (!this.chars.irLeds) throw new Error("this board's firmware has no tracking LEDs: update it");
+    if (!bytes) throw new Error("the board won't take that level");
+    await this.write(this.chars.irLeds, bytes);
+    this.irLeds = decodeIrLeds(await this.queue(() => this.chars.irLeds.readValue()));
+    this.changed();
+    return this.irLeds;
+  }
+
   /** Saves the joystick's curve on the board (used from its next report), then reads it back. */
   async setJoystickTuning(tuning) {
     const bytes = encodeJoystickTuning(tuning);
@@ -405,6 +483,7 @@ export class Board extends EventTarget {
     const bytes = encodeActuatorCommand(command);
     if (!this.hasActuators) throw new Error("this board's firmware has no actuators: update it");
     if (!bytes) throw new Error("the board won't take that");
+    if (this.control) return this.control.send(command);
     return this.write(this.chars.actuators, bytes);
   }
 
@@ -655,6 +734,7 @@ export class Board extends EventTarget {
   }
 
   onDisconnected() {
+    this.control?.close();
     this.device.removeEventListener("gattserverdisconnected", this.handleGattDisconnect);
     for (const [characteristic, handler] of this.listeners) characteristic.removeEventListener("characteristicvaluechanged", handler);
     this.listeners = [];

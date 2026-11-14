@@ -1,10 +1,12 @@
+import { healthSummary, diagnostics, downloadDiagnostics, encodeProfile } from "./device-health.js";
+import { bindProfileEditor } from "./profile-view.js";
 // Haptography: record surface textures from the recording device (nrf-controller's capture/
 // build) over Web Serial, keep them labelled in a library in this browser, replay them, and score
 // each take and each dataset. The pure parts are wire.js, session.js, analysis.js, export.js and
 // simulate.js (Node-tested in tests/haptography/); this file is the page.
 
 import * as wire from "./wire.js";
-import { HapticDevice, openBoardPort } from "./device.js";
+import { CMD, HapticDevice, openBoardPort } from "./device.js";
 import { textureDrive } from "./haptics.js";
 import { decodeSession } from "./session.js";
 import { analyze, scoreTake, scoreDataset, ANALYSIS_VERSION, SETTINGS, spectraBetween, principalAxis, project } from "./analysis.js";
@@ -161,7 +163,7 @@ const live = {
 function resetLive() {
   live.reader = new wire.StreamReader();
   for (const k of ["imuT", "vib", "accel", "gyro", "mic", "tofT", "tofD", "tofOk", "speedT", "speed"]) live[k].clear();
-  Object.assign(live, { micEnd: null, lp: null, lastImuT: null, info: null, firstStats: null, lastStats: null, lastTof: null });
+  Object.assign(live, { micEnd: null, lp: null, lastImuT: null, info: null, firstStats: null, lastStats: null, lastTof: null, health: null, profile: null, healthReceivedMs: null });
   live.counts = { imu: 0, mic: 0, tof: 0 };
   live.prevCounts = { imu: 0, mic: 0, tof: 0 };
   $("messages").replaceChildren();
@@ -190,6 +192,8 @@ function handlePacket(packet) {
   hapticDevice?.accept(packet);
   const { type, body } = packet;
   switch (type) {
+    case wire.HEALTH: live.health = body; live.healthReceivedMs = performance.now(); break;
+    case wire.PROFILE: live.profile = body; break;
     case wire.INFO:
       live.info = body;
       updateHaptics();
@@ -316,6 +320,7 @@ function updateMeters() {
   $("m-imu").textContent = on ? fmtInt(c.imu - p.imu) : "—";
   $("m-mic").textContent = on ? fmtInt(c.mic - p.mic) : "—";
   $("m-tof").textContent = on ? fmtInt(c.tof - p.tof) : "—";
+  live.measuredImuHz = c.imu - p.imu;
   live.prevCounts = { ...c };
   const tof = live.lastTof;
   const dist = $("m-dist");
@@ -327,7 +332,7 @@ function updateMeters() {
     $(id).classList.toggle("bad", on && n > 0);
   }
 }
-setInterval(updateMeters, 1000);
+setInterval(() => { updateMeters(); renderDeviceHealth(); }, 1000);
 
 // ---- Sources: the serial port, or the demo ------------------------------------------------
 
@@ -429,6 +434,7 @@ $("demo").addEventListener("click", () => (source ? stopSource() : startDemo()))
 // ---- Recording ----------------------------------------------------------------------------
 
 let rec = null;
+let storageError = false;
 
 function recMeta() {
   return {
@@ -529,7 +535,9 @@ async function spool() {
   const n = r.spoolN++;
   try {
     await store.spoolAppend(r.id, n, bytes, n === 0 ? { ...r.meta, created: r.created } : undefined);
+    storageError = false;
   } catch {
+    storageError = true;
     /* the spool is a safety net only: the recording itself is in memory */
   }
 }
@@ -1581,3 +1589,36 @@ async function start() {
 }
 
 start();
+
+
+const profileEditor = bindProfileEditor($("hardware-profile"), {
+  save: async (profile, key) => {
+    if (source?.kind !== "serial" || !hapticDevice || hapticBusy || rec || String(live.info?.board_id) !== key) throw Error("Stop recording/playback and select the connected board first");
+    if ((live.info?.version ?? 0) < 5) throw Error("Update the capture firmware to save profiles");
+    await hapticDevice.command(CMD.SET_PROFILE, encodeProfile(profile));
+    // ACK is sent after the profile is persisted; wait for its periodic read-back.
+    for (let n = 0; n < 25; n++) {
+      if (JSON.stringify(live.profile) === JSON.stringify(profile)) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw Error("Profile read-back was not confirmed");
+  },
+});
+function currentHealth() {
+  return healthSummary({ connected: Boolean(source), health: live.health,
+    healthAgeMs: live.healthReceivedMs == null ? null : performance.now() - live.healthReceivedMs,
+    rateHz: live.measuredImuHz ?? null, expectedHz: live.info?.imu_rate_hz,
+    lost: live.reader.lost, bad: live.reader.bad, storage: storageError ? "error" : store?.persistent === false ? "memory" : null });
+}
+function renderDeviceHealth() {
+  const summary = currentHealth();
+  $("device-health").textContent = source?.kind === "demo" ? "Demo · simulated readings" : summary.text;
+  $("device-health").dataset.state = source?.kind === "demo" ? "demo" : summary.state;
+  $("export-diagnostics").disabled = !live.info;
+  profileEditor.sync(live.profile, String(live.info?.board_id), source?.kind === "serial");
+}
+$("export-diagnostics").addEventListener("click", () => downloadDiagnostics(diagnostics({
+  boardId: live.info?.board_id?.toString(16).toUpperCase().padStart(4, "0"), health: live.health,
+  profile: live.profile, summary: currentHealth(), counters: { lost: live.reader.lost, bad: live.reader.bad, ...(live.lastStats ?? {}) },
+  recording: { active: Boolean(rec), persistent: Boolean(store?.persistent) },
+})));
