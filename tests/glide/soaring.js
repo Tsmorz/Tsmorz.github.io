@@ -4,7 +4,7 @@
  const e=id=>document.getElementById(id),assert=(v,m)=>{if(!v)throw Error(m);};
  const wait=async(fn,m)=>{const end=Date.now()+30000;while(!fn()){if(Date.now()>end)throw Error('Timed out: '+m+'; '+e('dsStatus').textContent);await new Promise(r=>setTimeout(r,100));}};
  e('guide').close();await wait(()=>e('app').dataset.calc==='ready','terrain ready');
- assert(document.title.includes('Dyna-soar') && e('head').textContent.includes('Dyna-soar'),'brand name present');
+ assert(document.title.includes('DynaSoar') && e('head').textContent.includes('DynaSoar'),'brand name present');
  assert(Math.abs(+e('launchLat').value-44.077964)<1e-6 && Math.abs(+e('launchLon').value+103.245844)<1e-6,'default is the exact statue, not a snapped neighbouring peak');
  assert(e('head').querySelector('img').naturalWidth>0,'dinosaur illustration loaded');
  const realFetch=window.fetch;let direction=270,speed=6,pending=null,mode='success',points=[];
@@ -87,5 +87,5 @@
  window.fetch=realFetch;
  assert(document.documentElement.scrollWidth<=innerWidth+1,'no horizontal overflow');
  if(compact.matches)assert(e('settingsToggle').getBoundingClientRect().bottom<=innerHeight+1,'settings stay in the viewport');
- console.log('PASS: heading rotation, north reset, tilt, grouped wind controls, crest/lee labels, Dyna-soar branding, exact Dinosaur Park default, model wind provenance, whole-envelope wind reversal, ridge candidates, wind profile, errors and stale weather replies');
+ console.log('PASS: heading rotation, north reset, tilt, grouped wind controls, crest/lee labels, DynaSoar branding, exact Dinosaur Park default, model wind provenance, whole-envelope wind reversal, ridge candidates, wind profile, errors and stale weather replies');
 })();

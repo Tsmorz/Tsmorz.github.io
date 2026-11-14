@@ -33,7 +33,7 @@
   map.fire('click', { latlng: target });
   await wait(() => !el('destination').hidden && !el('destination').classList.contains('pending'), 'destination selected');
   assert(+el('launchLon').value === original.lon, 'inspection does not move launch');
-  assert(el('destStats').textContent.includes('Arrival AGL') && !el('destStats').querySelector('dd').textContent.includes('—'), 'destination arrival information present');
+  assert(el('destStats').textContent.includes('Best-glide arrival AGL') && !el('destStats').querySelector('dd').textContent.includes('—'), 'destination arrival information present');
   el('modeLaunch').click();
   map.fire('click', { latlng: L.latLng(original.lat + 0.0001, original.lon) });
   await wait(() => ready() && +el('launchLat').value !== original.lat, 'launch moved');

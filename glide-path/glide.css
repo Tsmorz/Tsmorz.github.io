@@ -7,7 +7,7 @@
   --ink: #1d1e23; --ink-2: #41434c; --muted: #5a5c67;
   --accent: #6459d3; --accent-ink: #ffffff; --accent-soft: rgba(100, 89, 211, .08); --focus: #6459d3;
   --warn: #8f5300; --warn-bg: #fdf1dc;
-  --s-straight: #5a4fd6; --s-curve: #12a599; --s-hit: #b8263a;
+  --s-route: #a58d12; --s-straight: #5a4fd6; --s-curve: #12a599; --s-hit: #b8263a;
   --terrain: #e3e3e7; --terrain-edge: #8d909b; --steep: #9a9ca5;
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   --serif: "STIX Two Text", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
@@ -20,7 +20,7 @@
     --ink: #ececef; --ink-2: #c9cad1; --muted: #a2a4ad;
     --accent: #c8c0ff; --accent-ink: #1b1c1f; --accent-soft: rgba(200, 192, 255, .10); --focus: #c8c0ff;
     --warn: #e2a336; --warn-bg: #3a2c12;
-    --s-straight: #a798ff; --s-curve: #88fce9; --s-hit: #eb4763;
+    --s-route: #e4cc66; --s-straight: #a798ff; --s-curve: #88fce9; --s-hit: #eb4763;
     --terrain: #34363b; --terrain-edge: #7c808b; --steep: #7c7f88;
   }
 }
@@ -30,7 +30,7 @@
   --ink: #ececef; --ink-2: #c9cad1; --muted: #a2a4ad;
   --accent: #c8c0ff; --accent-ink: #1b1c1f; --accent-soft: rgba(200, 192, 255, .10); --focus: #c8c0ff;
   --warn: #e2a336; --warn-bg: #3a2c12;
-  --s-straight: #a798ff; --s-curve: #88fce9; --s-hit: #eb4763;
+  --s-route: #e4cc66; --s-straight: #a798ff; --s-curve: #88fce9; --s-hit: #eb4763;
   --terrain: #34363b; --terrain-edge: #7c808b; --steep: #7c7f88;
 }
 
@@ -114,7 +114,7 @@ button.link { background: none; border: 0; padding: 6px 4px; color: var(--accent
 
 /* Legend (on the map, always light like the map under it) and results */
 .legend-box { background: rgba(255,255,255,.95); color: #1d1e23; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.2); font-size: 13px;
-              --s-straight: #5a4fd6; --s-curve: #12a599; --s-hit: #b8263a; --steep: #9a9ca5; --ink: #1d1e23; --route: #a58d12; --ring: #1d1e23; }
+              --s-route: #a58d12; --s-straight: #5a4fd6; --s-curve: #12a599; --s-hit: #b8263a; --steep: #9a9ca5; --ink: #1d1e23; --route: #a58d12; --ring: #1d1e23; }
 /* over satellite imagery the map draws mid-tone steps with solid outlines; the key shows the same colours */
 .legend-box.on-img { --s-straight: #8a7af7; --s-curve: #0fa593; --s-hit: #f2526c; --route: #b08f10; }
 .legend-box summary { cursor: pointer; padding: 0 12px; min-height: 40px; display: flex; align-items: center; font-weight: 600; list-style-position: inside; }
@@ -277,7 +277,7 @@ dialog.guide[open] { display: flex; flex-direction: column; }
 .seg { border-radius: 3px; }.seg button { min-height: 32px; min-width: 62px; font: 11px var(--font); }
 button.btn { border-radius: 3px; min-height: 36px; padding: 6px 10px; font: 12px var(--font); }
 button.btn.sm { min-height: 32px; padding: 4px 8px; font: 11px var(--font); }
-input[type=text], input[type=number], select { border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface); color: var(--ink); font: 13px var(--font); min-height: 34px; padding: 5px 7px; max-width: 100%; min-width: 0; }
+input[type=search], input[type=text], input[type=number], select { border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface); color: var(--ink); font: 13px var(--font); min-height: 34px; padding: 5px 7px; max-width: 100%; min-width: 0; }
 input[type=text] { font-size: 16px; }
 input[type=number] { font: 12px var(--mono); }
 #panel { padding: 0 12px 18px; min-height: 0; }
@@ -348,7 +348,7 @@ dl.stats { font-size: 11px; gap: 6px 10px; }dl.stats dd { font-size: 10px; }
   #app.drawer-open #panel { display: block; }#app.drawer-full #panel { max-height: calc(100dvh - 150px); }
   .drawer-head { display: flex; position: sticky; top: 0; align-items: center; gap: 8px; background: var(--surface); z-index: 2; min-height: 47px; border-bottom: 1px solid var(--line); }.drawer-head h2 { margin: 0 auto 0 0; }.drawer-head button { min-height: 36px; }
   .show-panel-bar { display: none; }.wide-only { display: none !important; }
-  input[type=text], input[type=number], select { font-size: 16px; min-height: 40px; }.input-pair { grid-template-columns: minmax(0, 1fr) 86px; }.input-pair input[type=range] { height: 44px; }.input-pair input[type=number] { font-size: 16px; }.direction-input input { width: 72px; font-size: 16px; }
+  input[type=search], input[type=text], input[type=number], select { font-size: 16px; min-height: 40px; }.input-pair { grid-template-columns: minmax(0, 1fr) 86px; }.input-pair input[type=range] { height: 44px; }.input-pair input[type=number] { font-size: 16px; }.direction-input input { width: 72px; font-size: 16px; }
   button.btn { min-height: 40px; }.coordinates input { font-size: 16px; }.preset-label select { font-size: 16px; }.save-row input { font-size: 16px; }.save-row button { min-height: 40px; }
   details.group > summary { min-height: 44px; }.row label { font-size: 13px; }.hint, .switch { font-size: 12px; }.legend-box { font-size: 10px; max-width: 245px; }.legend-box summary { font-size: 12px; }
   .wind-box { font-size: 11px; min-height: 30px; padding: 4px 6px; }.wind-box .wind-arrow { width: 17px; height: 17px; }
@@ -414,7 +414,7 @@ dl.stats { font-size: 11px; gap: 6px 10px; }dl.stats dd { font-size: 10px; }
 
 .status-line { display: flex; align-items: center; gap: 10px; }.status-line #status { flex: 1; }.status-line button.btn.sm { min-height: 28px; padding: 2px 8px; }
 
-/* Dyna-soar: one small landmark illustration; the map remains the workspace. */
+/* DynaSoar: one small landmark illustration; the map remains the workspace. */
 .brand { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .brand img { width: 54px; height: 44px; object-fit: contain; }
 .guide-brand { display: flex; align-items: center; justify-content: center; gap: 15px; margin: -6px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
@@ -476,3 +476,11 @@ dl.stats { font-size: 11px; gap: 6px 10px; }dl.stats dd { font-size: 10px; }
 
 .ridge-label { z-index: 2; }
 .ds-pin.selected { z-index: 3; }
+
+.city-search { margin: 12px 0; }
+.city-search label { display: block; font-weight: 600; margin-bottom: 5px; }
+.city-results { padding: 0; margin: 4px 0; list-style: none; }
+.city-results button { width: 100%; min-height: 40px; padding: 8px; text-align: left; background: var(--surface-2); border: 1px solid var(--line); cursor: pointer; }
+.city-results button:hover { border-color: var(--accent); }
+
+.city-search input[type=search] { font-size: 16px; }

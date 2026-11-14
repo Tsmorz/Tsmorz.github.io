@@ -1,4 +1,4 @@
-// Dyna-soar: the page. The maths is in glide-core.js (no DOM); the route search runs in glide-worker.js.
+// DynaSoar: the page. The maths is in glide-core.js (no DOM); the route search runs in glide-worker.js.
 'use strict';
 const G = GlideCore, GP = GlidePlan;
 const CONTENT = JSON.parse(document.getElementById("glide-content").textContent);
@@ -14,10 +14,10 @@ let soaringUI = null, windUI = null;
 // satellite imagery, where each region also gets a solid outline. `C` is the one in use (restyle()).
 const PAL = {
   light: { straight: [90, 79, 214], curve: [18, 165, 153], curveDark: [10, 118, 109], steep: [118, 120, 128], out: [110, 112, 120],
-           hit: '#b8263a', route: '#a58d12', line: '#1d1e23', ring: '#1d1e23', casing: '#ffffff',
+           hit: '#b8263a', route: '#a58d12', flight: '#5a4fd6', line: '#1d1e23', ring: '#1d1e23', casing: '#ffffff',
            a: { out: 42, steep: 85, steepStripe: 60, straight: 110, curve: 105, curveStripe: 185, edge: 235 } },
   img: { straight: [138, 122, 247], curve: [15, 165, 147], curveDark: [8, 112, 100], steep: [232, 233, 238], out: [255, 255, 255],
-         hit: '#f2526c', route: '#b08f10', line: '#ffffff', ring: '#ffffff', casing: '#1d1e23',
+         hit: '#f2526c', route: '#b08f10', flight: '#8a7af7', line: '#ffffff', ring: '#ffffff', casing: '#1d1e23',
          a: { out: 48, steep: 45, steepStripe: 30, straight: 130, curve: 95, curveStripe: 185, edge: 255 } }
 };
 let C = PAL.light;
@@ -50,17 +50,18 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localho
 let COL = {};
 function readColours() {
   const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim();
+  PAL.light.flight=v('--s-straight'); PAL.light.route=v('--s-route');
   COL = { straight: v('--s-straight'), curve: v('--s-curve'), hit: v('--s-hit'), terrain: v('--terrain'), terrainEdge: v('--terrain-edge'),
           line: v('--line'), muted: v('--muted'), ink2: v('--ink-2'), surface2: v('--surface-2'), warn: v('--warn') };
 }
 readColours();
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColours(); drawProfile(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColours(); restyle(); drawProfile(); mark3d(); });
 $('theme').onclick = () => {
   const root = document.documentElement;
   const dark = root.getAttribute('data-theme') ? root.getAttribute('data-theme') === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   root.setAttribute('data-theme', dark ? 'light' : 'dark');
   try { localStorage.setItem('theme', dark ? 'light' : 'dark'); } catch (e) {}
-  readColours(); drawProfile();
+  readColours(); restyle(); drawProfile(); mark3d();
 };
 
 // ---------- Units: sliders work in the chosen system; P always holds metric values ----------
@@ -134,6 +135,7 @@ function afterParams() {
 }
 // a folded section says what it's set to, so the panel can stay short
 function summaries() {
+  $('descentNote').textContent = `${CONTENT.trajectory.sinkNote} ${U.v(Math.max(G.steadyGlide(P.va,P.gr).sink, Math.min(P.dsink,P.va*.8)))}`;
   $('sumGlider').textContent = `${P.gr}:1, ${U.v(P.va)}, ${U.h(P.agl)} up`;
   $('sumWind').textContent = P.ws ? `${U.v(P.ws)} from ${compass(P.wd)}` : 'calm';
   $('sumRules').textContent = `seen to ${U.d(P.vis)}, ${U.h(P.mg)} clear, ${P.sl}° max`;
@@ -335,6 +337,7 @@ map.on('baselayerchange', e => {
   if (map.hasLayer(contours)) contours.redraw();
   restyle();
   drawOverlay();
+  drawProfile();
   mark3d('reach');
 });
 map.on('overlayadd overlayremove', e => { if (e.layer === contours) { LS.set('contours', e.type === 'overlayadd'); contourKey(); } });
@@ -363,11 +366,12 @@ const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
     `<li><span class="key k-ds">1</span>${CONTENT.soaring.key}</li>` +
     '<li id="keyCurve"><span class="key k-curve"></span>Potential landing, curving</li>' +
     '<li><span class="key k-steep"></span>Reachable, too steep to land</li>' +
+    `<li>${CONTENT.trajectory.legend}</li>` +
     '</ul><details class="legend-extra"><summary>Other map symbols</summary><ul class="legend"><li><span class="key k-out"></span>Reachable, but out of sight</li>' +
     '<li><span class="key k-ring"></span>As far as you can see it</li>' +
     '<li><span class="key k-hit"></span>Straight glide hits a slope</li>' +
     '<li><span class="key k-line"></span>Cross-section (dots: its distance marks)</li>' +
-    '<li><span class="key k-route"></span>Highest-arrival route</li>' +
+    `<li><span class="key k-route"></span>${CONTENT.trajectory.routeKey}</li>` +
     '<li id="keyContour" hidden><span class="key k-contour"></span><span></span></li></ul></details>';
   L.DomEvent.disableClickPropagation(box);
   return box;
@@ -415,7 +419,7 @@ function restyle() {
   hitLines.setStyle({ color: C.hit });
   ring.setStyle({ color: C.ring });
   profCase.setStyle({ color: C.casing }); routeCase.setStyle({ color: C.casing });
-  profPast.setStyle({ color: C.line }); profLine.setStyle({ color: C.line });
+  profPast.setStyle({ color: C.line }); profLine.setStyle({ color: C.flight });
   probe.setStyle({ color: C.casing, fillColor: C.line });
   routeLine.setStyle({ color: C.route }); routeEnd.setStyle({ color: C.casing, fillColor: C.route });
   profTicks.eachLayer(t => t.setStyle({ color: C.line, fillColor: C.casing }));
@@ -496,6 +500,7 @@ function load3d() {
       tiles: { street: osm._url, streetAttr: osm.options.attribution, topo: topo._url, topoAttr: topo.options.attribution,
                sat: sat._url, satAttr: sat.options.attribution },
       base: () => baseName(base), overlay: () => overlay, canvas: overlayCanvas, circle: G.circle,
+      profile: () => soaringUI?.view === 'soaring' ? null : PROF, profileColour: () => profileColour(PROF),
       wind:()=>windUI?.features()||[], windShade:()=>windUI?.shade()||null,
       ridgeLabel: CONTENT.orientation.ridge, soaring: () => soaringUI?.features() || { key: '', items: [] }, onSoaring: index => soaringUI?.selectIndex(index),
       onViewport: () => { if (!view3d?.flying) windUI?.render(); }, onCamera: cameraChanged, onHover: point => mapHover(point, p => view3d.project(p)), onOut: () => { if (cursorFrom === 'map') hideCursor(); }, onInspect: routeAt, onTap: mapTap, onMoveLaunch: (lat, lon) => setLaunch(lat, lon)
@@ -914,7 +919,7 @@ function refreshRoute() {
   $('destState').textContent = CONTENT.destination[info.kind];
   $('destCoords').textContent = `${route.target.lat.toFixed(5)}, ${route.target.lng.toFixed(5)}`;
   const value = (v, f) => Number.isFinite(v) ? f(v) : '—';
-  const rows = [['Arrival AGL', value(info.arrival, U.h)], ['Route', value(info.routeDistance, U.d)],
+  const rows = [['Best-glide arrival AGL', value(info.arrival, U.h)], ['Route', value(info.routeDistance, U.d)],
     ['Min. terrain clearance', value(info.clearance, U.h)], ['Ground slope', value(info.slope, v => `${v.toFixed(1)}°`)],
     ['Sight', `${U.d(info.distance)} / ${U.d(P.vis)}`]];
   if(windUI?.ready){const v=windUI.atLatLng(route.target);rows.push([`Wind @ ${U.h(windUI.height)} AGL`,`${U.v(Math.hypot(v.east,v.north))} from ${compass(WindCore.bearing(v.east,v.north))}`]);}
@@ -937,7 +942,7 @@ $('profBack').onclick = $('clearDestination').onclick = () => clearRoute(true);
 
 // ---------- Cross-section ----------
 let PROF = null; // what's drawn, for the touch / hover read-out
-function profileData() {
+function rawProfileData() {
   if (route && route.cells && route.cells.length > 1 && Gres?.key === runKey()) {
     const GW=GRID.GW,cell=2*M.mpp,d=[],ground=[],glide=[],lls=[];
     let distance=0;
@@ -974,18 +979,68 @@ function profileData() {
   return { d, ground, glide, end, hit, curve: false, lls, what: route ? `${CONTENT.destination[route.info?.kind || 'pending']}: ${U.d(targetDistance || 0)} from launch.` : what };
 }
 
+// All views and playback consume this one sampled trajectory, including a selected approach.
+function profileData() {
+  const raw = rawProfileData();
+  if (!route?.info?.reachable || raw.end < 1) {
+    if(raw.end<1)return raw;
+    const n=raw.end+1,d=raw.d.slice(0,n),ground=raw.ground.slice(0,n),best=raw.glide.slice(0,n),bearing=[],wind=[];
+    for(let k=1;k<n;k++){
+      const a=raw.lls[k-1],b=raw.lls[k],mid=L.latLng((a.lat+b.lat)/2,(a.lng+b.lng)/2);
+      const [x,y]=G.lonLatToPx(mid.lng,mid.lat,M.z);
+      bearing.push((route?.bearing??P.pb)*G.D2R);wind.push(windUI?.layer?WindCore.sampleLayer(windUI.layer,(x-lpx)*M.mpp,(lpy-y)*M.mpp):WindCore.vector(P.ws,P.wd));
+    }
+    const solved=G.descentPath({d,ground,best,bearing,wind,Va:P.va,GR:P.gr,margin:P.mg,maxSink:0});
+    return {...raw,time:solved.time,sink:solved.sink,wind,bearing};
+  }
+  let points = raw.lls.slice(0, raw.end+1);
+  if (raw.curve) { points[0]=launch; points[points.length-1]=route.target; }
+  else { points=[launch,route.target]; }
+  const lls=[points[0]],d=[0],ground=[groundAtLaunch],best=[R.h0],bearing=[],wind=[];
+  const opts=glideOpts(), aero=G.steadyGlide(P.va,P.gr);
+  const enu=ll=>{const [x,y]=G.lonLatToPx(ll.lng,ll.lat,M.z);return [(x-lpx)*M.mpp,(lpy-y)*M.mpp];};
+  let blocked=false;
+  for(let k=1;k<points.length;k++) {
+    const a=enu(points[k-1]),b=enu(points[k]),length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    if(length<1e-6)continue;
+    const count=Math.max(1,Math.ceil(length/Math.min(10,M.mpp/2))),brg=Math.atan2(b[0]-a[0],b[1]-a[1]);
+    for(let j=1;j<=count;j++) {
+      const f=j/count,e=a[0]+(b[0]-a[0])*f,n=a[1]+(b[1]-a[1])*f;
+      const midE=e-(b[0]-a[0])/count/2,midN=n-(b[1]-a[1])/count/2;
+      const v=opts.wind?WindCore.sampleLayer(opts.wind,midE,midN):WindCore.vector(P.ws,P.wd);
+      const vg=G.groundSpeed(brg,aero.horizontal,Math.hypot(v.east,v.north),WindCore.bearing(v.east,v.north)*G.D2R);
+      const ds=length/count,h=best.at(-1)-ds*aero.sink/vg,g=elevAtENU(e,n);
+      bearing.push(brg);wind.push(v);d.push(d.at(-1)+ds);ground.push(g);best.push(h);lls.push(enuToLatLng(e,n));
+      if(!(vg>0)||!Number.isFinite(g)||h<g+P.mg-0.02)blocked=true;
+    }
+  }
+  const solved=G.descentPath({d,ground,best,bearing,wind,Va:P.va,GR:P.gr,margin:P.mg,maxSink:P.dsink});
+  if(blocked||['blocked','missing','invalid'].includes(solved.state)) {
+    return {...raw,end:0,what:CONTENT.trajectory.blocked,approach:'blocked'};
+  }
+  const state=P.dsink>0?solved.state:'disabled';
+  return {d,ground,glide:solved.h,end:d.length-1,hit:false,curve:raw.curve,lls,time:solved.time,sink:solved.sink,wind,bearing,
+    approach:state,what:CONTENT.trajectory[state]};
+}
+const profileColour = p => p?.curve || p?.approach ? C.route : C.flight;
+
 function drawProfile() {
   if (soaringUI?.view === 'soaring') { soaringUI.drawProfile(); return; }
   const cv = $('profile');
   if (!R || !M) return;
   const p = profileData();
   $('profWhat').textContent = p.what;
-  if ($('app').classList.contains('profile-off')) { drawTrace(p, []); PROF = { ...p }; $('btnFly').disabled = !(p.end > 0) || ['loading', 'updating', 'missing'].includes($('app').dataset.calc); return; }
+  if(route?.info?.reachable) {
+    let row=$('approachStats');
+    if(!row){row=document.createElement('div');row.id='approachStats';const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=CONTENT.trajectory.arrival;row.append(dt,dd);$('destStats').append(row);}
+    row.querySelector('dd').textContent=p.approach==='blocked'?CONTENT.trajectory.unavailable:U.h(p.glide[p.end]-p.ground[p.end]);
+  }
+  if ($('app').classList.contains('profile-off')) { PROF = { ...p }; drawTrace(p, []); $('btnFly').disabled = !(p.end > 0) || ['loading', 'updating', 'missing'].includes($('app').dataset.calc); return; }
   const dpr = window.devicePixelRatio || 1, Wc = cv.clientWidth, Hc = cv.clientHeight;
   if (!Wc || !Hc) return;
   if (cv.width !== Math.round(Wc * dpr) || cv.height !== Math.round(Hc * dpr)) { cv.width = Math.round(Wc * dpr); cv.height = Math.round(Hc * dpr); }
   const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, Wc, Hc);
-  const series = p.curve ? COL.curve : COL.straight;
+  const series = profileColour(p);
   $('profKeyLine').style.borderTopColor = series; $('profKeyMargin').style.borderTopColor = series;
   if (p.d.length < 2) { PROF = null; clearTrace(); $('btnFly').disabled = true; return; }
   const dMax = p.d[p.d.length - 1];
@@ -1062,7 +1117,9 @@ function llAt(p, s) {
 }
 function drawTrace(p, ticks) {
   profTicks.clearLayers();
-  if (p.curve) { profCase.setLatLngs([]); profLine.setLatLngs([]); profPast.setLatLngs([]); } // the route line is the trace
+  const series=profileColour(p);
+  profLine.setStyle({color:series}); routeLine.setStyle({color:C.route});
+  if (p.curve) { routeCase.setLatLngs(p.lls); routeLine.setLatLngs(p.lls); profCase.setLatLngs([]); profLine.setLatLngs([]); profPast.setLatLngs([]); } // the route line is the trace
   else {
     const flown = p.lls.slice(0, p.end + 1);
     profCase.setLatLngs(p.lls); profLine.setLatLngs(flown); profPast.setLatLngs(p.lls.slice(p.end));
@@ -1272,6 +1329,33 @@ $('retryTerrain').onclick = async () => {
 };
 $('btnSave').onclick = saveArea;
 $('btnMHill').onclick = () => { fitNext = true; setLaunch(M_HILL.lat, M_HILL.lon, M_HILL.snap); };
+let cityRequest=null,cityGeneration=0;
+$('cityQuery').addEventListener('input',()=>{cityGeneration++;cityRequest?.abort();$('cityResults').replaceChildren();$('cityStatus').textContent='';});
+$('citySearch').addEventListener('submit',async e=>{
+  e.preventDefault();const query=$('cityQuery').value.trim(),generation=++cityGeneration;
+  cityRequest?.abort();$('cityResults').replaceChildren();
+  if(query.length<2){$('cityStatus').textContent=CONTENT.search.short;return;}
+  const request=cityRequest=new AbortController(),deadline=setTimeout(()=>request.abort(),10000);
+  $('cityStatus').textContent=CONTENT.search.loading;$('citySearch').setAttribute('aria-busy','true');
+  try {
+    const url=new URL('https://geocoding-api.open-meteo.com/v1/search');
+    url.search=new URLSearchParams({name:query,count:'8',language:'en',format:'json'});
+    const response=await fetch(url,{signal:request.signal});if(!response.ok)throw Error('Search unavailable');
+    const data=await response.json();if(generation!==cityGeneration)return;
+    const results=(Array.isArray(data.results)?data.results:[]).filter(p=>typeof p.name==='string'&&Number.isFinite(p.latitude)&&Math.abs(p.latitude)<85.05112878&&Number.isFinite(p.longitude)&&Math.abs(p.longitude)<=180);
+    $('cityStatus').textContent=results.length?'':CONTENT.search.empty;
+    for(const place of results){
+      const li=document.createElement('li'),button=document.createElement('button');button.type='button';
+      button.textContent=[place.name,place.admin1,place.country].filter((v,i,a)=>v&&a.indexOf(v)===i).join(', ');
+      button.onclick=async()=>{
+        cityGeneration++;cityRequest?.abort();$('cityResults').replaceChildren();$('cityStatus').textContent=CONTENT.search.selected;
+        const at=L.latLng(place.latitude,place.longitude);map.setView(at,12,{animate:false});
+        if(is3d)await set3d(true,mapPitch,mapHeading,at,11);
+      };li.append(button);$('cityResults').append(li);
+    }
+  } catch(err) {if(generation===cityGeneration)$('cityStatus').textContent=CONTENT.search.failed;}
+  finally {clearTimeout(deadline);if(cityRequest===request)$('citySearch').setAttribute('aria-busy','false');}
+});
 $('btnGeo').onclick = () => locate();
 function locate() {
   if (!navigator.geolocation) return setStatus('<span class="warn">This browser can\'t share your location. Tap the map instead.</span>');
@@ -1377,7 +1461,7 @@ function updatePlanState() {
   const base = selectedPlan?.plan.params;
   for (const k of Object.keys(SPEC)) $(k).closest('.row').classList.toggle('changed', !!base && changed.includes(k));
   if (selectedPlan) $('planStatus').textContent = dirty ? `${changed.length} setting${changed.length === 1 ? '' : 's'} changed${!GP.samePlan({ ...now, params: selectedPlan.plan.params }, selectedPlan.plan) ? '; launch, destination or wind model changed' : ''}. Save to update this plan.` : 'Matches the saved plan.';
-  const aircraft = [...CONTENT.aircraft, ...customAircraft()].find(a => ['gr', 'va', 'vis'].every(k => Math.abs(P[k] - a[k]) < 1e-8));
+  const aircraft = [...CONTENT.aircraft, ...customAircraft()].find(a => ['gr', 'va', 'vis', 'dsink'].every(k => Math.abs(P[k] - (a[k]??0)) < 1e-8));
   selectedAircraft = aircraft || null;
   $('aircraftPreset').value = aircraft?.id || '';
   $('deleteAircraft').disabled = !aircraft || !customAircraft().some(a => a.id === aircraft.id);
@@ -1413,7 +1497,7 @@ $('aircraftPreset').onchange = () => {
   if (!a) return;
   $('aircraftName').value = customAircraft().some(x => x.id === a.id) ? a.name : '';
   applyPreset(GP.aircraft(a)); wdDial.render();
-  $('aircraftStatus').textContent = 'Aircraft sets glide ratio, airspeed and sight distance. Launch height and wind stay as set.';
+  $('aircraftStatus').textContent = 'Aircraft sets glide ratio, airspeed, descent sink and sight distance. Launch height and wind stay as set.';
 };
 $('saveAircraft').onclick = () => {
   const name = $('aircraftName').value.trim().slice(0, 80);
@@ -1493,7 +1577,7 @@ async function flyIt() {
   if (!is3d || !view3d) return;
   const n = p.end + 1;
   view3d.fly({ lls: p.lls.slice(0, n), d: p.d.slice(0, n), h: p.glide.slice(0, n), g: p.ground.slice(0, n), U,
-               Va: P.va, gr: P.gr, ws: P.ws, wd: P.wd },
+               time: p.time, wind: p.wind, sink: p.sink, Va: P.va, gr: P.gr, ws: P.ws, wd: P.wd },
              k => showCursor(k, 'fly'), () => hideCursor());
 }
 $('btnFly').onclick = flyIt;

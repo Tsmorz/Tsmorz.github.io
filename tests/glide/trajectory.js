@@ -1,0 +1,65 @@
+// task shot -- /glide-path/ --eval-file tests/glide/trajectory.js --wait 0 --console (also --phone --dark)
+(async()=>{
+  const el=id=>document.getElementById(id),assert=(ok,why)=>{if(!ok)throw Error(why);};
+  const wait=async(fn,why)=>{const end=Date.now()+45000;while(!fn()){if(Date.now()>end)throw Error('Timed out: '+why);await new Promise(r=>setTimeout(r,50));}};
+  el('guide').close();
+  await wait(()=>el('app').dataset.calc==='ready','initial terrain');
+  assert(document.title.includes('DynaSoar'),'DynaSoar title');
+  el('dsEnabled').checked=false;el('dsEnabled').dispatchEvent(new Event('change'));
+  windUI.restore({enabled:false});
+  Object.assign(P,{agl:300,gr:15,va:10,ws:0,vis:1000,mg:20,curve:false,dsink:6});setSliders();afterParams();compute();
+  await wait(()=>el('app').dataset.calc==='ready','updated terrain');
+  showRoute(enuToLatLng(500,0));
+  assert(route.info.reachable&&PROF.end>0,'actual-terrain destination has a sampled approach');
+  assert(PROF.lls.at(-1).distanceTo(route.target)<.1,'approach terminates at the selected coordinate');
+  assert(PROF.glide.at(-1)<R.h0-100,'low destination produces additional descent');
+  assert(PROF.sink.every(w=>w<=6+1e-5),'sampled approach respects sink authority');
+  assert(PROF.glide.every((h,k)=>h>=PROF.ground[k]+P.mg-.02),'sampled approach clears every terrain sample');
+  assert(PROF.time.at(-1)>0,'flight has integrated physical time');
+  await set3d(true,65,180,launch,15);
+  await wait(()=>view3d.trajectory?.vertices>0,'airborne custom layer');
+  assert(view3d.trajectory.color===profileColour(PROF),'airborne and slice palette match');
+  assert(profLine.options.color===profileColour(PROF),'ground and slice palette match');
+  const previous=base;
+  map.removeLayer(previous);map.addLayer(sat);map.fire('baselayerchange',{layer:sat});
+  await wait(()=>view3d.trajectory?.color===profileColour(PROF),'satellite trajectory palette');
+  assert(profLine.options.color===C.route,'satellite ground trace shares the selected-flight color');
+  map.removeLayer(sat);map.addLayer(previous);map.fire('baselayerchange',{layer:previous});
+  Object.assign(P,{curve:true});el('curve').checked=true;compute();
+  await wait(()=>Gres?.key===runKey()&&PROF?.curve,'curved route');
+  assert(PROF.end>0&&PROF.time.at(-1)>0,'curved route uses the same constrained trajectory');
+  assert(routeLine.getLatLngs().at(-1).distanceTo(route.target)<.1,'curved ground trace terminates at the exact destination');
+  const original=P.dsink;
+  document.querySelector('[data-units=imperial]').click();
+  assert(P.dsink===original,'changing units preserves SI sink');
+  assert(el('approachStats').textContent.includes('ft'),'approach readout uses display units');
+  document.querySelector('[data-units=metric]').click();
+  const oldLaunch=launch,originalFetch=window.fetch;let pending,requests=0;
+  window.fetch=(url,options)=>{
+    if(String(url).includes('geocoding-api.open-meteo.com')){
+      requests++;assert(new URL(url).searchParams.get('name')===el('cityQuery').value,'search query is URL-encoded');
+      return new Promise(resolve=>{pending=resolve;});
+    }
+    return originalFetch(url,options);
+  };
+  const submit=query=>{el('cityQuery').value=query;el('cityQuery').dispatchEvent(new Event('input'));el('citySearch').dispatchEvent(new Event('submit',{cancelable:true}));};
+  submit('Rapid City');
+  pending({ok:true,json:async()=>({results:[{name:'Rapid City',admin1:'South Dakota',country:'United States',latitude:44.08,longitude:-103.23}]})});
+  await wait(()=>el('cityResults').children.length===1,'city results');
+  assert(el('cityResults').textContent.includes('South Dakota'),'city results disambiguate country and region');
+  el('cityResults').querySelector('button').click();
+  assert(launch.equals(oldLaunch),'search selection pans without moving launch');
+  assert(map.getCenter().distanceTo(L.latLng(44.08,-103.23))<1,'selected city centres map');
+  submit('Berlin');el('cityQuery').value='Paris';el('cityQuery').dispatchEvent(new Event('input'));
+  pending({ok:true,json:async()=>({results:[{name:'Berlin',latitude:52.5,longitude:13.4}]})});
+  await new Promise(r=>setTimeout(r,100));
+  assert(!el('cityResults').children.length,'late city results cannot overwrite edited queries');
+  submit('Atlantis');pending({ok:true,json:async()=>({})});await wait(()=>el('cityStatus').textContent===CONTENT.search.empty,'empty search');
+  submit('London');pending({ok:false});await wait(()=>el('cityStatus').textContent===CONTENT.search.failed,'failed search');
+  assert(requests===4,'search sends requests only on submit');window.fetch=originalFetch;
+  el('cityQuery').value='';el('cityStatus').textContent='';
+  await set3d(true,60,180,launch,14);
+  if(innerWidth<=720)setProfile(true);
+  assert(document.documentElement.scrollWidth<=innerWidth+1,'layout fits viewport');
+  console.log('PASS: absolute airborne trajectory, exact destination, sink/clearance/time, matching palettes, unit invariance, city search selection and stale/empty/error replies');
+})();

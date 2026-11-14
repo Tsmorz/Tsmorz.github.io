@@ -1,6 +1,6 @@
 {
-  "name": "Dyna-soar",
-  "short_name": "Dyna-soar",
+  "name": "DynaSoar",
+  "short_name": "DynaSoar",
   "description": "Explore glide reach and candidate lee ridges with terrain, local model wind and wind-aligned profiles.",
   "start_url": "./",
   "scope": "./",

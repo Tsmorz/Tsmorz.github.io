@@ -61,7 +61,7 @@ layout: null
       <button id="profBack" class="link" type="button" hidden>Clear destination</button>
       <button id="btnFly" class="btn sm fly" type="button" title="Fly this glide in 3D"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M7 5v14l11-7z" fill="currentColor"/></svg>Fly it</button>
       <label class="bearing-input" for="bearingValue">{{ site.data.glide.orientation.heading }} <input id="bearingValue" type="number" min="0" max="359.9" step="0.1" value="180">°</label>
-      <div class="prof-keys" aria-hidden="true">
+      <div class="prof-keys" aria-hidden="true" title="{{ site.data.glide.trajectory.legend }}">
         <span><i id="profKeyLine"></i>Glider</span><span><i id="profKeyMargin" class="m"></i>Glider − margin</span><span><i class="t"></i>Ground</span>
       </div>
     </div>
@@ -83,6 +83,12 @@ layout: null
         <button id="btnGeo" class="btn primary" type="button">Use my location</button>
         <button id="btnMHill" class="btn" type="button">{{ site.data.glide.landmark.name }}</button>
       </div>
+      <form id="citySearch" class="city-search" role="search">
+        <label for="cityQuery">{{ site.data.glide.search.label }}</label>
+        <div class="save-row"><input id="cityQuery" type="search" minlength="2" maxlength="120" required placeholder="{{ site.data.glide.search.placeholder }}" autocomplete="off"><button class="btn sm" type="submit">{{ site.data.glide.search.button }}</button></div>
+        <p id="cityStatus" class="hint" role="status"></p><ul id="cityResults" class="city-results"></ul>
+        <a class="hint" href="https://open-meteo.com/en/docs/geocoding-api" target="_blank" rel="noopener">{{ site.data.glide.search.attribution }}</a>
+      </form>
       <p class="hint">Choose Move launch, then tap the map. Dragging the L marker also moves it.</p>
       <details class="launch-coords"><summary>Enter coordinates</summary><div class="coordinates"><label for="launchLat">Latitude<input id="launchLat" type="number" min="-85.05112878" max="85.05112878" step="any"></label><label for="launchLon">Longitude<input id="launchLon" type="number" min="-180" max="180" step="any"></label><button type="button" id="setCoordinates" class="btn sm">Set launch</button></div></details>
     </details>
@@ -93,6 +99,9 @@ layout: null
       <div class="save-row"><input type="text" id="aircraftName" placeholder="Aircraft name" aria-label="Custom aircraft name"><button id="saveAircraft" type="button" class="btn sm">Save aircraft</button><button id="deleteAircraft" type="button" class="btn sm" disabled>Delete</button></div><p id="aircraftStatus" class="hint" role="status"></p>
       <div class="row"><label for="gr">{% assign control = site.data.glide.controls | where: "id", "gr" | first %}{{ control.name }} <output id="v_gr" for="gr"></output></label><div class="input-pair"><input id="gr" type="range"><input id="n_gr" type="number" step="any" aria-label="gr exact value"></div></div>
       <div class="row"><label for="va">{% assign control = site.data.glide.controls | where: "id", "va" | first %}{{ control.name }} <output id="v_va" for="va"></output></label><div class="input-pair"><input id="va" type="range"><input id="n_va" type="number" step="any" aria-label="va exact value"></div></div>
+      <div class="row"><label for="dsink">{% assign control = site.data.glide.controls | where: "id", "dsink" | first %}{{ control.name }} <output id="v_dsink" for="dsink"></output></label><div class="input-pair"><input id="dsink" type="range"><input id="n_dsink" type="number" step="any" aria-label="Descent sink exact value"></div></div>
+      <p id="descentNote" class="hint"></p>
+      <details class="ds-method"><summary>Flight model</summary><p class="hint">{{ site.data.glide.trajectory.method }}</p><a class="hint" href="https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/glider-trajectory-problem/">Steady glide geometry · NASA</a></details>
       <div class="row"><label for="agl">{% assign control = site.data.glide.controls | where: "id", "agl" | first %}{{ control.name }} <output id="v_agl" for="agl"></output></label><div class="input-pair"><input id="agl" type="range"><input id="n_agl" type="number" step="any" aria-label="agl exact value"></div></div>
     </details>
 

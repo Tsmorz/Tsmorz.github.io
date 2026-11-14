@@ -1,4 +1,4 @@
-# Dyna-soar artwork
+# DynaSoar artwork
 
 Website asset: `dyna-soar.png`. Generated with the built-in image-generation tool, then resized for delivery. The original generated PNG is preserved in the local generated-images library.
 

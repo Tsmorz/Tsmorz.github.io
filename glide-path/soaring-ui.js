@@ -1,4 +1,4 @@
-// Dyna-soar's ridge screen and local model wind. Shares the page's map, SI plan and profile cursor.
+// DynaSoar's ridge screen and local model wind. Shares the page's map, SI plan and profile cursor.
 // The scan runs in the existing worker; its markings never modify glide reach or imply energy gain.
 soaringUI = (() => {
   'use strict';

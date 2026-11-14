@@ -35,14 +35,20 @@
     return vg > 0 ? vg : 0;
   }
 
+  // Va is true airspeed, including its vertical component (important for steep glides).
+  function steadyGlide(Va, GR) {
+    const horizontal = Va * GR / Math.hypot(GR, 1);
+    return { horizontal, sink: Va / Math.hypot(GR, 1) };
+  }
   function windSpeedAt(o, brg, e, n) {
+    const Va = steadyGlide(o.Va, o.GR).horizontal;
     const v=o.windAt?o.windAt(e,n):o.wind?Wind.sampleLayer(o.wind,e,n):null;
-    if(v){const x=Math.sin(brg),y=Math.cos(brg),along=v.east*x+v.north*y,cross=v.east*y-v.north*x;if(Math.abs(cross)>=o.Va)return 0;return Math.max(0,Math.sqrt(o.Va*o.Va-cross*cross)+along);}
-    return groundSpeed(brg,o.Va,o.windSpeed,o.windFromDeg*D2R);
+    if(v){const x=Math.sin(brg),y=Math.cos(brg),along=v.east*x+v.north*y,cross=v.east*y-v.north*x;if(Math.abs(cross)>=Va)return 0;return Math.max(0,Math.sqrt(Va*Va-cross*cross)+along);}
+    return groundSpeed(brg,Va,o.windSpeed,o.windFromDeg*D2R);
   }
   // Spatial wind is integrated step-by-step; uniform-wind callers retain their original exact path.
   function castRays(o, elevAt) {
-    const n=o.n,sink=o.Va/o.GR,dmax=new Float32Array(n),kind=new Uint8Array(n),grg=new Float32Array(n),variable=!!(o.wind||o.windAt),profiles=variable?[]:null;
+    const n=o.n,sink=steadyGlide(o.Va,o.GR).sink,dmax=new Float32Array(n),kind=new Uint8Array(n),grg=new Float32Array(n),variable=!!(o.wind||o.windAt),profiles=variable?[]:null;
     for(let i=0;i<n;i++){
       const brg=i/n*2*Math.PI,ux=Math.sin(brg),uy=Math.cos(brg),vg=windSpeedAt(o,brg,0,0);
       if(vg<=0){kind[i]=2;if(profiles)profiles.push(new Float32Array([o.h0]));continue;}
@@ -62,7 +68,7 @@
   function glideAlong(o,elevAt,brg,extra=0){
     const vg=windSpeedAt(o,brg,0,0),ux=Math.sin(brg),uy=Math.cos(brg),d=[0],ground=[elevAt(0,0)],glide=[o.h0];
     if(vg<=0)return {d,ground,glide,end:0,kind:2,g:0};
-    const sink=o.Va/o.GR,g=vg/sink;let h=o.h0,kind=1,end=0,stopAt=Infinity;
+    const sink=steadyGlide(o.Va,o.GR).sink,g=vg/sink;let h=o.h0,kind=1,end=0,stopAt=Infinity;
     for(let s=o.ds;s<=o.maxD&&s<=stopAt;s+=o.ds){
       const t=elevAt(ux*s,uy*s);if(!Number.isFinite(t))break;d.push(s);ground.push(t);
       if(stopAt===Infinity){const speed=windSpeedAt(o,brg,ux*(s-o.ds/2),uy*(s-o.ds/2));
@@ -84,6 +90,44 @@
     if(dist>Math.min(R.dmax[i0],R.dmax[i1]))return 0;
     if(!R.profiles)return (R.grg[i0]+R.grg[i1])/2;
     const h=reachAltitude(R,brg,dist);return dist>0&&R.h0>h?dist/(R.h0-h):(R.grg[i0]+R.grg[i1])/2;
+  }
+
+  // Plan extra drag at constant true airspeed, never an instantaneous altitude snap.
+  // The supplied best-glide profile already includes wind and the route's terrain checks.
+  // Backward viability + forward maximum descent finds the lowest feasible arrival on this track.
+  // This is quasi-steady planning: no flare, acceleration, stall or finite-radius turn model.
+  function descentPath(o) {
+    const { d, ground, best, bearing, wind, Va, GR, margin, maxSink } = o;
+    const n = d.length, h = best.slice(), time = Array(n).fill(0), sink = Array(n).fill(0);
+    if (n < 2 || !d.every(Number.isFinite) || !ground.every(Number.isFinite) || !best.every(Number.isFinite)) return { h, time, sink, state: 'missing' };
+    const base = steadyGlide(Va, GR), limit = Math.max(base.sink, Math.min(maxSink, Va * 0.8));
+    const low = [], high = [], floor = ground.map(g => g + margin);
+    for (let k = 1; k < n; k++) {
+      const ds = d[k] - d[k-1], v = wind[k-1], brg = bearing[k-1];
+      if (!(ds > 0)) return { h, time, sink, state: 'invalid' };
+      low[k] = Math.max(0, best[k-1] - best[k]);
+      const loss = w => {
+        const speed = groundSpeed(brg, Math.sqrt(Va*Va-w*w), Math.hypot(v.east,v.north), Math.atan2(-v.east,-v.north));
+        return speed > 0 ? ds*w/speed : Infinity;
+      };
+      // Limit extra sink before cross/headwind removes forward progress.
+      let a = base.sink, b = limit;
+      for (let j=0;j<40;j++) { const m=(a+b)/2; if (Number.isFinite(loss(m))) a=m; else b=m; }
+      high[k] = Math.max(low[k], loss(a));
+    }
+    for (let k=n-2;k>=0;k--) floor[k]=Math.max(floor[k],floor[k+1]+low[k+1]);
+    if (floor[0] > best[0]+0.02) return { h, time, sink, state: 'blocked' };
+    for (let k=1;k<n;k++) {
+      h[k] = Math.min(best[k], Math.max(floor[k],h[k-1]-high[k]));
+      const ds=d[k]-d[k-1], slope=(h[k-1]-h[k])/ds, v=wind[k-1], brg=bearing[k-1];
+      const along=v.east*Math.sin(brg)+v.north*Math.cos(brg), cross=v.east*Math.cos(brg)-v.north*Math.sin(brg);
+      // Solve Va² = (Vground − Walong)² + Wcross² + (slope·Vground)².
+      const A=1+slope*slope, disc=A*(Va*Va-cross*cross)-slope*slope*along*along;
+      const vg=(along+Math.sqrt(Math.max(0,disc)))/A;
+      if (!(vg>0)) return { h: best.slice(), time, sink, state: 'blocked' };
+      sink[k]=slope*vg; time[k]=time[k-1]+ds/vg;
+    }
+    return { h, time, sink, state: h[n-1]-ground[n-1] <= margin+0.05 ? 'approach' : 'limited' };
   }
 
   function lonLatToPx(lon, lat, z) {
@@ -133,10 +177,10 @@
     [2, 1], [1, 2], [-1, 2], [-2, 1], [-2, -1], [-1, -2], [1, -2], [2, -1]];
   function reachGrid(o, terr, W, H) {
     const N = W * H, alt = new Float32Array(N).fill(-Infinity), parent = new Int32Array(N).fill(-1), midAlt = new Float32Array(N).fill(NaN), done = new Uint8Array(N);
-    const sink = o.Va / o.GR, wf = o.windFromDeg * D2R;
+    const { sink, horizontal } = steadyGlide(o.Va, o.GR), wf = o.windFromDeg * D2R;
     const variable=!!o.wind;
     const moves = MOVES.map(([dx, dy]) => {
-      const vg = groundSpeed(Math.atan2(dx, -dy), o.Va, o.windSpeed, wf);
+      const vg = groundSpeed(Math.atan2(dx, -dy), horizontal, o.windSpeed, wf);
       const sx = Math.sign(dx), sy = Math.sign(dy);
       const mids = Math.abs(dx) === 2 ? [[sx, 0], [sx, sy]] : Math.abs(dy) === 2 ? [[0, sy], [sx, sy]] : dx && dy ? [[sx, 0], [0, sy]] : [];
       return { dx, dy, brg: Math.atan2(dx,-dy), length: Math.hypot(dx,dy)*o.cell, loss: vg > 0 ? Math.hypot(dx, dy) * o.cell * sink / vg : Infinity, mids };
@@ -401,5 +445,5 @@
     return area.filter(k => !keep.has(k));
   }
 
-  return { groundSpeed, castRays, glideAlong, reachAt, reachAltitude, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, gliderMesh, flightCamera, FLIGHT_VIEW, TS, D2R };
+  return { steadyGlide, descentPath, groundSpeed, castRays, glideAlong, reachAt, reachAltitude, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, gliderMesh, flightCamera, FLIGHT_VIEW, TS, D2R };
 });
