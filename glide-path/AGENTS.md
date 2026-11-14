@@ -31,9 +31,9 @@ edges; above zoom 13 it contours the part of the zoom-13 tile under it and draws
 and units; every 5th line thick), shown in the Key. They come on with Satellite the first time; after that `contours` keeps the
 choice. Google's imagery is not an option: its terms forbid it beside a non-Google map and need a billed API key.
 
-**3D** (the 3D | 2D button under the locate button; kept as `view3d`): the same map tilted, drawn by **MapLibre GL**, vendored
+**Map orientation** (`orientMap`, heading controls and the 3D | 2D button; tilt kept as `view3d`): flat rotation and tilt use **MapLibre GL**, vendored
 in `glide-path/lib/maplibre/` (5.24.0, source-map comment stripped, BSD licence kept) and loaded with `glide-3d.js` only the
-first time 3D is opened. Its mountains are the same Terrarium tiles (raster-dem, `encoding: 'terrarium'`, maxzoom 13, true
+first time the map is rotated or tilted. Its mountains are the same Terrarium tiles (raster-dem, `encoding: 'terrarium'`, maxzoom 13, true
 scale), so the reach, which is the 2D overlay's own canvas as a `canvas` source (copied once per redraw: `play()` then
 `pause()` after a render), lies on exactly the ground it was worked out on. The base follows the 2D layers menu; a MapLibre
 hillshade goes over the light maps and is the whole base offline. Lines and points (outline, slope hits, sight ring, the
@@ -41,17 +41,16 @@ cross-section with its marks, the route, the probe) are read from the 2D map's L
 `mark3d()`, so the 2D map stays the one source of truth. The 3D map is a `.map3d` layer inside the Leaflet container (z 900:
 over the panes, under the controls), so the Key, wind badge and layers menu stay; zoom, scale and attribution are hidden
 (`.is-3d`), and its mouse, touch and wheel events are stopped there so the 2D map never pans or sets the launch from them.
-In 3D a tap or dragging the pin moves the launch; long-press routes are 2D only. No WebGL: the button says so.
-**Fly it** (beside the cross-section's title) follows the glide in 3D, the straight one or the long-press route, at its own
-heights (the profile's `glide`): a chase camera 150 m behind and 80 m above the glider (`calculateCameraOptionsFromTo`, kept
-25 m over the ground; the centre is unclamped from the ground while it flies), a readout with Stop, and the cross-section's
-cursor following along. The whole glide takes 8 to 40 s; dragging the map ends it. **The glider** is a 2 m model sailplane,
-`GlideCore.gliderMesh()` (no DOM; test 6b checks its size, symmetry and normals): a lofted fuselage with a painted canopy,
-tapered polyhedral wings with a cambered airfoil, a T-tail, red tips. It is drawn with WebGL in a canvas at the middle of the
-view (larger than life), lit by sun, sky and ground with a gloss highlight, from the chase camera's own angle, and flies:
-it banks for a coordinated turn at the set airspeed (from the track's curvature, smoothed), noses down at the glide angle,
-crabs into a crosswind, and rocks a little. `view3d.preview({ look, yaw, pitch, bank })` draws it alone, for checking the
-model by eye.
+Taps use the selected map mode in both renderers; dragging L moves the launch. Long-press always inspects.
+Keep the compass and wind badge screen-relative (`cameraChanged`); changing a section heading or selecting a ridge
+must also orient the map. Rotation and tilt require WebGL; North up restores Leaflet from a flat rotated view.
+
+**Fly it**: keep `GlideCore.flightCamera` and `FLIGHT_VIEW` calibrated to `gliderMesh` and the CSS-sized
+`.fly-glider` canvas. Enlarging the glider independently of the terrain camera makes it look enormous on landing.
+Terrain clearance can raise the camera; compensate the glyph scale by the actual chase distance. Map-vector glyphs
+are hidden during a close chase, and the Stop readout must stay clear of the map-mode toolbar.
+`task check:glide` guards the physical projection; `tests/glide/flight.js` checks it and wind vectors in the browser
+(run through `task shot`, also with `--phone`). `view3d.preview({ look, yaw, pitch, bank })` inspects the mesh alone.
 
 **No height limit**: the glider starts at the launch height the visitor sets and is never capped on the way (the US / EU
 rules switch was taken out); the note under the panel tells pilots to check their local rules. **Units** are metric or
@@ -86,7 +85,9 @@ Planning: the map defaults to **Inspect destination**; **Move launch** is a one-
 
 Each slider has an exact numeric input; wind and profile bearings also accept degrees. Named aircraft store glide ratio, airspeed and sight distance, leaving launch height and wind unchanged. Named plans store launch, all settings, destination and units in `glide-reach-plans`; aircraft use `glide-reach-aircraft`. Matching names update the saved item. Modified controls are marked against the loaded plan. **Copy plan link** serializes the same validated SI data into `#plan=`; a shared plan overrides local defaults on load. Malformed links report an error and retain local defaults. `tests/glide/browser.js` exercises these flows via `task shot -- /glide-path/ --eval-file tests/glide/browser.js` (also `--phone`), after `task build`.
 
-Calculation states distinguish loading, updating (previous overlay explicitly labelled), ready, incomplete terrain and missing terrain. Old worker results never repaint an overlay for new settings. Offline areas report actual cached tile counts; Verify saved terrain also asks the active service worker to check its own complete shell file list. Coverage at the current launch counts all 277 required terrain tiles across zoom levels, rather than trusting a saved-area name.
+Calculation states distinguish loading, updating (previous overlay explicitly labelled), ready, incomplete terrain and missing terrain.
+Keep the `loadTerrTile` deadline around the response body and decoding too; discard failed promises so Retry can recover.
+Do not automatically change terrain zoom while tiles are missing. `tests/glide/loading.js` guards stalled requests, bodies, queued launches and retry. Old worker results never repaint an overlay for new settings. Offline areas report actual cached tile counts; Verify saved terrain also asks the active service worker to check its own complete shell file list. Coverage at the current launch counts all 277 required terrain tiles across zoom levels, rather than trusting a saved-area name.
 
 It works offline. `sw.js` keeps the page and every terrain tile it has fetched (a capped `glide-terrain-runtime` cache), and
 "Save this area" stores 9 × 9 zoom-13 tiles round the launch plus 7 × 7 at each of zooms 12 to 9 (277 tiles) in
@@ -104,7 +105,7 @@ itself and moves open tabs to the new address, deleting no caches (the terrain c
 
 The name is **Dyna-soar**; the URL remains `/glide-path/`, and existing `glide-reach-*` storage, shared plans and terrain caches are retained. The exact Dinosaur Park statue location (44.077964, −103.245844; Library of Congress survey) is the default when no launch or shared plan is saved. Its launch button never snaps to a neighbouring peak. Aircraft, branding, weather copy, screening explanations and landmark coordinates live in `_data/glide.yml`. `dyna-soar.png` is the generated cartoon; `glide-path/ARTWORK.md` records the reference and generation prompt.
 
-`soaring-core.js` is pure geometry and weather parsing; `soaring-ui.js` owns ridge marks and the wind-aligned profile; `wind-ui.js` owns regional forecasts, the terrain-flow worker, map vectors and the separate vertical-flow overlay. A ridge needs a local crest, ≥15 m rise/drop over roughly 140 m along the wind, and ≥8° lee angle. These are explicit screening choices, not validated flight thresholds. Calm ≤0.5 m/s has no directional screen. Terrain cells >40 m are rejected. Missing terrain never forms a candidate. Six separated candidates are shown with **DS?** labels and dashed lee outlines, independent of the reach palette. Profiles run from upwind through the crest to the lee; there is no resolved separated shear layer or energy-gaining flight path. **Fly it** is hidden for this terrain-only view. Glide reach uses one selected fixed-AGL horizontal layer of the spatial wind field, with no credit for vertical air motion or soaring energy gain.
+`soaring-core.js` is pure geometry and weather parsing; `soaring-ui.js` owns ridge marks and the wind-aligned profile; `wind-ui.js` owns regional forecasts, the terrain-flow worker, map vectors and the separate vertical-flow overlay. A ridge needs a local crest, ≥15 m rise/drop over roughly 140 m along the wind, and ≥8° lee angle. These are explicit screening choices, not validated flight thresholds. Calm ≤0.5 m/s has no directional screen. Terrain cells >40 m are rejected. Missing terrain never forms a candidate. Separated candidates have numbered ridge marks, solid crests and dashed lee outlines, independent of the reach palette. Profiles run from upwind through the crest to the lee; there is no resolved separated shear layer or energy-gaining flight path. **Fly it** is hidden for this terrain-only view. Glide reach uses one selected fixed-AGL horizontal layer of the spatial wind field, with no credit for vertical air motion or soaring energy gain.
 
 The existing worker keeps independent `screenGrid` terrain for `SoaringCore.scan`, tagged by terrain ID and a launch/wind/sight key. Its replies do not complete a route-search job. Screening retains zoom-13 terrain when reach steps to a coarser zoom; if necessary it loads a bounded local mosaic sized to the sight distance. Only the latest matching screen paints. Its markings and selected profile also work in 3D.
 
@@ -116,7 +117,7 @@ The existing worker keeps independent `screenGrid` terrain for `SoaringCore.scan
 
 Straight glides integrate local along-track ground speed step by step and retain cumulative altitude profiles for destination interpolation. Curved paths use the same fixed-layer field, positive height loss only, and distinct first/second half-edge losses; intermediate terrain checks and `midAlt` retain the correct halfway altitude. `GlideCore.reachAltitude` and the cross-section share those integrated results. Changing wind, roughness or layer recomputes the whole envelope and all arrivals. Vertical velocity is never included in the ray or route height update.
 
-Wind arrows are available in 2D and 3D. Optional teal upflow/red-hatched downflow shading is separate from reach classification. The ridge strip shows estimated flow paths projected into its vertical section, not a 3-D glider trajectory; its cursor reports horizontal wind, estimated vertical air and the 10–80 m vector difference. Neither these differences nor candidate marks confirm a flyable dynamic-soaring shear layer.
+Wind arrows follow the visible viewport in both renderers, including uniform manual wind; keep their density and size in screen pixels when zooming. Optional teal upflow/red-hatched downflow shading is separate from reach classification. The ridge strip shows estimated flow paths projected into its vertical section, not a 3-D glider trajectory; its cursor reports horizontal wind, estimated vertical air and the 10–80 m vector difference. Neither these differences nor candidate marks confirm a flyable dynamic-soaring shear layer.
 
 `task check:glide` includes asymmetric ridge fixtures, wind reversal/along-ridge rejection, missing terrain, screening separation, wind-aligned sections, forecast units/times and worker message checks. After `task build`, `task shot -- /glide-path/ --eval-file tests/glide/soaring.js --console` checks the actual Dinosaur Park terrain, mock forecasts, a full-map wind reversal, candidate selection, profile and weather failure/staleness. Repeat with `--phone`; the existing `tests/glide/browser.js` still checks saved plans, unit invariance and offline coverage.
 

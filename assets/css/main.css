@@ -1012,3 +1012,18 @@ ewt-install-dialog {
   --md-filled-button-container-shape: 3px;
   --md-text-button-container-shape: 3px;
 }
+
+/* Portfolio illustrations keep their complete silhouettes, in both themes. */
+.card-media.card-illustration { margin-bottom: .75rem; }
+.card-illustration img { object-fit: contain; padding: 1rem 1.2rem .25rem; }
+.home-featured-wrap { position: relative; z-index: 1; margin-top: 2.5rem; }
+.home-featured { display: grid; grid-template-columns: minmax(150px, 270px) minmax(0, 1fr); align-items: center; gap: clamp(1.2rem, 4vw, 3rem); max-width: 800px; margin-inline: auto; color: var(--text); text-decoration: none; }
+.home-featured img { width: 100%; height: auto; max-height: 210px; object-fit: contain; }
+.home-featured h2 { margin: .25rem 0 .5rem; }
+.home-featured p { margin: 0 0 .75rem; color: var(--text-muted); }
+.home-featured-action { color: var(--accent); font-weight: 600; }
+.home-featured:hover .home-featured-action { text-decoration: underline; }
+@media (max-width: 520px) {
+  .home-featured { grid-template-columns: 1fr; gap: .75rem; }
+  .home-featured img { max-height: 210px; }
+}

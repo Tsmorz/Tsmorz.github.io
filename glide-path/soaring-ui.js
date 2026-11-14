@@ -59,7 +59,8 @@ soaringUI = (() => {
     if(!enabled || resultKey!==key() || !result) return;
     marks.clearLayers();$('dsCandidates').replaceChildren();
     const list=result.candidates;
-    if(selected && !list.some(c=>c.x===selected.x && c.y===selected.y)) selected=null;
+    // A worker refresh replaces candidate objects. Retain the selection by coordinates.
+    if(selected) selected=list.find(c=>c.x===selected.x && c.y===selected.y)||null;
     if(!selected && list.length) selected=list[0];
     mark3d();
     status(ground.failed && !list.length && result.state==='none' ? 'missing' : result.state);
@@ -72,9 +73,23 @@ soaringUI = (() => {
       const selectedHere=selected===c;
       const polygon=L.polygon([xy(0,-width),xy(0,width),xy(depth,width*.7),xy(depth,-width*.7)],
         {color:C.casing,weight:6,fill:false,interactive:false}).addTo(marks);
-      L.polygon(polygon.getLatLngs(),{color:C.line,weight:2,dashArray:'5 4',fill:false,interactive:false}).addTo(marks);
-      const pin=L.marker(point,{icon:L.divIcon({className:'ds-pin'+(selectedHere?' selected':''),html:`<span>DS? ${index+1}</span>`,iconSize:[54,40],iconAnchor:[27,20]}),title:`Candidate ridge ${index+1}: inspect wind profile`,keyboard:true}).addTo(marks);
+      L.polygon(polygon.getLatLngs(),{color:C.line,weight:selectedHere?3:1.5,dashArray:'5 4',fill:selectedHere,fillColor:C.line,fillOpacity:.12,interactive:false}).addTo(marks);
+      const pin=L.marker(point,{icon:L.divIcon({className:'ds-pin'+(selectedHere?' selected':''),html:`<span>${selectedHere && view==='soaring' ? CONTENT.orientation.ridge+' ' : ''}${index+1}</span>`,iconSize:[72,40],iconAnchor:[36,20]}),title:`Candidate ridge ${index+1}: inspect wind profile`,keyboard:true}).addTo(marks);
       pin.on('click',e=>{if(e.originalEvent)L.DomEvent.stopPropagation(e.originalEvent);select(c);});
+      const crest = [xy(0,-width),xy(0,width)];
+      L.polyline(crest,{color:C.casing,weight:selectedHere?8:5,interactive:false}).addTo(marks);
+      L.polyline(crest,{color:C.line,weight:selectedHere?4:2,interactive:false}).addTo(marks);
+      if(selectedHere && view==='soaring') {
+        const arrow = [xy(-depth*.8,0),xy(depth*.8,0)], tip = arrow[1];
+        const head = [xy(depth*.5,-width*.28),tip,xy(depth*.5,width*.28)];
+        for(const points of [arrow,head]) {
+          L.polyline(points,{color:C.casing,weight:7,interactive:false}).addTo(marks);
+          L.polyline(points,{color:C.line,weight:3,interactive:false}).addTo(marks);
+        }
+        for(const [along,text] of [[-depth*.4,CONTENT.orientation.windward],[depth*.4,CONTENT.orientation.lee]])
+          L.marker(xy(along,width*1.7),{interactive:false,icon:L.divIcon({className:'ridge-label',html:`<span>${text}</span>`,iconSize:[80,26],iconAnchor:[40,13]})}).addTo(marks);
+      }
+
       const li=document.createElement('li'), b=document.createElement('button');b.type='button';b.className='ds-candidate';b.setAttribute('aria-pressed',String(selectedHere && view==='soaring'));
       const name=document.createElement('b'), detail=document.createElement('span');name.textContent=`Ridge ${index+1} · ${U.d(c.distance)} away`;
       detail.textContent=`Windward rise ${U.h(c.rise)} · lee drop ${U.h(c.drop)} · ${c.leeAngle.toFixed(0)}°`;
@@ -86,14 +101,15 @@ soaringUI = (() => {
     const items=result.candidates.map((c,index)=>{
       const v=S.flow(c.windFrom),w=50/ground.cell,d=c.run/ground.cell;
       const xy=(a,b)=>ll(c.x+v.x*a-v.y*b,c.y+v.y*a+v.x*b);
-      return {index,point:ll(c.x,c.y),selected:selected===c,outline:[xy(0,-w),xy(0,w),xy(d,w*.7),xy(d,-w*.7),xy(0,-w)]};
+      return {index,point:ll(c.x,c.y),selected:selected===c && view==='soaring',crest:[xy(0,-w),xy(0,w)],labels:[{point:xy(-d*.4,w*1.7),text:CONTENT.orientation.windward},{point:xy(d*.4,w*1.7),text:CONTENT.orientation.lee}],arrow:[[xy(-d*.8,0),xy(d*.8,0)],[xy(d*.5,-w*.28),xy(d*.8,0),xy(d*.5,w*.28)]],outline:[xy(0,-w),xy(0,w),xy(d,w*.7),xy(d,-w*.7),xy(0,-w)]};
     });
-    return {key:resultKey+':'+(selected?selected.x+','+selected.y:''),items};
+    return {key:resultKey+':'+view+':'+(selected?selected.x+','+selected.y:''),items};
   }
   function select(candidate) {
     selected=candidate;setView('soaring');setProfile(true);render();
     if(compact.matches) setDrawer(false);
-    map.panInside(ll(candidate.x,candidate.y),{padding:[70,70]});
+    map.panInside(ll(candidate.x,candidate.y),{padding:[100,100]});
+    orientMap(candidate.windFrom+180,ll(candidate.x,candidate.y),15.5);
   }
   function setView(value,redraw=true) {
     view=value;$('prof').dataset.view=value;
@@ -109,7 +125,7 @@ soaringUI = (() => {
   function drawRidgeProfile() {
     const cv=$('profile'), p=ridgeProfile();$('btnFly').disabled=true;
     const local=p&&windUI?windUI.atLatLng(ll(selected.x,selected.y)):null;
-    $('profWhat').textContent=p?`Local wind ${U.v(local?Math.hypot(local.east,local.north):P.ws)} from ${compass(local?WindCore.bearing(local.east,local.north):P.wd)} · projected flow estimate · lift/sink excluded from reach.`:'Choose a candidate ridge from the map or Dynamic soaring panel.';
+    $('profWhat').textContent=p?`Local wind ${U.v(local?Math.hypot(local.east,local.north):P.ws)} from ${compass(local?WindCore.bearing(local.east,local.north):P.wd)} · projected flow estimate · lift/sink excluded from reach.`:CONTENT.soaring.empty;
     if(!p) { PROF=null;clearTrace();const ctx=cv.getContext('2d');ctx.clearRect(0,0,cv.width,cv.height);return; }
     if($('app').classList.contains('profile-off')) { PROF=p;drawTrace(p,[]);return; }
     const W=cv.clientWidth,H=cv.clientHeight,dpr=devicePixelRatio||1;if(!W||!H)return;
@@ -124,9 +140,9 @@ soaringUI = (() => {
     for(let h=Math.ceil(lo/step)*step;h<hi;h+=step){ctx.beginPath();ctx.moveTo(L0,Y(h));ctx.lineTo(W-R0,Y(h));ctx.stroke();ctx.fillText(U.h(h),L0-5,Y(h));}
     let start=0;while(start<p.d.length){while(start<p.d.length&&!Number.isFinite(p.ground[start]))start++;if(start===p.d.length)break;let end=start;ctx.beginPath();ctx.moveTo(X(p.d[start]),H-B0);while(end<p.d.length&&Number.isFinite(p.ground[end])){ctx.lineTo(X(p.d[end]),Y(p.ground[end]));end++;}ctx.lineTo(X(p.d[end-1]),H-B0);ctx.closePath();ctx.fillStyle=COL.terrain;ctx.fill();ctx.strokeStyle=COL.terrainEdge;ctx.stroke();start=end;}
     ctx.setLineDash([4,4]);ctx.strokeStyle=COL.ink2;ctx.beginPath();ctx.moveTo(X(p.crest),T0);ctx.lineTo(X(p.crest),H-B0);ctx.stroke();ctx.setLineDash([]);
-    ctx.fillStyle=COL.ink2;ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillText('Upwind →',L0,13);ctx.textAlign='right';ctx.fillText('Lee / downwind',W-R0,13);
+    ctx.fillStyle=COL.ink2;ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillText(CONTENT.orientation.windward,L0,13);ctx.textAlign='center';ctx.fillText(CONTENT.orientation.direction,W/2,13);ctx.textAlign='right';ctx.fillText(CONTENT.orientation.lee,W-R0,13);
     ctx.textAlign='center';ctx.fillStyle=COL.muted;const ticks=[0,p.crest,p.span];
-    for(const d of ticks){ctx.textAlign=d===0?'left':d===p.span?'right':'center';ctx.fillText(d===p.crest?'Crest':`${d<p.crest?'−':'+'}${U.d(p.crest)}`,X(d),H-5);}
+    for(const d of ticks){ctx.textAlign=d===0?'left':d===p.span?'right':'center';ctx.fillText(d===p.crest?CONTENT.orientation.crest:`${d<p.crest?'−':'+'}${U.d(p.crest)}`,X(d),H-5);}
     if(windUI?.ready&&windUI?.field?.state==='terrain'){
       const direction=S.flow(selected.windFrom),stepD=p.span/70;
       ctx.strokeStyle=COL.curve;ctx.lineWidth=1.2;ctx.setLineDash([4,3]);

@@ -19,11 +19,11 @@ windUI = (()=>{
  function parameters(){
   // Editing mean wind makes it a manual scenario; it must not secretly retain forecast neighbours.
   if(meta&&(Math.abs(meta.speed-P.ws)>1e-8||Math.abs(meta.from-P.wd)>1e-8))config.samples=[];
-  settingsUI();label();if(applied===key())render();if(applied&&applied!==key()){arrowLayer.clearLayers();if(shade)shade.remove();$('flowStatus').textContent=CONTENT.flow.updating;}
+  settingsUI();label();render();if(applied&&applied!==key())$('flowStatus').textContent=CONTENT.flow.updating;
  }
  function prepare(){
   if(!launch||!M)return true;
-  if(!config.enabled){if(layer){layer=null;field=null;revision++;arrowLayer.clearLayers();if(shade)shade.remove();}applied=key();$('flowStatus').textContent=CONTENT.flow.disabled;return true;}
+  if(!config.enabled){if(layer){layer=null;field=null;revision++;arrowLayer.clearLayers();if(shade)shade.remove();}applied=key();$('flowStatus').textContent=CONTENT.flow.disabled;render();return true;}
   wanted=key();if(applied===wanted)return true;if(pendingKey===wanted)return false;
   const source=soaringUI?.terrainData;if(!source){soaringUI?.ensureTerrain();return false;}
   const [atX,atY]=G.lonLatToPx(launch.lng,launch.lat,source.z),sx=(atX-source.x0)/2,sy=(atY-source.y0)/2;
@@ -53,17 +53,28 @@ windUI = (()=>{
   const p={lat:launch.lat+n/111320,lon:launch.lng+e/(111320*Math.cos(launch.lat*Math.PI/180))};return {...W.regional(activeSamples(),p.lat,p.lon,h,config.roughness,W.vector(P.ws,P.wd)),mode:'regional'};
  }
  function atLatLng(point,height=config.height){const e=(point.lng-launch.lng)*111320*Math.cos(launch.lat*Math.PI/180),n=(point.lat-launch.lat)*111320;return sample(e,n,height);}
- let windLines=[];
+ let windLines=[], arrowsKey='';
  function render(){
-  windLines=[];arrowLayer.clearLayers();if(shade)shade.remove();if(!layer||applied!==key()||!config.enabled)return;
+  windLines=[];arrowsKey=key();arrowLayer.clearLayers();if(shade)shade.remove();
+  if(!launch||view3d?.flying){mark3d();return;}
   const toLL=(e,n)=>L.latLng(launch.lat+n/111320,launch.lng+e/(111320*Math.cos(launch.lat*Math.PI/180)));
-  if($('windArrows').checked)for(let y=8;y<layer.ny;y+=12)for(let x=8;x<layer.nx;x+=12){
-   const e=layer.x0+(x+.5)*layer.cell,n=layer.y0-(y+.5)*layer.cell,v=W.sampleLayer(layer,e,n),speed=Math.hypot(v.east,v.north);if(speed<.1)continue;
-   const len=55/speed,tip=toLL(e+v.east*len,n+v.north*len),tail=toLL(e-v.east*len*.3,n-v.north*len*.3);windLines.push([tail,tip],[toLL(e+v.east*len*.65-v.north*len*.22,n+v.north*len*.65+v.east*len*.22),tip,toLL(e+v.east*len*.65+v.north*len*.22,n+v.north*len*.65-v.east*len*.22)]);
+  const size=is3d?{x:el3d.clientWidth,y:el3d.clientHeight}:map.getSize();
+  const unproject=p=>is3d?view3d.unproject(p):map.containerPointToLatLng(p);
+  const project=p=>is3d?view3d.project(p):map.latLngToContainerPoint(p);
+  const shift=(p,e,n)=>L.latLng(p.lat+n/111320,p.lng+e/(111320*Math.cos(p.lat*Math.PI/180)));
+  // A sparse screen grid keeps direction arrows visible when inspecting a ridge or panning away.
+  const spacing=size.x<560?90:110;
+  if($('windArrows').checked)for(let y=spacing*.55;y<size.y-20;y+=spacing)for(let x=spacing*.55;x<size.x-20;x+=spacing){
+   const point=unproject([x,y]);if(!Number.isFinite(point.lat)||!Number.isFinite(point.lng))continue;
+   const v=atLatLng(point),speed=Math.hypot(v.east,v.north);if(speed<.1)continue;
+   const e=v.east/speed,n=v.north/speed,probe=project(shift(point,e*20,n*20)),origin=project(point);
+   const px=Math.hypot(probe.x-origin.x,probe.y-origin.y);if(!Number.isFinite(px)||px<.01)continue;
+   const len=20*20/px,tip=shift(point,e*len,n*len),tail=shift(point,-e*len*.35,-n*len*.35);
+   windLines.push([tail,tip],[shift(point,e*len*.65-n*len*.22,n*len*.65+e*len*.22),tip,shift(point,e*len*.65+n*len*.22,n*len*.65-e*len*.22)]);
    const a=Math.atan2(v.east,v.north)*180/Math.PI;
-   L.marker(toLL(e,n),{interactive:false,icon:L.divIcon({className:'wind-vector',html:`<svg viewBox="-12 -12 24 24" style="transform:rotate(${a}deg)" aria-hidden="true"><path class="wind-casing" d="M0 9V-8M-4 -4 0 -8 4 -4"/><path d="M0 9V-8M-4 -4 0 -8 4 -4"/></svg>`,iconSize:[24,24],iconAnchor:[12,12]}),title:`${U.v(speed)} toward ${compass((a+360)%360)} at ${U.h(config.height)} AGL`}).addTo(arrowLayer);
+   L.marker(point,{interactive:false,icon:L.divIcon({className:'wind-vector',html:`<svg viewBox="-12 -12 24 24" style="transform:rotate(${a}deg)" aria-hidden="true"><path class="wind-casing" d="M0 9V-8M-4 -4 0 -8 4 -4"/><path d="M0 9V-8M-4 -4 0 -8 4 -4"/></svg>`,iconSize:[24,24],iconAnchor:[12,12]}),title:`${U.v(speed)} toward ${compass((a+360)%360)} at ${U.h(config.enabled?config.height:10)} AGL`}).addTo(arrowLayer);
   }
-  if($('ridgeShading').checked&&field?.state==='terrain'){
+  if($('ridgeShading').checked&&config.enabled&&applied===key()&&layer&&field?.state==='terrain'){
    cv.width=layer.nx;cv.height=layer.ny;const ctx=cv.getContext('2d'),img=ctx.createImageData(cv.width,cv.height);
    for(let i=0;i<layer.up.length;i++){const v=layer.up[i],k=i*4;if(Math.abs(v)<.05)continue;const up=v>0;img.data[k]=up?18:184;img.data[k+1]=up?165:38;img.data[k+2]=up?153:58;img.data[k+3]=Math.min(130,Math.abs(v)*65)*(up||((i%layer.nx+Math.floor(i/layer.nx))%4<2)?1:.35);}
    ctx.putImageData(img,0,0);const bounds=L.latLngBounds(toLL(layer.x0,layer.y0-layer.ny*layer.cell),toLL(layer.x0+layer.nx*layer.cell,layer.y0));shade=new CanvasOverlay(cv,bounds,{interactive:false,opacity:.65}).addTo(map);
@@ -101,5 +112,5 @@ windUI = (()=>{
  $('windArrows').onchange=()=>{LS.set('wind-arrows',$('windArrows').checked);render();};$('ridgeShading').onchange=()=>{LS.set('wind-shading',$('ridgeShading').checked);render();};
  ['ws','n_ws','windBearing'].forEach(id=>$(id).addEventListener('input',()=>{error='';label();}));
  $('fetchWind').onclick=fetchWind;settingsUI();label();
- return {features:()=>applied===key()?windLines:[],shade:()=>shade&&map.hasLayer(shade)?{canvas:cv,bounds:shade.getBounds()}:null,vertical:value=>units==='imperial'?`${(value*G.FT).toFixed(1)} ft/s`:`${value.toFixed(2)} m/s`,parameters,prepare,sample,atLatLng,render,snapshot,restore,terrainChanged(){applied='';if(M&&launch)requestAnimationFrame(compute);},get revision(){return revision;},get layer(){return config.enabled&&applied===key()?layer:null;},get height(){return config.enabled?config.height:10;},get scenarioKey(){return JSON.stringify(config);},get maxSpeed(){return Math.max(P.ws,field?.diagnostics?.maxSpeed||0,...activeSamples().map(p=>{const v=W.regional([p],p.lat,p.lon,config.height,config.roughness);return Math.hypot(v.east,v.north);}));},get ready(){return !config.enabled||applied===key();},get field(){return field;}};
+ return {features:()=>arrowsKey===key()&&!view3d?.flying?windLines:[],shade:()=>shade&&map.hasLayer(shade)?{canvas:cv,bounds:shade.getBounds()}:null,vertical:value=>units==='imperial'?`${(value*G.FT).toFixed(1)} ft/s`:`${value.toFixed(2)} m/s`,parameters,prepare,sample,atLatLng,render,snapshot,restore,terrainChanged(){applied='';if(M&&launch)requestAnimationFrame(compute);},get revision(){return revision;},get layer(){return config.enabled&&applied===key()?layer:null;},get height(){return config.enabled?config.height:10;},get scenarioKey(){return JSON.stringify(config);},get maxSpeed(){return Math.max(P.ws,field?.diagnostics?.maxSpeed||0,...activeSamples().map(p=>{const v=W.regional([p],p.lat,p.lon,config.height,config.roughness);return Math.hypot(v.east,v.north);}));},get ready(){return !config.enabled||applied===key();},get field(){return field;}};
 })();

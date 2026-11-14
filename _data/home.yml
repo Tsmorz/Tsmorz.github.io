@@ -13,3 +13,9 @@ explore:
   - name: Recipes
     blurb: A few favorites, weighed on a kitchen scale, with a tick box for every step.
     url: /recipes/
+
+featured:
+  project: Dyna-soar
+  label: From the workshop
+  blurb: Pick a launch, follow the wind and explore the ridges with your model glider. A little Dinosaur Park inspiration, wherever you fly.
+  action: Try Dyna-soar

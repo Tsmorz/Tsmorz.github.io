@@ -275,6 +275,16 @@
   // superellipse sections with a painted canopy, tapered wings with a thin cambered airfoil and polyhedral, and a T-tail;
   // red tips. Proportions of a model, not a scaled-down full-size glider: a shorter wing for its fuselage, a bigger tail.
   // Returns { pos, nrm, col } (Float32Array, 3 per vertex: position, unit normal pointing out, linear RGB) and idx (Uint16Array).
+  // Calibrate the chase distance to the same 2 m mesh and CSS-sized glider viewport.
+  // Both cameras then project a metre to the same number of screen pixels.
+  const FLIGHT_VIEW = { fov: 17, distance: 2.15, look: 28 };
+  function flightCamera(span, gliderHeight, mapHeight, mapFov) {
+    const distance = FLIGHT_VIEW.distance * span * mapHeight / gliderHeight *
+      Math.tan(FLIGHT_VIEW.fov * D2R / 2) / Math.tan(mapFov * D2R / 2);
+    return { distance, back: distance * Math.cos(FLIGHT_VIEW.look * D2R),
+      up: distance * Math.sin(FLIGHT_VIEW.look * D2R), clearance: Math.min(1, span / 2) };
+  }
+
   function gliderMesh() {
     const pos = [], nrm = [], col = [], idx = [];
     const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -391,5 +401,5 @@
     return area.filter(k => !keep.has(k));
   }
 
-  return { groundSpeed, castRays, glideAlong, reachAt, reachAltitude, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, gliderMesh, TS, D2R };
+  return { groundSpeed, castRays, glideAlong, reachAt, reachAltitude, reachGrid, routeTo, chooseZoom, Units, FT, MPH, MI, lonLatToPx, pxToLonLat, mppAt, decodeTerrarium, areaTiles, tilesOnlyIn, contours, contourStep, circle, gliderMesh, flightCamera, FLIGHT_VIEW, TS, D2R };
 });

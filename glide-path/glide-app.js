@@ -30,7 +30,7 @@ const LS = {
   set(k, v) { try { localStorage.setItem('glide-reach-' + k, JSON.stringify(v)); return true; } catch (e) { return false; } }
 };
 const $ = id => document.getElementById(id);
-const setStatus = html => { $('status').innerHTML = html; };
+const setStatus = (html, source = 'message') => { $('status').innerHTML = html; $('status').dataset.source = source; };
 let hadResult = false;
 function markCalc(phase, text) {
   $('app').dataset.calc = phase;
@@ -41,6 +41,7 @@ function markCalc(phase, text) {
   $('resultNotice').textContent = pending && hadResult ? 'Previous result shown' : '';
   $('prof').classList.toggle('stale', pending && hadResult);
   if (pending) $('btnFly').disabled = true;
+  if ((phase === 'ready' || phase === 'partial') && $('status').dataset.source === 'terrain') placeStatus();
 }
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -73,6 +74,7 @@ if (!['metric', 'imperial'].includes(units)) units = 'metric';
 let U = G.Units[units];
 const P = GP.parameters(sharedPlan?.params || LS.get('params', {}));
 let selectedPlan = null, selectedAircraft = null;
+let mapHeading = 0, mapPitch = 0;
 let pendingTarget = sharedPlan ? sharedPlan.target : undefined;
 $('curve').checked = P.curve;
 
@@ -144,31 +146,39 @@ document.querySelectorAll('details.group').forEach(d => {
   const k = d.dataset.sec; if (k in openSecs) d.open = openSecs[k];
   d.addEventListener('toggle', () => { openSecs[k] = d.open; LS.set('open', openSecs); });
 });
-// the wind on the map: an arrow the way it blows (north is always up), its speed and where it comes from
+// The wind badge follows the map orientation and names the direction it comes from.
 function windBadge() {
   const box=document.getElementById('windMap');if(!box)return;
   const local=windUI?.layer&&launch?windUI.atLatLng(launch):null,speed=local?Math.hypot(local.east,local.north):P.ws,from=local?WindCore.bearing(local.east,local.north):P.wd;
-  box.classList.toggle('calm',speed<.05);box.querySelector('.wind-arrow').style.transform=`rotate(${(from+180)%360}deg)`;
+  box.classList.toggle('calm',speed<.05);box.querySelector('.wind-arrow').style.transform=`rotate(${GP.wrap(from+180-mapHeading)}deg)`;
   box.querySelector('.wind-text').innerHTML=(speed>=.05?`<b>${U.v(speed)}</b> from ${compass(from)}`:'<b>Calm</b>')+`<small>${local?`${U.h(windUI.height)} AGL`:'10 m reference'}</small>`;
   box.setAttribute('aria-label',`Wind at ${local?U.h(windUI.height)+' above ground':'10 metre reference'}: ${U.v(speed)} from ${compass(from,true)}`);
 }
 
 // ---------- Terrain tiles: one decoder for the calculation and the shaded map ----------
 const tileMem = new Map(); // url -> Promise<Float32Array>, a small LRU
+const TERRAIN_TIMEOUT = 12000; // One stalled tile must not hold the whole mosaic in Loading.
 const decodeCanvas = document.createElement('canvas'); decodeCanvas.width = decodeCanvas.height = TS;
 const decodeCtx = decodeCanvas.getContext('2d', { willReadFrequently: true });
 function loadTerrTile(url) {
   if (tileMem.has(url)) { const p = tileMem.get(url); tileMem.delete(url); tileMem.set(url, p); return p; }
-  const p = (async () => {
-    const r = await fetch(url, { mode: 'cors' });
+  const controller = new AbortController();
+  let timer;
+  const request = (async () => {
+    const r = await fetch(url, { mode: 'cors', signal: controller.signal });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const bmp = await createImageBitmap(await r.blob());
-    decodeCtx.drawImage(bmp, 0, 0);
+    decodeCtx.drawImage(bmp, 0, 0); bmp.close();
     const d = decodeCtx.getImageData(0, 0, TS, TS).data, out = new Float32Array(TS * TS);
     for (let i = 0, k = 0; i < out.length; i++, k += 4) out[i] = G.decodeTerrarium(d[k], d[k + 1], d[k + 2]);
     return out;
   })();
-  p.catch(() => tileMem.delete(url));
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => { controller.abort(); reject(new Error(CONTENT.calculation.timeout)); }, TERRAIN_TIMEOUT);
+  });
+  // Bound the response body and decoding too, including a network layer that fails to honour abort.
+  const p = Promise.race([request, deadline]).finally(() => clearTimeout(timer));
+  p.catch(() => { if (tileMem.get(url) === p) tileMem.delete(url); });
   tileMem.set(url, p);
   if (tileMem.size > 200) tileMem.delete(tileMem.keys().next().value);
   return p;
@@ -329,6 +339,7 @@ map.on('baselayerchange', e => {
 });
 map.on('overlayadd overlayremove', e => { if (e.layer === contours) { LS.set('contours', e.type === 'overlayadd'); contourKey(); } });
 map.on('zoomend', () => contourKey());
+map.on('moveend resize', () => { if (!is3d) windUI?.render(); });
 L.control.layers({ 'Street map (online)': osm, 'Topo map (online)': topo, 'Satellite (online)': sat, 'Shaded terrain (works offline)': shade },
   { 'Contour lines': contours }, { position: 'topright' }).addTo(map);
 L.control.scale({ imperial: true }).addTo(map);
@@ -349,7 +360,7 @@ const Legend = L.Control.extend({ options: { position: 'bottomleft' }, onAdd() {
   box.innerHTML = '<summary>Key</summary>';
   const ul = L.DomUtil.create('div', 'legend-content', box);
   ul.innerHTML = '<ul class="legend"><li><span class="key k-straight"></span>Potential landing, straight</li>' +
-    '<li><span class="key k-ds">DS?</span>Lee-ridge candidate (unconfirmed)</li>' +
+    `<li><span class="key k-ds">1</span>${CONTENT.soaring.key}</li>` +
     '<li id="keyCurve"><span class="key k-curve"></span>Potential landing, curving</li>' +
     '<li><span class="key k-steep"></span>Reachable, too steep to land</li>' +
     '</ul><details class="legend-extra"><summary>Other map symbols</summary><ul class="legend"><li><span class="key k-out"></span>Reachable, but out of sight</li>' +
@@ -421,6 +432,7 @@ function setMapMode(mode) {
   $('modeInspect').setAttribute('aria-pressed', String(mode === 'inspect'));
 }
 function mapTap(lat, lon) {
+  if (Date.now() - suppressTap < 700) return;
   if (mapMode === 'launch') {
     setLaunch(lat, lon); setMapMode('inspect');
     if (guideAfterTap) { guideAfterTap = false; openGuide(1); }
@@ -449,26 +461,26 @@ map.on('contextmenu', e => routeAt(e.latlng));
   const el = map.getContainer(); let t = null, x0 = 0, y0 = 0;
   const cancel = () => { clearTimeout(t); t = null; };
   el.addEventListener('touchstart', e => {
-    if (e.touches.length !== 1) return cancel();
+    if (e.touches.length !== 1 || e.target.closest('.leaflet-control, .maplibregl-control-container, button')) return cancel();
     x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
-    t = setTimeout(() => { t = null; const r = el.getBoundingClientRect(); suppressTap = Date.now(); routeAt(map.containerPointToLatLng([x0 - r.left, y0 - r.top])); }, 550);
-  }, { passive: true });
-  el.addEventListener('touchmove', e => { if (t && Math.hypot(e.touches[0].clientX - x0, e.touches[0].clientY - y0) > 10) cancel(); }, { passive: true });
-  el.addEventListener('touchend', cancel); el.addEventListener('touchcancel', cancel);
+    t = setTimeout(() => { t = null; const r = el.getBoundingClientRect(); suppressTap = Date.now(); routeAt(is3d ? view3d.unproject([x0-r.left,y0-r.top]) : map.containerPointToLatLng([x0-r.left,y0-r.top])); }, 550);
+  }, { passive: true, capture: true });
+  el.addEventListener('touchmove', e => { if (t && (!e.touches.length || Math.hypot(e.touches[0].clientX - x0, e.touches[0].clientY - y0) > 10)) cancel(); }, { passive: true, capture: true });
+  el.addEventListener('touchend', cancel, true); el.addEventListener('touchcancel', cancel, true);
 })();
 
 // ---------- 3D: the same map tilted, with MapLibre GL, loaded the first time it is opened (glide-3d.js) ----------
 // It sits inside the 2D map, over its tiles and under its controls, so the Key, the wind and the layers menu stay.
-let view3d = null, is3d = false, loading3d = null;
+let view3d = null, is3d = false, loading3d = null, cameraRequest = 0;
 const mark3d = what => { if (view3d && is3d) view3d.mark(what); };
 const el3d = L.DomUtil.create('div', 'map3d', map.getContainer());
 el3d.hidden = true;
 el3d.setAttribute('role', 'application');
-el3d.setAttribute('aria-label', '3D map. Drag to move it; right-drag, Ctrl-drag or two fingers to tilt and turn; use Move launch or Inspect destination before tapping.');
+el3d.setAttribute('aria-label', 'Map. Drag to move; use heading controls to turn. Right-drag or two fingers to tilt. Tap to inspect a destination.');
 // the 2D map underneath must not pan, zoom, set the launch or start a route from what happens in 3D
 for (const t of ['mousedown', 'pointerdown', 'touchstart', 'click', 'dblclick', 'contextmenu', 'wheel', 'keydown']) el3d.addEventListener(t, e => e.stopPropagation());
 const hint3d = L.DomUtil.create('div', 'hint3d', el3d);
-hint3d.textContent = 'Right-drag, Ctrl-drag or two fingers to tilt and turn';
+hint3d.textContent = 'Drag to move · use the heading arrows to turn';
 const hasWebGL = (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; } })();
 const loadScript = src => new Promise((ok, fail) => {
   const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error(src)); document.head.appendChild(s);
@@ -485,45 +497,65 @@ function load3d() {
                sat: sat._url, satAttr: sat.options.attribution },
       base: () => baseName(base), overlay: () => overlay, canvas: overlayCanvas, circle: G.circle,
       wind:()=>windUI?.features()||[], windShade:()=>windUI?.shade()||null,
-      soaring: () => soaringUI?.features() || { key: '', items: [] }, onSoaring: index => soaringUI?.selectIndex(index),
-      onTap: mapTap, onMoveLaunch: (lat, lon) => setLaunch(lat, lon)
+      ridgeLabel: CONTENT.orientation.ridge, soaring: () => soaringUI?.features() || { key: '', items: [] }, onSoaring: index => soaringUI?.selectIndex(index),
+      onViewport: () => { if (!view3d?.flying) windUI?.render(); }, onCamera: cameraChanged, onHover: point => mapHover(point, p => view3d.project(p)), onOut: () => { if (cursorFrom === 'map') hideCursor(); }, onInspect: routeAt, onTap: mapTap, onMoveLaunch: (lat, lon) => setLaunch(lat, lon)
     });
   })();
   loading3d.catch(() => { loading3d = null; });
   return loading3d;
 }
-async function set3d(on) {
-  if (on && !hasWebGL) { setStatus('<span class="warn">This browser can\'t draw a 3D map (it has no WebGL).</span>'); return; }
+// The existing MapLibre renderer also supplies a rotatable flat view. Leaflet remains the layer source.
+function cameraChanged(bearing, pitch) {
+  mapHeading = GP.wrap(bearing); mapPitch = pitch;
+  const input = $('mapHeading');
+  if (input && document.activeElement !== input) input.value = +mapHeading.toFixed(1);
+  const north = $('mapNorth');
+  if (north) north.querySelector('span').style.transform = `rotate(${-mapHeading}deg)`;
+  if (btn3d) { btn3d.title = pitch > 1 ? 'Back to the flat map' : 'Tilt the map into 3D'; btn3d.textContent = pitch > 1 ? '2D' : '3D'; btn3d.setAttribute('aria-pressed', String(pitch > 1)); }
+  windBadge();
+}
+async function set3d(on, pitch = 62, bearing = mapHeading, center = null, zoom = null) {
+  const request = ++cameraRequest;
+  if (on && !hasWebGL) { setStatus('<span class="warn">Map rotation needs WebGL in this browser.</span>'); return; }
   is3d = on;
   map.getContainer().classList.toggle('is-3d', on);
-  btn3d.textContent = on ? '2D' : '3D';
-  btn3d.title = on ? 'Back to the flat map' : 'Tilt the map into 3D';
-  btn3d.setAttribute('aria-pressed', String(on));
-  LS.set('view3d', on);
-  if (!on) { if (view3d) view3d.close(); return; }
+  LS.set('view3d', on && pitch > 1);
+  if (!on) { if (view3d) view3d.close(); cameraChanged(0, 0); return; }
   if (!view3d) {
-    setStatus('Loading the 3D map…');
+    setStatus('Loading the map…');
     try { view3d = await load3d(); } catch (e) {
-      setStatus('<span class="warn">The 3D map didn\'t load. Check the connection and try again.</span>');
+      setStatus('<span class="warn">The map could not load. Check the connection and try again.</span>');
       return set3d(false);
     }
     if (launch) placeStatus();
   }
-  if (!is3d) return; // switched back while it loaded
-  view3d.open();
-  hint3d.classList.remove('gone'); clearTimeout(hint3d.t); hint3d.t = setTimeout(() => hint3d.classList.add('gone'), 5000);
+  if (!is3d || request !== cameraRequest) return;
+  view3d.open({ bearing, pitch, center, zoom });
+  cameraChanged(bearing, pitch);
 }
+function orientMap(bearing, center = null, zoom = null) {
+  return set3d(true, mapPitch, GP.wrap(bearing), center, zoom);
+}
+
 let btn3d;
-const View3D = L.Control.extend({ options: { position: 'topleft' }, onAdd() {
-  const div = L.DomUtil.create('div', 'leaflet-bar');
-  btn3d = L.DomUtil.create('a', 'view3d', div);
-  btn3d.href = '#'; btn3d.setAttribute('role', 'button'); btn3d.textContent = '3D'; btn3d.title = 'Tilt the map into 3D';
-  btn3d.setAttribute('aria-pressed', 'false');
-  L.DomEvent.disableClickPropagation(div);
-  L.DomEvent.on(btn3d, 'click', e => { L.DomEvent.preventDefault(e); set3d(!is3d); });
-  return div;
+const Orientation = L.Control.extend({ options: { position: 'topleft' }, onAdd() {
+  const box = L.DomUtil.create('div', 'map-orientation');
+  box.innerHTML = `<div class="map-turn"><button type="button" id="mapLeft" aria-label="${CONTENT.orientation.left}">↶</button><label>${CONTENT.orientation.heading} <input id="mapHeading" type="number" min="0" max="359.9" step="1" value="0" aria-label="${CONTENT.orientation.hint}">°</label><button type="button" id="mapRight" aria-label="${CONTENT.orientation.right}">↷</button></div><div class="map-facing"><button type="button" id="mapNorth"><span aria-hidden="true">↑</span> ${CONTENT.orientation.north}</button><button type="button" class="view3d" id="mapTilt" aria-pressed="false">3D</button></div>`;
+  L.DomEvent.disableClickPropagation(box); L.DomEvent.disableScrollPropagation(box);
+  box.addEventListener('keydown', e => e.stopPropagation());
+  return box;
 } });
-new View3D().addTo(map);
+new Orientation().addTo(map);
+btn3d = $('mapTilt'); btn3d.onclick = () => set3d(true, mapPitch > 1 ? 0 : 62);
+$('mapLeft').onclick = () => orientMap(mapHeading - 15);
+$('mapRight').onclick = () => orientMap(mapHeading + 15);
+$('mapNorth').onclick = () => mapPitch > 1 ? orientMap(0) : set3d(false);
+$('mapHeading').onchange = () => {
+  const input = $('mapHeading'), value = Number(input.value);
+  if (!input.value.trim() || !Number.isFinite(value)) { input.value = +mapHeading.toFixed(1); return; }
+  input.value = GP.wrap(value); orientMap(value);
+};
+
 
 function setNet() {
   const on = navigator.onLine;
@@ -567,7 +599,7 @@ function makeDial(el, { mode, get, set, step }) {
   return { render };
 }
 const wdDial = makeDial($('wdDial'), { mode: 'from', step: 5, get: () => P.wd, set: v => { P.wd = v; parameterChanged(); } });
-const pbDial = makeDial($('pbDial'), { mode: 'to', step: 1, get: () => P.pb, set: v => { P.pb = v; save(); clearRoute(false); afterParams(); schedule('profile'); } });
+const pbDial = makeDial($('pbDial'), { mode: 'to', step: 1, get: () => P.pb, set: v => { P.pb = v; save(); clearRoute(false); afterParams(); schedule('profile'); orientMap(v); } });
 
 let pending = null;
 function schedule(what) {
@@ -614,8 +646,8 @@ function onGrid() {
 
 // ---------- Launch, terrain and the calculation ----------
 async function useMosaic(lat, lon, z) {
-  loading = true; markCalc('loading'); setStatus('Loading terrain…');
-  try { M = await loadMosaic(lat, lon, z, (d, n) => { setStatus(`Loading terrain ${d} of ${n}…`); markCalc('loading', `Terrain ${d}/${n}`); }); }
+  loading = true; markCalc('loading'); setStatus('Loading terrain…', 'terrain');
+  try { M = await loadMosaic(lat, lon, z, (d, n) => { setStatus(`Loading terrain ${d} of ${n}…`, 'terrain'); markCalc('loading', `Terrain ${d}/${n}`); }); }
   finally { loading = false; }
   SL = slopeGrid(); GRID = poolGrid(); gridId++; Gres = null; GEO = null; postGrid();
   soaringUI?.terrain(M);
@@ -700,7 +732,7 @@ let zoomTimer = null, zoomKey = null;
 function checkZoom() {
   clearTimeout(zoomTimer);
   zoomTimer = setTimeout(async () => {
-    if (!M || loading || placingLaunch || groundAtLaunch !== groundAtLaunch) return;
+    if (!M || M.failed || loading || placingLaunch || groundAtLaunch !== groundAtLaunch) return;
     const lat = launch.lat;
     const range = Math.max(0, groundAtLaunch + P.agl - P.mg - M.minT) * P.gr * (P.va + Math.max(P.ws,windUI?.maxSpeed||0)) / P.va;
     let want = G.chooseZoom(range, lat, RT, Z_MAX, Z_MIN);
@@ -1055,7 +1087,10 @@ function showCursor(k, from) {
   probe.setLatLng(PROF.lls[k]); if (!map.hasLayer(probe)) probe.addTo(map);
   mark3d();
   // scrubbing the cross-section past the edge of the map pans it just enough to keep the probe in view
-  if (from === 'profile' && !is3d) map.panInside(PROF.lls[k], { padding: [36, 36], animate: false });
+  if (from === 'profile') {
+    if (is3d) view3d.panInside(PROF.lls[k]);
+    else map.panInside(PROF.lls[k], { padding: [36, 36], animate: false });
+  }
 }
 function hideCursor() {
   cursorK = null; cursorFrom = null;
@@ -1091,16 +1126,17 @@ $('profile').addEventListener('pointerdown', profHover);
 $('profile').addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideCursor(); });
 // on the map: a pointer within a few pixels of the trace moves the cursor on the cross-section too
 const NEAR_PX = 18;
-map.on('mousemove', e => {
-  if (!PROF || !PROF.lls || is3d) return;
+function mapHover(point, project) {
+  if (!PROF?.lls) return;
   let best = -1, bd = NEAR_PX * NEAR_PX;
   for (let k = 0; k < PROF.lls.length; k++) {
-    const q = map.latLngToContainerPoint(PROF.lls[k]), dx = q.x - e.containerPoint.x, dy = q.y - e.containerPoint.y;
+    const q = project(PROF.lls[k]), dx = q.x - point.x, dy = q.y - point.y;
     if (dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = k; }
   }
   if (best >= 0) showCursor(best, 'map');
   else if (cursorFrom === 'map') hideCursor();
-});
+}
+map.on('mousemove', e => { if (!is3d) mapHover(e.containerPoint, p => map.latLngToContainerPoint(p)); });
 map.on('mouseout', () => { if (cursorFrom === 'map') hideCursor(); });
 
 // ---------- Saved areas ----------
@@ -1415,7 +1451,7 @@ function numericBearing(id, key, dial, isFlight) {
     if (!el.value || !Number.isFinite(v)) { el.setCustomValidity('Enter a bearing in degrees.'); el.reportValidity(); return; }
     el.setCustomValidity(''); P[key] = GP.wrap(v); el.value = +P[key].toFixed(1); dial.render();
     if (isFlight) parameterChanged();
-    else { clearRoute(false); save(); afterParams(); schedule('profile'); map.invalidateSize(); }
+    else { clearRoute(false); save(); afterParams(); schedule('profile'); map.invalidateSize(); orientMap(P.pb); }
   });
 }
 numericBearing('windBearing', 'wd', wdDial, true);
@@ -1453,7 +1489,7 @@ async function flyIt() {
   const p = PROF;
   if (soaringUI?.view === 'soaring') return;
   if (!p || !(p.end > 0) || ['loading', 'updating', 'missing'].includes($('app').dataset.calc)) return;
-  if (!is3d) await set3d(true);
+  if (!is3d || mapPitch < 1) await set3d(true);
   if (!is3d || !view3d) return;
   const n = p.end + 1;
   view3d.fly({ lls: p.lls.slice(0, n), d: p.d.slice(0, n), h: p.glide.slice(0, n), g: p.ground.slice(0, n), U,
