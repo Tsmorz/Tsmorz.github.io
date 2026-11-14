@@ -3,7 +3,8 @@
 // be saved on the next visit. Falls back to memory when IndexedDB is unavailable (a private
 // window, blocked storage): the page still works, it just forgets on reload.
 
-const DB_NAME = "haptography";
+// A separate namespace lets the studio evolve its schema without downgrading this recorder.
+const DB_NAME = "haptography-bench";
 const DB_VERSION = 1;
 
 function request(r) {
