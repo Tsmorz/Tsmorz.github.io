@@ -1,13 +1,16 @@
+import { decodeHealth, decodeProfile } from "./device-health.js";
 // The recording device's serial stream (capture/ in nrf-controller): COBS-framed packets with a
 // type, a packet number and a CRC-16. The layout is src/capture_wire.h's, the same one
-// recording/wire.py reads; tests/haptography/wire.test.mjs reads the C encoder's fixture stream
-// with this file and checks VERSION and the packet types against the header. Pure: no DOM.
+// recording/wire.py reads; tests/haptography/wire.test.mjs reads the versioned C encoder fixture stream
+// with this file and checks VERSION and packet types against its generated contract. Pure: no DOM.
 
-export const VERSION = 3;
+export const VERSION = 5;
 // Version 2 recordings (before the actuators) read the same: INFO and STATS were shorter, and the
 // fields they lacked are left out.
 export const OLDEST_VERSION = 2;
 
+export const HEALTH = 10;
+export const PROFILE = 11;
 export const INFO = 1;
 export const IMU = 2;
 // 3 was the board's orientation, dropped: the PC works it out from the IMU samples
@@ -24,7 +27,7 @@ export const INFO_TOF_OK = 0x04;
 export const INFO_TACHAMMER_OK = 0x08;
 export const INFO_ERM_OK = 0x10;
 
-export const PLAYBACK_KINDS = { 1: "waveform", 2: "clip", 3: "ERM effect" };
+export const PLAYBACK_KINDS = { 1: "waveform", 2: "clip", 3: "ERM effect", 4: "ERM pulse" };
 export const PLAYBACK_OUTCOMES = { 0: "played", 1: "stopped", 2: "failed" };
 
 export const IMU_MAX_SAMPLES = 32;
@@ -104,6 +107,8 @@ export function parseBody(type, body) {
   const v = new DataView(body.buffer, body.byteOffset, body.byteLength);
   const u64 = (at) => v.getUint32(at, true) + v.getUint32(at + 4, true) * 2 ** 32;
   switch (type) {
+    case HEALTH: { const h = decodeHealth(v); if (!h) throw new RangeError("invalid health"); return h; }
+    case PROFILE: { const p = decodeProfile(v); if (!p) throw new RangeError("invalid profile"); return p; }
     case INFO: {
       const info = {
         version: v.getUint16(0, true),

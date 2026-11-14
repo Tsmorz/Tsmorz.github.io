@@ -47,6 +47,8 @@ class Grow {
 export class SessionBuilder {
   constructor() {
     this.info = null;
+    this.health = null;
+    this.profile = null;
     this.imuT = new Grow(Float64Array);
     this.imuSeq = new Grow(Float64Array);
     this.gyro = new Grow(Int16Array, 3);
@@ -64,6 +66,8 @@ export class SessionBuilder {
   add(packet) {
     const b = packet.body;
     switch (packet.type) {
+      case wire.HEALTH: this.health = b; break;
+      case wire.PROFILE: this.profile = b; break;
       case wire.INFO:
         this.info = b;
         break;
@@ -111,6 +115,8 @@ export class SessionBuilder {
     const col = (k) => Float64Array.from({ length: tof.length / 6 }, (_, i) => tof[i * 6 + k]);
     return {
       info: this.info,
+      ...(this.health && { health: this.health }),
+      ...(this.profile && { profile: this.profile }),
       imu: { t_us: this.imuT.done(), seq: this.imuSeq.done(), gyro: this.gyro.done(), accel: this.accel.done() },
       mic: {
         samples: this.mic.done(),
