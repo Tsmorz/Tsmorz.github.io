@@ -1286,7 +1286,7 @@ function testBridge() {
 
 let cvPkg = null;
 try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
-if(run('5n'))require('./tag-tracker/charging.cjs')({check,near});
+if(run('5n')){console.log('5n. beer poured between steins by the handle, and props off the table');require('./tag-tracker/pour.cjs')({check,near});}
 const bridged = Promise.all([run('5d') ? testBridge() : Promise.resolve(),run('5l') ? require('./tag-tracker/advanced.cjs')({check,near}) : Promise.resolve(),run('5m') ? require('./tag-tracker/controller-link.cjs')({check,near}) : Promise.resolve()]);
 if (!run('6') && !run('6b')) bridged.then(finish);
 else if (!cvPkg) bridged.then(() => {

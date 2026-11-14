@@ -28,6 +28,9 @@ The robot has one generic look, the Machine; don't restore human avatars, story 
 
 The shared header has Calibrate → Tracking → Tasks. Tracking and Calibrate share the camera column;
 Tasks alone mounts `#gameHUD`. Tab switches must preserve the physical scene and current task.
+Tracking shows only the robot or tags: the task table pauses there (`tableShown`), undrawn and
+unlabelled. There is no Physics or Forces UI. The task bar holds Sound, Haptics and Controller
+(connect boards, each board's haptic hand); `#gameSettings` keeps the same controls.
 `S.tab` selects the page; `S.mode` selects calibration or tracking detection. Setup belongs in Settings
 and Task settings, not a hand command bar. Camera & AprilTags opens Tracking and its setup guide.
 
@@ -82,7 +85,8 @@ hand. Stationary real body/wrist tags auto-calibrate after 0.8 s.
 
 ## The five tasks
 
-The catalogue is exactly `bowl`, `sort`, `tray`, `cable`, `laundry`, freely selectable in that order.
+The catalogue is exactly `bowl`, `sort`, `tray`, `pour`, `laundry`, freely selectable in that order.
+A prop below the tabletop (`TaskCore.fallen`) restarts the attempt at once with a notice naming it.
 Both placement variants contain two blocks. Removed IDs fall back to `bowl`; don't add progression
 locks. `TaskCore.mission` must not mutate its full variant. Keep small/full records separate.
 Changed objectives need new revisions so old times can't compete. Timers use monotonic elapsed time.
@@ -116,32 +120,29 @@ crushed bundle is not. First fold toward the robot, then return the doubled open
 Keep grippers down so this is playable without wrist inversion. Waking a resting
 towel must still permit a real grasp.
 
-## Charging and controller contracts
+## Pouring and controller contracts
 
-`charging-core.js` requires a released two-pin charger in the outlet, then USB-C insertion while a
-raised, free Samsung-style phone is held in the other hand. Both opposing grips must overlap during
-insertion for at least 0.1 s; picking up a preconnected assembly cannot pass. Release the plug while
-continuing to hold the phone; keep both connections seated. No pose snapping or locking.
+`pour` empties a Weissbier bottle into a mug (`pour-core.js`). Containers are stacks of cylinder
+sections (`CONTAINER`); a neck passes at most `flow` and the beer leaves along it, a wide lip spills
+sideways. The mug is a stein: wider than the jaws, its `grip_zone` allows only the handle. Grip the
+bottle at `BOTTLE.grip`: lower, its mouth meets the palm and levers it round in the pads. The left
+arm pours outward; rolling inward hits the ±120° forearm limit. The surface is level to gravity less
+the container's acceleration; beer is conserved; over `spill_limit` spoils the attempt. Beer joins a
+container only through its mouth; a drop hitting any solid splashes to the table. `visual`
+pieces (labels) draw without collision or mass; keep them ≥1 mm proud or they z-fight.
+The USB fixture (`connector-fixture.json`) is test-only and keeps the cable and insertion code.
 
-The socket is a frame on the phone body. Preserve continuous sleeve contact, spring detent and equal
-and opposite reactions. Tiny cylinder samples must fit the real 2 mm charger pins. The cable couples
-both moving endpoints, with stretch, curvature, gravity, self/rigid/table contact and friction.
-The old fixed socket is test-only (`connector-fixture.json`). The outlet is not electrical simulation.
-
-Controller firmware belongs in `../nrf-controller`, never this repo. `decodeImuBatch` must match
-`src/sysid_wire.h`. TP/1 framing/freshness policies live in `src/teleop_wire.*` and `teleop_policy.*`;
-keep their C/JS byte parity. USB/ESB is a separate image, default 1 Mbaud, not normal BLE firmware.
-Source clocks must survive gateway forwarding and reboot; USB replaces duplicate BLE connections.
-Never open a serial console on a port owned by the page. Neither transport starts an unseen camera
-track. Fuse IMU only into a still-live, aligned Filtered track.
+Controller firmware belongs in `../nrf-controller`. `decodeImuBatch` matches `src/sysid_wire.h`;
+TP/1 framing/freshness (`src/teleop_wire.*`, `teleop_policy.*`) keeps C/JS byte parity. USB/ESB is a
+separate 1 Mbaud image. Source clocks survive gateway forwarding and reboot; USB replaces duplicate
+BLE links. Never open a serial console on the page's port, start an unseen camera track, or fuse IMU
+into anything but a live, aligned Filtered track.
 
 Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 45%, BLE
-10 Hz and USB/ESB changing cues up to 25 Hz. No ERM, servo-motion or STOP_ALL writes (the latter would
-also release a servo). Readiness doesn't require the power rail already on; firmware acquires it.
-Unmapped, simulated, stale (>500 ms), unready or disconnected boards receive no task output. Drop busy
-writes rather than queueing them. Reset cues on task changes, off, blur and hidden pages. ACK means
-acceptance, not physical motion. Retain 100 ms source freshness, 50 ms gateway expiry and 120 ms ACK
-timeouts. Configured 416 Hz/2 Mbit/s targets are not hardware latency or force measurements.
+10 Hz, USB/ESB up to 25 Hz. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
+firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
+get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK
+is acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry, 120 ms ACK timeouts.
 
 Voice uses whole utterances and preserves Tasks unless explicitly changing tabs. Bluetooth controller
 push-to-talk follows ACT `keys`, not paused data-event streams. Preserve ordered writes and epoch-
@@ -155,6 +156,6 @@ Setup choices apply only through Next/Print/phone actions, never merely by closi
 ## Regression entry points
 
 `teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `fabric.cjs` (5o), `advanced.cjs` (5l),
-`controller-link.cjs` (5m), `charging.cjs` (5n), `voice.cjs` (5p). The `*-browser.js` counterparts run
+`controller-link.cjs` (5m), `pour.cjs` (5n), `voice.cjs` (5p). The `*-browser.js` counterparts run
 actual IK, motor slew, grasps and release; move hands as a player does (open fully, then retreat
 smoothly). Repeat responsive checks on a phone. State what has not run on real hardware.

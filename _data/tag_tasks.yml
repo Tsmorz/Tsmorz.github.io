@@ -269,162 +269,123 @@ levels:
     ball: ball
     min_height: 0.07
     seconds: 1.0
-- id: cable
+- id: pour
   revision: 2
-  name: Charge the Samsung phone
-  hands: 2
-  skill: Two-handed cable assembly
-  brief: Plug the charger into the outlet. Then hold the Samsung phone in one gripper
-    and connect its USB-C cable with the other.
-  hint: Use the right gripper for the charger and USB-C housing, and the left for
-    the phone. Keep a loose cable loop; align the connector with the phone’s bottom
-    edge.
-  par: 300
+  name: Pour a Weissbier
+  hands: 1
+  skill: Steady pouring from a bottle
+  brief: Lift the Weissbier bottle by its neck and pour it all into the mug without
+    spilling. Stand the bottle back up on the table.
+  hint: Grip the neck from above and pour sideways with I/P, slowly, keeping the stream
+    in the mug.
+  par: 120
   objects:
-  - key: charger
-    kind: charger
+  - key: bottle
+    kind: bottle
     at:
-    - -0.045
-    - -0.2
-    - 0.029
-    mass: 0.085
-    label: Phone charger
-    color: "#e3e5e7"
-    mat: aluminium
-    slop: 5.0e-05
-  - key: outlet
-    kind: outlet
-    at:
-    - 0.06
-    - -0.22
-    - 0.1
+    - -0.03
+    - 0.02
+    - 0
     mass: 0.3
-    fixed: true
-    label: Power outlet
-    color: "#b7bdc4"
-    mat: aluminium
-    slop: 5.0e-05
+    label: Weissbier bottle
+    color: "#5a3514"
+    mat: ceramic
     show_label: true
-  - key: phone
-    kind: phone
+  - key: mug
+    kind: stein
     at:
-    - 0.005
-    - 0.18
-    - 0.0445
-    mass: 0.185
-    label: Samsung Galaxy phone
-    color: "#252b32"
-    mat: aluminium
-    slop: 5.0e-05
+    - -0.03
+    - 0.2
+    - 0
+    # handle turned away from the bottle, out of the stream's way
+    R:
+    - 0
+    - -1
+    - 0
+    - 1
+    - 0
+    - 0
+    - 0
+    - 0
+    - 1
+    mass: 0.25
+    label: Mug
+    color: "#8f9aa6"
+    mat: ceramic
     show_label: true
-  - key: plug
-    kind: usb-plug
-    at:
-    - -0.07
-    - -0.025
-    - 0.0675
-    label: USB-C plug
-    color: "#30363e"
-    mass: 0.025
-    mat: rubber
-    slop: 5.0e-05
-  - key: rest
-    kind: plug-rest
-    at:
-    - -0.07
-    - -0.025
-    - 0
-    fixed: true
-    label: Cable cradle
-    color: "#6f7985"
-    mat: aluminium
-  - key: phone-rest
-    kind: phone-rest
-    at:
-    - 0.005
-    - 0.18
-    - 0
-    fixed: true
-    label: Phone cradle
-    color: "#6f7985"
-    mat: aluminium
-  cables:
-  - key: wire
-    label: Phone charging cable
-    plug: plug
-    anchor_body: charger
-    anchor_local:
-    - -0.02
-    - 0
-    - -0.018
-    length: 0.6
-    mass: 0.025
-    radius: 0.0016
-    resolution: 65
-    bend_stiffness: 2.0e-05
-    color: "#242a32"
-    loop_direction: -1
+  pour:
+    from: bottle
+    to: mug
+    litres: 0.5
+    spill_limit: 0.05
+    color: "#e0a33c"
+    foam: "#f3ead6"
   goals:
-  - type: power
-    object: charger
-    target: outlet
-    label: Seat and release the charger in the outlet
-    destination: the power outlet
-  - type: charge
-    object: plug
-    target: phone
-    label: Connect USB-C while holding the phone in the other gripper
-    destination: the phone’s USB-C socket
-  charging:
-    charger: charger
-    outlet: outlet
-    phone: phone
-    plug: plug
-    socket_at:
-    - -0.078
-    - 0
-    - 0
+  - type: pour
+    object: bottle
+    target: mug
+    empty: 0.05
+    label: Pour it all into the mug, spill under 5%, stand the bottle back up
+    destination: the mug
   camera:
     at:
     - 0
-    - 0
-    - 0.14
+    - 0.11
+    - 0.1
     offset:
-    - 0.8
-    - -0.75
-    - 0.55
+    - 0.75
+    - -0.8
+    - 0.65
   markers: []
   guide:
+    labels:
+      grab: Grab the neck
+      target: Pour into here
     plan:
-    - Use the right gripper to grasp the charger body. Lift it, align both round pins
-      with the outlet and push straight in. Open the gripper once it seats.
-    - Use the left gripper around the lower half of the Samsung phone on its cradle.
-      Lift it clear and keep its screen facing up.
-    - With the right gripper, pinch the rear half of the USB-C housing on its cradle.
-      Lift it without pulling the cable taut.
-    - Bring the plug straight toward the socket in the phone’s bottom edge. Hold the
-      phone steady with the left gripper and adjust the right wrist in fine steps.
-    - Once connected, open the plug gripper while continuing to hold the phone. Keep
-      both connections still until the charging objective completes.
+    - Lift the gripper well above the bottle, open it and come down over the neck
+      with the pads either side of it. Close.
+    - Lift the bottle until its base clears the mug's rim, and carry it over so the
+      neck is above the mug.
+    - Tilt sideways slowly with I/P. The beer reaches the mouth at about 75 degrees;
+      keep the stream in the mug and follow it with the hand as the bottle empties.
+    - Stand the bottle back up, carry it clear of the mug, lower it onto the table
+      and open the gripper.
     tips:
-    - Lift the phone straight up and keep it toward the left shoulder while the right
-      gripper picks up the cable. Lift the empty cable gripper clear before moving
-      sideways.
-    - The socket moves with the phone. Insertion force pushes back on both hands;
-      a phone left on the table cannot satisfy the two-handed objective.
-    - Both cable ends move with their attached objects. The jacket bends, drags, collides
-      and develops tension; move the objects closer if the cable pulls them off axis.
-    - Keep the phone screen up and its bottom edge toward the robot. Leave room between
-      both grippers for the metal connector nose.
-    - Shift + W/A/S/D/Q/E moves in 0.2 mm steps. Shift + J/K/U/O turns the wrist finely.
-      Motion × 0.1 helps with AprilTags.
-    - TacHammer pulses indicate impacts and changes in load. One knock marks a seating
-      event. This is a simulated outlet and charger.
+    - The palm is wider than the neck is long. Grip high on the neck, with the palm
+      just above the cap.
+    - Pour outward, toward the mug on the robot's left. Rolling the other way runs
+      the forearm into its limit and the arm swings round to reach.
+    - A bottle glugs. Tilting further than the neck can pass only moves the stream;
+      it doesn't pour faster.
+    - The beer stays level as the bottle turns, and a quick start or stop sloshes it.
+      Spilling more than 5% ends the attempt; press Restart task to try again.
+    - Shift + I/P turns the wrist in fine steps.
     stages:
+      pour_grab:
+        title: Grab the bottle by its neck
+        text: Come down over the marked neck with the gripper open, pads either side
+          of it, and close.
+      pour_lift:
+        title: Lift it upright
+        text: Raise the bottle straight up until its base clears the mug's rim.
+      pour_move:
+        title: Carry it over the mug
+        text: Carry it smoothly until the neck is above the mug's opening.
+      pour_tilt:
+        title: Tilt slowly to pour
+        text: Tilt sideways with I/P until the beer runs into the mug. Keep the stream
+          in the mug and tilt further as the bottle empties.
+      pour_set_down:
+        title: Stand the bottle back up
+        text: Turn it upright, carry it clear of the mug, lower it onto the table and
+          open the gripper.
+      pour_spilled:
+        title: Too much beer spilled
+        text: More than 5% reached the table. Press Restart task to refill the bottle
+          and try again.
       done:
-        title: Phone charging complete
-        text: Both connections are seated. You connected USB-C while holding the phone
-          with the other gripper. You can set the phone down or try again.
+        title: Poured without spilling
+        text: The Weissbier is in the mug and the bottle is standing on the table.
 - id: laundry
   revision: 3
   name: Fold a fluffy towel
@@ -619,6 +580,14 @@ ui:
   done: Released and settled. Choose another task when you’re ready.
   one_gripper: One gripper
   two_grippers: Two grippers
+  sound: Sound
+  sound_title: Contact sounds from the table (or press M)
+  haptics: Haptics
+  haptics_title: TacHammer clicks and knocks sent to connected controllers
+  controller: Controller
+  controller_title: Connect nrf-controller boards for motion and haptics
+  controller_hand: Haptics to
+  fell: "{prop} fell off the table, so the task restarted. Keep props over the table."
 guidance:
   mouse: Drag a gripper to reach. Scroll down on it to close and up to open. Space
     toggles the selected gripper. Hold Alt while dragging to change the movement plane.
@@ -716,53 +685,19 @@ guidance:
       title: Release the cable support
       text: The plug is seated and released. Open the other gripper to let go of the
         cable, then leave the connector still.
-    charger_outlet:
-      title: Plug the charger into the outlet
-      text: Grasp the charger body with the right gripper. Lift it, line up both round
-        pins with the outlet holes and advance straight in. Keep a slack loop of cable.
-    charger_release:
-      title: Release the seated charger
-      text: The charger pins are seated. Open the right gripper and leave the charger
-        supported by the outlet.
-    phone_pickup:
-      title: Pick up the Samsung phone
-      text: Use the left gripper around the lower half of the phone. Lift it clear
-        of the table, keep the screen facing up, and leave the bottom USB-C socket
-        exposed.
-    phone_insert:
-      title: Hold the phone and line up USB-C
-      text: Hold the phone steady with the left gripper. Use the right gripper on
-        the cable housing, line up the flat nose with the phone’s bottom socket, and
-        insert slowly.
-    phone_release:
-      title: Release the connected USB-C plug
-      text: The connector is seated. Open the gripper holding the cable plug. Continue
-        holding the phone in the other gripper.
-    phone_regrasp:
-      title: Connect while the phone is held
-      text: This task needs both hands during insertion. Withdraw the plug slightly,
-        hold the raised phone with one gripper, then seat the plug using the other.
-    phone_hold:
-      title: Keep the connected phone steady
-      text: Keep holding the phone with the cable gripper open. The charger must stay
-        in the outlet and the USB-C connector must remain seated.
-    phone_seat_wait:
-      title: Keep both grips for a moment
-      text: Hold the phone and connector steady as the plug seats. Then the guide
-        will ask you to open the cable gripper.
 haptics:
   label: TacHammer task feedback
   strength: Strength
-  help: Brief, self-ending TacHammer pulses for contact, grip slip, fabric and cable
-    tension, and connector seating. ERM and gripper-servo commands are not sent.
+  help: Brief, self-ending TacHammer pulses for contact, grip slip and fabric or
+    cable tension. ERM and gripper-servo commands are not sent.
   routing: Haptic hand
   sides:
   - From wrist tag
   - Left hand
   - Right hand
   - 'Off'
-  routing_help: Connect nrf-controller boards in Camera & AprilTags → Motion sensors.
-    Assign each board its wrist tag, or choose a haptic hand for mouse practice. The
+  routing_help: Connect nrf-controller boards with Controller on the task screen.
+    Give each board a hand under Haptics to, or From wrist tag when AprilTags drive. The
     board must report TacHammer ready.
   'off': TacHammer feedback off
   disconnected: No controllers connected

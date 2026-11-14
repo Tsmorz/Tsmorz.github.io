@@ -203,19 +203,23 @@
     return out;
   }
   function compoundMeshes(pieces) {
-    const profile = pieces.find(s => s.bowlProfile)?.bowlProfile;
+    // A revolved body (bowl, stein): one smooth surface from its profile, plus any pieces marked `show` (a handle).
+    const profile = pieces.find(s => s.bowlProfile || s.profile), revolved = [];
     if (profile) {
+      const prof = profile.bowlProfile || profile.profile;
       // One continuous, smoothly shaded surface through the foot, outside, rounded lip and hollow inside.
       const point = (v) => {
-        const t = v * (profile.length - 1), i = Math.min(profile.length - 2, Math.floor(t)), f = t - i;
-        const at = (n) => profile[Math.max(0, Math.min(profile.length - 1, n))];
+        const t = v * (prof.length - 1), i = Math.min(prof.length - 2, Math.floor(t)), f = t - i;
+        const at = (n) => prof[Math.max(0, Math.min(prof.length - 1, n))];
         const [a,b,c,d] = [at(i-1),at(i),at(i+1),at(i+2)];
         return [0,1].map(k => Math.max(0, .5*((2*b[k])+(-a[k]+c[k])*f+(2*a[k]-5*b[k]+4*c[k]-d[k])*f*f+(-a[k]+3*b[k]-3*c[k]+d[k])*f*f*f)));
       };
-      return [part(surface((u,v) => { const [r,z] = point(v); return [r*Math.cos(TAU*u),r*Math.sin(TAU*u),z]; }, 96, 96, () => [0,0,0]), 'ceramic')];
+      revolved.push(part(surface((u,v) => { const [r,z] = point(v); return [r*Math.cos(TAU*u),r*Math.sin(TAU*u),z]; }, 96, 96, () => [0,0,0]), 'ceramic'));
+      if (!pieces.some(s => s.show)) return revolved;
     }
-    const result = [];
+    const result = revolved;
     for (const s of pieces) {
+      if (profile && !s.show) continue;
       const R = s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1], p = s.p || [0, 0, 0];
       const meshes = [];
       if(s.type==='ellipsoid'){meshes.push(blob([0,0,0],s.r,1,1,{nu:24,nv:16}));}
@@ -277,6 +281,14 @@
     return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
   }
 
+  // A liquid's flat surface: a fan over its outline (world points), facing `up`.
+  function liquidMesh(l) {
+    const pts = l.points, n = pts.length, c = pts.reduce((a, p) => C.add(a, p.map((v) => v / n)), [0, 0, 0]), pos = [...c], nrm = [...l.up], idx = [];
+    for (const p of pts) { pos.push(...p); nrm.push(...l.up); }
+    const flip = n > 1 && dot(cross(sub(pts[0], c), sub(pts[1], c)), l.up) < 0;
+    for (let i = 0; i < n; i++) { const a = 1 + i, b = 1 + ((i + 1) % n); idx.push(0, ...(flip ? [b, a] : [a, b])); }
+    return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), idx: new Uint16Array(idx) };
+  }
   function cableMesh(c) {
     // Catmull-Rom interpolation only smooths the rendered centreline. Physics always uses the actual rod nodes.
     const points=[],nodes=c.nodes.map(n=>n.p),steps=c.bend?3:2,sides=12;
@@ -292,7 +304,7 @@
       previous=t;const v=cross(t,u);
       for(let j=0;j<sides;j++){
         const a=j*TAU/sides,n=C.add(u.map(x=>x*Math.cos(a)),v.map(x=>x*Math.sin(a)));
-        const distance=Math.min(i,points.length-1-i)*(c.nodes.length>1?C.norm(sub(nodes[1],nodes[0]))/steps:0),boot=1+Math.max(0,1-distance/.012)*.8;
+        const distance=Math.min(i,points.length-1-i)*(c.nodes.length>1?C.norm(sub(nodes[1],nodes[0]))/steps:0),boot=c.boot===false?1:1+Math.max(0,1-distance/.012)*.8;
         pos.push(...C.add(p,n.map(x=>x*c.radius*boot)));nrm.push(...n);
         if(i<points.length-1){const k=i*sides+j,l=i*sides+(j+1)%sides;idx.push(k,l,k+sides,l,l+sides,k+sides);}
       }
@@ -374,6 +386,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     floor:{base:lin('#966d49'),spec:.28,shine:45,rim:0},
     wood:{base:lin('#805638'),spec:.18,shine:24,rim:0},plaster:{base:lin('#e2d4b9'),spec:.08,shine:8,rim:0},fabric:{base:[1,1,1],spec:.08,shine:6,rim:0},rug:{base:lin('#706452'),spec:.03,shine:4,rim:0},
     ceramic: { base: lin('#ece8e1'), spec: 0.6, shine: 90, rim: 0.6 },
+    liquid: { base: lin('#e0a526'), spec: 1.1, shine: 160, rim: 0.3 },
+    label: { base: lin('#efe7d4'), spec: 0.15, shine: 12, rim: 0.3 }, labelBand: { base: lin('#2d4f8c'), spec: 0.3, shine: 30, rim: 0.4 },
   };
   // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
   function model4(p, s) {
@@ -529,6 +543,15 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
           else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
           setMat(c.radius?'top':'fabric', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
+        // Beer: each stein's level surface, and the falling stream as a thin tube through its drops.
+        const meshes = [...(o.props.liquids || []).map((l) => ['liquid' + l.key, liquidMesh(l), l.color]), ...(o.props.streams || []).map((s, i) => ['stream' + i, cableMesh({ nodes: s.points.map((p) => ({ p })), radius: 0.0026, bend: 0, boot: false }), s.color])];
+        for (const [key, mesh, color] of meshes) {
+          liveCloths.add(key);
+          let g = clothGPU.get(key);
+          if (!g || g.count !== mesh.idx.length) { if (g) free(g); g = upload(mesh); clothGPU.set(key, g); }
+          else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
+          setMat('liquid', 0, lin(color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
+        }
         for (const [k, g] of clothGPU) if (!liveCloths.has(k)) { free(g); clothGPU.delete(k); }
       }
       const L=o.locomotion;
@@ -593,5 +616,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     return self;
   }
 
-  return { meshes, actorMeshes, propMeshes, compoundMeshes, clothMesh, cableMesh, beveledBox, create, lin };
+  return { meshes, actorMeshes, propMeshes, compoundMeshes, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
 });

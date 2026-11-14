@@ -1,18 +1,27 @@
 // Robot workbench: scene construction, physical objectives, progress and a robot-mounted camera. No DOM.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./physics-core.js'), require('./cloth-core.js'), require('./cable-core.js'), require('./charging-core.js'));
-  else root.TaskCore = factory(root.TagCore, root.PhysicsCore, root.ClothCore, root.CableCore, root.ChargingCore);
-})(typeof self !== 'undefined' ? self : this, function (C, P, Cloth, Cable, Charging) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./physics-core.js'), require('./cloth-core.js'), require('./cable-core.js'), require('./pour-core.js'));
+  else root.TaskCore = factory(root.TagCore, root.PhysicsCore, root.ClothCore, root.CableCore, root.PourCore);
+})(typeof self !== 'undefined' ? self : this, function (C, P, Cloth, Cable, Pour) {
   'use strict';
   const I = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   const box = (p, h) => ({ type: 'box', p, h });
   const cyl = (p, r, h) => ({ type: 'cylinder', p, r, h });
   const rz = (a) => [Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a), 0, 0, 0, 1];
+  // Stein dimensions (m), shared by its geometry, its liquid and its grip zone.
+  const STEIN = { R: 0.05, Ri: 0.043, H: 0.13, floor: 0.01, handle: { x: 0.078, r: 0.005, w: 0.009, z0: 0.035, z1: 0.115 } };
+  // A 0.5 l Weissbier bottle: outside sections {z0, z1, r} from its base, and the inside (3 mm glass) from its inner floor.
+  // 72 mm across, so the jaws close on its body or neck; gripped from above, only the neck clears the palm.
+  // `grip`: where the pads go, high on the neck so the palm clears the mouth by over a centimetre.
+  const BOTTLE = { floor: 0.006, H: 0.241, grip: 0.221, neck: { r: 0.0135, z0: 0.185, z1: 0.236 },
+    outside: [{ z0: 0, z1: 0.145, r: 0.036 }, { z0: 0.145, z1: 0.16, r: 0.03 }, { z0: 0.16, z1: 0.172, r: 0.024 }, { z0: 0.172, z1: 0.185, r: 0.018 }, { z0: 0.185, z1: 0.241, r: 0.0135 }],
+    inside: [{ z0: 0, z1: 0.139, r: 0.033 }, { z0: 0.139, z1: 0.152, r: 0.028 }, { z0: 0.152, z1: 0.165, r: 0.022 }, { z0: 0.165, z1: 0.177, r: 0.016 }, { z0: 0.177, z1: 0.235, r: 0.0105 }] };
+  // What a container holds and how fast its mouth lets it out (m³/s), for the pour.
+  const CONTAINER = {
+    stein: { shape: { sections: [{ z0: 0, z1: STEIN.H - STEIN.floor, r: STEIN.Ri }] }, floor: STEIN.floor },
+    bottle: { shape: { sections: BOTTLE.inside }, floor: BOTTLE.floor, flow: 0.00016 },
+  };
   function geometry(kind) {
-    if(kind==='phone-rest')return [box([0,0,.004],[.082,.044,.004]),box([0,0,.024],[.058,.008,.016])];
-    if(kind==='charger')return [{...box([0,0,0],[.020,.025,.029]),material:'shell'},...[-1,1].map(sign=>({...cyl([.0295,sign*.0095,0],.002,.0095),R:[0,0,1,0,1,0,-1,0,0],material:'metal'}))];
-    if(kind==='outlet')return [box([.029,0,-.03],[.009,.042,.070]),box([.010,0,.019],[.010,.04,.0163]),box([.010,0,-.019],[.010,.04,.0163]),box([.010,0,0],[.010,.0068,.0027]),...[-1,1].map(sign=>box([.010,sign*.0261,0],[.010,.0139,.0027]))];
-    if(kind==='phone')return [{...box([.006,0,0],[.072,.035,.0045]),material:'metal'},...[-1,1].flatMap(sign=>[{...box([-.072,sign*.0198,0],[.006,.0152,.0045]),material:'metal'},{...box([-.072,0,sign*.003],[.006,.0046,.0015]),material:'metal'}]),{...box([-.072,0,0],[.004,.0028,.0003]),material:'dark'},{...box([.006,0,.0048],[.067,.032,.0003]),material:'glass'},...[-.042,-.022,-.002].flatMap(x=>[{...cyl([x,-.024,-.0055],.0055,.001),material:'metal'},{...cyl([x,-.024,-.0066],.0043,.00015),material:'glass'}])];
     if (kind === 'plug-rest') return [box([0,0,.004],[.028,.024,.004]),box([0,0,.035],[.020,.005,.027])];
     if (kind === 'usb-plug') return [box([0,0,0],[.020,.007,.0055]),box([.024,0,.00115],[.004,.0042,.00015]),box([.024,0,-.00115],[.004,.0042,.00015]),box([.024,.004,0],[.004,.0002,.001]),box([.024,-.004,0],[.004,.0002,.001])];
     if (kind === 'usb-port') return [box([.005,0,.0035],[.005,.008,.002]),box([.005,0,-.0035],[.005,.008,.002]),box([.005,.0062,0],[.005,.0016,.0015]),box([.005,-.0062,0],[.005,.0016,.0015]),box([.006,0,0],[.004,.0028,.0003]),box([.011,0,0],[.001,.008,.006]),box([.012,0,-.034],[.012,.022,.028])];
@@ -30,6 +39,25 @@
         const ry = [Math.cos(tilt),0,Math.sin(tilt),0,1,0,-Math.sin(tilt),0,Math.cos(tilt)];
         parts.push({ ...box([.082 * Math.cos(a), .082 * Math.sin(a), .0285], [.003, .082 * Math.tan(Math.PI / 32) * 1.04, len / 2 + .001]), R: C.mul3(rz(a), ry) });
       }
+      return parts;
+    }
+    if (kind === 'stein') {
+      // A stoneware stein, 100 mm across: wider than the jaws open (90 mm), so only its handle can be gripped.
+      // The renderer revolves `profile`; collision uses a floor disc, a ring of wall segments and a D-shaped handle.
+      const R = STEIN.R, Ri = STEIN.Ri, H = STEIN.H, wall = (R - Ri) / 2, n = 28, hx = STEIN.handle;
+      const profile = [[0,0],[R-.002,0],[R,.003],[R,H-.004],[R-.0015,H],[Ri+.0015,H],[Ri,H-.004],[Ri,STEIN.floor+.002],[Ri-.002,STEIN.floor],[0,STEIN.floor]];
+      const parts = [{ ...cyl([0, 0, STEIN.floor / 2], R, STEIN.floor / 2), profile }];
+      for (let i = 0; i < n; i++) { const a = i * 2 * Math.PI / n, rr = Ri + wall; parts.push({ ...box([rr * Math.cos(a), rr * Math.sin(a), (STEIN.floor + H) / 2], [wall, rr * Math.tan(Math.PI / n) * 1.05, (H - STEIN.floor) / 2]), R: rz(a) }); }
+      // the handle: a vertical bar joined to the wall by two arms, all 18 mm thick across y so the pads can close on it
+      parts.push({ ...box([hx.x, 0, (hx.z0 + hx.z1) / 2], [hx.r, hx.w, (hx.z1 - hx.z0) / 2]), show: true });
+      for (const z of [hx.z0 + .005, hx.z1 - .005]) parts.push({ ...box([(R - .002 + hx.x - hx.r) / 2, 0, z], [(hx.x - hx.r - R + .002) / 2 + .001, hx.w, .005]), show: true });
+      return parts;
+    }
+    if (kind === 'bottle') {
+      // Collision: solid stacked cylinders. Drawn: one smooth brown-glass revolve plus a paper label and band.
+      const parts = BOTTLE.outside.map((x, i) => ({ ...cyl([0, 0, (x.z0 + x.z1) / 2], x.r, (x.z1 - x.z0) / 2), ...(i ? {} : { profile: [[0,0],[.034,0],[.036,.004],[.036,.145],[.031,.158],[.023,.171],[.0155,.184],[.0135,.196],[.0135,.231],[.0152,.233],[.0152,.24],[.011,.241],[0,.241]] }) }));
+      // (paper stands ~1 mm proud of the glass so the two surfaces never fight in the depth buffer)
+      parts.push({ ...cyl([0, 0, .075], .0372, .038), visual: true, show: true, material: 'label' }, { ...cyl([0, 0, .116], .0373, .003), visual: true, show: true, material: 'labelBand' }, { ...cyl([0, 0, .212], .0145, .012), visual: true, show: true, material: 'label' });
       return parts;
     }
     if (kind === 'tray') return [box([0, 0, 0], [0.085, 0.19, 0.006]), ...[-1, 1].flatMap((s) => [box([s * 0.081, 0, 0.014], [0.004, 0.19, 0.014]), box([0, s * 0.186, 0.014], [0.085, 0.004, 0.014])])];
@@ -59,7 +87,8 @@
     const W = P.world({ table, gripper }), byKey = new Map();
     const at = (p) => C.add(table.t, C.mulv(table.R, p));
     for (const s of level.objects || []) {
-      const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, pieces: geometry(s.kind) }, at(s.at), C.mul3(table.R, s.R || I));
+      const zone = s.kind === 'stein' ? { grip_zone: { min: [STEIN.R + .002, -.03, .02], max: [STEIN.handle.x + .03, .03, STEIN.H + .01] } } : {};
+      const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, ...zone, pieces: geometry(s.kind) }, at(s.at), C.mul3(table.R, s.R || I));
       Object.assign(b, { key: s.key, color: s.color, label: s.label }); byKey.set(s.key, b);
     }
     for (const s of level.cloths || []) { const c = Cloth.towel(s, table); W.cloths.push(c); byKey.set(s.key, c); }
@@ -87,10 +116,26 @@
         else if(state.liftTime<spec.seconds)state.liftTime=0;
       });
     }
-    if(level.charging)Charging.attach(game);
+    if(level.pour){
+      // Beer poured from one stein into the other: more than `spill_limit` of it outside both spoils the attempt.
+      const spec=level.pour,V0=spec.litres/1000,container=key=>CONTAINER[byKey.get(key).kind];
+      const from=Pour.vessel(byKey.get(spec.from),{...container(spec.from),volume:V0}),to=Pour.vessel(byKey.get(spec.to),{...container(spec.to),volume:0});
+      const solid=(q,skip)=>W.bodies.some(b=>b!==skip&&b.pieces&&C.norm(C.sub(q,b.t))<b.bound+.005&&P.bodyDistance(b,C.sub(C.mulv(C.tr3(b.R),C.sub(q,b.t)),b.off))<0);
+      game.pour=Pour.pour(W,[from,to],table,solid);game.pour.from=from;game.pour.to=to;game.pour.V0=V0;game.pour.spoiled=false;
+      W.mechanisms.push(dt=>{game.pour.step(dt);if(game.pour.spilled>spec.spill_limit*V0)game.pour.spoiled=true;});
+      const reset=game.reset;game.reset=()=>{reset();game.pour.reset();game.pour.spoiled=false;};
+    }
     return game;
   }
   const within = (p, q, tolerance) => p.every((v, i) => Math.abs(v - q[i]) < tolerance[i]);
+  // A prop (or most of a cloth) below the tabletop has left the table: the attempt is over. Returns its label or null.
+  // The table is 3 cm thick, so 4 cm below its top can only be past an edge, never resting on it.
+  function fallen(g) {
+    const W = g.world, low = (p) => g.local(p)[2] < -0.04;
+    for (const b of W.bodies) if (!b.fixed && b.key && low(W.poseOf(b).t)) return b.label || b.key;
+    for (const c of W.cloths) if (c.nodes.filter((n) => low(n.p)).length > c.nodes.length / 2) return c.label || c.key;
+    return null;
+  }
   function update(g, dt, active, clock) {
     if (g.complete) return g;
     const W = g.world, holds = new Map();
@@ -117,8 +162,11 @@
         const tray=g.byKey.get(r.target),tp=W.poseOf(tray),q=C.mulv(C.tr3(tp.R),C.sub(W.poseOf(b).t,tp.t));
         return released(b)&&settled(b)&&settled(tray)&&Math.abs(q[0])+P.BALL.r<.077&&Math.abs(q[1])+P.BALL.r<.182&&Math.abs(q[2]-(.006+P.BALL.r))<.015;
       }
-      if(r.type==='power')return g.charging.wallDwell>.3;
-      if(r.type==='charge')return Charging.complete(g);
+      if(r.type==='pour'){
+        // Emptied into the other stein, both set down upright, released and still, nothing still falling.
+        const p=g.pour,steins=[p.from.body,p.to.body];
+        return !p.spoiled&&p.from.V<=r.empty*p.V0&&!p.drops.length&&steins.every(s=>released(s)&&settled(s)&&C.mulv(C.tr3(W.table.R),[W.poseOf(s).R[2],W.poseOf(s).R[5],W.poseOf(s).R[8]])[2]>Math.cos(.26)&&g.local(W.poseOf(s).t)[2]<.01);
+      }
       if (r.type === 'fold') {
         const f = Cloth.folded(b), ps = b.nodes.map((n) => g.local(n.p)), mid = [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
         const span = [0, 1].map((i) => Math.max(...ps.map((p) => p[i])) - Math.min(...ps.map((p) => p[i])));
@@ -160,7 +208,21 @@
       if(holds.length)return {...base,index:1,at:goal.at,state:within(p,goal.at,goal.tolerance)?'release':'tray_move'};
       return {...base,index:1,at:goal.at,state:'settle'};
     }
-    if(g.charging){const state=Charging.guidance(g),first=g.charging.wallDwell<.3,s=g.level.charging,object=first?s.charger:state==='phone_pickup'?s.phone:s.plug,target=first?s.outlet:s.phone;return {state,index:first?0:1,object,target,at:g.local(W.poseOf(g.byKey.get(target)).t)};}
+    if(g.pour){
+      const p=g.pour,A=p.from.body,B=p.to.body,base={index:0,object:A.key,target:B.key,at:g.local(W.poseOf(B).t)},state=s=>({...base,state:s});
+      const holding=b=>held.some(h=>h.grip.body===b),a=g.local(W.poseOf(A).t),upright=b=>{const R=W.poseOf(b).R;return C.mulv(C.tr3(W.table.R),[R[2],R[5],R[8]])[2]>Math.cos(.26);};
+      if(p.spoiled)return state('pour_spilled');
+      if(p.from.V>goals[0].empty*p.V0){
+        if(!holding(A))return state(A.gripZone&&Object.values(W.hands).some(h=>!h.grip&&h.touch[0]===A&&h.touch[1]===A)?'pour_handle':'pour_grab');
+        if(a[2]<.03&&!p.from.pouring)return state('pour_lift');
+        // judged by the mouth, which a tipped bottle holds far from its base; beer flowing is pouring
+        const mouth=g.local(C.add(W.poseOf(A).t,C.mulv(W.poseOf(A).R,[0,0,p.from.floor+p.from.h])));
+        return state(p.from.pouring>0||Math.hypot(mouth[0]-base.at[0],mouth[1]-base.at[1])<.12?'pour_tilt':'pour_move');
+      }
+      if(holding(A)||!upright(A)||a[2]>.01)return {...state('pour_set_down'),at:null};
+      if(holding(B))return {...state('release'),object:B.key};
+      return state('settle');
+    }
     const selected=goals.findIndex((r,i)=>!g.steps[i]&&held.some(h=>h.grip.body.key===r.object));
     if(selected>=0)index=selected;
     if(index<0)index=0;
@@ -251,5 +313,5 @@
     return { eye, fwd, right, up, fov, project(p) { const d = C.sub(p, eye), z = d.reduce((s, v, i) => s + v * fwd[i], 0); if (z < 0.001) return null;
       return [w / 2 + f * d.reduce((s, v, i) => s + v * right[i], 0) / z, h / 2 - f * d.reduce((s, v, i) => s + v * up[i], 0) / z, z]; } };
   }
-  return { geometry, mission, create, update, guidance, progress, best, headCamera };
+  return { geometry, mission, create, update, guidance, progress, best, headCamera, fallen, STEIN, BOTTLE };
 });

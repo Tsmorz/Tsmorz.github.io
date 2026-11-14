@@ -11,7 +11,7 @@ module.exports = function ({ check, near }) {
   const create = (id) => T.create(levels.find((l) => l.id === id), table, G);
   const put = (W, b, at, rot = I) => { b.R = rot.slice(); b.q = P.qOf(rot); b.t = C.sub(at, C.mulv(rot, b.off)); b.v = [0,0,0]; b.w = [0,0,0]; b.asleep = false; b.still = 0; };
   const finish = (g, n = 60) => { for (let i = 0; i < n; i++) { g.world.step(1/60); T.update(g,1/60,true); } };
-  check(levels.map(l=>l.id).join(',')==='bowl,sort,tray,cable,laundry'&&levels.slice(0,2).every(l=>l.hands===1)&&levels.slice(2).every(l=>l.hands===2), 'exactly five tasks progress from a first grasp to two-handed balance, charging and a towel');
+  check(levels.map(l=>l.id).join(',')==='bowl,sort,tray,pour,laundry'&&['bowl','sort','pour'].every(id=>levels.find(l=>l.id===id).hands===1)&&['tray','laundry'].every(id=>levels.find(l=>l.id===id).hands===2), 'exactly five tasks: a first grasp, sorting, two-handed balance, pouring by the handle and a towel');
   check(taskData.ready&&taskData.ready.offset.length===3&&levels.every(l=>!l.ready&&!(l.guided&&l.guided.ready)), 'every task starts from the one shared ready pose; no task carries its own');
   check(levels.find(l=>l.id==='sort').objects.length===2&&T.mission(levels.find(l=>l.id==='sort'),'guided').objects.length===2,'both modes offer exactly two blocks');
   for (const l of levels) {

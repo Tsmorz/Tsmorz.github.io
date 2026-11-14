@@ -93,16 +93,7 @@ tplot.addEventListener('pointerleave', () => { hoverX = null; $('tip').hidden = 
 // The series the time plot draws, for the mode shown: {times, rows (each a value per line, or null for a gap), names,
 // cols, css (colours as CSS), unit, fmt (a value as text), tipName, empty}.
 const JOINT_SHORT = ['Sh. fwd', 'Sh. out', 'Arm turn', 'Elbow', 'Forearm', 'W. bend', 'W. tilt'];
-const FORCE_NAMES = ['Squeeze', 'Can hold', 'Load', 'Contact'];
 function tplotSeries(mode, now) {
-  if (mode === 'forces') {
-    const h = RB.fhist.get(S.jointSide) || [];
-    return {
-      times: h.map((x) => x.time), rows: h.map((x) => x.v), names: FORCE_NAMES, cols: FORCE_NAMES.map((_, i) => K.slots[i]), css: FORCE_NAMES.map((_, i) => `var(--s${i + 1})`),
-      unit: 'N', fmt: (v) => v.toFixed(1), tipFmt: (v) => v.toFixed(2) + ' N', tipName: S.jointSide === 1 ? 'Left hand' : 'Right hand',
-      tipNames: ['Squeeze', 'Can hold (2·μ·squeeze)', 'Grip’s load', 'Everything else it touches'], empty: 'No hand on the table',
-    };
-  }
   if (mode === 'joints') {
     const arm = robotArms().find((x) => x.side === S.jointSide), h = arm ? (RB.jhist.get(arm.key) || []).filter((x) => x.side === arm.side) : [], D = 180 / Math.PI;
     return {
@@ -134,7 +125,7 @@ function drawTplot() {
   const { c, w, h } = sizeCanvas(tplot);
   c.clearRect(0, 0, w, h);
   const mode = tpMode(), now = performance.now() / 1000, span = S.settings.span, sr = tplotSeries(mode, now);
-  const n = sr.names.length, L = 50, R = mode === 'joints' || mode === 'forces' ? 92 : 74, T = 28, B = 24, pw = w - L - R, ph = h - T - B;
+  const n = sr.names.length, L = 50, R = mode === 'joints' ? 92 : 74, T = 28, B = 24, pw = w - L - R, ph = h - T - B;
   if (pw < 40 || ph < 30) return;
   const times = sr.times, rows = sr.rows, has = rows.some((r) => r);
   let lo = Infinity, hi = -Infinity, stp;
@@ -177,7 +168,7 @@ function drawTplot() {
     for (let k = 1; k < n; k++) if (ys[k].y - ys[k - 1].y < gap) ys[k].y = ys[k - 1].y + gap;
     const off = Math.max(0, ys[n - 1].y - (T + ph)); // keep the stack above the time axis
     c.textAlign = 'left'; c.textBaseline = 'middle';
-    const lw = mode === 'joints' || mode === 'forces' ? 52 : 10;
+    const lw = mode === 'joints' ? 52 : 10;
     for (const p of ys) {
       c.font = '600 11px Archivo, system-ui, sans-serif'; c.fillStyle = sr.cols[p.i]; c.fillText(sr.names[p.i], L + pw + 6, p.y - off);
       c.font = '11px Archivo, sans-serif'; c.fillStyle = K.text2; c.fillText(sr.fmt(rows[kl][p.i]), L + pw + 6 + lw, p.y - off);
@@ -268,7 +259,6 @@ function setMode(m) {
     if (S.tab !== 'tasks') TASK.trackingView = S.settings.show3d;
     S.settings.show3d = 'robot'; S.settings.robot.props = 'arcade';
   } else if (S.tab === 'tasks' && TASK.trackingView) S.settings.show3d = TASK.trackingView;
-  $('robotProps').value = S.settings.robot.props;
   document.querySelectorAll('[data-show3d]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.show3d === S.settings.show3d)));
   S.tab = m; S.mode = m === 'calib' ? 'calib' : 'track';
   for (const t of TABS) { const b = $('tab-' + t); b.setAttribute('aria-selected', String(m === t)); b.tabIndex = m === t ? 0 : -1; }

@@ -102,13 +102,10 @@ function clearRobotCal() { RB.cal = null; RB.prev.clear(); paintRobotBtns(); }
 function paintRobotBtns() {
   const on = S.settings.show3d === 'robot';
   $('robotCalBtn').hidden = !on; $('robotClearBtn').hidden = !on || !RB.cal; $('scaleField').hidden = !on;
-  const table = on && S.settings.robot.props !== 'off';
-  $('propsField').hidden = !on; $('tableResetBtn').hidden = !table; $('tagsDriveBtn').hidden = !on || !TB.drive.size;
-  $('forcesField').hidden = !table; $('soundBtn').hidden = !table || !SND;
+  $('tagsDriveBtn').hidden = !on || !TB.drive.size;
   const snd = S.settings.robot.sound;
   $('soundBtn').setAttribute('aria-pressed', String(snd)); $('soundBtn').classList.toggle('primary', snd); $('soundBtn').classList.toggle('outline', !snd);
-  $('soundBtn').innerHTML = `<svg class="i"><use href="#i-${snd ? 'sound' : 'mute'}"/></svg>`;
-  $('soundBtn').title = snd ? 'Sound is on: the table\'s knocks, rolls and scrapes. Turn it off (or press M)' : 'Sound is off. Turn it on to hear the table\'s knocks, rolls and scrapes (or press M)';
+  $('soundBtn').querySelector('use').setAttribute('href', `#i-${snd ? 'sound' : 'mute'}`); $('soundBtn').disabled = !SND;
   document.querySelectorAll('.help .rob-only').forEach((x) => { x.hidden = !on; });
   $('robotCalBtn').classList.toggle('primary', !RB.cal); $('robotCalBtn').classList.toggle('outline', !!RB.cal);
   $('robotCalBtn').textContent = RB.cal ? 'Calibrate again' : 'Calibrate robot';
@@ -212,7 +209,7 @@ function drawRobot(c, o, w, h, now) {
   $('plotGL').hidden = !gl;
   hoverNow();
   if (gl) drawRobotGL(gl, o, w, h, now); else drawRobotFlat(c, o, h, now);
-  if (TB.world) RB.pts.push(...tableCorners());
+  if (tableShown()) RB.pts.push(...tableCorners());
   if (!S.view.fitted) autoFit();
   paintRobotText(now);
   paintTaskLabels(o, w, h);
@@ -247,8 +244,7 @@ function drawRobotGL(gl, o, w, h, now) {
     tags: (gameView() ? [] : robotTags(now)).map((tg) => ({ R: tg.R, t: tg.t, parts: tg.parts, color: colorOf(tg.key), fade: tg.fresh ? 0 : 0.45 })),
     theme: { accent: K.accent, warn: K.warn, bg: K.surface, dark: isDark() },
     game: gameView(), props: tableDraw(), eyes: S.settings.robot.view === 'eyes', headTilt: S.settings.robot.headTilt,
-    locomotion: TB.world ? { floor: TB.world.floorZ - sc.chest.t[2], phase:0,speed:0,distance:0 } : null,
-    forces: gameView() ? [] : forceArrows(),
+    locomotion: tableShown() ? { floor: TB.world.floorZ - sc.chest.t[2], phase:0,speed:0,distance:0 } : null,
   });
 }
 // Drawn flat: outlined solids, painted far to near: capsules for the links, balls for the joints, a box for the torso.
@@ -325,15 +321,6 @@ function drawRobotFlat(c, o, h, now) {
   items.sort((p, q) => q.z - p.z);
   for (const it of items) it.draw();
   c.globalAlpha = 1;
-  // the force arrows, over everything
-  for (const ar of forceArrows()) {
-    const p = o.project(ar.a), q = o.project(ar.b);
-    if (!p || !q) continue;
-    const dx = q[0] - p[0], dy = q[1] - p[1], l = Math.hypot(dx, dy), hd = Math.min(9, l * 0.45), ux = dx / (l || 1), uy = dy / (l || 1);
-    c.strokeStyle = c.fillStyle = ar.warn ? K.warn : K.accent; c.lineWidth = 2.5; c.lineCap = 'round';
-    c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0] - ux * hd * 0.8, q[1] - uy * hd * 0.8); c.stroke();
-    c.beginPath(); c.moveTo(q[0], q[1]); c.lineTo(q[0] - ux * hd - uy * hd * 0.5, q[1] - uy * hd + ux * hd * 0.5); c.lineTo(q[0] - ux * hd + uy * hd * 0.5, q[1] - uy * hd - ux * hd * 0.5); c.closePath(); c.fill();
-  }
   // each tag riding on the robot, in its colour
   const line = (a, b, col, lw) => { const p = o.project(a), q = o.project(b); if (!p || !q) return; c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(p[0], p[1]); c.lineTo(q[0], q[1]); c.stroke(); };
   for (const tg of robotTags(now)) {
@@ -382,8 +369,11 @@ function gripOf(a) {
   const g = b ? C.gripOpening(b.act, b.grip) : null;
   return g === null ? 1 : g;
 }
+// The task table exists only on the Tasks tab. Elsewhere it pauses, kept as it is for the return.
+const tableShown = () => S.tab === 'tasks' && !!TB.world;
 function tableStep(sc) {
-  if (!sc || S.settings.robot.props === 'off' || !PHYS) { TB.world = null; TB.game = null; TB.sig = ''; RB.fhist.clear(); if (SND) SND.stop(); return; }
+  if (S.tab !== 'tasks') { if (SND) SND.stop(); TB.t = performance.now(); return; }
+  if (!sc || S.settings.robot.props === 'off' || !PHYS) { TB.world = null; TB.game = null; TB.sig = ''; if (SND) SND.stop(); return; }
   const sig = tableSig(sc);
   if (!TB.world || sig !== TB.sig) { TB.sig = sig; placeTable(sc); }
   const W = TB.world, m = sc.m, links = [], hands = [], P = (p) => RCORE.place(sc.chest, p);
@@ -397,7 +387,6 @@ function tableStep(sc) {
   const previous = W.time;
   W.step((t - TB.t) / 1000); TB.t = t;
   if (TB.game) stepTask(W.time - previous);
-  forceHistory(W.record, t / 1000);
   sendTaskHaptics(W, sc, t);
   if (SND && W.record && W.record.time !== TB.heard) { TB.heard = W.record.time; SND.play(W.record, panOf); }
   // the arm drawn to where its hand is: the table or a prop may have stopped it short of where the arm was sent
@@ -415,41 +404,6 @@ function panOf(p) {
   const q = RB.view && RB.view.project(p);
   return q && RB.viewW ? Math.max(-1, Math.min(1, (q[0] / RB.viewW) * 2 - 1)) * 0.8 : 0;
 }
-// The Forces tab's numbers for a hand from a step's record (N): the squeeze, what its friction can hold, the grip's
-// load (what the prop it holds puts on the fingers), and everything else it touches together; and how much of what the
-// pads can hold the grip uses.
-function forceRow(h) {
-  let cf = [0, 0, 0];
-  for (const x of h.contacts) cf = C.add(cf, x.f);
-  return { v: [h.squeeze, h.hold, h.grip ? h.grip.load : 0, C.norm(cf)], use: h.grip ? h.grip.use : 0, slipping: !!(h.grip && h.grip.slipping), holds: h.grip ? h.grip.kind : null };
-}
-function forceHistory(rec, time) {
-  if (!rec) return;
-  for (const k of Object.keys(rec.hands)) {
-    const side = +k, a = RB.fhist.get(side) || [];
-    a.push(Object.assign({ time }, forceRow(rec.hands[k])));
-    while (a.length && a[0].time < time - S.settings.span - 1) a.shift();
-    RB.fhist.set(side, a);
-  }
-  for (const side of [...RB.fhist.keys()]) if (!rec.hands[side]) RB.fhist.delete(side);
-}
-// The force arrows: each thing pushing on a hand, ending where it pushes, and each grip's load from where it pinches,
-// amber while it slips. Lengths grow with the log of the force, so 0.3 N and 40 N both read: 3.5 cm per doubling past 0.2 N.
-const arrowLen = (F) => 0.035 * Math.log2(1 + F / 0.2);
-function forceArrows() {
-  const rec = TB.world && TB.world.record, out = [];
-  if (!rec || !S.settings.robot.forces) return out;
-  for (const h of Object.values(rec.hands)) {
-    for (const x of h.contacts) {
-      const F = C.norm(x.f);
-      if (F < 0.05) continue;
-      out.push({ a: C.sub(x.p, x.f.map((v) => (v / F) * arrowLen(F))), b: x.p, warn: false });
-    }
-    const g = h.grip;
-    if (g && g.load >= 0.05) out.push({ a: g.p, b: C.add(g.p, g.force.map((v) => (v / g.load) * arrowLen(g.load))), warn: g.slipping });
-  }
-  return out;
-}
 const tableUp = () => [TB.world.table.R[2], TB.world.table.R[5], TB.world.table.R[8]];
 function tableCorners() {
   const T = TB.world.table, lx = T.size[0] / 2, ly = T.size[1] / 2;
@@ -457,11 +411,11 @@ function tableCorners() {
 }
 // what robot-gl.js draws: the table, the bodies and their shadows on it
 function tableDraw() {
-  const W = TB.world;
+  const W = tableShown() ? TB.world : null;
   if (!W) return null;
   const T = W.table, up = tableUp(), Rt = C.tr3(T.R), shadows = [];
   const bodies = W.bodies.map((b) => Object.assign({ kind: b.kind, key: b.key, color: b.color }, W.poseOf(b)));
-  const compounds = Object.fromEntries(W.bodies.filter((b) => b.pieces).map((b) => [b.key, b.kind==='phone'?[...b.pieces,...phoneScreen(b)]:b.pieces]));
+  const compounds = Object.fromEntries(W.bodies.filter((b) => b.pieces).map((b) => [b.key, b.drawn || b.pieces]));
   taskMarkers(bodies, compounds);
   benchDecoration(bodies, compounds);
   for (const b of W.bodies) {
@@ -472,12 +426,20 @@ function tableDraw() {
   }
   return {
     dims: { table: { size: T.size, thick: TABLE.thick, legs: TABLE.legs }, ball: { r: PHYS.BALL.r }, cup: { R: PHYS.CUP.R, Ri: PHYS.CUP.Ri, H: PHYS.CUP.H, floor: PHYS.CUP.floor, handle: PHYS.CUP.handle }, compounds },
-    table: { R: T.R, t: T.t }, bodies, shadows, cloths: W.cloths, cables: W.cables,
+    table: { R: T.R, t: T.t }, bodies, shadows, cloths: W.cloths, cables: W.cables, ...pourDraw(),
   };
+}
+// the beer in the task's steins and its falling stream, in the pour's colour
+function pourDraw() {
+  const p = TB.game && TB.game.pour;
+  if (!p) return {};
+  // the stream in the beer's colour; the surface in a glass, its head of foam
+  const v = p.view(), spec = TB.game.level.pour, color = spec.color || '#e0a526', foam = spec.foam || color;
+  return { liquids: v.surfaces.filter((x) => x.points.length > 2).map((x) => ({ ...x, color: foam })), streams: v.streams.map((points) => ({ points, color })) };
 }
 // drawn flat (no WebGL): the table's top, the ball, the cup as a fat stroke from its base to its rim
 function tableFlat(face, seg, ball) {
-  const W = TB.world;
+  const W = tableShown() ? TB.world : null;
   if (!W) return;
   const q = tableCorners();
   face([q[0], q[1], q[3], q[2]], K.well, 0.8); face([q[2], q[3], q[1], q[0]], K.well, 0.8);
@@ -496,12 +458,7 @@ function tableFlat(face, seg, ball) {
   for (const cable of W.cables) for(let i=1;i<cable.nodes.length;i++)seg(cable.nodes[i-1].p,cable.nodes[i].p,cable.radius,cable.color,cable.color,1);
   for(const cloth of W.cloths){const mesh=RobotGL.clothMesh(cloth);for(let i=0;i<mesh.idx.length;i+=3)face([...mesh.idx.slice(i,i+3)].map(k=>[...mesh.pos.slice(k*3,k*3+3)]),cloth.color,1);}
 }
-$('robotProps').value = S.settings.robot.props;
-$('robotProps').onchange = () => { S.settings.robot.props = $('robotProps').value; saveSettings(); if (S.settings.robot.props === 'arcade') setMode('tasks'); paintRobotBtns(); };
-$('robotForces').value = S.settings.robot.forces ? 'on' : 'off';
-$('robotForces').onchange = () => { S.settings.robot.forces = $('robotForces').value === 'on'; saveSettings(); };
 $('soundBtn').onclick = () => setSound(!S.settings.robot.sound);
-$('tableResetBtn').onclick = resetTable;
 $('tagsDriveBtn').onclick = () => { TB.drive.clear(); for (const k of [...RB.prev.keys()]) if (String(k).startsWith('drive')) RB.prev.delete(k); paintRobotBtns(); };
 
 // Moving a hand with the mouse (or a finger): press on a gripper and drag it across the view, in the robot's plane the
@@ -622,7 +579,7 @@ function handWheel(e) {
 }
 plot.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || S.settings.show3d !== 'robot') return;
-  if (e.key === 't' || e.key === 'T') { e.preventDefault(); resetTable(); }
+  if ((e.key === 't' || e.key === 'T') && S.tab === 'tasks') { e.preventDefault(); resetTable(); }
   else if ((e.key === 'm' || e.key === 'M') && S.settings.robot.props !== 'off') { e.preventDefault(); setSound(!S.settings.robot.sound); }
   else if (e.key === ' ') { e.preventDefault(); const hs = chosenHands(); playGrasp(hs.some((a) => driveOf(a).open > 0.5) ? 0 : 1); }
 });
@@ -648,16 +605,6 @@ function paintRobotText(now) {
       jt.innerHTML = `<table><thead><tr><th>Joint</th>${arms.map((a) => `<th class="num g">${a.side === 1 ? 'Left' : 'Right'}, °</th>`).join('')}<th class="num g">Range, °</th></tr></thead><tbody>` +
         RCORE.JOINTS.map((j, i) => `<tr><td><span style="display:inline-flex;align-items:center;gap:7px"><span class="sw" style="background:var(--s${i + 1})"></span>${j.name}</span></td>${arms.map((a) => `<td class="num mono g">${(a.q[i] * D).toFixed(0)}</td>`).join('')}<td class="num mono g muted">${lim(j)}</td></tr>`).join('') + '</tbody></table>' +
         arms.filter((a) => !a.reach).map((a) => `<div class="far">${a.side === 1 ? 'Left' : 'Right'} hand ${(a.gap * 100).toFixed(0)} cm out of reach</div>`).join('');
-    }
-    if (tpMode() === 'forces') {
-      // each hand's numbers now: the squeeze and what it can hold, the grip's load and its share of that, the rest
-      const fs = forceSides(), now1 = fs.map((sd) => { const a = RB.fhist.get(sd); return a[a.length - 1]; });
-      const row = (name, i, title) => `<tr><td><span style="display:inline-flex;align-items:center;gap:7px" title="${title}"><span class="sw" style="background:var(--s${i + 1})"></span>${name}</span></td>${now1.map((x) => `<td class="num mono g">${x.v[i].toFixed(2)}</td>`).join('')}</tr>`;
-      $('forcesNow').innerHTML = `<table><thead><tr><th>Force</th>${fs.map((sd) => `<th class="num g">${sd === 1 ? 'Left' : 'Right'}, N</th>`).join('')}</tr></thead><tbody>` +
-        row('Squeeze', 0, 'How hard the jaws squeeze what they hold') + row('Can hold', 1, 'The most the pads’ friction holds: 2 × μ × squeeze') +
-        row('Load', 2, 'What the prop it holds puts on the fingers') + row('Contact', 3, 'Everything else the hand touches, together') +
-        `<tr><td>Grip used</td>${now1.map((x) => `<td class="num mono g${x.slipping ? ' warn' : ''}">${x.holds ? (x.use * 100).toFixed(0) + '%' : '–'}</td>`).join('')}</tr>` +
-        `<tr><td>Holding</td>${now1.map((x) => `<td class="num g${x.slipping ? ' warn' : ''}">${x.holds ? (x.slipping ? 'slipping' : { ball: 'the ball', cup: 'the mug' }[x.holds] || x.holds) : 'nothing'}</td>`).join('')}</tr></tbody></table>`;
     }
   }
   if (pnow - RB.hintT > 250) {
