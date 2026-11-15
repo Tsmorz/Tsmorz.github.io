@@ -140,9 +140,10 @@ changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INF
 Capture `Control.zero` takes the chest rotation as `basis`: cable-axis roll, transverse pitch and board-up
 yaw stay in that reference frame, independently of the gripper's neutral roll. Never anchor those axes to its jaws.
 
-Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE
-10 Hz, USB/ESB up to 25 Hz. Force changes pulse timing, not drive percentage. Test pulse uses the
-same selected level. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
+Task feedback uses finite TacHammer CLICK for impact/contact onset, KNOCK for seating and BUZZ_50HZ
+under sustained load: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE
+10 Hz, USB/ESB up to 25 Hz. Rumble bursts self-end after 300 ms; renew only while loaded. Impacts take
+priority and dropped clicks never replay. Test pulse uses the same selected level. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
 firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
 get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK
 is acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry, 120 ms ACK timeouts.

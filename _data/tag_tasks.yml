@@ -692,8 +692,9 @@ haptics:
   calibrating: Task feedback pauses while the capture gyro calibrates.
   label: TacHammer task feedback
   strength: Drive level
-  help: Brief TacHammer pulses at the selected drive level (75% by default). Contact
-    force changes pulse timing; impacts use a knock. ERM and gripper-servo commands are not sent.
+  help: A sharp TacHammer click marks contact and impacts. A low rumble follows while
+    force stays applied. Both use the selected drive level (75% by default).
+    ERM and gripper-servo commands are not sent.
   routing: Haptic hand
   sides:
   - From wrist tag

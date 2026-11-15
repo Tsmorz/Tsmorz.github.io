@@ -57,7 +57,7 @@ module.exports=async function({check}){
   tick(1400,{enabled:false});tick(1400,{active:false});check(writes.length===1,'off and hidden/unfocused task states produce no output');
   let resolve;board.hapticCharacteristic={writeValueWithResponse:bytes=>{writes.push([...bytes]);return new Promise(r=>resolve=r);}};
   tick(1400);D.reset();tick(1450);check(writes.length===2,'resetting while a write is in flight cannot queue or overlap another command');resolve();await new Promise(r=>setImmediate(r));
-  check(writes.every(b=>b[1]===2&&b[2]<=3&&b[4]===0&&b[5]===0),'no ERM, continuous-rumble, STOP_ALL or servo command is sent');
+  check(writes.every(b=>b[1]===2&&[1,3,6].includes(b[2])&&b[4]===0&&b[5]===0),'only finite click, knock or 50 Hz rumble cues; no ERM, STOP_ALL or servo command is sent');
   const detentWrites=[],seatBoard={...board,hapticBusy:false,hapticCharacteristic:{writeValueWithResponse:x=>{detentWrites.push([...x]);return Promise.resolve();}}},seatWorld={time:4,hands:{1:{grip:{body:{id:10,insertion:{clickAt:4}}}}},record:{hands:{1:{force:[0,0,0]}}}},seatD=H.dispatcher();
   const seatTick=now=>seatD.tick({boards:[seatBoard],world:seatWorld,arms,now,enabled:true,active:true});
   seatTick(1100);await new Promise(r=>setImmediate(r));seatTick(1250);await new Promise(r=>setImmediate(r));
