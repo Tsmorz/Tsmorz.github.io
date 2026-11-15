@@ -687,14 +687,14 @@ guidance:
         cable, then leave the connector still.
 haptics:
   test: Test pulse
-  test_sent: Test pulse acknowledged
+  test_sent: Test pulse acknowledged at {level}%
   test_unavailable: Connect the device, enable Haptics and select Left or Right hand first.
   capture_status: Capture USB · IMU orientation and TacHammer
   calibrating: Task feedback pauses while the capture gyro calibrates.
   label: TacHammer task feedback
-  strength: Strength
-  help: Brief, self-ending TacHammer pulses for contact, grip slip and fabric or
-    cable tension. ERM and gripper-servo commands are not sent.
+  strength: Drive level
+  help: Brief TacHammer pulses at the selected drive level (75% by default). Contact
+    force changes pulse timing; impacts use a knock. ERM and gripper-servo commands are not sent.
   routing: Haptic hand
   sides:
   - From wrist tag

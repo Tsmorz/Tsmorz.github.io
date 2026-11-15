@@ -3,9 +3,14 @@
   if(typeof module==='object'&&module.exports)module.exports=factory();else root.TaskHaptics=factory();
 })(typeof self!=='undefined'?self:this,function(){
   'use strict';
+  const MAX_LEVEL=75;
   const norm=v=>Math.hypot(...(v||[0,0,0]));
+  const level=value=>Math.max(1,Math.min(MAX_LEVEL,Math.round(Number.isFinite(value)?value:MAX_LEVEL)));
+  function settings(saved){
+    return {version:2,enabled:saved?.enabled!==false,level:level(saved?.version===2?saved.level:MAX_LEVEL)};
+  }
   function packet(level,id=1){
-    const b=new Uint8Array(6),v=new DataView(b.buffer);b[0]=2;b[1]=2;b[2]=id;b[3]=Math.max(1,Math.min(70,Math.round(Number.isFinite(level)?level:1)));v.setUint16(4,0,true);return b;
+    const b=new Uint8Array(6),v=new DataView(b.buffer);b[0]=2;b[1]=2;b[2]=id;b[3]=Math.max(1,Math.min(MAX_LEVEL,Math.round(Number.isFinite(level)?level:1)));v.setUint16(4,0,true);return b;
   }
   function cue(W,side){
     const h=W.hands[side],rec=W.record,hand=rec?.hands?.[side],grip=h?.grip?.body;
@@ -29,7 +34,7 @@
     const states=new Map();let epoch=null;
     return {
       reset(){states.clear();epoch=null;},
-      tick({boards,world,arms,now,enabled,strength=.6,active=true}){
+      tick({boards,world,arms,now,enabled,level:drive=MAX_LEVEL,active=true}){
         if(!enabled||!active||!world){states.clear();return;}
         if(epoch!==world){states.clear();epoch=world;}
         for(const b of boards){
@@ -47,8 +52,7 @@
           if(b.hapticError&&b.hapticRetryAfter&&now>=b.hapticRetryAfter){b.hapticError=null;b.hapticRetryAfter=null;}
           if(b.hapticCharacteristic.busy||b.hapticBusy||b.hapticError||now-s.last<interval)continue;
           s.last=now;s.load=c.load;s.event=c.event;s.seatAt=null;b.hapticBusy=true;
-          const level=Math.min(70,Math.max(3,(click?42:8+12*Math.log1p(c.load))*Math.max(0,Math.min(1,Number.isFinite(strength)?strength:.6))));
-          const bytes=packet(level,click||impact?3:1),ch=b.hapticCharacteristic;
+          const bytes=packet(level(drive),click||impact?3:1),ch=b.hapticCharacteristic;
           try{
             const write=ch.writeValueWithResponse?ch.writeValueWithResponse(bytes):ch.writeValue(bytes);
             Promise.resolve(write).then(()=>{if(b.hapticCharacteristic!==ch)return;b.hapticLast={at:now,side,reason:click?'connector seated':c.reason,level:bytes[3]};},e=>{if(b.hapticCharacteristic!==ch)return;b.hapticError=String(e.message||e);b.hapticRetryAfter=ch.transient?now+250:null;}).finally(()=>{if(b.hapticCharacteristic===ch)b.hapticBusy=false;});
@@ -57,5 +61,5 @@
       }
     };
   }
-  return {packet,cue,dispatcher};
+  return {packet,cue,dispatcher,level,settings,MAX_LEVEL};
 });

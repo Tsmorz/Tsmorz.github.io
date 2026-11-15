@@ -3,6 +3,7 @@
   const sleep=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,message)=>{if(!ok)throw Error(message);};
   const wait=async(f,message)=>{const end=Date.now()+7000;while(!f()){if(Date.now()>end)throw Error(message);await sleep(30);}};
   document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');await sleep(300);
+  assert(taskHapticSettings.level===75&&$('taskHapticLevel').textContent==='75%','drive defaults to a visible 75 percent');
   const W=await import('/haptography/wire.js'),commands=[],parser=new W.StreamReader();parser.synced=true;
   let input,timer,packet=0,seq=0,t=1000000,speed=0,imu=true,closed=false;
   const emit=(type,body)=>input.enqueue(W.encodePacket(type,packet++&65535,body));
@@ -41,7 +42,12 @@
   const physical=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,1,RB.scene.arms.find(a=>a.side===1).q).R);
   assert(C.angleOf(C.mul3(C.tr3(base),physical))>.1,'real IK and motor slew rotate the rendered gripper');
   assert(C.angleOf(C.mul3(C.tr3(other),RCORE.fk(RB.scene.m,-1,RB.scene.arms.find(a=>a.side===-1).q).R))<.01,'other hand retains its orientation');
-  $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.some(p=>p.type===0x44&&p.body[0]===1&&p.body[1]===15),'concurrent haptic ACK');
+  $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.some(p=>p.type===0x44&&p.body[0]===1&&p.body[1]===75),'concurrent haptic ACK');
+  assert($('ctlConnectionStatus').textContent===TASK_DATA.haptics.test_sent.replace('{level}','75'),'test pulse reports the actual 75 percent command');
+  $('taskHapticStrength').value=37;$('taskHapticStrength').dispatchEvent(new Event('input'));
+  $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.some(p=>p.type===0x44&&p.body[1]===37),'test pulse follows the selected drive percentage');
+  assert($('gameHaptics').textContent.includes('37%'),'toolbar shows selected percentage');
+  $('taskHapticStrength').value=75;$('taskHapticStrength').dispatchEvent(new Event('input'));
   const epoch=b.motion.epoch;imu=false;await sleep(250);assert(b.captureControl.paused,'stale IMU pauses control even while INFO continues');
   const held=b.captureControl.last.slice();imu=true;
   await wait(()=>b.motion.ready&&b.motion.epoch>epoch,'IMU recovery calibration');await sleep(100);assert(JSON.stringify(b.captureControl.last)===JSON.stringify(held),'recovered stream waits for a new neutral pose');

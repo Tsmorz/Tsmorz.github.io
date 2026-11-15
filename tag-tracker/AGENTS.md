@@ -136,8 +136,9 @@ calibration finishes, or the actuator can prevent its own stillness check. Gaps,
 stale data hold the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
 changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
 
-Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 70%, BLE
-10 Hz, USB/ESB up to 25 Hz. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
+Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE
+10 Hz, USB/ESB up to 25 Hz. Force changes pulse timing, not drive percentage. Test pulse uses the
+same selected level. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
 firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
 get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK
 is acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry, 120 ms ACK timeouts.

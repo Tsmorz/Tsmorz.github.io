@@ -209,10 +209,11 @@ paintCampaignMode();paintTasks(true);paintTaskVisibility();
 
 // Haptics follow the task's physical contact record, never a canned level animation.
 const TASK_HAPTIC=TaskHaptics.dispatcher();
-let taskHapticSettings=store.get('task-haptics',{enabled:true,strength:.6}),taskHapticPaint=0;
-$('taskHaptics').checked=taskHapticSettings.enabled!==false;$('taskHapticStrength').value=taskHapticSettings.strength??.6;
+let taskHapticSettings=TaskHaptics.settings(store.get('task-haptics',{})),taskHapticPaint=0;
+store.set('task-haptics',taskHapticSettings);
+$('taskHaptics').checked=taskHapticSettings.enabled!==false;$('taskHapticStrength').value=taskHapticSettings.level;
 function setTaskHaptics(on){taskHapticSettings.enabled=!!on;store.set('task-haptics',taskHapticSettings);TASK_HAPTIC.reset();$('taskHaptics').checked=!!on;paintHapticsBtn();}
-function paintHapticsBtn(){const on=taskHapticSettings.enabled!==false,b=$('gameHaptics');b.setAttribute('aria-pressed',String(on));b.classList.toggle('primary',on);b.classList.toggle('outline',!on);}
+function paintHapticsBtn(){const on=taskHapticSettings.enabled!==false,b=$('gameHaptics'),value=taskHapticSettings.level+'%';b.textContent=TASK_DATA.ui.haptics+' '+value;$('taskHapticLevel').textContent=value;b.setAttribute('aria-pressed',String(on));b.classList.toggle('primary',on);b.classList.toggle('outline',!on);}
 $('taskHaptics').onchange=()=>setTaskHaptics($('taskHaptics').checked);$('gameHaptics').onclick=()=>setTaskHaptics(taskHapticSettings.enabled===false);paintHapticsBtn();
 // The Controller panel: connect boards from the task screen and choose which hand's cues each one plays.
 $('gameController').onclick=()=>{const p=$('controllerPanel');p.hidden=!p.hidden;$('gameController').setAttribute('aria-expanded',String(!p.hidden));paintControllerPanel(true);};
@@ -234,9 +235,9 @@ function paintControllerPanel(force){
   });
   $('ctlBoards').querySelectorAll('.ctl-board select').forEach(sel=>{sel.onchange=()=>{const b=S.boards.find(x=>x.id===sel.closest('.ctl-board').dataset.id);if(!b)return;b.captureControl?.clear();b.hapticSide=sel.value;boardStore.save(b);renderBoards();controllerSig='';};});
 }
-$('taskHapticStrength').oninput=()=>{taskHapticSettings.strength=+$('taskHapticStrength').value;store.set('task-haptics',taskHapticSettings);};
+$('taskHapticStrength').oninput=()=>{taskHapticSettings.level=TaskHaptics.level(+$('taskHapticStrength').value);$('taskHapticStrength').value=taskHapticSettings.level;store.set('task-haptics',taskHapticSettings);paintHapticsBtn();};
 function sendTaskHaptics(W,sc,now){
-  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,strength:taskHapticSettings.strength,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('gameSettings').open&&!$('setupDlg').open});
+  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,level:taskHapticSettings.level,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('gameSettings').open&&!$('setupDlg').open});
   if(now-taskHapticPaint<250)return;taskHapticPaint=now;
   const live=S.boards.filter(b=>!b.sim&&b.state==='live'),ready=live.filter(b=>b.act?.tachammerReady&&now-b.actT<500&&(b.transport!=='capture'||b.motion?.ready)),last=ready.map(b=>b.hapticLast).filter(x=>x&&now-x.at<750),text=!taskHapticSettings.enabled?TASK_DATA.haptics.off:!live.length?TASK_DATA.haptics.disconnected:!ready.length?(live.some(b=>b.transport==='capture'&&!b.motion?.ready)?TASK_DATA.haptics.calibrating:TASK_DATA.haptics.unavailable):last.length?TASK_DATA.haptics.sent:TASK_DATA.haptics.ready;
   $('taskHapticStatus').textContent=$('ctlStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;paintControllerPanel();
@@ -258,7 +259,7 @@ async function testBoardHaptics(b){
   if(!taskHapticSettings.enabled||S.tab!=='tasks'||document.hidden||!document.hasFocus()||!b||b.sim||b.state!=='live'||!['1','-1'].includes(b.hapticSide)||!b.act?.tachammerReady||now-b.actT>=500||!ch){note.textContent=TASK_DATA.haptics.test_unavailable;return;}
   if(b.hapticBusy||ch.busy)return;
   b.hapticBusy=true;
-  try{const bytes=TaskHaptics.packet(15,1);await(ch.writeValueWithResponse?ch.writeValueWithResponse(bytes):ch.writeValue(bytes));if(b.hapticCharacteristic===ch){b.hapticError=null;note.textContent=TASK_DATA.haptics.test_sent;}}
+  try{const bytes=TaskHaptics.packet(taskHapticSettings.level,1);await(ch.writeValueWithResponse?ch.writeValueWithResponse(bytes):ch.writeValue(bytes));if(b.hapticCharacteristic===ch){b.hapticError=null;note.textContent=TASK_DATA.haptics.test_sent.replace('{level}',String(bytes[3]));}}
   catch(e){note.textContent=e.message;}
   finally{if(b.hapticCharacteristic===ch)b.hapticBusy=false;}
 }

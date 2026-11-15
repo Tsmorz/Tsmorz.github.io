@@ -6,7 +6,7 @@ async function addCaptureBoard(){
   let port;try{port=await navigator.serial.requestPort({filters:[{usbVendorId:0x2886,usbProductId:0x0068}]});}catch(e){if(e.name!=='NotFoundError')note(e.message);return;}
   let link,b;
   try{
-    const {CaptureLink}=await import('../haptography/task-link.js?v=52691a25');
+    const {CaptureLink}=await import('../haptography/task-link.js?v=1a57c9b7');
     const orientation=new CaptureOrientation.Estimator();
     link=new CaptureLink(port,current=>{
       if(!b)return;
