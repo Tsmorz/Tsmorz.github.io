@@ -9,7 +9,7 @@
 // sides, forearms forward, palms in) wherever the tags are; pressing it fixes how each tag sits on the robot, as a
 // tare does. It reads the plotted poses (in the chosen frame) with any tare taken off, so taring never moves it.
 const RCORE = window.RobotCore;
-const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist: new Map(), slew: new Map(), ready: new Map(), slewT: 0, scene: null, pts: [], msg: '', msgWarn: false, msgT: 0, hintT: 0, jointsT: 0, autoDone: false, fitSig: '', fhist: new Map(), view: null, viewW: 0 };
+const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist: new Map(), slew: new Map(), slewT: 0, scene: null, pts: [], msg: '', msgWarn: false, msgT: 0, hintT: 0, jointsT: 0, autoDone: false, fitSig: '', fhist: new Map(), view: null, viewW: 0 };
 // the table (below): its physics world, the hands moved with the mouse
 const PHYS = window.PhysicsCore;
 const TABLE = { size: [0.5, 0.9], thick: 0.03, legs: 0.72 };
@@ -125,13 +125,10 @@ plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') &
 
 // The robot this frame: the chest's pose and each arm's joint angles. With no tracks yet it is a preview, standing
 // in its start pose a little way in front of the camera.
-function robotReady(m,side){
-  // every task starts from the same pose (tag_tasks.yml `ready`); elsewhere the arms hang in HOME
+function robotReady(){
+  // Seed joints directly: an unconstrained first IK solve can choose a different elbow branch.
   const ready=typeof gameView==='function'&&gameView()&&TASK_DATA.ready;if(!ready)return RCORE.HOME;
-  const key=JSON.stringify([m,ready]),cached=RB.ready.get(side);if(cached?.key===key)return cached.q;
-  const home=RCORE.fk(m,side,RCORE.HOME),d=ready.offset;
-  const target={R:RCORE.Ry((ready.pitch||0)*Math.PI/180),t:C.add(home.wrist,[d[0],side*d[1],d[2]])};
-  const q=RCORE.ik(m,side,target).q;RB.ready.set(side,{key,q});return q;
+  return ready.joints.map(degrees=>degrees*Math.PI/180);
 }
 function robotUpdate(now) {
   robotTake();
@@ -171,7 +168,7 @@ function robotUpdate(now) {
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
   const withBody = preview || roles.body !== null || S.settings.robot.props === 'arcade';
   if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) {
-    const q = robotReady(m,side), captureR = captureHandRotation(side, now * 1000), key = 'capture' + side;
+    const q = robotReady(), captureR = captureHandRotation(side, now * 1000), key = 'capture' + side;
     const s = captureR ? RCORE.ik(m, side, { R: C.mul3(C.tr3(tg.chest.R), captureR), t: RCORE.fk(m,side,q).wrist }, RB.prev.get(key), { prefer }) : null;
     if (s) RB.prev.set(key, { q: s.q, elbow: s.elbow, psi: s.psi, side });
     arms.push({ key: null, side, q: s ? s.q : q, reach: s ? s.reach : true, gap: s ? s.gap : 0, live: !!s, idle: !s });
@@ -210,15 +207,22 @@ function robotGL() {
 }
 function drawRobot(c, o, w, h, now) {
   robotUpdate(now);
-  if (S.settings.robot.view === 'eyes') { c.clearRect(0, 0, w, h); o = TaskCore.headCamera(RB.scene.chest, RB.scene.m, S.settings.robot.headTilt, w, h); }
-  RB.view = o; RB.viewW = w;
   tableStep(RB.scene);
   const gl = robotGL();
   $('plotGL').hidden = !gl;
+  // taskPlaced may set the camera this very frame. Never paint with the previous tab's projection.
+  const render = () => {
+    const V = S.view;
+    o = S.settings.robot.view === 'eyes' ? TaskCore.headCamera(RB.scene.chest, RB.scene.m, S.settings.robot.headTilt, w, h) : C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w, h });
+    if (gameView() || S.settings.robot.view === 'eyes') c.clearRect(0, 0, w, h);
+    RB.view = o; RB.viewW = w;
+    if (gl) drawRobotGL(gl, o, w, h, now); else drawRobotFlat(c, o, h, now);
+    if (tableShown()) RB.pts.push(...tableCorners());
+  };
+  render();
+  // Rendering supplies the fit bounds; finish the fit before the browser presents this frame.
+  if (!S.view.fitted) { autoFit(); c.clearRect(0, 0, w, h); render(); }
   hoverNow();
-  if (gl) drawRobotGL(gl, o, w, h, now); else drawRobotFlat(c, o, h, now);
-  if (tableShown()) RB.pts.push(...tableCorners());
-  if (!S.view.fitted) autoFit();
   paintRobotText(now);
   paintTaskLabels(o, w, h);
 }
@@ -352,8 +356,9 @@ function placeTable(sc) {
   const m = sc.m, G = RCORE.gripper(m), w = RCORE.fk(m, 1, RCORE.HOME).wrist, tip = w[0] + 0.07 + G.fl;
   const anchor = sc.anchor || sc.chest;
   const R = RCORE.upright([anchor.R[0], anchor.R[3], anchor.R[6]]), ch = { R, t: anchor.t };
-  // the top just under the fingers in the start pose, its near edge under the wrists
-  const cx = w[0] - 0.03 + TABLE.size[0] / 2, table = { R, t: RCORE.place(ch, [cx, 0, w[2] - 0.045]), size: TABLE.size, thick: TABLE.thick };
+  // Leave clearance below the fully open vertical jaws, so spawning cannot push the hands upward.
+  const clearance = G.body.h[1] + 0.045;
+  const cx = w[0] - 0.03 + TABLE.size[0] / 2, table = { R, t: RCORE.place(ch, [cx, 0, w[2] - clearance]), size: TABLE.size, thick: TABLE.thick };
   const kind = S.settings.robot.props;
   // the ball just past the left hand's fingertips (between the hands on its own), the mug past the right's
   const spots = kind === 'cup' ? { ball: [tip + 0.045 - cx, w[1]], cup: [tip + 0.105 - cx, -w[1]] } : { ball: [tip + 0.05 - cx, 0] };

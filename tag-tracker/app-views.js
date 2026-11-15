@@ -254,6 +254,8 @@ function frame() {
 // S.tab chooses Calibrate, Tracking or Tasks; S.mode chooses board or tag detection.
 function setMode(m) {
   if (!TABS.includes(m)) return;
+  // Idle poses belong to their tab; don't slew through the previous tab's wrist rotation.
+  if (m !== S.tab) for (const a of RB.scene?.arms || []) if (a.idle) RB.slew.delete(a.side);
   if(m!=='tasks')pauseCaptureOrientations();
   stopTaskInput();
   if (m === 'tasks') {

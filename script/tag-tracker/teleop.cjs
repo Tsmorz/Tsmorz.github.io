@@ -12,7 +12,14 @@ module.exports = function ({ check, near, budget }) {
   const put = (W, b, at, rot = I) => { b.R = rot.slice(); b.q = P.qOf(rot); b.t = C.sub(at, C.mulv(rot, b.off)); b.v = [0,0,0]; b.w = [0,0,0]; b.asleep = false; b.still = 0; };
   const finish = (g, n = 60) => { for (let i = 0; i < n; i++) { g.world.step(1/60); T.update(g,1/60,true); } };
   check(levels.map(l=>l.id).join(',')==='bowl,sort,tray,pour,laundry'&&['bowl','sort','pour'].every(id=>levels.find(l=>l.id===id).hands===1)&&['tray','laundry'].every(id=>levels.find(l=>l.id===id).hands===2), 'exactly five tasks: a first grasp, sorting, two-handed balance, pouring by the handle and a towel');
-  check(taskData.ready&&taskData.ready.offset.length===3&&levels.every(l=>!l.ready&&!(l.guided&&l.guided.ready)), 'every task starts from the one shared ready pose; no task carries its own');
+  check(taskData.ready&&taskData.ready.joints.length===R.JOINTS.length&&taskData.ready.joints.every((v,i)=>v*Math.PI/180>=R.JOINTS[i].lo&&v*Math.PI/180<=R.JOINTS[i].hi)&&levels.every(l=>!l.ready&&!(l.guided&&l.guided.ready)), 'every task starts from one valid shared joint pose; no task carries its own');
+  for (const side of [1,-1]) {
+    const q=taskData.ready.joints.map(v=>v*Math.PI/180), k=R.fk(model,side,q);
+    check(near(C.sub(k.elbow,k.shoulder),[0,0,-model.upper],1e-12)&&near(C.sub(k.wrist,k.elbow),[model.fore,0,0],1e-12), 'ready: elbows hang down and forearms point forward on side '+side);
+    check(near(C.mulv(k.R,[0,0,-1]),[1,0,0],1e-12)&&Math.abs(Math.abs(k.R[7])-1)<1e-12, 'ready: fingers point forward and jaws open vertically on side '+side);
+    const solved=R.ik(model,side,k,{q,elbow:k.elbow});
+    check(near(solved.q,q,1e-6), 'ready: physics IK preserves the seeded elbow and wrist on side '+side);
+  }
   check(levels.find(l=>l.id==='sort').objects.length===2&&T.mission(levels.find(l=>l.id==='sort'),'guided').objects.length===2,'both modes offer exactly two blocks');
   for (const l of levels) {
     const g = create(l.id), W = g.world, keys = new Set([...W.bodies, ...W.cloths].map((b) => b.key));

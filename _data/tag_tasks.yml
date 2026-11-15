@@ -1,11 +1,10 @@
 # Robot tasks and guidance. Metres and seconds.
 title: Robot tasks
 subtitle: Five tasks, from a first grasp to two-handed precision and soft fabric.
-# Every task starts with both idle arms here: each wrist moved from the home pose (m, robot frame,
-# y mirrored for the right arm) with the grippers pitched (degrees) from pointing straight down.
+# Shared idle joint angles in degrees, in RobotCore.JOINTS order: elbows by the sides,
+# forearms and fingers forward, with the jaws opening vertically. Right arm is mirrored.
 ready:
-  offset: [0.04, 0.02, 0.12]
-  pitch: 0
+  joints: [0, 0, 0, 90, 90, 0, 0]
 levels:
 - id: bowl
   name: Ball in the bowl
