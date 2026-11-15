@@ -92,15 +92,32 @@ test('neutral pose maps sensor rotation to a selected hand without changing its 
   assert.equal(control.rotation(sample,1,'camera',s.now,true),null);
 });
 
-test('stale data, background use and estimator resets hold the last target until recentered',()=>{
-  for(const reason of ['stale','background','restart']){
+test('temporary delivery delays and background use hold, then resume the original neutral automatically',()=>{
+  for(const reason of ['stale','background']){
+    const s=stream(),control=new O.Control();s.run(2.1);control.zero(s.estimator.snapshot,I,1,'camera',s.now);
+    const neutral=control.neutral;
+    const moved=s.run(.2,[0,0,60]),last=control.rotation(moved,1,'camera',s.now,true);
+    assert.deepEqual(control.rotation(moved,1,'camera',s.now+(reason==='stale'?101:0),reason!=='background'),last);
+    assert.equal(control.paused,true);assert.equal(control.recenterRequired,false);
+    const resumed=s.run(.2,[0,0,60]),R=control.rotation(resumed,1,'camera',s.now,true);
+    assert.ok(C.angleOf(C.mul3(R,C.tr3(C.rodrigues([0,0,24*degrees]))))<1e-5);
+    assert.equal(control.neutral,neutral);assert.equal(control.paused,false);
+  }
+});
+
+test('an estimator reset still requires neutral even after focus and fresh samples return',()=>{
+  for(const active of [false,true]){
     const s=stream(),control=new O.Control();s.run(2.1);control.zero(s.estimator.snapshot,I,1,'camera',s.now);
     const moved=s.run(.2,[0,0,60]),last=control.rotation(moved,1,'camera',s.now,true);
-    const next={...moved,epoch:moved.epoch+(reason==='restart'?1:0)};
-    assert.deepEqual(control.rotation(next,1,'camera',s.now+(reason==='stale'?101:0),reason!=='background'),last);
-    const resumed=s.run(.2,[0,0,60]);assert.deepEqual(control.rotation(resumed,1,'camera',s.now,true),last);
-    assert.ok(control.zero(resumed,last,1,'camera',s.now));assert.equal(control.paused,false);
-    assert.equal(control.rotation(resumed,1,'tag',s.now,true),null);
+    const restarted={...moved,epoch:moved.epoch+1,q:[1,0,0,0]};
+    assert.deepEqual(control.rotation(restarted,1,'camera',s.now,active),last);
+    assert.equal(control.recenterRequired,true);
+    const recovered={...restarted,q:C.quatOf(C.rodrigues([0,0,.3]))};
+    assert.deepEqual(control.rotation(recovered,1,'camera',s.now,true),last);
+    assert.equal(control.paused,true);
+    assert.ok(control.zero(recovered,last,1,'camera',s.now));
+    assert.equal(control.paused,false);assert.equal(control.recenterRequired,false);
+    assert.equal(control.rotation(recovered,1,'tag',s.now,true),null);
   }
 });
 

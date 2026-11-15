@@ -69,18 +69,44 @@
   const epoch=b.motion.epoch;imu=false;await sleep(250);assert(b.captureControl.paused,'stale IMU pauses control even while INFO continues');
   const held=b.captureControl.last.slice();imu=true;
   await wait(()=>b.motion.ready&&b.motion.epoch>epoch,'IMU recovery calibration');await sleep(100);assert(JSON.stringify(b.captureControl.last)===JSON.stringify(held),'recovered stream waits for a new neutral pose');
+  assert(b.captureControl.recenterRequired&&captureControlState(b)===TASK_DATA.link.capture_paused,'a true stream reset explains why neutral is required');
   $('ctlBoards').querySelector('[data-capture-zero]').click();assert(!b.captureControl.paused,'explicit recenter resumes control');
-  window.dispatchEvent(new Event('blur'));await sleep(50);assert(b.captureControl.paused,'blur pauses orientation');
-  $('ctlBoards').querySelector('[data-capture-zero]').click();
+  const neutral=b.captureControl.neutral,focused=Object.getOwnPropertyDescriptor(document,'hasFocus'),visible=Object.getOwnPropertyDescriptor(document,'hidden');
+  try{
+    Object.defineProperty(document,'hasFocus',{configurable:true,value:()=>false});
+    window.dispatchEvent(new Event('blur'));await sleep(100);
+    assert(b.captureControl.paused&&!b.captureControl.recenterRequired,'leaving the window holds orientation without invalidating neutral');
+    assert(captureControlState(b)===TASK_DATA.link.capture_suspended,'temporary pause promises automatic resume');
+    const away=b.captureControl.last.slice();speed=-40;await sleep(350);speed=0;await sleep(100);
+    assert(JSON.stringify(b.captureControl.last)===JSON.stringify(away),'the gripper target holds while the window is unfocused');
+    if(focused)Object.defineProperty(document,'hasFocus',focused);else delete document.hasFocus;
+    window.dispatchEvent(new Event('focus'));await wait(()=>!b.captureControl.paused,'focus return resumes without Set neutral');await sleep(400);
+    assert(b.captureControl.neutral===neutral&&C.angleOf(C.mul3(b.captureControl.last,C.tr3(away)))>.15,'returning follows motion made while away using the original neutral');
+    const returned=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,1,RB.scene.arms.find(a=>a.side===1).q).R);
+    assert(C.angleOf(C.mul3(returned,C.tr3(away)))>.1,'the rendered gripper resumes orientation too');
+    Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));await sleep(100);
+    assert(b.captureControl.paused,'a hidden page holds the orientation');
+    if(visible)Object.defineProperty(document,'hidden',visible);else delete document.hidden;
+    document.dispatchEvent(new Event('visibilitychange'));await wait(()=>!b.captureControl.paused,'visible page resumes without Set neutral');
+    assert(b.captureControl.neutral===neutral,'visibility preserves the original neutral');
+    $('gameSettingsBtn').click();await sleep(100);assert(b.captureControl.paused,'task settings hold orientation');
+    $('gameSettingsClose').click();await wait(()=>!b.captureControl.paused,'closing task settings resumes orientation');
+    assert(b.captureControl.neutral===neutral,'task settings do not need another neutral');
+  }finally{
+    if(focused)Object.defineProperty(document,'hasFocus',focused);else delete document.hasFocus;
+    if(visible)Object.defineProperty(document,'hidden',visible);else delete document.hidden;
+  }
   select().value='-1';select().dispatchEvent(new Event('change'));assert(!b.captureControl.neutral,'hand remapping clears the old neutral');
   $('ctlBoards').querySelector('[data-capture-zero]').click();assert(b.captureControl.neutral?.side===-1,'other hand can be calibrated independently');
   const right=b.captureControl.last.slice();speed=-40;await sleep(400);speed=0;await sleep(150);
   assert(C.angleOf(C.mul3(C.tr3(right),b.captureControl.last))>.15,'right-hand orientation follows its mapping');
   setMode('track');assert(b.captureControl.paused,'leaving Tasks pauses orientation even when Tracking draws tags');
-  setMode('tasks');await sleep(50);assert(b.captureControl.paused,'returning to Tasks still requires recentering');
+  const tabNeutral=b.captureControl.neutral;
+  setMode('tasks');await wait(()=>!b.captureControl.paused,'returning to Tasks automatically resumes orientation');
+  assert(b.captureControl.neutral===tabNeutral,'switching tabs preserves the neutral pose');
   taskLevel('sort');assert(!b.captureControl.neutral,'task changes clear IMU calibration');
   await b.serialLink.close();assert(closed&&b.state!=='live'&&!b.hapticCharacteristic,'disconnect releases motion and haptic transport');
   assert($('ctlConnectionStatus').textContent===TASK_DATA.link.capture_lost,'disconnect replaces the active-orientation notice');
   assert(document.documentElement.scrollWidth<=innerWidth+1,'controller panel fits viewport');
-  return {passed:true,protocol:4,gyroCalibration:true,physicalOrientation:true,positionPreserved:true,haptics:true,staleHold:true,remapping:true,viewport:[innerWidth,innerHeight]};
+  return {passed:true,protocol:4,gyroCalibration:true,physicalOrientation:true,positionPreserved:true,haptics:true,focusResume:true,visibilityResume:true,settingsResume:true,tabResume:true,streamResetRequiresNeutral:true,remapping:true,viewport:[innerWidth,innerHeight]};
 })()

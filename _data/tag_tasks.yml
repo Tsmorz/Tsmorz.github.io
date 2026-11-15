@@ -732,7 +732,8 @@ link:
   capture_waiting_imu: Waiting for IMU samples…
   capture_neutral: IMU ready · set a neutral pose
   capture_on: IMU orientation on · recenter if the heading drifts
-  capture_paused: IMU paused · set neutral to resume
+  capture_suspended: IMU paused · resumes automatically when you return and samples are fresh
+  capture_paused: IMU stream reset · set neutral to resume
   capture_lost: Capture device disconnected
   capture_neutral_help: Choose Left or Right hand and hold still, then Set neutral in Tasks.
   connect: Connect USB / ESB
@@ -744,8 +745,9 @@ link:
     for the Haptography capture device. Disconnect it from Haptography first. Choose a hand,
     hold the device still for two seconds, then Set neutral. Turn about the board's up axis
     to yaw, tip the cable end to pitch, or twist around the cable to roll the gripper.
-    Wrist rotation stops at its limits; mouse or AprilTags still sets its position. Set neutral again if heading
-    drifts. Test pulse checks the TacHammer output.
+    Wrist rotation stops at its limits; mouse or AprilTags still sets its position.
+    Returning to Tasks resumes orientation automatically. Set neutral again after a stream reset
+    or if heading drifts. Test pulse checks the TacHammer output.
   unsupported: Web Serial needs Chrome or Edge on a computer and HTTPS or localhost.
   closed: Serial controller disconnected. Connect USB / ESB to choose the port again.
   waiting: Port open. Waiting for controller identity and motion…

@@ -89,19 +89,21 @@
   }
 
   class Control{
-    clear(){this.neutral=null;this.paused=false;}
+    clear(){this.neutral=null;this.paused=false;this.recenterRequired=false;}
     zero(sample,R,side,frame,now,basis=I){
       if(!fresh(sample,now)||!finite(R)||R.length!==9||!finite(basis)||basis.length!==9||![1,-1].includes(side))return false;
       // XIAO flat, USB toward the operator: sensor +X points away from USB (robot forward),
       // +Y left and +Z up. These are roll, pitch and yaw respectively.
       // Anchor those axes to the robot, independently of how its gripper is rolled at neutral.
-      this.neutral={q:sample.q.slice(),R:R.slice(),basis:basis.slice(),side,frame,epoch:sample.epoch};this.last=R.slice();this.paused=false;return true;
+      this.neutral={q:sample.q.slice(),R:R.slice(),basis:basis.slice(),side,frame,epoch:sample.epoch};this.last=R.slice();this.paused=false;this.recenterRequired=false;return true;
     }
     rotation(sample,side,frame,now,active){
       const n=this.neutral;if(!n)return null;
       if(n.side!==side||n.frame!==frame){this.clear();return null;}
-      if(!active||!fresh(sample,now)||sample.epoch!==n.epoch)this.paused=true;
-      // A delayed/restarted/background stream holds its last target until explicitly re-centred.
+      // Focus/visibility and delivery delays do not destroy a continuous sensor reference.
+      // A changed estimator epoch does: never resume from a newly initialized heading without neutral.
+      if(sample&&sample.epoch!==n.epoch)this.recenterRequired=true;
+      this.paused=this.recenterRequired||!active||!fresh(sample,now);
       if(!this.paused){
         const delta=matrix(multiply(conjugate(n.q),sample.q));
         this.last=product(product(product(n.basis,delta),transpose(n.basis)),n.R);

@@ -65,16 +65,13 @@ Mouse targets (`TB.drive`) are world-fixed until Resume AprilTags or recalibrati
 out of that plane. Only the actual gripper is pickable. Picking, drawing and projection must share the
 head camera, including its tilt. Calibrate robot reads un-tared poses.
 
-The hands are physical bodies pulled by limited springs, not cursor teleports. They collide with the
-other arm and gripper, excluding their own links by side-prefixed IDs. Rigid grip loads include both
-joint and pad forces; don't report their internal cancellation as an external load.
-Compound rendering and collision dimensions must agree, with hollow openings. Mass properties use
-piece inertia and the parallel-axis theorem. Material IDs in `MATERIALS` go over the air: never renumber.
+Keep limited-spring physical hands and collisions with the other arm/gripper; exclude their own
+side-prefixed links. Rigid grip loads sum joint and pad forces; internal cancellation is not external load.
+Match compound rendering/collision dimensions, hollow openings and piece/parallel-axis inertia.
+Material IDs in `MATERIALS` go over the air: never renumber.
 Keep fixed 240 Hz substeps, contact friction, warm starting, sleeping and bounded reactions together.
 
-AprilTags remain the default input. Mouse drag moves a gripper; scroll closes/opens it, Space toggles,
-Shift-scroll tilts and Alt-drag changes plane. 1/2/3 select left/right/both. Q/E lift/lower; J/K tilt,
-I/P tilt sideways, U/O roll. In Robot eyes, arrow keys move the selected hand; tilt stays on the slider.
+AprilTags remain the default input; `app-tasks.js` defines mouse and keyboard bindings.
 Every task starts idle arms in the one top-level `ready.joints` pose in `tag_tasks.yml` (degrees); no
 task carries its own. It never overrides AprilTag input. Preserve the elbow when the mouse takes a ready
 hand. Seed idle joints without a first-frame IK solve, clear idle slew on tab changes, and apply task
@@ -96,10 +93,10 @@ retreat between blocks, wrong-prop/missing-hand/layer hints and visible destinat
 A rim hit or lost load invalidates the attempt until restart. Require both a clean elevated two-hand
 hold and released set-down. Test actual contacts, not just a ball parked at its final coordinates.
 
-No automated tests for the towel simulation: Tony tests it by hand, and a scripted fold is chaotic, so its
-outcome flips with last-digit rounding between machines (it failed only on CI). The towel has a fabric core, plush nap, layer contact and a closed shell drawn through `clothSurface`,
-a spline 3× finer than the physics grid (never smooth the nodes themselves). `halfThickness` is its
-contact radius: `radius` identifies cables in rendering. GPU buffers rebuild when topology changes.
+No automated towel tests: Tony tests by hand; scripted folds vary with last-digit rounding.
+Keep the fabric core, plush nap, layer contact and closed `clothSurface` shell, 3× finer than the
+physics grid; never smooth the nodes themselves. `halfThickness` is its contact radius; `radius`
+identifies cables in rendering. Rebuild GPU buffers when topology changes.
 Plush sleep tolerates ≤3% chattering corner nodes, or a folded towel stays awake on some platforms.
 `bend_memory` sets creases only while released and where both link ends touch something: a set taken
 while held or hanging props up arches and fails `compact`. Bending stiffer than `bend_compliance` 15
@@ -134,8 +131,9 @@ into anything but a live, aligned Filtered track.
 Capture USB uses its native raw IMU via `capture-core.js`/`app-capture.js`, never the TP/VQF
 decoder or a teleop firmware flash. Relative orientation requires a stationary gyro calibration
 and per-hand neutral pose; IMU never supplies translation. Keep task pulses muted until gyro bias
-calibration finishes, or the actuator can prevent its own stillness check. Gaps, resets, blur and
-stale data hold the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
+calibration finishes, or the actuator can prevent its own stillness check. Blur, hidden pages, dialogs
+and stale delivery hold the last rotation and resume with fresh samples in the same estimator epoch.
+An epoch change requires recentering. Keep calibration in memory and clear it on hand/task/frame
 changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
 Capture `Control.zero` takes the chest rotation as `basis`: cable-axis roll, transverse pitch and board-up
 yaw stay in that reference frame, independently of the gripper's neutral roll. Never anchor those axes to its jaws.
@@ -148,10 +146,9 @@ firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready 
 get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK
 is acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry, 120 ms ACK timeouts.
 
-Voice uses whole utterances and preserves Tasks unless explicitly changing tabs. Bluetooth controller
-push-to-talk follows ACT `keys`, not paused data-event streams. Preserve ordered writes and epoch-
-scoped cancellation; grant the optional audio service. USB/ESB has no microphone stream. Keep the
-`audio_wire.h`/ADPCM contract with nrf-controller; computer-microphone input remains available.
+Voice uses whole utterances and preserves Tasks unless explicitly changing tabs. Bluetooth PTT follows
+ACT `keys`, not paused data-event streams. Keep ordered writes, epoch-scoped cancellation, optional audio
+service and the `audio_wire.h`/ADPCM contract. USB/ESB has no mic stream; computer mic remains available.
 
 Stream drops an in-flight message rather than queueing. The UDP bridge accepts only localhost and
 `tsmorz.github.io` unless `--origin` adds one. Printing uses true paper size and rejects fit-to-page.
