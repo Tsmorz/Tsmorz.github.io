@@ -15,7 +15,18 @@ export const TACHAMMER_WAVEFORMS = [
   { id: 8, key: "RAMP_UP", label: "Ramp up, 80 Hz" },
   { id: 9, key: "SWEEP", label: "Sweep 20 → 250 Hz" },
   { id: 10, key: "ENGINE", label: "Engine rumble, 30 Hz" },
+  // The Drake LF cues tuned on the recording board (recording/haptics/effects.py), at most 70%.
+  { id: 11, key: "FRICTION", label: "Sliding friction", drake: true },
+  { id: 12, key: "IMPACT", label: "Sharp impact", drake: true },
+  { id: 13, key: "DEEP_RUMBLE", label: "Deep rumble", drake: true },
 ];
+export const TACHAMMER_DRAKE_MAX_LEVEL = 70; // TACHAMMER_DRAKE_MAX_LEVEL, actuator_library.h
+
+/** The highest level (%) a TacHammer waveform plays at (tachammer_waveform_max_level()). */
+export const tachammerMaxLevel = (id) => {
+  const entry = TACHAMMER_WAVEFORMS.find((waveform) => waveform.id === id);
+  return !entry ? 0 : entry.drake ? TACHAMMER_DRAKE_MAX_LEVEL : 100;
+};
 
 // The pancake ERM through the DRV2605L: one effect each from TI's ROM library A.
 export const ERM_PRESETS = [

@@ -8,6 +8,17 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-15-haptics",
+    date: "2026-11-15",
+    firmware: "next",
+    title: "Haptics on the main page",
+    items: [
+      "Recording has a Haptics block: play a TacHammer cue on the selected board, or on every board at once, and stop them all.",
+      "Controller boards gain the three Drake LF cues from the recording board (sliding friction, sharp impact and deep rumble), played at up to 70%.",
+      "A board's hardware profile now chooses its wiring: the controller pads, or an amp on the header (enable on D1, powered from USB, no joystick).",
+    ],
+  },
+  {
     id: "2026-11-14-controller-reliability",
     date: "2026-11-14",
     firmware: "next",

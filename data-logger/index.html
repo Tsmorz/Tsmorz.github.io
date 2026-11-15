@@ -96,6 +96,15 @@
      wrapper only becomes a row of its own on laptop screens (below). */
   .top-row { display: contents; }
   .boards-section, .recording-section { grid-column: 1 / -1; }
+  /* Haptics sits at the foot of Recording, under whatever the recording lists. */
+  .haptics { margin-top: auto; padding-top: 12px; }
+  .haptics .plot-head { justify-content: flex-start; flex-wrap: nowrap; align-items: center; gap: 6px; }
+  .hap-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hap-status { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hap-status.bad-text { color: var(--bad); }
+  .hap-level { display: inline-flex; align-items: center; gap: 6px; }
+  .hap-level input { width: 84px; }
+  #hap-cue { width: 168px; max-width: 100%; }
   .seam { display: none; }
   /* While a seam is dragged the cursor stays a resize arrow everywhere and nothing gets selected. */
   body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select: none; }
@@ -650,6 +659,21 @@
       <span class="bad-text" id="rec-recover-text"></span>
     </div>
     <ul id="rec-boards"></ul>
+    <!-- Haptics: excite the boards while they record (haptics-view.js). -->
+    <div class="haptics">
+      <div class="plot-head"><span class="hap-title">Haptics <span class="muted" id="hap-board">TacHammer</span></span><button type="button" class="info" popovertarget="haptics-info" aria-label="About the haptics"></button><span class="muted hap-status" id="hap-status" role="status" aria-live="polite"></span><button id="hap-stop" class="h2-key" type="button" disabled title="Stop every board's actuators">Stop</button></div>
+      <div class="row">
+        <select id="hap-cue" aria-label="Cue to play"></select>
+        <label class="hap-level">Level <input type="range" id="hap-level" min="1" max="70" value="70" aria-label="Haptic level"><output class="readout" id="hap-level-out"></output></label>
+        <button id="hap-play" type="button" disabled>Play</button>
+        <button id="hap-play-all" type="button" hidden>Play on all</button>
+      </div>
+    </div>
+    <div class="info-pop" id="haptics-info" popover>
+      <p>Plays a cue on the selected board's TacHammer (a Drake LF through a MAX98357A amp), or on every board at once. The three Drake cues are the friction, impact and deep rumble tuned on the recording board, held to 70% as they were there. The patterns are the Actuators dialog's test waveforms. Stop stops every board's actuators.</p>
+      <p>A board with the amp on its header (SD_MODE on D1, powered from USB, no joystick) needs <b>Wiring</b> set to <b>Header amp</b> in its hardware profile, under the board list. A board's own drive ceiling caps every cue too.</p>
+      <p>Cues themselves aren't recorded: the IMU and microphone record what the board felt and heard.</p>
+    </div>
     <div class="info-pop" id="recording-info" popover>
       <p>With several boards, choose a clock source first (Settings › Clock sync): the others record their time against it about once a second, and <code>task align</code> lines them up on it afterwards.</p>
       <p id="flash-hint" hidden>Boards' flash: each board records on its own (LED dim red) and keeps going if you disconnect or carry it off. Upload runs at ~12 KB/s per board, all boards at once, and reads only what was recorded since this browser's last upload: a full 8 MB takes about 11 minutes.</p>
