@@ -129,14 +129,15 @@ test('neutral calibration refuses unready or stale data',()=>{
 
 test('cable-axis roll, cable-end pitch and board-up yaw map to the matching gripper axes',()=>{
   const m=R.model();
-  // Raw sensor X is along the cable, Y is across it, Z is board up.
-  for(const side of [1,-1])for(const [axis,worldAxis] of [[0,[1,0,0]],[1,[0,1,0]],[2,[0,0,1]]]){
+  // USB toward the operator: raw X is transverse/pitch, raw Y is cable-axis roll,
+  // pointing toward the operator (opposite robot forward), and raw Z is board-up yaw.
+  for(const side of [1,-1])for(const [axis,worldAxis] of [[0,[0,1,0]],[1,[-1,0,0]],[2,[0,0,1]]])for(const angle of [-20,20]){
     const control=new O.Control(),base=R.fk(m,side,R.HOME).R;
     const sample={ready:true,q:[1,0,0,0],at:0,epoch:1};control.zero(sample,base,side,'camera',0);
-    const rv=[0,0,0];rv[axis]=20*degrees;
+    const rv=[0,0,0];rv[axis]=angle*degrees;
     const moved={...sample,q:C.quatOf(C.rodrigues(rv)),at:10};
-    const actual=control.rotation(moved,side,'camera',10,true),expected=C.mul3(C.rodrigues(worldAxis.map(v=>v*20*degrees)),base);
-    assert.ok(C.angleOf(C.mul3(actual,C.tr3(expected)))<1e-7,`side ${side}, raw axis ${axis}`);
+    const actual=control.rotation(moved,side,'camera',10,true),expected=C.mul3(C.rodrigues(worldAxis.map(v=>v*angle*degrees)),base);
+    assert.ok(C.angleOf(C.mul3(actual,C.tr3(expected)))<1e-7,`side ${side}, raw axis ${axis}, angle ${angle}`);
   }
 });
 
@@ -148,8 +149,23 @@ test('yaw, pitch and roll axes do not swap when Set neutral is used with stacked
     control.zero(sample,base,side,'camera',0,basis);
     const rv=[0,0,0];rv[axis]=.2;
     const moved={...sample,q:C.quatOf(C.rodrigues(rv)),at:10};
-    const expected=C.mul3(C.mul3(C.mul3(basis,C.rodrigues(rv)),C.tr3(basis)),base);
+    const mounted=[-rv[1],rv[0],rv[2]];
+    const expected=C.mul3(C.mul3(C.mul3(basis,C.rodrigues(mounted)),C.tr3(basis)),base);
     const actual=control.rotation(moved,side,'camera',10,true);
     assert.ok(C.angleOf(C.mul3(actual,C.tr3(expected)))<1e-7,`side ${side}, heading ${heading}, neutral roll ${roll}, axis ${axis}`);
+  }
+});
+
+test('combined cable pitch, roll and yaw preserve rotation order and handedness',()=>{
+  const m=R.model(),sensor=C.mul3(R.Rz(.6),R.Ry(.2)),basis=R.Rz(.7);
+  const raw=C.mul3(C.mul3(R.Rx(.21),R.Ry(-.28)),R.Rz(.11));
+  const mounted=C.mul3(C.mul3(R.Ry(.21),R.Rx(.28)),R.Rz(.11));
+  for(const side of [1,-1]){
+    const control=new O.Control(),sample={ready:true,q:C.quatOf(sensor),at:0,epoch:1};
+    const base=C.mul3(basis,R.fk(m,side,R.HOME).R);
+    control.zero(sample,base,side,'camera',0,basis);
+    const actual=control.rotation({...sample,q:C.quatOf(C.mul3(sensor,raw)),at:10},side,'camera',10,true);
+    const expected=C.mul3(C.mul3(C.mul3(basis,mounted),C.tr3(basis)),base);
+    assert.ok(C.angleOf(C.mul3(actual,C.tr3(expected)))<1e-7);
   }
 });

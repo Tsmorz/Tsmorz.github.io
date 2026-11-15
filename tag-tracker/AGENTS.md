@@ -137,6 +137,7 @@ An epoch change requires recentering. Keep calibration in memory and clear it on
 changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
 Capture `Control.zero` takes the chest rotation as `basis`: cable-axis roll, transverse pitch and board-up
 yaw stay in that reference frame, independently of the gripper's neutral roll. Never anchor those axes to its jaws.
+`SENSOR_TO_ROBOT` maps raw X to pitch (+Y), raw Y to cable-axis roll (-X), and raw Z to yaw (+Z).
 
 Task feedback uses finite TacHammer CLICK for impact/contact onset, KNOCK for seating and BUZZ_50HZ
 under sustained load: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE

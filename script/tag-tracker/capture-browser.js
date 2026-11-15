@@ -5,7 +5,8 @@
   document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');await sleep(300);
   assert(taskHapticSettings.level===75&&$('taskHapticLevel').textContent==='75%','drive defaults to a visible 75 percent');
   const W=await import('/haptography/wire.js'),commands=[],parser=new W.StreamReader();parser.synced=true;
-  let input,timer,packet=0,seq=0,t=1000000,speed=0,imu=true,closed=false;
+  let input,timer,packet=0,seq=0,t=1000000,speed=0,pitchSpeed=0,rollSpeed=0,imu=true,closed=false;
+  let sensorR=[1,0,0,0,1,0,0,0,1];
   const emit=(type,body)=>input.enqueue(W.encodePacket(type,packet++&65535,body));
   const info=()=>emit(W.INFO,W.encodeInfo({version:4,t_us:t,board_id:0x1bde,imu_rate_hz:1000,gyro_dps_per_lsb:.01,accel_g_per_lsb:.0001,mic_rate_hz:16000,tof_budget_ms:15,tof_distance_mode:1,flags:9,haptic_rate_hz:16000,erm_step_us:0,clip_max_samples:96000,clip_max_erm:0}));
   const port={
@@ -13,7 +14,12 @@
       this.readable=new ReadableStream({start(c){input=c;c.enqueue(new Uint8Array([0]));},cancel(){clearInterval(timer);}});
       this.writable=new WritableStream({write(bytes){for(const p of parser.feed(bytes)){commands.push(p);emit(W.ACK,W.encodeAck({command_type:p.type,command_number:p.number,status:0}));}}});
       info();timer=setInterval(()=>{
-        const samples=Array.from({length:10},(_,i)=>({dt_us:i*1000,gyro:[Math.round((.78+.6*Math.sin(2*Math.PI*20*(t+i*1000)/1e6))/.01),Math.round((-3.02+.42*Math.sin(2*Math.PI*17*(t+i*1000)/1e6))/.01),Math.round((speed+.11+1.03*Math.sin(2*Math.PI*13*(t+i*1000)/1e6))/.01)],accel:[0,0,10400]}));
+        const turn=C.rodrigues([pitchSpeed,rollSpeed,speed].map(v=>v*Math.PI/180*.001));
+        const samples=Array.from({length:10},(_,i)=>{
+          sensorR=C.mul3(sensorR,turn);
+          const accel=C.mulv(C.tr3(sensorR),[0,0,1.04]).map(v=>Math.round(v/.0001));
+          return {dt_us:i*1000,gyro:[Math.round((pitchSpeed+.78+.6*Math.sin(2*Math.PI*20*(t+i*1000)/1e6))/.01),Math.round((rollSpeed-3.02+.42*Math.sin(2*Math.PI*17*(t+i*1000)/1e6))/.01),Math.round((speed+.11+1.03*Math.sin(2*Math.PI*13*(t+i*1000)/1e6))/.01)],accel};
+        });
         if(imu)emit(W.IMU,W.encodeImu(t,seq,samples));t+=10000;seq+=10;
         if(seq%500===0)info();
       },10);
@@ -34,6 +40,22 @@
   assert(b.n>=2000&&b.buf.length===0&&b.track===null,'native capture IMU is estimated without entering TP/VQF fusion');
   const arm=RB.scene.arms.find(a=>a.side===1),drive=driveOf(arm);drive.open=.6;
   const position=drive.t.slice(),other=RCORE.fk(RB.scene.m,-1,RB.scene.arms.find(a=>a.side===-1).q).R;
+  const checkPitchRoll=async side=>{
+    for(const [motion,axis] of [['pitch',[0,1,0]],['roll',[-1,0,0]]]){
+      $('ctlBoards').querySelector('[data-capture-zero]').click();
+      const base=b.captureControl.last.slice(),want=C.mulv(RB.scene.chest.R,axis),upper=RB.slew.get(side).q.slice(0,4);
+      if(motion==='pitch')pitchSpeed=35;else rollSpeed=35;
+      await sleep(450);pitchSpeed=rollSpeed=0;await sleep(150);
+      const target=C.so3Log(C.mul3(b.captureControl.last,C.tr3(base)));
+      assert(C.norm(target)>.15&&target.reduce((s,v,i)=>s+v*want[i],0)/C.norm(target)>.99,`${motion} uses its cable-based axis on side ${side}`);
+      const R=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,side,RB.scene.arms.find(a=>a.side===side).q).R),physical=C.so3Log(C.mul3(R,C.tr3(base)));
+      assert(C.norm(physical)>.12&&physical.reduce((s,v,i)=>s+v*want[i],0)/C.norm(physical)>.98,`rendered ${motion} follows the correct axis on side ${side}`);
+      assert(C.norm(C.sub(RB.slew.get(side).q.slice(0,4),upper))<1e-8,`${motion} does not turn the arm on side ${side}`);
+      if(motion==='pitch')pitchSpeed=-35;else rollSpeed=-35;
+      await sleep(450);pitchSpeed=rollSpeed=0;await sleep(400);
+    }
+  };
+  await checkPitchRoll(1);
   $('ctlBoards').querySelector('[data-capture-zero]').click();assert(b.captureControl.neutral,'neutral calibration');
   const base=b.captureControl.last.slice();speed=45;await sleep(650);speed=0;await sleep(300);
   const target=b.captureControl.last.slice(),delta=C.angleOf(C.mul3(C.tr3(base),target));
@@ -100,6 +122,7 @@
   $('ctlBoards').querySelector('[data-capture-zero]').click();assert(b.captureControl.neutral?.side===-1,'other hand can be calibrated independently');
   const right=b.captureControl.last.slice();speed=-40;await sleep(400);speed=0;await sleep(150);
   assert(C.angleOf(C.mul3(C.tr3(right),b.captureControl.last))>.15,'right-hand orientation follows its mapping');
+  await checkPitchRoll(-1);
   setMode('track');assert(b.captureControl.paused,'leaving Tasks pauses orientation even when Tracking draws tags');
   const tabNeutral=b.captureControl.neutral;
   setMode('tasks');await wait(()=>!b.captureControl.paused,'returning to Tasks automatically resumes orientation');
@@ -108,5 +131,5 @@
   await b.serialLink.close();assert(closed&&b.state!=='live'&&!b.hapticCharacteristic,'disconnect releases motion and haptic transport');
   assert($('ctlConnectionStatus').textContent===TASK_DATA.link.capture_lost,'disconnect replaces the active-orientation notice');
   assert(document.documentElement.scrollWidth<=innerWidth+1,'controller panel fits viewport');
-  return {passed:true,protocol:4,gyroCalibration:true,physicalOrientation:true,positionPreserved:true,haptics:true,focusResume:true,visibilityResume:true,settingsResume:true,tabResume:true,streamResetRequiresNeutral:true,remapping:true,viewport:[innerWidth,innerHeight]};
+  return {passed:true,protocol:4,gyroCalibration:true,physicalPitchRoll:true,physicalOrientation:true,positionPreserved:true,haptics:true,focusResume:true,visibilityResume:true,settingsResume:true,tabResume:true,streamResetRequiresNeutral:true,remapping:true,viewport:[innerWidth,innerHeight]};
 })()
