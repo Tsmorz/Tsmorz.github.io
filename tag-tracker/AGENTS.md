@@ -12,7 +12,7 @@ scripts in `index.html` share one global scope. The page tracks AprilTags and dr
 - Run `node --check` on edited JS, then `task versions`: every script's `?v=` must match its content.
   The worker's version also covers `tracker-core.js`, which it imports with the same query.
 - Keep no-DOM logic in the cores. `script/test-tag-tracker` is `task check:tag-tracker`; select sections
-  while iterating, e.g. `task check:tag-tracker -- 5j 5k 5o 5q`. Sections reseed their random numbers.
+  while iterating, e.g. `task check:tag-tracker -- 5j 5k 5o 5q`. Sections reseed their random numbers. Time with `budget()`, never `check()`.
 - Build before browser checks. `task shot -- /tag-tracker/ --eval-file script/tag-tracker/<test>.js`
   fails on page exceptions. Inspect the PNG; repeat with `--phone`. Headless WebGL needs Metal.
 - Run `task ci` before finishing. OpenCV detection/calibration tests are optional when the pinned npm

@@ -44,7 +44,15 @@ const run = (sec) => {
   seed = 7 + [...sec].reduce((h, c) => h * 31 + c.charCodeAt(0), 0) % 100000;
   return true;
 };
-function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) failed = true; }
+const failures = [];
+function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) { failed = true; failures.push(msg); } }
+// Wall-clock time, never check(): fails on your machine, only warns on CI (CI=true), where a shared runner's speed
+// varies several-fold from run to run, so no bound is both safe there and still catches a slowdown here.
+function budget(ms, limit, msg) {
+  if (ms < limit || !process.env.CI) return check(ms < limit, msg);
+  console.log(`  SLOW ${msg} (over ${limit} ms; a warning on CI)`);
+  console.log(`::warning title=tag-tracker timing::${msg} (over ${limit} ms)`);
+}
 let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
 const near = (a, b, tol) => a.every((x, i) => Math.abs(x - b[i]) <= tol);
 function rotXYZ(a, b, c) {
@@ -1034,8 +1042,7 @@ if (run('5i')) {
   const t0 = process.hrtime.bigint();
   run(W, 120, (s) => W.setRobot({ hands: [{ side: 1, pose: { R: Rh, t: [-0.05 + 0.1 * s, 0.1, 0.05] }, opening: 1 }, { side: -1, pose: { R: Rh, t: [-0.05, -0.1, 0.05] }, opening: 1 }] }));
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / 120;
-  // wall-clock time: a shared CI runner on one core takes ~5 ms where a laptop takes <1, so bound by the frame budget
-  check(ms < 16, `a 60 Hz frame of the table with two hands takes ${ms.toFixed(2)} ms (budget 16.7 ms)`);
+  budget(ms, 16,`a 60 Hz frame of the table with two hands takes ${ms.toFixed(2)} ms (budget 16.7 ms)`);
   // The grippers are rigid against each other and against the other arm: two hands driven through each other meet and
   // stop (neither passes into the other), each pushing with all its arm can (HAND.force); a hand swept through the
   // other arm's forearm stops against it, and through its own arm's (it hangs on that one) passes
@@ -1227,7 +1234,7 @@ if (run('5i')) {
 
 if (run('5j')) {
   console.log('5j. teleoperation progression, compound props, cloth and the robot-eye camera');
-  require('./tag-tracker/teleop.cjs')({ check, near });
+  require('./tag-tracker/teleop.cjs')({ check, near, budget });
 }
 
 if (run('5k')) {
@@ -1377,7 +1384,7 @@ else bridged.then(async () => {
     check(worst < lim, `8 cm tag at ${z} m: position error ${errs.map((e) => e.toFixed(1)).join(', ')} mm (all under ${lim})`);
     check(angs.length === 6 && Math.max(...angs) < 5, `and its rotation within ${Math.max(...angs).toFixed(2)}° (under 5°); OpenCV's own pose alone: up to ${Math.max(...rawAng).toFixed(1)}°`);
   }
-  check(ms / n < 100, `detection and SE(3) refinement on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
+  budget(ms / n, 100, `detection and SE(3) refinement on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
   // Searching only a window round where the tag should be finds the same corners as searching the whole picture, in
   // whole-picture pixels, and costs a fraction of the time.
   {
@@ -1432,6 +1439,7 @@ else bridged.then(async () => {
 }).catch((e) => { console.log('  FAIL ' + (e && e.stack || e)); failed = true; finish(); });
 
 function finish() {
-  if (failed) { console.log('\nFAIL'); process.exit(1); }
+  // Name the failures last, so the tail of a CI log says which checks failed.
+  if (failed) { console.log(`\nFAIL (${failures.length}):\n` + failures.map((m) => '  - ' + m).join('\n')); process.exit(1); }
   console.log('\nOK');
 }

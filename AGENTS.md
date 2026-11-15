@@ -124,6 +124,11 @@ task shot -- /tag-tracker/ --click '#emptyDemo' --wait 8000   # headless screens
 at the top of `script/shot`), read the PNG and fix what it shows or throws, instead of asking me to look. Jekyll pages need
 `task build` first; self-contained ones don't. Still say what only a real device (camera, Bluetooth, a board) can check.
 
+**No test fails CI on wall-clock time.** A shared runner is several times slower than this Mac and varies run to run, so a
+time bound only warns when `CI` is set (`budget()` in `script/test-tag-tracker`); deterministic checks stay `check()`. When CI
+fails, find the failing check's own line (`script/test-tag-tracker` lists its failures last) before changing anything; never loosen a
+bound on a guess.
+
 `.claude/settings.json` allows the usual commands for Claude Code and runs `.claude/hooks/check-js.sh` (`node --check`)
 after every edit of a `.js` file, so a syntax error comes back at once. Other agents: run `node --check` on a `.js` file
 you edited.

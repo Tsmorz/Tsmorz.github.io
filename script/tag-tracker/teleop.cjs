@@ -1,5 +1,5 @@
 // Called by script/test-tag-tracker section 5j. Deterministic physical and objective regressions.
-module.exports = function ({ check, near }) {
+module.exports = function ({ check, near, budget }) {
   const fs = require('fs'), path = require('path'), { spawnSync } = require('child_process');
   const root = path.resolve(__dirname, '../..'), C = require(root + '/tag-tracker/tracker-core'), R = require(root + '/tag-tracker/robot-core');
   const P = require(root + '/tag-tracker/physics-core'), T = require(root + '/tag-tracker/task-core'), Cloth = require(root + '/tag-tracker/cloth-core'), GL = require(root + '/tag-tracker/robot-gl');
@@ -20,7 +20,7 @@ module.exports = function ({ check, near }) {
     const t = performance.now(); run(W,60); T.update(g,1,false);
     check(!g.complete && !g.steps.some((done,i)=>done&&l.goals[i].type!=='aboard') && W.capped === 0 && W.respawns === 0 && W.bodies.every((b) => [...b.t,...b.v,...b.R].every(Number.isFinite)) && W.cloths.every((c) => c.nodes.every((n) => [...n.p,...n.v].every(Number.isFinite))), l.id + ': initial state is stable, finite and does not award itself');
     const ms = (performance.now()-t)/60;
-    check(ms < 50, `${l.id}: physics frame ${ms.toFixed(2)} ms (60 Hz input)`);
+    budget(ms, 50, `${l.id}: physics frame ${ms.toFixed(2)} ms (60 Hz input)`);
     for (const b of W.bodies.filter((b) => b.pieces)) {
       const meshes = GL.compoundMeshes(b.pieces);
       check(meshes.every((p) => [...p.mesh.pos,...p.mesh.nrm].every(Number.isFinite) && p.mesh.idx.every((i) => i*3 < p.mesh.pos.length)), l.id + ': compound collision shapes have finite, indexed meshes');
