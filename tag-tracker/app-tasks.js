@@ -221,7 +221,8 @@ function paintControllerPanel(force){
   const boards=S.boards.filter(b=>!b.sim),live=boards.filter(b=>b.state==='live').length;
   $('gameControllerCount').textContent=live?`(${live})`:'';$('gameController').classList.toggle('primary',live>0);$('gameController').classList.toggle('outline',!live);
   const sig=JSON.stringify(boards.map(b=>[b.id,b.name,b.state,b.hapticSide]));if(!force&&sig===controllerSig)return;controllerSig=sig;
-  $('ctlBoards').innerHTML=boards.map(b=>`<div class="ctl-board" data-id="${escapeHtml(b.id)}"><strong title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</strong><span class="small muted">${escapeHtml(b.state)}</span><label class="field">${escapeHtml(TASK_DATA.ui.controller_hand)} <select class="select sm">${['auto','1','-1','off'].map((v,i)=>`<option value="${v}"${b.hapticSide===v?' selected':''}>${escapeHtml(TASK_DATA.haptics.sides[i])}</option>`).join('')}</select></label></div>`).join('');
+  $('ctlBoards').innerHTML=boards.map(b=>`<div class="ctl-board" data-id="${escapeHtml(b.id)}"><strong title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</strong><span class="small muted">${escapeHtml(b.state)}</span><label class="field">${escapeHtml(TASK_DATA.ui.controller_hand)} <select class="select sm">${['auto','1','-1','off'].map((v,i)=>`<option value="${v}"${b.hapticSide===v?' selected':''}>${escapeHtml(TASK_DATA.haptics.sides[i])}</option>`).join('')}</select></label><button class="btn sm outline" data-test-haptic>${escapeHtml(TASK_DATA.haptics.test)}</button></div>`).join('');
+  $('ctlBoards').querySelectorAll('[data-test-haptic]').forEach(button=>{button.onclick=()=>testBoardHaptics(S.boards.find(b=>b.id===button.closest('.ctl-board').dataset.id));});
   $('ctlBoards').querySelectorAll('.ctl-board select').forEach(sel=>{sel.onchange=()=>{const b=S.boards.find(x=>x.id===sel.closest('.ctl-board').dataset.id);if(!b)return;b.hapticSide=sel.value;boardStore.save(b);renderBoards();controllerSig='';};});
 }
 $('taskHapticStrength').oninput=()=>{taskHapticSettings.strength=+$('taskHapticStrength').value;store.set('task-haptics',taskHapticSettings);};
@@ -241,3 +242,13 @@ function paintLeaderboard(){
   const previous=TASK.saved[currentTask().id];$('taskFastest').textContent=rows.length?`${TASK_DATA.scores.best} ${TaskScores.format(rows[0].seconds)}`:previous?`${TASK_DATA.scores.previous} ${TaskScores.format(previous.time)}`:TASK_DATA.scores.empty;
 }
 
+
+async function testBoardHaptics(b){
+  const note=$('ctlConnectionStatus'),now=performance.now(),ch=b?.hapticCharacteristic;
+  if(!taskHapticSettings.enabled||S.tab!=='tasks'||document.hidden||!document.hasFocus()||!b||b.sim||b.state!=='live'||!['1','-1'].includes(b.hapticSide)||!b.act?.tachammerReady||now-b.actT>=500||!ch){note.textContent=TASK_DATA.haptics.test_unavailable;return;}
+  if(b.hapticBusy||ch.busy)return;
+  b.hapticBusy=true;
+  try{const bytes=TaskHaptics.packet(15,1);await(ch.writeValueWithResponse?ch.writeValueWithResponse(bytes):ch.writeValue(bytes));if(b.hapticCharacteristic===ch){b.hapticError=null;note.textContent=TASK_DATA.haptics.test_sent;}}
+  catch(e){note.textContent=e.message;}
+  finally{if(b.hapticCharacteristic===ch)b.hapticBusy=false;}
+}

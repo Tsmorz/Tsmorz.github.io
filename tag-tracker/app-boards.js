@@ -235,6 +235,7 @@ function renderBoards() {
     }
     const cn = row.querySelector('[data-a=connect]');
     if (cn) cn.onclick = () => { b.retries = 0; connectDevice(b.device); };
+    if(b.transport==='capture'){row.querySelector('select').disabled=true;for(const action of ['use','relearn','gopen','gclosed'])row.querySelector(`[data-a=${action}]`)?.setAttribute('disabled','');}
     list.appendChild(row);
   }
   list.dataset.keys = keys.join('|');
@@ -256,6 +257,7 @@ function paintBoards() {
       : !b.W ? 'Finding its heading…'
       : `Lined up${b.fit != null ? `, within ${deg(b.fit)}°` : ''}${!b.use ? ', not used' : S.settings.pose !== 'filtered' ? '; used by Filtered poses' : ''}`;
     if(live&&b.transport)ln.textContent=(b.transport==='esb'?TASK_DATA.link.esb:TASK_DATA.link.serial)+(Number.isFinite(b.serialRtt)?`, ${b.serialRtt.toFixed(1)} ms ${TASK_DATA.link.rtt}`:'')+(Number.isFinite(b.actuatorDelayMs)?`, ${b.actuatorDelayMs.toFixed(1)} ms ${TASK_DATA.link.drive_delay}`:'')+(b.linkDropped||b.radioDropped?`, ${b.linkDropped||0} / ${b.radioDropped||0} ${TASK_DATA.link.dropped}`:'')+'; '+ln.textContent;
+    if(live&&b.transport==='capture')ln.textContent=TASK_DATA.haptics.capture_only;
     const gl = $('bg-' + b.id);
     if (gl) {
       const fresh = b.act && now - b.actT < 500, p = fresh ? C.gripPermille(b.act) : null, g = fresh ? C.gripOpening(b.act, b.grip) : null;

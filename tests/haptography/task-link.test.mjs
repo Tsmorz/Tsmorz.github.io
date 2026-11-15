@@ -1,0 +1,86 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { CaptureLink } from '../../haptography/task-link.js';
+import * as W from '../../haptography/wire.js';
+import { fixtureStream } from './fixture.mjs';
+import TaskHaptics from '../../tag-tracker/haptic-core.js';
+
+function peer({ ack = true, status = 0 } = {}) {
+  let input, number = 30, time = 0;
+  const commands = [], parser = new W.StreamReader(); parser.synced = true;
+  const send = (type, body) => input.enqueue(W.encodePacket(type, number++, body));
+  const port = {
+    async open(options) {
+      this.options = options;
+      this.readable = new ReadableStream({ start(c) { input = c; c.enqueue(fixtureStream().bytes); } });
+      this.writable = new WritableStream({ write(bytes) {
+        for (const p of parser.feed(bytes)) {
+          commands.push(p);
+          if (ack) send(W.ACK, W.encodeAck({ command_type: p.type, command_number: p.number, status }));
+        }
+      } });
+    },
+    async close() { this.closes = (this.closes || 0) + 1; }
+  };
+  const link = new CaptureLink(port, () => {}, () => time);
+  return { link, port, commands, send, advance: ms => { time += ms; } };
+}
+
+test('C fixture identifies capture board; finite task cues use native capture waveform bytes and matching ACK', async () => {
+  const p = peer(); await p.link.open();
+  try {
+    assert.equal(p.link.info.board_id, 0xd892); assert.equal(p.port.options.baudRate, 1000000);
+    assert.equal(p.commands.length, 0); // Never send TP HELLO, STOP_ALL, clip, servo or ERM commands.
+    for (const id of [1, 3]) await p.link.command(TaskHaptics.packet(45, id));
+    assert.deepEqual(p.commands.map(c => [c.type, ...c.body]), [[0x44, 1, 45], [0x44, 3, 45]]);
+    for (const invalid of [[2, 2, 2, 20, 0, 0], [2, 2, 1, 46, 0, 0], [2, 2, 1, 20, 1, 0], [2, 0]]) {
+      await assert.rejects(p.link.command(new Uint8Array(invalid)), /Unsupported/);
+    }
+    assert.equal(p.commands.length, 2);
+  } finally { await Promise.all([p.link.close(), p.link.close()]); }
+  assert.equal(p.port.closes, 1);
+});
+
+test('stale stream, stale readiness and unready actuator refuse feedback', async () => {
+  const p = peer(); await p.link.open();
+  try {
+    p.advance(501); await assert.rejects(p.link.command(TaskHaptics.packet(15)), /stale/);
+    p.link.lastPacket = 501; p.advance(1000); p.link.lastPacket = 1501;
+    assert.equal(p.link.ready, false); // Other sensor data cannot indefinitely renew INFO readiness.
+    p.link.lastInfo = 1501; p.link.info.flags = 0;
+    await assert.rejects(p.link.command(TaskHaptics.packet(15)), /ready/);
+    assert.equal(p.commands.length, 0);
+  } finally { await p.link.close(); }
+});
+
+test('missing ACK drops concurrent feedback, times out without retry, and disconnect cancels pending writes', async () => {
+  const p = peer({ ack: false }); await p.link.open();
+  const pending = p.link.command(TaskHaptics.packet(15));
+  await assert.rejects(p.link.command(TaskHaptics.packet(15)), /busy/);
+  await assert.rejects(pending, /answer in time/); assert.equal(p.commands.length, 1);
+  const next = p.link.command(TaskHaptics.packet(15));
+  const rejection = assert.rejects(next, /disconnected/);
+  await p.link.close(); await rejection;
+  assert.equal(p.link.ready, false); assert.equal(p.link.client.waiters.size, 0);
+});
+
+test('firmware refusal is surfaced and not retried', async () => {
+  const p = peer({ status: 2 }); await p.link.open();
+  try { await assert.rejects(p.link.command(TaskHaptics.packet(15)), /no actuator/); assert.equal(p.commands.length, 1); }
+  finally { await p.link.close(); }
+});
+
+test('real task dispatcher routes contact into capture while retaining readiness and hand gating', async () => {
+  const p = peer(); await p.link.open();
+  try {
+    const b = { state: 'live', act: { tachammerReady: true }, actT: 0, hapticSide: '1', hapticRateHz: 25,
+      hapticCharacteristic: { writeValueWithResponse: bytes => p.link.command(bytes) } };
+    const world = { hands: { 1: {} }, record: { hands: { 1: { force: [5, 0, 0] } } } };
+    const d = TaskHaptics.dispatcher();
+    d.tick({ boards: [b], world, arms: [], now: 0, enabled: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(p.commands.length, 1); assert.equal(p.commands[0].type, 0x44);
+    b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
+    assert.equal(p.commands.length, 1);
+  } finally { await p.link.close(); }
+});
