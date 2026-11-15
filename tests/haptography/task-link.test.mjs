@@ -31,9 +31,9 @@ test('C fixture identifies capture board; finite task cues use native capture wa
   try {
     assert.equal(p.link.info.board_id, 0xd892); assert.equal(p.port.options.baudRate, 1000000);
     assert.equal(p.commands.length, 0); // Never send TP HELLO, STOP_ALL, clip, servo or ERM commands.
-    for (const id of [1, 3]) await p.link.command(TaskHaptics.packet(45, id));
-    assert.deepEqual(p.commands.map(c => [c.type, ...c.body]), [[0x44, 1, 45], [0x44, 3, 45]]);
-    for (const invalid of [[2, 2, 2, 20, 0, 0], [2, 2, 1, 46, 0, 0], [2, 2, 1, 20, 1, 0], [2, 0]]) {
+    for (const id of [1, 3]) await p.link.command(TaskHaptics.packet(70, id));
+    assert.deepEqual(p.commands.map(c => [c.type, ...c.body]), [[0x44, 1, 70], [0x44, 3, 70]]);
+    for (const invalid of [[2, 2, 2, 20, 0, 0], [2, 2, 1, 71, 0, 0], [2, 2, 1, 20, 1, 0], [2, 0]]) {
       await assert.rejects(p.link.command(new Uint8Array(invalid)), /Unsupported/);
     }
     assert.equal(p.commands.length, 2);
@@ -70,16 +70,17 @@ test('firmware refusal is surfaced and not retried', async () => {
   finally { await p.link.close(); }
 });
 
-test('real task dispatcher routes contact into capture while retaining readiness and hand gating', async () => {
+test('real task dispatcher caps strong contact at 70 percent while retaining readiness and hand gating', async () => {
   const p = peer(); await p.link.open();
   try {
     const b = { state: 'live', act: { tachammerReady: true }, actT: 0, hapticSide: '1', hapticRateHz: 25,
       hapticCharacteristic: { writeValueWithResponse: bytes => p.link.command(bytes) } };
-    const world = { hands: { 1: {} }, record: { hands: { 1: { force: [5, 0, 0] } } } };
+    const world = { hands: { 1: {} }, record: { hands: { 1: { force: [200, 0, 0] } } } };
     const d = TaskHaptics.dispatcher();
-    d.tick({ boards: [b], world, arms: [], now: 0, enabled: true });
+    d.tick({ boards: [b], world, arms: [], now: 0, enabled: true, strength: 1 });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(p.commands.length, 1); assert.equal(p.commands[0].type, 0x44);
+    assert.equal(p.commands[0].body[1], 70);
     b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
     assert.equal(p.commands.length, 1);
   } finally { await p.link.close(); }

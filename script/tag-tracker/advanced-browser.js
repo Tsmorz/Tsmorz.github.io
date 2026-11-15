@@ -11,6 +11,6 @@
   assert(g.local(W.poseOf(bottle).t)[2]>.04&&W.record.hands[1].grip?.load>0,'lifting the bottle puts a finite load on the grip');
   const writes=[],b={id:'test-haptic',state:'live',hapticSide:'1',track:null,act:{tachammerReady:true},actT:performance.now(),hapticCharacteristic:{writeValueWithResponse:bytes=>{writes.push([...bytes]);return Promise.resolve();}}};
   TaskHaptics.dispatcher().tick({boards:[b],world:W,arms:RB.scene.arms,now:performance.now(),enabled:true,active:true});await wait(20);
-  assert(writes.length&&writes.every(x=>x[0]===2&&x[1]===2&&x[3]<=45),'the real grip load reaches the finite TacHammer write path');
+  assert(writes.length&&writes.every(x=>x[0]===2&&x[1]===2&&x[3]<=70),'the real grip load reaches the finite TacHammer write path');
   return {passed:true,realRobotGrip:true,tacHammerOnly:true};
 })()

@@ -143,7 +143,7 @@ Capture USB is haptic-output-only via `haptography/task-link.js` and `app-captur
 feed capture raw IMU into the TP/VQF decoder or require a teleop firmware flash. Capture cues use
 PLAY_WAVEFORM with matching ACKs, no retries, and fresh INFO plus stream activity.
 
-Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 45%, BLE
+Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 70%, BLE
 10 Hz, USB/ESB up to 25 Hz. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
 firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
 get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK

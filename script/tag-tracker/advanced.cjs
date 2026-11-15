@@ -42,7 +42,7 @@ module.exports=async function({check}){
   Object.assign(plug,saved);g.reset();
   check(!g.complete&&wire.pins.size===0&&wire.nodes.every(n=>n.v.every(v=>v===0))&&!plug.externalImpulse,'restart clears the cable, results and pending reaction impulses');
   // Wire packets, per-hand routing, unavailable/stale/off guards, rate limits and no asynchronous backlog.
-  check([...H.packet(99,3)].join(',')==='2,2,3,45,0,0','TacHammer command is version 2 / play / knock / capped strength / zero value');
+  check([...H.packet(99,3)].join(',')==='2,2,3,70,0,0','TacHammer command is version 2 / play / knock / capped strength / zero value');
   const status=C.decodeActuatorStatus(new DataView(C.encodeActuatorStatus({railOn:true,tachammerReady:true,ermReady:true}).buffer));
   check(status.tachammerReady&&status.ermReady,'firmware capability bits decode independently of servo availability');
   const writes=[],board={state:'live',track:7,act:status,actT:1000,hapticCharacteristic:{writeValueWithResponse:bytes=>{writes.push([...bytes]);return Promise.resolve();}}},arms=[{key:7,side:1,live:true}],world={hands:{1:{}},record:{hands:{1:{force:[0,0,2]}}}},D=H.dispatcher();

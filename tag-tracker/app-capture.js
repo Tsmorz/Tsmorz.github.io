@@ -6,7 +6,7 @@ async function addCaptureBoard(){
   let port;try{port=await navigator.serial.requestPort({filters:[{usbVendorId:0x2886,usbProductId:0x0068}]});}catch(e){if(e.name!=='NotFoundError')note(e.message);return;}
   let link,b;
   try{
-    const {CaptureLink}=await import('../haptography/task-link.js?v=505867e6');
+    const {CaptureLink}=await import('../haptography/task-link.js?v=d4eb8a86');
     link=new CaptureLink(port,current=>{
       if(!b)return;
       b.act={tachammerReady:current.ready};b.actT=current.lastPacket;b.actOk=true;
