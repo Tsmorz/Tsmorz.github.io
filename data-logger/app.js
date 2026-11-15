@@ -1,5 +1,5 @@
 import { runEndurance } from "./endurance.js";
-import { healthSummary, diagnostics, downloadDiagnostics } from "./device-health.js";
+import { healthSummary, diagnostics, downloadDiagnostics, wiringChoices } from "./device-health.js";
 import { bindProfileEditor } from "./profile-view.js";
 import { Board, DISPLAY_DECIMATION, ENVELOPE_SECONDS, TRACE_POINTS } from "./board.js";
 import { fitCanvas, hairline } from "./canvas.js";
@@ -15,6 +15,7 @@ import { calibrateDialogOpen, describeCalibration, initCalibrate, renderCalibrat
 import { FACE_TOLERANCE_DEG } from "./imu-calibration.js";
 import { initSpeech, pushToTalk, renderSpeech } from "./speech-view.js";
 import { actuatorDialogOpen, initActuators, renderActuatorSummary, renderActuators } from "./actuator-view.js";
+import { initHaptics, renderHaptics } from "./haptics-view.js";
 import { initJoystick, joystickDialogOpen, renderJoystick, renderJoystickKey } from "./joystick-view.js";
 import { initIrLeds, renderIrLeds } from "./ir-leds-view.js";
 import { firmwareMark, initWhatsNew } from "./whats-new.js";
@@ -1316,6 +1317,7 @@ function renderBoards() {
   if (calibrateDialogOpen()) renderCalibrate();
   renderActuatorSummary();
   if (actuatorDialogOpen()) renderActuators();
+  renderHaptics();
   renderJoystickKey();
   if (joystickDialogOpen()) renderJoystick();
   renderIrLeds();
@@ -3280,6 +3282,7 @@ initReplay({ getColors: () => colors });
 initCalibrate({ getBoard: () => selected, drawPose, drawBoardPicture, setStatus });
 initSpeech({ getBoard: () => selected, isRecording: () => recorder.active });
 initActuators({ getBoard: () => selected });
+initHaptics({ getBoard: () => selected, getBoards: () => boards.values() });
 initJoystick({ getBoard: () => selected });
 initIrLeds({ getBoard: () => selected, setStatus });
 initWhatsNew({ getBoards: () => [...boards.values()] });
@@ -3319,7 +3322,8 @@ function renderDeviceHealth() {
   $("device-health").textContent = summary.text;
   $("device-health").dataset.state = summary.state;
   $("export-diagnostics").disabled = !selected;
-  profileEditor?.sync(selected?.hardwareProfile, selected?.key, Boolean(selected?.connected));
+  profileEditor?.sync(selected?.hardwareProfile, selected?.key, Boolean(selected?.connected),
+    wiringChoices(selected?.health?.role, selected?.hardwareProfile?.wiring));
 }
 $("export-diagnostics").addEventListener("click", () => {
   if (!selected) return;

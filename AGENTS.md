@@ -158,6 +158,11 @@ publish-dashboard` there (it replaces the whole folder). **Never edit it here**:
 nrf-controller and publish again. It is a standalone Web Bluetooth page with its own look, outside the
 site's layouts (no front matter, so Jekyll copies it as-is).
 
+The haptography studio imports two of its modules from here (`../data-logger/device-health.js` and
+`profile-view.js`: board health and hardware profiles) instead of keeping copies, so after a publish
+run `task check:haptography` too. `tests/haptography/page.test.mjs` allows those imports, and no others
+from outside `haptography/`.
+
 `dashboard/index.html` is this site's own: a redirect from the page's old address (`/dashboard/`, until
 2026-10-25) to `/data-logger/`, keeping any query and hash. The publish task doesn't touch it.
 

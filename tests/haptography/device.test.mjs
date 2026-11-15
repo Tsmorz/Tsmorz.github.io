@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { DeviceClient, COMMAND, openBoardPort } from '../../haptography/device.js';
-import { decodeHealth, decodeProfile, encodeProfile } from '../../haptography/device-health.js';
+import { decodeHealth, decodeProfile, encodeProfile } from '../../data-logger/device-health.js';
 import { boundDrive, driveSafe, GRID, packClip, PREVIEW_PEAK, windowRms, PREVIEW_RMS, recordingTarget } from '../../haptography/haptics-core.js';
 import * as W from '../../haptography/wire.js';
 const info = { version: 5, flags: W.INFO_TACHAMMER_OK, haptic_rate_hz: 16000, erm_step_us: 0, clip_max_samples: 96000, clip_max_erm: 0 };

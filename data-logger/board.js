@@ -1,4 +1,4 @@
-import { decodeHealth, decodeProfile, encodeProfile } from "./device-health.js";
+import { decodeHealth, decodeProfile, encodeProfile, wiringChoices } from "./device-health.js";
 import { TELEMETRY_HEALTH, TELEMETRY_PROFILE } from "./wire.js";
 // One connected board: its Bluetooth connection, the streams it sends, what the page shows of
 // them, and its share of a recording. app.js keeps one of these per board and renders whichever
@@ -375,8 +375,12 @@ export class Board extends EventTarget {
   async setHardwareProfile(profile) {
     const bytes = encodeProfile(profile);
     if (!bytes || !this.chars.profile) throw Error("This firmware cannot save that hardware profile");
-    if (profile.wiring !== this.hardwareProfile?.wiring) throw Error("Wiring is fixed by the firmware");
-    await this.write(this.chars.profile, bytes);
+    const rewiring = profile.wiring !== this.hardwareProfile?.wiring;
+    if (rewiring && !wiringChoices(this.health?.role, this.hardwareProfile?.wiring).includes(profile.wiring)) {
+      throw Error("This board's firmware can't be wired that way");
+    }
+    try { await this.write(this.chars.profile, bytes); }
+    catch (error) { throw rewiring ? Error("The board refused the wiring: update its firmware") : error; }
     for (let attempt = 0; attempt < 30; attempt++) {
       await this.refreshHealth();
       if (this.health?.profileError === 0) {

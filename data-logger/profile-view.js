@@ -1,10 +1,13 @@
+// The hardware profile editor, shared with the haptography studio, which imports it from
+// /data-logger/ (see device-health.js).
 import { WIRING_PROFILES, profileValid } from "./device-health.js";
 
 export function bindProfileEditor(container, { save }) {
   container.innerHTML = `<details><summary>Hardware profile</summary>
     <p data-wiring>No profile received. Update the firmware to configure this board.</p>
-    <p>Wiring is fixed by the firmware. Limits and calibration are saved on this board. Stop actuators before saving.</p>
-    <form><fieldset disabled><label>Maximum haptic drive (%) <input name="ceiling" type="number" min="1" max="100" required></label>
+    <p>Wiring, limits and calibration are saved on this board. Stop actuators before saving.</p>
+    <form><fieldset disabled><label>Wiring <select name="wiring" aria-label="Where the TacHammer amp and joystick are wired"></select></label>
+    <label>Maximum haptic drive (%) <input name="ceiling" type="number" min="1" max="100" required></label>
     <label>Servo minimum (µs) <input name="servoMinUs" type="number" min="500" max="1500" required></label>
     <label>Servo maximum (µs) <input name="servoMaxUs" type="number" min="1500" max="2500" required></label>
     <label><input name="calibrated" type="checkbox"> Use measured joystick calibration</label>
@@ -17,7 +20,7 @@ export function bindProfileEditor(container, { save }) {
   form.addEventListener("submit", async event => {
     event.preventDefault();
     if (!profile || busy || !form.reportValidity()) return;
-    const next = { ...profile, calibrated: fields.calibrated.checked,
+    const next = { ...profile, wiring: Number(fields.wiring.value), calibrated: fields.calibrated.checked,
       ceiling: Number(fields.ceiling.value), servoMinUs: Number(fields.servoMinUs.value), servoMaxUs: Number(fields.servoMaxUs.value),
       joystick: [0, 1].map(a => [0, 1, 2].map(i => Number(fields[`axis${a}${i}`].value))) };
     if (!profileValid(next)) { result.textContent = "Invalid limits: joystick points need at least 100 mV between them, and servo limits must span 1500 µs."; return; }
@@ -28,7 +31,8 @@ export function bindProfileEditor(container, { save }) {
     finally { busy = false; form.querySelector("fieldset").disabled = !profile || !available; }
   });
   return {
-    sync(next, key, connected = true) {
+    /** Shows the board's profile; choices are the wirings its firmware takes (wiringChoices()). */
+    sync(next, key, connected = true, choices = next ? [next.wiring] : []) {
       if (key !== boardKey) { edited = false; result.textContent = ""; }
       boardKey = key;
       available = connected;
@@ -36,6 +40,10 @@ export function bindProfileEditor(container, { save }) {
       container.querySelector("[data-wiring]").textContent = next ? `${WIRING_PROFILES[next.wiring] ?? "Unknown wiring"} · drive ceiling ${next.ceiling}%` : "No profile received. Update the firmware to configure this board.";
       form.querySelector("fieldset").disabled = !connected || !next || busy;
       if (!next || edited || busy) return;
+      const options = choices.includes(next.wiring) ? choices : [next.wiring, ...choices];
+      fields.wiring.replaceChildren(...options.map(n => Object.assign(document.createElement("option"), { value: n, textContent: WIRING_PROFILES[n] ?? `Wiring ${n}` })));
+      fields.wiring.value = next.wiring;
+      fields.wiring.disabled = options.length < 2;
       for (const name of ["ceiling", "servoMinUs", "servoMaxUs"]) fields[name].value = next[name];
       fields.calibrated.checked = next.calibrated;
       next.joystick.forEach((axis, a) => axis.forEach((mv, i) => { fields[`axis${a}${i}`].value = mv; }));

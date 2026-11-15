@@ -1,9 +1,22 @@
-// Shared wire formats and health language. Kept byte-identical in the two published dashboards.
+// Board health and hardware profile formats and wording, shared by both published pages: the
+// haptography studio imports this file and profile-view.js from /data-logger/ rather than keeping
+// copies, so a change here reaches it on the next publish (run personal-site's task check then).
 export const HEALTH_VERSION = 1;
 export const HEALTH_BYTES = 64;
 export const PROFILE_BYTES = 20;
 export const DEVICE_ROLES = Object.freeze({ 1: "Bluetooth controller", 2: "Capture", 3: "Teleoperation controller", 4: "Teleoperation gateway" });
-export const WIRING_PROFILES = Object.freeze({ 1: "Controller · amplifier SD on D16", 2: "Capture · amplifier SD on D1" });
+// Where a board's TacHammer amp and joystick are wired (DEVICE_WIRING_*, src/device_profile.h).
+export const WIRING_PROFILES = Object.freeze({
+  1: "Controller pads · amp SD on D16, joystick on A0/A1",
+  2: "Header amp · amp SD on D1, powered from USB, no joystick",
+});
+const ROLE_CONTROLLER = 1; // APP_DEVICE_ROLE (src/health/health.h): the Bluetooth controller
+
+/** The wirings a board's firmware can be set to: the Bluetooth controller takes either, others their own. */
+export function wiringChoices(role, current) {
+  if (role === ROLE_CONTROLLER) return [1, 2];
+  return current ? [current] : [];
+}
 const text = (view, start) => new TextDecoder().decode(new Uint8Array(view.buffer, view.byteOffset + start, 8)).replace(/\0.*$/, "");
 export function decodeHealth(view) {
   if (view.byteLength !== HEALTH_BYTES || view.getUint8(0) !== HEALTH_VERSION) return null;

@@ -22,11 +22,16 @@ test("every id app.js uses is in index.html", () => {
   assert.deepEqual(missing, []);
 });
 
-test("imports resolve inside the folder", () => {
+// The board health and hardware profile modules are the data logger's (/data-logger/, published from
+// nrf-controller), shared rather than copied; nothing else comes from outside this folder.
+const SHARED = "../data-logger/";
+
+test("imports resolve inside the folder, or to the data logger's shared modules", () => {
   for (const file of scripts) {
     const src = readFileSync(join(DIR, file), "utf8");
     for (const m of src.matchAll(/from "(\.[^"]+)"/g)) {
-      assert.ok(m[1].startsWith("./"), `${file} imports ${m[1]} from outside the folder`);
+      const shared = m[1].startsWith(SHARED) && !m[1].slice(SHARED.length).includes("/");
+      assert.ok(m[1].startsWith("./") || shared, `${file} imports ${m[1]} from outside the folder`);
       assert.ok(existsSync(join(DIR, m[1])), `${file} imports missing ${m[1]}`);
     }
   }

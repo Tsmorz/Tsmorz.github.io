@@ -1,4 +1,4 @@
-import { decodeHealth, decodeProfile } from "./device-health.js";
+import { decodeHealth, decodeProfile } from "../data-logger/device-health.js";
 // The recording device's serial stream (capture/ in nrf-controller): COBS-framed packets with a
 // type, a packet number and a CRC-16. The layout is src/capture_wire.h's, the same one
 // recording/wire.py reads; tests/haptography/wire.test.mjs reads the versioned C encoder fixture stream
