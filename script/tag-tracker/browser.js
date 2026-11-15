@@ -11,6 +11,9 @@
   // Play the first level using only wrist targets passed through IK, motor slew, real pad contacts and physics.
   // Props are never moved directly by this test.
   const sc = RB.scene, W = TB.world, ball = TB.game.byKey.get('ball'), arm = sc.arms.find((a) => a.side === 1), d = driveOf(arm);
+  // Start from the natural forward-facing hand, lift clear, then turn down for a top grasp.
+  d.open = 1; d.t = C.add(d.t, [0, 0, .15]); await wait(900);
+  d.R = W.table.R.slice(); await wait(900);
   const finger = RCORE.gripper(sc.m).finger.c[2], offset = C.mulv(d.R, [0, 0, finger]), start = W.poseOf(ball).t.slice();
   d.open = 1; d.t = C.sub(C.add(start, [0, 0, 0.07]), offset); await wait(1700);
   d.t = C.sub(start, offset); await wait(1500); d.open = 0;

@@ -67,7 +67,7 @@ export class CaptureLink {
   async command(bytes) {
     // Only the existing finite CLICK/KNOCK command subset; never forward servo or ERM commands.
     if (bytes.length !== 6 || bytes[0] !== 2 || bytes[1] !== 2 || ![1, 3].includes(bytes[2]) ||
-        bytes[3] < 1 || bytes[3] > 70 || bytes[4] || bytes[5]) throw new Error('Unsupported task haptic cue.');
+        bytes[3] < 1 || bytes[3] > 75 || bytes[4] || bytes[5]) throw new Error('Unsupported task haptic cue.');
     if (!this.ready) throw new Error('Capture TacHammer is not ready or its stream is stale.');
     if (this.busy) throw new Error('Capture link busy.');
     return this.client.command(COMMAND.waveform, new Uint8Array([bytes[2], bytes[3]]));

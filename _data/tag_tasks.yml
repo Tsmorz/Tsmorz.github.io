@@ -1,11 +1,10 @@
 # Robot tasks and guidance. Metres and seconds.
 title: Robot tasks
 subtitle: Five tasks, from a first grasp to two-handed precision and soft fabric.
-# Every task starts with both idle arms here: each wrist moved from the home pose (m, robot frame,
-# y mirrored for the right arm) with the grippers pitched (degrees) from pointing straight down.
+# Shared idle joint angles in degrees, in RobotCore.JOINTS order: elbows by the sides,
+# forearms and fingers forward, with the jaws opening vertically. Right arm is mirrored.
 ready:
-  offset: [0.04, 0.02, 0.12]
-  pitch: 0
+  joints: [0, 0, 0, 90, 90, 0, 0]
 levels:
 - id: bowl
   name: Ball in the bowl
@@ -687,13 +686,14 @@ guidance:
         cable, then leave the connector still.
 haptics:
   test: Test pulse
-  test_sent: Test pulse acknowledged
+  test_sent: Test pulse acknowledged at {level}%
   test_unavailable: Connect the device, enable Haptics and select Left or Right hand first.
   capture_status: Capture USB · IMU orientation and TacHammer
+  calibrating: Task feedback pauses while the capture gyro calibrates.
   label: TacHammer task feedback
-  strength: Strength
-  help: Brief, self-ending TacHammer pulses for contact, grip slip and fabric or
-    cable tension. ERM and gripper-servo commands are not sent.
+  strength: Drive level
+  help: Brief TacHammer pulses at the selected drive level (75% by default). Contact
+    force changes pulse timing; impacts use a knock. ERM and gripper-servo commands are not sent.
   routing: Haptic hand
   sides:
   - From wrist tag
@@ -727,6 +727,8 @@ link:
   capture_zero: Set neutral
   capture_stop: Stop IMU
   capture_still: Hold the device still for two seconds to calibrate its gyro.
+  capture_calibrating: 'Calibrating gyro · {seconds}/2 s still · haptics muted'
+  capture_waiting_imu: Waiting for IMU samples…
   capture_neutral: IMU ready · set a neutral pose
   capture_on: IMU orientation on · recenter if the heading drifts
   capture_paused: IMU paused · set neutral to resume

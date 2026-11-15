@@ -75,9 +75,10 @@ Keep fixed 240 Hz substeps, contact friction, warm starting, sleeping and bounde
 AprilTags remain the default input. Mouse drag moves a gripper; scroll closes/opens it, Space toggles,
 Shift-scroll tilts and Alt-drag changes plane. 1/2/3 select left/right/both. Q/E lift/lower; J/K tilt,
 I/P tilt sideways, U/O roll. In Robot eyes, arrow keys move the selected hand; tilt stays on the slider.
-Every task starts idle arms in the one top-level `ready` pose in `tag_tasks.yml` (grippers down); no
+Every task starts idle arms in the one top-level `ready.joints` pose in `tag_tasks.yml` (degrees); no
 task carries its own. It never overrides AprilTag input. Preserve the elbow when the mouse takes a ready
-hand. Stationary real body/wrist tags auto-calibrate after 0.8 s.
+hand. Seed idle joints without a first-frame IK solve, clear idle slew on tab changes, and apply task
+camera placement before drawing. Stationary real body/wrist tags auto-calibrate after 0.8 s.
 
 ## The five tasks
 
@@ -112,8 +113,7 @@ friction with stretch (late projections leave strain); keep a contact's side acr
 The `xx` objective requires a released first-fold checkpoint, both second grasps, overlapping material
 quarters, a spread footprint and released settling. Loose fluffy corners are allowed; one fold or a
 crushed bundle is not. First fold toward the robot, then return the doubled open edge to the crease.
-Keep grippers down so this is playable without wrist inversion. Waking a resting
-towel must still permit a real grasp.
+Waking a resting towel must still permit a real grasp.
 
 ## Pouring and controller contracts
 
@@ -131,12 +131,14 @@ into anything but a live, aligned Filtered track.
 
 Capture USB uses its native raw IMU via `capture-core.js`/`app-capture.js`, never the TP/VQF
 decoder or a teleop firmware flash. Relative orientation requires a stationary gyro calibration
-and per-hand neutral pose; IMU never supplies translation. Gaps, resets, blur and stale data hold
-the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
+and per-hand neutral pose; IMU never supplies translation. Keep task pulses muted until gyro bias
+calibration finishes, or the actuator can prevent its own stillness check. Gaps, resets, blur and
+stale data hold the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
 changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
 
-Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 70%, BLE
-10 Hz, USB/ESB up to 25 Hz. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
+Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE
+10 Hz, USB/ESB up to 25 Hz. Force changes pulse timing, not drive percentage. Test pulse uses the
+same selected level. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
 firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
 get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK
 is acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry, 120 ms ACK timeouts.

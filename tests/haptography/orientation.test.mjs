@@ -30,6 +30,20 @@ test('capture orientation requires still calibration and removes a real-sized gy
   assert.ok(error(q,I)<.001);assert.equal(s.estimator.samples,10100);
 });
 
+test('stationary capture noise above half a degree per second still calibrates',()=>{
+  // Board 1BDE's stationary trace had gyro SD [0.43, 0.29, 0.73] degrees/s.
+  const s=stream(),gyro=t=>[.78+.6*Math.sin(2*Math.PI*20*t),-3.02+.42*Math.sin(2*Math.PI*17*t),.11+1.03*Math.sin(2*Math.PI*13*t)];
+  const sample=s.run(2.1,gyro);
+  assert.equal(sample.ready,true);
+  s.estimator.bias.forEach((x,k)=>assert.ok(Math.abs(x/degrees-[.78,-3.02,.11][k])<.02));
+});
+
+test('deliberate motion restarts calibration while a quiet window reports progress',()=>{
+  const s=stream();assert.equal(s.run(3,t=>[0,0,12*Math.sin(2*Math.PI*t)]).ready,false);
+  const warming=s.run(.6);assert.equal(warming.ready,false);assert.ok(warming.calibrationS>.4&&warming.calibrationS<1);
+  assert.equal(s.run(1.6).ready,true);
+});
+
 test('raw gyro follows known yaw, roll and pitch with normalized finite quaternions',()=>{
   for(const axis of [0,1,2]){
     const s=stream();s.run(2.1);

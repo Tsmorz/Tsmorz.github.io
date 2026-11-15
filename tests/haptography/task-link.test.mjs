@@ -5,6 +5,24 @@ import * as W from '../../haptography/wire.js';
 import { fixtureStream } from './fixture.mjs';
 import TaskHaptics from '../../tag-tracker/haptic-core.js';
 
+test('task drive settings use real percentages and migrate legacy force scaling to 75 percent',()=>{
+  assert.deepEqual(TaskHaptics.settings(),{version:2,enabled:true,level:75});
+  assert.deepEqual(TaskHaptics.settings({enabled:false,strength:.6}),{version:2,enabled:false,level:75});
+  assert.equal(TaskHaptics.settings({version:2,level:37}).level,37);
+  assert.equal(TaskHaptics.settings({version:2,level:99}).level,75);
+  assert.equal(TaskHaptics.settings({version:2,level:NaN}).level,75);
+  assert.equal(TaskHaptics.level(0),1);
+});
+
+test('light and heavy contacts send the selected drive percentage without force attenuation',async()=>{
+  for(const force of [.2,5,200])for(const level of [undefined,37]){
+    const sent=[],b={state:'live',act:{tachammerReady:true},actT:0,hapticSide:'1',hapticCharacteristic:{writeValueWithResponse:bytes=>{sent.push(bytes);return Promise.resolve();}}};
+    TaskHaptics.dispatcher().tick({boards:[b],world:{hands:{1:{}},record:{hands:{1:{force:[force,0,0]}}}},arms:[],now:0,enabled:true,level});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(sent.length,1);assert.equal(sent[0][3],level??75);
+  }
+});
+
 function peer({ ack = true, status = 0 } = {}) {
   let input, number = 30, time = 0;
   const commands = [], parser = new W.StreamReader(); parser.synced = true;
@@ -31,9 +49,9 @@ test('C fixture identifies capture board; finite task cues use native capture wa
   try {
     assert.equal(p.link.info.board_id, 0xd892); assert.equal(p.port.options.baudRate, 1000000);
     assert.equal(p.commands.length, 0); // Never send TP HELLO, STOP_ALL, clip, servo or ERM commands.
-    for (const id of [1, 3]) await p.link.command(TaskHaptics.packet(70, id));
-    assert.deepEqual(p.commands.map(c => [c.type, ...c.body]), [[0x44, 1, 70], [0x44, 3, 70]]);
-    for (const invalid of [[2, 2, 2, 20, 0, 0], [2, 2, 1, 71, 0, 0], [2, 2, 1, 20, 1, 0], [2, 0]]) {
+    for (const id of [1, 3]) await p.link.command(TaskHaptics.packet(75, id));
+    assert.deepEqual(p.commands.map(c => [c.type, ...c.body]), [[0x44, 1, 75], [0x44, 3, 75]]);
+    for (const invalid of [[2, 2, 2, 20, 0, 0], [2, 2, 1, 76, 0, 0], [2, 2, 1, 20, 1, 0], [2, 0]]) {
       await assert.rejects(p.link.command(new Uint8Array(invalid)), /Unsupported/);
     }
     assert.equal(p.commands.length, 2);
@@ -48,7 +66,7 @@ test('capture raw IMU reaches its own consumer while haptic acknowledgements kee
   try {
     assert.equal(batches.length,1);assert.deepEqual(batches[0].batch.seq,[100,101,102]);
     assert.equal(batches[0].info.board_id,0xd892);assert.equal(batches[0].at,0);
-    await p.link.command(TaskHaptics.packet(70,3));assert.equal(p.commands[0].type,0x44);
+    await p.link.command(TaskHaptics.packet(75,3));assert.equal(p.commands[0].type,0x44);
   } finally {await p.link.close();}
 });
 
@@ -81,17 +99,21 @@ test('firmware refusal is surfaced and not retried', async () => {
   finally { await p.link.close(); }
 });
 
-test('real task dispatcher caps strong contact at 70 percent while retaining readiness and hand gating', async () => {
+test('real task dispatcher sends the selected 75 percent even for light contact while retaining readiness and hand gating', async () => {
   const p = peer(); await p.link.open();
   try {
     const b = { state: 'live', act: { tachammerReady: true }, actT: 0, hapticSide: '1', hapticRateHz: 25,
       hapticCharacteristic: { writeValueWithResponse: bytes => p.link.command(bytes) } };
-    const world = { hands: { 1: {} }, record: { hands: { 1: { force: [200, 0, 0] } } } };
+    const world = { hands: { 1: {} }, record: { hands: { 1: { force: [.2, 0, 0] } } } };
     const d = TaskHaptics.dispatcher();
-    d.tick({ boards: [b], world, arms: [], now: 0, enabled: true, strength: 1 });
+    b.transport='capture';b.motion={ready:false};
+    d.tick({ boards: [b], world, arms: [], now: 0, enabled: true, level: 75 });
+    assert.equal(p.commands.length,0); // Stationary gyro calibration must not excite the actuator.
+    b.motion.ready=true;
+    d.tick({ boards: [b], world, arms: [], now: 0, enabled: true, level: 75 });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(p.commands.length, 1); assert.equal(p.commands[0].type, 0x44);
-    assert.equal(p.commands[0].body[1], 70);
+    assert.equal(p.commands[0].body[1], 75);
     b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
     assert.equal(p.commands.length, 1);
   } finally { await p.link.close(); }

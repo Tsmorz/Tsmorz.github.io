@@ -8,10 +8,24 @@
   assert(tabs.map(b => b.textContent.trim()).join(',') === 'Calibrate,Tracking,Tasks', 'tabs follow the setup, tracking, task workflow');
   assert(S.tab === 'tasks' && gameView(), 'the initial workbench is the selected Tasks tab');
   await wait(300);
-  // Every task starts with both idle arms in the same shared pose, grippers down, through the real IK and slew.
+  const readyFrame = label => {
+    for (const a of RB.scene.arms) {
+      const k = RCORE.fk(RB.scene.m, a.side, a.q);
+      assert(k.elbow[2] < k.shoulder[2] - RB.scene.m.upper * .98 && k.wrist[0] > k.elbow[0] + RB.scene.m.fore * .98, label + ': elbows down, forearms forward');
+      assert(Math.abs(k.R[7]) > .99 && -k.R[2] > .99, label + ': fingers forward, jaws vertical');
+      assert(a.open === 1, label + ': idle grippers fully open');
+    }
+    const V = S.view, camera = C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w: plot.clientWidth, h: plot.clientHeight });
+    assert(C.norm(C.sub(RB.view.eye, camera.eye)) < 1e-9, label + ': the rendered camera already matches the initialized view');
+  };
+  // Reproduce a fresh load, including unset fit bounds, and inspect its very first rendered frame.
+  robotReset(); RB.pts = []; TB.world = null; TB.sig = ''; Object.assign(S.view, view0());
+  draw3d(); readyFrame('first frame');
+  // Every task starts in the same pose immediately, through the real renderer, IK, slew and physics.
   const startPoses = [];
   for (const id of TASK_DATA.levels.map(l => l.id)) {
-    taskLevel(id); await wait(500);
+    taskLevel(id); draw3d(); readyFrame(id + ' first frame'); await wait(500);
+    readyFrame(id + ' settled');
     startPoses.push({ id, hands: [1, -1].map(side => { const a = RB.scene.arms.find(x => x.side === side), k = RCORE.fk(RB.scene.m, side, a.q); return { wrist: k.wrist, R: k.R }; }) });
   }
   const sameStart = startPoses.every(p => p.hands.every((h, i) => C.norm(C.sub(h.wrist, startPoses[0].hands[i].wrist)) < 1e-6 && C.norm(C.so3Log(C.mul3(h.R, C.tr3(startPoses[0].hands[i].R)))) < 1e-6));
@@ -19,7 +33,13 @@
   taskLevel(startPoses[0].id); await wait(300);
   const world = TB.world, game = TB.game;
   for (const mode of ['calib', 'track', 'tasks']) {
-    $('tab-' + mode).click(); await wait(120);
+    $('tab-' + mode).click();
+    if (mode !== 'calib') {
+      draw3d();
+      if (mode === 'tasks') readyFrame('return to Tasks first frame');
+      else assert(RB.scene.arms.every(a => C.norm(C.sub(a.q, RCORE.HOME)) < 1e-9), 'Tracking returns directly to HOME without an idle motor transition');
+    }
+    await wait(120);
     assert(S.tab === mode && $('tab-' + mode).getAttribute('aria-selected') === 'true', mode + ' selects the correct tab');
     assert(tabs.every(visible), 'all navigation stays visible in ' + mode);
     assert(visible($('calibCard')) === (mode === 'calib') && visible($('gameHUD')) === (mode === 'tasks'), 'only the current panel is visible in ' + mode);
