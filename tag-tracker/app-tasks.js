@@ -130,7 +130,7 @@ function chosenHands() {
 function playNudge(name,fine=false) {
   const moves = { forward: [1, 0, 0], back: [-1, 0, 0], left: [0, 1, 0], right: [0, -1, 0], up: [0, 0, 1], down: [0, 0, -1] };
   const sc = RB.scene, hs = chosenHands(); if (!sc || !hs.length) return;
-  const local = moves[name], R = TB.world ? TB.world.table.R : sc.chest.R, delta = C.mulv(R, local.map((v) => v * (fine?.0002:.012)));
+  const local = moves[name], R = TB.world ? TB.world.table.R : sc.chest.R, delta = C.mulv(R, local.map((v) => v * (fine?.0002:.012) * S.settings.robot.scale));
   // Both share the same displacement. Stop both at the first reach limit, preserving their separation.
   let fraction = 1;
   for (const a of hs) {

@@ -58,7 +58,9 @@ and Task settings, with Sound, Haptics and Controller available on the task bar.
 ## Robot, table and input
 
 Keep `robot-core.js`'s `MIN_BEND` (straight elbows are singular), bounded elbow swing and motor slew.
-Motion × scales translation from calibrated wrist home, never wrist orientation or chest motion.
+`robot.scale` is shared by the Task sensitivity slider and Tracking's Motion × selector. Scale
+AprilTag translation from calibrated wrist home and incremental mouse/keyboard travel, never wrist
+rotation or chest motion. Changing gain must not rescale an existing mouse target or reset its IK seed.
 
 Mouse targets (`TB.drive`) are world-fixed until Resume AprilTags or recalibration. `grabPlane` and
 `holdBack` must keep corrections inside the drag plane; reaching an arm limit must not lift its target
