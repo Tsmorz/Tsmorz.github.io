@@ -1,5 +1,5 @@
-// Haptics-only adapter for Tag Tracker. Share the capture decoder and command ACK contract.
-import { StreamReader, INFO, INFO_TACHAMMER_OK, OLDEST_VERSION, VERSION } from './wire.js';
+// Native capture adapter for Tag Tracker. Keep raw IMU separate from TP/VQF packets.
+import { StreamReader, INFO, IMU, INFO_TACHAMMER_OK, OLDEST_VERSION, VERSION } from './wire.js';
 import { DeviceClient, COMMAND } from './device.js';
 
 export class CaptureLink {
@@ -41,6 +41,7 @@ export class CaptureLink {
             this.info = packet.body; this.lastInfo = this.now(); this.identify?.();
           }
           this.lastPacket = this.now(); this.client.feed(packet);
+          if(packet.type===IMU&&this.info)this.onImu?.(packet.body,this.info,this.lastPacket);
         }
         if (this.info) this.onStatus(this);
       }

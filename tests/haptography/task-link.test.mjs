@@ -41,6 +41,17 @@ test('C fixture identifies capture board; finite task cues use native capture wa
   assert.equal(p.port.closes, 1);
 });
 
+test('capture raw IMU reaches its own consumer while haptic acknowledgements keep working', async () => {
+  const p=peer(),batches=[];
+  p.link.onImu=(batch,info,at)=>batches.push({batch,info,at});
+  await p.link.open();
+  try {
+    assert.equal(batches.length,1);assert.deepEqual(batches[0].batch.seq,[100,101,102]);
+    assert.equal(batches[0].info.board_id,0xd892);assert.equal(batches[0].at,0);
+    await p.link.command(TaskHaptics.packet(70,3));assert.equal(p.commands[0].type,0x44);
+  } finally {await p.link.close();}
+});
+
 test('stale stream, stale readiness and unready actuator refuse feedback', async () => {
   const p = peer(); await p.link.open();
   try {

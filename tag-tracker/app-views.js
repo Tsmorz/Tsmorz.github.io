@@ -254,6 +254,7 @@ function frame() {
 // S.tab chooses Calibrate, Tracking or Tasks; S.mode chooses board or tag detection.
 function setMode(m) {
   if (!TABS.includes(m)) return;
+  if(m!=='tasks')pauseCaptureOrientations();
   stopTaskInput();
   if (m === 'tasks') {
     if (S.tab !== 'tasks') TASK.trackingView = S.settings.show3d;

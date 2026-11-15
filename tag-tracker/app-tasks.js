@@ -16,6 +16,7 @@ const taskTime=t=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0'
 function taskLevel(id){
   if(!taskCatalog().some(l=>l.id===id))return;
   S.settings.robot.level=id;S.settings.robot.props='arcade';
+  clearCaptureOrientations();
   TASK.guide=null;TASK.notice=null;TASK.hudSig='';TASK.moved=false;TB.n++;TB.drive.clear();TB.grab=null;RB.prev.clear();RB.slew.clear();selectPlayHand('1');
   saveSettings();paintRobotBtns();paintTasks(true);
 }
@@ -220,10 +221,18 @@ let controllerSig='';
 function paintControllerPanel(force){
   const boards=S.boards.filter(b=>!b.sim),live=boards.filter(b=>b.state==='live').length;
   $('gameControllerCount').textContent=live?`(${live})`:'';$('gameController').classList.toggle('primary',live>0);$('gameController').classList.toggle('outline',!live);
-  const sig=JSON.stringify(boards.map(b=>[b.id,b.name,b.state,b.hapticSide]));if(!force&&sig===controllerSig)return;controllerSig=sig;
+  const sig=JSON.stringify(boards.map(b=>[b.id,b.name,b.state,b.hapticSide,b.transport==='capture'&&captureControlState(b)]));if(!force&&sig===controllerSig)return;controllerSig=sig;
   $('ctlBoards').innerHTML=boards.map(b=>`<div class="ctl-board" data-id="${escapeHtml(b.id)}"><strong title="${escapeHtml(b.name)}">${escapeHtml(b.name)}</strong><span class="small muted">${escapeHtml(b.state)}</span><label class="field">${escapeHtml(TASK_DATA.ui.controller_hand)} <select class="select sm">${['auto','1','-1','off'].map((v,i)=>`<option value="${v}"${b.hapticSide===v?' selected':''}>${escapeHtml(TASK_DATA.haptics.sides[i])}</option>`).join('')}</select></label><button class="btn sm outline" data-test-haptic>${escapeHtml(TASK_DATA.haptics.test)}</button></div>`).join('');
   $('ctlBoards').querySelectorAll('[data-test-haptic]').forEach(button=>{button.onclick=()=>testBoardHaptics(S.boards.find(b=>b.id===button.closest('.ctl-board').dataset.id));});
-  $('ctlBoards').querySelectorAll('.ctl-board select').forEach(sel=>{sel.onchange=()=>{const b=S.boards.find(x=>x.id===sel.closest('.ctl-board').dataset.id);if(!b)return;b.hapticSide=sel.value;boardStore.save(b);renderBoards();controllerSig='';};});
+  $('ctlBoards').querySelectorAll('.ctl-board').forEach(row=>{
+    const b=S.boards.find(b=>b.id===row.dataset.id);if(b.transport!=='capture')return;
+    row.querySelector('label').firstChild.textContent=TASK_DATA.link.capture_hand+' ';
+    const controls=document.createElement('div');controls.className='row';
+    controls.innerHTML=`<button class="btn sm outline" data-capture-zero>${escapeHtml(TASK_DATA.link.capture_zero)}</button><button class="btn sm outline" data-capture-stop${b.captureControl?.neutral?'':' hidden'}>${escapeHtml(TASK_DATA.link.capture_stop)}</button><span class="small muted">${escapeHtml(captureControlState(b))}</span>`;
+    controls.querySelector('[data-capture-zero]').onclick=()=>zeroCaptureOrientation(b);
+    controls.querySelector('[data-capture-stop]').onclick=()=>stopCaptureOrientation(b);row.append(controls);
+  });
+  $('ctlBoards').querySelectorAll('.ctl-board select').forEach(sel=>{sel.onchange=()=>{const b=S.boards.find(x=>x.id===sel.closest('.ctl-board').dataset.id);if(!b)return;b.captureControl?.clear();b.hapticSide=sel.value;boardStore.save(b);renderBoards();controllerSig='';};});
 }
 $('taskHapticStrength').oninput=()=>{taskHapticSettings.strength=+$('taskHapticStrength').value;store.set('task-haptics',taskHapticSettings);};
 function sendTaskHaptics(W,sc,now){

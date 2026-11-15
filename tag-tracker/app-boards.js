@@ -224,7 +224,7 @@ function renderBoards() {
       b.track = e.target.value === '' ? null : parseKey(e.target.value);
       b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; boardStore.save(b); renderBoards();
     };
-    row.querySelector('[data-haptic-side]').onchange=e=>{b.hapticSide=e.target.value;boardStore.save(b);};
+    row.querySelector('[data-haptic-side]').onchange=e=>{b.captureControl?.clear();b.hapticSide=e.target.value;boardStore.save(b);};
     row.querySelector('[data-a=use]').onclick = () => { b.use = !b.use; boardStore.save(b); renderBoards(); };
     row.querySelector('[data-a=relearn]').onclick = () => { b.M = null; b.W = null; b.pairs = []; b.rms = null; b.fit = null; b.learn = ''; boardStore.save(b); renderBoards(); };
     const rm = row.querySelector('[data-a=rm]');
@@ -257,7 +257,7 @@ function paintBoards() {
       : !b.W ? 'Finding its heading…'
       : `Lined up${b.fit != null ? `, within ${deg(b.fit)}°` : ''}${!b.use ? ', not used' : S.settings.pose !== 'filtered' ? '; used by Filtered poses' : ''}`;
     if(live&&b.transport)ln.textContent=(b.transport==='esb'?TASK_DATA.link.esb:TASK_DATA.link.serial)+(Number.isFinite(b.serialRtt)?`, ${b.serialRtt.toFixed(1)} ms ${TASK_DATA.link.rtt}`:'')+(Number.isFinite(b.actuatorDelayMs)?`, ${b.actuatorDelayMs.toFixed(1)} ms ${TASK_DATA.link.drive_delay}`:'')+(b.linkDropped||b.radioDropped?`, ${b.linkDropped||0} / ${b.radioDropped||0} ${TASK_DATA.link.dropped}`:'')+'; '+ln.textContent;
-    if(live&&b.transport==='capture')ln.textContent=TASK_DATA.haptics.capture_only;
+    if(live&&b.transport==='capture')ln.textContent=TASK_DATA.haptics.capture_status;
     const gl = $('bg-' + b.id);
     if (gl) {
       const fresh = b.act && now - b.actT < 500, p = fresh ? C.gripPermille(b.act) : null, g = fresh ? C.gripOpening(b.act, b.grip) : null;
@@ -266,6 +266,7 @@ function paintBoards() {
         : g !== null ? `Gripper ${Math.round(g * 100)}% open${b.track === null ? '; choose what it’s fixed to' : ''}`
         : `Gripper at ${(p / 10).toFixed(1)}% of its supply: open it fully and press Set open, close it and press Set closed.`;
       gl.parentElement.querySelectorAll('button').forEach((x) => { x.disabled = p === null; });
+      if(b.transport==='capture')gl.textContent=captureControlState(b);
     }
   }
 }
