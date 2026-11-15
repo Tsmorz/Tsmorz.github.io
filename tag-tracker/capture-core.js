@@ -30,7 +30,7 @@
     constructor(){this.samples=0;this.epoch=0;this.reset();}
     reset(){
       this.epoch++;this.ready=false;this.q=[1,0,0,0];this.bias=[0,0,0];this.last=null;this.rest=null;this.gravity=null;
-      this.snapshot={ready:false,q:this.q.slice(),at:-Infinity,epoch:this.epoch};
+      this.snapshot={ready:false,q:this.q.slice(),at:-Infinity,epoch:this.epoch,calibrationS:0};
     }
     feed(batch,info,at){
       const scale=info?.gyro_dps_per_lsb*Math.PI/180,accelScale=info?.accel_g_per_lsb;
@@ -62,7 +62,8 @@
             const dg=gyro[k]-r.g[k],da=acc[k]-r.a[k];r.g[k]+=dg/r.n;r.a[k]+=da/r.n;
             r.gv[k]+=dg*(gyro[k]-r.g[k]);r.av[k]+=da*(acc[k]-r.a[k]);
           }
-          if(r.n>10&&(r.gv.some(x=>x/r.n>(.5*Math.PI/180)**2)||r.av.some(x=>x/r.n>.025**2))){this.rest=null;continue;}
+          // Capture-board rest noise can exceed 0.5 degrees/s; retain the 1.5 degrees/s rest tolerance.
+          if(r.n>10&&(r.gv.some(x=>x/r.n>(1.5*Math.PI/180)**2)||r.av.some(x=>x/r.n>.025**2))){this.rest=null;continue;}
           if(t-r.start>=2e6&&r.n>=20){this.bias=r.g.slice();this.gravity=[0,0,norm(r.a)];this.q=gravityQuaternion(r.a);this.ready=true;}
           continue;
         }
@@ -79,7 +80,8 @@
           if(turn>0){const gain=Math.sin(turn/2)/norm(error);this.q=unit(multiply([Math.cos(turn/2),...error.map(x=>x*gain)],this.q));}
         }
       }
-      if(received)this.snapshot={ready:this.ready,q:this.q.slice(),at,epoch:this.epoch,t_us:this.last?.t,seq:this.last?.seq};
+      if(received)this.snapshot={ready:this.ready,q:this.q.slice(),at,epoch:this.epoch,t_us:this.last?.t,seq:this.last?.seq,
+        calibrationS:this.ready?2:this.rest&&this.last?Math.min(2,(this.last.t-this.rest.start)/1e6):0};
       return this.snapshot;
     }
   }

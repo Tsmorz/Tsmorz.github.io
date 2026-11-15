@@ -690,6 +690,7 @@ haptics:
   test_sent: Test pulse acknowledged
   test_unavailable: Connect the device, enable Haptics and select Left or Right hand first.
   capture_status: Capture USB · IMU orientation and TacHammer
+  calibrating: Task feedback pauses while the capture gyro calibrates.
   label: TacHammer task feedback
   strength: Strength
   help: Brief, self-ending TacHammer pulses for contact, grip slip and fabric or
@@ -727,6 +728,8 @@ link:
   capture_zero: Set neutral
   capture_stop: Stop IMU
   capture_still: Hold the device still for two seconds to calibrate its gyro.
+  capture_calibrating: 'Calibrating gyro · {seconds}/2 s still · haptics muted'
+  capture_waiting_imu: Waiting for IMU samples…
   capture_neutral: IMU ready · set a neutral pose
   capture_on: IMU orientation on · recenter if the heading drifts
   capture_paused: IMU paused · set neutral to resume

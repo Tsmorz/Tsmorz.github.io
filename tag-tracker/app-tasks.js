@@ -238,7 +238,7 @@ $('taskHapticStrength').oninput=()=>{taskHapticSettings.strength=+$('taskHapticS
 function sendTaskHaptics(W,sc,now){
   TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,strength:taskHapticSettings.strength,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('gameSettings').open&&!$('setupDlg').open});
   if(now-taskHapticPaint<250)return;taskHapticPaint=now;
-  const live=S.boards.filter(b=>!b.sim&&b.state==='live'),ready=live.filter(b=>b.act?.tachammerReady&&now-b.actT<500),last=ready.map(b=>b.hapticLast).filter(x=>x&&now-x.at<750),text=!taskHapticSettings.enabled?TASK_DATA.haptics.off:!live.length?TASK_DATA.haptics.disconnected:!ready.length?TASK_DATA.haptics.unavailable:last.length?TASK_DATA.haptics.sent:TASK_DATA.haptics.ready;
+  const live=S.boards.filter(b=>!b.sim&&b.state==='live'),ready=live.filter(b=>b.act?.tachammerReady&&now-b.actT<500&&(b.transport!=='capture'||b.motion?.ready)),last=ready.map(b=>b.hapticLast).filter(x=>x&&now-x.at<750),text=!taskHapticSettings.enabled?TASK_DATA.haptics.off:!live.length?TASK_DATA.haptics.disconnected:!ready.length?(live.some(b=>b.transport==='capture'&&!b.motion?.ready)?TASK_DATA.haptics.calibrating:TASK_DATA.haptics.unavailable):last.length?TASK_DATA.haptics.sent:TASK_DATA.haptics.ready;
   $('taskHapticStatus').textContent=$('ctlStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;paintControllerPanel();
 }
 window.addEventListener('blur',()=>TASK_HAPTIC.reset());
@@ -254,6 +254,7 @@ function paintLeaderboard(){
 
 async function testBoardHaptics(b){
   const note=$('ctlConnectionStatus'),now=performance.now(),ch=b?.hapticCharacteristic;
+  if(b?.transport==='capture'&&!b.motion?.ready){note.textContent=TASK_DATA.link.capture_still;return;}
   if(!taskHapticSettings.enabled||S.tab!=='tasks'||document.hidden||!document.hasFocus()||!b||b.sim||b.state!=='live'||!['1','-1'].includes(b.hapticSide)||!b.act?.tachammerReady||now-b.actT>=500||!ch){note.textContent=TASK_DATA.haptics.test_unavailable;return;}
   if(b.hapticBusy||ch.busy)return;
   b.hapticBusy=true;

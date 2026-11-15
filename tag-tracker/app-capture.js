@@ -32,6 +32,8 @@ function captureControlState(b){
   const text=TASK_DATA.link;
   if(b.state!=='live')return text.capture_lost;
   if(b.captureControl?.neutral)return b.captureControl.paused?text.capture_paused:text.capture_on;
+  if(!b.motion||performance.now()-b.motion.at>=500)return text.capture_waiting_imu;
+  if(!b.motion.ready)return text.capture_calibrating.replace('{seconds}',(b.motion.calibrationS||0).toFixed(1));
   return b.state==='live'&&CaptureOrientation.fresh(b.motion,performance.now())?text.capture_neutral:text.capture_still;
 }
 function zeroCaptureOrientation(b){

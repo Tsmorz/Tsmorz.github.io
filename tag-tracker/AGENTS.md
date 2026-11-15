@@ -131,8 +131,9 @@ into anything but a live, aligned Filtered track.
 
 Capture USB uses its native raw IMU via `capture-core.js`/`app-capture.js`, never the TP/VQF
 decoder or a teleop firmware flash. Relative orientation requires a stationary gyro calibration
-and per-hand neutral pose; IMU never supplies translation. Gaps, resets, blur and stale data hold
-the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
+and per-hand neutral pose; IMU never supplies translation. Keep task pulses muted until gyro bias
+calibration finishes, or the actuator can prevent its own stillness check. Gaps, resets, blur and
+stale data hold the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
 changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
 
 Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 70%, BLE

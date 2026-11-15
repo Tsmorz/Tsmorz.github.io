@@ -35,6 +35,8 @@
         for(const b of boards){
           const side=b.hapticSide==='off'?null:b.hapticSide==='1'?1:b.hapticSide==='-1'?-1:arms.find(a=>a.key!=null&&a.key===b.track&&a.live&&!a.idle)?.side;
           if(!side||b.sim||b.state!=='live'||!b.hapticCharacteristic||!b.act?.tachammerReady||now-b.actT>500)continue;
+          // Do not shake the capture IMU while it is measuring its stationary gyro bias.
+          if(b.transport==='capture'&&!b.motion?.ready)continue;
           let s=states.get(b);if(!s){s={last:-Infinity,busy:false,event:null,seated:false};states.set(b,s);}
           const c=cue(world,side);if(c.seatEvent&&c.seatEvent!==s.seatEvent){s.seatAt=now;s.seatEvent=c.seatEvent;}
           const click=s.seatAt!=null&&now-s.seatAt<150,impact=c.event&&s.event!==c.event;

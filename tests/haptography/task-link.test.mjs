@@ -88,6 +88,10 @@ test('real task dispatcher caps strong contact at 70 percent while retaining rea
       hapticCharacteristic: { writeValueWithResponse: bytes => p.link.command(bytes) } };
     const world = { hands: { 1: {} }, record: { hands: { 1: { force: [200, 0, 0] } } } };
     const d = TaskHaptics.dispatcher();
+    b.transport='capture';b.motion={ready:false};
+    d.tick({ boards: [b], world, arms: [], now: 0, enabled: true, strength: 1 });
+    assert.equal(p.commands.length,0); // Stationary gyro calibration must not excite the actuator.
+    b.motion.ready=true;
     d.tick({ boards: [b], world, arms: [], now: 0, enabled: true, strength: 1 });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(p.commands.length, 1); assert.equal(p.commands[0].type, 0x44);

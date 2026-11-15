@@ -12,7 +12,7 @@
       this.readable=new ReadableStream({start(c){input=c;c.enqueue(new Uint8Array([0]));},cancel(){clearInterval(timer);}});
       this.writable=new WritableStream({write(bytes){for(const p of parser.feed(bytes)){commands.push(p);emit(W.ACK,W.encodeAck({command_type:p.type,command_number:p.number,status:0}));}}});
       info();timer=setInterval(()=>{
-        const samples=Array.from({length:10},(_,i)=>({dt_us:i*1000,gyro:[0,0,Math.round(speed/.01)],accel:[0,0,10000]}));
+        const samples=Array.from({length:10},(_,i)=>({dt_us:i*1000,gyro:[Math.round((.78+.6*Math.sin(2*Math.PI*20*(t+i*1000)/1e6))/.01),Math.round((-3.02+.42*Math.sin(2*Math.PI*17*(t+i*1000)/1e6))/.01),Math.round((speed+.11+1.03*Math.sin(2*Math.PI*13*(t+i*1000)/1e6))/.01)],accel:[0,0,10400]}));
         if(imu)emit(W.IMU,W.encodeImu(t,seq,samples));t+=10000;seq+=10;
         if(seq%500===0)info();
       },10);
@@ -23,10 +23,14 @@
   $('gameController').click();$('ctlCapture').click();
   await wait(()=>S.boards.some(b=>b.transport==='capture'),'capture connection');
   const b=S.boards.find(b=>b.transport==='capture');
-  await wait(()=>b.motion?.ready,'stationary gyro calibration');
-  assert(b.n>=2000&&b.buf.length===0&&b.track===null,'native capture IMU is estimated without entering TP/VQF fusion');
   const select=()=> $('ctlBoards').querySelector('select');
   select().value='1';select().dispatchEvent(new Event('change'));await sleep(50);
+  $('ctlBoards').querySelector('[data-test-haptic]').click();await sleep(50);
+  assert(commands.length===0,'test pulse stays muted during stationary calibration');
+  await wait(()=>b.motion?.calibrationS>.3,'visible calibration progress');
+  assert($('ctlStatus').textContent===TASK_DATA.haptics.calibrating,'task feedback reports its calibration pause');
+  await wait(()=>b.motion?.ready,'stationary gyro calibration with real-sized noise');
+  assert(b.n>=2000&&b.buf.length===0&&b.track===null,'native capture IMU is estimated without entering TP/VQF fusion');
   const arm=RB.scene.arms.find(a=>a.side===1),drive=driveOf(arm);drive.open=.6;
   const position=drive.t.slice(),other=RCORE.fk(RB.scene.m,-1,RB.scene.arms.find(a=>a.side===-1).q).R;
   $('ctlBoards').querySelector('[data-capture-zero]').click();assert(b.captureControl.neutral,'neutral calibration');
