@@ -45,7 +45,13 @@ const run = (sec) => {
   return true;
 };
 const failures = [];
-function check(ok, msg) { console.log((ok ? '  ok   ' : '  FAIL ') + msg); if (!ok) { failed = true; failures.push(msg); } }
+function check(ok, msg) {
+  console.log((ok ? '  ok   ' : '  FAIL ') + msg);
+  if (ok) return;
+  failed = true; failures.push(msg);
+  // On CI also an annotation: it shows on the run's summary page (and in the API) without opening the log
+  if (process.env.CI) console.log(`::error title=tag-tracker::${String(msg).replace(/\r?\n/g, ' ')}`);
+}
 // Wall-clock time, never check(): fails on your machine, only warns on CI (CI=true), where a shared runner's speed
 // varies several-fold from run to run, so no bound is both safe there and still catches a slowdown here.
 function budget(ms, limit, msg) {
