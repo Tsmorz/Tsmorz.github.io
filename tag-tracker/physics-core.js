@@ -224,7 +224,8 @@
     return unit([0, 1, 2].map((i) => { const a = p.slice(), b = p.slice(); a[i] += e; b[i] -= e; return shapeDistance(a, pieces) - shapeDistance(b, pieces); }));
   }
   function compoundBody(spec) {
-    const sp = [], mass = spec.mass || 0.12, pieces = spec.pieces;
+    // pieces marked `visual` (a paper label) are drawn only: no collision, no mass
+    const sp = [], mass = spec.mass || 0.12, pieces = spec.pieces.filter((s) => !s.visual);
     for (const s of pieces) {
       const put = (p, r) => sp.push({ p: add(s.p || [0, 0, 0], mulv(s.R || I3, p)), r });
       if (s.type === 'cylinder') {
@@ -258,7 +259,7 @@
     const bound = Math.max(...sp.map((s) => norm(s.p) + s.r));
     return makeBody(spec.kind || 'prop', { m: mass, Ib, off: scale(com, -1), sp, sdf: true, pieces,
       bound, mu: spec.mu || 0.6, e: 0.08, mat: spec.mat || 'wood', crr: 0.004, rollR: bound,
-      slop: spec.slop, fixed: !!spec.fixed, color: spec.color, label: spec.label, key: spec.key });
+      slop: spec.slop, fixed: !!spec.fixed, color: spec.color, label: spec.label, key: spec.key, gripZone: spec.grip_zone || null, drawn: spec.pieces });
   }
   const bodyDistance = (b, p) => b.pieces ? shapeDistance(p, b.pieces) : cupSdf(p);
   const bodyNormal = (b, p) => b.pieces ? shapeNormal(p, b.pieces) : cupNormal(p);
@@ -387,10 +388,12 @@
         else {
           const [t1, t2] = h.touch, near = (k) => Math.max(0, Math.min(...h.pads[k].filter((x) => x.other === t1).map((x) => x.dist)));
           const air = t1 && t1 === t2 ? near(0) + near(1) : 0;
-          if (t1 && t1 === t2 && squeeze >= GRIP.minF && air < GRIP.touch) {
+          const zoneOk = !(t1 && t1 === t2) || inGripZone(h, t1);
+          if (t1 && t1 === t2 && zoneOk && squeeze >= GRIP.minF && air < GRIP.touch) {
             h.grip = takeGrip(h, t1); h.F = squeeze;
             t1.asleep = false; t1.still = 0;
-          } else if (air && h.target < h.gap) h.gap = Math.max(h.target, h.gap - Math.min(JAW_SPEED * H, air)); // the last of the way to the prop
+          } else if (!zoneOk && air < GRIP.touch) { /* pads resting on a part too wide or not meant to be held: they stop */ }
+          else if (air && h.target < h.gap) h.gap = Math.max(h.target, h.gap - Math.min(JAW_SPEED * H, air)); // the last of the way to the prop
           else if (h.target > h.gap) h.gap = Math.min(h.target, h.gap + JAW_SPEED * H);
           else if (h.target < h.gap) h.gap = Math.max(h.target, h.gap - JAW_SPEED * H);
         }
@@ -555,6 +558,16 @@
 
     // A grip on prop P, from the pad spheres touching it (in the hand's body frame): the pinch is their middle, halfway
     // between the pads, held where it is on the prop and with the prop's turn as it is; the patch is their spread.
+    // A prop with a grip zone (a box in its shape frame: {min, max}) can be held only by pads inside it, e.g. a stein
+    // by its handle. Pads elsewhere on it rest against it without squeezing.
+    function inGripZone(h, P) {
+      if (!P.gripZone) return true;
+      const z = P.gripZone, Hb = h.body;
+      return [...h.pads[0], ...h.pads[1]].filter((x) => x.other === P).every((x) => {
+        const q = sub(tmulv(P.R, sub(add(Hb.t, mulv(Hb.R, x.p)), P.t)), P.off);
+        return q.every((v, i) => v >= z.min[i] && v <= z.max[i]);
+      });
+    }
     function takeGrip(h, P) {
       const Hb = h.body, pts = [...h.pads[0], ...h.pads[1]].filter((x) => x.other === P).map((x) => x.p);
       const span = (i) => (Math.max(...pts.map((p) => p[i])) - Math.min(...pts.map((p) => p[i]))) / 2 + GRIP.patch;

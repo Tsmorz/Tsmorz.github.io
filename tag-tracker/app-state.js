@@ -254,18 +254,16 @@ document.querySelectorAll('[data-tp]').forEach((b) => {
 });
 // The arms the robot has now (with a track), left first; Joint angles is offered only while it has one.
 const robotArms = () => (S.settings.show3d === 'robot' && RB.scene ? RB.scene.arms.filter((a) => a.key !== null && a.key !== undefined).sort((a, b) => b.side - a.side) : []);
-// The hands on the table (left first); Forces is offered only while there is one.
-const forceSides = () => (S.settings.show3d === 'robot' && TB.world ? [...RB.fhist.keys()].sort((a, b) => b - a) : []);
-const tpMode = () => (S.tplotMode === 'joints' && !robotArms().length ? 'velocity' : S.tplotMode === 'forces' && !forceSides().length ? 'velocity' : S.tplotMode);
+const tpMode = () => ((S.tplotMode === 'joints' && !robotArms().length) || S.tplotMode === 'forces' ? 'velocity' : S.tplotMode);
 function paintTplotMode() {
-  const mode = tpMode(), arms = robotArms(), fs = forceSides();
-  $('tpJoints').hidden = !arms.length; $('tpForces').hidden = !fs.length;
+  const mode = tpMode(), arms = robotArms();
+  $('tpJoints').hidden = !arms.length;
   document.querySelectorAll('[data-tp]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.tp === mode)));
-  const j = mode === 'joints', fo = mode === 'forces', sides = j ? arms.map((a) => a.side) : fs;
-  $('tplotTag').hidden = j || fo; $('jointArm').hidden = !(j || fo); $('jointsNow').hidden = !j; $('forcesNow').hidden = !fo; $('tagsNow').hidden = j || fo;
-  if (j || fo) {
+  const j = mode === 'joints', sides = arms.map((a) => a.side);
+  $('tplotTag').hidden = j; $('jointArm').hidden = !j; $('jointsNow').hidden = !j; $('tagsNow').hidden = j;
+  if (j) {
     if (!sides.includes(S.jointSide)) S.jointSide = sides[0];
-    const opts = sides.map((sd) => `<option value="${sd}">${sd === 1 ? 'Left' : 'Right'} ${j ? 'arm' : 'hand'}</option>`).join('');
+    const opts = sides.map((sd) => `<option value="${sd}">${sd === 1 ? 'Left' : 'Right'} arm</option>`).join('');
     if ($('jointArm').dataset.key !== opts) { $('jointArm').dataset.key = opts; $('jointArm').innerHTML = opts; }
     $('jointArm').value = String(S.jointSide);
   }

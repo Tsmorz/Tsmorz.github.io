@@ -7,7 +7,7 @@ layout: null
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#f3f3f3">
-<meta name="description" content="Collect surface textures, design actuator signals, and measure how closely they reproduce your recordings.">
+<meta name="description" content="Record surface textures, pick haptic waveforms from a library, and recreate your recordings on a TacHammer.">
 <title>Haptography</title>
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <script>
@@ -19,7 +19,7 @@ layout: null
 </script>
 <link rel="stylesheet" href="studio.css">
 </head>
-<body data-workspace="collect" data-channels="essential">
+<body data-workspace="collect" data-mode="live" data-channels="essential">
 <a class="skip-link" href="#workspace">Skip to workspace</a>
 <header>
   <div class="title">
@@ -27,10 +27,11 @@ layout: null
   </div>
 <nav class="workspace-nav" aria-label="Workspace" role="tablist">
 {% for tab in site.data.haptography.workspaces %}
-  <button type="button" role="tab" id="tab-{{ tab.id }}" data-workspace="{{ tab.id }}" aria-controls="workspace" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" tabindex="{% if forloop.first %}0{% else %}-1{% endif %}">{{ tab.name }}</button>
+  <button type="button" role="tab" id="tab-{{ tab.id }}" data-workspace="{{ tab.id }}" title="{{ tab.hint }}" aria-controls="workspace" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}" tabindex="{% if forloop.first %}0{% else %}-1{% endif %}">{{ tab.name }}</button>
 {% endfor %}
 </nav>
   <span class="storage-note" id="storage-note" role="status">Saved in this browser</span>
+  <label class="speaker-switch" title="Also play actuator output on this computer's speakers (the only output in Demo)"><input type="checkbox" id="speakers" checked> Speakers</label>
   <button id="stop-actuators" class="stop-key" type="button" disabled>Stop actuators <kbd>Esc</kbd></button>
   <button class="theme-toggle" id="theme" type="button" role="switch" aria-checked="false" aria-label="Dark theme" title="Toggle color theme">
     <span class="tt-opt tt-light" aria-hidden="true"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5.4"/><path d="M12 2.5v1.5M12 21.5V20M2.5 12H4M21.5 12H20M5.3 5.3l1.1 1.1M18.7 5.3l-1.1 1.1M5.3 18.7l1.1-1.1M18.7 18.7l-1.1-1.1"/></svg></span>
@@ -70,7 +71,7 @@ layout: null
       <span class="elapsed" id="rec-elapsed">0.0 s</span>
     </div>
     <p class="status-line" id="rec-status" role="status"></p>
-    <div class="row" id="after-record" hidden><button type="button" id="record-another">Record another</button><button type="button" id="retry-take">Retry</button><button type="button" id="inspect-take">Inspect take</button></div>
+    <div class="row" id="after-record" hidden><button type="button" id="record-another">Record another</button><button type="button" id="retry-take">Retry</button><button type="button" id="inspect-take">Replay take</button></div>
     <button type="button" id="restart-still" hidden>Restart stillness check</button>
     <details class="record-notes"><summary>Setup &amp; notes</summary><div class="fields">
       <label for="rec-notes">Notes</label>
@@ -100,8 +101,8 @@ layout: null
     </details>
   </section>
 
-  <section class="library-section" aria-labelledby="library-title">
-    <h2 id="library-title">Library <button class="info" type="button" popovertarget="library-info" aria-label="About the library"></button>
+  <section class="takes-section" aria-labelledby="takes-title">
+    <h2 id="takes-title">{{ site.data.haptography.labels.takes }} <button class="info" type="button" popovertarget="takes-info" aria-label="About recordings"></button>
       <select id="lib-dataset" class="end" aria-label="Dataset shown"></select></h2>
     <div class="recover" id="recover" hidden>
       <span id="recover-text"></span>
@@ -110,7 +111,7 @@ layout: null
     <div class="row">
       <button class="small" id="import" type="button" title="A session folder, or a folder of them">Import…</button>
       <button class="small" id="export-take" type="button" disabled title="Write the selected take as a session folder">Export…</button>
-      <button class="small" id="export-dataset" type="button" disabled title="Write every take in the dataset shown under Score, with dataset.json">Export dataset…</button>
+      <button class="small" id="export-dataset" type="button" disabled title="Write every take in the dataset shown, with dataset.json">Export dataset…</button>
     </div>
     <p class="status-line" id="lib-status" role="status"></p>
     <input type="file" id="import-input" webkitdirectory multiple hidden>
@@ -138,25 +139,28 @@ layout: null
       <label id="compare-wrap" class="end" hidden><input type="checkbox" id="compare"> compare surfaces</label>
     </h2>
     <div class="transport" id="transport" hidden>
-      <button id="play" type="button" title="Space">Listen on computer</button>
+      <button id="play" type="button" title="Space">Listen</button>
       <span class="segmented" role="radiogroup" aria-label="Listen to">
         <label><input type="radio" name="listen" id="listen-mic" value="mic" checked>Sound</label>
         <label><input type="radio" name="listen" id="listen-vib" value="vib">Vibration</label>
       </span>
       <span class="time" id="time-readout">0.00 / 0.00 s</span>
-      <label><input type="checkbox" id="audio-loop"> Loop selection</label>
-      <label><input type="checkbox" id="audio-normalize" checked> Normalize listening level</label>
-      <button class="small" id="zoom-fit" type="button" title="Show the whole take (double-click a plot)">Fit</button>
-      <span class="row" style="margin-left: auto; gap: 6px">
-        <input type="text" id="span-label" list="span-names" placeholder="span label" autocomplete="off" aria-label="Span label">
-        <button class="small" id="span-add" type="button" disabled>Add span</button>
+      <span class="transport-actions">
+        <button type="button" id="play-board" disabled title="Select a stroke first">Play on actuator</button>
+        <button type="button" id="create-target" class="primary" disabled title="Select a stroke first">Recreate selection</button>
       </span>
-      <datalist id="span-names"><option value="slide"><option value="tap"><option value="lift"><option value="still"><option value="bad"></datalist>
+      <span class="status-line" id="replay-status" role="status"></span>
     </div>
     <div id="selection-tools" class="selection-tools" hidden>
-      <div class="row"><label for="selection-start">From <input id="selection-start" type="number" step="0.001" min="0" value="0"> s</label><label for="selection-end">to <input id="selection-end" type="number" step="0.001" min="0" value="1"> s</label><button type="button" id="select-interval">Select interval</button><button type="button" id="zoom-selection">Zoom selection</button><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button><button type="button" id="create-target" class="primary">Create actuator signal</button><button type="button" id="exclude-selection">Exclude interval</button><button type="button" id="undo-label" disabled>Undo labels</button></div>
-      <div class="row"><span class="muted">Click a stroke, or drag across a plot to select. Drag the selection edges to adjust.</span><label class="end"><input type="checkbox" id="extra-channels"> Show rotation &amp; distance</label></div>
+      <div class="row"><span class="eyebrow">Strokes</span><span class="muted">Click one, or drag across a plot to select.</span><button class="small end" id="zoom-fit" type="button" title="Show the whole take (double-click a plot)">Fit</button></div>
       <div id="stroke-list" class="stroke-list" aria-label="Detected strokes"></div>
+      <details class="selection-more"><summary>Selection, labels &amp; listening</summary>
+        <div class="row"><label for="selection-start">From <input id="selection-start" type="number" step="0.001" min="0" value="0"> s</label><label for="selection-end">to <input id="selection-end" type="number" step="0.001" min="0" value="1"> s</label><button type="button" id="select-interval">Select interval</button><button type="button" id="zoom-selection">Zoom selection</button><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button></div>
+        <div class="row"><button type="button" id="exclude-selection">Exclude interval</button><button type="button" id="undo-label" disabled>Undo labels</button>
+          <input type="text" id="span-label" list="span-names" placeholder="span label" autocomplete="off" aria-label="Span label"><button class="small" id="span-add" type="button" disabled>Add span</button></div>
+        <datalist id="span-names"><option value="slide"><option value="tap"><option value="lift"><option value="still"><option value="bad"></datalist>
+        <div class="row"><label><input type="checkbox" id="audio-loop"> Loop selection</label><label><input type="checkbox" id="audio-normalize" checked> Normalize listening level</label><label><input type="checkbox" id="extra-channels"> Show rotation &amp; distance</label></div>
+      </details>
     </div>
     <div class="plots" id="plots">
       <div class="plot-head"><span>Vibration</span><span class="muted"><label><input type="checkbox" id="vib-raw"> with gravity</label> <span id="r-vib"></span></span></div>
@@ -184,7 +188,7 @@ layout: null
 
   <section class="score-section" aria-labelledby="score-title">
     <h2 id="score-title">Recording quality <button class="info" type="button" popovertarget="score-info" aria-label="How takes and datasets are scored"></button></h2>
-    <div id="take-none" class="empty-note">Pick a take in the Library, or record one.</div>
+    <div id="take-none" class="empty-note">Pick a recording, or record one.</div>
     <div id="take-panel" hidden>
       <div class="score-head">
         <span class="badge big" id="take-score">—</span>
@@ -192,7 +196,7 @@ layout: null
       </div>
       <p class="quality-summary" id="quality-summary"></p>
       <details><summary>Quality breakdown <span id="quality-number"></span></summary><ul class="checks" id="checks"></ul></details>
-      <h3>Take details</h3>
+      <details><summary>Take details &amp; spans</summary>
       <div class="fields">
         <label for="take-dataset">Dataset</label><input type="text" id="take-dataset" list="dataset-names" autocomplete="off">
         <label for="take-label">Surface</label><input type="text" id="take-label" list="label-names" autocomplete="off">
@@ -201,28 +205,49 @@ layout: null
         <label for="take-keep">Use</label><span class="row"><label><input type="checkbox" id="take-keep"> in the dataset</label>
           <button class="small" id="delete-take" type="button" style="margin-left: auto">Delete take…</button></span>
       </div>
-      <h3>Spans</h3>
       <ul class="spans" id="spans"></ul>
+      </details>
     </div>
-    <h3>Dataset <span class="ds-name" id="ds-name"></span><span class="badge end" id="ds-score">—</span></h3>
+    <details class="dataset-details"><summary>Dataset <span class="ds-name" id="ds-name"></span> <span class="badge" id="ds-score">—</span></summary>
     <div id="ds-none" class="empty-note">No takes in this dataset yet.</div>
     <table class="ds" id="ds-table" hidden>
       <thead><tr><th>Surface</th><th title="Usable takes / all">Takes</th><th>Strokes</th><th id="ds-bins-head">Speeds</th><th>Score</th></tr></thead>
       <tbody id="ds-body"></tbody>
     </table>
+    </details>
   </section>
+
+  <section class="waveforms-section" aria-labelledby="waveforms-title" hidden>
+    <div class="library-bar">
+      <h2 id="waveforms-title">Library <button class="info" type="button" popovertarget="library-info" aria-label="About the library"></button></h2>
+      <span class="segmented" role="radiogroup" aria-label="Show" id="lib-filter">
+        <label><input type="radio" name="lib-filter" value="all" checked>All</label>
+        <label><input type="radio" name="lib-filter" value="favorites">★ Favorites</label>
+        {% for group in site.data.haptography.library_groups %}<label><input type="radio" name="lib-filter" value="{{ group.id }}">{{ group.name }}</label>{% endfor %}
+        <label><input type="radio" name="lib-filter" value="recordings">From recordings</label>
+      </span>
+      <span class="library-output">
+        <label for="lib-level">Level <input type="range" id="lib-level" min="10" max="100" step="5" value="100"><output id="lib-level-out" for="lib-level">100%</output></label>
+        <label title="Play on the connected board's TacHammer too"><input type="checkbox" id="lib-board" checked> Actuator</label>
+        <button type="button" id="lib-export">Export favorites…</button>
+      </span>
+    </div>
+    <p class="status-line" id="lib-play-status" role="status"></p>
+    <div class="waveform-grid" id="waveform-grid" aria-label="Waveforms"></div>
+  </section>
+
   <section class="studio-section" aria-labelledby="studio-title" hidden>
-    <div class="studio-heading"><h2 id="studio-title">{{ site.data.haptography.labels.waveform }}</h2><div class="row"><button type="button" id="undo-tuning" disabled>Undo</button><button type="button" id="save-variant">Save variant</button></div></div>
-        <div class="playback-bar"><div><span class="eyebrow">Output</span><strong id="output-destination">No device connected</strong><span id="clip-capacity" class="muted"></span></div><div class="row"><label for="play-repeats">Repeats<input id="play-repeats" type="number" min="1" max="10" step="1" value="1"></label><label for="play-gap">Pause (s)<input id="play-gap" type="number" min="0.1" max="10" step="0.1" value="0.5"></label><button type="button" id="listen-drive">Listen on computer</button><button type="button" id="play-actuators" class="primary">Play &amp; measure</button></div></div>
-        <p id="actuator-status" class="status-line" role="status">Connect a board or start Demo in Collect.</p><progress id="upload-progress" max="1" value="0" aria-label="Upload progress" hidden></progress>
+    <div class="studio-heading"><h2 id="studio-title">{{ site.data.haptography.labels.waveform }} <button class="info" type="button" popovertarget="recreate-info" aria-label="About recreating a recording"></button></h2>
+      <div class="playback-bar"><div><strong id="output-destination">No device connected</strong><span id="clip-capacity" class="muted"></span></div>
+        <div class="row"><label for="play-repeats">Repeats<input id="play-repeats" type="number" min="1" max="10" step="1" value="1"></label><label for="play-gap">Pause (s)<input id="play-gap" type="number" min="0.1" max="10" step="0.1" value="0.5"></label><button type="button" id="undo-tuning" disabled>Undo</button><button type="button" id="listen-drive">Listen</button><button type="button" id="play-actuators" class="primary">Play &amp; measure</button><button type="button" id="save-variant">Save to library</button></div></div></div>
+    <p id="actuator-status" class="status-line" role="status">Connect a board or start Demo in Record.</p><progress id="upload-progress" max="1" value="0" aria-label="Upload progress" hidden></progress>
 
     <div class="studio-layout">
       <form id="signal-form" class="signal-controls">
-        <h3>Signal source</h3>
+        <h3>Source</h3>
         <label for="signal-kind">Create from</label><select id="signal-kind" name="kind">{% for source in site.data.haptography.sources %}<option value="{{ source.id }}"{% if source.id == 'sine' %} selected{% endif %}>{{ source.name }}</option>{% endfor %}</select>
-        <p id="target-source" class="muted">A test signal; choose a recording in Inspect to reproduce a texture.</p>
+        <p id="target-source" class="muted">To use a recording, select a stroke in Record and press Recreate selection.</p>
         <label for="signal-output">Send to</label><select id="signal-output" name="output"><option value="hammer">TacHammer</option><option value="erm">ERM envelope</option><option value="both">TacHammer + ERM</option></select>
-        <div class="presets" aria-label="Signal presets">{% for preset in site.data.haptography.presets %}<button type="button" data-preset="{{ forloop.index0 }}">{{ preset.name }}</button>{% endfor %}</div>
         {% for control in site.data.haptography.controls %}
         <div class="signal-control" data-control="{{ control.id }}">
           <label for="signal-{{ control.id }}">{{ control.name }} <span>{{ control.unit }}</span></label>
@@ -246,7 +271,6 @@ layout: null
         </details>
       </form>
       <div class="studio-main">
-
         <p id="signal-summary" class="signal-summary" role="status"></p>
         <div class="signal-tracks">
           <div class="track target-track"><div class="plot-head"><span id="target-heading">Source shape</span><span id="target-readout"></span></div><div class="plot studio-plot" id="plot-target"><canvas class="base"></canvas><canvas class="over"></canvas></div><div class="axis"><canvas id="target-axis"></canvas></div></div>
@@ -254,7 +278,7 @@ layout: null
           <div class="track" id="erm-plot-wrap" hidden><div class="plot-head"><span>ERM envelope <span class="unit">% full scale</span></span><span>One level per device step</span></div><div class="plot studio-plot small-plot" id="plot-erm"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
           <div class="track spectrum-track"><div class="plot-head"><span>Drive spectrum</span><span id="spectrum-band-label">Passband shaded</span></div><div class="plot studio-plot" id="plot-drive-spectrum"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
         </div>
-        <div id="comparison-panel">
+        <div id="comparison-panel" hidden>
           <h3>Measurement <span id="measurement-kind" class="end">Not measured</span></h3>
           <div class="metrics"><div><b id="metric-band">—</b><span>Band error (dB)</span><small>Lower is better</small></div><div><b id="metric-envelope">—</b><span>Envelope match</span><small>Closer to 1 is better</small></div><div><b id="metric-rms">—</b><span>Relative RMS error</span><small>Lower is better</small></div></div>
           <div class="plot-head"><span>Frequency-band comparison</span><span class="muted">Solid: target · dashed: measured</span></div><div class="plot studio-plot" id="plot-band-comparison"><canvas class="base"></canvas><canvas class="over"></canvas></div>
@@ -262,15 +286,17 @@ layout: null
           <p id="comparison-note" class="muted">Recordings are compared in physical units. Test signals can measure a response, but have no acceleration target to score.</p>
           <div class="row"><button type="button" id="refine-drive" disabled>Refine from measurement</button><button type="button" id="restore-best" disabled>Restore best round</button></div>
         </div>
-
       </div>
-        <div class="variant-panel"><h3>{{ site.data.haptography.labels.variants }} <span id="experiment-storage" class="end">Saved locally</span></h3>
-          <div class="row"><label class="grow" for="variant-name">Name<input type="text" id="variant-name" placeholder="Variant name"></label><label class="grow" for="variant-notes">Notes<input type="text" id="variant-notes" placeholder="Optional"></label><button type="button" id="update-assessment" disabled>Save notes</button></div>
-          <div class="row experiment-actions"><button type="button" id="duplicate-variant" disabled>Duplicate</button><button type="button" id="export-experiment" disabled>Export…</button><button type="button" id="import-experiment">Import…</button><input type="file" id="experiment-input" accept=".json,application/json" hidden></div>
-          <div class="row"><label for="variant-a">A<select id="variant-a" aria-label="Variant A"></select></label><label for="variant-b">B<select id="variant-b" aria-label="Variant B"></select></label><button type="button" id="play-a" disabled>Play A</button><button type="button" id="play-b" disabled>Play B</button><label><input type="checkbox" id="match-ab-level" checked> Match drive peak for A/B</label><label><input type="checkbox" id="prefer-variant"> Preferred</label></div>
-          <p class="control-hint">A/B shares repeat and pause settings. Matching drive peaks does not guarantee equal felt intensity.</p>
-          <ul id="variants" class="variants" aria-label="Saved variants"></ul>
-        </div>
+      <div class="variant-panel"><h3>{{ site.data.haptography.labels.variants }} <span id="experiment-storage" class="end">Saved locally</span></h3>
+        <p class="control-hint">Each one is also in the Library under From recordings, where you can star it.</p>
+        <ul id="variants" class="variants" aria-label="Saved versions"></ul>
+        <details class="variant-edit"><summary>Rename, notes &amp; A/B test</summary>
+          <div class="row"><label class="grow" for="variant-name">Name<input type="text" id="variant-name" placeholder="Version name"></label><label class="grow" for="variant-notes">Notes<input type="text" id="variant-notes" placeholder="Optional"></label><label><input type="checkbox" id="prefer-variant"> Preferred</label><button type="button" id="update-assessment" disabled>Save notes</button><button type="button" id="duplicate-variant" disabled>Duplicate</button></div>
+          <div class="row ab-row"><label for="variant-a">A<select id="variant-a" aria-label="Version A"></select></label><label for="variant-b">B<select id="variant-b" aria-label="Version B"></select></label><button type="button" id="play-a" disabled>Play A</button><button type="button" id="play-b" disabled>Play B</button><label><input type="checkbox" id="match-ab-level" checked> Match drive peak</label></div>
+          <p class="control-hint">A/B uses the repeat and pause settings. Matching drive peaks does not guarantee equal felt intensity.</p>
+          <div class="row experiment-actions"><button type="button" id="export-experiment" disabled>Export…</button><button type="button" id="import-experiment">Import…</button><input type="file" id="experiment-input" accept=".json,application/json" hidden></div>
+        </details>
+      </div>
     </div>
   </section>
 </main>
@@ -278,23 +304,32 @@ layout: null
 <div class="info-pop" id="record-info" popover>
   <p>Plug the recording device (the <code>capture</code> build) into this computer's USB and press <b>Connect board</b>: Chrome or Edge on a computer lists its serial port. <b>Demo</b> plays a simulated board instead.</p>
   <p>Name the dataset and the surface, then <b>Record</b> (or press R). Hold the device still for the first 4 s so the gyro's bias can be learned, then slide it toward and away from the wall the distance sensor points at, at different speeds.</p>
+  <p>Pick a recording to replay it: <b>Listen</b> plays its sound or vibration here, <b>Play on actuator</b> plays a selected stroke on the TacHammer (and the speakers), and <b>Recreate selection</b> opens it in Recreate.</p>
   <p><b>Lost</b> counts packets that never arrived, <b>Bad</b> ones that arrived damaged, <b>Dropped</b> ones the board couldn't send. All three should stay at 0.</p>
 </div>
-<div class="info-pop" id="library-info" popover>
-  <p>Takes are kept in this browser only. <b>Export</b> writes each take as a session folder (<code>raw.bin</code>, CSVs, <code>mic.wav</code>, <code>info.json</code> and <code>labels.json</code>) in the layout the recording tools on the computer read; <b>Import</b> reads such folders back.</p>
-  <p><b>Export</b> writes the selected take; <b>Export dataset</b> every take of the dataset shown under Score, plus <code>dataset.json</code> with its scores.</p>
-  <p>A take you untick under Score › Use stays in the library but doesn't count towards its dataset.</p>
+<div class="info-pop" id="takes-info" popover>
+  <p>Recordings are kept in this browser only. <b>Export</b> writes each take as a session folder (<code>raw.bin</code>, CSVs, <code>mic.wav</code>, <code>info.json</code> and <code>labels.json</code>) in the layout the recording tools on the computer read; <b>Import</b> reads such folders back.</p>
+  <p><b>Export dataset</b> writes every take of the dataset shown, plus <code>dataset.json</code> with its scores. A take you untick under Take details › Use stays here but doesn't count towards its dataset.</p>
 </div>
 <div class="info-pop" id="scope-info" popover>
-  <p><b>Live</b> shows the last 5 s from the board. <b>Replay</b> shows the selected take: scroll to zoom, Shift-scroll to pan, click to move the playhead, drag to select a stretch and label it as a span, double-click to fit.</p>
+  <p><b>Live</b> shows the last 5 s from the board. <b>Replay</b> shows the selected recording: scroll to zoom, Shift-scroll to pan, click to move the playhead, drag to select a stretch, double-click to fit.</p>
   <p><b>Vibration</b> is the accelerometer with gravity and hand motion filtered out (above 5 Hz). Listening to it plays its strongest axis at its own pace: the texture as you would feel it, heard.</p>
   <p>Speed comes from the distance sensor alone, uncorrected for tilt; shaded bands are the strokes found in it (blue away from the wall, red toward it).</p>
-  <p><b>Spectrogram</b> draws the vibration (to 835 Hz; the accelerometer rolls off above ~400 Hz) and the sound (to 8 kHz, log scale) as frequency over time. <b>Spectrum</b> shows their power spectra: live, the last second; in a take, the strokes, the quiet between them, and a selection if you made one. <b>Compare surfaces</b> overlays every surface of the dataset.</p>
-  <p><b>Grain</b>: a texture with a spacing λ vibrates at speed ÷ λ, so its strokes line up along a line through zero; the dashed line is the surface's median grain.</p>
+  <p><b>Spectrogram</b> draws the vibration (to 835 Hz; the accelerometer rolls off above ~400 Hz) and the sound (to 8 kHz, log scale) as frequency over time. <b>Spectrum</b> shows their power spectra. <b>Compare surfaces</b> overlays every surface of the dataset.</p>
 </div>
 <div class="info-pop" id="score-info" popover>
   <p>Each take scores out of 100: the serial link (15), the IMU's samples (10), the microphone (10), good distance readings (20), 4 s still at the start (10), strokes found (15), the texture signal (10: the strokes' vibration at least 10 dB over the quiet between them) and IMU headroom (10).</p>
-  <p>Each surface in a dataset scores on its usable takes (scoring 60 or more and ticked Use): their mean score scaled by having 3 of them (40), 24 strokes (30) and 3 strokes in each mean-speed band (30). Under it: the grain (its texture's spacing, from speed ÷ vibration frequency), how alike its takes' vibration spectra are, and what to record next.</p>
+  <p>Each surface in a dataset scores on its usable takes (scoring 60 or more and ticked Use): their mean score scaled by having 3 of them (40), 24 strokes (30) and 3 strokes in each mean-speed band (30).</p>
+</div>
+<div class="info-pop" id="library-info" popover>
+  <p>Common haptic waveforms. Click one to play it: on the computer's speakers when <b>Speakers</b> (top right) is on, and on the board's TacHammer when one is connected and <b>Actuator</b> is ticked.</p>
+  <p>Star the ones you like; <b>Export favorites</b> writes <code>library.json</code> (each waveform's parameters) and a 16 kHz <code>.wav</code> of each drive, the same samples the board plays.</p>
+  <p><b>From recordings</b> lists the versions you saved in Recreate. Every drive stays inside the actuator's tested limits (70% peak, 7000-count RMS over 100 ms), so long buzzes play quieter than single clicks.</p>
+</div>
+<div class="info-pop" id="recreate-info" popover>
+  <p>Select a stroke in Record and press <b>Recreate selection</b>: its vibration becomes a TacHammer drive here. <b>Listen</b> plays the drive on the speakers; <b>Play &amp; measure</b> plays it on the board (simulated in Demo) and records what the actuator did.</p>
+  <p>Without a measured <b>Actuator response</b> the drive is just the recording's shape, scaled. Measure one, and the drive is shaped to make the actuator move like the recording; <b>Refine</b> corrects it from each measurement.</p>
+  <p><b>Save to library</b> keeps the drive, its settings and any measurement.</p>
 </div>
 
 <script type="application/json" id="studio-content">{{ site.data.haptography | jsonify }}</script>
