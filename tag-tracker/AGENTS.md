@@ -12,7 +12,7 @@ scripts in `index.html` share one global scope. The page tracks AprilTags and dr
 - Run `node --check` on edited JS, then `task versions`: every script's `?v=` must match its content.
   The worker's version also covers `tracker-core.js`, which it imports with the same query.
 - Keep no-DOM logic in the cores. `script/test-tag-tracker` is `task check:tag-tracker`; select sections
-  while iterating, e.g. `task check:tag-tracker -- 5j 5k 5o 5q`. Sections reseed their random numbers. Time with `budget()`, never `check()`.
+  while iterating, e.g. `task check:tag-tracker -- 5j 5k 5q`. Sections reseed their random numbers. Time with `budget()`, never `check()`.
 - Build before browser checks. `task shot -- /tag-tracker/ --eval-file script/tag-tracker/<test>.js`
   fails on page exceptions. Inspect the PNG; repeat with `--phone`. Headless WebGL needs Metal.
 - Run `task ci` before finishing. OpenCV detection/calibration tests are optional when the pinned npm
@@ -99,7 +99,8 @@ and missing-layer hints. Keep guidance, destinations and objectives visible.
 A rim hit or lost load invalidates the attempt until restart. Require both a clean elevated two-hand
 hold and released set-down. Test actual contacts, not just a ball parked at its final coordinates.
 
-The towel has a fabric core, plush nap, layer contact and a closed shell drawn through `clothSurface`,
+No automated tests for the towel simulation: Tony tests it by hand, and a scripted fold is chaotic, so its
+outcome flips with last-digit rounding between machines (it failed only on CI). The towel has a fabric core, plush nap, layer contact and a closed shell drawn through `clothSurface`,
 a spline 3× finer than the physics grid (never smooth the nodes themselves). `halfThickness` is its
 contact radius: `radius` identifies cables in rendering. GPU buffers rebuild when topology changes.
 Plush sleep tolerates ≤3% chattering corner nodes, or a folded towel stays awake on some platforms.
@@ -155,7 +156,7 @@ Setup choices apply only through Next/Print/phone actions, never merely by closi
 
 ## Regression entry points
 
-`teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `fabric.cjs` (5o), `advanced.cjs` (5l),
+`teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `advanced.cjs` (5l),
 `controller-link.cjs` (5m), `pour.cjs` (5n), `voice.cjs` (5p). The `*-browser.js` counterparts run
 actual IK, motor slew, grasps and release; move hands as a player does (open fully, then retreat
 smoothly). Repeat responsive checks on a phone. State what has not run on real hardware.

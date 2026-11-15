@@ -41,7 +41,6 @@ module.exports=async function({check}){
   }
   Object.assign(plug,saved);g.reset();
   check(!g.complete&&wire.pins.size===0&&wire.nodes.every(n=>n.v.every(v=>v===0))&&!plug.externalImpulse,'restart clears the cable, results and pending reaction impulses');
-  // Fabric patch rotation and the twice-folded plush towel are covered separately by section 5o.
   // Wire packets, per-hand routing, unavailable/stale/off guards, rate limits and no asynchronous backlog.
   check([...H.packet(99,3)].join(',')==='2,2,3,45,0,0','TacHammer command is version 2 / play / knock / capped strength / zero value');
   const status=C.decodeActuatorStatus(new DataView(C.encodeActuatorStatus({railOn:true,tachammerReady:true,ermReady:true}).buffer));

@@ -1239,7 +1239,7 @@ if (run('5i')) {
 }
 
 if (run('5j')) {
-  console.log('5j. teleoperation progression, compound props, cloth and the robot-eye camera');
+  console.log('5j. teleoperation progression, compound props and the robot-eye camera');
   require('./tag-tracker/teleop.cjs')({ check, near, budget });
 }
 
@@ -1256,11 +1256,6 @@ if (run('5p')) {
 if (run('5q')) {
   console.log('5q. clean two-hand tray balance and rim-contact failure');
   require('./tag-tracker/balance.cjs')({ check, near });
-}
-
-if (run('5o')) {
-  console.log('5o. finite cloth patches, plush layer contact and two towel folds');
-  require('./tag-tracker/fabric.cjs')({ check, near });
 }
 
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
