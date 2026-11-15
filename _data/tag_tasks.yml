@@ -2,9 +2,9 @@
 title: Robot tasks
 subtitle: Five tasks, from a first grasp to two-handed precision and soft fabric.
 # Shared idle joint angles in degrees, in RobotCore.JOINTS order: elbows by the sides,
-# forearms and fingers forward, with the jaws opening vertically. Right arm is mirrored.
+# forearms and fingers forward, with the jaws opening sideways. Right arm is mirrored.
 ready:
-  joints: [0, 0, 0, 90, 90, 0, 0]
+  joints: [0, 0, 0, 90, 0, 0, 0]
 levels:
 - id: bowl
   name: Ball in the bowl
@@ -741,8 +741,9 @@ link:
     and ESB require TP/1 teleop firmware; its default is 1,000,000 baud. Both routes
     send motion into Filtered tracking and return TacHammer cues. Use Connect capture USB
     for the Haptography capture device. Disconnect it from Haptography first. Choose a hand,
-    hold the device still for two seconds, then Set neutral. Tilt and turn it to rotate
-    the gripper; mouse or AprilTags still sets its position. Set neutral again if heading
+    hold the device still for two seconds, then Set neutral. Turn about the board's up axis
+    to yaw, tip the cable end to pitch, or twist around the cable to roll the gripper.
+    Wrist rotation stops at its limits; mouse or AprilTags still sets its position. Set neutral again if heading
     drifts. Test pulse checks the TacHammer output.
   unsupported: Web Serial needs Chrome or Edge on a computer and HTTPS or localhost.
   closed: Serial controller disconnected. Connect USB / ESB to choose the port again.

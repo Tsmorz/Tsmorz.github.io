@@ -42,6 +42,12 @@
   const physical=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,1,RB.scene.arms.find(a=>a.side===1).q).R);
   assert(C.angleOf(C.mul3(C.tr3(base),physical))>.1,'real IK and motor slew rotate the rendered gripper');
   assert(C.angleOf(C.mul3(C.tr3(other),RCORE.fk(RB.scene.m,-1,RB.scene.arms.find(a=>a.side===-1).q).R))<.01,'other hand retains its orientation');
+  const upper=RB.slew.get(1).q.slice(0,4),m=RB.scene.m;
+  speed=120;await sleep(2500);speed=0;await sleep(700);
+  const stopped=RB.slew.get(1).q,actual=RB.scene.arms.find(a=>a.side===1).q;
+  assert(C.norm(C.sub(stopped.slice(0,4),upper))<1e-8,'turning beyond the wrist stop never moves shoulder or elbow commands');
+  assert(Math.abs(stopped[5]-RCORE.JOINTS[5].hi)<.01&&stopped.slice(4).every((v,i)=>v>=RCORE.JOINTS[i+4].lo-1e-8&&v<=RCORE.JOINTS[i+4].hi+1e-8),'chip yaw stops at the wrist limit after more than half a turn');
+  assert(actual.slice(4).every((v,i)=>v>=RCORE.JOINTS[i+4].lo-1e-8&&v<=RCORE.JOINTS[i+4].hi+1e-8)&&C.norm(C.sub(RCORE.fk(m,1,actual).elbow,RCORE.fk(m,1,stopped).elbow))<.005,'the physical/rendered hand also respects stops without twisting the elbow');
   $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.some(p=>p.type===0x44&&p.body[0]===1&&p.body[1]===75),'concurrent haptic ACK');
   assert($('ctlConnectionStatus').textContent===TASK_DATA.haptics.test_sent.replace('{level}','75'),'test pulse reports the actual 75 percent command');
   $('taskHapticStrength').value=37;$('taskHapticStrength').dispatchEvent(new Event('input'));

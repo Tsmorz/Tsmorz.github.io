@@ -79,6 +79,8 @@ Every task starts idle arms in the one top-level `ready.joints` pose in `tag_tas
 task carries its own. It never overrides AprilTag input. Preserve the elbow when the mouse takes a ready
 hand. Seed idle joints without a first-frame IK solve, clear idle slew on tab changes, and apply task
 camera placement before drawing. Stationary real body/wrist tags auto-calibrate after 0.8 s.
+Use `handIK`/`wrist` for task orientation commands: wrist stops never recruit shoulder or elbow motion.
+Keep the requested wrist Euler branch unwrapped past stops; otherwise a large turn flips to the opposite stop.
 
 ## The five tasks
 
@@ -135,6 +137,8 @@ and per-hand neutral pose; IMU never supplies translation. Keep task pulses mute
 calibration finishes, or the actuator can prevent its own stillness check. Gaps, resets, blur and
 stale data hold the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
 changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
+`SENSOR_TO_HAND` maps the cable axis to gripper roll, the transverse axis to pitch and board up to yaw;
+never apply raw sensor rotations directly in the hand's differently oriented frame.
 
 Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE
 10 Hz, USB/ESB up to 25 Hz. Force changes pulse timing, not drive percentage. Test pulse uses the

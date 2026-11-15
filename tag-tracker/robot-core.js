@@ -149,6 +149,28 @@
     return [sh[0], sh[1], sh[2], q4, wr[0], wr[1], wr[2]];
   }
 
+  // Turn only the wrist. Never borrow shoulder/elbow motion to chase an unreachable orientation.
+  // Keep the requested Euler branch continuous even after a full turn past a stop.
+  function wrist(m, side, q, R, input) {
+    const ref = input || q.slice(4), Rf = fk(m, side, q).Rf;
+    const choices = eulerZXY(mul3(tr3(Rf), R)).map(s => [side*s[0], side*s[1], s[2]].map((v,i) => v + TAU*Math.round((ref[i]-v)/TAU)));
+    const distance = s => s.reduce((sum,v,i) => sum+(v-ref[i])**2,0);
+    const want = choices.reduce((a,b) => distance(a) <= distance(b) ? a : b);
+    const out = q.slice();
+    for (let i=0;i<3;i++) out[i+4] = clamp(want[i], JOINTS[i+4].lo, JOINTS[i+4].hi);
+    return { q: out, wristInput: want, limited: want.some((v,i) => Math.abs(v-out[i+4])>1e-9) };
+  }
+
+  // Position and orientation are separate controls. Solve translation with the previous hand
+  // rotation, then fit the requested wrist rotation within its own stops.
+  function handIK(m, side, target, prev, opts) {
+    const seed = prev || {q: HOME}, k = fk(m, side, seed.q);
+    const s = norm(sub(k.wrist,target.t)) < 1e-9
+      ? { q: seed.q.slice(), elbow: k.elbow, wrist: k.wrist, psi: seed.psi, reach: true, gap: 0 }
+      : ik(m, side, {R:k.R,t:target.t}, seed, opts);
+    return Object.assign(s, wrist(m,side,s.q,target.R,prev && prev.wristInput));
+  }
+
   // What the spare degree of freedom prefers, by default: elbows below the hands and out to the side, then as low as
   // they go. Weights per m² (elbow position) and rad² (limits).
   const PREFER = { low: 100, out: 100, sink: 0.01, limits: 1000, steady: 2, turn: 0.01, better: 0.2, swing: 6 * DEG };
@@ -336,5 +358,5 @@
     return { R: mul3(rodrigues(r), home.R), t: add(home.t, d) };
   }
 
-  return { MODEL, JOINTS, HOME, MIN_BEND, PREFER, SLEW, reachOf, model, gripper, slew, fk, ik, inReach, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
+  return { MODEL, JOINTS, HOME, MIN_BEND, PREFER, SLEW, reachOf, model, gripper, slew, fk, ik, wrist, handIK, inReach, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
 });

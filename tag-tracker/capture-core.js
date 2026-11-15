@@ -20,6 +20,10 @@
   function product(a,b){
     return a.map((_,i)=>{const r=3*Math.floor(i/3),c=i%3;return a[r]*b[c]+a[r+1]*b[c+3]+a[r+2]*b[c+6];});
   }
+  // Capture grip: sensor X runs along the cable, Z is board up, Y is the pitch axis.
+  // The hand points along -Z; its back (+X) is up in the forward-facing neutral pose.
+  const SENSOR_TO_HAND=[0,0,1,0,1,0,-1,0,0];
+  const HAND_TO_SENSOR=[0,0,-1,0,1,0,1,0,0];
   function gravityQuaternion(a){
     const n=norm(a),v=a.map(x=>x/n);
     return v[2]<-.999999?[0,1,0,0]:unit([1+v[2],v[1],-v[0],0]);
@@ -97,7 +101,7 @@
       if(n.side!==side||n.frame!==frame){this.clear();return null;}
       if(!active||!fresh(sample,now)||sample.epoch!==n.epoch)this.paused=true;
       // A delayed/restarted/background stream holds its last target until explicitly re-centred.
-      if(!this.paused)this.last=product(n.R,matrix(multiply(conjugate(n.q),sample.q)));
+      if(!this.paused)this.last=product(n.R,product(product(SENSOR_TO_HAND,matrix(multiply(conjugate(n.q),sample.q))),HAND_TO_SENSOR));
       return this.last.slice();
     }
   }
