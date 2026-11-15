@@ -54,6 +54,18 @@
   $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.some(p=>p.type===0x44&&p.body[1]===37),'test pulse follows the selected drive percentage');
   assert($('gameHaptics').textContent.includes('37%'),'toolbar shows selected percentage');
   $('taskHapticStrength').value=75;$('taskHapticStrength').dispatchEvent(new Event('input'));
+  // Recenter while the fingers are stacked: chip yaw must still be vertical-axis yaw.
+  taskLevel('bowl');await sleep(250);
+  const rolled=RCORE.HOME.slice();rolled[4]=Math.PI/2;
+  const rolledDrive=driveOf(RB.scene.arms.find(a=>a.side===1));
+  rolledDrive.R=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,1,rolled).R);await sleep(1200);
+  $('ctlBoards').querySelector('[data-capture-zero]').click();
+  const rolledBase=b.captureControl.last.slice(),up=C.mulv(RB.scene.chest.R,[0,0,1]);
+  speed=45;await sleep(650);speed=0;await sleep(400);
+  const yawAxis=C.so3Log(C.mul3(b.captureControl.last,C.tr3(rolledBase)));
+  assert(C.norm(yawAxis)>.3&&yawAxis.reduce((s,v,i)=>s+v*up[i],0)/C.norm(yawAxis)>.99,'Set neutral with stacked fingers does not turn chip yaw into pitch');
+  const rendered=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,1,RB.scene.arms.find(a=>a.side===1).q).R),renderedAxis=C.so3Log(C.mul3(rendered,C.tr3(rolledBase)));
+  assert(C.norm(renderedAxis)>.2&&renderedAxis.reduce((s,v,i)=>s+v*up[i],0)/C.norm(renderedAxis)>.98,'the rendered stacked gripper also yaws about robot up');
   const epoch=b.motion.epoch;imu=false;await sleep(250);assert(b.captureControl.paused,'stale IMU pauses control even while INFO continues');
   const held=b.captureControl.last.slice();imu=true;
   await wait(()=>b.motion.ready&&b.motion.epoch>epoch,'IMU recovery calibration');await sleep(100);assert(JSON.stringify(b.captureControl.last)===JSON.stringify(held),'recovered stream waits for a new neutral pose');

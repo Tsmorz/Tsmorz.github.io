@@ -137,8 +137,8 @@ and per-hand neutral pose; IMU never supplies translation. Keep task pulses mute
 calibration finishes, or the actuator can prevent its own stillness check. Gaps, resets, blur and
 stale data hold the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
 changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
-`SENSOR_TO_HAND` maps the cable axis to gripper roll, the transverse axis to pitch and board up to yaw;
-never apply raw sensor rotations directly in the hand's differently oriented frame.
+Capture `Control.zero` takes the chest rotation as `basis`: cable-axis roll, transverse pitch and board-up
+yaw stay in that reference frame, independently of the gripper's neutral roll. Never anchor those axes to its jaws.
 
 Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE
 10 Hz, USB/ESB up to 25 Hz. Force changes pulse timing, not drive percentage. Test pulse uses the
