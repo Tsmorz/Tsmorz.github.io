@@ -12,8 +12,8 @@ import { Simulator } from "./simulate.js";
 import { openStore } from "./storage.js";
 import { Plot, XYPlot, readColors, drawAxis, fmtHz } from "./plots.js";
 
-import { healthSummary, diagnostics, downloadDiagnostics, encodeProfile } from "./device-health.js";
-import { bindProfileEditor } from "./profile-view.js";
+import { healthSummary, diagnostics, downloadDiagnostics, encodeProfile } from "../data-logger/device-health.js";
+import { bindProfileEditor } from "../data-logger/profile-view.js";
 import { DeviceClient, COMMAND, openBoardPort } from "./device.js";
 import { mountStudio } from "./studio.js";
 import { mountLibrary } from "./library.js";
