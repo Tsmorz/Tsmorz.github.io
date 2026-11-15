@@ -16,7 +16,7 @@ module.exports = function ({ check, near, budget }) {
   for (const side of [1,-1]) {
     const q=taskData.ready.joints.map(v=>v*Math.PI/180), k=R.fk(model,side,q);
     check(near(C.sub(k.elbow,k.shoulder),[0,0,-model.upper],1e-12)&&near(C.sub(k.wrist,k.elbow),[model.fore,0,0],1e-12), 'ready: elbows hang down and forearms point forward on side '+side);
-    check(near(C.mulv(k.R,[0,0,-1]),[1,0,0],1e-12)&&Math.abs(Math.abs(k.R[7])-1)<1e-12, 'ready: fingers point forward and jaws open vertically on side '+side);
+    check(near(C.mulv(k.R,[0,0,-1]),[1,0,0],1e-12)&&Math.abs(Math.abs(k.R[4])-1)<1e-12, 'ready: fingers point forward and jaws open sideways on side '+side);
     const solved=R.ik(model,side,k,{q,elbow:k.elbow});
     check(near(solved.q,q,1e-6), 'ready: physics IK preserves the seeded elbow and wrist on side '+side);
   }

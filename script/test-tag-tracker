@@ -698,6 +698,22 @@ if (run('5h')) {
   const h = RC.ik(m, 1, L, null);
   check(near(h.q, RC.HOME, 1e-6) && h.reach, 'the home wrist pose solves back to the home angles');
 
+  for (const side of [1,-1]) for (const joint of [4,5,6]) for (const sign of [-1,1]) {
+    const q=[.2,.1,.05,1.3,0,0,0], k=RC.fk(m,side,q);
+    let prev={q,elbow:k.elbow}, stopped=true;
+    for(let angle=0;angle<=720;angle+=2){
+      const wanted=q.slice();wanted[joint]=sign*angle*D;
+      const s=RC.handIK(m,side,{R:RC.fk(m,side,wanted).R,t:k.wrist},prev);
+      const limit=sign<0?RC.JOINTS[joint].lo:RC.JOINTS[joint].hi;
+      stopped=stopped&&near(s.q.slice(0,4),q.slice(0,4),1e-12)&&near(RC.fk(m,side,s.q).elbow,k.elbow,1e-12)&&Math.abs(s.q[joint]-(sign<0?Math.max(limit,wanted[joint]):Math.min(limit,wanted[joint])))<1e-6;
+      prev=s;
+    }
+    check(stopped, `side ${side}, wrist joint ${joint}, direction ${sign}: two full turns stop at the wrist limit without moving the arm or flipping branches`);
+  }
+  const seed={q:RC.HOME}, target=C.add(L.wrist,[.025,0,.015]), base=RC.handIK(m,1,{t:target,R:L.R},seed);
+  const turned=RC.handIK(m,1,{t:target,R:C.mul3(L.R,RC.Rz(Math.PI))},seed);
+  check(near(base.q.slice(0,4),turned.q.slice(0,4),1e-12)&&near(RC.fk(m,1,turned.q).wrist,target,1e-9), 'translation still moves the arm, independently of a saturated wrist command');
+
   let worstP = 0, worstR = 0, over1 = 0, over5 = 0;
   for (let k = 0; k < N; k++) {
     const side = k % 2 ? 1 : -1, T = RC.fk(m, side, randQ()), s = RC.ik(m, side, T, null), F = RC.fk(m, side, s.q);

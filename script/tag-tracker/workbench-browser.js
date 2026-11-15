@@ -12,7 +12,7 @@
     for (const a of RB.scene.arms) {
       const k = RCORE.fk(RB.scene.m, a.side, a.q);
       assert(k.elbow[2] < k.shoulder[2] - RB.scene.m.upper * .98 && k.wrist[0] > k.elbow[0] + RB.scene.m.fore * .98, label + ': elbows down, forearms forward');
-      assert(Math.abs(k.R[7]) > .99 && -k.R[2] > .99, label + ': fingers forward, jaws vertical');
+      assert(Math.abs(k.R[4]) > .99 && -k.R[2] > .99, label + ': fingers forward, jaws sideways');
       assert(a.open === 1, label + ': idle grippers fully open');
     }
     const V = S.view, camera = C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w: plot.clientWidth, h: plot.clientHeight });

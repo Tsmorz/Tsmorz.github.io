@@ -157,9 +157,10 @@ function robotUpdate(now) {
   const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
   const arms = tg.arms.map((a) => {
     const captureR = captureHandRotation(a.side, now * 1000);
-    const target = captureR && a.target ? { R: C.mul3(C.tr3(tg.chest.R), captureR), t: a.target.t } : a.target;
-    const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, target, prev && prev.side === a.side ? prev : null, { prefer });
-    RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, side: a.side });
+    const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev.tag || prev : null, { prefer });
+    const tag = { q:s.q, elbow:s.elbow, psi:s.psi };
+    if (captureR) Object.assign(s,RCORE.wrist(m,a.side,s.q,C.mul3(C.tr3(tg.chest.R),captureR),prev?.wristInput));
+    RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, tag, side: a.side });
     // each new pose's joint angles, for the Joint angles plot (the arm's side kept, so a recalibration that swaps sides shows)
     const ts = RB.last.get(a.key).time, h = RB.jhist.get(a.key) || [];
     if (!h.length || h[h.length - 1].time !== ts) { h.push({ time: ts, q: s.q.slice(), side: a.side }); while (h.length && h[0].time < ts - S.settings.span - 1) h.shift(); RB.jhist.set(a.key, h); }
@@ -169,9 +170,9 @@ function robotUpdate(now) {
   const withBody = preview || roles.body !== null || S.settings.robot.props === 'arcade';
   if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) {
     const q = robotReady(), captureR = captureHandRotation(side, now * 1000), key = 'capture' + side;
-    const s = captureR ? RCORE.ik(m, side, { R: C.mul3(C.tr3(tg.chest.R), captureR), t: RCORE.fk(m,side,q).wrist }, RB.prev.get(key), { prefer }) : null;
-    if (s) RB.prev.set(key, { q: s.q, elbow: s.elbow, psi: s.psi, side });
-    arms.push({ key: null, side, q: s ? s.q : q, reach: s ? s.reach : true, gap: s ? s.gap : 0, live: !!s, idle: !s });
+    const s = captureR ? RCORE.wrist(m, side, q, C.mul3(C.tr3(tg.chest.R), captureR), RB.prev.get(key)?.wristInput) : null;
+    if (s) RB.prev.set(key, s);
+    arms.push({ key: null, side, q: s ? s.q : q, reach: true, gap: 0, live: !!s, idle: !s });
   }
   // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it). It was put
   // there in the world (by the table), so it stays there when the body moves: the arm reaches to keep it
@@ -179,8 +180,8 @@ function robotUpdate(now) {
   for (const [side, d] of TB.drive) {
     if (d.frame !== S.settings.frame) { TB.drive.delete(side); continue; } // (another frame: its world is a different one)
     const captureR = captureHandRotation(side, now * 1000);
-    const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.ik(m, side, { R: C.mul3(Rc, captureR || d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || null, { prefer });
-    RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, side });
+    const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.handIK(m, side, { R: C.mul3(Rc, captureR || d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || {q:robotReady()}, { prefer });
+    RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, side });
     const a = arms.find((x) => x.side === side), set = { q: s.q, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
     if (a) Object.assign(a, set); else arms.push(Object.assign({ key: null, side }, set));
   }
@@ -356,7 +357,7 @@ function placeTable(sc) {
   const m = sc.m, G = RCORE.gripper(m), w = RCORE.fk(m, 1, RCORE.HOME).wrist, tip = w[0] + 0.07 + G.fl;
   const anchor = sc.anchor || sc.chest;
   const R = RCORE.upright([anchor.R[0], anchor.R[3], anchor.R[6]]), ch = { R, t: anchor.t };
-  // Leave clearance below the fully open vertical jaws, so spawning cannot push the hands upward.
+  // Leave clearance below the open jaws and the tray rim, so spawning cannot push the hands upward.
   const clearance = G.body.h[1] + 0.045;
   const cx = w[0] - 0.03 + TABLE.size[0] / 2, table = { R, t: RCORE.place(ch, [cx, 0, w[2] - clearance]), size: TABLE.size, thick: TABLE.thick };
   const kind = S.settings.robot.props;
@@ -409,7 +410,7 @@ function tableStep(sc) {
     const h = W.hands[a.side], P = W.handPose(a.side);
     if (!h || !P) continue;
     a.jaw = h.gap;
-    const k = RCORE.fk(m, a.side, a.q), s = RCORE.ik(m, a.side, { R: C.mul3(Rt, P.R), t: C.mulv(Rt, C.sub(P.t, sc.chest.t)) }, { q: a.q, elbow: k.elbow }, { prefer: S.settings.robot.elbows ? undefined : false });
+    const k = RCORE.fk(m, a.side, a.q), s = RCORE.handIK(m, a.side, { R: C.mul3(Rt, P.R), t: C.mulv(Rt, C.sub(P.t, sc.chest.t)) }, { q: a.q, elbow: k.elbow }, { prefer: S.settings.robot.elbows ? undefined : false });
     a.q = s.q;
   }
 }

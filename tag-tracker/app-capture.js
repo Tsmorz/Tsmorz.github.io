@@ -6,7 +6,7 @@ async function addCaptureBoard(){
   let port;try{port=await navigator.serial.requestPort({filters:[{usbVendorId:0x2886,usbProductId:0x0068}]});}catch(e){if(e.name!=='NotFoundError')note(e.message);return;}
   let link,b;
   try{
-    const {CaptureLink}=await import('../haptography/task-link.js?v=1a57c9b7');
+    const {CaptureLink}=await import('../haptography/task-link.js?v=9313bb97');
     const orientation=new CaptureOrientation.Estimator();
     link=new CaptureLink(port,current=>{
       if(!b)return;
@@ -42,7 +42,7 @@ function zeroCaptureOrientation(b){
     note.textContent=TASK_DATA.link.capture_neutral_help;return;
   }
   const R=C.mul3(sc.chest.R,RCORE.fk(sc.m,side,a.q).R);
-  if(!b.captureControl.zero(b.motion,R,side,S.settings.frame,performance.now())){note.textContent=TASK_DATA.link.capture_still;return;}
+  if(!b.captureControl.zero(b.motion,R,side,S.settings.frame,performance.now(),sc.chest.R)){note.textContent=TASK_DATA.link.capture_still;return;}
   for(const other of S.boards)if(other!==b&&other.captureControl?.neutral?.side===side)other.captureControl.clear();
   note.textContent=TASK_DATA.link.capture_on;paintControllerPanel(true);
 }

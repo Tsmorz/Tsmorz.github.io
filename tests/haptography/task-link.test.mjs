@@ -49,12 +49,12 @@ test('C fixture identifies capture board; finite task cues use native capture wa
   try {
     assert.equal(p.link.info.board_id, 0xd892); assert.equal(p.port.options.baudRate, 1000000);
     assert.equal(p.commands.length, 0); // Never send TP HELLO, STOP_ALL, clip, servo or ERM commands.
-    for (const id of [1, 3]) await p.link.command(TaskHaptics.packet(75, id));
-    assert.deepEqual(p.commands.map(c => [c.type, ...c.body]), [[0x44, 1, 75], [0x44, 3, 75]]);
+    for (const id of [1, 3, 6]) await p.link.command(TaskHaptics.packet(75, id));
+    assert.deepEqual(p.commands.map(c => [c.type, ...c.body]), [[0x44, 1, 75], [0x44, 3, 75], [0x44, 6, 75]]);
     for (const invalid of [[2, 2, 2, 20, 0, 0], [2, 2, 1, 76, 0, 0], [2, 2, 1, 20, 1, 0], [2, 0]]) {
       await assert.rejects(p.link.command(new Uint8Array(invalid)), /Unsupported/);
     }
-    assert.equal(p.commands.length, 2);
+    assert.equal(p.commands.length, 3);
   } finally { await Promise.all([p.link.close(), p.link.close()]); }
   assert.equal(p.port.closes, 1);
 });
@@ -114,7 +114,11 @@ test('real task dispatcher sends the selected 75 percent even for light contact 
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(p.commands.length, 1); assert.equal(p.commands[0].type, 0x44);
     assert.equal(p.commands[0].body[1], 75);
+    p.advance(150);
+    d.tick({ boards: [b], world, arms: [], now: 150, enabled: true, level: 75 });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x44,1,75],[0x44,6,75]]);
     b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
-    assert.equal(p.commands.length, 1);
+    assert.equal(p.commands.length, 2);
   } finally { await p.link.close(); }
 });

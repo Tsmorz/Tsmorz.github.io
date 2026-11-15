@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import O from '../../tag-tracker/capture-core.js';
 import C from '../../tag-tracker/tracker-core.js';
+import R from '../../tag-tracker/robot-core.js';
 
 const info={board_id:0x1bde,flags:1,imu_rate_hz:1000,gyro_dps_per_lsb:.01,accel_g_per_lsb:.0001};
 const I=[1,0,0,0,1,0,0,0,1],degrees=Math.PI/180;
@@ -87,7 +88,7 @@ test('neutral pose maps sensor rotation to a selected hand without changing its 
   const base=C.rodrigues([.2,-.4,.1]);
   assert.ok(control.zero(s.estimator.snapshot,base,-1,'camera',s.now));
   const sample=s.run(.5,[0,0,60]),R=control.rotation(sample,-1,'camera',s.now,true);
-  assert.ok(C.angleOf(C.mul3(R,C.tr3(C.mul3(base,C.rodrigues([0,0,30*degrees])))))<1e-5);
+  assert.ok(C.angleOf(C.mul3(R,C.tr3(C.mul3(C.rodrigues([0,0,30*degrees]),base))))<1e-5);
   assert.equal(control.rotation(sample,1,'camera',s.now,true),null);
 });
 
@@ -107,4 +108,31 @@ test('neutral calibration refuses unready or stale data',()=>{
   const control=new O.Control(),s=stream();assert.equal(control.zero(s.run(1),I,1,'camera',s.now),false);
   const sample=s.run(1.1);assert.equal(control.zero(sample,I,1,'camera',s.now+100),false);
   assert.equal(control.zero(sample,I,0,'camera',s.now),false);
+});
+
+test('cable-axis roll, cable-end pitch and board-up yaw map to the matching gripper axes',()=>{
+  const m=R.model();
+  // Raw sensor X is along the cable, Y is across it, Z is board up.
+  for(const side of [1,-1])for(const [axis,worldAxis] of [[0,[1,0,0]],[1,[0,1,0]],[2,[0,0,1]]]){
+    const control=new O.Control(),base=R.fk(m,side,R.HOME).R;
+    const sample={ready:true,q:[1,0,0,0],at:0,epoch:1};control.zero(sample,base,side,'camera',0);
+    const rv=[0,0,0];rv[axis]=20*degrees;
+    const moved={...sample,q:C.quatOf(C.rodrigues(rv)),at:10};
+    const actual=control.rotation(moved,side,'camera',10,true),expected=C.mul3(C.rodrigues(worldAxis.map(v=>v*20*degrees)),base);
+    assert.ok(C.angleOf(C.mul3(actual,C.tr3(expected)))<1e-7,`side ${side}, raw axis ${axis}`);
+  }
+});
+
+test('yaw, pitch and roll axes do not swap when Set neutral is used with stacked fingers',()=>{
+  const m=R.model(),sample={ready:true,q:[1,0,0,0],at:0,epoch:1};
+  for(const side of [1,-1])for(const heading of [0,.7])for(const roll of [0,Math.PI/2])for(const axis of [0,1,2]){
+    const basis=R.Rz(heading),q=R.HOME.slice();q[4]=roll;
+    const base=C.mul3(basis,R.fk(m,side,q).R),control=new O.Control();
+    control.zero(sample,base,side,'camera',0,basis);
+    const rv=[0,0,0];rv[axis]=.2;
+    const moved={...sample,q:C.quatOf(C.rodrigues(rv)),at:10};
+    const expected=C.mul3(C.mul3(C.mul3(basis,C.rodrigues(rv)),C.tr3(basis)),base);
+    const actual=control.rotation(moved,side,'camera',10,true);
+    assert.ok(C.angleOf(C.mul3(actual,C.tr3(expected)))<1e-7,`side ${side}, heading ${heading}, neutral roll ${roll}, axis ${axis}`);
+  }
 });
