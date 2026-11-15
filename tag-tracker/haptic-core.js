@@ -5,7 +5,7 @@
   'use strict';
   const norm=v=>Math.hypot(...(v||[0,0,0]));
   function packet(level,id=1){
-    const b=new Uint8Array(6),v=new DataView(b.buffer);b[0]=2;b[1]=2;b[2]=id;b[3]=Math.max(1,Math.min(45,Math.round(Number.isFinite(level)?level:1)));v.setUint16(4,0,true);return b;
+    const b=new Uint8Array(6),v=new DataView(b.buffer);b[0]=2;b[1]=2;b[2]=id;b[3]=Math.max(1,Math.min(70,Math.round(Number.isFinite(level)?level:1)));v.setUint16(4,0,true);return b;
   }
   function cue(W,side){
     const h=W.hands[side],rec=W.record,hand=rec?.hands?.[side],grip=h?.grip?.body;
@@ -45,7 +45,7 @@
           if(b.hapticError&&b.hapticRetryAfter&&now>=b.hapticRetryAfter){b.hapticError=null;b.hapticRetryAfter=null;}
           if(b.hapticCharacteristic.busy||b.hapticBusy||b.hapticError||now-s.last<interval)continue;
           s.last=now;s.load=c.load;s.event=c.event;s.seatAt=null;b.hapticBusy=true;
-          const level=Math.min(45,Math.max(3,(click?42:8+12*Math.log1p(c.load))*Math.max(0,Math.min(1,Number.isFinite(strength)?strength:.6))));
+          const level=Math.min(70,Math.max(3,(click?42:8+12*Math.log1p(c.load))*Math.max(0,Math.min(1,Number.isFinite(strength)?strength:.6))));
           const bytes=packet(level,click||impact?3:1),ch=b.hapticCharacteristic;
           try{
             const write=ch.writeValueWithResponse?ch.writeValueWithResponse(bytes):ch.writeValue(bytes);

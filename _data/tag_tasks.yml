@@ -585,7 +585,7 @@ ui:
   haptics: Haptics
   haptics_title: TacHammer clicks and knocks sent to connected controllers
   controller: Controller
-  controller_title: Connect nrf-controller boards for motion and haptics
+  controller_title: Connect controllers and capture devices
   controller_hand: Haptics to
   fell: "{prop} fell off the table, so the task restarted. Keep props over the table."
 guidance:
@@ -686,6 +686,10 @@ guidance:
       text: The plug is seated and released. Open the other gripper to let go of the
         cable, then leave the connector still.
 haptics:
+  test: Test pulse
+  test_sent: Test pulse acknowledged
+  test_unavailable: Connect the device, enable Haptics and select Left or Right hand first.
+  capture_status: Capture USB · IMU orientation and TacHammer
   label: TacHammer task feedback
   strength: Strength
   help: Brief, self-ending TacHammer pulses for contact, grip slip and fabric or
@@ -716,12 +720,28 @@ scores:
   time: Time
   previous: Previous best
 link:
+  capture: Connect capture USB
+  capture_waiting: Waiting for capture-device identity…
+  capture_ready: Capture device connected. Choose a hand, hold still for two seconds, then Set neutral.
+  capture_hand: Hand
+  capture_zero: Set neutral
+  capture_stop: Stop IMU
+  capture_still: Hold the device still for two seconds to calibrate its gyro.
+  capture_neutral: IMU ready · set a neutral pose
+  capture_on: IMU orientation on · recenter if the heading drifts
+  capture_paused: IMU paused · set neutral to resume
+  capture_lost: Capture device disconnected
+  capture_neutral_help: Choose Left or Right hand and hold still, then Set neutral in Tasks.
   connect: Connect USB / ESB
   ble: Connect BLE
   baud: Baud
   help: Use BLE, a direct USB controller, or a USB-connected XIAO ESB receiver. USB
     and ESB require TP/1 teleop firmware; its default is 1,000,000 baud. Both routes
-    send motion into Filtered tracking and return TacHammer cues.
+    send motion into Filtered tracking and return TacHammer cues. Use Connect capture USB
+    for the Haptography capture device. Disconnect it from Haptography first. Choose a hand,
+    hold the device still for two seconds, then Set neutral. Tilt and turn it to rotate
+    the gripper; mouse or AprilTags still sets its position. Set neutral again if heading
+    drifts. Test pulse checks the TacHammer output.
   unsupported: Web Serial needs Chrome or Edge on a computer and HTTPS or localhost.
   closed: Serial controller disconnected. Connect USB / ESB to choose the port again.
   waiting: Port open. Waiting for controller identity and motion…

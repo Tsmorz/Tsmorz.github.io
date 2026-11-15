@@ -426,7 +426,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 .task-times{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-variant-numeric:tabular-nums}.task-times time{font-size:24px}.task-scores{width:100%;border-collapse:collapse;font-size:13px}.task-scores td,.task-scores th{text-align:left;padding:5px 3px;border-bottom:1px solid var(--rule)}.task-scores td:last-child{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.task-scores tr[aria-current]{color:var(--accent)}
 .workbench-guide details{margin:12px 0;font-size:13px;line-height:1.5}.workbench-guide summary{cursor:pointer;font-weight:600}.workbench-guide ol,.workbench-guide ul{padding-left:21px}.workbench-guide li{margin:7px 0}.workbench-guide .guide-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.workbench-guide .hint{font-size:12px}
 .game-corner{position:absolute;top:16px;right:16px;left:16px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}.game-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:center;pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:6px}.game-actions input{width:90px;accent-color:var(--accent)}.game-actions button{min-height:40px}.game-actions label{display:flex;align-items:center}
-#gameHUD .guide-notice{border:1px solid var(--warn);border-radius:4px;padding:6px 8px;margin:8px 0;font-size:13px;line-height:1.4}#gameHUD .controller-panel{width:min(340px,100%);pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:10px;display:grid;gap:8px;font-size:13px}#gameHUD .controller-panel p{margin:0}#gameHUD .controller-panel .row{display:flex;gap:6px;flex-wrap:wrap}.ctl-board{display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--rule);padding-top:6px}.ctl-board strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#gameHUD .guide-notice{border:1px solid var(--warn);border-radius:4px;padding:6px 8px;margin:8px 0;font-size:13px;line-height:1.4}#gameHUD .controller-panel{width:min(340px,100%);pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:10px;display:grid;gap:8px;font-size:13px}#gameHUD .controller-panel p{margin:0}#gameHUD .controller-panel .row{display:flex;gap:6px;flex-wrap:wrap}.ctl-board{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--rule);padding-top:6px}.ctl-board strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #taskLabels .task-label[data-active=true]{border-color:var(--accent);color:var(--accent);font-weight:700}
 #taskLabels .task-label[data-pin]{transform:translate(-50%,calc(-100% - 22px))}
 #taskLabels .task-label[data-pin]::after{content:'';position:absolute;left:50%;top:100%;width:2px;height:22px;margin-left:-1px;background:var(--accent)}
@@ -826,7 +826,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
     <div class="guide-actions"><button class="btn sm primary" id="gameNext" hidden>{{ site.data.tag_tasks.ui.next }}</button><button class="btn sm outline" id="guideRestart">{{ site.data.tag_tasks.ui.restart }}</button></div>
   </section>
   <div class="game-corner"><div class="game-actions"><button class="btn sm outline" id="gameEyes" aria-pressed="false">{{ site.data.tag_tasks.ui.eyes }}</button><label title="{{ site.data.tag_tasks.ui.tilt }}"><span class="sr">{{ site.data.tag_tasks.ui.tilt }}</span><input id="gameTilt" type="range" min="-80" max="25" value="-40" aria-label="{{ site.data.tag_tasks.ui.tilt }}"></label><button class="btn sm" id="gameTags" hidden>{{ site.data.tag_tasks.ui.tags }}</button><button class="btn sm outline" id="soundBtn" aria-pressed="false" title="{{ site.data.tag_tasks.ui.sound_title }}"><svg class="i"><use href="#i-mute"/></svg>{{ site.data.tag_tasks.ui.sound }}</button><button class="btn sm outline" id="gameHaptics" aria-pressed="true" title="{{ site.data.tag_tasks.ui.haptics_title }}">{{ site.data.tag_tasks.ui.haptics }}</button><button class="btn sm outline" id="gameController" aria-expanded="false" aria-controls="controllerPanel" title="{{ site.data.tag_tasks.ui.controller_title }}">{{ site.data.tag_tasks.ui.controller }} <span id="gameControllerCount"></span></button><button class="btn sm sq" id="gameSettingsBtn" aria-haspopup="dialog" aria-label="{{ site.data.tag_tasks.ui.settings }}" title="{{ site.data.tag_tasks.ui.settings }}"><svg class="i"><use href="#i-gear"/></svg></button></div>
-  <section class="controller-panel" id="controllerPanel" hidden aria-label="{{ site.data.tag_tasks.ui.controller_title }}"><div class="row"><button class="btn sm outline" id="ctlBle">{{ site.data.tag_tasks.link.ble }}</button><button class="btn sm outline" id="ctlSerial">{{ site.data.tag_tasks.link.connect }}</button></div><div id="ctlBoards"></div><p id="ctlStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p><p class="hint">{{ site.data.tag_tasks.link.help }}</p></section></div>
+  <section class="controller-panel" id="controllerPanel" hidden aria-label="{{ site.data.tag_tasks.ui.controller_title }}"><div class="row"><button class="btn sm outline" id="ctlBle">{{ site.data.tag_tasks.link.ble }}</button><button class="btn sm outline" id="ctlSerial">{{ site.data.tag_tasks.link.connect }}</button><button class="btn sm outline" id="ctlCapture">{{ site.data.tag_tasks.link.capture }}</button></div><p id="ctlConnectionStatus" role="status"></p><div id="ctlBoards"></div><p id="ctlStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p><p class="hint">{{ site.data.tag_tasks.link.help }}</p></section></div>
 </div>
 </main>
 <dialog id="gameSettings" aria-labelledby="gameSettingsTitle"><div class="card-h"><h2 id="gameSettingsTitle">{{ site.data.tag_tasks.ui.settings }}</h2><div class="spacer"></div><button class="btn" id="gameSetupBtn">{{ site.data.tag_tasks.ui.setup }}</button><button class="btn" id="gameSettingsClose">{{ site.data.tag_tasks.ui.return }}</button></div><section style="padding:16px"><label>{{ site.data.tag_tasks.scores.player }} <input class="input sm" id="taskPlayer" maxlength="32" autocomplete="nickname"></label><br><label><input type="checkbox" id="taskHaptics"> {{ site.data.tag_tasks.haptics.label }}</label> <label>{{ site.data.tag_tasks.haptics.strength }} <input type="range" id="taskHapticStrength" min="0.1" max="1" step="0.1"></label><p>{{ site.data.tag_tasks.haptics.help }}</p><p>{{ site.data.tag_tasks.haptics.routing_help }}</p><div class="row"><button class="btn sm" id="taskSerial">{{ site.data.tag_tasks.link.connect }}</button><button class="btn sm outline" id="taskBluetooth">{{ site.data.tag_tasks.link.ble }}</button></div><p class="hint">{{ site.data.tag_tasks.link.help }}</p><p id="taskHapticStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p></section><div id="gameSettingsTools"></div></dialog>
@@ -1035,7 +1035,8 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 <script src="physics-core.js?v=2d108b77"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
 <script src="cable-core.js?v=2ad7bd56"></script>
-<script src="haptic-core.js?v=d1c04643"></script>
+<script src="capture-core.js?v=bffae51a"></script>
+<script src="haptic-core.js?v=2327050a"></script>
 <script src="cloth-core.js?v=96b51383"></script>
 <script src="controller-link.js?v=829d5a6d"></script>
 <script src="score-core.js?v=e43f050f"></script>
@@ -1046,15 +1047,16 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 <script src="app-state.js?v=5ead985c"></script>
 <script src="app-cameras.js?v=4caf5a11"></script>
 <script src="app-plot.js?v=ced3cea6"></script>
-<script src="app-robot.js?v=73bd1d08"></script>
-<script src="app-tasks.js?v=f95cb7ec"></script>
-<script src="app-views.js?v=ef766d9b"></script>
+<script src="app-robot.js?v=0ea2532a"></script>
+<script src="app-tasks.js?v=6eef3502"></script>
+<script src="app-views.js?v=b63b75a1"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>
 <script src="voice-core.js?v=452722f2"></script>
 <script src="app-io.js?v=c6d92c32"></script>
-<script src="app-boards.js?v=ad40d99e"></script>
+<script src="app-boards.js?v=2676ca22"></script>
 <script src="app-serial.js?v=16b64948"></script>
+<script src="app-capture.js?v=291566dc"></script>
 <script src="app-demo.js?v=f40e920f"></script>
 <script>
 'use strict';

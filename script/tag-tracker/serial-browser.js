@@ -14,7 +14,7 @@
   await wait(500);assert(b.n>100&&b2.n>100&&b.buf.length>100&&b2.buf.length>100&&b.buf.every(x=>Number.isFinite(x.t)&&x.Q.every(Number.isFinite)),'serial sensor frames feed the existing time-aligned fusion input buffer');
   assert(Math.abs(C.gripOpening(b.act,b.grip)-.7)<.001,'serial actuator status also supplies calibrated gripper feedback');
   const arm=RB.scene.arms.find(a=>a.side===-1),d=driveOf(arm);d.R=TB.world.table.R.slice();d.t=C.add(TB.world.table.t,C.mulv(TB.world.table.R,[-.12,-.18,.06]));TASK.moved=true;await wait(1400);
-  assert(writes.length>0&&writes.every(f=>f.type===5&&f.board===id&&f.pipe===1&&f.payload[0]===2&&f.payload[1]===2&&f.payload[3]<=45),'physical contact sends addressed TacHammer-only packets through the real USB adapter');
+  assert(writes.length>0&&writes.every(f=>f.type===5&&f.board===id&&f.pipe===1&&f.payload[0]===2&&f.payload[1]===2&&f.payload[3]<=70),'physical contact sends addressed TacHammer-only packets through the real USB adapter');
   while(b2.serialLink.writing)await wait(10);await b2.hapticCharacteristic.writeValueWithResponse(TaskHaptics.packet(5));assert(writes.some(f=>f.board===secondId&&f.pipe===0),'feedback can address the second hand without sending it to the first');
   assert(writes.every(f=>f.stamp>1000000&&f.stamp<=stamp+1234),'commands echo recent source-controller status timestamps');
   const clock=b.clock;seq=0;stamp=50000;await wait(120);assert(b.clock!==clock&&b.buf.every(x=>Number.isFinite(x.t)),'a restarted wireless controller resets its clock fit and fusion heading');

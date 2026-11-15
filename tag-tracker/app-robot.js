@@ -27,7 +27,7 @@ function setSound(on) {
 if (SND && S.settings.robot.sound) SND.set({ on: true }); // (the browser lets it play once the page is clicked)
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => { if (SND) SND.resume(); }, { capture: true });
 document.addEventListener('visibilitychange', () => duckSound());
-function robotReset() { RB.cal = null; RB.last.clear(); RB.seen.clear(); RB.prev.clear(); RB.jhist.clear(); RB.slew.clear(); RB.autoDone = false; RB.fitSig = ''; paintRobotBtns(); }
+function robotReset() { RB.cal = null; RB.last.clear(); RB.seen.clear(); RB.prev.clear(); RB.jhist.clear(); RB.slew.clear(); RB.autoDone = false; RB.fitSig = ''; clearCaptureOrientations(); paintRobotBtns(); }
 const refKeyNow = () => (S.settings.frame === 'camera' ? null : parseKey(S.settings.frame));
 // the newest plotted pose of every track, untared; a track out of view keeps its last one
 function robotTake() {
@@ -94,7 +94,7 @@ function calibrateRobot(quiet) {
     return 'Not every tag is in view';
   }
   RB.cal = { cal: robotCalibrate(roles, RCORE.model(S.settings.robot)), roles, sig: robotSig() };
-  RB.prev.clear(); TB.drive.clear(); TB.n++; paintRobotBtns();
+  RB.prev.clear(); TB.drive.clear(); TB.n++; clearCaptureOrientations(); paintRobotBtns();
   if (!quiet) robotSay('Calibrated. The robot follows you now; calibrate again whenever it drifts.');
   return 'Robot calibrated';
 }
@@ -159,7 +159,9 @@ function robotUpdate(now) {
   for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
   const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
   const arms = tg.arms.map((a) => {
-    const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev : null, { prefer });
+    const captureR = captureHandRotation(a.side, now * 1000);
+    const target = captureR && a.target ? { R: C.mul3(C.tr3(tg.chest.R), captureR), t: a.target.t } : a.target;
+    const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, target, prev && prev.side === a.side ? prev : null, { prefer });
     RB.prev.set(a.key, { q: s.q, elbow: s.elbow, psi: s.psi, side: a.side });
     // each new pose's joint angles, for the Joint angles plot (the arm's side kept, so a recalibration that swaps sides shows)
     const ts = RB.last.get(a.key).time, h = RB.jhist.get(a.key) || [];
@@ -168,13 +170,19 @@ function robotUpdate(now) {
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
   const withBody = preview || roles.body !== null || S.settings.robot.props === 'arcade';
-  if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) arms.push({ key: null, side, q: robotReady(m,side), reach: true, gap: 0, live: false, idle: true });
+  if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) {
+    const q = robotReady(m,side), captureR = captureHandRotation(side, now * 1000), key = 'capture' + side;
+    const s = captureR ? RCORE.ik(m, side, { R: C.mul3(C.tr3(tg.chest.R), captureR), t: RCORE.fk(m,side,q).wrist }, RB.prev.get(key), { prefer }) : null;
+    if (s) RB.prev.set(key, { q: s.q, elbow: s.elbow, psi: s.psi, side });
+    arms.push({ key: null, side, q: s ? s.q : q, reach: s ? s.reach : true, gap: s ? s.gap : 0, live: !!s, idle: !s });
+  }
   // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it). It was put
   // there in the world (by the table), so it stays there when the body moves: the arm reaches to keep it
   const Rc = C.tr3(tg.chest.R);
   for (const [side, d] of TB.drive) {
     if (d.frame !== S.settings.frame) { TB.drive.delete(side); continue; } // (another frame: its world is a different one)
-    const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.ik(m, side, { R: C.mul3(Rc, d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || null, { prefer });
+    const captureR = captureHandRotation(side, now * 1000);
+    const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.ik(m, side, { R: C.mul3(Rc, captureR || d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || null, { prefer });
     RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, side });
     const a = arms.find((x) => x.side === side), set = { q: s.q, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
     if (a) Object.assign(a, set); else arms.push(Object.assign({ key: null, side }, set));
@@ -359,6 +367,7 @@ function resetTable() {
   if (TB.game) TB.game.reset(); else if (TB.world) TB.world.reset();
   taskPlaced();
   TB.drive.clear(); TB.grab = null; RB.prev.clear(); RB.slew.clear(); paintRobotBtns();
+  clearCaptureOrientations();
   return 'Task restarted';
 }
 // how open an arm's gripper should be, 0 to 1

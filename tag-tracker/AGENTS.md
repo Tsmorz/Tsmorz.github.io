@@ -20,19 +20,16 @@ scripts in `index.html` share one global scope. The page tracks AprilTags and dr
 
 ## Look and navigation
 
-Cool anodised greys, ink and the site's violet accent; amber only for warnings. No orange accent,
-rounded cards, pills, monospace labels or panel shadows. Use Archivo, wide for names and titles.
-Panels have a 1 px outline and 4 px corners; reticle corner marks belong only on video.
+Use cool anodised greys, ink, violet accents and Archivo; amber only for warnings. No orange,
+rounded cards, pills, monospace labels or shadows. Panels have 1 px outlines and 4 px corners.
+Reticle corner marks belong only on video.
 Tag colours keep their categorical slot in storage (eight slots, then labelled grey). Label x/y/z.
 The robot has one generic look, the Machine; don't restore human avatars, story rooms or rewards.
 
-The shared header has Calibrate → Tracking → Tasks. Tracking and Calibrate share the camera column;
-Tasks alone mounts `#gameHUD`. Tab switches must preserve the physical scene and current task.
-Tracking shows only the robot or tags: the task table pauses there (`tableShown`), undrawn and
-unlabelled. There is no Physics or Forces UI. The task bar holds Sound, Haptics and Controller
-(connect boards, each board's haptic hand); `#gameSettings` keeps the same controls.
-`S.tab` selects the page; `S.mode` selects calibration or tracking detection. Setup belongs in Settings
-and Task settings, not a hand command bar. Camera & AprilTags opens Tracking and its setup guide.
+Preserve Calibrate → Tracking → Tasks and the scene across tab switches. Tasks alone mounts
+`#gameHUD`; Tracking pauses and hides the task table (`tableShown`). No Physics or Forces UI.
+`S.tab` selects the page; `S.mode` selects calibration/tracking detection. Keep setup in Settings
+and Task settings, with Sound, Haptics and Controller available on the task bar.
 
 ## Tracking contracts
 
@@ -60,9 +57,8 @@ and Task settings, not a hand command bar. Camera & AprilTags opens Tracking and
 
 ## Robot, table and input
 
-`robot-core.js` owns the seven-joint arms and analytic IK. Keep `MIN_BEND`: fully straight elbows are
-singular. Follow previous solutions with bounded elbow swing, and retain motor slew. Motion × scales
-translation from the calibrated wrist home, not wrist orientation or chest motion.
+Keep `robot-core.js`'s `MIN_BEND` (straight elbows are singular), bounded elbow swing and motor slew.
+Motion × scales translation from calibrated wrist home, never wrist orientation or chest motion.
 
 Mouse targets (`TB.drive`) are world-fixed until Resume AprilTags or recalibration. `grabPlane` and
 `holdBack` must keep corrections inside the drag plane; reaching an arm limit must not lift its target
@@ -85,15 +81,13 @@ hand. Stationary real body/wrist tags auto-calibrate after 0.8 s.
 
 ## The five tasks
 
-The catalogue is exactly `bowl`, `sort`, `tray`, `pour`, `laundry`, freely selectable in that order.
-A prop below the tabletop (`TaskCore.fallen`) restarts the attempt at once with a notice naming it.
-Both placement variants contain two blocks. Removed IDs fall back to `bowl`; don't add progression
-locks. `TaskCore.mission` must not mutate its full variant. Keep small/full records separate.
-Changed objectives need new revisions so old times can't compete. Timers use monotonic elapsed time.
+Keep `bowl`, `sort`, `tray`, `pour`, `laundry` freely selectable, in order; removed IDs fall back to
+`bowl`. Both placement variants need two blocks. `TaskCore.fallen` immediately restarts with a notice.
+`TaskCore.mission` must not mutate its full variant. Separate small/full records; changed objectives
+need new revisions. Timers use monotonic elapsed time.
 
-Guidance reads actual constraints and goals; it never moves props or awards success. After placing A,
-keep the empty-gripper retreat before picking B with the same gripper. Show wrong-prop, missing-hand
-and missing-layer hints. Keep guidance, destinations and objectives visible.
+Guidance reads actual constraints; never move props or award success. Preserve the empty-gripper
+retreat between blocks, wrong-prop/missing-hand/layer hints and visible destinations/objectives.
 
 `balance` monitors ball/rim geometry every physics substep, including before grasping the tray.
 A rim hit or lost load invalidates the attempt until restart. Require both a clean elevated two-hand
@@ -123,14 +117,10 @@ towel must still permit a real grasp.
 
 ## Pouring and controller contracts
 
-`pour` empties a Weissbier bottle into a mug (`pour-core.js`). Containers are stacks of cylinder
-sections (`CONTAINER`); a neck passes at most `flow` and the beer leaves along it, a wide lip spills
-sideways. The mug is a stein: wider than the jaws, its `grip_zone` allows only the handle. Grip the
-bottle at `BOTTLE.grip`: lower, its mouth meets the palm and levers it round in the pads. The left
-arm pours outward; rolling inward hits the ±120° forearm limit. The surface is level to gravity less
-the container's acceleration; beer is conserved; over `spill_limit` spoils the attempt. Beer joins a
-container only through its mouth; a drop hitting any solid splashes to the table. `visual`
-pieces (labels) draw without collision or mass; keep them ≥1 mm proud or they z-fight.
+In `pour-core.js`, preserve beer conservation and mouth-only collection; solid hits spill.
+`CONTAINER`, `flow` and `spill_limit` govern geometry, flow and failure. `grip_zone` restricts the
+stein to its handle; `BOTTLE.grip` keeps the bottle mouth clear of the palm. The left arm pours
+outward: inward roll hits its forearm limit. Keep `visual` labels ≥1 mm proud to avoid z-fighting.
 The USB fixture (`connector-fixture.json`) is test-only and keeps the cable and insertion code.
 
 Controller firmware belongs in `../nrf-controller`. `decodeImuBatch` matches `src/sysid_wire.h`;
@@ -139,7 +129,13 @@ separate 1 Mbaud image. Source clocks survive gateway forwarding and reboot; USB
 BLE links. Never open a serial console on the page's port, start an unseen camera track, or fuse IMU
 into anything but a live, aligned Filtered track.
 
-Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 45%, BLE
+Capture USB uses its native raw IMU via `capture-core.js`/`app-capture.js`, never the TP/VQF
+decoder or a teleop firmware flash. Relative orientation requires a stationary gyro calibration
+and per-hand neutral pose; IMU never supplies translation. Gaps, resets, blur and stale data hold
+the last rotation until recentered. Keep calibration in memory and clear it on hand/task/frame
+changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
+
+Task feedback is finite TacHammer CLICK/KNOCK only: six-byte version-2 commands, capped at 70%, BLE
 10 Hz, USB/ESB up to 25 Hz. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
 firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
 get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK
@@ -157,6 +153,7 @@ Setup choices apply only through Next/Print/phone actions, never merely by closi
 ## Regression entry points
 
 `teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `advanced.cjs` (5l),
-`controller-link.cjs` (5m), `pour.cjs` (5n), `voice.cjs` (5p). The `*-browser.js` counterparts run
-actual IK, motor slew, grasps and release; move hands as a player does (open fully, then retreat
-smoothly). Repeat responsive checks on a phone. State what has not run on real hardware.
+`controller-link.cjs` (5m), `pour.cjs` (5n), `voice.cjs` (5p). `capture-browser.js` covers raw IMU,
+neutral poses, hold/recenter and simultaneous haptics. Other browser tests run actual IK and contacts:
+move hands as a player does (open fully, then retreat smoothly). Repeat responsive checks on a phone.
+State what has not run on real hardware.
