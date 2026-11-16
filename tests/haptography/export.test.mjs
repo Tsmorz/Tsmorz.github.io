@@ -37,7 +37,7 @@ test("the fixture's session files", () => {
 
 test("the same files as the versioned Python session export", () => {
   const { bytes } = fixtureStream();
-  const out = join(ROOT, "tests/fixtures/capture/v5/session");
+  const out = join(ROOT, "tests/fixtures/capture/v6/session");
   const ours = X.sessionFiles(bytes, decodeSession(bytes), null);
   const theirs = readdirSync(out);
   for (const name of ["raw.bin", "imu.csv", "tof.csv", "mic.wav", "mic_blocks.csv", "messages.txt"]) {

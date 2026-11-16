@@ -5,7 +5,7 @@ import { DeviceClient, COMMAND, openBoardPort } from '../../haptography/device.j
 import { decodeHealth, decodeProfile, encodeProfile } from '../../data-logger/device-health.js';
 import { boundDrive, driveSafe, GRID, packClip, PREVIEW_PEAK, windowRms, PREVIEW_RMS, recordingTarget } from '../../haptography/haptics-core.js';
 import * as W from '../../haptography/wire.js';
-const info = { version: 5, flags: W.INFO_TACHAMMER_OK, haptic_rate_hz: 16000, erm_step_us: 0, clip_max_samples: 96000, clip_max_erm: 0 };
+const info = { version: 6, flags: W.INFO_TACHAMMER_OK, haptic_rate_hz: 16000, clip_max_samples: 96000 };
 function peer(options = {}) {
   const commands = []; let client, tag, frames = 0, dropped = false;
   client = new DeviceClient(async bytes => {
@@ -13,7 +13,8 @@ function peer(options = {}) {
     const type = view.getUint8(0), number = view.getUint16(1, true);
     commands.push({ type, number, bytes });
     if (options.dropFirst && !dropped) { dropped = true; return; }
-    if (type === COMMAND.begin) { frames = view.getUint32(3, true); assert.equal(view.getUint32(7, true), 0, 'no ERM track'); }
+    if (type === COMMAND.begin) { frames = view.getUint32(3, true); assert.equal(view.getUint32(7, true), 0, 'the reserved length (the ERM track\'s before 6)'); }
+    if (type === COMMAND.data) assert.equal(view.getUint8(3), 0, 'the reserved track byte');
     client.feed({ type: W.ACK, body: { command_type: type, command_number: number, status: options.refuse === type ? 2 : 0 } });
     if (type === COMMAND.play) {
       tag = view.getUint16(3, true);
@@ -22,9 +23,9 @@ function peer(options = {}) {
   }, { timeout: 5, attempts: 2 });
   return { client, commands };
 }
-test('Drake-only protocol 5 uploads no ERM, retries keep their number, and completion can arrive before the ACK finishes', async () => {
+test('a clip uploads as protocols 3-6 all take it, retries keep their number, and completion can arrive before the ACK finishes', async () => {
   const { client, commands } = peer({ dropFirst: true });
-  const result = await client.play(new Float64Array(80), null, info);
+  const result = await client.play(new Float64Array(80), info);
   assert.equal(result.report.frames, 800);
   assert.deepEqual(commands[0].bytes, commands[1].bytes);
   assert.equal(commands.at(-1).type, COMMAND.stop);
@@ -33,7 +34,7 @@ test('Drake-only protocol 5 uploads no ERM, retries keep their number, and compl
 test('failed upload, incomplete playback and cancellation finish with STOP', async () => {
   for (const options of [{ refuse: COMMAND.begin }, { outcome: 2 }, { noReport: true }]) {
     const { client, commands } = peer(options);
-    const promise = client.play(new Float64Array(160), null, info);
+    const promise = client.play(new Float64Array(160), info);
     const failed = assert.rejects(promise);
     if (options.noReport) {
       while (!commands.some(c => c.type === COMMAND.play)) await new Promise(r => setTimeout(r, 5));
@@ -46,7 +47,7 @@ test('failed upload, incomplete playback and cancellation finish with STOP', asy
 test('Stop interrupts an upload before PLAY', async () => {
   const { client, commands } = peer();
   let stopped;
-  await assert.rejects(client.play(new Float64Array(160), null, info, null, phase => {
+  await assert.rejects(client.play(new Float64Array(160), info, null, phase => {
     if (phase === 'Uploading') stopped ??= client.stop();
   }));
   await stopped;
@@ -55,14 +56,14 @@ test('Stop interrupts an upload before PLAY', async () => {
 test('peak, sustained drive, missing actuator and nonfinite samples are rejected before upload', async () => {
   const { client, commands } = peer();
   for (const [drive, board] of [[new Float64Array([NaN]), info], [new Float64Array([PREVIEW_PEAK + 0.01]), info], [new Float64Array(1600).fill(0.4), info], [new Float64Array(80), { ...info, flags: 0 }]]) {
-    await assert.rejects(client.upload(drive, null, board));
+    await assert.rejects(client.upload(drive, board));
   }
   assert.equal(commands.length, 0);
   const bounded = boundDrive(Float64Array.from({ length: GRID }, (_, i) => Math.sin(i * 0.4)));
   assert.ok(driveSafe(bounded)); assert.ok(windowRms(bounded) <= PREVIEW_RMS + 1e-10);
 });
 test('health and persisted profile decode the actual C fixture', () => {
-  const bytes = readFileSync(new URL('../fixtures/capture/v5/health-profile.bin', import.meta.url));
+  const bytes = readFileSync(new URL('../fixtures/capture/v6/health-profile.bin', import.meta.url));
   const h = decodeHealth(new DataView(bytes.buffer, bytes.byteOffset, 64));
   assert.equal(h.build, '12345678'); assert.equal(h.sensorErrors, 7); assert.equal(h.profileError, -5);
   const p = decodeProfile(new DataView(bytes.buffer, bytes.byteOffset + 64, 20));
@@ -87,8 +88,7 @@ test('recording conversion refuses IMU gaps, invalid samples and still data', ()
   accel[1500] = NaN; assert.throws(() => recordingTarget(a, 0.1, 1), /invalid/);
   accel.fill(1); assert.throws(() => recordingTarget(a, 0.1, 1), /little vibration/);
 });
-test('a Drake-only clip packs with the firmware\'s zero ERM step, an ERM track needs a real one', () => {
-  assert.equal(packClip(new Float64Array(160), null, 16000, 0).samples, 1600);
-  assert.throws(() => packClip(new Float64Array(160), new Float64Array(10), 16000, 0), /ERM step/);
-  assert.throws(() => packClip(new Float64Array(160), null, 0, 0), /sample rate/);
+test('a clip packs at the firmware\'s rate', () => {
+  assert.equal(packClip(new Float64Array(160), 16000).samples, 1600);
+  assert.throws(() => packClip(new Float64Array(160), 0), /sample rate/);
 });

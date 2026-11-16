@@ -4,9 +4,10 @@ import { decodeHealth, decodeProfile } from "../data-logger/device-health.js";
 // recording/wire.py reads; tests/haptography/wire.test.mjs reads the versioned C encoder fixture stream
 // with this file and checks VERSION and packet types against its generated contract. Pure: no DOM.
 
-export const VERSION = 5;
+export const VERSION = 6;
 // Version 2 recordings (before the actuators) read the same: INFO and STATS were shorter, and the
-// fields they lacked are left out.
+// fields they lacked are left out. Versions 3-5 had an ERM: its INFO fields are read past (6 keeps
+// them as zeros), and their PLAYBACK kinds 3 and 4 still have names.
 export const OLDEST_VERSION = 2;
 
 export const HEALTH = 10;
@@ -25,9 +26,12 @@ export const INFO_IMU_OK = 0x01;
 export const INFO_MIC_OK = 0x02;
 export const INFO_TOF_OK = 0x04;
 export const INFO_TACHAMMER_OK = 0x08;
-export const INFO_ERM_OK = 0x10;
+// 0x10 was the ERM's, before version 6
 
-export const PLAYBACK_KINDS = { 1: "waveform", 2: "clip", 3: "ERM effect", 4: "ERM pulse" };
+export const PLAYBACK_KINDS = { 1: "waveform", 2: "clip" };
+// Kinds a recording from before version 6 may hold: the ERM's.
+export const RETIRED_PLAYBACK_KINDS = { 3: "ERM effect", 4: "ERM pulse" };
+export const playbackKindName = (kind) => PLAYBACK_KINDS[kind] ?? RETIRED_PLAYBACK_KINDS[kind];
 export const PLAYBACK_OUTCOMES = { 0: "played", 1: "stopped", 2: "failed" };
 
 export const IMU_MAX_SAMPLES = 32;
@@ -123,10 +127,9 @@ export function parseBody(type, body) {
         flags: v.getUint8(27),
       };
       if (body.length >= 40) {
+        // 30 and 36 were the ERM's step and longest track (zeros from version 6)
         info.haptic_rate_hz = v.getUint16(28, true);
-        info.erm_step_us = v.getUint16(30, true);
         info.clip_max_samples = v.getUint32(32, true);
-        info.clip_max_erm = v.getUint32(36, true);
       }
       return info;
     }
@@ -305,8 +308,8 @@ export function encodeInfo(info) {
   w.u16(VERSION); w.u64(info.t_us); w.u16(info.board_id); w.u16(info.imu_rate_hz);
   w.f32(info.gyro_dps_per_lsb); w.f32(info.accel_g_per_lsb); w.u16(info.mic_rate_hz);
   w.u16(info.tof_budget_ms); w.u8(info.tof_distance_mode); w.u8(info.flags);
-  w.u16(info.haptic_rate_hz ?? 0); w.u16(info.erm_step_us ?? 0);
-  w.u32(info.clip_max_samples ?? 0); w.u32(info.clip_max_erm ?? 0);
+  w.u16(info.haptic_rate_hz ?? 0); w.u16(0); // reserved: the ERM's step before version 6
+  w.u32(info.clip_max_samples ?? 0); w.u32(0); // reserved: the ERM's longest track
   return w.done();
 }
 
