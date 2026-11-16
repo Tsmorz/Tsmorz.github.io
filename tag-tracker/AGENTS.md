@@ -20,7 +20,8 @@ A self-contained AprilTag/robot page; `layout: null` renders `_data/tag_tasks.ym
 Use cool greys, ink, violet and Archivo; amber only for warnings. No orange, rounded cards, pills, monospace or shadows.
 Panels have 1 px outlines and 4 px corners; reticle corner marks belong only on video.
 Tag colours keep their categorical slot in storage (eight slots, then labelled grey). Label x/y/z.
-Keep the generic cool-silver Machine with black joints/accents, one thin tubular mast and an AMR chassis; no human avatars, story rooms or rewards.
+Keep the cool-silver Machine with black joints/accents, Robotiq 2F-85 grippers, one thin tubular mast and an AMR chassis.
+No human avatars, story rooms or rewards. `supportLayout` derives its preview floor from the fresh-task standing height; switching views must not shorten the mast.
 
 Preserve Calibrate → Tracking → Tasks and the scene across tab switches. Tasks alone mounts
 `#gameHUD`; Tracking pauses and hides the task table (`tableShown`). No Physics or Forces UI.
@@ -88,7 +89,7 @@ Restart atomically reseeds robot/props/history. `W.initialize` settles rigid sup
 Cancel pointer capture, clear feedback/`ContactSound.reset()`, and abort the old frame before feedback or contact reconstruction.
 
 Guidance reads actual constraints; never move props or award success. Preserve empty-gripper retreat,
-wrong-prop/missing-hand/layer hints and visible destinations/objectives.
+wrong-prop/missing-hand/layer hints and visible destinations/objectives. Start `guidePlan` closed on task placement; repainting must preserve a visitor's choice to expand it.
 
 `balance` monitors ball/rim geometry every physics substep, including before grasping the tray.
 A rim hit or lost load invalidates the attempt until restart. Require both a clean elevated two-hand
@@ -146,5 +147,5 @@ Print at true size, rejecting fit-to-page. Setup applies via Next/Print/phone ac
 ## Regression entry points
 
 `teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `advanced.cjs` (5l), `controller-link.cjs` (5m),
-`pour.cjs` (5n), `voice.cjs` (5p). Capture/restart browser checks cover IMU, neutral, live input and quiet reset.
+`pour.cjs` (5n), `voice.cjs` (5p). Capture/restart browser checks cover IMU, neutral, live input and quiet reset; `robot-standing-browser.js` checks preview/task floor equality.
 Use actual IK/contacts in browser tests: open fully, retreat smoothly. Repeat on a phone; state hardware limits.

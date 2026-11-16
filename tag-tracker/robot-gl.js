@@ -1,6 +1,6 @@
 // RobotGL: draws the tag tracker's robot with WebGL: smooth curved shells, lit by a key light, a fill light and the sky,
-// with specular highlights and a rim, two-tone panels and violet lights: an engineering robot of brushed aluminium box
-// sections and motor drums, a generic design modelled on no one's robot.
+// with specular highlights and a rim, two-tone panels and violet lights: a generic engineering robot of brushed
+// aluminium sections and motor drums, fitted with Robotiq 2F-85-style housings and articulated parallel jaws.
 //
 // The meshes are built here from the robot's lengths (RobotCore.model), each in the frame it rides in: the chest's, or an
 // arm's upper-arm, forearm or hand frame (RobotCore.fk), so a frame only needs its pose to be drawn. The camera is the 3D
@@ -73,6 +73,24 @@
   }
   const part = (mesh, mat, extra) => Object.assign({ mesh, mat }, extra || {});
 
+  // Hand-frame display/fallback contract. Contacts share this linkage through RobotCore.gripper;
+  // the pads stay parallel at their task grasp depth rather than simulating adaptive wrapping.
+  function gripperLayout(m,gap=0){
+    const G=RC.gripper(m),opening=Math.max(0,Math.min(G.gapMax,gap));
+    return {gap:opening,body:G.body,cuff:{c:[0,0,-.009],r:.032,h:.013},halfWidth:G.halfWidth(opening),
+      fingers:G.linkage(opening).map(j=>({...j,backbone:{c:[G.finger.c[0],j.side*(opening/2+G.finger.c[1]),G.finger.c[2]],h:G.finger.h.slice()},pad:{c:[G.pad.c[0],j.side*(opening/2+G.pad.c[1]),G.pad.c[2]],h:G.pad.h.slice()}}))};
+  }
+  function linkCapsule(length,r){
+    const extent=length/2+r;
+    return surface((u,v)=>{const z=(v*2-1)*extent,d=Math.max(0,Math.abs(z)-length/2),radius=Math.sqrt(Math.max(0,r*r-d*d)),a=u*TAU;return [radius*Math.cos(a),radius*Math.sin(a),z];},16,20,p=>[p[0],p[1],p[2]-Math.max(-length/2,Math.min(length/2,p[2]))]);
+  }
+  function gripperPartPose(p,layout){
+    const jaw=layout.fingers.find(j=>j.side===p.jaw),I=[1,0,0,0,1,0,0,0,1];
+    if(p.joint!==undefined)return {R:I,t:jaw.joints[p.joint].p};
+    const s=jaw.segments[p.link],z=unit(sub(s.b,s.a)),x=[1,0,0],y=cross(z,x);
+    return {R:[x[0],y[0],z[0],x[1],y[1],z[1],x[2],y[2],z[2]],t:C.add(s.a,s.b).map(v=>v/2)};
+  }
+
   // ---- the robot ----
   // Its groups of meshes, each in the frame it rides in: body (the chest's frame), bar and mount
   // (the chest's, for two arms or one without a body), upper (the upper arm's: origin at the shoulder, the arm along -z),
@@ -130,14 +148,15 @@
       part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'robotDark'),
     ];
     out.foreLight = [part(torus([0, 0, -(L2 - 0.06)], 0.035, 0.004, { nu: 36, nv: 8 }), 'light')];
-    // the gripper: a body across the jaws' travel with a rail under it, a light on the back of the hand
-    const gb = G.body, rail = gb.c[2] - gb.h[2];
+    // The 75 mm black chassis and the 85 mm jaw stroke follow the 2F-85 silhouette.
+    // Small housing markings remain inside the housing's contact envelope.
+    const gb = G.body,bottom=gb.c[2]-gb.h[2],mark=(z,a,mat)=>part(surface((u,v)=>{const th=(u-.5)*a;return [(gb.r-.0002)*Math.cos(th),(gb.r-.0002)*Math.sin(th),z+(v-.5)*.002];},12,1,p=>[p[0],p[1],0]),mat,{grip:true});
     out.hand = {};
     for (const sd of [1, -1]) out.hand[sd] = [
-      part(lathe([0, 0, 0], 0.004, -0.022, () => 0.034, { k0: 0.1, k1: 0.1 }), 'robotDark'),
-      part(blob(gb.c, gb.h, 0.2, 0.2), 'robotMetal', {grip:true}),
-      part(blob([0, 0, rail], [0.012, gb.h[1] - 0.006, 0.003], 0.4, 0.3, { nu: 24, nv: 8 }), 'robotDark', {grip:true}),
-      part(blob([gb.h[0] + 0.001, 0, gb.c[2]], [0.003, 0.016, 0.012], 1, 1, { nu: 20, nv: 6 }), 'light'),
+      part(lathe([0,0,0],.004,-.022,()=>.032,{k0:.1,k1:.1}), 'robotDark'),
+      part(lathe([gb.c[0],gb.c[1],0],bottom,gb.c[2]+gb.h[2],()=>gb.r-.0006,{nu:48,nv:24,k0:.04,k1:.04}), 'robotDark', {grip:true,housing:true}),
+      part(lathe([0,0,0],bottom+.0004,bottom+.0035,()=>gb.r-.0001,{nu:40,nv:6,k0:.04,k1:.04}), 'robotLink', {grip:true}),
+      mark(gb.c[2]-.003,.7,'robotShell'),mark(gb.c[2]+.004,.3,'robotBrand'),
     ];
     const mir = (c, j) => [c[0], j * c[1], c[2]];
     out.finger = {};
@@ -145,6 +164,11 @@
       part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'robotDark', {grip:true}),
       part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'robotRubber', {tip:true,grip:true}),
     ];
+    out.linkages=[];
+    for(const jaw of G.linkage(0)){
+      for(const [index,s]of jaw.segments.entries())out.linkages.push(part(linkCapsule(C.norm(sub(s.b,s.a)),s.r),'robotLink',{grip:true,jaw:jaw.side,link:index}));
+      for(const [index,s]of jaw.joints.entries())out.linkages.push(part(blob([0,0,0],[s.r,s.r,s.r],1,1,{nu:16,nv:10}),'robotLink',{grip:true,jaw:jaw.side,joint:index}));
+    }
     const base=supportLayout(m).bounds;
     out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], ...[-1,1].flatMap(x=>[-1,1].map(y=>[base.c[0]+x*base.h[0],y*base.h[1],base.c[2]-base.h[2]])), [0, 0, 0]];
     return out;
@@ -350,7 +374,10 @@
 
   // Shared with the flat fallback. A low mobile chassis carries one uninterrupted tube;
   // changing the floor height lengthens only that tube, never the arm/shoulder frames.
-  function supportLayout(m,floor=m.up-.59) {
+  function supportLayout(m,floor) {
+    // Use the same standing floor as a fresh task, including before any table exists.
+    // A separate short preview floor made Calibrate and Tracking shrink the mast.
+    if(floor===undefined){const G=RC.gripper(m);floor=RC.fk(m,1,RC.HOME).wrist[2]-G.halfWidth(G.gapMax)-.045-.75;}
     const cx=-.075,bottom=floor+.121,top=Math.max(bottom+.08,m.up-.22),r=.031,height=top-bottom;
     return {floor,base:{c:[cx,0,floor+.083],h:[.175,.168,.032]},
       bounds:{c:[cx,0,floor+.064],h:[.183,.199,.064]},
@@ -424,12 +451,14 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     return [0, 2, 4].map((i) => Math.pow(parseInt(h.slice(i, i + 2), 16) / 255, 2.2));
   }
   // the materials ('light' is the violet glow)
-  const ROBOT_COLORS={metal:'#c8cfd7',shell:'#dce1e7',dark:'#24282e',rubber:'#171a1e'};
+  const ROBOT_COLORS={metal:'#c8cfd7',shell:'#dce1e7',dark:'#24282e',rubber:'#171a1e',link:'#181b20',brand:'#c51f30'};
   const MATS = {
     robotMetal: {base:lin(ROBOT_COLORS.metal),spec:.9,shine:90,rough:.3,metal:.5,rim:.8},
     robotShell: {base:lin(ROBOT_COLORS.shell),spec:.3,shine:25,rough:.48,metal:.08,rim:.5},
     robotDark: {base:lin(ROBOT_COLORS.dark),spec:.35,shine:35,rough:.62,rim:.5},
     robotRubber: {base:lin(ROBOT_COLORS.rubber),spec:.08,shine:5,rough:.9,rim:.1},
+    robotLink: {base:lin(ROBOT_COLORS.link),spec:.65,shine:95,rough:.3,metal:.32,rim:.5},
+    robotBrand: {base:lin(ROBOT_COLORS.brand),spec:.1,shine:10,rough:.7,rim:0},
     metal: { base: lin('#b8c0c8'), spec: 1, shine: 110, rim: .9, metal:.94, rough:.32 },
     dark: { base: lin('#24282e'), spec:.4, shine:30, rim:1, rough:.64 },
     glass: { base: lin('#07080c'), spec: 1.3, shine: 220, rim: 1.4 },
@@ -540,7 +569,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
       built = {
         M, gpu, amr:up([...A.amr,...A.wheel]), body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
-        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },
+        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },linkages:up(M.linkages),
         tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
       };
       built.gpu.push(built.tag.paper, built.tag.border, built.tag.ink, ...built.tag.cells);
@@ -688,6 +717,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
         for(const p of B.hand[a.side]){setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(k.R,k.wrist));}
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
         for (const j of [1, -1]) for(const p of B.finger[j]){setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(k.R,C.add(k.wrist,C.mulv(k.R,[0,j*jaw/2,0]))));}
+        const linkage=gripperLayout(o.m,jaw);
+        for(const p of B.linkages){const pose=gripperPartPose(p,linkage);setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(C.mul3(k.R,pose.R),C.add(k.wrist,C.mulv(k.R,pose.t))));}
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       // the force arrows (o.forces: [{a: tail, b: tip, warn}]), over everything: they are often inside a gripper
@@ -735,5 +766,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     return self;
   }
 
-  return { meshes, actorMeshes, supportLayout, robotPalette:ROBOT_COLORS, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
+  return { meshes, actorMeshes, supportLayout, gripperLayout,gripperPartPose,robotPalette:ROBOT_COLORS, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
 });

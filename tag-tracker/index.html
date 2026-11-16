@@ -230,9 +230,10 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .dlg legend{font-weight:700;font-size:14px;font-stretch:112%;padding:0 8px 0 0}
 .dlg-f{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--rule2);flex-wrap:wrap}
 .dlg .hint.bad,#boardMsg.bad{color:var(--warn)}
-#controlsDlg[open]{display:flex;flex-direction:column;width:min(820px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:hidden}
-#controlsDlg .dlg-h{flex:none}.controls-help{min-height:0;overflow:auto;padding:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 28px}.controls-help>p{grid-column:1/-1;margin:0;color:var(--ink2);font-size:13px}.controls-help section{min-width:0}.controls-help h3{margin:0 0 8px;font-size:15px}.controls-help dl{margin:0}.controls-help dl>div{display:grid;grid-template-columns:minmax(100px,.85fr) minmax(0,1.4fr);gap:10px;border-top:1px solid var(--rule);padding:7px 0;font-size:13px;line-height:1.45}.controls-help dt{font-weight:600}.controls-help dd{margin:0;color:var(--ink2)}.controls-help kbd{font:inherit}
-@media(max-width:600px){#controlsDlg[open]{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.controls-help{grid-template-columns:minmax(0,1fr);gap:18px}.controls-help dl>div{grid-template-columns:minmax(104px,.8fr) minmax(0,1.4fr)}}
+#controlsDlg[open]{display:flex;flex-direction:column;width:min(980px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:hidden}
+#controlsDlg .dlg-h{flex:none}.controls-help{min-height:0;overflow:auto;padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:14px}.controls-help p{margin:0;color:var(--ink2);font-size:13px}.controls-help h3{margin:0 0 10px;font-size:14px}.controls-layout{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;font-size:12px}.controls-layout .seg button{height:34px}.controls-legend{font-size:12px!important}.controls-keyboard-window{min-width:0;width:100%;max-width:100%;overflow-x:auto;padding:3px 1px 7px;scrollbar-width:thin}.controls-keyboard{--key-height:44px;--key-gap:4px;min-width:740px;display:grid;gap:var(--key-gap)}.controls-key-row{display:flex;gap:var(--key-gap,4px);position:relative}.controls-key,.controls-key-gap{flex:var(--key-units,1) 1 0;min-width:0}.controls-key{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;height:var(--key-height,44px);padding:2px;border:1px solid var(--rule);border-bottom-width:3px;border-radius:4px;background:var(--well);color:var(--muted);font:600 12px/1.15 var(--font)}.controls-key small{font-size:9px;font-weight:400}.controls-key.is-bound{border-color:var(--accent);background:var(--accentWash);color:var(--accent);cursor:pointer}.controls-key.is-bound:hover,.controls-key[aria-pressed=true]{background:var(--accent);color:var(--onAccent)}.controls-key.is-tall{height:calc(2*var(--key-height) + var(--key-gap));clip-path:polygon(0 0,100% 0,100% 100%,16.67% 100%,16.67% 50%,0 50%);z-index:1}.controls-scroll-hint{display:none}.controls-pointer-row{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-top:1px solid var(--rule);padding-top:12px}.controls-arrows{--key-height:42px;--key-gap:4px;width:150px;display:grid;gap:4px}.controls-arrow-help{max-width:280px}.controls-arrow-help p{margin-top:8px}.controls-mouse-help{display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px 16px}.controls-mouse-help h3{width:100%;margin-bottom:0}.controls-mouse{position:relative;width:106px;height:126px;border:1px solid var(--rule2);border-radius:36px 36px 28px 28px;background:var(--well);flex:none}.controls-mouse button{position:absolute;border:1px solid var(--accent);background:var(--accentWash);color:var(--accent);cursor:pointer;font:600 12px var(--font)}.controls-mouse button:hover,.controls-mouse button[aria-pressed=true]{background:var(--accent);color:var(--onAccent)}.controls-mouse [data-mouse-control=left]{top:0;left:0;width:52px;height:65px;border-radius:36px 0 0 0;padding-right:12px}.controls-mouse [data-mouse-control=right]{top:0;right:0;width:52px;height:65px;border-radius:0 36px 0 0;padding-left:12px}.controls-mouse [data-mouse-control=wheel]{top:15px;left:39px;width:26px;height:43px;border-radius:4px;z-index:1;background:var(--panel)}.controls-mouse-gestures{align-self:flex-end;white-space:normal;max-width:160px;font-size:12px!important;border-color:var(--accent)!important;color:var(--accent)!important}.controls-mouse-gestures[aria-pressed=true]{background:var(--accent)!important;color:var(--onAccent)!important}.controls-key-info{flex:none;border-top:1px solid var(--rule2);background:var(--field);padding:12px 14px;min-height:90px;max-height:35dvh;overflow:auto}.controls-key-info strong{display:block;color:var(--accent);font-size:14px}.controls-key-info p{margin:5px 0 0;font-size:13px;line-height:1.45}
+.controls-keyboard-window{height:294px;min-height:294px;overflow-y:hidden}.controls-key-row{height:var(--key-height,44px)}
+@media(max-width:760px){#controlsDlg[open]{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.controls-scroll-hint{display:block;font-size:12px!important}.controls-pointer-row{gap:14px;flex-wrap:wrap}.controls-arrow-help{max-width:210px}.controls-mouse-help{max-width:220px}.controls-key-info{min-height:110px}.controls-layout .seg button{padding:0 8px;font-size:12px}}
 .pick .ord{font-weight:650;font-size:11.5px;color:var(--accent)}
 .brow{display:grid;grid-template-columns:auto minmax(90px,1fr) auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
 .brow:first-child{border-top:0}
@@ -855,9 +856,14 @@ body.game-screen .card3d>.card-h,body.game-screen #taskPanel,body.game-screen #r
   <div class="dlg-h"><h2 id="controlsTitle">{{ site.data.tag_tasks.controls_help.title }}</h2><button class="btn sm sq" id="controlsClose" aria-label="{{ site.data.tag_tasks.ui.close }}" autofocus><svg class="i"><use href="#i-x"/></svg></button></div>
   <div class="controls-help" tabindex="0">
     <p id="controlsIntro">{{ site.data.tag_tasks.controls_help.intro }}</p>
-    {% for group in site.data.tag_tasks.controls_help.groups %}<section aria-labelledby="controlsGroup{{ forloop.index }}"><h3 id="controlsGroup{{ forloop.index }}">{{ group.title }}</h3><dl>{% for mapping in group.mappings %}<div><dt><kbd>{{ mapping.input }}</kbd></dt><dd>{{ mapping.action }}</dd></div>{% endfor %}</dl></section>{% endfor %}
+    <div class="controls-layout"><span>{{ site.data.tag_tasks.controls_help.layout_label }}</span><span class="seg" role="radiogroup" aria-label="{{ site.data.tag_tasks.controls_help.layout_label }}">{% for keyboard in site.data.tag_tasks.controls_help.keyboard.layouts %}<button type="button" role="radio" data-keyboard-layout="{{ keyboard.id }}" aria-checked="false">{{ keyboard.label }}</button>{% endfor %}</span></div>
+    <p class="controls-legend">{{ site.data.tag_tasks.controls_help.legend }}</p>
+    <div class="controls-keyboard-window"><div id="controlsKeyboard" class="controls-keyboard" role="group" aria-label="{{ site.data.tag_tasks.controls_help.key_group }}"></div></div>
+    <p class="controls-scroll-hint">{{ site.data.tag_tasks.controls_help.scroll_hint }}</p>
+    <div class="controls-pointer-row"><section class="controls-mouse-help" aria-labelledby="controlsMouseTitle"><h3 id="controlsMouseTitle">{{ site.data.tag_tasks.controls_help.mouse_group }}</h3><div class="controls-mouse">{% for mouse in site.data.tag_tasks.controls_help.mouse %}{% unless mouse.id == 'body' %}<button data-mouse-control="{{ mouse.id }}">{{ mouse.short }}</button>{% endunless %}{% endfor %}</div>{% for mouse in site.data.tag_tasks.controls_help.mouse %}{% if mouse.id == 'body' %}<button class="btn sm outline controls-mouse-gestures" data-mouse-control="{{ mouse.id }}">{{ mouse.short }}</button>{% endif %}{% endfor %}</section><section class="controls-arrow-help" aria-labelledby="controlsArrowsTitle"><h3 id="controlsArrowsTitle">{{ site.data.tag_tasks.controls_help.arrow_group }}</h3><div id="controlsArrows" class="controls-arrows" role="group" aria-labelledby="controlsArrowsTitle"></div><p>{{ site.data.tag_tasks.controls_help.arrow_hint }}</p></section></div>
     <p>{{ site.data.tag_tasks.controls_help.note }}</p>
   </div>
+  <div class="controls-key-info" role="status" aria-live="polite"><strong id="controlsKeyTitle">{{ site.data.tag_tasks.controls_help.prompt_title }}</strong><p id="controlsKeyDetail">{{ site.data.tag_tasks.controls_help.prompt_text }}</p></div>
 </dialog>
 
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
@@ -1059,11 +1065,11 @@ body.game-screen .card3d>.card-h,body.game-screen #taskPanel,body.game-screen #r
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
 <script src="tracker-core.js?v=52a69d77"></script>
-<script src="robot-core.js?v=34912f74"></script>
+<script src="robot-core.js?v=59abcd0b"></script>
 <script src="cloth-render-core.js?v=4d36b3e4"></script>
 <script src="liquid-render-core.js?v=c8633fcc"></script>
-<script src="robot-gl.js?v=a81bdf90"></script>
-<script src="physics-core.js?v=f91ea371"></script>
+<script src="robot-gl.js?v=69241cf0"></script>
+<script src="physics-core.js?v=bb2c1787"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
 <script src="cable-core.js?v=2ad7bd56"></script>
 <script src="capture-core.js?v=4a30abd7"></script>
@@ -1078,8 +1084,9 @@ body.game-screen .card3d>.card-h,body.game-screen #taskPanel,body.game-screen #r
 <script src="app-state.js?v=5ead985c"></script>
 <script src="app-cameras.js?v=1709d28f"></script>
 <script src="app-plot.js?v=ca7272fa"></script>
-<script src="app-robot.js?v=0b0e59e8"></script>
-<script src="app-tasks.js?v=29a20955"></script>
+<script src="app-robot.js?v=a2a593d3"></script>
+<script src="app-tasks.js?v=020fb0da"></script>
+<script src="controls-help.js?v=f672f273"></script>
 <script src="app-views.js?v=705e4feb"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>

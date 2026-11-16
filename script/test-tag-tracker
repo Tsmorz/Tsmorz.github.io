@@ -920,6 +920,7 @@ if (run('5h')) {
 }
 
 if (run('5i')) {
+  require('./tag-tracker/robotiq-physics.cjs')({check});
   console.log('5i. the table: the physics the robot plays with, and the gripper on the operator\'s hand');
   require('./tag-tracker/restart.cjs')({check});
   require('./tag-tracker/sound-reset.cjs')({check});
@@ -1007,7 +1008,8 @@ if (run('5i')) {
   W = P.world({ table, gripper: G });
   const c4 = W.add('cup', [0, 0, 0], Rz180), b5 = W.add('ball', [0, 0, 0.12]);
   run(W, 60);
-  const fz = -G.finger.c[2];
+  // Take the near wall with the tips; the 75 mm housing must stay outside the mug.
+  const fz = -(G.finger.c[2]-G.finger.h[2])+P.CUP.R-.02;
   hand = { R: Rh, t: [-fz, 0, 0.04] };
   drive(30, null, 1); drive(40, null, 0);
   const heldMug = W.hands[1].grip && W.hands[1].grip.body === c4;
@@ -1040,7 +1042,8 @@ if (run('5i')) {
   };
   // pinched by its handle: a light pinch can't hold the mug's weight off to one side and it swings down about the jaws;
   // a firm one holds it
-  const hx = -(P.CUP.handle.x + P.CUP.handle.a) - 0.002, hz = P.CUP.handle.z, atHandle = { R: I, t: [hx, 0, hz - G.finger.c[2]] };
+  // Approach the upper handle so the wider Robotiq housing clears the vessel rim.
+  const hx = -(P.CUP.handle.x + P.CUP.handle.a) - 0.002, hz = P.CUP.handle.z+.01, atHandle = { R: I, t: [hx, 0, hz - G.finger.c[2]] };
   const hl = gripLift(Rz180, atHandle, 0.001), hf = gripLift(Rz180, atHandle, 1);
   check(hl.took && Math.abs(hl.gap - 2 * P.CUP.handle.b) < 0.001 && hl.held && hl.tilt > 30 && hl.z > 0.06 && hf.held && hf.tilt < 5 && hf.z > 0.11,
     `pinched by its handle (jaws ${(hl.gap * 1000).toFixed(1)} mm apart) and lifted, the mug swings ${hl.tilt.toFixed(0)}° about the jaws held lightly and stays held; held firmly, ${hf.tilt.toFixed(1)}°`);
@@ -1102,7 +1105,8 @@ if (run('5i')) {
     });
     const rh = Wh.record.hands[1], push = rh.contacts.filter((x) => x.other.kind === 'hand').reduce((v, x) => C.add(v, x.f), [0, 0, 0]);
     const felt = P.haptics(Wh.record, 1).touches.find((x) => x.via === 'hand') || {};
-    check(worst > -0.002 && Wh.hands[1].body.t[1] > Wh.hands[-1].body.t[1] && Math.abs(push[1] - P.HAND.force) < 0.1 * P.HAND.force && clash.length >= 1 && clash[0].a.mat === 'aluminium' && felt.mat === 'aluminium',
+    // The open fingers now extend past the narrower cylindrical palm and meet first.
+    check(worst > -0.002 && Wh.hands[1].body.t[1] > Wh.hands[-1].body.t[1] && Math.abs(push[1] - P.HAND.force) < 0.1 * P.HAND.force && clash.length >= 1 && clash[0].a.mat === 'rubber' && felt.mat === 'rubber',
       `two grippers driven into each other meet and stop (overlap at most ${(-worst * 1000).toFixed(1)} mm), pushing with ${push[1].toFixed(1)} N (all an arm can: ${P.HAND.force} N); a clank at ${((clash[0] || {}).speed || 0).toFixed(2)} m/s, felt as ${felt.mat || 'nothing'}`);
     // (the link runs along y at x = 10 cm, level with the fingers; overlap is the deepest any of the hand's spheres goes into it)
     const sweep = (link) => {
@@ -1146,8 +1150,8 @@ if (run('5i')) {
       `a gripper dragged 10 cm into the table presses with ${held.F.toFixed(1)} N and rises ${(held.up * 1000).toFixed(1)} mm when the pointer comes up 10 mm (the first ${P.PRESS * 1000} mm only lets the press off; sliding ${(held.slid * 1000).toFixed(1)} mm); sent where the pointer is, ${raw.F.toFixed(0)} N and ${(raw.up * 1000).toFixed(1)} mm`);
   }
   // A gripper tilted 23° about its fingers, dragged level (in a horizontal plane) 5 cm into the other gripper. Held back
-  // in the drag plane it rests against it at its own height; sent where the pointer is, the drive spends all its force
-  // on the push, the tilted faces turn some of it up and down, and the two slide past each other
+  // in the drag plane it rests against it at its own height and with a lighter preload. Without holdBack the drive
+  // spends all its force on the push; round housings and articulated fingers may interlock instead of sliding apart.
   {
     const Rt = C.mul3([1, 0, 0, 0, Math.cos(0.4), -Math.sin(0.4), 0, Math.sin(0.4), Math.cos(0.4)], Rh), z = 0.3;
     const drag = (hold) => {
@@ -1165,8 +1169,8 @@ if (run('5i')) {
       return { dz: Wd.handPose(1).t[2] - z, other: Wd.handPose(-1).t[2] - z, push: Wd.record.hands[1].contacts.filter((x) => x.other.kind === 'hand').reduce((v, x) => v + C.norm(x.f), 0) };
     };
     const held = drag(true), raw = drag(false);
-    check(Math.abs(held.dz) < 0.002 && Math.abs(held.other) < 0.002 && held.push > 2 && held.push < 20 && Math.abs(raw.dz) > 0.01,
-      `a tilted gripper dragged level into the other rests against it at its height (${(held.dz * 1000).toFixed(1)} mm off, the other ${(held.other * 1000).toFixed(1)} mm), pushing ${held.push.toFixed(1)} N; sent where the pointer is, it slides ${(raw.dz * 1000).toFixed(0)} mm and the other ${(raw.other * 1000).toFixed(0)} mm`);
+    check(Math.abs(held.dz) < 0.002 && Math.abs(held.other) < 0.002 && held.push > 2 && held.push < 20 && raw.push > held.push*2,
+      `a tilted gripper dragged level into the other stays at its height (${(held.dz * 1000).toFixed(1)} mm off, the other ${(held.other * 1000).toFixed(1)} mm), pushing ${held.push.toFixed(1)} N; without holdBack it presses ${raw.push.toFixed(1)} N`);
   }
   // The record: impacts, touches and the forces on the hands (for the force arrows, the sounds and haptics).
   check(Object.values(P.MATERIALS).every((v, i, a) => Number.isInteger(v) && v > 0 && a.indexOf(v) === i) && P.MATERIALS.wood === 1 && P.MATERIALS.ceramic === 2 && P.MATERIALS.rubber === 3 && P.MATERIALS.aluminium === 4 && P.MATERIALS.stone === 5,
@@ -1239,9 +1243,10 @@ if (run('5i')) {
       `closing on the ball is an impact on the pads (felt: ${grasp.map((x) => (x.speed * 100).toFixed(0) + ' cm/s').join(', ')}); a ball dropped elsewhere is heard but not felt`);
     check(g.kind === 'ball' && Math.abs(g.load - w) < 0.1 * w && g.force[2] < 0 && !g.slipping && g.use < 1 && Wr.record.hands[1].hold > g.load,
       `held up, the grip carries the ball's weight (${(g.load || 0).toFixed(3)} N, ${w.toFixed(3)} N), down on the fingers, within what the pads hold (${Wr.record.hands[1].hold.toFixed(1)} N)`);
-    go(30, (s) => ({ R: I, t: [0, 0, P.BALL.r - G.finger.c[2] + 0.1 - 0.07 * s] }), 0);
+    // Keep the cylindrical housing above the rim, so this measures the held ball's hit.
+    go(30, (s) => ({ R: I, t: [0, 0, P.BALL.r - G.finger.c[2] + 0.1 - 0.05 * s] }), 0);
     felt = [];
-    go(24, (s) => ({ R: I, t: [0.12 * s, 0, P.BALL.r - G.finger.c[2] + 0.03] }), 0); go(10, null, 0);
+    go(24, (s) => ({ R: I, t: [0.12 * s, 0, P.BALL.r - G.finger.c[2] + 0.05] }), 0); go(10, null, 0);
     const knock = felt.find((x) => x.via === 'held') || {};
     check(knock.mat === 'ceramic' && knock.id === 2 && knock.through === 'stainless' && knock.speed > 0.15,
       `knocked into a mug, the operator feels it through the ball: ceramic, through stainless steel, at ${((knock.speed || 0) * 100).toFixed(0)} cm/s`);

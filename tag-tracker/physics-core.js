@@ -195,16 +195,30 @@
     const c = HAND.com, out = [];
     const at = (p, r, extra) => out.push(Object.assign({ p: sub(p, c), r, mu: ROBOT_MU, mat: 'aluminium' }, extra || {}));
     at([0, 0, -0.012], 0.03);
-    for (const y of [-0.04, -0.02, 0, 0.02, 0.04]) at([0, y, G.body.c[2]], Math.min(G.body.h[0], G.body.h[2]));
+    if(G.body.type==='cylinder'){
+      // A filled, rounded cylinder proxy, never the old 128 mm-wide palm row.
+      const r=Math.min(G.body.r,G.body.h[2]),ring=G.body.r-r;
+      at(G.body.c,r,{palm:true});
+      for(let k=0;k<8;k++){const a=k*Math.PI/4;at(add(G.body.c,[ring*Math.cos(a),ring*Math.sin(a),0]),r,{palm:true});}
+    }else for(const y of [-0.04,-0.02,0,.02,.04])at([0,y,G.body.c[2]],Math.min(G.body.h[0],G.body.h[2]),{palm:true});
     const fr = G.finger.h[1], top = G.finger.c[2] + G.finger.h[2] - fr, bot = G.finger.c[2] - G.finger.h[2] + fr;
     for (const j of [1, -1]) for (const x of [-0.011, 0, 0.011]) for (let k = 0; k < 4; k++) {
       // a pad's spheres touch with the pad's own flat face (`flat`, pointing into the gap)
       at([x, j * (g / 2 + fr), top + ((bot - top) * k) / 3], fr, { jaw: j, flat: [0, -j, 0], mu: PAD_MU, mat: 'rubber' });
     }
+    for(const jaw of G.linkage?.(g)||[]){
+      for(const s of jaw.segments){
+        const d=sub(s.b,s.a),n=Math.max(1,Math.ceil((norm(d)-1e-9)/(1.5*s.r)));
+        // Joint spheres cover each endpoint; bounded spacing fills the metal bars.
+        for(let k=1;k<n;k++)at(madd(s.a,d,k/n),s.r,{link:true});
+      }
+      for(const j of jaw.joints)at(j.p,j.r,{link:true});
+    }
     return out;
   }
   function handBody(G) {
-    return makeBody('hand', { m: HAND.mass, Ib: diag(HAND.I), off: scale(HAND.com, -1), sp: handSpheres(G, G.gapMax), bound: HAND.bound, mu: ROBOT_MU, e: 0.1, mat: 'aluminium' });
+    const sp=handSpheres(G,G.gapMax),bound=Math.max(HAND.bound,...sp.map(s=>norm(s.p)+s.r));
+    return makeBody('hand', { m: HAND.mass, Ib: diag(HAND.I), off: scale(HAND.com, -1), sp, bound, mu: ROBOT_MU, e: 0.1, mat: 'aluminium' });
   }
 
   // Compound props share their collision geometry with the renderer. All pieces are centred boxes or capped
@@ -423,7 +437,11 @@
           else if (h.target < h.gap) h.gap = Math.max(h.target, h.gap - JAW_SPEED * H);
         }
         h.jawRate = (h.gap - g0) / H;
-        b.sp = handSpheres(G, h.gap);
+        const previous=b.sp;b.sp=handSpheres(G,h.gap);b.bound=HAND.bound;
+        for(let i=0;i<b.sp.length;i++){
+          const s=b.sp[i];b.bound=Math.max(b.bound,norm(s.p)+s.r);
+          if(s.link&&previous[i]?.link)s.motion=scale(sub(s.p,previous[i].p),1/H);
+        }
         h.touch = [null, null]; h.pads = [[], []];
         const c0 = add(T0.t, mulv(T0.R, HAND.com)), c1 = add(T1.t, mulv(T1.R, HAND.com)), K = HAND.w;
         const [F] = clampLen(scale(add(scale(sub(c1, b.t), K * K), scale(sub(scale(sub(c1, c0), 1 / H), b.v), 2 * K)), HAND.mass), HAND.force);
@@ -450,7 +468,7 @@
       // contacts
       const cs = [], world = (b) => b.sp.map((s) => ({ c: add(b.t, mulv(b.R, s.p)), r: s.r, s }));
       const S = new Map([...props, ...hb].map((b) => [b, world(b)]));
-      const jawExt = (b, s) => { const h = hands.find((x) => x.h.body === b); return s.jaw ? mulv(b.R, [0, (s.jaw * h.h.jawRate) / 2, 0]) : null; };
+      const jawExt = (b, s) => { const h = hands.find((x) => x.h.body === b); return s.motion?mulv(b.R,s.motion):s.jaw ? mulv(b.R, [0, (s.jaw * h.h.jawRate) / 2, 0]) : null; };
       // a hand's sphere s meeting something along nOut (out of the hand): a pad turns that to its face, and notes it
       const padN = (b, s, nOut, other, dist) => {
         if (!s.flat) return nOut;
@@ -532,8 +550,8 @@
       for (const generate of W.contactGenerators) for (const c of generate())
         cs.push(contact(c.A,-1,c.B,-1,c.p,c.n,c.dist,null,c.mu,c.key));
       for (const ct of cs) {
-        if (ct.A.kind === 'hand' && ct.sA && ct.sA.jaw) ct.eA = jawExt(ct.A, ct.sA);
-        if (ct.B && ct.B.kind === 'hand' && ct.sB && ct.sB.jaw) ct.eB = jawExt(ct.B, ct.sB);
+        if (ct.A.kind === 'hand' && ct.sA && (ct.sA.jaw||ct.sA.link)) ct.eA = jawExt(ct.A, ct.sA);
+        if (ct.B && ct.B.kind === 'hand' && ct.sB && (ct.sB.jaw||ct.sB.link)) ct.eB = jawExt(ct.B, ct.sB);
         prep(ct);
       }
       const js = [];

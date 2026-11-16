@@ -461,72 +461,184 @@ controls_help:
   intro: Click the robot scene to focus it before using these keys. Select a gripper,
     then move, turn or open it. With capture-device orientation on, mouse and keyboard
     control position and grip; wrist keys work when capture orientation is off.
-  note: Movement scales translation only. Shift makes keyboard steps and wrist turns
-    finer; Shift-drag pans the outside camera. Mouse and keyboard take over a gripper’s position;
-    choose Resume AprilTags to return position control to your wrist tags. Close this panel with Escape or ×.
-  groups:
-  - title: Mouse
-    mappings:
-    - input: Drag a gripper
-      action: Move it in the plane that best faces the camera.
-    - input: Alt + drag a gripper
-      action: Use the alternate movement plane. Alt can change during a drag.
-    - input: Wheel over a gripper
-      action: Down closes the fingers; up opens them.
-    - input: Shift + wheel over a gripper
-      action: Tilt the wrist forward or back.
-  - title: Select and move
-    mappings:
-    - input: 1 / 2 / 3
-      action: Select the left gripper, right gripper or both.
-    - input: W / S
-      action: Move forward or back across the table.
-    - input: A / D
-      action: Move left or right across the table.
-    - input: Q / E
-      action: Raise or lower the gripper.
-    - input: ↑ / ↓ / ← / →
-      action: In Robot eyes, raise, lower or move sideways.
-    - input: Shift + movement key
-      action: Use a fine 0.2 mm step instead of 12 mm, multiplied by Movement.
-  - title: Turn the wrist
-    mappings:
-    - input: J / K
-      action: Tilt forward or back.
-    - input: I / P
-      action: Tilt sideways.
-    - input: U / O
-      action: Roll the wrist.
-    - input: Shift + wrist key
-      action: Turn about 0.1° instead of 5°.
-  - title: Camera
-    mappings:
-    - input: Drag empty space / arrow keys
-      action: Rotate the outside camera.
-    - input: Shift-drag / right-drag / middle-drag
-      action: Pan the outside camera.
-    - input: Wheel on empty space / pinch
-      action: Zoom the outside camera. Wheel up zooms in.
-    - input: Drag or wheel on empty space in Robot eyes
-      action: Look up or down. The Head camera tilt slider does the same.
-    - input: F / double-click
-      action: Fit the scene in the outside view.
-    - input: R
-      action: Reset the camera to the outside view.
-    - input: + / −
-      action: Zoom the outside camera in or out.
-  - title: Grasp and task
-    mappings:
-    - input: Space
-      action: Toggle the selected gripper open or closed. With both selected, close both if either is open.
-    - input: T
-      action: Restart the current task.
-    - input: M
-      action: Turn contact sounds on or off.
-    - input: C
-      action: Calibrate the robot from visible AprilTags. This does not set capture-device neutral.
-    - input: V
-      action: Start or stop Voice when no dialog or text field is active.
+  note: Movement keys step 12 mm × Movement, or 0.2 mm with Shift. Wrist keys turn 5°,
+    or about 0.1° with Shift. Mouse and keyboard take over a gripper’s position; choose
+    Resume AprilTags to return position control to your wrist tags. Close with Escape or ×.
+  layout_label: Keyboard layout
+  legend: Highlighted keys have a use here. Hover, focus or tap one to see it below.
+  scroll_hint: Swipe the keyboard sideways to see every key.
+  key_group: Physical keyboard reference
+  arrow_group: Arrow keys
+  arrow_hint: Outside view rotates the camera; Robot eyes moves the selected gripper.
+  mouse_group: Mouse
+  prompt_title: Choose a highlighted key or mouse control
+  prompt_text: This is a reference. Tapping here only shows a control’s use.
+  detail_separator: ' — '
+  keyboard:
+    default_layout: us
+    function_row:
+    - {label: Esc, action: escape}
+    - {gap: 1}
+    - {label: F1}
+    - {label: F2}
+    - {label: F3}
+    - {label: F4}
+    - {gap: 0.5}
+    - {label: F5}
+    - {label: F6}
+    - {label: F7}
+    - {label: F8}
+    - {gap: 0.5}
+    - {label: F9}
+    - {label: F10}
+    - {label: F11}
+    - {label: F12}
+    layouts:
+    - id: us
+      label: US QWERTY
+      rows:
+      - [{label: '`', shift: '~'}, {label: '1', shift: '!', action: left}, {label: '2', shift: '@', action: right}, {label: '3', shift: '#', action: both}, {label: '4', shift: '$'}, {label: '5', shift: '%'}, {label: '6', shift: '^'}, {label: '7', shift: '&'}, {label: '8', shift: '*'}, {label: '9', shift: '('}, {label: '0', shift: ')'}, {label: '-', shift: '_', action: zoom_out}, {label: '=', shift: '+', action: zoom_in}, {label: '⌫', width: 2}]
+      - [{label: Tab, width: 1.5}, {label: Q, action: up}, {label: W, action: forward}, {label: E, action: down}, {label: R, action: camera_reset}, {label: T, action: restart}, {label: Y}, {label: U, action: roll_minus}, {label: I, action: sideways_minus}, {label: O, action: roll_plus}, {label: P, action: sideways_plus}, {label: '[', shift: '{'}, {label: ']', shift: '}'}, {label: '\', shift: '|', width: 1.5}]
+      - [{label: Caps, width: 1.75}, {label: A, action: leftward}, {label: S, action: back}, {label: D, action: rightward}, {label: F, action: fit}, {label: G}, {label: H}, {label: J, action: tilt_forward}, {label: K, action: tilt_back}, {label: L}, {label: ';', shift: ':'}, {label: "'", shift: '"'}, {label: Enter, width: 2.25}]
+      - [{label: Shift, width: 2.25, action: shift}, {label: Z}, {label: X}, {label: C, action: calibrate}, {label: V, action: voice}, {label: B}, {label: N}, {label: M, action: sound}, {label: ',', shift: '<'}, {label: '.', shift: '>'}, {label: '/', shift: '?'}, {label: Shift, width: 2.75, action: shift}]
+      - [{label: Ctrl, width: 1.25}, {label: Win, width: 1.25}, {label: Alt, width: 1.25, action: alt}, {label: Space, width: 6.25, action: grasp}, {label: Alt, width: 1.25, action: alt}, {label: Win, width: 1.25}, {label: Menu, width: 1.25}, {label: Ctrl, width: 1.25}]
+    - id: de
+      label: German QWERTZ
+      rows:
+      - [{label: '^', shift: '°'}, {label: '1', shift: '!', action: left}, {label: '2', shift: '"', action: right}, {label: '3', shift: '§', action: both}, {label: '4', shift: '$'}, {label: '5', shift: '%'}, {label: '6', shift: '&'}, {label: '7', shift: '/'}, {label: '8', shift: '('}, {label: '9', shift: ')'}, {label: '0', shift: '=', input: Shift + 0, action: zoom_in_shift}, {label: 'ß', shift: '?'}, {label: '´', shift: '`'}, {label: '⌫', width: 2}]
+      - [{label: Tab, width: 1.5}, {label: Q, action: up}, {label: W, action: forward}, {label: E, action: down}, {label: R, action: camera_reset}, {label: T, action: restart}, {label: Z}, {label: U, action: roll_minus}, {label: I, action: sideways_minus}, {label: O, action: roll_plus}, {label: P, action: sideways_plus}, {label: Ü}, {label: '+', shift: '*', action: zoom_in}, {label: Enter, width: 1.5, tall: true}]
+      - [{label: Caps, width: 1.75}, {label: A, action: leftward}, {label: S, action: back}, {label: D, action: rightward}, {label: F, action: fit}, {label: G}, {label: H}, {label: J, action: tilt_forward}, {label: K, action: tilt_back}, {label: L}, {label: Ö}, {label: Ä}, {label: '#', shift: "'"}, {gap: 1.25}]
+      - [{label: Shift, width: 1.25, action: shift}, {label: '<', shift: '>'}, {label: Y}, {label: X}, {label: C, action: calibrate}, {label: V, action: voice}, {label: B}, {label: N}, {label: M, action: sound}, {label: ',', shift: ';'}, {label: '.', shift: ':'}, {label: '-', shift: '_', action: zoom_out}, {label: Shift, width: 2.75, action: shift}]
+      - [{label: Ctrl, width: 1.25}, {label: Win, width: 1.25}, {label: Alt, width: 1.25, action: alt}, {label: Space, width: 6.25, action: grasp}, {label: AltGr, width: 1.25}, {label: Win, width: 1.25}, {label: Menu, width: 1.25}, {label: Ctrl, width: 1.25}]
+    arrows:
+    - [{gap: 1}, {label: '↑', action: arrow_up}, {gap: 1}]
+    - [{label: '←', action: arrow_left}, {label: '↓', action: arrow_down}, {label: '→', action: arrow_right}]
+  mouse:
+  - id: left
+    label: Left button
+    short: L
+    action: mouse_left
+  - id: right
+    label: Right button
+    short: R
+    action: mouse_right
+  - id: wheel
+    label: Wheel
+    short: '↕'
+    action: mouse_wheel
+  - id: body
+    label: Double-click / pinch
+    short: Double-click / pinch
+    action: mouse_gesture
+  actions:
+    escape:
+      title: "Close this reference"
+      detail: "Escape closes this panel without restarting or leaving the task."
+    left:
+      title: "Select left gripper"
+      detail: "Select the robot’s left gripper for movement and grasp keys."
+    right:
+      title: "Select right gripper"
+      detail: "Select the robot’s right gripper for movement and grasp keys."
+    both:
+      title: "Select both grippers"
+      detail: "Movement and grasp keys now apply to both grippers."
+    up:
+      title: "Raise gripper"
+      detail: "Move the selected gripper upward. Hold Shift for a finer step."
+    down:
+      title: "Lower gripper"
+      detail: "Move the selected gripper downward. Hold Shift for a finer step."
+    forward:
+      title: "Move forward"
+      detail: "Move the selected gripper forward across the table. Hold Shift for a finer step."
+    back:
+      title: "Move back"
+      detail: "Move the selected gripper back across the table. Hold Shift for a finer step."
+    leftward:
+      title: "Move left"
+      detail: "Move the selected gripper left across the table. Hold Shift for a finer step."
+    rightward:
+      title: "Move right"
+      detail: "Move the selected gripper right across the table. Hold Shift for a finer step."
+    tilt_forward:
+      title: "Tilt wrist forward"
+      detail: "Tilt the selected wrist forward. K turns it back; Shift makes the turn finer."
+    tilt_back:
+      title: "Tilt wrist back"
+      detail: "Tilt the selected wrist back. J turns it forward; Shift makes the turn finer."
+    sideways_minus:
+      title: "Tilt wrist sideways −"
+      detail: "Tilt the selected wrist sideways. P turns it the other way; Shift makes the turn finer."
+    sideways_plus:
+      title: "Tilt wrist sideways +"
+      detail: "Tilt the selected wrist sideways. I turns it the other way; Shift makes the turn finer."
+    roll_minus:
+      title: "Roll wrist −"
+      detail: "Roll the selected wrist. O turns it the other way; Shift makes the turn finer."
+    roll_plus:
+      title: "Roll wrist +"
+      detail: "Roll the selected wrist. U turns it the other way; Shift makes the turn finer."
+    grasp:
+      title: "Open or close gripper"
+      detail: "Toggle the selected gripper. With both selected, close both if either is open."
+    restart:
+      title: "Restart task"
+      detail: "Restart the current task from its ready pose."
+    sound:
+      title: "Toggle contact sound"
+      detail: "Turn the table’s contact sounds on or off."
+    calibrate:
+      title: "Calibrate robot"
+      detail: "Calibrate from visible AprilTags. This does not set capture-device neutral."
+    voice:
+      title: "Toggle Voice"
+      detail: "Start or stop Voice when no dialog or text field is active."
+    fit:
+      title: "Fit outside view"
+      detail: "Fit the scene in the outside camera view."
+    camera_reset:
+      title: "Reset outside view"
+      detail: "Switch to the outside camera and reset its view."
+    zoom_in:
+      title: "Zoom in"
+      detail: "Zoom the outside camera in."
+    zoom_in_shift:
+      title: "Zoom in with Shift"
+      detail: "Hold Shift on the German 0 key to type = and zoom the outside camera in."
+    zoom_out:
+      title: "Zoom out"
+      detail: "Zoom the outside camera out."
+    shift:
+      title: "Fine moves / mouse modifiers"
+      detail: "Hold with movement or wrist keys for finer steps. Shift-drag pans the outside camera; Shift-wheel over a gripper tilts its wrist."
+    alt:
+      title: "Alternate drag plane"
+      detail: "Hold Alt while dragging a gripper to use the alternate movement plane."
+    arrow_up:
+      title: "Camera up / gripper up"
+      detail: "Rotate the outside camera upward. In Robot eyes, raise the selected gripper instead."
+    arrow_down:
+      title: "Camera down / gripper down"
+      detail: "Rotate the outside camera downward. In Robot eyes, lower the selected gripper instead."
+    arrow_left:
+      title: "Camera left / gripper left"
+      detail: "Rotate the outside camera left. In Robot eyes, move the selected gripper left instead."
+    arrow_right:
+      title: "Camera right / gripper right"
+      detail: "Rotate the outside camera right. In Robot eyes, move the selected gripper right instead."
+    mouse_left:
+      title: "Drag gripper / look around"
+      detail: "Drag a gripper to move it in the plane facing the camera. Drag empty space to orbit the outside view, or look up/down in Robot eyes."
+    mouse_right:
+      title: "Pan outside camera"
+      detail: "Right-drag or middle-drag pans the outside camera. Shift-drag does the same."
+    mouse_wheel:
+      title: "Grip / zoom / head tilt"
+      detail: "Over a gripper, wheel down closes and up opens; Shift-wheel tilts the wrist. Over empty space, zoom the outside view or tilt the head in Robot eyes. Press and drag the wheel to pan the outside view."
+    mouse_gesture:
+      title: "Fit / touch zoom"
+      detail: "Double-click fits the outside view. Pinch with two fingers zooms the outside view; Robot eyes uses vertical dragging for head tilt."
 physics: Rigid contacts, friction-limited grasps, deformable XPBD fabric and an elastic
   cable run at 240 Hz. Cable and fabric loads pull back on the grippers. These are
   physical approximations; connector forces are representative, not measured hardware

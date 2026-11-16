@@ -82,12 +82,30 @@
   // widest the pads open.
   function gripper(m) {
     const fl = Math.max(0.045, (m && m.hand ? m.hand : MODEL.hand) - 0.045), z = -(0.07 + fl / 2);
-    return {
-      gapMax: 0.09, fl,
-      body: { c: [0, 0, -0.045], h: [0.03, 0.064, 0.024] },
+    const G={
+      gapMax: 0.085, fl,
+      body: { type:'cylinder',r:.0375,c: [0, 0, -0.045], h: [.0375,.0375,0.024] },
       finger: { c: [0, 0.009, z], h: [0.02, 0.009, fl / 2 + 0.006] },
       pad: { c: [0, 0.0015, -(0.075 + fl * 0.6)], h: [0.016, 0.002, fl * 0.36] },
     };
+    // Robotiq-style two-link mechanics, shared by rendering and colliding sphere chains.
+    // The task contact model keeps the pads parallel; it does not simulate adaptive wrapping.
+    G.linkage=gap=>{
+      const opening=clamp(gap,0,G.gapMax),rootY=.026,rootZ=G.body.c[2]-G.body.h[2]+.008,tipZ=G.finger.c[2]+.003,L=Math.max(.024,Math.abs(tipZ-rootZ)*.72);
+      return [1,-1].map(side=>{
+        const y=opening/2+G.finger.c[1],dy=y-rootY,dz=tipZ-rootZ,d=Math.hypot(dy,dz),h=Math.sqrt(Math.max(0,L*L-d*d/4)),knee=[(rootY+y)/2-dz/d*h,(rootZ+tipZ)/2+dy/d*h],segments=[],joints=[];
+        for(const x of [-.0205,.0205]){
+          const a=[x,side*rootY,rootZ],b=[x,side*knee[0],knee[1]],c=[x,side*y,tipZ];
+          segments.push({a,b,r:.004},{a:b,b:c,r:.004});for(const p of [a,b,c])joints.push({p,r:.006});
+        }
+        return {side,segments,joints};
+      });
+    };
+    G.halfWidth=gap=>{
+      const opening=clamp(gap,0,G.gapMax),jaws=G.linkage(opening);
+      return Math.max(G.body.h[1],opening/2+G.finger.c[1]+G.finger.h[1],opening/2+G.pad.c[1]+G.pad.h[1],...jaws.flatMap(j=>[...j.segments.flatMap(s=>[Math.abs(s.a[1])+s.r,Math.abs(s.b[1])+s.r]),...j.joints.map(s=>Math.abs(s.p[1])+s.r)]));
+    };
+    return G;
   }
 
   function model(o) {

@@ -358,15 +358,25 @@ function drawRobotFlat(c, o, h, now) {
     ball(P(k.elbow), 0.042, well, ink, al);
     seg(P(k.elbow), P(k.wrist), 0.035, fill, armInk, al);
     ball(P(k.wrist), 0.036, a.live && !a.idle ? K.accent : well, ink, al);
-    // the gripper: a bar across the hand along the jaws' travel (y), a finger each side at the gap, a dot on the back
-    const fd = [-H[2], -H[5], -H[8]], jy = [H[1], H[4], H[7]], bk = [H[0], H[3], H[6]];
-    const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(jy.map((x) => x * v), bk.map((x) => x * (w || 0))))));
-    const G = RCORE.gripper(m), g2 = (a.jaw === undefined ? G.gapMax : a.jaw) / 2 + G.finger.c[1], tip = 0.07 + G.fl;
-    const hot=hotOf(a),edge=hot?K.accent:ink;
-    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, hot?K.accent:fill, edge, al);
-    seg(at(0.07, g2), at(tip, g2), 0.009, hot?K.accent:well, edge, al);
-    seg(at(0.07, -g2), at(tip, -g2), 0.009, hot?K.accent:well, edge, al);
-    ball(at(0.045, 0, 0.032), 0.01, K.accent, K.accent, al);
+    // The fallback uses the same housing, opening and moving linkage as WebGL/contacts.
+    const G=RCORE.gripper(m),layout=RobotGL.gripperLayout(m,a.jaw===undefined?G.gapMax:a.jaw),at=p=>P(C.add(k.wrist,C.mulv(H,p)));
+    const hot=hotOf(a),edge=hot?K.accent:ink,dark=hot?K.accent:well;
+    const cylinder=(centre,radius,half,color)=>{
+      const rings=[-1,1].map(sign=>Array.from({length:16},(_,i)=>at([centre[0]+radius*Math.cos(i*Math.PI/8),centre[1]+radius*Math.sin(i*Math.PI/8),centre[2]+sign*half])));
+      face(rings[0].slice().reverse(),color,al);face(rings[1],color,al);
+      for(let i=0;i<16;i++){const j=(i+1)%16;face([rings[0][i],rings[0][j],rings[1][j],rings[1][i]],color,al);}
+    };
+    const handBox=(shape,color)=>{
+      const V=(x,y,z)=>at(shape.c.map((v,i)=>v+[x,y,z][i]*shape.h[i]));
+      for(const q of [[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]],[[-1,1,-1],[-1,-1,-1],[-1,-1,1],[-1,1,1]],[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]],[[1,1,-1],[-1,1,-1],[-1,1,1],[1,1,1]],[[1,-1,1],[1,1,1],[-1,1,1],[-1,-1,1]],[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]])face(q.map(p=>V(...p)),color,al);
+    };
+    cylinder(layout.cuff.c,layout.cuff.r,layout.cuff.h,well);
+    cylinder(layout.body.c,layout.body.r,layout.body.h[2],dark);
+    for(const jaw of layout.fingers){
+      handBox(jaw.backbone,dark);handBox(jaw.pad,hot?K.accent:palette.rubber);
+      for(const s of jaw.segments)seg(at(s.a),at(s.b),s.r,dark,edge,al);
+      for(const s of jaw.joints)ball(at(s.p),s.r,dark,edge,al);
+    }
   }
   tableFlat(face, seg, ball);
   items.sort((p, q) => q.z - p.z);
@@ -423,7 +433,7 @@ function placeTable(sc) {
   const anchor = sc.anchor || sc.chest;
   const R = RCORE.upright([anchor.R[0], anchor.R[3], anchor.R[6]]), ch = { R, t: anchor.t };
   // Leave clearance below the open jaws and the tray rim, so spawning cannot push the hands upward.
-  const clearance = G.body.h[1] + 0.045;
+  const clearance = G.halfWidth(G.gapMax) + 0.045;
   const cx = w[0] - 0.03 + TABLE.size[0] / 2, table = { R, t: RCORE.place(ch, [cx, 0, w[2] - clearance]), size: TABLE.size, thick: TABLE.thick };
   const kind = S.settings.robot.props;
   // the ball just past the left hand's fingertips (between the hands on its own), the mug past the right's

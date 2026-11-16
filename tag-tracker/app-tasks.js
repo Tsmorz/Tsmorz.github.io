@@ -44,7 +44,7 @@ function paintTasks(force){
   $('taskNext').hidden=!(active&&active.complete)||l.id===taskCatalog().at(-1).id;
 }
 function taskPlaced(){
-  TASK.stored=false;TASK.moved=false;TASK.guide=null;TASK.hudSig='';
+  TASK.stored=false;TASK.moved=false;TASK.guide=null;TASK.hudSig='';TASK.planKey=null;
   if(TB.game&&S.settings.robot.view!=='eyes'){
     const T=TB.world.table,d=C.mulv(T.R,TB.game.level.camera?.offset||[1.05,-.95,.78]),dist=C.norm(d);
     Object.assign(S.view,{target:C.add(T.t,C.mulv(T.R,TB.game.level.camera?.at||[0,0,.09])),dist:dist*Math.max(1,plot.clientHeight/Math.max(1,plot.clientWidth)),yaw:Math.atan2(d[0],-d[1]),pitch:Math.asin(d[2]/dist),fitted:true,fromCam:false});
@@ -186,7 +186,7 @@ function paintGameHUD(){
   $('gameTitle').textContent=l.name;$('gameObjective').textContent=l.brief;
   $('guideTitle').textContent=format(text.title);$('guideText').textContent=format(text.text);
   $('guideGoals').innerHTML=l.goals.map((r,i)=>`<li data-done="${!!(g&&g.steps[i])}" data-active="${i===guide.index}">${escapeHtml(r.label)}</li>`).join('');
-  const planKey=l.id+S.settings.robot.playMode;if(TASK.planKey!==planKey){TASK.planKey=planKey;$('guidePlanList').innerHTML=l.guide.plan.map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guideTipsList').innerHTML=l.guide.tips.map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guidePlan').open=l.id==='sort'||l.id==='laundry';}
+  const planKey=l.id+S.settings.robot.playMode;if(TASK.planKey!==planKey){TASK.planKey=planKey;$('guidePlanList').innerHTML=l.guide.plan.map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guideTipsList').innerHTML=l.guide.tips.map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guidePlan').open=false;}
   $('gameNext').hidden=$('taskNext').hidden;$('gameTags').hidden=!TB.drive.size||!RB.cal;
 }
 $('gameNext').onclick=()=>$('taskNext').click();$('guideRestart').onclick=()=>resetTable();$('gameTags').onclick=()=>$('tagsDriveBtn').click();

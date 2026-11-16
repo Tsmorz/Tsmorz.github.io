@@ -14,7 +14,7 @@ module.exports=function({check}){
   check(!hits&&Math.abs(W.poseOf(ball).t[0])<1e-9,'a reset from -12 cm to +12 cm never sweeps the old hand/forearm through the respawned ball');
 
   const data=JSON.parse(require('child_process').execFileSync('ruby',['-ryaml','-rjson','-e','puts JSON.generate(YAML.load_file(ARGV[0]))',root+'/_data/tag_tasks.yml']));
-  const ready=data.ready.joints.map(v=>v*Math.PI/180),home=R.fk(m,1,ready),taskTable={R:I,t:[home.wrist[0]-.03+.25,0,home.wrist[2]-(G.body.h[1]+.045)],size:[.5,.9],thick:.03};
+  const ready=data.ready.joints.map(v=>v*Math.PI/180),home=R.fk(m,1,ready),taskTable={R:I,t:[home.wrist[0]-.03+.25,0,home.wrist[2]-(G.halfWidth(G.gapMax)+.045)],size:[.5,.9],thick:.03};
   const robot={links:[],hands:[]};for(const side of [1,-1]){const k=R.fk(m,side,ready);robot.links.push({id:side+'u',a:k.shoulder,b:k.elbow,r:.04},{id:side+'f',a:k.elbow,b:k.wrist,r:.032});robot.hands.push({side,pose:{R:k.R,t:k.wrist},opening:1});}
   for(const level of data.levels){
     const g=T.create(level,taskTable,G),world=g.world;
