@@ -82,14 +82,14 @@
   // at the chest's origin, so the body's front passes just behind it.
   function bars(m, out) {
     out.bar = [
-      part(lathe([-m.back, 0, m.up], -m.half, m.half, () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([-m.back, 0, m.up], [0.065, 0.065, 0.065], 0.9, 0.9), 'shell'),
+      part(lathe([-m.back, 0, m.up], -m.half, m.half, () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'robotDark'),
+      part(blob([-m.back, 0, m.up], [0.065, 0.065, 0.065], 0.9, 0.9), 'robotShell'),
       part(torus([-m.back, 0, m.up - 0.01], 0.064, 0.006), 'light'),
     ];
     out.mount = {};
     for (const sd of [1, -1]) out.mount[sd] = [
-      part(lathe([-m.back, 0, m.up], sd * m.half, sd * (m.half - 0.14), () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.07, 0.025, 0.07], 0.9, 0.6), 'shell'),
+      part(lathe([-m.back, 0, m.up], sd * m.half, sd * (m.half - 0.14), () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'robotDark'),
+      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.07, 0.025, 0.07], 0.9, 0.6), 'robotShell'),
       part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.05, 0.03, 0.05], 0.9, 0.9, { nu: 24, nv: 12 }), 'light'),
     ];
   }
@@ -97,62 +97,56 @@
   // Machine: an engineering robot. Brushed aluminium box sections, motor drums on the joint axes, a battery on its
   // back, a sensor bar for a head with two lenses, a parallel gripper, on a column and a foot.
   function machine(m) {
-    const out = {}, cx = -0.075, wy = Math.max(0.09, m.half - 0.055), zc = m.up - 0.1, z0 = m.up - 0.3, hz = m.up + 0.17, hx = -m.back + 0.01;
+    const out = {}, cx = -0.075, wy = Math.max(0.09, m.half - 0.055), zc = m.up - 0.1, hz = m.up + 0.17, hx = -m.back + 0.01;
     out.body = [
-      part(blob([cx, 0, zc], [0.072, wy, 0.15], 0.2, 0.22, { nu: 48, nv: 32 }), 'metal'),
-      part(blob([cx + 0.062, 0, zc + 0.01], [0.014, wy * 0.8, 0.115], 0.18, 0.18, { nu: 40, nv: 24 }), 'dark'),
+      part(blob([cx, 0, zc], [0.072, wy, 0.15], 0.2, 0.22, { nu: 48, nv: 32 }), 'robotShell'),
+      part(blob([cx + 0.062, 0, zc + 0.01], [0.014, wy * 0.8, 0.115], 0.18, 0.18, { nu: 40, nv: 24 }), 'robotMetal'),
       part(blob([cx + 0.077, 0, -0.088], [0.004, 0.05, 0.005], 0.5, 0.3, { nu: 20, nv: 8 }), 'light'),
       part(blob([cx + 0.077, 0, zc - 0.11], [0.004, 0.008, 0.008], 1, 1, { nu: 12, nv: 8 }), 'light'),
-      part(blob([cx - 0.088, 0, zc + 0.01], [0.028, wy * 0.62, 0.11], 0.25, 0.25), 'dark'),
+      part(blob([cx - 0.088, 0, zc + 0.01], [0.028, wy * 0.62, 0.11], 0.25, 0.25), 'robotDark'),
       part(blob([cx - 0.118, 0, zc + 0.01], [0.004, wy * 0.4, 0.004], 0.5, 0.3, { nu: 16, nv: 6 }), 'light'),
-      part(lathe([cx, 0, 0], z0 + 0.02, zc - 0.13, () => 0.04, { k0: 0.08, k1: 0.08 }), 'dark'),
-      part(torus([cx, 0, (z0 + zc - 0.11) / 2], 0.043, 0.004), 'light'),
-      part(blob([cx, 0, z0 - 0.03], [0.07, 0.12, 0.045], 0.22, 0.25), 'metal'),
-      part(lathe([cx, 0, z0 - 0.03], 0.095, 0.15, () => 0.034, { axis: 'y', k0: 0.12, k1: 0.12 }), 'dark'),
-      part(lathe([cx, 0, z0 - 0.03], -0.095, -0.15, () => 0.034, { axis: 'y', k0: 0.12, k1: 0.12 }), 'dark'),
-      part(lathe([cx, 0, 0], z0 - 0.07, z0 - 0.26, (s) => 0.028 + 0.004 * s, { k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([cx, 0, z0 - 0.27], [0.11, 0.11, 0.016], 1, 0.6, { nu: 40, nv: 12 }), 'metal'),
-      part(torus([cx, 0, z0 - 0.268], 0.104, 0.004), 'light'),
-      part(lathe([hx, 0, 0], m.up + 0.04, m.up + 0.11, () => 0.03, { k0: 0.1, k1: 0.1 }), 'dark'),
-      part(blob([hx, 0, m.up + 0.11], [0.045, 0.045, 0.012], 1, 0.7, { nu: 28, nv: 10 }), 'metal'),
-      part(blob([hx + 0.01, 0, hz], [0.058, 0.105, 0.045], 0.22, 0.22, { nu: 40, nv: 24 }), 'metal'),
+      part(lathe([hx, 0, 0], m.up + 0.04, m.up + 0.11, () => 0.03, { k0: 0.1, k1: 0.1 }), 'robotDark'),
+      part(blob([hx, 0, m.up + 0.11], [0.045, 0.045, 0.012], 1, 0.7, { nu: 28, nv: 10 }), 'robotMetal'),
+    ];
+    out.head = [
+      part(blob([hx + 0.01, 0, hz], [0.058, 0.105, 0.045], 0.22, 0.22, { nu: 40, nv: 24 }), 'robotShell'),
       part(blob([hx + 0.065, 0, hz], [0.006, 0.09, 0.025], 0.25, 0.2, { nu: 32, nv: 12 }), 'glass'),
       part(blob([hx + 0.071, 0.048, hz], [0.008, 0.018, 0.018], 1, 1, { nu: 20, nv: 12 }), 'glass'),
       part(blob([hx + 0.071, -0.048, hz], [0.008, 0.018, 0.018], 1, 1, { nu: 20, nv: 12 }), 'glass'),
       part(blob([hx + 0.078, 0.048, hz], [0.002, 0.006, 0.006], 1, 1, { nu: 12, nv: 8 }), 'light'),
       part(blob([hx + 0.078, -0.048, hz], [0.002, 0.006, 0.006], 1, 1, { nu: 12, nv: 8 }), 'light'),
-      part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'dark'),
+      part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'robotDark'),
     ];
-    out.head = out.body.splice(16); // sensor bar pivots at its centre; neck and torso stay in the chest frame
     bars(m, out);
     const L1 = m.upper, L2 = m.fore, G = RC.gripper(m);
     out.upper = [
-      part(lathe([0, 0, 0], -0.055, 0.055, () => 0.052, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
-      part(blob([0, 0, -L1 / 2], [0.036, 0.03, L1 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
-      part(blob([0.038, 0, -L1 / 2], [0.004, 0.012, L1 / 2 - 0.06], 0.5, 0.5, { nu: 12, nv: 12 }), 'dark'),
-      part(lathe([0, 0, -L1], -0.05, 0.05, () => 0.045, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
+      part(lathe([0, 0, 0], -0.055, 0.055, () => 0.052, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'robotDark'),
+      part(blob([0, 0, -L1 / 2], [0.036, 0.03, L1 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'robotMetal'),
+      part(blob([0.038, 0, -L1 / 2], [0.004, 0.012, L1 / 2 - 0.06], 0.5, 0.5, { nu: 12, nv: 12 }), 'robotDark'),
+      part(lathe([0, 0, -L1], -0.05, 0.05, () => 0.045, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'robotDark'),
     ];
     out.fore = [
-      part(blob([0, 0, -L2 / 2], [0.03, 0.027, L2 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
-      part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'dark'),
+      part(blob([0, 0, -L2 / 2], [0.03, 0.027, L2 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'robotMetal'),
+      part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'robotDark'),
     ];
     out.foreLight = [part(torus([0, 0, -(L2 - 0.06)], 0.035, 0.004, { nu: 36, nv: 8 }), 'light')];
     // the gripper: a body across the jaws' travel with a rail under it, a light on the back of the hand
     const gb = G.body, rail = gb.c[2] - gb.h[2];
     out.hand = {};
     for (const sd of [1, -1]) out.hand[sd] = [
-      part(lathe([0, 0, 0], 0.004, -0.022, () => 0.034, { k0: 0.1, k1: 0.1 }), 'dark'),
-      part(blob(gb.c, gb.h, 0.2, 0.2), 'metal'),
-      part(blob([0, 0, rail], [0.012, gb.h[1] - 0.006, 0.003], 0.4, 0.3, { nu: 24, nv: 8 }), 'dark'),
+      part(lathe([0, 0, 0], 0.004, -0.022, () => 0.034, { k0: 0.1, k1: 0.1 }), 'robotDark'),
+      part(blob(gb.c, gb.h, 0.2, 0.2), 'robotMetal', {grip:true}),
+      part(blob([0, 0, rail], [0.012, gb.h[1] - 0.006, 0.003], 0.4, 0.3, { nu: 24, nv: 8 }), 'robotDark', {grip:true}),
       part(blob([gb.h[0] + 0.001, 0, gb.c[2]], [0.003, 0.016, 0.012], 1, 1, { nu: 20, nv: 6 }), 'light'),
     ];
     const mir = (c, j) => [c[0], j * c[1], c[2]];
     out.finger = {};
     for (const j of [1, -1]) out.finger[j] = [
-      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
-      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'rubber', {tip:true}),
+      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'robotMetal', {grip:true}),
+      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'robotRubber', {tip:true,grip:true}),
     ];
-    out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], [cx, 0.11, z0 - 0.29], [cx, -0.11, z0 - 0.29], [0, 0, 0]];
+    const base=supportLayout(m).base;
+    out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], ...[-1,1].flatMap(x=>[-1,1].map(y=>[base.c[0]+x*base.h[0],y*base.h[1],base.c[2]-base.h[2]])), [0, 0, 0]];
     return out;
   }
 
@@ -324,12 +318,23 @@
     return out;
   }
 
-  // The AMR base and wheels use the same frame as the robot.
-  function actorMeshes(m) {
-    const b=(p,r,mat)=>part(blob(p,r,0.7,0.8,{nu:24,nv:16}),mat), hz=m.up+.17, hx=-m.back+.02;
-    const amr=[b([-.065,0,.115],[.18,.19,.055],'metal'),b([-.065,0,.17],[.145,.16,.018],'dark'),b([-.075,0,.35],[.027,.027,.21],'metal'),b([.112,0,.12],[.004,.105,.009],'light')];
-    const wheel=[b([0,0,0],[.07,.025,.07],'dark'),b([0,.026,0],[.045,.004,.045],'metal'),b([0,.031,0],[.04,.005,.006],'dark')];
-    return {amr,wheel};
+  // Shared with the flat fallback. The post is one uninterrupted section from the grounded
+  // base into the torso; collars and full-height ribs reinforce it without introducing joints.
+  function supportLayout(m,floor=m.up-.59) {
+    const cx=-.075,bottom=floor+.045,top=Math.max(bottom+.08,m.up-.22),height=top-bottom;
+    const post={c:[cx,0,(bottom+top)/2],h:[.06,.065,height/2]};
+    return {floor,base:{c:[cx,0,floor+.025],h:[.19,.21,.025]},post,
+      collar:{c:[cx,0,bottom+.018],h:[.084,.092,.025]},cap:{c:[cx,0,top-.006],h:[.075,.09,.012]},
+      ribs:[-1,1].map(s=>({c:[cx,s*.066,post.c[2]],h:[.052,.009,post.h[2]]})),
+      bolts:[-1,1].flatMap(x=>[-1,1].map(y=>[cx+x*.145,y*.165,floor+.051]))};
+  }
+  // The support lives in the chest frame. Keeping it separate lets tasks extend the same
+  // single post to the actual floor without scaling the robot or its kinematic dimensions.
+  function actorMeshes(m,floor) {
+    const layout=supportLayout(m,floor),box=(s,mat,role)=>part(blob(s.c,s.h,.18,.2,{nu:32,nv:20}),mat,{support:role});
+    const amr=[box(layout.base,'robotMetal','base'),box(layout.post,'robotShell','post'),box(layout.collar,'robotMetal','collar'),box(layout.cap,'robotMetal','cap'),...layout.ribs.map(s=>box(s,'robotMetal','rib'))];
+    for(const p of layout.bolts)amr.push(part(lathe(p,-.002,.004,()=>.006,{nu:12,nv:4,k0:.04,k1:.04}),'robotDark',{support:'bolt'}));
+    return {amr,wheel:[]};
   }
 
   // ---- drawing ----
@@ -383,6 +388,10 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
   }
   // the materials ('light' is the violet glow)
   const MATS = {
+    robotMetal: {base:lin('#d8dbde'),spec:.9,shine:90,rough:.3,metal:.38,rim:.8},
+    robotShell: {base:lin('#eceeed'),spec:.3,shine:25,rough:.56,metal:.05,rim:.5},
+    robotDark: {base:lin('#42474b'),spec:.45,shine:40,rough:.55,rim:.5},
+    robotRubber: {base:lin('#303336'),spec:.08,shine:5,rough:.9,rim:.1},
     metal: { base: lin('#b8c0c8'), spec: 1, shine: 110, rim: .9, metal:.94, rough:.32 },
     dark: { base: lin('#24282e'), spec:.4, shine:30, rim:1, rough:.64 },
     glass: { base: lin('#07080c'), spec: 1.3, shine: 220, rim: 1.4 },
@@ -486,6 +495,12 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       propsKey = key;
       return props;
     }
+    let support=null,supportKey='';
+    function buildSupport(m,floor){
+      const key=JSON.stringify([m,floor]);if(key===supportKey)return support;
+      if(support)for(const p of support)free(p.g);
+      support=actorMeshes(m,floor).amr.map(p=>Object.assign({},p,{g:upload(p.mesh)}));supportKey=key;return support;
+    }
     const clothGPU = new Map();
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
     // o: { w, h, dpr, cam: TagCore.orbit result, fov, chest, m, arms: [{side, q, live, idle, reach, jaw: the gripper's gap (m),
@@ -514,7 +529,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       gl.uniform3fv(U.uFadeTo, bg);
       const rimLight = dark ? lin('#d9d4ff') : lin('#55606a');
       let current;const commands=[];
-      const surfaceOf=mat=>({floor:4,wood:1,plaster:2,fabric:3,rug:3,metal:5,pewter:5,gold:5,cotton:6,liquid:7,foam:8,bottleGlass:9,glass:9}[mat]||0);
+      const surfaceOf=mat=>({floor:4,wood:1,plaster:2,fabric:3,rug:3,metal:5,robotMetal:5,pewter:5,gold:5,cotton:6,liquid:7,foam:8,bottleGlass:9,glass:9}[mat]||0);
       const applyMat=m=>{gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniform1f(U.uMetal,m.metal);gl.uniform1f(U.uRough,m.rough);gl.uniform1f(U.uTransmit,m.transmit);gl.uniform1f(U.uAlpha,m.alpha);};
       const setMat=(mat,fade,tint,exact)=>{
         const M=mats[mat]||mats.shell;
@@ -582,7 +597,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       }
       const L=o.locomotion;
       if(o.body){
-        if(L){drawList(B.amr,at([1,0,0,0,1,0,0,0,1],[0,0,L.floor]),0);for(const side of [-1,1])drawList(B.wheel,at(RC.Ry((L.distance||0)/.07),[-.065,side*.19,L.floor+.075]),0);}
+        drawList(L?buildSupport(o.m,L.floor):B.amr,ch,o.fadeBody||0);
+        if(L){const b=supportLayout(o.m,L.floor).base;for(const x of [-1,1])for(const y of [-1,1])keep([b.c[0]+x*b.h[0],b.c[1]+y*b.h[1],L.floor]);}
         drawList(B.body, ch, o.fadeBody || 0);
         if (!o.eyes) {
           const pivot = [-o.m.back + 0.02, 0, o.m.up + 0.17], R = RC.Ry(-(o.headTilt || 0) * Math.PI / 180);
@@ -597,11 +613,11 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         drawList(B.fore, at(k.Rf, k.elbow), fade);
         // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
         if ((!a.reach || (a.live && !a.idle))) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
-        // Only the grasp pads highlight at the open/close hit target; the palm and fingers keep their material.
+        // Highlight the pickable gripper assembly without tinting its wrist motor or arm.
         const hot = a.hot ? glow.map((x) => x * (a.hot > 1 ? 1.25 : 1)) : null;
-        drawList(B.hand[a.side], at(k.R, k.wrist), fade);
+        for(const p of B.hand[a.side]){setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(k.R,k.wrist));}
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
-        for (const j of [1, -1]) for(const p of B.finger[j]){setMat(p.mat,fade,p.tip?hot:null);drawG(p.g,at(k.R,C.add(k.wrist,C.mulv(k.R,[0,j*jaw/2,0]))));}
+        for (const j of [1, -1]) for(const p of B.finger[j]){setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(k.R,C.add(k.wrist,C.mulv(k.R,[0,j*jaw/2,0]))));}
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       // the force arrows (o.forces: [{a: tail, b: tip, warn}]), over everything: they are often inside a gripper
@@ -649,5 +665,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     return self;
   }
 
-  return { meshes, actorMeshes, propMeshes, compoundMeshes, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
+  return { meshes, actorMeshes, supportLayout, propMeshes, compoundMeshes, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
 });

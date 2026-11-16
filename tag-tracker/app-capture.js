@@ -41,8 +41,12 @@ function zeroCaptureOrientation(b){
   if(!b||b.transport!=='capture'||b.state!=='live'||!a||!gameView()||document.hidden||!document.hasFocus()){
     note.textContent=TASK_DATA.link.capture_neutral_help;return;
   }
-  const R=C.mul3(sc.chest.R,RCORE.fk(sc.m,side,a.q).R);
+  const R=C.mul3(sc.chest.R,RCORE.fk(sc.m,side,robotReady()).R);
   if(!b.captureControl.zero(b.motion,R,side,S.settings.frame,performance.now(),sc.chest.R)){note.textContent=TASK_DATA.link.capture_still;return;}
+  const drive=TB.drive.get(side);if(drive)drive.R=R.slice();
+  // Explicit neutral also starts a new wrist branch. Retaining an unwrapped request
+  // from a full turn past a stop would keep a canonical rotation pinned at that stop.
+  for(const [key,prev] of RB.prev)if(prev.side===side||key==='drive'+side||key==='capture'+side)delete prev.wristInput;
   for(const other of S.boards)if(other!==b&&other.captureControl?.neutral?.side===side)other.captureControl.clear();
   note.textContent=TASK_DATA.link.capture_on;paintControllerPanel(true);
 }

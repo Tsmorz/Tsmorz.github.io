@@ -301,17 +301,17 @@ function drawRobotFlat(c, o, h, now) {
     if (area >= 0) return;
     items.push({ z: q.reduce((s, x) => s + x[2], 0) / 4 + 0.05, draw() { c.globalAlpha = al; c.beginPath(); q.forEach((x, i) => (i ? c.lineTo(x[0], x[1]) : c.moveTo(x[0], x[1]))); c.closePath(); c.fillStyle = fc; c.fill(); c.strokeStyle = ink; c.lineWidth = 1.5; c.lineJoin = 'round'; c.stroke(); } });
   };
-  const bodyAl = sc.bodyLive ? 1 : 0.45;
+  const boxAt=(centre,half,front,side,alpha)=>{
+    const [x,y,z]=centre,[hx,hy,hz]=half,V=(sx,sy,sz)=>P([x+sx*hx,y+sy*hy,z+sz*hz]);
+    const quads=[[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]],[[-1,1,-1],[-1,-1,-1],[-1,-1,1],[-1,1,1]],[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]],[[1,1,-1],[-1,1,-1],[-1,1,1],[1,1,1]],[[1,-1,1],[1,1,1],[-1,1,1],[-1,-1,1]],[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]];
+    quads.forEach((q,i)=>face(q.map(p=>V(...p)),i===0?front:side,alpha));
+  };
+  const bodyAl = gameView() || sc.bodyLive ? 1 : 0.45;
   if (sc.body) {
-    // torso: a box behind the chest tag, from the hips to the shoulders; then the neck, the head and its visor
-    const x0 = -0.01, x1 = -(2 * m.back + 0.06), y = Math.max(0.06, m.half - 0.035), z1 = m.up + 0.03, z0 = m.up - 0.52;
-    const V = (x, yy, z) => P([x, yy, z]);
-    const box = [
-      [V(x0, -y, z0), V(x0, y, z0), V(x0, y, z1), V(x0, -y, z1)], [V(x1, y, z0), V(x1, -y, z0), V(x1, -y, z1), V(x1, y, z1)],
-      [V(x1, -y, z0), V(x0, -y, z0), V(x0, -y, z1), V(x1, -y, z1)], [V(x0, y, z0), V(x1, y, z0), V(x1, y, z1), V(x0, y, z1)],
-      [V(x0, -y, z1), V(x0, y, z1), V(x1, y, z1), V(x1, -y, z1)], [V(x1, -y, z0), V(x1, y, z0), V(x0, y, z0), V(x0, -y, z0)],
-    ];
-    box.forEach((q, i) => face(q, i === 0 ? fill : well, bodyAl));
+    const floor=tableShown()?TB.world.floorZ-ch.t[2]:undefined,support=RobotGL.supportLayout(m,floor),silver='#cbd2d9',white='#f0f2f4',z1=m.up+.03;
+    for(const s of [support.base,support.collar,support.cap,...support.ribs])boxAt(s.c,s.h,silver,white,bodyAl);
+    boxAt(support.post.c,support.post.h,white,silver,bodyAl);
+    boxAt([-.075,0,m.up-.1],[.072,Math.max(.09,m.half-.055),.15],white,silver,bodyAl);
     const hx = -m.back, head = P([hx, 0, m.up + 0.17]);
     seg(P([hx, 0, z1 - 0.01]), head, 0.035, fill, ink, bodyAl);
     ball(head, 0.085, fill, ink, bodyAl);
@@ -338,10 +338,10 @@ function drawRobotFlat(c, o, h, now) {
     const fd = [-H[2], -H[5], -H[8]], jy = [H[1], H[4], H[7]], bk = [H[0], H[3], H[6]];
     const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(jy.map((x) => x * v), bk.map((x) => x * (w || 0))))));
     const G = RCORE.gripper(m), g2 = (a.jaw === undefined ? G.gapMax : a.jaw) / 2 + G.finger.c[1], tip = 0.07 + G.fl;
-    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, well, ink, al);
-    seg(at(0.07, g2), at(tip, g2), 0.009, fill, ink, al);
-    seg(at(0.07, -g2), at(tip, -g2), 0.009, fill, ink, al);
-    if(hotOf(a))for(const j of [-1,1])seg(at(tip-.012,j*g2),at(tip,j*g2),.01,K.accent,K.accent,al);
+    const hot=hotOf(a),edge=hot?K.accent:ink;
+    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, hot?K.accent:well, edge, al);
+    seg(at(0.07, g2), at(tip, g2), 0.009, hot?K.accent:fill, edge, al);
+    seg(at(0.07, -g2), at(tip, -g2), 0.009, hot?K.accent:fill, edge, al);
     ball(at(0.045, 0, 0.032), 0.01, K.accent, K.accent, al);
   }
   tableFlat(face, seg, ball);

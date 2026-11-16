@@ -21,12 +21,12 @@ Use cool anodised greys, ink, violet accents and Archivo; amber only for warning
 rounded cards, pills, monospace labels or shadows. Panels have 1 px outlines and 4 px corners.
 Reticle corner marks belong only on video.
 Tag colours keep their categorical slot in storage (eight slots, then labelled grey). Label x/y/z.
-Keep the generic Machine robot; no human avatars, story rooms or rewards.
+Keep the generic silver/white Machine on one continuous support post and a broad foot; no human avatars, story rooms or rewards.
 
 Preserve Calibrate → Tracking → Tasks and the scene across tab switches. Tasks alone mounts
 `#gameHUD`; Tracking pauses and hides the task table (`tableShown`). No Physics or Forces UI.
 `S.tab` selects the page; `S.mode` selects calibration/tracking detection. Keep setup in Settings
-with Sound, Haptics and Controller on the task bar. Keep haptic strength and movement sensitivity inline;
+with Sound, Haptics and Controller on the right control rail. Stack haptic strength and movement sensitivity there;
 show head tilt only in robot-eye view. Popups close with an accessible ×; do not restore task settings.
 
 ## Tracking contracts
@@ -62,7 +62,7 @@ rotation or chest motion. Changing gain must not rescale an existing mouse targe
 
 Mouse targets (`TB.drive`) are world-fixed until Resume AprilTags or recalibration. `grabPlane` and
 `holdBack` must keep corrections inside the drag plane; reaching an arm limit must not lift its target
-out of that plane. Only the actual gripper is pickable. Picking, drawing and projection must share the
+out of that plane. Only the actual gripper is pickable; highlight its palm/rail and fingers, never the arm. Picking, drawing and projection must share the
 head camera, including its tilt. Calibrate robot reads un-tared poses.
 `dragPlaneGuide` projects the locked `TB.grab.n` at the commanded grasp point with the final camera;
 never infer another plane from the pointer or let the guide intercept input.
@@ -125,7 +125,7 @@ an epoch change requires recentering. Calibration stays in memory and clears on 
 Tasks/restarts call `rebaseCaptureOrientations`: `Control.retarget` aligns the ready hand only within
 the same live estimator epoch. View changes must preserve neutral; never bypass a real stream reset.
 Use PLAY_WAVEFORM with matching ACKs, no retries and fresh INFO/stream activity.
-`Control.zero` uses chest `basis`, never jaw orientation: cable-axis roll, transverse pitch, board-up yaw.
+Set neutral restores the `robotReady()` hand rotation, preserves position/opening and clears wrist unwrap history. `Control.zero` uses chest `basis`, never jaw orientation: cable-axis roll, transverse pitch, board-up yaw.
 `SENSOR_TO_ROBOT`: raw X → pitch (+Y), raw Y → cable-axis roll (-X), raw Z → yaw (+Z).
 
 Task feedback uses six-byte v2 finite TacHammer commands: CLICK for contacts/wrist stops, KNOCK for seating and

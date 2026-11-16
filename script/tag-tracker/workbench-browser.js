@@ -77,10 +77,26 @@
   key(plot, '3'); assert(chosenHands().length === 2, '3 selects both grippers');
   key(plot, '1');
   assert(!$('gameSettingsBtn')&&!$('gameSettings')&&!$('campaignMode'),'task settings and alternate challenges are removed');
-  assert($('taskHapticStrength').closest('.game-actions')&&$('taskMotionScale').closest('.game-actions'),'haptic strength and motion sensitivity live together on the task bar');
+  assert($('taskHapticStrength').closest('.game-actions')&&$('taskMotionScale').closest('.game-actions'),'haptic strength and motion sensitivity share the side control rail');
   setRobotView('orbit');assert(!visible($('gameTiltField')),'head tilt is hidden in the outside view');
   setRobotView('eyes');assert(visible($('gameTiltField')),'head tilt appears in robot-eye view');
+  const rail=document.querySelector('.game-corner').getBoundingClientRect(),guide=document.querySelector('.workbench-guide').getBoundingClientRect(),scene=plot.getBoundingClientRect();
+  const sliders=['taskHapticStrength','taskMotionScale','gameTilt'].map(id=>$(id).getBoundingClientRect());
+  assert(sliders.every((r,i)=>r.width>=110&&r.left>=rail.left&&r.right<=rail.right&&(!i||r.top>=sliders[i-1].bottom)), 'horizontal sliders have usable travel and stack vertically inside the side rail');
+  assert(rail.width<=220&&rail.right<=hud.right+1&&rail.bottom<=hud.bottom+1&&rail.top>=hud.top-1,'the compact rail fits within the workbench');
+  if(innerWidth<=720) assert(scene.width>=hud.width-2&&scene.bottom<=rail.top+1&&guide.right<=rail.left+1,'phone controls sit beside the guide below an unobscured full-width scene');
+  else assert(scene.right<=rail.left+1&&guide.right<=scene.left+1,'desktop guidance, scene and side controls have separate space');
+  for(const id of ['gameEyes','soundBtn','gameController','gameHaptics','taskHapticStrength','taskMotionScale','gameTilt']){
+    $(id).scrollIntoView({block:'nearest'});const r=$(id).getBoundingClientRect();
+    assert(r.left>=rail.left&&r.right<=rail.right&&r.top>=rail.top&&r.bottom<=rail.bottom,'every rail control remains reachable without covering the scene: '+id);
+  }
+  assert($('gameHaptics').textContent.includes('75%')&&$('taskHapticStrength').value==='75','the rail preserves the selected 75% haptic peak');
+  const motion=S.settings.robot.scale;$('taskMotionScale').value=.65;$('taskMotionScale').dispatchEvent(new Event('input'));
+  assert(S.settings.robot.scale===.65&&$('taskMotionValue').textContent==='0.65×','the rail movement slider updates its visible value and shared movement gain');
+  $('taskMotionScale').value=motion;$('taskMotionScale').dispatchEvent(new Event('input'));
   $('gameController').click();assert(visible($('controllerPanel')),'the controller popup opens');
+  const popup=$('controllerPanel').getBoundingClientRect();
+  assert(popup.left>=hud.left-1&&popup.right<=hud.right+1&&popup.top>=rail.top-1&&popup.bottom<=rail.bottom+1&&getComputedStyle($('controllerPanel')).overflowY==='auto','the controller popup fits the side rail height and can scroll its device details');
   $('ctlClose').click();assert(!visible($('controllerPanel'))&&S.tab==='tasks','the popup X closes in place');
   $('gameTilt').value = -45; $('gameTilt').dispatchEvent(new Event('input'));
   assert(S.settings.robot.headTilt === -45, 'the head slider still tilts the wide camera');
@@ -93,6 +109,6 @@
   const shirt=TB.world.cloths[0];
   assert(shirt.kind==='shirt'&&shirt.halfThickness===.001&&!shirt.pile&&shirt.landmarks.cuffs.length===2,'the fabric task loads a thin cut-pattern T-shirt');
   const meshes=RobotGL.meshes(RB.scene.m);
-  assert([1,-1].every(j=>meshes.finger[j].filter(p=>p.tip).length===1)&&[1,-1].every(j=>meshes.hand[j].every(p=>!p.tip)),'only the grasp pads are eligible for pointer highlighting');
+  assert([1,-1].every(j=>meshes.finger[j].filter(p=>p.tip).length===1&&meshes.finger[j].every(p=>p.grip))&&[1,-1].every(j=>meshes.hand[j].some(p=>p.grip)&&meshes.hand[j].some(p=>!p.grip))&&[...meshes.upper,...meshes.fore,...meshes.foreLight,...meshes.body].every(p=>!p.grip),'gripper fingers and palm highlight together while wrist cuffs and arms stay unhighlighted');
   return { passed: true, persistentTabs: true, preservedTask: true, eyeArrowControls: true, viewport: [innerWidth,innerHeight] };
 })()

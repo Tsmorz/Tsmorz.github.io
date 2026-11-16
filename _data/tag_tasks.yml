@@ -638,7 +638,7 @@ link:
   capture_suspended: IMU paused · resumes automatically when you return and samples are fresh
   capture_paused: IMU stream reset · set neutral to resume
   capture_lost: Capture device disconnected
-  capture_neutral_help: Choose Left or Right hand and hold still, then Set neutral in Tasks.
+  capture_neutral_help: Choose a hand and hold the device in your neutral pose, then Set neutral to restore the gripper's base orientation.
   connect: Connect USB / ESB
   ble: Connect BLE
   baud: Baud
@@ -646,7 +646,8 @@ link:
     and ESB require TP/1 teleop firmware; its default is 1,000,000 baud. Both routes
     send motion into Filtered tracking and return TacHammer cues. Use Connect capture USB
     for the Haptography capture device. Disconnect it from Haptography first. Choose a hand,
-    hold the device still for two seconds, then Set neutral. Turn about the board's up axis
+    hold the device still for two seconds, then Set neutral to restore the gripper's base orientation
+    at its current position. Turn about the board's up axis
     to yaw, tip the cable end to pitch, or twist around the cable to roll the gripper.
     Wrist rotation stops at its limits; mouse or AprilTags still sets its position.
     Returning to Tasks resumes orientation automatically. Set neutral again after a stream reset
