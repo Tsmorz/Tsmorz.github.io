@@ -21,6 +21,9 @@
     return a.map((_,i)=>{const r=3*Math.floor(i/3),c=i%3;return a[r]*b[c]+a[r+1]*b[c+3]+a[r+2]*b[c+6];});
   }
   const I=[1,0,0,0,1,0,0,0,1];
+  // Sensor mounting: X -> robot Y (pitch), Y -> -robot X (cable-axis roll), Z -> Z (yaw).
+  // This is a proper 90-degree rotation, keeping combined turns and yaw right-handed.
+  const SENSOR_TO_ROBOT=[0,-1,0,1,0,0,0,0,1];
   const transpose=R=>[R[0],R[3],R[6],R[1],R[4],R[7],R[2],R[5],R[8]];
   function gravityQuaternion(a){
     const n=norm(a),v=a.map(x=>x/n);
@@ -89,19 +92,20 @@
   }
 
   class Control{
-    clear(){this.neutral=null;this.paused=false;}
+    clear(){this.neutral=null;this.paused=false;this.recenterRequired=false;}
     zero(sample,R,side,frame,now,basis=I){
       if(!fresh(sample,now)||!finite(R)||R.length!==9||!finite(basis)||basis.length!==9||![1,-1].includes(side))return false;
-      // XIAO flat, USB toward the operator: sensor +X points away from USB (robot forward),
-      // +Y left and +Z up. These are roll, pitch and yaw respectively.
+      // XIAO flat, USB toward the operator: sensor Y runs along the cable, X across it, Z up.
       // Anchor those axes to the robot, independently of how its gripper is rolled at neutral.
-      this.neutral={q:sample.q.slice(),R:R.slice(),basis:basis.slice(),side,frame,epoch:sample.epoch};this.last=R.slice();this.paused=false;return true;
+      this.neutral={q:sample.q.slice(),R:R.slice(),basis:product(basis,SENSOR_TO_ROBOT),side,frame,epoch:sample.epoch};this.last=R.slice();this.paused=false;this.recenterRequired=false;return true;
     }
     rotation(sample,side,frame,now,active){
       const n=this.neutral;if(!n)return null;
       if(n.side!==side||n.frame!==frame){this.clear();return null;}
-      if(!active||!fresh(sample,now)||sample.epoch!==n.epoch)this.paused=true;
-      // A delayed/restarted/background stream holds its last target until explicitly re-centred.
+      // Focus/visibility and delivery delays do not destroy a continuous sensor reference.
+      // A changed estimator epoch does: never resume from a newly initialized heading without neutral.
+      if(sample&&sample.epoch!==n.epoch)this.recenterRequired=true;
+      this.paused=this.recenterRequired||!active||!fresh(sample,now);
       if(!this.paused){
         const delta=matrix(multiply(conjugate(n.q),sample.q));
         this.last=product(product(product(n.basis,delta),transpose(n.basis)),n.R);

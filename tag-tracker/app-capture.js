@@ -31,7 +31,7 @@ async function addCaptureBoard(){
 function captureControlState(b){
   const text=TASK_DATA.link;
   if(b.state!=='live')return text.capture_lost;
-  if(b.captureControl?.neutral)return b.captureControl.paused?text.capture_paused:text.capture_on;
+  if(b.captureControl?.neutral)return b.captureControl.recenterRequired?text.capture_paused:b.captureControl.paused?text.capture_suspended:text.capture_on;
   if(!b.motion||performance.now()-b.motion.at>=500)return text.capture_waiting_imu;
   if(!b.motion.ready)return text.capture_calibrating.replace('{seconds}',(b.motion.calibrationS||0).toFixed(1));
   return b.state==='live'&&CaptureOrientation.fresh(b.motion,performance.now())?text.capture_neutral:text.capture_still;
@@ -61,6 +61,7 @@ function captureHandRotation(side,now){
   return null;
 }
 function clearCaptureOrientations(){for(const b of S.boards)b.captureControl?.clear();}
+// Hold while away; Control resumes the same neutral when fresh samples and focus return.
 function pauseCaptureOrientations(){for(const b of S.boards)if(b.captureControl?.neutral)b.captureControl.paused=true;}
 window.addEventListener('blur',pauseCaptureOrientations);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseCaptureOrientations();});

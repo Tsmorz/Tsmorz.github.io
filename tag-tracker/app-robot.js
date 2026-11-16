@@ -117,9 +117,15 @@ function paintScale() {
   const v = S.settings.robot.scale, sel = $('robotScale');
   if (![...sel.options].some((x) => +x.value === v)) sel.add(new Option(String(v), String(v)));
   sel.value = [...sel.options].find((x) => +x.value === v).value;
+  $('taskMotionScale').value = v;
+  $('taskMotionValue').textContent = `${+v.toFixed(2)}×`;
+  $('taskMotionScale').setAttribute('aria-valuetext', $('taskMotionValue').textContent);
 }
+function setMotionScale(value) { S.settings.robot.scale = Number(value); saveSettings(); paintScale(); }
 paintScale();
-$('robotScale').onchange = () => { S.settings.robot.scale = +$('robotScale').value; saveSettings(); RB.prev.clear(); };
+$('robotScale').onchange = () => setMotionScale($('robotScale').value);
+$('taskMotionScale').oninput = () => setMotionScale($('taskMotionScale').value);
+$('taskMotionReset').onclick = () => setMotionScale(1);
 $('robotClearBtn').onclick = clearRobotCal;
 plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey && S.settings.show3d === 'robot') { e.preventDefault(); calibrateRobot(); } });
 
@@ -544,7 +550,7 @@ function handGrab(e) {
   const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n);
   if (!at) return false;
-  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, off: C.sub(p, at) };
+  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, at };
   plot.setPointerCapture(e.pointerId); plot.style.cursor = 'grabbing';
   return true;
 }
@@ -561,23 +567,25 @@ function handMove(e) {
   const G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit();
   // Alt pressed or let go mid-drag: carry on from here on the other plane
-  if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.off = C.sub(p, at); g.alt = e.altKey; } return true; }
+  if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.at = at; g.alt = e.altKey; } return true; }
   const at = rayHit(o, r, e, p, g.n);
   if (!at) return true;
   // the new grip point; on the table (or the floor, the other arm or the other gripper) it goes at most PHYS.PRESS past
-  // where the hand rests, and the pointer slips over the rest (the offset takes it up), so the hand comes up as soon as
+  // where the hand rests. Discard blocked pointer travel, so the hand comes up as soon as
   // the pointer does. The shift stays in the drag plane, so a tilted push never carries the hand up or down.
-  let want = C.add(at, g.off);
+  // Scale only new pointer travel: changing sensitivity never rescales an existing world target.
+  let want = C.add(p, C.sub(at, g.at).map(v => v * S.settings.robot.scale));
+  g.at = at;
   const ph = TB.world && TB.world.handPose(g.side);
   if (ph && TB.world.record) {
     const shift = PHYS.holdBack(TB.world.record.hands[g.side], C.add(ph.t, C.mulv(ph.R, [0, 0, G.finger.c[2]])), want, undefined, g.n);
-    if (C.norm(shift) > 0) { want = C.add(want, shift); g.off = C.add(g.off, shift); }
+    if (C.norm(shift) > 0) want = C.add(want, shift);
   }
   // and the wrist behind it, kept within the arm's reach in the drag plane (out of reach the arm would stretch along the
   // line from its shoulder, which lifts the hand); the pointer slips over the rest here too
   const ch = sc.chest, Rct = C.tr3(ch.R), wr = C.sub(want, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const loc = C.mulv(Rct, C.sub(wr, ch.t)), inr = RCORE.inReach(sc.m, g.side, loc, C.mulv(Rct, g.n));
-  if (inr !== loc) { const shift = C.mulv(ch.R, C.sub(inr, loc)); want = C.add(want, shift); g.off = C.add(g.off, shift); }
+  if (inr !== loc) { const shift = C.mulv(ch.R, C.sub(inr, loc)); want = C.add(want, shift); }
   d.t = C.sub(want, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   return true;
 }
