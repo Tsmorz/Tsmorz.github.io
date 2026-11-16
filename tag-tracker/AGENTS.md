@@ -4,7 +4,7 @@ A self-contained AprilTag/robot page; `layout: null` renders `_data/tag_tasks.ym
 
 ## Editing and checking
 
-- Content, task variants and hints belong in `_data/tag_tasks.yml`, never in markup or JS strings.
+- Content, task variants, hints and `controls_help` mappings belong in `_data/tag_tasks.yml`, never in markup or JS strings.
 - `app-*.js` files may declare functions and wire handlers at load, but cannot read or call later files.
   Startup calls belong in the boot script at the end of `index.html`. Keep its script order intact.
 - Avoid top-level names belonging to `window` (`name`, `status`, `stop`, `print`, `on...`).
@@ -25,7 +25,7 @@ Keep the generic cool-silver Machine with black joints/accents, one thin tubular
 Preserve Calibrate → Tracking → Tasks and the scene across tab switches. Tasks alone mounts
 `#gameHUD`; Tracking pauses and hides the task table (`tableShown`). No Physics or Forces UI.
 `S.tab` selects the page; `S.mode` selects calibration/tracking detection. Keep setup in Settings
-with Sound, Haptics and Controller on the right control rail. Stack haptic strength and movement sensitivity there;
+with Sound, Haptics, Controller and the keyboard reference on the right rail. Stack haptic strength and movement sensitivity there;
 show head tilt only in robot-eye view. Popups close with an accessible ×; do not restore task settings.
 
 ## Tracking contracts

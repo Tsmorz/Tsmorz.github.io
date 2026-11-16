@@ -191,6 +191,17 @@ function paintGameHUD(){
 }
 $('gameNext').onclick=()=>$('taskNext').click();$('guideRestart').onclick=()=>resetTable();$('gameTags').onclick=()=>$('tagsDriveBtn').click();
 $('gameEyes').onclick=()=>setRobotView(S.settings.robot.view==='eyes'?'orbit':'eyes');
+function openTaskControls(){
+  const dialog=$('controlsDlg');if(dialog.open)return;
+  const pointer=TB.grab?.id;TB.grab=null;
+  if(pointer!=null&&plot.hasPointerCapture?.(pointer))plot.releasePointerCapture(pointer);
+  TB.ptr=null;TB.hover=null;plot.style.cursor='';$('dragPlaneGuide').hidden=true;
+  dialog.showModal();$('gameKeyboard').setAttribute('aria-expanded','true');
+}
+$('gameKeyboard').onclick=openTaskControls;
+$('controlsClose').onclick=()=>$('controlsDlg').close();
+$('controlsDlg').addEventListener('keydown',e=>e.stopPropagation());
+$('controlsDlg').addEventListener('close',()=>{$('gameKeyboard').setAttribute('aria-expanded','false');if($('gameKeyboard').getClientRects().length)$('gameKeyboard').focus({preventScroll:true});});
 $('gameTilt').onchange=()=>saveSettings();$('gameTilt').oninput=()=>setHeadTilt(+$('gameTilt').value);
 function paintGameCamera(){$('gameEyes').textContent=S.settings.robot.view==='eyes'?TASK_DATA.ui.outside:TASK_DATA.ui.eyes;$('gameEyes').setAttribute('aria-pressed',String(S.settings.robot.view==='eyes'));$('gameTilt').value=S.settings.robot.headTilt;$('gameTiltField').hidden=S.settings.robot.view!=='eyes';$('headTilt').closest('label').hidden=S.settings.robot.view!=='eyes';}
 paintTasks(true);paintTaskVisibility();
@@ -226,7 +237,7 @@ function paintControllerPanel(force){
 }
 $('taskHapticStrength').oninput=()=>{taskHapticSettings.level=TaskHaptics.level(+$('taskHapticStrength').value);$('taskHapticStrength').value=taskHapticSettings.level;store.set('task-haptics',taskHapticSettings);paintHapticsBtn();};
 function sendTaskHaptics(W,sc,now){
-  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,level:taskHapticSettings.level,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('setupDlg').open&&!$('settingsDlg').open});
+  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,level:taskHapticSettings.level,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('setupDlg').open&&!$('settingsDlg').open&&!$('controlsDlg').open});
   if(now-taskHapticPaint<250)return;taskHapticPaint=now;
   const live=S.boards.filter(b=>!b.sim&&b.state==='live'),ready=live.filter(b=>b.act?.tachammerReady&&now-b.actT<500&&(b.transport!=='capture'||b.motion?.ready)),last=ready.map(b=>b.hapticLast).filter(x=>x&&now-x.at<750),text=!taskHapticSettings.enabled?TASK_DATA.haptics.off:!live.length?TASK_DATA.haptics.disconnected:!ready.length?(live.some(b=>b.transport==='capture'&&!b.motion?.ready)?TASK_DATA.haptics.calibrating:TASK_DATA.haptics.unavailable):last.length?TASK_DATA.haptics.sent:TASK_DATA.haptics.ready;
   $('ctlStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;paintControllerPanel();

@@ -86,7 +86,7 @@
   assert(rail.width<=220&&rail.right<=hud.right+1&&rail.bottom<=hud.bottom+1&&rail.top>=hud.top-1,'the compact rail fits within the workbench');
   if(innerWidth<=720) assert(scene.width>=hud.width-2&&scene.bottom<=rail.top+1&&guide.right<=rail.left+1,'phone controls sit beside the guide below an unobscured full-width scene');
   else assert(scene.right<=rail.left+1&&guide.right<=scene.left+1,'desktop guidance, scene and side controls have separate space');
-  for(const id of ['gameEyes','soundBtn','gameController','gameHaptics','taskHapticStrength','taskMotionScale','gameTilt']){
+  for(const id of ['gameEyes','soundBtn','gameController','gameKeyboard','gameHaptics','taskHapticStrength','taskMotionScale','gameTilt']){
     $(id).scrollIntoView({block:'nearest'});const r=$(id).getBoundingClientRect();
     assert(r.left>=rail.left&&r.right<=rail.right&&r.top>=rail.top&&r.bottom<=rail.bottom,'every rail control remains reachable without covering the scene: '+id);
   }

@@ -135,6 +135,12 @@
     openSettings();await sleep(100);assert(b.captureControl.paused,'task settings hold orientation');
     $('settingsClose').click();await wait(()=>!b.captureControl.paused,'closing task settings resumes orientation');
     assert(b.captureControl.neutral===neutral,'task settings do not need another neutral');
+    const beforeHelp=b.captureControl.last.slice();$('gameKeyboard').click();
+    await wait(()=>b.captureControl.paused,'keyboard help holds capture orientation');
+    speed=35;await sleep(250);speed=0;await sleep(100);
+    assert(C.angleOf(C.mul3(b.captureControl.last,C.tr3(beforeHelp)))<1e-7,'sensor motion does not rotate the gripper behind keyboard help');
+    $('controlsClose').click();await wait(()=>!b.captureControl.paused,'closing keyboard help resumes orientation');
+    assert(b.captureControl.neutral===neutral&&C.angleOf(C.mul3(b.captureControl.last,C.tr3(beforeHelp)))>.08,'keyboard help preserves neutral and resumes fresh sensor movement');
   }finally{
     if(focused)Object.defineProperty(document,'hasFocus',focused);else delete document.hasFocus;
     if(visible)Object.defineProperty(document,'hidden',visible);else delete document.hidden;

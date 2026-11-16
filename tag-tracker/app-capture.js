@@ -56,7 +56,7 @@ function stopCaptureOrientation(b){
   control?.clear();paintControllerPanel(true);
 }
 function captureHandRotation(side,now,chest=RB.scene?.chest,m=RB.scene?.m){
-  const active=gameView()&&!document.hidden&&document.hasFocus()&&!$('setupDlg').open&&!$('settingsDlg').open&&!V.rec&&!V.boardTake&&!V.opening;
+  const active=gameView()&&!document.hidden&&document.hasFocus()&&!$('setupDlg').open&&!$('settingsDlg').open&&!$('controlsDlg')?.open&&!V.rec&&!V.boardTake&&!V.opening;
   for(const b of S.boards){
     const control=b.captureControl;
     if(b.transport!=='capture'||!control?.neutral||control.neutral.side!==side)continue;

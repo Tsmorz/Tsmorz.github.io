@@ -74,3 +74,17 @@ test('a restart holds the ready hand until fresh capture data can retarget witho
     assert.equal(control.neutral.epoch,epoch);
   }
 });
+
+test('keyboard help holds capture orientation and resumes the same neutral when closed',()=>{
+  for(const side of [1,-1]){
+    const p=page(side),control=p.board.captureControl;
+    p.context.zeroCaptureOrientation(p.board);
+    const neutral=control.neutral,held=control.last.slice(),dialog=p.context.$('controlsDlg');
+    dialog.open=true;p.board.motion={...p.board.motion,q:C.quatOf(R.Rx(.4))};
+    assert.ok(angle(p.context.captureHandRotation(side,1000),held)<1e-7);
+    assert.equal(control.paused,true);assert.equal(control.neutral,neutral);assert.equal(control.recenterRequired,false);
+    dialog.open=false;
+    assert.ok(angle(p.context.captureHandRotation(side,1000),held)>.1);
+    assert.equal(control.paused,false);assert.equal(control.neutral,neutral);assert.equal(control.neutral.epoch,p.board.motion.epoch);
+  }
+});

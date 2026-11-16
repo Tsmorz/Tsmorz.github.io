@@ -196,6 +196,7 @@ function draw3d() {
   plot.addEventListener('wheel', (e) => { e.preventDefault(); if (safely(handWheel, e)) return; if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes') { setHeadTilt(S.settings.robot.headTilt - Math.sign(e.deltaY) * 2); return; } S.view.dist = Math.min(50, Math.max(0.1, S.view.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
   plot.addEventListener('dblclick', fitView);
   plot.addEventListener('keydown', (e) => {
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
     const V = S.view, k = e.key;
     if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes' && k.startsWith('Arrow')) {
       e.preventDefault(); return;
