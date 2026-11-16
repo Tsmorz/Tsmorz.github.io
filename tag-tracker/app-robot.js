@@ -13,7 +13,7 @@ const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist
 // the table (below): its physics world, the hands moved with the mouse
 const PHYS = window.PhysicsCore;
 const TABLE = { size: [0.5, 0.9], thick: 0.03, legs: 0.72 };
-const TB = { world: null, game: null, sig: '', t: 0, n: 0, drive: new Map(), grab: null, lastSide: null, ptr: null, hover: null };
+const TB = { world: null, game: null, sig: '', t: 0, n: 0, generation:0, drive: new Map(), grab: null, lastSide: null, ptr: null, hover: null };
 // The table's contacts as sound (sound.js), off until turned on (the speaker button, M, or "sound on"). It goes quiet
 // while the microphone listens for a voice command or note, and while the page is hidden.
 const SND = window.ContactSound ? ContactSound.create() : null;
@@ -125,7 +125,7 @@ function setMotionScale(value) { S.settings.robot.scale = Number(value); saveSet
 paintScale();
 $('robotScale').onchange = () => setMotionScale($('robotScale').value);
 $('taskMotionScale').oninput = () => setMotionScale($('taskMotionScale').value);
-$('taskMotionReset').onclick = () => setMotionScale(1);
+
 $('robotClearBtn').onclick = clearRobotCal;
 plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey && S.settings.show3d === 'robot') { e.preventDefault(); calibrateRobot(); } });
 
@@ -160,9 +160,24 @@ function robotUpdate(now) {
   } else if (!cal) cal = robotCalibrate(roles, m);
   const poses = { body: roles.body !== null ? RB.last.get(roles.body) : null, arms: {} };
   for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
-  const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
+  const input=RB.taskInput;
+  if(input&&(input.cal!==RB.cal||input.frame!==S.settings.frame||input.sig!==sig))RB.taskInput=null;
+  const rebased=gameView()&&RB.taskInput;
+  const tg = RCORE.targets(cal, poses, { scale: rebased?1:S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
+  RB.rawChest=tg.chest;
+  if(gameView()&&RB.taskInput){
+    const base=RB.taskInput;
+    if(base.bodyPending&&fresh(roles.body)){base.chest=tg.chest;base.bodyPending=false;base.arms.clear();}
+    tg.chest=base.bodyPending?base.readyChest:C.compose(C.compose(tg.chest,C.inverse(base.chest)),base.readyChest);
+    for(const a of tg.arms){
+      const ready=RCORE.fk(m,a.side,robotReady()),key=a.key+'|'+a.side;
+      let origin=base.arms.get(key);
+      if(!origin&&!base.bodyPending&&fresh(a.key)){origin={R:a.target.R.slice(),t:a.target.t.slice()};base.arms.set(key,origin);}
+      a.target=origin?{t:C.add(ready.wrist,C.sub(a.target.t,origin.t).map(v=>v*S.settings.robot.scale)),R:C.mul3(C.mul3(a.target.R,C.tr3(origin.R)),ready.R)}:{t:ready.wrist,R:ready.R};
+    }
+  }
   const arms = tg.arms.map((a) => {
-    const captureR = captureHandRotation(a.side, now * 1000);
+    const captureR = captureHandRotation(a.side, now * 1000, tg.chest, m);
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev.tag || prev : null, { prefer });
     const tag = { q:s.q, elbow:s.elbow, psi:s.psi };
     if (captureR) Object.assign(s,RCORE.wrist(m,a.side,s.q,C.mul3(C.tr3(tg.chest.R),captureR),prev?.wristInput));
@@ -170,25 +185,32 @@ function robotUpdate(now) {
     // each new pose's joint angles, for the Joint angles plot (the arm's side kept, so a recalibration that swaps sides shows)
     const ts = RB.last.get(a.key).time, h = RB.jhist.get(a.key) || [];
     if (!h.length || h[h.length - 1].time !== ts) { h.push({ time: ts, q: s.q.slice(), side: a.side }); while (h.length && h[0].time < ts - S.settings.span - 1) h.shift(); RB.jhist.set(a.key, h); }
-    return { key: a.key, side: a.side, q: s.q, reach: s.reach, gap: s.gap, live: fresh(a.key) };
+    return { key: a.key, side: a.side, q: s.q, wristStop: s.wristStop || 0, reach: s.reach, gap: s.gap, live: fresh(a.key) };
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
   const withBody = preview || roles.body !== null || S.settings.robot.props === 'arcade';
   if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) {
-    const q = robotReady(), captureR = captureHandRotation(side, now * 1000), key = 'capture' + side;
+    const q = robotReady(), captureR = captureHandRotation(side, now * 1000, tg.chest, m), key = 'capture' + side;
     const s = captureR ? RCORE.wrist(m, side, q, C.mul3(C.tr3(tg.chest.R), captureR), RB.prev.get(key)?.wristInput) : null;
     if (s) RB.prev.set(key, s);
-    arms.push({ key: null, side, q: s ? s.q : q, reach: true, gap: 0, live: !!s, idle: !s });
+    arms.push({ key: null, side, q: s ? s.q : q, wristStop: s?.wristStop || 0, reach: true, gap: 0, live: !!s, idle: !s });
   }
   // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it). It was put
   // there in the world (by the table), so it stays there when the body moves: the arm reaches to keep it
   const Rc = C.tr3(tg.chest.R);
   for (const [side, d] of TB.drive) {
     if (d.frame !== S.settings.frame) { TB.drive.delete(side); continue; } // (another frame: its world is a different one)
-    const captureR = captureHandRotation(side, now * 1000);
+    const captureR = captureHandRotation(side, now * 1000, tg.chest, m);
     const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.handIK(m, side, { R: C.mul3(Rc, captureR || d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || {q:robotReady()}, { prefer });
-    RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, side });
-    const a = arms.find((x) => x.side === side), set = { q: s.q, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
+    if(s.positionLimited){
+      const accepted=C.add(tg.chest.t,C.mulv(tg.chest.R,s.wrist)),delta=C.sub(accepted,d.t),n=TB.grab?.side===side?TB.grab.n:null;
+      // Discard movement beyond a hard arm stop so reversing the pointer works immediately.
+      // A moving chest can make the locked drag plane unreachable; retain that plane's
+      // world target instead of projecting it upward or sideways to fit the arm.
+      if(!n||Math.abs(delta.reduce((v,x,i)=>v+x*n[i],0))<1e-6)d.t=accepted;
+    }
+    RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, positionPending:s.positionPending, positionGoal:s.positionGoal, side });
+    const a = arms.find((x) => x.side === side), set = { q: s.q, wristStop: s.wristStop || 0, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
     if (a) Object.assign(a, set); else arms.push(Object.assign({ key: null, side }, set));
   }
   // the arm's motors: each joint follows its target only as fast as it can turn and speed up (RobotCore.slew)
@@ -229,6 +251,7 @@ function drawRobot(c, o, w, h, now) {
   render();
   // Rendering supplies the fit bounds; finish the fit before the browser presents this frame.
   if (!S.view.fitted) { autoFit(); c.clearRect(0, 0, w, h); render(); }
+  paintDragPlaneGuide(o, w, h);
   hoverNow();
   paintRobotText(now);
   paintTaskLabels(o, w, h);
@@ -270,7 +293,7 @@ function drawRobotGL(gl, o, w, h, now) {
 function drawRobotFlat(c, o, h, now) {
   const sc = RB.scene, m = sc.m, ch = sc.chest, P = (p) => RCORE.place(ch, p), f = h / 2 / Math.tan(((o.fov || 45) * Math.PI) / 360);
   const items = [], pts = [];
-  const ink = K.text, fill = K.surface, well = K.well;
+  const palette=RobotGL.robotPalette,ink=K.text,fill=palette.metal,well=palette.dark;
   const seg = (a, b, r, fc, sc2, al) => {
     const p = o.project(a), q = o.project(b);
     pts.push(a, b);
@@ -293,21 +316,30 @@ function drawRobotFlat(c, o, h, now) {
     if (area >= 0) return;
     items.push({ z: q.reduce((s, x) => s + x[2], 0) / 4 + 0.05, draw() { c.globalAlpha = al; c.beginPath(); q.forEach((x, i) => (i ? c.lineTo(x[0], x[1]) : c.moveTo(x[0], x[1]))); c.closePath(); c.fillStyle = fc; c.fill(); c.strokeStyle = ink; c.lineWidth = 1.5; c.lineJoin = 'round'; c.stroke(); } });
   };
-  const bodyAl = sc.bodyLive ? 1 : 0.45;
+  const boxAt=(centre,half,front,side,alpha)=>{
+    const [x,y,z]=centre,[hx,hy,hz]=half,V=(sx,sy,sz)=>P([x+sx*hx,y+sy*hy,z+sz*hz]);
+    const quads=[[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]],[[-1,1,-1],[-1,-1,-1],[-1,-1,1],[-1,1,1]],[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]],[[1,1,-1],[-1,1,-1],[-1,1,1],[1,1,1]],[[1,-1,1],[1,1,1],[-1,1,1],[-1,-1,1]],[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]];
+    quads.forEach((q,i)=>face(q.map(p=>V(...p)),i===0?front:side,alpha));
+  };
+  const bodyAl = gameView() || sc.bodyLive ? 1 : 0.45;
   if (sc.body) {
-    // torso: a box behind the chest tag, from the hips to the shoulders; then the neck, the head and its visor
-    const x0 = -0.01, x1 = -(2 * m.back + 0.06), y = Math.max(0.06, m.half - 0.035), z1 = m.up + 0.03, z0 = m.up - 0.52;
-    const V = (x, yy, z) => P([x, yy, z]);
-    const box = [
-      [V(x0, -y, z0), V(x0, y, z0), V(x0, y, z1), V(x0, -y, z1)], [V(x1, y, z0), V(x1, -y, z0), V(x1, -y, z1), V(x1, y, z1)],
-      [V(x1, -y, z0), V(x0, -y, z0), V(x0, -y, z1), V(x1, -y, z1)], [V(x0, y, z0), V(x1, y, z0), V(x1, y, z1), V(x0, y, z1)],
-      [V(x0, -y, z1), V(x0, y, z1), V(x1, y, z1), V(x1, -y, z1)], [V(x1, -y, z0), V(x1, y, z0), V(x0, y, z0), V(x0, -y, z0)],
-    ];
-    box.forEach((q, i) => face(q, i === 0 ? fill : well, bodyAl));
+    const floor=tableShown()?TB.world.floorZ-ch.t[2]:undefined,support=RobotGL.supportLayout(m,floor),silver=palette.metal,white=palette.shell,z1=m.up+.03;
+    boxAt(support.bumper.c,support.bumper.h,well,well,bodyAl);
+    boxAt(support.base.c,support.base.h,silver,silver,bodyAl);
+    boxAt(support.deck.c,support.deck.h,white,silver,bodyAl);
+    for(const s of [support.collar,support.cap])boxAt(s.c,s.h,well,well,bodyAl);
+    const post=support.post,r=post.r;
+    seg(P(C.add(post.c,[0,0,-post.h[2]+r])),P(C.add(post.c,[0,0,post.h[2]-r])),r,silver,ink,bodyAl);
+    for(const w of support.wheels)ball(P(w.c),w.r,palette.rubber,ink,bodyAl);
+    boxAt(support.sensor.c,support.sensor.h,well,well,bodyAl);
+    boxAt(support.indicator.c,support.indicator.h,K.accent,K.accent,bodyAl);
+    const wy=Math.max(.09,m.half-.055);
+    boxAt([-.075,0,m.up-.1],[.072,wy,.15],white,silver,bodyAl);
+    boxAt([-.013,0,m.up-.09],[.014,wy*.8,.115],well,well,bodyAl);
     const hx = -m.back, head = P([hx, 0, m.up + 0.17]);
     seg(P([hx, 0, z1 - 0.01]), head, 0.035, fill, ink, bodyAl);
-    ball(head, 0.085, fill, ink, bodyAl);
-    seg(P([hx + 0.075, -0.035, m.up + 0.18]), P([hx + 0.075, 0.035, m.up + 0.18]), 0.014, ink, ink, bodyAl);
+    ball(head, 0.085, white, ink, bodyAl);
+    seg(P([hx + 0.075, -0.035, m.up + 0.18]), P([hx + 0.075, 0.035, m.up + 0.18]), 0.014, well, well, bodyAl);
     seg(P([-m.back, -m.half, m.up]), P([-m.back, m.half, m.up]), 0.035, well, ink, bodyAl);
   } else if (sc.arms.length === 2) {
     // two arms and no body: a bar between the shoulders on a small mount
@@ -326,15 +358,25 @@ function drawRobotFlat(c, o, h, now) {
     ball(P(k.elbow), 0.042, well, ink, al);
     seg(P(k.elbow), P(k.wrist), 0.035, fill, armInk, al);
     ball(P(k.wrist), 0.036, a.live && !a.idle ? K.accent : well, ink, al);
-    // the gripper: a bar across the hand along the jaws' travel (y), a finger each side at the gap, a dot on the back
-    const fd = [-H[2], -H[5], -H[8]], jy = [H[1], H[4], H[7]], bk = [H[0], H[3], H[6]];
-    const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(jy.map((x) => x * v), bk.map((x) => x * (w || 0))))));
-    const G = RCORE.gripper(m), g2 = (a.jaw === undefined ? G.gapMax : a.jaw) / 2 + G.finger.c[1], tip = 0.07 + G.fl;
-    const gInk = hotOf(a) ? K.accent : ink;
-    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, well, gInk, al);
-    seg(at(0.07, g2), at(tip, g2), 0.009, fill, gInk, al);
-    seg(at(0.07, -g2), at(tip, -g2), 0.009, fill, gInk, al);
-    ball(at(0.045, 0, 0.032), 0.01, K.accent, K.accent, al);
+    // The fallback uses the same housing, opening and moving linkage as WebGL/contacts.
+    const G=RCORE.gripper(m),layout=RobotGL.gripperLayout(m,a.jaw===undefined?G.gapMax:a.jaw,a.jawState),at=p=>P(C.add(k.wrist,C.mulv(H,p)));
+    const hot=hotOf(a),edge=hot?K.accent:ink,dark=hot?K.accent:well;
+    const cylinder=(centre,radius,half,color)=>{
+      const rings=[-1,1].map(sign=>Array.from({length:16},(_,i)=>at([centre[0]+radius*Math.cos(i*Math.PI/8),centre[1]+radius*Math.sin(i*Math.PI/8),centre[2]+sign*half])));
+      face(rings[0].slice().reverse(),color,al);face(rings[1],color,al);
+      for(let i=0;i<16;i++){const j=(i+1)%16;face([rings[0][i],rings[0][j],rings[1][j],rings[1][i]],color,al);}
+    };
+    const handBox=(shape,color)=>{
+      const V=(x,y,z)=>at(shape.c.map((v,i)=>v+[x,y,z][i]*shape.h[i]));
+      for(const q of [[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]],[[-1,1,-1],[-1,-1,-1],[-1,-1,1],[-1,1,1]],[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]],[[1,1,-1],[-1,1,-1],[-1,1,1],[1,1,1]],[[1,-1,1],[1,1,1],[-1,1,1],[-1,-1,1]],[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]])face(q.map(p=>V(...p)),color,al);
+    };
+    cylinder(layout.cuff.c,layout.cuff.r,layout.cuff.h,well);
+    cylinder(layout.body.c,layout.body.r,layout.body.h[2],dark);
+    for(const jaw of layout.fingers){
+      handBox(jaw.backbone,dark);handBox(jaw.pad,hot?K.accent:palette.rubber);
+      for(const s of jaw.segments)seg(at(s.a),at(s.b),s.r,dark,edge,al);
+      for(const s of jaw.joints)ball(at(s.p),s.r,dark,edge,al);
+    }
   }
   tableFlat(face, seg, ball);
   items.sort((p, q) => q.z - p.z);
@@ -359,27 +401,53 @@ function drawRobotFlat(c, o, h, now) {
 // (their pose, and how open the operator wants them: a hand moved with the mouse, else the servo on the board fixed to
 // that hand's track, else open) go to the physics, which steps by the time since the last frame.
 const tableSig = (sc) => [S.settings.robot.props, S.settings.robot.playMode, S.settings.robot.level, S.settings.frame, TB.n, sc.preview ? 'p' : '', JSON.stringify(sc.m)].join('|');
+function taskRobotState(sc){
+  const links=[],hands=[],P=p=>RCORE.place(sc.chest,p);
+  for(const a of sc.arms){const k=RCORE.fk(sc.m,a.side,a.q);links.push({id:a.side+'u',a:P(k.shoulder),b:P(k.elbow),r:.04},{id:a.side+'f',a:P(k.elbow),b:P(k.wrist),r:.032});hands.push({side:a.side,pose:{R:C.mul3(sc.chest.R,k.R),t:P(k.wrist)},opening:a.open});}
+  return {links,hands};
+}
+function resetTaskRobot(sc=RB.scene){
+  const pointer=TB.grab?.id;TB.grab=null;
+  if(pointer!=null&&plot.hasPointerCapture?.(pointer))plot.releasePointerCapture(pointer);
+  TB.drive.clear();TB.ptr=null;TB.hover=null;TB.lastSide=null;plot.style.cursor='';$('dragPlaneGuide').hidden=true;
+  RB.prev.clear();RB.slew.clear();RB.slewT=performance.now()/1000;
+  if(sc){
+    const raw=RB.rawChest||sc.chest,readyChest={R:RCORE.upright([raw.R[0],raw.R[3],raw.R[6]]),t:raw.t.slice()};
+    RB.taskInput={cal:RB.cal,frame:S.settings.frame,sig:robotSig(),chest:raw,readyChest,bodyPending:sc.bodyKey!=null,arms:new Map()};
+    sc.chest=readyChest;sc.anchor=null;
+    sc.arms=[1,-1].map(side=>{
+      const old=sc.arms.find(a=>a.side===side),q=robotReady().slice(),k=RCORE.fk(sc.m,side,q);
+      RB.slew.set(side,{q:q.slice(),v:Array(7).fill(0)});
+      if(old?.key!=null)RB.prev.set(old.key,{side,q:q.slice(),elbow:k.elbow,tag:{q:q.slice(),elbow:k.elbow}});
+      return {...old,side,q,open:1,jaw:RCORE.gripper(sc.m).gapMax,jawState:null,wristStop:0,reach:true,gap:0,driven:false,idle:true};
+    });RB.scene=sc;
+  }
+  rebaseCaptureOrientations();
+  TB.generation++;TB.t=performance.now();TB.heard=null;
+  cancelTaskHaptics();for(const b of S.boards)b.hapticLast=null;
+  SND?.reset?.();
+}
 function placeTable(sc) {
+  resetTaskRobot(sc);
   const m = sc.m, G = RCORE.gripper(m), w = RCORE.fk(m, 1, RCORE.HOME).wrist, tip = w[0] + 0.07 + G.fl;
   const anchor = sc.anchor || sc.chest;
   const R = RCORE.upright([anchor.R[0], anchor.R[3], anchor.R[6]]), ch = { R, t: anchor.t };
   // Leave clearance below the open jaws and the tray rim, so spawning cannot push the hands upward.
-  const clearance = G.body.h[1] + 0.045;
+  const clearance = G.halfWidth(G.gapMax) + 0.045;
   const cx = w[0] - 0.03 + TABLE.size[0] / 2, table = { R, t: RCORE.place(ch, [cx, 0, w[2] - clearance]), size: TABLE.size, thick: TABLE.thick };
   const kind = S.settings.robot.props;
   // the ball just past the left hand's fingertips (between the hands on its own), the mug past the right's
   const spots = kind === 'cup' ? { ball: [tip + 0.045 - cx, w[1]], cup: [tip + 0.105 - cx, -w[1]] } : { ball: [tip + 0.05 - cx, 0] };
   TB.game = kind === 'arcade' ? TaskCore.create(currentTask(), table, G) : null;
   TB.world = TB.game ? TB.game.world : PHYS.scene(kind, table, G, spots, Math.PI);
+  TB.world.initialize(taskRobotState(sc));
   taskPlaced();
   TB.t = performance.now();
 }
 function resetTable() {
   if (S.settings.robot.props === 'off') return 'The table is off';
-  if (TB.game) TB.game.reset(); else if (TB.world) TB.world.reset();
-  taskPlaced();
-  TB.drive.clear(); TB.grab = null; RB.prev.clear(); RB.slew.clear(); paintRobotBtns();
-  clearCaptureOrientations();
+  robotUpdate(performance.now()/1000);
+  TASK.notice=null;placeTable(RB.scene);TB.sig=tableSig(RB.scene);paintRobotBtns();
   return 'Task restarted';
 }
 // how open an arm's gripper should be, 0 to 1
@@ -397,17 +465,13 @@ function tableStep(sc) {
   if (!sc || S.settings.robot.props === 'off' || !PHYS) { TB.world = null; TB.game = null; TB.sig = ''; if (SND) SND.stop(); return; }
   const sig = tableSig(sc);
   if (!TB.world || sig !== TB.sig) { TB.sig = sig; placeTable(sc); }
-  const W = TB.world, m = sc.m, links = [], hands = [], P = (p) => RCORE.place(sc.chest, p);
-  for (const a of sc.arms) {
-    const k = RCORE.fk(m, a.side, a.q);
-    links.push({ id: a.side + 'u', a: P(k.shoulder), b: P(k.elbow), r: 0.04 }, { id: a.side + 'f', a: P(k.elbow), b: P(k.wrist), r: 0.032 });
-    hands.push({ side: a.side, pose: { R: C.mul3(sc.chest.R, k.R), t: P(k.wrist) }, opening: a.open });
-  }
-  W.setRobot({ links, hands });
+  const W = TB.world, m = sc.m,generation=TB.generation;
+  W.setRobot(taskRobotState(sc));
   const t = performance.now();
   const previous = W.time;
   W.step((t - TB.t) / 1000); TB.t = t;
   if (TB.game) stepTask(W.time - previous);
+  if(TB.world!==W||TB.generation!==generation)return;
   sendTaskHaptics(W, sc, t);
   if (SND && W.record && W.record.time !== TB.heard) { TB.heard = W.record.time; SND.play(W.record, panOf); }
   // the arm drawn to where its hand is: the table or a prop may have stopped it short of where the arm was sent
@@ -416,7 +480,10 @@ function tableStep(sc) {
     const h = W.hands[a.side], P = W.handPose(a.side);
     if (!h || !P) continue;
     a.jaw = h.gap;
-    const k = RCORE.fk(m, a.side, a.q), s = RCORE.handIK(m, a.side, { R: C.mul3(Rt, P.R), t: C.mulv(Rt, C.sub(P.t, sc.chest.t)) }, { q: a.q, elbow: k.elbow }, { prefer: S.settings.robot.elbows ? undefined : false });
+    a.jawState={carrierGap:h.carrierGap??h.gap,padCompression:h.padCompression};
+    // Contact deflection must preserve the commanded elbow branch, rather than re-optimise
+    // its posture on every solver fluctuation. The command already carries elbow preference.
+    const k = RCORE.fk(m, a.side, a.q), s = RCORE.handIK(m, a.side, { R: C.mul3(Rt, P.R), t: C.mulv(Rt, C.sub(P.t, sc.chest.t)) }, { q: a.q, elbow: k.elbow }, { prefer:false, swing:.5*Math.PI/180 });
     a.q = s.q;
   }
 }
@@ -456,7 +523,7 @@ function pourDraw() {
   if (!p) return {};
   // the stream in the beer's colour; the surface in a glass, its head of foam
   const v = p.view(), spec = TB.game.level.pour, color = spec.color || '#e0a526', foam = spec.foam || color;
-  return { liquids: v.surfaces.filter((x) => x.points.length > 2).map((x) => ({ ...x, color: foam })), streams: v.streams.map((points) => ({ points, color })) };
+  return { liquids: v.surfaces.filter(x=>x.points.length>2).flatMap(x=>[{...x,color},...(x.foam>.01?[{...x,color:foam,layer:'foam'}]:[])]), streams: v.streams.map((points,i) => ({ points, radii:v.radii[i], phase:v.phase, color })), particles:v.particles };
 }
 // drawn flat (no WebGL): the table's top, the ball, the cup as a fat stroke from its base to its rim
 function tableFlat(face, seg, ball) {
@@ -468,6 +535,7 @@ function tableFlat(face, seg, ball) {
     const p = W.poseOf(b);
     if (b.kind === 'ball') ball(p.t, PHYS.BALL.r, '#2a78d6', K.text, 1);
     else if (b.pieces) for (const s of b.pieces) {
+      if(s.visual)continue;
       if (s.type === 'cylinder') { const R = C.mul3(p.R, s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1]), t = C.add(p.t, C.mulv(p.R, s.p)); seg(C.add(t, C.mulv(R, [0, 0, -s.h])), C.add(t, C.mulv(R, [0, 0, s.h])), s.r, b.color || K.surface, K.text, 1); }
       else {
         const vs = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]].map((v) => C.add(p.t, C.mulv(p.R, C.add(s.p, C.mulv(s.R || [1,0,0,0,1,0,0,0,1], v.map((x,i) => x*s.h[i]))))));
@@ -483,8 +551,8 @@ $('soundBtn').onclick = () => setSound(!S.settings.robot.sound);
 $('tagsDriveBtn').onclick = () => { TB.drive.clear(); for (const k of [...RB.prev.keys()]) if (String(k).startsWith('drive')) RB.prev.delete(k); paintRobotBtns(); };
 
 // Moving a hand with the mouse (or a finger): press on a gripper and drag it across the view, in the robot's plane the
-// view looks most squarely at (grabPlane); with Alt held, in the next one. Scrolling on a hand opens and closes it
-// (with Shift: tips the fingers down and up), and Space opens or closes the last one moved. A moved hand stays where it
+// view looks most squarely at (grabPlane). Scrolling on a hand opens and closes it,
+// and Space opens or closes the last one moved. A moved hand stays where it
 // was put until Tags drive, Calibrate robot, or a reload.
 function plotOrbit() {
   const V = S.view, r = plot.getBoundingClientRect();
@@ -530,16 +598,35 @@ function rayHit(o, r, e, p, n) {
 }
 // The plane a hand is dragged in: its normal is whichever of the robot's forward, side and up (the table's axes, else the
 // chest's, upright) the view looks most nearly along. From above the hand moves side to side and forward and back, from
-// the side forward and back and up and down, from the front side to side and up and down. Alt takes the next nearest,
-// so from above it lifts the hand.
-function grabPlane(o, alt) {
-  const ch = RB.scene.chest, R = TB.world ? TB.world.table.R : RCORE.upright([ch.R[0], ch.R[3], ch.R[6]]);
+// the side forward and back and up and down, from the front side to side and up and down.
+function grabFrame() {
+  const ch = RB.scene.chest;
+  return TB.world ? TB.world.table.R : RCORE.upright([ch.R[0], ch.R[3], ch.R[6]]);
+}
+function grabPlane(o) {
+  const R = grabFrame();
   const by = [0, 1, 2].map((i) => [R[i], R[3 + i], R[6 + i]]).map((a) => ({ a, d: Math.abs(a[0] * o.fwd[0] + a[1] * o.fwd[1] + a[2] * o.fwd[2]) }));
   by.sort((x, y) => y.d - x.d);
-  return by[alt ? 1 : 0].a;
+  return by[0].a;
+}
+// Screen overlay uses the same final camera as picking and the rendered hand, including robot eyes.
+function paintDragPlaneGuide(o, w, h) {
+  const el = $('dragPlaneGuide'), g = TB.grab, sc = RB.scene, d = g && TB.drive.get(g.side);
+  if (!o || S.settings.show3d !== 'robot' || !g || !d || !sc || !sc.arms.some(a=>a.side===g.side)) { el.hidden = true; return; }
+  const centre = C.add(d.t,C.mulv(d.R,[0,0,RCORE.gripper(sc.m).finger.c[2]]));
+  const guide = RCORE.dragPlaneGuide(centre,g.basis,g.n);
+  if (!guide) { el.hidden = true; return; }
+  const corners = guide.corners.map(p=>o.project(p)), axes = guide.axes.map(a=>({...a,from:o.project(a.from),to:o.project(a.to),label:o.project(a.label)}));
+  if (corners.some(p=>!p) || axes.some(a=>!a.from||!a.to||!a.label)) { el.hidden = true; return; }
+  const point = p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+  const grid = guide.grid.map(line=>line.map(p=>o.project(p))).filter(line=>line.every(Boolean));
+  const svg = el.firstElementChild;
+  svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  svg.innerHTML = `<defs><marker id="dragPlaneArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L5 3L1 5"/></marker></defs><polygon points="${corners.map(point).join(' ')}"/><path class="drag-plane-grid" d="${grid.map(([a,b])=>`M${point(a)}L${point(b)}`).join(' ')}"/>` + axes.map(a=>`<g data-drag-axis="${a.index}"><path class="drag-plane-axis" d="M${point(a.from)}L${point(a.to)}" marker-start="url(#dragPlaneArrow)" marker-end="url(#dragPlaneArrow)"/><text x="${Math.max(45,Math.min(w-45,a.label[0])).toFixed(1)}" y="${Math.max(14,Math.min(h-8,a.label[1])).toFixed(1)}">${escapeHtml(TASK_DATA.motion.drag_axes[a.index])}</text></g>`).join('');
+  el.hidden = false;
 }
 function handGrab(e) {
-  if (e.shiftKey || (e.pointerType === 'mouse' && e.button !== 0)) return false;
+  if (e.pointerType === 'mouse' && e.button !== 0) return false;
   const hit = handAt(e);
   if (!hit) return false;
   selectPlayHand(String(hit.a.side)); TASK.moved = true;
@@ -548,9 +635,9 @@ function handGrab(e) {
   const kept = TB.drive.get(hit.a.side);
   if (kept && !hit.a.reach) { TB.drive.delete(hit.a.side); driveOf(hit.a).open = kept.open; }
   const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
-  const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n);
+  const { o, r } = plotOrbit(), n = grabPlane(o), at = rayHit(o, r, e, p, n);
   if (!at) return false;
-  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, at };
+  TB.grab = { id: e.pointerId, side: hit.a.side, n, at, basis:grabFrame().slice() };
   plot.setPointerCapture(e.pointerId); plot.style.cursor = 'grabbing';
   return true;
 }
@@ -566,8 +653,6 @@ function handMove(e) {
   // plane that followed it would move the target with it
   const G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit();
-  // Alt pressed or let go mid-drag: carry on from here on the other plane
-  if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.at = at; g.alt = e.altKey; } return true; }
   const at = rayHit(o, r, e, p, g.n);
   if (!at) return true;
   // the new grip point; on the table (or the floor, the other arm or the other gripper) it goes at most PHYS.PRESS past
@@ -589,15 +674,15 @@ function handMove(e) {
   d.t = C.sub(want, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   return true;
 }
-function handDrop(e) { if (TB.grab && TB.grab.id === e.pointerId) { TB.grab = null; plot.style.cursor = ''; TB.ptr = { clientX: e.clientX, clientY: e.clientY, buttons: 0 }; } }
+function handDrop(e) { if (TB.grab && TB.grab.id === e.pointerId) { TB.grab = null; $('dragPlaneGuide').hidden = true; plot.style.cursor = ''; TB.ptr = { clientX: e.clientX, clientY: e.clientY, buttons: 0 }; } }
+plot.addEventListener('lostpointercapture', handDrop);
 plot.addEventListener('pointerleave', () => { if (!TB.grab) { TB.ptr = null; TB.hover = null; plot.style.cursor = ''; } });
 function handWheel(e) {
   const hit = TB.grab ? { a: RB.scene.arms.find((x) => x.side === TB.grab.side) } : handAt(e);
   if (!hit || !hit.a) return false;
   selectPlayHand(String(hit.a.side)); TASK.moved = true;
   const d = driveOf(hit.a), dy = e.deltaY || e.deltaX;
-  if (e.shiftKey) d.R = C.mul3(d.R, RCORE.Ry(Math.sign(dy) * 0.06));
-  else d.open = Math.min(1, Math.max(0, d.open - dy * 0.002)); // scrolling down (towards you) closes it, like a trigger
+  d.open = Math.min(1, Math.max(0, d.open - dy * 0.002)); // scrolling down (towards you) closes it, like a trigger
   return true;
 }
 plot.addEventListener('keydown', (e) => {

@@ -9,7 +9,6 @@
 //   6b. contours: a plane, a cone (closed rings), a saddle either side of the line, a window against the whole grid, missing heights, spacing
 //   7. the service worker (sw.js) in a mock: terrain from saved/recent caches offline, the recent cache capped,
 //      the page from cache offline or on a stalled network, street-map tiles left alone
-//   8. the old address: /glide-reach/ redirects, and its sw.js retires the old service worker
 const path = require('path');
 const fs = require('fs');
 const vm = require('vm');
@@ -465,14 +464,14 @@ console.log('7. service worker');
   const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
 
   await run('install', {});
-  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 26, 'install caches the page, its script and styles, the core, the planning logic, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
+  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 28, 'install caches the page, its script and styles, the core, the planning logic, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
   let verification;
   await run('message', { data: { type: 'verify-shell' }, ports: [{ postMessage: r => { verification = r; } }] });
-  check(verification.present === 26 && verification.total === 26, 'offline verification checks every installed page file');
+  check(verification.present === 28 && verification.total === 28, 'offline verification checks every installed page file');
   const shellCache = await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx));
   await shellCache.delete('glide-plan.js');
   await run('message', { data: { type: 'verify-shell' }, ports: [{ postMessage: r => { verification = r; } }] });
-  check(verification.present === 25 && verification.total === 26, 'verification detects an evicted planning script');
+  check(verification.present === 27 && verification.total === 28, 'verification detects an evicted planning script');
   await shellCache.put('glide-plan.js', resp('shell:glide-plan.js'));
   const shellFiles = vm.runInContext('SHELL_FILES', ctx).filter(f => f !== './');
   const missing = shellFiles.filter(f => !fs.existsSync(path.join(__dirname, '..', 'glide-path', f)));
@@ -512,28 +511,6 @@ console.log('7. service worker');
   check(await get('https://tile.openstreetmap.org/13/1746/2975.png') === undefined, 'street-map tiles are not intercepted');
   check(await get('https://tsmorz.github.io/recipes/', 'navigate') === undefined, 'nor the rest of the site');
 
-  console.log('8. the old address (/glide-reach/)');
-  {
-    // its sw.js replaces the service worker installed there before the move: it unregisters, sends open tabs to
-    // /glide-path/ and deletes no caches (the terrain is shared with the new page)
-    const h = {}, went = [];
-    let unreg = 0, deleted = 0;
-    const tabs = [{ url: 'https://tsmorz.github.io/glide-reach/?lat=44.1#map', navigate: async u => { went.push(u); } }];
-    const c2 = { URL, Promise, console,
-      caches: { delete: async () => { deleted++; }, keys: async () => ['glide-terrain-saved'] },
-      self: { addEventListener: (ty, f) => { h[ty] = f; }, skipWaiting: () => {},
-              registration: { unregister: async () => { unreg++; return true; } },
-              clients: { matchAll: async () => tabs, claim: async () => {} } } };
-    vm.createContext(c2);
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'glide-reach/sw.js'), 'utf8'), c2);
-    let p; h.install({ waitUntil: x => { p = x; } }); await p;
-    p = null; h.activate({ waitUntil: x => { p = x; } }); await p;
-    check(unreg === 1, 'the old service worker unregisters itself');
-    check(went.length === 1 && went[0] === 'https://tsmorz.github.io/glide-path/?lat=44.1#map', `and sends open tabs to the new address (${went[0]})`);
-    check(deleted === 0 && !h.fetch, 'without deleting caches or answering requests');
-    const redirect = fs.readFileSync(path.join(__dirname, '..', 'glide-reach/index.html'), 'utf8');
-    check(redirect.includes('location.replace("/glide-path/" + location.search + location.hash)'), 'its index.html redirects, keeping query and hash');
-  }
 
   if (failed) { console.log('\nFAILED'); process.exit(1); }
   console.log('\nAll glide-path checks passed.');

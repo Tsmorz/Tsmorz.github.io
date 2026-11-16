@@ -11,7 +11,7 @@ module.exports = function ({ check, near, budget }) {
   const create = (id) => T.create(levels.find((l) => l.id === id), table, G);
   const put = (W, b, at, rot = I) => { b.R = rot.slice(); b.q = P.qOf(rot); b.t = C.sub(at, C.mulv(rot, b.off)); b.v = [0,0,0]; b.w = [0,0,0]; b.asleep = false; b.still = 0; };
   const finish = (g, n = 60) => { for (let i = 0; i < n; i++) { g.world.step(1/60); T.update(g,1/60,true); } };
-  check(levels.map(l=>l.id).join(',')==='bowl,sort,tray,pour,laundry'&&['bowl','sort','pour'].every(id=>levels.find(l=>l.id===id).hands===1)&&['tray','laundry'].every(id=>levels.find(l=>l.id===id).hands===2), 'exactly five tasks: a first grasp, sorting, two-handed balance, pouring by the handle and a towel');
+  check(levels.map(l=>l.id).join(',')==='bowl,sort,tray,pour,laundry'&&['bowl','sort','pour'].every(id=>levels.find(l=>l.id===id).hands===1)&&['tray','laundry'].every(id=>levels.find(l=>l.id===id).hands===2), 'exactly five tasks: a first grasp, sorting, two-handed balance, pouring and a thin T-shirt');
   check(taskData.ready&&taskData.ready.joints.length===R.JOINTS.length&&taskData.ready.joints.every((v,i)=>v*Math.PI/180>=R.JOINTS[i].lo&&v*Math.PI/180<=R.JOINTS[i].hi)&&levels.every(l=>!l.ready&&!(l.guided&&l.guided.ready)), 'every task starts from one valid shared joint pose; no task carries its own');
   for (const side of [1,-1]) {
     const q=taskData.ready.joints.map(v=>v*Math.PI/180), k=R.fk(model,side,q);
@@ -20,7 +20,7 @@ module.exports = function ({ check, near, budget }) {
     const solved=R.ik(model,side,k,{q,elbow:k.elbow});
     check(near(solved.q,q,1e-6), 'ready: physics IK preserves the seeded elbow and wrist on side '+side);
   }
-  check(levels.find(l=>l.id==='sort').objects.length===2&&T.mission(levels.find(l=>l.id==='sort'),'guided').objects.length===2,'both modes offer exactly two blocks');
+  check(levels.find(l=>l.id==='sort').objects.length===2&&T.mission(levels.find(l=>l.id==='sort'),'guided').objects.length===2,'the single placement task offers exactly two blocks');
   for (const l of levels) {
     const g = create(l.id), W = g.world, keys = new Set([...W.bodies, ...W.cloths].map((b) => b.key));
     check(l.name && l.brief && l.hint && l.par > 0 && l.goals.length && l.goals.every((r) => keys.has(r.object) && (!r.target || keys.has(r.target))), l.id + ': content and objective references are valid');
@@ -43,11 +43,11 @@ module.exports = function ({ check, near, budget }) {
     check(P.shapeDistance([r,0,z],T.geometry('bowl')) < 0 && P.shapeDistance([r-.015,0,z],T.geometry('bowl')) > .008, 'the flared bowl has a solid wall and hollow interior at '+z+' m');
   }
   let g = create('bowl'), W = g.world;
-  put(W,g.byKey.get('ball'),[.04,-.17,.03]); finish(g);
+  put(W,g.byKey.get('ball'),C.add(W.poseOf(g.byKey.get('bowl')).t,[0,0,.03])); finish(g);
   check(g.complete && g.stars === 3, 'a ball released inside a physically settled bowl completes the easy level');
-  g = create('bowl'); W = g.world; put(W,g.byKey.get('ball'),[.04,-.17,.14]); T.update(g,.8,true);
+  g = create('bowl'); W = g.world; put(W,g.byKey.get('ball'),C.add(W.poseOf(g.byKey.get('bowl')).t,[0,0,.14])); T.update(g,.8,true);
   check(!g.complete, 'hovering above the bowl does not complete the task');
-  W.hands[1] = { grip: {body:g.byKey.get('ball')} }; put(W,g.byKey.get('ball'),[.04,-.17,.03]); T.update(g,.8,true);
+  W.hands[1] = { grip: {body:g.byKey.get('ball')} }; put(W,g.byKey.get('ball'),C.add(W.poseOf(g.byKey.get('bowl')).t,[0,0,.03])); T.update(g,.8,true);
   check(!g.complete, 'a held ball does not count as released');
   g = create('sort'); W = g.world; for (const r of g.level.goals) put(W,g.byKey.get(r.object),r.at); finish(g);
   check(g.complete, 'two correctly placed, settled blocks complete placement');
@@ -74,8 +74,8 @@ module.exports = function ({ check, near, budget }) {
   const both = [1,-1].every((s)=>W.hands[s].grip && W.hands[s].grip.body === tray);
   for(let i=0;i<50;i++){z+=.002;two(0);W.step(1/60);}
   check(both && W.poseOf(tray).t[2]>.07 && P.tilt(tray)<.15 && W.capped===0, 'two grippers can share a loaded-width tray without a solver blow-up');
-  check(!T.progress({laundry:{stars:3,time:10}},levels).laundry,'old shirt and single-fold times do not seed the twice-folded towel task');
-  const p = T.progress({bowl:{stars:3,time:40},laundry:{stars:99,time:-1},other:{stars:1,time:1}},levels);
+  check(!T.progress({laundry:{stars:3,time:10}},levels).laundry,'old fabric task times do not seed the new shirt task');
+  const p = T.progress({bowl:{stars:3,time:40,revision:levels.find(l=>l.id==='bowl').revision},laundry:{stars:99,time:-1},other:{stars:1,time:1}},levels);
   check(Object.keys(p).join() === 'bowl' && T.best(p.bowl,{stars:2,elapsed:60}).time===40 && T.best(p.bowl,{stars:2,elapsed:60}).stars===3, 'saved progress validates input and preserves the best time and stars independently');
   // Head camera follows the body, keeps an orthonormal basis, and projects what the robot looks towards at centre.
   for(const angle of [-80,-40,0,25]){

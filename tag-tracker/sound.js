@@ -3,7 +3,7 @@
 //   - An impact rings both materials' modes (a few decaying sines and a click of noise). Its amplitude is in proportion
 //     to how fast they met (full at IMPACT_FULL m/s), and a harder hit is brighter: its higher modes and its click grow
 //     faster than its lowest, as a shorter, harder contact puts more into high frequencies. A soft partner damps the
-//     other's ring (rubber on the mug is a dull tock, the robot's metal on it a clink).
+//     other's ring (rubber on the mug is a dull tock; the robot's damped chassis makes a knock).
 //   - A touch that lasts makes two sounds at once, each in proportion to its own speed: sliding hisses (the surfaces'
 //     speed past each other, its band rising with it) and rolling rumbles (how fast the ball travels over the other).
 //     A skidding ball does both.
@@ -20,7 +20,8 @@
     wood: { modes: [[190, 0.06, 1], [480, 0.035, 0.5], [1150, 0.018, 0.25]], click: 2400, gain: 0.9, damp: 0.7 },
     ceramic: { modes: [[1320, 0.4, 1], [3080, 0.22, 0.55], [5150, 0.12, 0.3]], click: 6000, gain: 0.55, damp: 1 },
     rubber: { modes: [[150, 0.03, 1], [380, 0.018, 0.4]], click: 900, gain: 0.8, damp: 0.25 },
-    aluminium: { modes: [[880, 0.28, 1], [2390, 0.16, 0.6], [4170, 0.09, 0.35]], click: 5000, gain: 0.5, damp: 0.9 },
+    aluminium: { modes: [[175, 0.045, 1], [390, 0.025, 0.45], [840, 0.012, 0.16]], click: 1500, gain: 0.8, damp: 0.45 },
+    stainless: { modes: [[740, 0.12, 1], [1880, 0.075, 0.45], [3620, 0.035, 0.18]], click: 4200, gain: 0.75, damp: 0.8 },
     stone: { modes: [[120, 0.05, 1], [310, 0.03, 0.5]], click: 1800, gain: 1, damp: 0.6 },
   };
   const FALLBACK = SOUNDS.wood;
@@ -47,22 +48,45 @@
       out.push({ type: 'slide', f: band * (0.15 + 0.35 * Math.min(1, t.slip)), q: 1.4, gain: Math.min(0.4, 0.09 * t.slip * push) });
     }
     const roll = Math.max(0, t.roll - 0.5 * t.slip); // a skid's own travel is the slide's
-    if (roll > 0.02) out.push({ type: 'roll', f: 140 + 220 * Math.min(1, roll), q: 0.9, gain: Math.min(0.4, 0.22 * roll * push) });
+    if (roll > 0.02) {
+      const steel=t.a.mat==='stainless'||t.b.mat==='stainless';
+      out.push({ type: 'roll', f: (steel?75:140) + (steel?110:220) * Math.min(1, roll), q: steel?2.1:0.9, gain: Math.min(0.4, (steel?.3:.22) * roll * push) });
+      // A quiet upper band gives a solid steel ball its grain above the heavy rolling body.
+      if(steel)out.push({type:'grain',f:650+450*Math.min(1,roll),q:3,gain:Math.min(.08,.035*roll*push)});
+    }
     return out;
   }
   // A touch's name, the same from step to step.
   const sideKey = (x) => x.kind + (x.id !== undefined ? x.id : x.link !== undefined ? x.link : '');
   const touchKey = (t) => sideKey(t.a) + '|' + sideKey(t.b);
+  // Solver features can report several hits for the same physical pair. Use its strongest
+  // event and rearm only after separation, just as tactile contact feedback does.
+  function impactGate(){
+    const last=new Map();
+    const key=e=>[sideKey(e.a),sideKey(e.b)].sort().join('|');
+    return rec=>{
+      const strongest=new Map(),out=[];
+      for(const e of rec.events)if(e.type==='impact'){
+        const k=key(e),old=strongest.get(k);if(!old||e.impulse>old.impulse)strongest.set(k,e);
+      }
+      for(const [k,e]of strongest){if(e.t-(last.get(k)??-Infinity)>.1)out.push(e);last.set(k,e.t);}
+      for(const t of rec.touches)last.set(key(t),rec.time);
+      for(const [k,t]of last)if(rec.time-t>1)last.delete(k);
+      return out;
+    };
+  }
 
   // The sound of records on any audio context, into `out`: hit(e, pan, when) plays an impact; touches(rec, panOf, when)
   // keeps each touch's sounds going (started, changed and stopped at `when`).
   function voices(ctx, out) {
     const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const loops = new Map(), nyq = ctx.sampleRate / 2.2;
+    const loops = new Map(), sources=new Set(), nyq = ctx.sampleRate / 2.2, bus=ctx.createGain();
+    bus.connect(out);
+    const watch=src=>{sources.add(src);src.onended=()=>{sources.delete(src);src.disconnect();};return src;};
     const panner = (pan) => {
-      if (!ctx.createStereoPanner) return out;
-      const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan || 0)); p.connect(out);
+      if (!ctx.createStereoPanner) return bus;
+      const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan || 0)); p.connect(bus);
       return p;
     };
     function hit(e, pan, t) {
@@ -71,11 +95,11 @@
       const dst = panner(pan);
       for (const m of v.modes) {
         if (m.f > nyq) continue;
-        const o = ctx.createOscillator(), g = ctx.createGain();
+        const o = watch(ctx.createOscillator()), g = ctx.createGain();
         o.frequency.value = m.f; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(m.amp * v.gain, t + 0.001); g.gain.setTargetAtTime(0, t + 0.001, m.decay);
         o.connect(g); g.connect(dst); o.start(t); o.stop(t + 0.002 + m.decay * 7);
       }
-      const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      const n = watch(ctx.createBufferSource()), f = ctx.createBiquadFilter(), g = ctx.createGain();
       n.buffer = noise; f.type = 'bandpass'; f.frequency.value = Math.min(v.click.f, nyq); f.Q.value = 0.8;
       g.gain.setValueAtTime(v.click.amp * v.gain, t); g.gain.setTargetAtTime(0, t, v.click.decay);
       n.connect(f); f.connect(g); g.connect(dst); n.start(t, Math.random() * 0.5); n.stop(t + v.click.decay * 8);
@@ -89,7 +113,7 @@
         let l = loops.get(key);
         if (!l) {
           if (loops.size >= 8) continue;
-          const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+          const src = watch(ctx.createBufferSource()), f = ctx.createBiquadFilter(), g = ctx.createGain();
           src.buffer = noise; src.loop = true; f.type = 'bandpass'; f.frequency.value = v.f; g.gain.setValueAtTime(0, t);
           src.connect(f); f.connect(g); g.connect(panner(panOf ? panOf(tc.p) : 0)); src.start(t, Math.random());
           loops.set(key, (l = { src, f, g }));
@@ -98,7 +122,8 @@
       }
       for (const [key, l] of loops) if (!seen.has(key)) fade(key, l, t);
     }
-    return { hit, touches, stop: (t) => { for (const [key, l] of loops) fade(key, l, t); } };
+    return { hit, touches, stop: (t) => { for (const [key, l] of loops) fade(key, l, t); },
+      reset(t){for(const src of sources){src.stop(t);src.disconnect();}sources.clear();loops.clear();bus.disconnect();} };
   }
   // The output stage: a master gain, then a limiter that only catches peaks (so the loudness still follows the speed).
   function master(ctx, level) {
@@ -110,12 +135,13 @@
   }
 
   // The player. Returns null where there is no Web Audio. set({on, duck}) turns it on and off (duck: quiet while the
-  // microphone listens); play(record, panOf) plays a step's impacts, each at its own time within the step, and keeps
+  // microphone listens); play(record, panOf) plays fresh impacts immediately alongside tactile dispatch and keeps
   // its touches' sounds going (panOf(p) gives a point's place left to right, -1..1); stop() silences the touches.
   function create() {
     const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
     if (!AC) return null;
     let ctx = null, gain = null, V = null, on = false, duck = false;
+    let impacts=impactGate();
     function init() {
       if (ctx) return;
       ctx = new AC();
@@ -136,12 +162,13 @@
       resume() { if (on && ctx && ctx.state === 'suspended') ctx.resume(); },
       play(rec, panOf) {
         if (!on || !ctx || !rec) return;
-        const now = ctx.currentTime + 0.005, t0 = rec.time - rec.dt;
+        const now = ctx.currentTime + 0.005;
         let n = 0;
-        for (const e of rec.events) if (n++ < 8) V.hit(e, panOf ? panOf(e.p) : 0, now + Math.max(0, e.t - t0));
+        for (const e of impacts(rec)) if (n++ < 8) V.hit(e, panOf ? panOf(e.p) : 0, now);
         V.touches(rec, panOf, now);
       },
       stop() { if (ctx) V.stop(ctx.currentTime); },
+      reset() { impacts=impactGate();if(ctx){V.reset(ctx.currentTime);V=voices(ctx,gain);} },
       get on() { return on; },
     };
     return self;
@@ -155,9 +182,9 @@
     const ctx = new OfflineAudioContext(2, Math.ceil(duration * o.rate), o.rate), out = master(ctx, o.level);
     for (const p of passes) {
       if (!p.records.length) continue;
-      const V = voices(ctx, out), r0 = p.records[0], start = r0.time - r0.dt, k = p.scale || 1, at = (t) => p.at + (t - start) * k;
+      const V = voices(ctx, out), impacts=impactGate(), r0 = p.records[0], start = r0.time - r0.dt, k = p.scale || 1, at = (t) => p.at + (t - start) * k;
       for (const rec of p.records) {
-        for (const e of rec.events) V.hit(e, o.panOf ? o.panOf(e.p) : 0, at(e.t));
+        for (const e of impacts(rec)) V.hit(e, o.panOf ? o.panOf(e.p) : 0, at(e.t));
         V.touches(rec, o.panOf, at(rec.time - rec.dt));
       }
       const last = p.records[p.records.length - 1];
@@ -166,5 +193,5 @@
     return ctx.startRendering();
   }
 
-  return { SOUNDS, IMPACT_FULL, hitVoice, loopVoices, loudness, brightness, touchKey, create, render };
+  return { SOUNDS, IMPACT_FULL, hitVoice, loopVoices, loudness, brightness, touchKey, impactGate, create, render };
 });

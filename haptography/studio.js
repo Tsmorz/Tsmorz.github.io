@@ -6,7 +6,7 @@ import { project, principalAxis, analyze } from "./analysis.js";
 import { decodeSession } from "./session.js";
 import { Plot, XYPlot, readColors, drawAxis } from "./plots.js";
 import { welch } from "./spectrum.js";
-import { INFO_IMU_OK, INFO_TACHAMMER_OK, INFO_ERM_OK } from "./wire.js";
+import { INFO_IMU_OK, INFO_TACHAMMER_OK } from "./wire.js";
 import { driveAudio } from "./library-core.js";
 import { playOnSpeakers, speakersOn, stopSpeakers } from "./speakers.js";
 
@@ -28,7 +28,7 @@ export async function mountStudio(api) {
   let busy = false, operation = null, selected = null, dirtyVariant = true, uploaded = false, signalError = "";
   let lastRound = null, variants = [], profiles = [], undo = [], saveTimer, settingsTimer;
   let listening = false;
-  const plots = { target: new Plot($("plot-target")), drive: new Plot($("plot-drive")), erm: new Plot($("plot-erm")), envelope: new Plot($("plot-envelope")) };
+  const plots = { target: new Plot($("plot-target")), drive: new Plot($("plot-drive")), envelope: new Plot($("plot-envelope")) };
   const spectrum = new XYPlot($("plot-drive-spectrum")), bands = new XYPlot($("plot-band-comparison"));
   const responsePlot = new XYPlot($("plot-response")), coherencePlot = new XYPlot($("plot-coherence"));
   const snapshot = () => Object.fromEntries(Array.from($("signal-form").elements).filter((el) => el.name).map((el) => [el.name, el.value]));
@@ -117,7 +117,7 @@ export async function mountStudio(api) {
     range.addEventListener("change", () => { clearTimeout(settingsTimer); controlsChanged(); });
     number.addEventListener("change", () => { range.value = number.value; controlsChanged(); });
   }
-  for (const name of ["kind", "output", "axis", "regularization", "correctionGain"]) $("signal-form").elements.namedItem(name).addEventListener("change", controlsChanged);
+  for (const name of ["kind", "axis", "regularization", "correctionGain"]) $("signal-form").elements.namedItem(name).addEventListener("change", controlsChanged);
   $("undo-tuning").addEventListener("click", () => {
     const previous = undo.pop(); if (!previous) return;
     fill(previous.settings); rawTarget = previous.rawTarget; targetAbout = previous.targetAbout; result = previous.result; lastRound = previous.lastRound;
@@ -160,15 +160,15 @@ export async function mountStudio(api) {
     $("retry-take").disabled = busy || !source;
     const hide = (name, hidden) => { const el = document.querySelector(`[data-control=${name}]`); if (el) el.hidden = hidden; };
     hide("seconds", s.kind === "recording"); hide("frequency", !["sine", "sweep", "pulse"].includes(s.kind));
-    hide("endFrequency", s.kind !== "sweep"); hide("width", s.kind !== "pulse"); hide("ermShare", s.output !== "both");
+    hide("endFrequency", s.kind !== "sweep"); hide("width", s.kind !== "pulse");
     $("signal-axis").disabled = busy || s.kind !== "recording";
     $("target-source").textContent = s.kind === "recording" && targetAbout ? `${targetAbout.label || "Recording"}: ${targetAbout.t0.toFixed(3)}–${targetAbout.t1.toFixed(3)} s${targetAbout.simulated ? " · simulated source" : ""}` : "To use a recording, select a stroke in Record and press Recreate selection.";
     $("profile-state").textContent = model ? `${model.simulated ? "Simulated" : "Measured"}${validModel ? "" : " · inactive for this source"}` : "Not measured · open to measure or import";
     $("profile-select").replaceChildren(Object.assign(node("option", "No active profile"), { value: "" }), ...profiles.map((p) => Object.assign(node("option", `${p.simulated ? "Demo: " : ""}${p.note || "Imported response"} · ${p.created ? new Date(p.created).toLocaleDateString() : "imported"}`), { value: p.id })));
     $("profile-select").value = model?.id ?? ""; $("profile-select").disabled = busy;
     $("profile-plots").hidden = !model;
-    $("profile-description").textContent = model ? `${model.note || "No setup note"} · ${model.created ? new Date(model.created).toLocaleString() : "Imported profile"}${model.board != null ? ` · board ${model.board}` : ""} · delay ${(model.delay / H.GRID * 1000).toFixed(1)} ms${model.erm_gain_g ? ` · ERM ${model.erm_gain_g.toFixed(3)} g/full scale` : " · ERM not measured"}` : "Measure or import a profile to compensate for the actuator's frequency response.";
-    $("output-destination").textContent = demo ? "Simulated actuators · no physical output" : source?.kind === "serial" ? `Board ${info?.board_id?.toString(16).toUpperCase() ?? "…"} · ${s.output === "both" ? "TacHammer + ERM" : s.output === "erm" ? "ERM" : "TacHammer"}` : "No device connected";
+    $("profile-description").textContent = model ? `${model.note || "No setup note"} · ${model.created ? new Date(model.created).toLocaleString() : "Imported profile"}${model.board != null ? ` · board ${model.board}` : ""} · delay ${(model.delay / H.GRID * 1000).toFixed(1)} ms` : "Measure or import a profile to compensate for the actuator's frequency response.";
+    $("output-destination").textContent = demo ? "Simulated actuators · no physical output" : source?.kind === "serial" ? `Board ${info?.board_id?.toString(16).toUpperCase() ?? "…"} · TacHammer` : "No device connected";
     const rate = info?.haptic_rate_hz;
     const max = demo ? 6 : rate && info?.clip_max_samples ? info.clip_max_samples / rate : 0;
     $("clip-capacity").textContent = max ? `Clip capacity ${max.toFixed(2)} s${demo ? "" : ` · ${rate.toLocaleString()} samples/s`}` : "Waiting for compatible capture firmware";
@@ -179,8 +179,7 @@ export async function mountStudio(api) {
     else if (result?.calibrated && !validModel) reason = "This drive uses an incompatible response profile. Select a matching profile to regenerate it.";
     else if (!demo && !(info?.flags & INFO_TACHAMMER_OK)) reason = "The capture firmware's I²S output is not ready.";
     else if (!demo && !(info?.flags & INFO_IMU_OK)) reason = "The IMU must be ready to measure a response.";
-    else if (!demo && s.output !== "hammer" && !(info?.flags & INFO_ERM_OK)) reason = "The ERM driver is not ready.";
-    else if (!demo && (info?.version < 3 || info?.version > 5)) reason = "Actuator playback needs compatible capture firmware (protocols 3–5).";
+    else if (!demo && (info?.version < 3 || info?.version > 6)) reason = "Actuator playback needs compatible capture firmware (protocols 3–6).";
     else if (!result) reason = signalError || "Choose a valid source and signal settings.";
     else if (!max || result.drive.length / H.GRID > max + 1e-6) reason = `Shorten the signal to fit the device's ${max.toFixed(2)} s clip capacity.`;
     $("play-actuators").disabled = busy || Boolean(reason);
@@ -189,14 +188,14 @@ export async function mountStudio(api) {
     if (!busy && reason) message(reason, false);
     else if (!busy && model && !validModel) message("This profile belongs to a different source. Measure or import a matching profile before calibrated playback.", true);
     else if (!busy && model?.board != null && !demo && model.board !== info?.board_id) message("This response profile was measured on another board. Check its setup or measure again.", true);
-    $("measure-profile").disabled = busy || !source || api.recording() || (!demo && (!(info?.flags & INFO_IMU_OK) || !(info?.flags & INFO_TACHAMMER_OK) || (info?.version < 3 || info?.version > 5)));
+    $("measure-profile").disabled = busy || !source || api.recording() || (!demo && (!(info?.flags & INFO_IMU_OK) || !(info?.flags & INFO_TACHAMMER_OK) || (info?.version < 3 || info?.version > 6)));
     $("export-profile").disabled = !model; $("import-profile").disabled = busy;
     $("stop-actuators").disabled = !busy;
     $("save-variant").disabled = busy || !result;
     $("undo-tuning").disabled = busy || !undo.length;
     $("listen-drive").disabled = busy || !result || H.peak(result.drive) < 1e-8;
-    $("listen-drive").title = result && H.peak(result.drive) < 1e-8 ? "The ERM envelope has no audio waveform; play it on the actuators to feel it." : "Audio preview of the TacHammer command";
-    $("refine-drive").disabled = busy || !lastRound?.score || !validModel || !result || s.output === "erm";
+    $("listen-drive").title = "Audio preview of the TacHammer command";
+    $("refine-drive").disabled = busy || !lastRound?.score || !validModel || !result;
     const comparable = variants.filter((v) => v.score && sameTarget(v.about, targetAbout) && v.about.axis === s.axis && v.simulated === demo && v.settings.low === s.low && v.settings.high === s.high && v.settings.attack === s.attack && v.settings.release === s.release);
     $("restore-best").disabled = busy || !comparable.length;
     $("restore-best").onclick = () => loadVariant(comparable.reduce((a, b) => a.score.bandError < b.score.bandError ? a : b));
@@ -207,7 +206,6 @@ export async function mountStudio(api) {
       $("target-readout").textContent = `${H.rms(result.target).toFixed(3)} ${s.kind === "recording" ? "g RMS" : "RMS"}${s.kind === "recording" && (lastRound || result.predicted) ? ` · dashed: ${lastRound ? "measured" : "predicted TacHammer"}` : ""}`;
       $("drive-readout").textContent = `Limit ${s.strength}% · peak ${(H.peak(result.drive) * 100).toFixed(1)}%`;
     } else $("signal-summary").textContent = "Choose a valid source to preview a signal.";
-    $("erm-plot-wrap").hidden = !result?.erm;
     $("comparison-panel").hidden = !lastRound;
     const score = lastRound?.score;
     $("metric-band").textContent = score ? score.bandError.toFixed(2) : "—";
@@ -233,7 +231,6 @@ export async function mountStudio(api) {
     // Test-signal shapes are dimensionless and cannot share an axis with measured g.
     plots.target.draw({ ...common, series: result?.settings.kind === "recording" ? targets : result ? [series(result.target, c.signal)] : [], yOptions: { symmetric: true, min: 0.01 } });
     plots.drive.draw({ ...common, series: result ? [series(result.drive, c.signal, 100)] : [], yOptions: { fixed: [-100, 100] } });
-    plots.erm.draw({ ...common, series: result?.erm ? [series(result.erm, c.y, 100, 0.01)] : [], yOptions: { fixed: [0, 100] } });
     drawAxis($("target-axis"), 0, seconds, c);
     const spec = result && welch(result.drive, H.GRID, { nfft: 512 });
     spectrum.draw({ colors: c, x: [1, 800], xLog: true, yFloorDb: 80, xFmt: (v) => `${v} Hz`, yFmt: (v) => `${v.toFixed(0)} dB`,
@@ -267,17 +264,17 @@ export async function mountStudio(api) {
       busy = false; operation = null; $("upload-progress").hidden = true; refresh(); draw(); scheduleSave();
     }
   }
-  async function measure(drive, erm, signal, { speakers = true } = {}) {
+  async function measure(drive, signal, { speakers = true } = {}) {
     checkAbort(signal);
     if (api.source()?.kind === "demo") {
       message("Simulating actuator playback and measurement…");
       hear(drive, speakers);
       await pause(300 + drive.length / H.GRID * 100, signal);
-      return { vibration: H.demoVibration(drive, erm), simulated: true };
+      return { vibration: H.demoVibration(drive), simulated: true };
     }
     const info = api.info(), client = api.client();
     if (!client) throw new Error("Device disconnected.");
-    const played = await client.play(drive, erm, info, signal, (phase, amount) => {
+    const played = await client.play(drive, info, signal, (phase, amount) => {
       message(`${phase}${phase === "Uploading" ? ` ${Math.round(amount * 100)}%` : ""} · ${$("output-destination").textContent}`);
       if (phase === "Playing") hear(drive, speakers);
       $("upload-progress").hidden = phase !== "Uploading"; $("upload-progress").value = amount;
@@ -292,7 +289,7 @@ export async function mountStudio(api) {
     const current = result;
     if (!current) throw new Error("Choose a valid signal first.");
     for (let i = 0; i < repeats; i++) {
-      const measured = await measure(current.drive, current.erm, signal);
+      const measured = await measure(current.drive, signal);
       const axis = effectiveModel()?.axis ?? principalAxis(measured.vibration);
       const vibration = project(measured.vibration, axis);
       lastRound = { measured: vibration, score: current.settings.kind === "recording" ? H.compare(current.target, vibration) : null, ...measured, vibration: undefined };
@@ -328,22 +325,11 @@ export async function mountStudio(api) {
       const x = H.fade(H.makeSignal({ kind: "sweep", seconds, frequency: 20, endFrequency: 600 }));
       const drive = H.boundDrive(Float64Array.from(x, (v) => v * limit * scale), Math.min(H.PREVIEW_PEAK, limit * 0.95));
       message(`Measuring response ${i + 1}/3…`);
-      const measured = await measure(drive, null, signal, { speakers: false });
+      const measured = await measure(drive, signal, { speakers: false });
       takes.push({ drive, vibration: measured.vibration });
       await pause(300, signal);
     }
     const next = H.identify(takes);
-    if (api.source()?.kind === "demo" || api.info()?.flags & INFO_ERM_OK) {
-      const drive = new Float64Array(H.GRID), erm = Float64Array.from({ length: 100 }, (_, i) => i >= 10 && i < 90 ? limit : 0);
-      const response = await measure(drive, erm, signal, { speakers: false });
-      const mag = Float64Array.from({ length: H.GRID }, (_, i) => Math.hypot(...response.vibration.subarray(3 * i, 3 * i + 3)));
-      const steady = H.rms(mag.subarray(H.GRID * 0.5, H.GRID * 0.8));
-      if (steady > 1e-4) {
-        next.erm_gain_g = steady / limit;
-        const env = H.envelope(mag, 16), at = env.findIndex((v, i) => i >= 10 && v >= 0.63 * steady);
-        next.erm_rise_s = at >= 10 ? (at - 10) / 100 : null;
-      }
-    }
     model = { ...next, id: id(), note, created: new Date().toISOString(), board: api.info()?.board_id ?? null, simulated: api.source()?.kind === "demo" };
     profiles.push(model);
     document.querySelector(".profile-panel").open = false;
@@ -413,7 +399,7 @@ export async function mountStudio(api) {
     $("variants").replaceChildren(...variants.slice().reverse().map((v) => {
       const li = node("li", ""), button = node("button", `${v.preferred ? "★ " : ""}${v.name}`);
       button.type = "button"; button.setAttribute("aria-pressed", String(v.id === selected && !dirtyVariant));
-      button.append(node("small", `${v.simulated ? "Simulated · " : ""}${v.settings.output} · ${(v.result.drive.length / H.GRID).toFixed(2)} s · peak ${(H.peak(v.result.drive) * 100).toFixed(0)}%${v.score ? ` · band error ${v.score.bandError.toFixed(2)} dB` : ""}${v.notes ? ` · ${v.notes}` : ""}`));
+      button.append(node("small", `${v.simulated ? "Simulated · " : ""}${(v.result.drive.length / H.GRID).toFixed(2)} s · peak ${(H.peak(v.result.drive) * 100).toFixed(0)}%${v.score ? ` · band error ${v.score.bandError.toFixed(2)} dB` : ""}${v.notes ? ` · ${v.notes}` : ""}`));
       button.disabled = busy; button.addEventListener("click", () => loadVariant(v)); li.append(button); return li;
     }));
     for (const key of ["play-a", "play-b"]) $(key).disabled = busy || !variants.length || !api.source() || api.recording();
@@ -439,12 +425,12 @@ export async function mountStudio(api) {
     if ($("match-ab-level").checked) {
       const other = variants.find((x) => x.id === $(selector === "variant-a" ? "variant-b" : "variant-a").value);
       if (other) {
-        const amplitude = (r) => Math.max(H.peak(r.drive), r.erm ? H.peak(r.erm) : 0);
+        const amplitude = (r) => H.peak(r.drive);
         factor = Math.min(amplitude(v.result), amplitude(other.result)) / (amplitude(v.result) || 1);
       }
     }
-    const drive = Float64Array.from(v.result.drive, (x) => x * factor), erm = v.result.erm ? Float64Array.from(v.result.erm, (x) => x * factor) : null;
-    for (let i = 0; i < repeats; i++) { await measure(drive, erm, signal); if (i < repeats - 1) await pause(gap * 1000, signal); }
+    const drive = Float64Array.from(v.result.drive, (x) => x * factor);
+    for (let i = 0; i < repeats; i++) { await measure(drive, signal); if (i < repeats - 1) await pause(gap * 1000, signal); }
     message(`${button === "play-a" ? "A" : "B"}: “${v.name}” played at ${(H.peak(drive) * 100).toFixed(1)}% peak${factor !== 1 ? " (matched drive peak)" : ""}.`);
   }));
   $("export-experiment").addEventListener("click", async () => {
@@ -457,7 +443,6 @@ export async function mountStudio(api) {
         for (let i = 0; i < variants.length; i++) {
           const v = variants[i], prefix = `${i + 1}-${v.id}`;
           await write(`${prefix}-drive.wav`, H.wav(v.result.drive));
-          if (v.result.erm) await write(`${prefix}-erm.csv`, "level\n" + Array.from(v.result.erm, (x) => Math.round(x * 127)).join("\n") + "\n");
           if (v.raw) await write(`${prefix}-raw.bin`, v.raw instanceof Uint8Array ? v.raw : Uint8Array.from(v.raw));
         }
       } else download("haptography-experiment.json", json(data));
@@ -474,17 +459,16 @@ export async function mountStudio(api) {
       const imported = data.variants.map((v) => {
         if (!finiteArray(v.result?.drive, H.GRID * 30, 1) || !finiteArray(v.result?.target, H.GRID * 30) || v.result.drive.length !== v.result.target.length ||
           (v.measured && (!finiteArray(v.measured, H.GRID * 30) || v.measured.length !== v.result.target.length)) ||
-          (v.result.erm && !finiteArray(v.result.erm, 3000, 1)) || !v.settings || !content.sources.some((s) => s.id === v.settings.kind)) throw new Error("An experiment contains invalid signal data.");
+          !v.settings || !content.sources.some((s) => s.id === v.settings.kind)) throw new Error("An experiment contains invalid signal data.");
         if (!controls.every((c) => Number.isFinite(v.settings[c.id]) && v.settings[c.id] >= c.min && v.settings[c.id] <= c.max) ||
-          !["hammer", "erm", "both"].includes(v.settings.output) || !["principal", "0", "1", "2"].includes(v.settings.axis) ||
+          !["principal", "0", "1", "2"].includes(v.settings.axis) ||
           !(v.settings.high > v.settings.low) || !(v.settings.regularization >= 0.005 && v.settings.regularization <= 1) ||
           !(v.settings.correctionGain >= 0.05 && v.settings.correctionGain <= 1) ||
           H.peak(v.result.drive) > v.settings.strength / 100 + 1e-8 ||
-          (v.settings.kind === "recording" && (!finiteArray(v.rawTarget, H.GRID * 30) || v.rawTarget.length !== v.result.target.length || !Number.isFinite(v.about?.t0) || !Number.isFinite(v.about?.t1) || v.about.t1 <= v.about.t0)) ||
-          (v.result.erm && v.result.erm.length !== Math.floor(v.result.target.length / 16))) throw new Error("An experiment contains invalid source or settings data.");
+          (v.settings.kind === "recording" && (!finiteArray(v.rawTarget, H.GRID * 30) || v.rawTarget.length !== v.result.target.length || !Number.isFinite(v.about?.t0) || !Number.isFinite(v.about?.t1) || v.about.t1 <= v.about.t0))) throw new Error("An experiment contains invalid source or settings data.");
         if (v.profile) H.validateModel(v.profile);
         return { ...v, id: id(), name: String(v.name || "Imported variant"), notes: String(v.notes || ""), score: v.settings.kind === "recording" && v.measured ? H.compare(Float64Array.from(v.result.target), Float64Array.from(v.measured)) : null,
-          result: { ...v.result, settings: v.settings, drive: Float64Array.from(v.result.drive), target: Float64Array.from(v.result.target), erm: v.result.erm ? Float64Array.from(v.result.erm) : null,
+          result: { ...v.result, settings: v.settings, drive: Float64Array.from(v.result.drive), target: Float64Array.from(v.result.target), erm: undefined,
             predicted: v.profile ? H.predict(Float64Array.from(v.result.drive), v.profile) : null, calibrated: Boolean(v.profile && v.settings.kind === "recording") }, raw: v.raw ? Uint8Array.from(v.raw) : null };
       });
       variants.push(...imported); if (imported.length) loadVariant(imported[0]); await persist(); message(`Imported ${imported.length} variants.`);
@@ -524,15 +508,15 @@ export async function mountStudio(api) {
   // The actuator is a real board; in Demo (or with none) these play on the speakers only.
   const boardReady = () => {
     const info = api.info();
-    return api.source()?.kind === "serial" && !api.recording() && Boolean(info?.flags & INFO_TACHAMMER_OK) && info?.version >= 3 && info?.version <= 5;
+    return api.source()?.kind === "serial" && !api.recording() && Boolean(info?.flags & INFO_TACHAMMER_OK) && info?.version >= 3 && info?.version <= 6;
   };
-  async function playOnce(drive, erm, label, { speakers = true } = {}) {
+  async function playOnce(drive, label, { speakers = true } = {}) {
     if (busy) throw new Error("The actuator is busy. Press Stop actuators first.");
-    if (!boardReady()) throw new Error(api.recording() ? "Stop recording before playing on the actuator." : "Connect a board with capture firmware (protocols 3–5) to play on the actuator.");
+    if (!boardReady()) throw new Error(api.recording() ? "Stop recording before playing on the actuator." : "Connect a board with capture firmware (protocols 3–6) to play on the actuator.");
     const info = api.info(), max = info.clip_max_samples / info.haptic_rate_hz;
     if (!(drive.length / H.GRID <= max + 1e-6)) throw new Error(`This is ${(drive.length / H.GRID).toFixed(2)} s; the board holds ${max.toFixed(2)} s. Select a shorter stretch.`);
     busy = true; operation = new AbortController(); refresh();
-    try { await measure(drive, erm, operation.signal, { speakers }); message(`Played “${label}” on the actuator.`); }
+    try { await measure(drive, operation.signal, { speakers }); message(`Played “${label}” on the actuator.`); }
     catch (err) {
       if (err.name === "AbortError") throw new Error("Stopped.");
       await api.client()?.stop().catch(() => {});
@@ -543,8 +527,8 @@ export async function mountStudio(api) {
     const loaded = api.loaded(), span = api.selection();
     if (!loaded || !span) throw new Error("Select a stroke or drag across a plot first.");
     const raw = H.recordingTarget(loaded.analysis, span[0], span[1]).target;
-    const made = H.generate(raw, { ...settings(), kind: "recording", output: "hammer" }, effectiveModel());
-    if (boardReady()) { await playOnce(made.drive, null, "selection"); return "actuator"; }
+    const made = H.generate(raw, { ...settings(), kind: "recording" }, effectiveModel());
+    if (boardReady()) { await playOnce(made.drive, "selection"); return "actuator"; }
     if (!speakersOn()) throw new Error("Turn on Speakers (top right), or connect a board, to play it.");
     await playOnSpeakers(driveAudio(made.drive));
     return "speakers";

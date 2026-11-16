@@ -92,12 +92,17 @@
   }
 
   class Control{
-    clear(){this.neutral=null;this.paused=false;this.recenterRequired=false;}
+    clear(){this.neutral=null;this.paused=false;this.recenterRequired=false;this.needsTaskPose=false;}
     zero(sample,R,side,frame,now,basis=I){
       if(!fresh(sample,now)||!finite(R)||R.length!==9||!finite(basis)||basis.length!==9||![1,-1].includes(side))return false;
       // XIAO flat, USB toward the operator: sensor Y runs along the cable, X across it, Z up.
       // Anchor those axes to the robot, independently of how its gripper is rolled at neutral.
-      this.neutral={q:sample.q.slice(),R:R.slice(),basis:product(basis,SENSOR_TO_ROBOT),side,frame,epoch:sample.epoch};this.last=R.slice();this.paused=false;this.recenterRequired=false;return true;
+      this.neutral={q:sample.q.slice(),R:R.slice(),basis:product(basis,SENSOR_TO_ROBOT),side,frame,epoch:sample.epoch};this.last=R.slice();this.paused=false;this.recenterRequired=false;this.needsTaskPose=false;return true;
+    }
+    retarget(sample,R,side,frame,now,basis){
+      const n=this.neutral;
+      if(!n||this.recenterRequired||n.epoch!==sample?.epoch||n.side!==side||n.frame!==frame)return false;
+      return this.zero(sample,R,side,frame,now,basis);
     }
     rotation(sample,side,frame,now,active){
       const n=this.neutral;if(!n)return null;

@@ -40,6 +40,25 @@
   assert(b.n>=2000&&b.buf.length===0&&b.track===null,'native capture IMU is estimated without entering TP/VQF fusion');
   const arm=RB.scene.arms.find(a=>a.side===1),drive=driveOf(arm);drive.open=.6;
   const position=drive.t.slice(),other=RCORE.fk(RB.scene.m,-1,RB.scene.arms.find(a=>a.side===-1).q).R;
+  const handRotation=side=>C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,side,RB.scene.arms.find(a=>a.side===side).q).R);
+  const recenterToBase=async side=>{
+    const d=TB.drive.get(side)||driveOf(RB.scene.arms.find(a=>a.side===side)),position=d.t.slice(),opening=d.open,upper=RB.slew.get(side).q.slice(0,4),epoch=b.motion.epoch,samples=b.n;
+    const base=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,side,robotReady()).R);
+    assert(C.angleOf(C.mul3(handRotation(side),C.tr3(base)))>.3,`side ${side}: recenter starts with a rotated gripper`);
+    $('ctlBoards').querySelector('[data-capture-zero]').click();
+    assert(C.angleOf(C.mul3(b.captureControl.last,C.tr3(base)))<1e-7,`side ${side}: Set neutral targets the canonical base orientation`);
+    assert(RB.prev.get('drive'+side)?.wristInput===undefined,`side ${side}: Set neutral clears unwrapped wrist-stop history`);
+    await wait(()=>C.angleOf(C.mul3(handRotation(side),C.tr3(base)))<.02,`side ${side}: the actual gripper returns to base after Set neutral`);
+    assert(RB.slew.get(side).q.slice(0,4).every((v,i)=>Math.abs(v-upper[i])<1e-8),`side ${side}: recenter never turns the shoulder or elbow`);
+    assert(C.norm(C.sub(d.t,position))<1e-10&&d.open===opening,`side ${side}: recenter preserves translation and opening`);
+    assert(b.motion.ready&&b.motion.epoch===epoch&&b.n>samples,`side ${side}: recenter keeps the calibrated live IMU stream`);
+    return base;
+  };
+  const recenterAfterFullTurn=async side=>{
+    driveOf(RB.scene.arms.find(a=>a.side===side));speed=180;
+    try{await wait(()=>RB.prev.get('drive'+side)?.wristInput?.some(v=>Math.abs(v)>2*Math.PI+.5),`side ${side}: continuous sensor turn exceeds 360 degrees`);}finally{speed=0;}
+    await sleep(650);await recenterToBase(side);
+  };
   const checkPitchRoll=async side=>{
     for(const [motion,axis] of [['pitch',[0,1,0]],['roll',[-1,0,0]]]){
       $('ctlBoards').querySelector('[data-capture-zero]').click();
@@ -70,24 +89,26 @@
   assert(C.norm(C.sub(stopped.slice(0,4),upper))<1e-8,'turning beyond the wrist stop never moves shoulder or elbow commands');
   assert(Math.abs(stopped[5]-RCORE.JOINTS[5].hi)<.01&&stopped.slice(4).every((v,i)=>v>=RCORE.JOINTS[i+4].lo-1e-8&&v<=RCORE.JOINTS[i+4].hi+1e-8),'chip yaw stops at the wrist limit after more than half a turn');
   assert(actual.slice(4).every((v,i)=>v>=RCORE.JOINTS[i+4].lo-1e-8&&v<=RCORE.JOINTS[i+4].hi+1e-8)&&C.norm(C.sub(RCORE.fk(m,1,actual).elbow,RCORE.fk(m,1,stopped).elbow))<.005,'the physical/rendered hand also respects stops without twisting the elbow');
-  $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.some(p=>p.type===0x44&&p.body[0]===1&&p.body[1]===75),'concurrent haptic ACK');
+  const beforeTest=commands.length;
+  $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.slice(beforeTest).some(p=>p.type===0x44&&p.body[0]===1&&p.body[1]===75)&&$('ctlConnectionStatus').textContent===TASK_DATA.haptics.test_sent.replace('{level}','75'),'concurrent test-pulse ACK, independently of the wrist-stop click');
   assert($('ctlConnectionStatus').textContent===TASK_DATA.haptics.test_sent.replace('{level}','75'),'test pulse reports the actual 75 percent command');
   $('taskHapticStrength').value=37;$('taskHapticStrength').dispatchEvent(new Event('input'));
   $('ctlBoards').querySelector('[data-test-haptic]').click();await wait(()=>commands.some(p=>p.type===0x44&&p.body[1]===37),'test pulse follows the selected drive percentage');
   assert($('gameHaptics').textContent.includes('37%'),'toolbar shows selected percentage');
   $('taskHapticStrength').value=75;$('taskHapticStrength').dispatchEvent(new Event('input'));
-  // Recenter while the fingers are stacked: chip yaw must still be vertical-axis yaw.
+  await recenterAfterFullTurn(1);
+  // A manually stacked gripper returns to the base pose; chip yaw must retain its board-up axis.
   taskLevel('bowl');await sleep(250);
+  stopCaptureOrientation(b);
   const rolled=RCORE.HOME.slice();rolled[4]=Math.PI/2;
   const rolledDrive=driveOf(RB.scene.arms.find(a=>a.side===1));
   rolledDrive.R=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,1,rolled).R);await sleep(1200);
-  $('ctlBoards').querySelector('[data-capture-zero]').click();
-  const rolledBase=b.captureControl.last.slice(),up=C.mulv(RB.scene.chest.R,[0,0,1]);
+  const rolledBase=await recenterToBase(1),up=C.mulv(RB.scene.chest.R,[0,0,1]);
   speed=45;await sleep(650);speed=0;await sleep(400);
   const yawAxis=C.so3Log(C.mul3(b.captureControl.last,C.tr3(rolledBase)));
-  assert(C.norm(yawAxis)>.3&&yawAxis.reduce((s,v,i)=>s+v*up[i],0)/C.norm(yawAxis)>.99,'Set neutral with stacked fingers does not turn chip yaw into pitch');
+  assert(C.norm(yawAxis)>.3&&yawAxis.reduce((s,v,i)=>s+v*up[i],0)/C.norm(yawAxis)>.99,'Set neutral from stacked fingers keeps chip yaw about robot up');
   const rendered=C.mul3(RB.scene.chest.R,RCORE.fk(RB.scene.m,1,RB.scene.arms.find(a=>a.side===1).q).R),renderedAxis=C.so3Log(C.mul3(rendered,C.tr3(rolledBase)));
-  assert(C.norm(renderedAxis)>.2&&renderedAxis.reduce((s,v,i)=>s+v*up[i],0)/C.norm(renderedAxis)>.98,'the rendered stacked gripper also yaws about robot up');
+  assert(C.norm(renderedAxis)>.2&&renderedAxis.reduce((s,v,i)=>s+v*up[i],0)/C.norm(renderedAxis)>.98,'the reset gripper also yaws about robot up');
   const epoch=b.motion.epoch;imu=false;await sleep(250);assert(b.captureControl.paused,'stale IMU pauses control even while INFO continues');
   const held=b.captureControl.last.slice();imu=true;
   await wait(()=>b.motion.ready&&b.motion.epoch>epoch,'IMU recovery calibration');await sleep(100);assert(JSON.stringify(b.captureControl.last)===JSON.stringify(held),'recovered stream waits for a new neutral pose');
@@ -111,9 +132,15 @@
     if(visible)Object.defineProperty(document,'hidden',visible);else delete document.hidden;
     document.dispatchEvent(new Event('visibilitychange'));await wait(()=>!b.captureControl.paused,'visible page resumes without Set neutral');
     assert(b.captureControl.neutral===neutral,'visibility preserves the original neutral');
-    $('gameSettingsBtn').click();await sleep(100);assert(b.captureControl.paused,'task settings hold orientation');
-    $('gameSettingsClose').click();await wait(()=>!b.captureControl.paused,'closing task settings resumes orientation');
+    openSettings();await sleep(100);assert(b.captureControl.paused,'task settings hold orientation');
+    $('settingsClose').click();await wait(()=>!b.captureControl.paused,'closing task settings resumes orientation');
     assert(b.captureControl.neutral===neutral,'task settings do not need another neutral');
+    const beforeHelp=b.captureControl.last.slice();$('gameKeyboard').click();
+    await wait(()=>b.captureControl.paused,'keyboard help holds capture orientation');
+    speed=35;await sleep(250);speed=0;await sleep(100);
+    assert(C.angleOf(C.mul3(b.captureControl.last,C.tr3(beforeHelp)))<1e-7,'sensor motion does not rotate the gripper behind keyboard help');
+    $('controlsClose').click();await wait(()=>!b.captureControl.paused,'closing keyboard help resumes orientation');
+    assert(b.captureControl.neutral===neutral&&C.angleOf(C.mul3(b.captureControl.last,C.tr3(beforeHelp)))>.08,'keyboard help preserves neutral and resumes fresh sensor movement');
   }finally{
     if(focused)Object.defineProperty(document,'hasFocus',focused);else delete document.hasFocus;
     if(visible)Object.defineProperty(document,'hidden',visible);else delete document.hidden;
@@ -123,13 +150,21 @@
   const right=b.captureControl.last.slice();speed=-40;await sleep(400);speed=0;await sleep(150);
   assert(C.angleOf(C.mul3(C.tr3(right),b.captureControl.last))>.15,'right-hand orientation follows its mapping');
   await checkPitchRoll(-1);
+  await recenterAfterFullTurn(-1);
   setMode('track');assert(b.captureControl.paused,'leaving Tasks pauses orientation even when Tracking draws tags');
   const tabNeutral=b.captureControl.neutral;
   setMode('tasks');await wait(()=>!b.captureControl.paused,'returning to Tasks automatically resumes orientation');
   assert(b.captureControl.neutral===tabNeutral,'switching tabs preserves the neutral pose');
-  taskLevel('sort');assert(!b.captureControl.neutral,'task changes clear IMU calibration');
+  taskLevel('sort');await wait(()=>!b.captureControl.needsTaskPose&&!b.captureControl.paused,'new task automatically aligns the calibrated device');
+  assert(b.captureControl.neutral&&b.captureControl.neutral.epoch===b.motion.epoch,'task changes preserve the live sensor calibration');
+  const afterTask=b.captureControl.last.slice();speed=40;await sleep(450);speed=0;await sleep(150);
+  assert(C.angleOf(C.mul3(b.captureControl.last,C.tr3(afterTask)))>.15,'orientation works in the new task without Set neutral');
+  resetTable();await wait(()=>!b.captureControl.needsTaskPose,'restart automatically aligns the ready hand');
+  const beforeViews=b.captureControl.neutral;
+  setRobotView('eyes');await sleep(120);setRobotView('orbit');await sleep(120);
+  assert(b.captureControl.neutral===beforeViews&&!b.captureControl.paused,'outside and robot-eye views preserve neutral');
   await b.serialLink.close();assert(closed&&b.state!=='live'&&!b.hapticCharacteristic,'disconnect releases motion and haptic transport');
   assert($('ctlConnectionStatus').textContent===TASK_DATA.link.capture_lost,'disconnect replaces the active-orientation notice');
   assert(document.documentElement.scrollWidth<=innerWidth+1,'controller panel fits viewport');
-  return {passed:true,protocol:4,gyroCalibration:true,physicalPitchRoll:true,physicalOrientation:true,positionPreserved:true,haptics:true,focusResume:true,visibilityResume:true,settingsResume:true,tabResume:true,streamResetRequiresNeutral:true,remapping:true,viewport:[innerWidth,innerHeight]};
+  return {passed:true,protocol:4,gyroCalibration:true,physicalPitchRoll:true,physicalOrientation:true,canonicalNeutral:true,fullTurnRecenterBothHands:true,positionPreserved:true,haptics:true,focusResume:true,visibilityResume:true,settingsResume:true,tabResume:true,streamResetRequiresNeutral:true,remapping:true,viewport:[innerWidth,innerHeight]};
 })()

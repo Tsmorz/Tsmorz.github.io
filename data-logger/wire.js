@@ -1,7 +1,7 @@
 // Wire formats shared with the firmware (src/sysid_wire.h for the recorded data streams,
 // src/dashboard_wire.h for the control service). Pure functions only, no DOM or Bluetooth, so
 // tests/dashboard/wire.test.mjs can run them in Node. Everything on the wire is little-endian.
-import { ERM_PRESETS, ERM_ROM_EFFECT_MAX, KEYS, RUMBLE_MS, SERVO_PATTERNS, SERVO_PULSE_US, TACHAMMER_WAVEFORMS } from "./actuators.js";
+import { KEYS, SERVO_PATTERNS, SERVO_PULSE_US, TACHAMMER_WAVEFORMS } from "./actuators.js";
 
 // Control service: LED, mouse settings, latency (DASHBOARD_PROTOCOL_VERSION in dashboard_wire.h).
 export const PROTOCOL_VERSION = 2;
@@ -453,9 +453,9 @@ export function crc32(bytes) {
 }
 
 // The Actuators dialog's test commands and the board's status (struct dashboard_actuator_command /
-// dashboard_actuator_status, dashboard_wire.h).
+// dashboard_actuator_status, dashboard_wire.h). 3-5 were the ERM's, retired with it.
 export const ACTUATOR_COMMANDS = {
-  stopAll: 1, tachammerPlay: 2, ermPreset: 3, ermEffect: 4, ermRumble: 5, servoPattern: 6, servoPulse: 7, servoRelease: 8,
+  stopAll: 1, tachammerPlay: 2, servoPattern: 6, servoPulse: 7, servoRelease: 8,
 };
 export const ACTUATOR_STATUS_BYTES = 15;
 
@@ -472,12 +472,6 @@ function actuatorCommandValid({ command, id, level, value }) {
       return true;
     case c.tachammerPlay:
       return inList(TACHAMMER_WAVEFORMS, id) && isLevel(level);
-    case c.ermPreset:
-      return inList(ERM_PRESETS, id);
-    case c.ermEffect:
-      return within(value, 1, ERM_ROM_EFFECT_MAX);
-    case c.ermRumble:
-      return isLevel(level) && within(value, RUMBLE_MS.min, RUMBLE_MS.max);
     case c.servoPattern:
       return inList(SERVO_PATTERNS, id) && isLevel(level);
     case c.servoPulse:
@@ -508,10 +502,8 @@ export function decodeActuatorStatus(view) {
   return {
     railOn: Boolean(flags & 0x01),
     tachammerReady: Boolean(flags & 0x02),
-    ermReady: Boolean(flags & 0x04),
     servoReady: Boolean(flags & 0x08),
     analogReady: Boolean(flags & 0x10),
-    ermPlaying: Boolean(flags & 0x20),
     tachammerWaveform: view.getUint8(2) || null,
     servoPattern: view.getUint8(3) || null,
     keys: view.getUint8(4),

@@ -1,0 +1,2 @@
+t_us,imu_samples,imu_dropped,mic_blocks,mic_errors,tof_readings,tof_errors,tx_packets,tx_dropped,tx_bytes,tx_peak_bytes,rx_commands,rx_bad,haptic_errors
+2000000,1666,1,100,0,66,2,400,3,60000,4096,12,1,0

@@ -4,11 +4,9 @@
   document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');setRobotView('orbit');await sleep(250);
   const slider=$('taskMotionScale'),value=$('taskMotionValue');
   const gain=n=>{slider.value=n;slider.dispatchEvent(new Event('input'));};
-  $('gameSettingsBtn').click();
-  assert(slider.getBoundingClientRect().height>0&&slider.closest('#gameSettings'),'sensitivity slider is visible in Task settings');
+  assert(slider.getBoundingClientRect().height>0&&slider.closest('.game-actions'),'sensitivity slider is visible in the task bar');
   assert(slider.min==='0.1'&&slider.max==='5','fine movement and larger movement are both available');
   gain(.25);assert(value.textContent==='0.25×'&&$('robotScale').value==='0.25'&&store.get('settings').robot.scale===.25,'slider, Tracking selector and persisted gain agree');
-  $('gameSettingsClose').click();
   // Synthetic pointers use the real picking, ray/plane drag, reach and contact code. Native
   // pointer capture requires a trusted pointer, so only capture itself is stubbed here.
   const capture=plot.setPointerCapture;plot.setPointerCapture=()=>{};
@@ -45,7 +43,7 @@
     const travel=C.sub(rayHit(g.o,g.r,end,g.p,g.n),at);
     assert(C.norm(C.sub(C.sub(g.d.t,before),travel.map(v=>2*v)))<1e-8,'the new gain affects only subsequent pointer travel');
     const beforeAlt=g.d.t.slice();handMove({...end,altKey:true});
-    assert(C.norm(C.sub(g.d.t,beforeAlt))<1e-12,'changing drag plane does not jump the gripper');
+    assert(C.norm(C.sub(g.d.t,beforeAlt))<1e-12,'the retired Alt modifier does not move the gripper or change its drag plane');
     handDrop(g.e);
     gain(.5);const atKey=g.d.t.slice(),up=C.mulv(TB.world.table.R,[0,0,.006]);playNudge('up');
     assert(C.norm(C.sub(C.sub(g.d.t,atKey),up))<1e-9,'keyboard movement shares the sensitivity');
@@ -63,9 +61,9 @@
     handDrop(edge.e);
   }finally{plot.setPointerCapture=capture;TB.grab=null;}
   $('robotScale').value='2';$('robotScale').dispatchEvent(new Event('change'));
-  assert(slider.value==='2'&&value.textContent==='2×','Tracking selector also updates Task settings');
-  $('taskMotionReset').click();assert(S.settings.robot.scale===1&&slider.value==='1'&&value.textContent==='1×','reset restores normal sensitivity');
-  taskLevel('bowl');draw3d();$('gameSettingsBtn').click();
-  assert(document.documentElement.scrollWidth<=innerWidth+1,'settings fit the viewport');
+  assert(slider.value==='2'&&value.textContent==='2×','Tracking selector also updates the task bar');
+  setMotionScale(1);assert(S.settings.robot.scale===1&&slider.value==='1'&&value.textContent==='1×','reset restores normal sensitivity');
+  taskLevel('bowl');draw3d();
+  assert(document.documentElement.scrollWidth<=innerWidth+1,'controls fit the viewport');
   return {passed:true,mouseGains:[.25,1,2],aprilTagGains:true,keyboardGain:true,noTargetJump:true,persisted:true,viewport:[innerWidth,innerHeight]};
 })()

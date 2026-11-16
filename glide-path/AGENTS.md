@@ -97,10 +97,6 @@ forbids "save area" features, so offline the page switches to a hillshade it dra
 `glide-path/lib/leaflet/` (1.9.4, source-map comment stripped), and MapLibre in `lib/maplibre/`, so the page loads with no network; bump `VERSION` in `sw.js`
 whenever `SHELL_FILES` changes (it lists every file of the page). The service worker also registers on `localhost`, so `script/serve` exercises it.
 
-The page was **Glide Reach at `/glide-reach/`** until 2026-11-10. `glide-reach/index.html` redirects to `/glide-path/`
-(keeping query and hash), and `glide-reach/sw.js` replaces the service worker browsers installed there: it unregisters
-itself and moves open tabs to the new address, deleting no caches (the terrain caches are shared). Leave both in place.
-
 ### DynaSoar ridge screen and local wind
 
 The name is **DynaSoar**; the URL remains `/glide-path/`, and existing `glide-reach-*` storage, shared plans and terrain caches are retained. The exact Dinosaur Park statue location (44.077964, −103.245844; Library of Congress survey) is the default when no launch or shared plan is saved. Its launch button never snaps to a neighbouring peak. Aircraft, branding, weather copy, screening explanations and landmark coordinates live in `_data/glide.yml`. `dyna-soar.png` is the generated cartoon; `glide-path/ARTWORK.md` records the reference and generation prompt.
@@ -127,3 +123,5 @@ Wind checks in `task check:glide` cover flat flow, ridge speed-up, windward lift
 `GlideCore.steadyGlide` resolves true airspeed into horizontal speed and sink for every reach calculation. Do not use total airspeed to cancel horizontal wind. `descentPath` is a quasi-steady extra-drag approach to the **clearance height**, not a touchdown simulation. Keep its terrain floor, sink limit, wind-relative speed and integrated time tests in `script/test-glide`. Legacy shared plans without `dsink` retain zero extra drag. Grid turns remain instantaneous; never describe that height envelope as a validated aircraft trajectory.
 
 The `profileData` trajectory is shared by the slice, `air-trajectory` custom 3D layer and playback. Air vertices are absolute MSL, rebased before float32 upload; GeoJSON lines remain draped ground traces. Use `profileColour` / `C.flight` / `C.route` across these views, including satellite. The custom layer must depth-test against terrain. `tests/glide/trajectory.js` guards city requests, sampled approaches and palette agreement on desktop and phone. City search uses Open-Meteo geocoding on submit only; selection pans the map without moving launch. Cancel requests on edits and ignore late responses.
+
+`aircraft-flight.js` validates the versioned `p4-flight` / `p4c-photo` contracts shared with esp32-p4-c6-base; `aircraft-ui.js` only reads user-selected local files. Never add cross-origin device commands or ask for the device password here. Preserve measured/estimated/missing location and simulation labels, split tracks at gaps, and never infer GPS by interpolating replay. Uploaded tracks are draped ground traces in both renderers, not measured 3D trajectories. Photo URLs must come from user-selected local JPEGs, never metadata URLs. The airplane controller does not execute a saved `plan`. `script/test-glide-aircraft` tests validation and gaps; `tests/glide/aircraft.js` covers the UI with `task shot`.

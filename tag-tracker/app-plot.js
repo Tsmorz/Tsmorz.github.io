@@ -54,6 +54,7 @@ function steadyRef() {
   return b.a.length > 2 ? C.meanPose(b.a, 10, 0.1) : tr.pose;
 }
 function draw3d() {
+  if (S.settings.show3d !== 'robot') $('dragPlaneGuide').hidden = true;
   const { c, w, h } = sizeCanvas(plot);
   c.clearRect(0, 0, w, h);
   const V = S.view, o = C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w, h });
@@ -186,7 +187,7 @@ function draw3d() {
       if (pinch) V.dist = Math.min(50, Math.max(0.1, V.dist * pinch / d));
       pinch = d; return;
     }
-    if (e.shiftKey || e.buttons === 4 || e.buttons === 2) pan(dx, dy);
+    if (e.buttons === 4 || e.buttons === 2) pan(dx, dy);
     else { V.yaw -= dx * 0.008; V.pitch = Math.max(-1.5, Math.min(1.5, V.pitch + dy * 0.008)); }
   });
   const up = (e) => { safely(handDrop, e); pts.delete(e.pointerId); pinch = 0; };
@@ -195,6 +196,7 @@ function draw3d() {
   plot.addEventListener('wheel', (e) => { e.preventDefault(); if (safely(handWheel, e)) return; if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes') { setHeadTilt(S.settings.robot.headTilt - Math.sign(e.deltaY) * 2); return; } S.view.dist = Math.min(50, Math.max(0.1, S.view.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
   plot.addEventListener('dblclick', fitView);
   plot.addEventListener('keydown', (e) => {
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
     const V = S.view, k = e.key;
     if (S.settings.show3d === 'robot' && S.settings.robot.view === 'eyes' && k.startsWith('Arrow')) {
       e.preventDefault(); return;

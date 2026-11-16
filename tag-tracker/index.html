@@ -230,6 +230,10 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .dlg legend{font-weight:700;font-size:14px;font-stretch:112%;padding:0 8px 0 0}
 .dlg-f{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--rule2);flex-wrap:wrap}
 .dlg .hint.bad,#boardMsg.bad{color:var(--warn)}
+#controlsDlg[open]{display:flex;flex-direction:column;width:min(980px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:hidden}
+#controlsDlg .dlg-h{flex:none}.controls-help{min-height:0;overflow:auto;padding:14px;display:grid;grid-template-columns:minmax(0,1fr);gap:14px}.controls-help p{margin:0;color:var(--ink2);font-size:13px}.controls-help h3{margin:0 0 10px;font-size:14px}.controls-layout{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;font-size:12px}.controls-layout .seg button{height:34px}.controls-legend{font-size:12px!important}.controls-keyboard-window{min-width:0;width:100%;max-width:100%;overflow-x:auto;padding:3px 1px 7px;scrollbar-width:thin}.controls-keyboard{--key-height:44px;--key-gap:4px;min-width:740px;display:grid;gap:var(--key-gap)}.controls-key-row{display:flex;gap:var(--key-gap,4px);position:relative}.controls-key,.controls-key-gap{flex:var(--key-units,1) 1 0;min-width:0}.controls-key{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;height:var(--key-height,44px);padding:2px;border:1px solid var(--rule);border-bottom-width:3px;border-radius:4px;background:var(--well);color:var(--muted);font:600 12px/1.15 var(--font)}.controls-key small{font-size:9px;font-weight:400}.controls-key.is-bound{border-color:var(--accent);background:var(--accentWash);color:var(--accent);cursor:pointer}.controls-key[aria-pressed=true]{background:var(--accent);color:var(--onAccent)}.controls-key.is-tall{height:calc(2*var(--key-height) + var(--key-gap));clip-path:polygon(0 0,100% 0,100% 100%,16.67% 100%,16.67% 50%,0 50%);z-index:1}.controls-scroll-hint{display:none}.controls-pointer-row{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-top:1px solid var(--rule);padding-top:12px}.controls-arrows{--key-height:42px;--key-gap:4px;width:150px;display:grid;gap:4px}.controls-arrow-help{max-width:280px}.controls-arrow-help p{margin-top:8px}.controls-mouse-help{display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px 16px}.controls-mouse-help h3{width:100%;margin-bottom:0}.controls-mouse{position:relative;width:106px;height:126px;border:1px solid var(--rule2);border-radius:36px 36px 28px 28px;background:var(--well);flex:none}.controls-mouse button{position:absolute;border:1px solid var(--accent);background:var(--accentWash);color:var(--accent);cursor:pointer;font:600 12px var(--font)}.controls-mouse button[aria-pressed=true]{background:var(--accent);color:var(--onAccent)}.controls-mouse [data-mouse-control=left]{top:0;left:0;width:52px;height:65px;border-radius:36px 0 0 0;padding-right:12px}.controls-mouse [data-mouse-control=right]{top:0;right:0;width:52px;height:65px;border-radius:0 36px 0 0;padding-left:12px}.controls-mouse [data-mouse-control=wheel]{top:15px;left:39px;width:26px;height:43px;border-radius:4px;z-index:1;background:var(--panel)}.controls-mouse-gestures{align-self:flex-end;white-space:normal;max-width:160px;font-size:12px!important;border-color:var(--accent)!important;color:var(--accent)!important}.controls-mouse-gestures[aria-pressed=true]{background:var(--accent)!important;color:var(--onAccent)!important}.controls-key-info{flex:none;border-top:1px solid var(--rule2);background:var(--field);padding:12px 14px;min-height:90px;max-height:35dvh;overflow:auto}.controls-key-info strong{display:block;color:var(--accent);font-size:14px}.controls-key-info p{margin:5px 0 0;font-size:13px;line-height:1.45}
+.controls-keyboard-window{height:294px;min-height:294px;overflow-y:hidden}.controls-key-row{height:var(--key-height,44px)}
+@media(max-width:760px){#controlsDlg[open]{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.controls-scroll-hint{display:block;font-size:12px!important}.controls-pointer-row{gap:14px;flex-wrap:wrap}.controls-arrow-help{max-width:210px}.controls-mouse-help{max-width:220px}.controls-key-info{min-height:110px}.controls-layout .seg button{padding:0 8px;font-size:12px}}
 .pick .ord{font-weight:650;font-size:11.5px;color:var(--accent)}
 .brow{display:grid;grid-template-columns:auto minmax(90px,1fr) auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-top:1px solid var(--rule)}
 .brow:first-child{border-top:0}
@@ -245,6 +249,13 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .plot3d canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
 .plot3d canvas:active{cursor:grabbing}
 .plot3d #plotGL{pointer-events:none} /* the shaded robot, over the grid; the plot canvas under it takes the pointer */
+#dragPlaneGuide{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}
+#dragPlaneGuide svg{width:100%;height:100%;display:block}
+#dragPlaneGuide polygon{fill:var(--accent);fill-opacity:.055;stroke:var(--accent);stroke-opacity:.45;stroke-width:1}
+#dragPlaneGuide path{fill:none;stroke:var(--accent);stroke-width:1.2}
+#dragPlaneGuide .drag-plane-grid{stroke-opacity:.22}
+#dragPlaneGuide .drag-plane-axis{stroke-opacity:.8}
+#dragPlaneGuide text{fill:var(--ink);stroke:var(--panel);stroke-width:3;paint-order:stroke;text-anchor:middle;dominant-baseline:middle;font:500 11px Archivo,system-ui,sans-serif}
 .plot3d .vbtns{position:absolute;right:10px;top:10px;z-index:2;display:flex;gap:6px}
 .plot3d .vbtns .btn{background:var(--panel)}.plot3d .vbtns .btn.primary{background:var(--accent)}
 .plot3d .help{position:absolute;right:10px;bottom:8px;font-size:12px;color:var(--muted);pointer-events:none;display:flex;gap:14px}
@@ -302,6 +313,10 @@ html.p3-full #view-track{z-index:101} /* sticky makes its own stacking context: 
 /* settings: groups of fields */
 .sgrid{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center}
 .sgrid+.sgrid{margin-top:12px}
+.camera-capture-row{padding-top:12px;margin-top:12px;border-top:1px solid var(--rule);min-width:0}
+.camera-capture-row strong{overflow-wrap:anywhere}
+.camera-capture-row .capture-info,.camera-capture-row .capture-note{font-size:12px;margin:6px 0}
+.camera-capture-row .capture-note:empty{display:none}
 .lens .num{width:64px}
 /* the setup guide */
 .setup .sstep{display:flex;flex-direction:column;gap:10px}
@@ -416,7 +431,7 @@ body.game-screen main>.col:first-child,body.game-screen #nowCard,body.game-scree
 body.game-screen main{display:block!important;position:relative;flex:1;min-height:0;width:100%;max-width:none!important;margin:0;padding:16px}
 body.game-screen #view-track{display:block;position:relative;top:0;height:100%}
 body.game-screen #view-track .card3d{display:block!important;height:100%;padding:0;border:1px solid var(--rule2);border-radius:4px;overflow:hidden}
-body.game-screen #view-track .plot3d{position:absolute;inset:0 0 0 304px;height:100%!important;min-height:0!important;margin:0;background:var(--well)}
+body.game-screen #view-track .plot3d{position:absolute;inset:0 220px 0 304px;height:100%!important;min-height:0!important;margin:0;background:var(--well)}
 body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen .plot3d #robotHint{display:none!important}
 #gameHUD{position:absolute;inset:16px;pointer-events:none;z-index:5;color:var(--ink)}
 .workbench-guide{position:absolute;top:0;bottom:0;left:0;width:304px;box-sizing:border-box;overflow:auto;padding:16px;background:var(--panel);border:1px solid var(--rule2);border-radius:4px 0 0 4px;pointer-events:auto;scrollbar-width:thin}
@@ -425,22 +440,22 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 #guideGoals{list-style:none;padding:0;font-size:13px;line-height:1.5;margin:14px 0}#guideGoals li{padding:4px 0}#guideGoals li::before{content:'○';display:inline-block;width:20px}#guideGoals li[data-done=true]::before{content:'✓';color:var(--accent)}#guideGoals li[data-active=true]{font-weight:600}
 .task-times{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-variant-numeric:tabular-nums}.task-times time{font-size:24px}.task-scores{width:100%;border-collapse:collapse;font-size:13px}.task-scores td,.task-scores th{text-align:left;padding:5px 3px;border-bottom:1px solid var(--rule)}.task-scores td:last-child{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.task-scores tr[aria-current]{color:var(--accent)}
 .workbench-guide details{margin:12px 0;font-size:13px;line-height:1.5}.workbench-guide summary{cursor:pointer;font-weight:600}.workbench-guide ol,.workbench-guide ul{padding-left:21px}.workbench-guide li{margin:7px 0}.workbench-guide .guide-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.workbench-guide .hint{font-size:12px}
-.game-corner{position:absolute;top:16px;right:16px;left:16px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}.game-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;align-items:center;pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:6px}.game-actions input{width:90px;accent-color:var(--accent)}.game-actions button{min-height:40px}.game-actions label{display:flex;align-items:center}
-#gameHUD .guide-notice{border:1px solid var(--warn);border-radius:4px;padding:6px 8px;margin:8px 0;font-size:13px;line-height:1.4}#gameHUD .controller-panel{width:min(340px,100%);pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:10px;display:grid;gap:8px;font-size:13px}#gameHUD .controller-panel p{margin:0}#gameHUD .controller-panel .row{display:flex;gap:6px;flex-wrap:wrap}.ctl-board{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--rule);padding-top:6px}.ctl-board strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.game-corner{position:absolute;top:0;right:0;bottom:0;width:220px;pointer-events:none}.game-actions{display:grid;align-content:start;gap:12px;height:100%;box-sizing:border-box;overflow:auto;scrollbar-width:thin;pointer-events:auto;background:var(--panel);border:1px solid var(--rule2);border-radius:0 4px 4px 0;padding:12px}.game-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}.game-tools #gameTags,.game-connection-tools{grid-column:1/-1}.game-connection-tools{display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:6px}#gameKeyboard .i{width:22px;height:22px}.game-actions input{width:100%;min-width:0;height:28px;margin:0;accent-color:var(--accent)}.game-actions button{min-height:40px;padding:0 8px}.game-tools button{min-width:0}.game-adjustment{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px;font-size:12px;border-top:1px solid var(--rule);padding-top:10px}.game-adjustment input,.game-adjustment button{grid-column:1/-1}.game-adjustment output{min-width:3.5ch;font-variant-numeric:tabular-nums;text-align:right}
+#gameHUD .guide-notice{border:1px solid var(--warn);border-radius:4px;padding:6px 8px;margin:8px 0;font-size:13px;line-height:1.4}#gameHUD .controller-panel{position:absolute;top:0;right:0;width:340px;max-width:calc(100vw - 32px);max-height:100%;box-sizing:border-box;overflow:auto;overscroll-behavior:contain;pointer-events:auto;background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:10px;display:grid;gap:8px;font-size:13px}#gameHUD .controller-panel p{margin:0}#gameHUD .controller-panel .row{display:flex;gap:6px;flex-wrap:wrap}.ctl-board{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--rule);padding-top:6px}.ctl-board strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #taskLabels .task-label[data-active=true]{border-color:var(--accent);color:var(--accent);font-weight:700}
 #taskLabels .task-label[data-pin]{transform:translate(-50%,calc(-100% - 22px))}
 #taskLabels .task-label[data-pin]::after{content:'';position:absolute;left:50%;top:100%;width:2px;height:22px;margin-left:-1px;background:var(--accent)}
 #taskLabels .task-label[data-pin]::before{content:'';position:absolute;left:50%;top:calc(100% + 22px);width:10px;height:10px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--accent);border:2px solid var(--panel)}
 #taskLabels .task-label[data-pin=target]::before{background:var(--panel);border-color:var(--accent)}
-#gameSettings{width:min(850px,calc(100vw - 24px));max-height:90dvh;background:var(--panel);color:var(--ink);padding:0;border:1px solid var(--rule2);border-radius:4px}#gameSettings::backdrop{background:var(--well);opacity:.85}
-.motion-settings{padding:16px;border-bottom:1px solid var(--rule)}.motion-settings>label{display:block;font-weight:600;margin-bottom:8px}.motion-scale{display:flex;align-items:center;gap:12px}.motion-scale input{flex:1;min-width:80px;accent-color:var(--accent)}.motion-scale output{min-width:4ch;text-align:right;font-variant-numeric:tabular-nums}.motion-settings p{margin:8px 0 0}
-#gameSettings>.card-h{position:sticky;top:0;background:var(--panel);z-index:2}#gameSettingsTools{padding:10px}#gameSettingsTools #taskPanel{max-width:none;border:0}#gameSettingsTools #robotPlayControls{padding:12px}#gameSettingsTools .task-levels{grid-template-columns:repeat(4,minmax(0,1fr))}#gameSettingsTools .task-select{display:flex}#gameSettingsTools .vbtns{display:flex;gap:6px;flex-wrap:wrap;padding:12px}#gameSettingsTools>.card-h{display:block;padding:12px}#gameSettingsTools>.card-h .toolbar{margin-top:10px}#gameSettingsTools .seg:has([data-show3d]){display:none}
-@media(max-width:720px){body.game-screen main{padding:10px}#gameHUD{inset:10px}body.game-screen #view-track .plot3d{inset:0 0 40%;height:60%!important}.workbench-guide{top:60%;left:0;right:0;bottom:0;width:auto;height:40%;padding:12px;border-radius:0 0 4px 4px}.workbench-guide .task-times{flex-direction:row;align-items:baseline;gap:10px;margin:6px 0}.workbench-guide .task-times time{font-size:18px}.workbench-guide #guideGoals{font-size:11px;line-height:1.2}.workbench-guide h1{font-size:18px;margin:4px 0 6px}.workbench-guide #gameObjective,.workbench-guide #gameChapter{display:none}.workbench-guide #guideGoals{margin:7px 0}.workbench-guide #guideGoals li{padding:2px 0;margin:0}.workbench-guide .live-guide{padding:8px 0;margin:8px 0}.workbench-guide .live-guide p{font-size:13px}.workbench-guide .select{margin-bottom:9px}.game-corner{top:8px;right:8px;left:8px}.game-actions{gap:5px;padding:4px}.game-actions input{width:65px}.game-actions .btn{font-size:12px;padding:0 9px}#gameSettingsTools .task-levels{display:none}}
+body.game-screen .card3d>.card-h,body.game-screen #taskPanel,body.game-screen #robotPlayControls,body.game-screen .plot3d>.vbtns{display:none!important}
+@media(max-width:1000px) and (min-width:721px){.workbench-guide{width:260px;padding:12px}body.game-screen #view-track .plot3d{left:260px;right:196px}.game-corner{width:196px}.game-actions{padding:8px}.game-tools{grid-template-columns:minmax(0,1fr)}.game-tools #gameController,.game-tools #gameTags{grid-column:auto}}
+@media(max-width:720px){body.game-screen main{padding:10px}#gameHUD{inset:10px}body.game-screen #view-track .plot3d{inset:0 0 44%;height:56%!important}.workbench-guide{top:56%;left:0;right:158px;bottom:0;width:auto;height:44%;padding:12px;border-radius:0 0 0 4px}.workbench-guide .task-times{flex-direction:row;align-items:baseline;gap:10px;flex-wrap:wrap;margin:6px 0}.workbench-guide .task-times time{font-size:18px}.workbench-guide #guideGoals{font-size:11px;line-height:1.2}.workbench-guide h1{font-size:18px;margin:4px 0 6px}.workbench-guide #gameObjective,.workbench-guide #gameChapter{display:none}.workbench-guide #guideGoals{margin:7px 0}.workbench-guide #guideGoals li{padding:2px 0;margin:0}.workbench-guide .live-guide{padding:8px 0;margin:8px 0}.workbench-guide .live-guide p{font-size:13px}.workbench-guide .select{margin-bottom:9px}.game-corner{top:56%;right:0;bottom:0;width:158px}.game-actions{gap:6px;padding:8px;border-radius:0 0 4px 0}.game-tools{grid-template-columns:minmax(0,1fr);gap:4px}.game-tools #gameController,.game-tools #gameTags{grid-column:auto}.game-actions .btn{font-size:12px;min-height:34px;padding:0 6px}.game-adjustment{padding-top:5px}.game-actions input{height:26px}#gameHUD .controller-panel{max-width:calc(100vw - 20px)}}
 </style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-cam" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></symbol>
+  <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="1"/><path d="M5 9h1m3 0h1m3 0h1m3 0h2M5 12h1m3 0h1m3 0h1m3 0h2M6 16h12"/></symbol>
   <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></symbol>
@@ -484,9 +499,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
     <select id="camSel" class="select" title="Camera"></select>
     <label class="sr" for="resSel">Resolution</label>
     <select id="resSel" class="select hide-sm" title="Resolution">
-      <option value="640x480">640 × 480</option>
-      <option value="1280x720" selected>1280 × 720</option>
-      <option value="1920x1080">1920 × 1080</option>
+      {% for option in site.data.tag_tasks.camera_capture.resolutions %}<option value="{{ option.value }}">{{ option.label }}</option>{% endfor %}
     </select>
     <button id="startBtn" class="btn primary"><svg class="i"><use href="#i-cam"/></svg><span>Start</span></button>
   </div>
@@ -755,7 +768,6 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
       </div>
       <div id="taskPanel" class="task-panel" hidden>
         <div class="task-title"><div><h3 id="taskTitle">{{ site.data.tag_tasks.title }}</h3><p class="hint" id="taskSubtitle">{{ site.data.tag_tasks.subtitle }}</p></div><span id="taskOverall" class="small"></span></div>
-        <div class="seg sm" id="campaignMode" role="radiogroup" aria-label="Campaign mode"><button role="radio" data-campaign-mode="guided" aria-checked="true">{{ site.data.tag_tasks.ui.guided }}</button><button role="radio" data-campaign-mode="practice" aria-checked="false">{{ site.data.tag_tasks.ui.practice }}</button></div>
         <label class="task-select field">Level <select id="taskSelect" class="select"></select></label>
         <nav id="taskLevels" class="task-levels" aria-label="Teleoperation levels"></nav>
         <div class="task-brief"><div><strong id="taskName"></strong><p id="taskBrief"></p></div><span id="taskClock" class="small">0:00</span></div>
@@ -777,6 +789,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
         </div>
         <canvas id="plot" tabindex="0" role="img" aria-label="{{ site.data.tag_tasks.controls.scene_label }}"></canvas>
         <canvas id="plotGL" aria-hidden="true" hidden></canvas>
+        <div id="dragPlaneGuide" aria-hidden="true" hidden><svg></svg></div>
         <div id="taskLabels" aria-hidden="true"></div>
         <div class="legend" id="legend3d"></div>
         <div class="rhint" id="robotHint" role="status" hidden></div>
@@ -821,22 +834,39 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
     <ul id="guideGoals" aria-label="{{ site.data.tag_tasks.ui.objectives }}"></ul>
     <p id="guideNotice" class="guide-notice" role="alert" hidden></p><div class="live-guide" aria-live="polite"><small>{{ site.data.tag_tasks.ui.next_action }}</small><h2 id="guideTitle"></h2><p id="guideText"></p></div>
     <details id="guidePlan"><summary>{{ site.data.tag_tasks.ui.plan }}</summary><ol id="guidePlanList"></ol></details>
-    <details id="taskLeaderboard"><summary>{{ site.data.tag_tasks.scores.title }}</summary><p class="hint">{{ site.data.tag_tasks.scores.scope }}</p><table class="task-scores"><thead><tr><th>{{ site.data.tag_tasks.scores.rank }}</th><th>{{ site.data.tag_tasks.scores.player }}</th><th>{{ site.data.tag_tasks.scores.time }}</th></tr></thead><tbody id="leaderboardRows"></tbody></table></details>
+    <details id="taskLeaderboard"><summary>{{ site.data.tag_tasks.scores.title }}</summary><label>{{ site.data.tag_tasks.scores.player }} <input class="input sm" id="taskPlayer" maxlength="32" autocomplete="nickname"></label><p class="hint">{{ site.data.tag_tasks.scores.scope }}</p><table class="task-scores"><thead><tr><th>{{ site.data.tag_tasks.scores.rank }}</th><th>{{ site.data.tag_tasks.scores.player }}</th><th>{{ site.data.tag_tasks.scores.time }}</th></tr></thead><tbody id="leaderboardRows"></tbody></table></details>
     <details id="guideTips"><summary>{{ site.data.tag_tasks.ui.tips }}</summary><ul id="guideTipsList"></ul></details>
     <details><summary>{{ site.data.tag_tasks.ui.controls }}</summary><p>{{ site.data.tag_tasks.guidance.mouse }}</p><p>{{ site.data.tag_tasks.controls.intro }}</p><p>{{ site.data.tag_tasks.controls.keyboard }}</p></details>
     <div class="guide-actions"><button class="btn sm primary" id="gameNext" hidden>{{ site.data.tag_tasks.ui.next }}</button><button class="btn sm outline" id="guideRestart">{{ site.data.tag_tasks.ui.restart }}</button></div>
   </section>
-  <div class="game-corner"><div class="game-actions"><button class="btn sm outline" id="gameEyes" aria-pressed="false">{{ site.data.tag_tasks.ui.eyes }}</button><label title="{{ site.data.tag_tasks.ui.tilt }}"><span class="sr">{{ site.data.tag_tasks.ui.tilt }}</span><input id="gameTilt" type="range" min="-80" max="25" value="-40" aria-label="{{ site.data.tag_tasks.ui.tilt }}"></label><button class="btn sm" id="gameTags" hidden>{{ site.data.tag_tasks.ui.tags }}</button><button class="btn sm outline" id="soundBtn" aria-pressed="false" title="{{ site.data.tag_tasks.ui.sound_title }}"><svg class="i"><use href="#i-mute"/></svg>{{ site.data.tag_tasks.ui.sound }}</button><button class="btn sm outline" id="gameHaptics" aria-pressed="true" title="{{ site.data.tag_tasks.ui.haptics_title }}">{{ site.data.tag_tasks.ui.haptics }}</button><button class="btn sm outline" id="gameController" aria-expanded="false" aria-controls="controllerPanel" title="{{ site.data.tag_tasks.ui.controller_title }}">{{ site.data.tag_tasks.ui.controller }} <span id="gameControllerCount"></span></button><button class="btn sm sq" id="gameSettingsBtn" aria-haspopup="dialog" aria-label="{{ site.data.tag_tasks.ui.settings }}" title="{{ site.data.tag_tasks.ui.settings }}"><svg class="i"><use href="#i-gear"/></svg></button></div>
-  <section class="controller-panel" id="controllerPanel" hidden aria-label="{{ site.data.tag_tasks.ui.controller_title }}"><div class="row"><button class="btn sm outline" id="ctlBle">{{ site.data.tag_tasks.link.ble }}</button><button class="btn sm outline" id="ctlSerial">{{ site.data.tag_tasks.link.connect }}</button><button class="btn sm outline" id="ctlCapture">{{ site.data.tag_tasks.link.capture }}</button></div><p id="ctlConnectionStatus" role="status"></p><div id="ctlBoards"></div><p id="ctlStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p><p class="hint">{{ site.data.tag_tasks.link.help }}</p></section></div>
+  <div class="game-corner"><div class="game-actions">
+    <div class="game-tools">
+    <button class="btn sm outline" id="gameEyes" aria-pressed="false">{{ site.data.tag_tasks.ui.eyes }}</button>
+    <button class="btn sm" id="gameTags" hidden>{{ site.data.tag_tasks.ui.tags }}</button>
+    <button class="btn sm outline" id="soundBtn" aria-pressed="false" title="{{ site.data.tag_tasks.ui.sound_title }}"><svg class="i"><use href="#i-mute"/></svg>{{ site.data.tag_tasks.ui.sound }}</button>
+    <div class="game-connection-tools"><button class="btn sm outline" id="gameController" aria-expanded="false" aria-controls="controllerPanel" title="{{ site.data.tag_tasks.ui.controller_title }}">{{ site.data.tag_tasks.ui.controller }} <span id="gameControllerCount"></span></button><button class="btn sm outline" id="gameKeyboard" aria-label="{{ site.data.tag_tasks.controls_help.button }}" title="{{ site.data.tag_tasks.controls_help.button }}" aria-haspopup="dialog" aria-controls="controlsDlg" aria-expanded="false"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg></button></div>
+    </div>
+    <div class="game-adjustment"><button class="btn sm outline" id="gameHaptics" aria-pressed="true" title="{{ site.data.tag_tasks.ui.haptics_title }}">{{ site.data.tag_tasks.ui.haptics }}</button><input type="range" id="taskHapticStrength" min="1" max="75" step="1" aria-label="{{ site.data.tag_tasks.haptics.strength }}" title="{{ site.data.tag_tasks.haptics.help }}"><output class="sr" id="taskHapticLevel" for="taskHapticStrength"></output></div>
+    <label class="game-adjustment" title="{{ site.data.tag_tasks.motion.help }}"><span>{{ site.data.tag_tasks.motion.short }}</span><output id="taskMotionValue" for="taskMotionScale"></output><input type="range" id="taskMotionScale" min="0.1" max="5" step="0.01" aria-label="{{ site.data.tag_tasks.motion.label }}"></label>
+    <label class="game-adjustment" id="gameTiltField" hidden title="{{ site.data.tag_tasks.ui.tilt }}"><span>{{ site.data.tag_tasks.ui.tilt }}</span><input id="gameTilt" type="range" min="-80" max="25" value="-40" aria-label="{{ site.data.tag_tasks.ui.tilt }}"></label>
+  </div>
+  <section class="controller-panel" id="controllerPanel" hidden aria-label="{{ site.data.tag_tasks.ui.controller_title }}"><div class="row"><strong>{{ site.data.tag_tasks.ui.controller }}</strong><span class="spacer"></span><button class="btn sm sq" id="ctlClose" aria-label="{{ site.data.tag_tasks.ui.close }}"><svg class="i"><use href="#i-x"/></svg></button></div><div class="row"><button class="btn sm outline" id="ctlBle">{{ site.data.tag_tasks.link.ble }}</button><button class="btn sm outline" id="ctlSerial">{{ site.data.tag_tasks.link.connect }}</button><button class="btn sm outline" id="ctlCapture">{{ site.data.tag_tasks.link.capture }}</button></div><p id="ctlConnectionStatus" role="status"></p><div id="ctlBoards"></div><p id="ctlStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p><p class="hint">{{ site.data.tag_tasks.link.help }}</p></section></div>
 </div>
 </main>
-<dialog id="gameSettings" aria-labelledby="gameSettingsTitle"><div class="card-h"><h2 id="gameSettingsTitle">{{ site.data.tag_tasks.ui.settings }}</h2><div class="spacer"></div><button class="btn" id="gameSetupBtn">{{ site.data.tag_tasks.ui.setup }}</button><button class="btn" id="gameSettingsClose">{{ site.data.tag_tasks.ui.return }}</button></div>
-<section class="motion-settings">
-  <label for="taskMotionScale">{{ site.data.tag_tasks.motion.label }}</label>
-  <div class="motion-scale"><input type="range" id="taskMotionScale" min="0.1" max="5" step="0.01" aria-describedby="taskMotionHelp"><output id="taskMotionValue" for="taskMotionScale"></output><button class="btn sm outline" id="taskMotionReset" type="button">{{ site.data.tag_tasks.motion.reset }}</button></div>
-  <p id="taskMotionHelp" class="hint">{{ site.data.tag_tasks.motion.help }}</p>
-</section>
-<section style="padding:16px"><label>{{ site.data.tag_tasks.scores.player }} <input class="input sm" id="taskPlayer" maxlength="32" autocomplete="nickname"></label><br><label><input type="checkbox" id="taskHaptics"> {{ site.data.tag_tasks.haptics.label }}</label> <label>{{ site.data.tag_tasks.haptics.strength }} <input type="range" id="taskHapticStrength" min="1" max="75" step="1"> <output id="taskHapticLevel" for="taskHapticStrength"></output></label><p>{{ site.data.tag_tasks.haptics.help }}</p><p>{{ site.data.tag_tasks.haptics.routing_help }}</p><div class="row"><button class="btn sm" id="taskSerial">{{ site.data.tag_tasks.link.connect }}</button><button class="btn sm outline" id="taskBluetooth">{{ site.data.tag_tasks.link.ble }}</button></div><p class="hint">{{ site.data.tag_tasks.link.help }}</p><p id="taskHapticStatus" role="status">{{ site.data.tag_tasks.haptics.disconnected }}</p></section><div id="gameSettingsTools"></div></dialog>
+
+<dialog class="dlg" id="controlsDlg" aria-labelledby="controlsTitle" aria-describedby="controlsIntro">
+  <div class="dlg-h"><h2 id="controlsTitle">{{ site.data.tag_tasks.controls_help.title }}</h2><button class="btn sm sq" id="controlsClose" aria-label="{{ site.data.tag_tasks.ui.close }}" autofocus><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="controls-help" tabindex="0">
+    <p id="controlsIntro">{{ site.data.tag_tasks.controls_help.intro }}</p>
+    <div class="controls-layout"><span>{{ site.data.tag_tasks.controls_help.layout_label }}</span><span class="seg" role="radiogroup" aria-label="{{ site.data.tag_tasks.controls_help.layout_label }}">{% for keyboard in site.data.tag_tasks.controls_help.keyboard.layouts %}<button type="button" role="radio" data-keyboard-layout="{{ keyboard.id }}" aria-checked="false">{{ keyboard.label }}</button>{% endfor %}</span></div>
+    <p class="controls-legend">{{ site.data.tag_tasks.controls_help.legend }}</p>
+    <div class="controls-keyboard-window"><div id="controlsKeyboard" class="controls-keyboard" role="group" aria-label="{{ site.data.tag_tasks.controls_help.key_group }}"></div></div>
+    <p class="controls-scroll-hint">{{ site.data.tag_tasks.controls_help.scroll_hint }}</p>
+    <div class="controls-pointer-row"><section class="controls-mouse-help" aria-labelledby="controlsMouseTitle"><h3 id="controlsMouseTitle">{{ site.data.tag_tasks.controls_help.mouse_group }}</h3><div class="controls-mouse">{% for mouse in site.data.tag_tasks.controls_help.mouse %}{% unless mouse.id == 'body' %}<button data-mouse-control="{{ mouse.id }}">{{ mouse.short }}</button>{% endunless %}{% endfor %}</div>{% for mouse in site.data.tag_tasks.controls_help.mouse %}{% if mouse.id == 'body' %}<button class="btn sm outline controls-mouse-gestures" data-mouse-control="{{ mouse.id }}">{{ mouse.short }}</button>{% endif %}{% endfor %}</section><section class="controls-arrow-help" aria-labelledby="controlsArrowsTitle"><h3 id="controlsArrowsTitle">{{ site.data.tag_tasks.controls_help.arrow_group }}</h3><div id="controlsArrows" class="controls-arrows" role="group" aria-labelledby="controlsArrowsTitle"></div><p>{{ site.data.tag_tasks.controls_help.arrow_hint }}</p></section></div>
+    <p>{{ site.data.tag_tasks.controls_help.note }}</p>
+  </div>
+  <div class="controls-key-info" role="status" aria-live="polite"><strong id="controlsKeyTitle">{{ site.data.tag_tasks.controls_help.prompt_title }}</strong><p id="controlsKeyDetail">{{ site.data.tag_tasks.controls_help.prompt_text }}</p></div>
+</dialog>
 
 <dialog class="dlg" id="printDlg" aria-labelledby="h-print">
   <form method="dialog" id="printForm" novalidate>
@@ -878,6 +908,23 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
   <div class="drawer-in">
     <div class="card-h"><h2 id="h-settings">Settings</h2><span class="small muted">Kept in this browser.</span><div class="spacer"></div><button type="button" class="btn sm sq" id="settingsClose" aria-label="Close settings" title="Close (Esc)"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="steps">
+      <div class="step" id="cameraCapture">
+        <h3>{{ site.data.tag_tasks.camera_capture.title }}</h3>
+        <div class="sgrid">
+          <label class="field">{{ site.data.tag_tasks.camera_capture.resolution }}
+            <select id="cameraResolution" class="select sm">
+              {% for option in site.data.tag_tasks.camera_capture.resolutions %}<option value="{{ option.value }}">{{ option.label }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">{{ site.data.tag_tasks.camera_capture.frame_rate }}
+            <select id="cameraFps" class="select sm">
+              {% for option in site.data.tag_tasks.camera_capture.frame_rates %}<option value="{{ option.value }}">{{ option.label }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <p class="hint">{{ site.data.tag_tasks.camera_capture.help }}</p>
+        <div id="cameraCaptureList"></div>
+      </div>
       <div class="step"><h3>{{ site.data.tag_tasks.voice.title }}</h3>
         <label class="field voice-source">{{ site.data.tag_tasks.voice.source }} <select id="voiceSource" class="select"></select></label>
         <p>{{ site.data.tag_tasks.voice.help }}</p><p>{{ site.data.tag_tasks.voice.commands }}</p><p class="hint">{{ site.data.tag_tasks.voice.transport }}</p>
@@ -906,8 +953,8 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
         <div class="sgrid">
           <span class="field">Detector
             <span class="seg sm" role="radiogroup" aria-label="Detector">
-              <button role="radio" data-q="precise" aria-checked="true" title="Full-resolution corners, about 0.1 px">Precise</button>
-              <button role="radio" data-q="fast" aria-checked="false" title="Half-resolution search, about 3× faster">Fast</button>
+              <button role="radio" data-q="precise" aria-checked="false" title="Full-resolution corners, about 0.1 px">Precise</button>
+              <button role="radio" data-q="fast" aria-checked="true" title="Half-resolution search, about 3× faster">Fast</button>
             </span>
           </span>
           <span class="field">Search
@@ -1024,7 +1071,7 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
   <button class="bv-nav next" id="bvNext" type="button" aria-label="Next tag" hidden>›</button>
   <div class="bv-bar" id="bvBar">
     <p id="bvMsg">Loading the board…</p>
-    <div class="row"><button class="btn sm primary" id="bvFull">Full screen</button><button class="btn sm outline" id="bvClose">Close</button></div>
+    <div class="row"><button class="btn sm primary" id="bvFull">Full screen</button><button class="btn sm outline sq" id="bvClose" aria-label="{{ site.data.tag_tasks.ui.close }}"><svg class="i"><use href="#i-x"/></svg></button></div>
   </div>
 </div>
 <div class="voice" id="voice" data-state="idle" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="voiceText" class="voice-message"></span><span class="meter" aria-hidden="true"><i id="voiceMeter"></i></span><button id="voiceStop" class="btn sm" hidden>{{ site.data.tag_tasks.voice.stop }}</button><button id="voiceCancel" class="btn sm sq" aria-label="{{ site.data.tag_tasks.voice.cancel }}" title="{{ site.data.tag_tasks.voice.cancel }}"><svg class="i"><use href="#i-x"/></svg></button></div>
@@ -1036,34 +1083,50 @@ body.game-screen .plot3d .help,body.game-screen .plot3d .legend,body.game-screen
 
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
-<script src="tracker-core.js?v=96749a42"></script>
-<script src="robot-core.js?v=270409cd"></script>
-<script src="robot-gl.js?v=4b08d01a"></script>
-<script src="physics-core.js?v=2d108b77"></script>
+<script src="tracker-core.js?v=52a69d77"></script>
+<script src="camera-core.js?v=089d6201"></script>
+<script src="robot-core.js?v=bbc4869f"></script>
+<script src="cloth-render-core.js?v=3f79154d"></script>
+<script src="liquid-render-core.js?v=1f9911a4"></script>
+<script src="robot-gl.js?v=054cbf9a"></script>
+<script src="physics-core.js?v=63b92fe8"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
 <script src="cable-core.js?v=2ad7bd56"></script>
-<script src="capture-core.js?v=d2da29c3"></script>
-<script src="haptic-core.js?v=f54f5b53"></script>
-<script src="cloth-core.js?v=96b51383"></script>
+<script src="capture-core.js?v=4a30abd7"></script>
+<script src="haptic-core.js?v=103adf41"></script>
+<script src="patch-contact-core.js?v=81b15cbf"></script>
+<script src="cloth-contact-core.js?v=66ec9454"></script>
+<script src="cloth-coupling-core.js?v=d8782174"></script>
+<script src="contact-newton-core.js?v=fb806e56"></script>
+<script src="contact-vi-core.js?v=3652d1eb"></script>
+<script src="contact-warm-core.js?v=8cf87ead"></script>
+<script src="contact-projection-core.js?v=9e9d0d4d"></script>
+<script src="contact-ngs-core.js?v=a430cd8d"></script>
+<script src="contact-tangent-core.js?v=10045b0b"></script>
+<script src="contact-refine-core.js?v=77b13f90"></script>
+<script src="contact-prox-core.js?v=d7f3cd35"></script>
+<script src="cloth-core.js?v=becdafae"></script>
 <script src="controller-link.js?v=829d5a6d"></script>
 <script src="score-core.js?v=e43f050f"></script>
-<script src="pour-core.js?v=32d8b943"></script>
-<script src="task-core.js?v=cc45a47a"></script>
-<script src="sound.js?v=4f5ec6ef"></script>
+<script src="pour-core.js?v=f932d76a"></script>
+<script src="task-core.js?v=53ddee55"></script>
+<script src="sound.js?v=c9a02028"></script>
 <script src="lib/qrcode-generator/qrcode.js"></script>
-<script src="app-state.js?v=5ead985c"></script>
-<script src="app-cameras.js?v=4caf5a11"></script>
-<script src="app-plot.js?v=ced3cea6"></script>
-<script src="app-robot.js?v=aa36ad2e"></script>
-<script src="app-tasks.js?v=3974ccbb"></script>
-<script src="app-views.js?v=66c75231"></script>
+<script src="app-state.js?v=2033caa0"></script>
+<script src="app-camera-settings.js?v=791f5747"></script>
+<script src="app-cameras.js?v=57139ac8"></script>
+<script src="app-plot.js?v=d30854ba"></script>
+<script src="app-robot.js?v=965a29fd"></script>
+<script src="app-tasks.js?v=45e77ba3"></script>
+<script src="controls-help.js?v=eb64e585"></script>
+<script src="app-views.js?v=0c95624e"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>
 <script src="voice-core.js?v=452722f2"></script>
-<script src="app-io.js?v=c6d92c32"></script>
+<script src="app-io.js?v=2ca9628e"></script>
 <script src="app-boards.js?v=2676ca22"></script>
-<script src="app-serial.js?v=16b64948"></script>
-<script src="app-capture.js?v=60808a19"></script>
+<script src="app-serial.js?v=9e994981"></script>
+<script src="app-capture.js?v=db131cc4"></script>
 <script src="app-demo.js?v=f40e920f"></script>
 <script>
 'use strict';
@@ -1072,6 +1135,7 @@ rememberBoards();
 paintThemeBtn();paintVoiceSources();
 setMode('tasks');
 renderCalibCams(); renderRig();
+refreshCameraSettings();
 renderTags(); renderBodies(); paintPoseUi(); refreshFrameSel(); refreshTplotSel(); onSettings(); renderCalib();
 listCameras();
 startWorker();

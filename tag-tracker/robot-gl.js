@@ -1,17 +1,20 @@
 // RobotGL: draws the tag tracker's robot with WebGL: smooth curved shells, lit by a key light, a fill light and the sky,
-// with specular highlights and a rim, two-tone panels and violet lights: an engineering robot of brushed aluminium box
-// sections and motor drums, a generic design modelled on no one's robot.
+// with specular highlights and a rim, two-tone panels and violet lights: a generic engineering robot of brushed
+// aluminium sections and motor drums, fitted with Robotiq 2F-85-style housings and articulated parallel jaws.
 //
 // The meshes are built here from the robot's lengths (RobotCore.model), each in the frame it rides in: the chest's, or an
 // arm's upper-arm, forearm or hand frame (RobotCore.fk), so a frame only needs its pose to be drawn. The camera is the 3D
 // plot's own (TagCore.orbit), so the robot lines up exactly with the grid and the cameras drawn on the 2D canvas under it.
 // meshes() has no DOM, so script/test-tag-tracker checks it in Node; create() needs a canvas.
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./robot-core.js'));
-  else root.RobotGL = factory(root.TagCore, root.RobotCore);
-})(typeof self !== 'undefined' ? self : this, function (C, RC) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./tracker-core.js'), require('./robot-core.js'), require('./cloth-render-core.js'), require('./liquid-render-core.js'));
+  else root.RobotGL = factory(root.TagCore, root.RobotCore, root.ClothRenderCore, root.LiquidRenderCore);
+})(typeof self !== 'undefined' ? self : this, function (C, RC, ClothRender, LiquidRender) {
   'use strict';
   const TAU = 2 * Math.PI;
+  // Representative turbid wheat-beer attenuation in metres. A thin falling jet
+  // transmits light; a deep glass has a cloudy body instead of the same opacity.
+  const beerOpacity=depth=>Math.max(0,Math.min(.98,1-Math.exp(-110*Math.max(0,Number.isFinite(depth)?depth:0))));
   // signed power, for superellipses. sin(π) is ~1e-16, not 0, and a small power of that is not small (to the 0.06 the
   // table's top uses it is 0.11), which split the shape open at its seam: values that should be 0 are 0.
   const sp = (w, e) => (Math.abs(w) < 1e-9 ? 0 : Math.sign(w) * Math.pow(Math.abs(w), e));
@@ -31,7 +34,7 @@
     for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++, k++) {
       const u = i / nu, v = j / nv, p = fn(u, v);
       const du = sub(fn(Math.min(1, u + e), v), fn(Math.max(0, u - e), v)), dv = sub(fn(u, Math.min(1, v + e)), fn(u, Math.max(0, v - e)));
-      const o = out(p);
+      const o = out(p,u,v);
       let nn = unit(cross(du, dv)) || unit(o) || [0, 0, 1];
       if (dot(nn, o) < 0) nn = [-nn[0], -nn[1], -nn[2]];
       pos.set(p, 3 * k); nrm.set(nn, 3 * k);
@@ -73,6 +76,33 @@
   }
   const part = (mesh, mat, extra) => Object.assign({ mesh, mat }, extra || {});
 
+  // Hand-frame display/fallback contract. Contacts share this linkage through RobotCore.gripper;
+  // the pads stay parallel at their task grasp depth rather than simulating adaptive wrapping.
+  function gripperLayout(m,gap=0,state){
+    const G=RC.gripper(m),opening=Math.max(0,Math.min(G.gapMax,state?.carrierGap??gap));
+    return {gap:opening,body:G.body,cuff:{c:[0,0,-.009],r:.032,h:.013},halfWidth:G.halfWidth(opening),
+      fingers:G.linkage(opening).map(j=>{
+        const compression=state?.padCompression?.[j.side]||[0,0,0],pad=G.padShape?G.padShape(j.side,opening,compression):{c:[G.pad.c[0],j.side*(opening/2+G.pad.c[1]),G.pad.c[2]],h:G.pad.h.slice()};
+        const scale=pad.h.map((v,i)=>v/G.pad.h[i]),base=G.pad.c.map((v,i)=>i===1?j.side*v:v);
+        return {...j,backbone:{c:[G.finger.c[0],j.side*(opening/2+G.finger.c[1]),G.finger.c[2]],h:G.finger.h.slice()},pad,
+          padTransform:{R:[1,0,0,0,1,0,0,0,1],t:pad.c.map((v,i)=>v-base[i]*scale[i]),scale}};
+      })};
+  }
+  function gripperFingerPose(part,side,layout){
+    const jaw=layout.fingers.find(j=>j.side===side);
+    return part.tip?jaw.padTransform:{R:[1,0,0,0,1,0,0,0,1],t:[0,side*layout.gap/2,0]};
+  }
+  function linkCapsule(length,r){
+    const extent=length/2+r;
+    return surface((u,v)=>{const z=(v*2-1)*extent,d=Math.max(0,Math.abs(z)-length/2),radius=Math.sqrt(Math.max(0,r*r-d*d)),a=u*TAU;return [radius*Math.cos(a),radius*Math.sin(a),z];},16,20,p=>[p[0],p[1],p[2]-Math.max(-length/2,Math.min(length/2,p[2]))]);
+  }
+  function gripperPartPose(p,layout){
+    const jaw=layout.fingers.find(j=>j.side===p.jaw),I=[1,0,0,0,1,0,0,0,1];
+    if(p.joint!==undefined)return {R:I,t:jaw.joints[p.joint].p};
+    const s=jaw.segments[p.link],z=unit(sub(s.b,s.a)),x=[1,0,0],y=cross(z,x);
+    return {R:[x[0],y[0],z[0],x[1],y[1],z[1],x[2],y[2],z[2]],t:C.add(s.a,s.b).map(v=>v/2)};
+  }
+
   // ---- the robot ----
   // Its groups of meshes, each in the frame it rides in: body (the chest's frame), bar and mount
   // (the chest's, for two arms or one without a body), upper (the upper arm's: origin at the shoulder, the arm along -z),
@@ -82,14 +112,14 @@
   // at the chest's origin, so the body's front passes just behind it.
   function bars(m, out) {
     out.bar = [
-      part(lathe([-m.back, 0, m.up], -m.half, m.half, () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([-m.back, 0, m.up], [0.065, 0.065, 0.065], 0.9, 0.9), 'shell'),
+      part(lathe([-m.back, 0, m.up], -m.half, m.half, () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'robotDark'),
+      part(blob([-m.back, 0, m.up], [0.065, 0.065, 0.065], 0.9, 0.9), 'robotShell'),
       part(torus([-m.back, 0, m.up - 0.01], 0.064, 0.006), 'light'),
     ];
     out.mount = {};
     for (const sd of [1, -1]) out.mount[sd] = [
-      part(lathe([-m.back, 0, m.up], sd * m.half, sd * (m.half - 0.14), () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.07, 0.025, 0.07], 0.9, 0.6), 'shell'),
+      part(lathe([-m.back, 0, m.up], sd * m.half, sd * (m.half - 0.14), () => 0.03, { axis: 'y', k0: 0.05, k1: 0.05 }), 'robotDark'),
+      part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.07, 0.025, 0.07], 0.9, 0.6), 'robotShell'),
       part(blob([-m.back, sd * (m.half - 0.15), m.up], [0.05, 0.03, 0.05], 0.9, 0.9, { nu: 24, nv: 12 }), 'light'),
     ];
   }
@@ -97,62 +127,62 @@
   // Machine: an engineering robot. Brushed aluminium box sections, motor drums on the joint axes, a battery on its
   // back, a sensor bar for a head with two lenses, a parallel gripper, on a column and a foot.
   function machine(m) {
-    const out = {}, cx = -0.075, wy = Math.max(0.09, m.half - 0.055), zc = m.up - 0.1, z0 = m.up - 0.3, hz = m.up + 0.17, hx = -m.back + 0.01;
+    const out = {}, cx = -0.075, wy = Math.max(0.09, m.half - 0.055), zc = m.up - 0.1, hz = m.up + 0.17, hx = -m.back + 0.01;
     out.body = [
-      part(blob([cx, 0, zc], [0.072, wy, 0.15], 0.2, 0.22, { nu: 48, nv: 32 }), 'metal'),
-      part(blob([cx + 0.062, 0, zc + 0.01], [0.014, wy * 0.8, 0.115], 0.18, 0.18, { nu: 40, nv: 24 }), 'dark'),
+      part(blob([cx, 0, zc], [0.072, wy, 0.15], 0.2, 0.22, { nu: 48, nv: 32 }), 'robotShell'),
+      part(blob([cx + 0.062, 0, zc + 0.01], [0.014, wy * 0.8, 0.115], 0.18, 0.18, { nu: 40, nv: 24 }), 'robotDark'),
       part(blob([cx + 0.077, 0, -0.088], [0.004, 0.05, 0.005], 0.5, 0.3, { nu: 20, nv: 8 }), 'light'),
       part(blob([cx + 0.077, 0, zc - 0.11], [0.004, 0.008, 0.008], 1, 1, { nu: 12, nv: 8 }), 'light'),
-      part(blob([cx - 0.088, 0, zc + 0.01], [0.028, wy * 0.62, 0.11], 0.25, 0.25), 'dark'),
+      part(blob([cx - 0.088, 0, zc + 0.01], [0.028, wy * 0.62, 0.11], 0.25, 0.25), 'robotDark'),
       part(blob([cx - 0.118, 0, zc + 0.01], [0.004, wy * 0.4, 0.004], 0.5, 0.3, { nu: 16, nv: 6 }), 'light'),
-      part(lathe([cx, 0, 0], z0 + 0.02, zc - 0.13, () => 0.04, { k0: 0.08, k1: 0.08 }), 'dark'),
-      part(torus([cx, 0, (z0 + zc - 0.11) / 2], 0.043, 0.004), 'light'),
-      part(blob([cx, 0, z0 - 0.03], [0.07, 0.12, 0.045], 0.22, 0.25), 'metal'),
-      part(lathe([cx, 0, z0 - 0.03], 0.095, 0.15, () => 0.034, { axis: 'y', k0: 0.12, k1: 0.12 }), 'dark'),
-      part(lathe([cx, 0, z0 - 0.03], -0.095, -0.15, () => 0.034, { axis: 'y', k0: 0.12, k1: 0.12 }), 'dark'),
-      part(lathe([cx, 0, 0], z0 - 0.07, z0 - 0.26, (s) => 0.028 + 0.004 * s, { k0: 0.05, k1: 0.05 }), 'dark'),
-      part(blob([cx, 0, z0 - 0.27], [0.11, 0.11, 0.016], 1, 0.6, { nu: 40, nv: 12 }), 'metal'),
-      part(torus([cx, 0, z0 - 0.268], 0.104, 0.004), 'light'),
-      part(lathe([hx, 0, 0], m.up + 0.04, m.up + 0.11, () => 0.03, { k0: 0.1, k1: 0.1 }), 'dark'),
-      part(blob([hx, 0, m.up + 0.11], [0.045, 0.045, 0.012], 1, 0.7, { nu: 28, nv: 10 }), 'metal'),
-      part(blob([hx + 0.01, 0, hz], [0.058, 0.105, 0.045], 0.22, 0.22, { nu: 40, nv: 24 }), 'metal'),
+      part(lathe([hx, 0, 0], m.up + 0.04, m.up + 0.11, () => 0.03, { k0: 0.1, k1: 0.1 }), 'robotDark'),
+      part(blob([hx, 0, m.up + 0.11], [0.045, 0.045, 0.012], 1, 0.7, { nu: 28, nv: 10 }), 'robotMetal'),
+    ];
+    out.head = [
+      part(blob([hx + 0.01, 0, hz], [0.058, 0.105, 0.045], 0.22, 0.22, { nu: 40, nv: 24 }), 'robotShell'),
       part(blob([hx + 0.065, 0, hz], [0.006, 0.09, 0.025], 0.25, 0.2, { nu: 32, nv: 12 }), 'glass'),
       part(blob([hx + 0.071, 0.048, hz], [0.008, 0.018, 0.018], 1, 1, { nu: 20, nv: 12 }), 'glass'),
       part(blob([hx + 0.071, -0.048, hz], [0.008, 0.018, 0.018], 1, 1, { nu: 20, nv: 12 }), 'glass'),
       part(blob([hx + 0.078, 0.048, hz], [0.002, 0.006, 0.006], 1, 1, { nu: 12, nv: 8 }), 'light'),
       part(blob([hx + 0.078, -0.048, hz], [0.002, 0.006, 0.006], 1, 1, { nu: 12, nv: 8 }), 'light'),
-      part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'dark'),
+      part(blob([hx - 0.03, 0.085, hz + 0.05], [0.004, 0.004, 0.035], 1, 1, { nu: 10, nv: 10 }), 'robotDark'),
     ];
-    out.head = out.body.splice(16); // sensor bar pivots at its centre; neck and torso stay in the chest frame
     bars(m, out);
     const L1 = m.upper, L2 = m.fore, G = RC.gripper(m);
     out.upper = [
-      part(lathe([0, 0, 0], -0.055, 0.055, () => 0.052, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
-      part(blob([0, 0, -L1 / 2], [0.036, 0.03, L1 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
-      part(blob([0.038, 0, -L1 / 2], [0.004, 0.012, L1 / 2 - 0.06], 0.5, 0.5, { nu: 12, nv: 12 }), 'dark'),
-      part(lathe([0, 0, -L1], -0.05, 0.05, () => 0.045, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'dark'),
+      part(lathe([0, 0, 0], -0.055, 0.055, () => 0.052, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'robotDark'),
+      part(blob([0, 0, -L1 / 2], [0.036, 0.03, L1 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'robotMetal'),
+      part(blob([0.038, 0, -L1 / 2], [0.004, 0.012, L1 / 2 - 0.06], 0.5, 0.5, { nu: 12, nv: 12 }), 'robotDark'),
+      part(lathe([0, 0, -L1], -0.05, 0.05, () => 0.045, { axis: 'y', k0: 0.06, k1: 0.06, nu: 36 }), 'robotDark'),
     ];
     out.fore = [
-      part(blob([0, 0, -L2 / 2], [0.03, 0.027, L2 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'metal'),
-      part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'dark'),
+      part(blob([0, 0, -L2 / 2], [0.03, 0.027, L2 / 2 - 0.035], 0.15, 0.3, { nu: 32, nv: 24 }), 'robotMetal'),
+      part(lathe([0, 0, 0], -(L2 - 0.065), -(L2 - 0.004), (s) => 0.034 - 0.004 * s, { k0: 0.12, k1: 0.15 }), 'robotDark'),
     ];
     out.foreLight = [part(torus([0, 0, -(L2 - 0.06)], 0.035, 0.004, { nu: 36, nv: 8 }), 'light')];
-    // the gripper: a body across the jaws' travel with a rail under it, a light on the back of the hand
-    const gb = G.body, rail = gb.c[2] - gb.h[2];
+    // The 75 mm black chassis and the 85 mm jaw stroke follow the 2F-85 silhouette.
+    // Small housing markings remain inside the housing's contact envelope.
+    const gb = G.body,bottom=gb.c[2]-gb.h[2],mark=(z,a,mat)=>part(surface((u,v)=>{const th=(u-.5)*a;return [(gb.r-.0002)*Math.cos(th),(gb.r-.0002)*Math.sin(th),z+(v-.5)*.002];},12,1,p=>[p[0],p[1],0]),mat,{grip:true});
     out.hand = {};
     for (const sd of [1, -1]) out.hand[sd] = [
-      part(lathe([0, 0, 0], 0.004, -0.022, () => 0.034, { k0: 0.1, k1: 0.1 }), 'dark'),
-      part(blob(gb.c, gb.h, 0.2, 0.2), 'metal'),
-      part(blob([0, 0, rail], [0.012, gb.h[1] - 0.006, 0.003], 0.4, 0.3, { nu: 24, nv: 8 }), 'dark'),
-      part(blob([gb.h[0] + 0.001, 0, gb.c[2]], [0.003, 0.016, 0.012], 1, 1, { nu: 20, nv: 6 }), 'light'),
+      part(lathe([0,0,0],.004,-.022,()=>.032,{k0:.1,k1:.1}), 'robotDark'),
+      part(lathe([gb.c[0],gb.c[1],0],bottom,gb.c[2]+gb.h[2],()=>gb.r-.0006,{nu:48,nv:24,k0:.04,k1:.04}), 'robotDark', {grip:true,housing:true}),
+      part(lathe([0,0,0],bottom+.0004,bottom+.0035,()=>gb.r-.0001,{nu:40,nv:6,k0:.04,k1:.04}), 'robotLink', {grip:true}),
+      mark(gb.c[2]-.003,.7,'robotShell'),mark(gb.c[2]+.004,.3,'robotBrand'),
     ];
     const mir = (c, j) => [c[0], j * c[1], c[2]];
     out.finger = {};
     for (const j of [1, -1]) out.finger[j] = [
-      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
-      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
+      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'robotDark', {grip:true}),
+      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'robotRubber', {tip:true,grip:true}),
     ];
-    out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], [cx, 0.11, z0 - 0.29], [cx, -0.11, z0 - 0.29], [0, 0, 0]];
+    out.linkages=[];
+    for(const jaw of G.linkage(0)){
+      for(const [index,s]of jaw.segments.entries())out.linkages.push(part(linkCapsule(C.norm(sub(s.b,s.a)),s.r),'robotLink',{grip:true,jaw:jaw.side,link:index}));
+      for(const [index,s]of jaw.joints.entries())out.linkages.push(part(blob([0,0,0],[s.r,s.r,s.r],1,1,{nu:16,nv:10}),'robotLink',{grip:true,jaw:jaw.side,joint:index}));
+    }
+    const base=supportLayout(m).bounds;
+    out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], ...[-1,1].flatMap(x=>[-1,1].map(y=>[base.c[0]+x*base.h[0],y*base.h[1],base.c[2]-base.h[2]])), [0, 0, 0]];
     return out;
   }
 
@@ -202,13 +232,39 @@
     }
     return out;
   }
+  // Arc-length, shape-preserving Hermite interpolation avoids the radial ringing of an
+  // unconstrained cubic around a tall wall, rounded lip or narrow bottle shoulder.
+  function profileSampler(points){
+    const at=[0];for(let i=1;i<points.length;i++)at.push(at[i-1]+Math.hypot(...points[i].map((v,k)=>v-points[i-1][k])));
+    const slopes=[0,1].map(k=>points.slice(1).map((p,i)=>(p[k]-points[i][k])/(at[i+1]-at[i])));
+    const tangents=[0,1].map(k=>points.map((_,i)=>{
+      if(!i)return slopes[k][0];if(i===points.length-1)return slopes[k].at(-1);
+      const a=slopes[k][i-1],b=slopes[k][i];if(a*b<=0)return 0;
+      const h=at[i]-at[i-1],j=at[i+1]-at[i],w1=2*j+h,w2=j+2*h;return (w1+w2)/(w1/a+w2/b);
+    }));
+    return v=>{const d=Math.max(0,Math.min(1,v))*at.at(-1);let i=0;while(i<points.length-2&&at[i+1]<d)i++;
+      const h=at[i+1]-at[i],t=(d-at[i])/h,a=2*t*t*t-3*t*t+1,b=t*t*t-2*t*t+t,c=-2*t*t*t+3*t*t,e=t*t*t-t*t;
+      return [0,1].map(k=>a*points[i][k]+b*h*tangents[k][i]+c*points[i+1][k]+e*h*tangents[k][i+1]);};
+  }
+  function steinHandleMesh(s){
+    const h=s.handle,r=.01,x=h.x-r,top=h.z1-.005,bottom=h.z0+.005,straight=x-s.wall,vertical=top-bottom-2*r,arc=r*Math.PI/2,total=2*straight+2*arc+vertical;
+    const path=v=>{
+      let d=v*total;
+      if(d<straight)return {p:[s.wall+d,0,top],t:[1,0,0]};d-=straight;
+      if(d<arc){const a=Math.PI/2-d/r;return {p:[x+r*Math.cos(a),0,top-r+r*Math.sin(a)],t:[Math.sin(a),0,-Math.cos(a)]};}d-=arc;
+      if(d<vertical)return {p:[h.x,0,top-r-d],t:[0,0,-1]};d-=vertical;
+      if(d<arc){const a=-d/r;return {p:[x+r*Math.cos(a),0,bottom+r+r*Math.sin(a)],t:[Math.sin(a),0,-Math.cos(a)]};}d-=arc;
+      return {p:[x-d,0,bottom],t:[-1,0,0]};
+    };
+    return surface((u,v)=>{const {p,t}=path(v),a=u*TAU;return [p[0]+t[2]*h.r*Math.sin(a),h.w*Math.cos(a),p[2]-t[0]*h.r*Math.sin(a)];},24,112,(p,u,v)=>sub(p,path(v).p));
+  }
   function compoundMeshes(pieces) {
     // A revolved body (bowl, stein): one smooth surface from its profile, plus any pieces marked `show` (a handle).
     const profile = pieces.find(s => s.bowlProfile || s.profile), revolved = [];
     if (profile) {
       const prof = profile.bowlProfile || profile.profile;
       // One continuous, smoothly shaded surface through the foot, outside, rounded lip and hollow inside.
-      const point = (v) => {
+      const point = profile.smoothProfile?profileSampler(prof):(v) => {
         const t = v * (prof.length - 1), i = Math.min(prof.length - 2, Math.floor(t)), f = t - i;
         const at = (n) => prof[Math.max(0, Math.min(prof.length - 1, n))];
         const [a,b,c,d] = [at(i-1),at(i),at(i+1),at(i+2)];
@@ -222,14 +278,25 @@
       if (profile && !s.show) continue;
       const R = s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1], p = s.p || [0, 0, 0];
       const meshes = [];
-      if(s.type==='ellipsoid'){meshes.push(blob([0,0,0],s.r,1,1,{nu:24,nv:16}));}
+      if(s.type==='stein-handle')meshes.push(steinHandleMesh(s));
+      else if(s.type==='trim')meshes.push(torus([0,0,0],s.r,s.h));
+      else if(s.type==='lozenges'){
+        for(let row=0;row<3;row++)for(let j=0;j<18;j++)meshes.push(surface((u,v)=>{
+          const a=(j+(row%2)*.5)*TAU/18+(u+v-1)*TAU/38;
+          return [s.r*Math.cos(a),s.r*Math.sin(a),(row-1)*s.h/1.5+(v-u)*s.h/3];
+        },2,2,p=>[p[0],p[1],0]));
+      }
+      else if(s.type==='ellipsoid'){meshes.push(blob([0,0,0],s.r,1,1,{nu:24,nv:16}));}
       else if (s.type === 'cylinder') {
-        meshes.push(surface((u, v) => [s.r * Math.cos(TAU * u), s.r * Math.sin(TAU * u), (v * 2 - 1) * s.h], 32, 2, (p) => [p[0], p[1], 0]));
-        for (const sign of [-1, 1]) meshes.push(surface((u, v) => [s.r * v * Math.cos(TAU * u), s.r * v * Math.sin(TAU * u), sign * s.h], 32, 2, () => [0, 0, sign]));
+        const segments=s.artwork?96:32,offset=s.artwork?-3*Math.PI/4:0;
+        const side=surface((u, v) => [s.r * Math.cos(TAU*u+offset), s.r * Math.sin(TAU*u+offset), (v * 2 - 1) * s.h],segments,2,p=>[p[0],p[1],0]);
+        if(s.artwork){side.uv=new Float32Array((segments+1)*3*2);for(let j=0;j<=2;j++)for(let i=0;i<=segments;i++)side.uv.set([i/segments,j/2],(j*(segments+1)+i)*2);}
+        meshes.push(side);
+        if(!s.visual)for (const sign of [-1, 1]) meshes.push(surface((u, v) => [s.r * v * Math.cos(TAU * u), s.r * v * Math.sin(TAU * u), sign * s.h], 32, 2, () => [0, 0, sign]));
       } else meshes.push(...beveledBox(s.h,s.bevel===0?.00001:Math.min(s.bevel||.009,...s.h.map(h=>h*(s.bevel?.95:.28)))));
       for (const m of meshes) {
         for (let i = 0; i < m.pos.length; i += 3) { m.pos.set(C.add(C.mulv(R, [...m.pos.slice(i, i + 3)]), p), i); m.nrm.set(C.mulv(R, [...m.nrm.slice(i, i + 3)]), i); }
-        result.push(part(m,s.material||'ceramic',{keepMaterial:!!s.material}));
+        result.push(part(m,s.material||'ceramic',{keepMaterial:!!s.material,...(s.artwork?{artwork:s.artwork}:{})}));
       }
     }
     return result;
@@ -257,6 +324,7 @@
     return {p,N,rows,triangles,S};
   }
   function clothMesh(c) {
+    if(c.kind==='shirt')return ClothRender.mesh(c);
     const surf=clothSurface(c),count=surf.p.length,normals=surf.p.map(()=>[0,0,0]);
     for(let t=0;t<surf.triangles.length;t+=3){const ids=surf.triangles.slice(t,t+3),n=cross(sub(surf.p[ids[1]],surf.p[ids[0]]),sub(surf.p[ids[2]],surf.p[ids[0]]));for(const i of ids)normals[i]=C.add(normals[i],n);}
     for(let i=0;i<count;i++)normals[i]=unit(normals[i])||[0,0,1];
@@ -281,14 +349,8 @@
     return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
   }
 
-  // A liquid's flat surface: a fan over its outline (world points), facing `up`.
-  function liquidMesh(l) {
-    const pts = l.points, n = pts.length, c = pts.reduce((a, p) => C.add(a, p.map((v) => v / n)), [0, 0, 0]), pos = [...c], nrm = [...l.up], idx = [];
-    for (const p of pts) { pos.push(...p); nrm.push(...l.up); }
-    const flip = n > 1 && dot(cross(sub(pts[0], c), sub(pts[1], c)), l.up) < 0;
-    for (let i = 0; i < n; i++) { const a = 1 + i, b = 1 + ((i + 1) % n); idx.push(0, ...(flip ? [b, a] : [a, b])); }
-    return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), idx: new Uint16Array(idx) };
-  }
+  // Flow geometry and small foam domes are display-only; the pour core owns every unit of beer.
+  const liquidMesh=l=>LiquidRender.surfaceMesh(l);
   function cableMesh(c) {
     // Catmull-Rom interpolation only smooths the rendered centreline. Physics always uses the actual rod nodes.
     const points=[],nodes=c.nodes.map(n=>n.p),steps=c.bend?3:2,sides=12;
@@ -305,7 +367,8 @@
       for(let j=0;j<sides;j++){
         const a=j*TAU/sides,n=C.add(u.map(x=>x*Math.cos(a)),v.map(x=>x*Math.sin(a)));
         const distance=Math.min(i,points.length-1-i)*(c.nodes.length>1?C.norm(sub(nodes[1],nodes[0]))/steps:0),boot=c.boot===false?1:1+Math.max(0,1-distance/.012)*.8;
-        pos.push(...C.add(p,n.map(x=>x*c.radius*boot)));nrm.push(...n);
+        const f=i/(points.length-1)*(nodes.length-1),j0=Math.min(nodes.length-1,Math.floor(f)),j1=Math.min(nodes.length-1,j0+1),radius=c.radii?c.radii[j0]+(c.radii[j1]-c.radii[j0])*(f-j0):c.radius;
+        pos.push(...C.add(p,n.map(x=>x*radius*boot)));nrm.push(...n);
         if(i<points.length-1){const k=i*sides+j,l=i*sides+(j+1)%sides;idx.push(k,l,k+sides,l,l+sides,k+sides);}
       }
     }return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
@@ -321,48 +384,94 @@
     return out;
   }
 
-  // The AMR base and wheels use the same frame as the robot.
-  function actorMeshes(m) {
-    const b=(p,r,mat)=>part(blob(p,r,0.7,0.8,{nu:24,nv:16}),mat), hz=m.up+.17, hx=-m.back+.02;
-    const amr=[b([-.065,0,.115],[.18,.19,.055],'metal'),b([-.065,0,.17],[.145,.16,.018],'dark'),b([-.075,0,.35],[.027,.027,.21],'metal'),b([.112,0,.12],[.004,.105,.009],'light')];
-    const wheel=[b([0,0,0],[.07,.025,.07],'dark'),b([0,.026,0],[.045,.004,.045],'metal'),b([0,.031,0],[.04,.005,.006],'dark')];
+  // Shared with the flat fallback. A low mobile chassis carries one uninterrupted tube;
+  // changing the floor height lengthens only that tube, never the arm/shoulder frames.
+  function supportLayout(m,floor) {
+    // Use the same standing floor as a fresh task, including before any table exists.
+    // A separate short preview floor made Calibrate and Tracking shrink the mast.
+    if(floor===undefined){const G=RC.gripper(m);floor=RC.fk(m,1,RC.HOME).wrist[2]-G.halfWidth(G.gapMax)-.045-.75;}
+    const cx=-.075,bottom=floor+.121,top=Math.max(bottom+.08,m.up-.22),r=.031,height=top-bottom;
+    return {floor,base:{c:[cx,0,floor+.083],h:[.175,.168,.032]},
+      bounds:{c:[cx,0,floor+.064],h:[.183,.199,.064]},
+      bumper:{c:[cx,0,floor+.061],h:[.183,.176,.016]},deck:{c:[cx,0,floor+.118],h:[.153,.146,.010]},
+      post:{c:[cx,0,(bottom+top)/2],h:[r,r,height/2],r},
+      collar:{c:[cx,0,floor+.13],h:[.045,.045,.018],r:.045},cap:{c:[cx,0,top-.005],h:[.042,.042,.015],r:.042},
+      wheels:[-1,1].flatMap(x=>[-1,1].map(side=>({c:[cx+x*.112,side*.182,floor+.046],r:.046,width:.032,side}))),
+      sensor:{c:[cx+.174,0,floor+.088],h:[.004,.059,.011]},indicator:{c:[cx+.179,0,floor+.09],h:[.002,.018,.002]}};
+  }
+  // The support lives in the chest frame. Keeping it separate lets tasks extend the same
+  // single post to the actual floor without scaling the robot or its kinematic dimensions.
+  function actorMeshes(m,floor) {
+    const layout=supportLayout(m,floor),box=(s,mat,role)=>part(blob(s.c,s.h,.26,.3,{nu:40,nv:20}),mat,{support:role});
+    const tube=(s,mat,role)=>part(lathe([s.c[0],s.c[1],0],s.c[2]-s.h[2],s.c[2]+s.h[2],()=>s.r,{nu:40,nv:20,k0:.015,k1:.015}),mat,{support:role});
+    const amr=[box(layout.bumper,'robotDark','bumper'),box(layout.base,'robotMetal','base'),box(layout.deck,'robotShell','deck'),tube(layout.post,'robotMetal','post'),tube(layout.collar,'robotDark','collar'),tube(layout.cap,'robotDark','cap'),box(layout.sensor,'glass','sensor'),box(layout.indicator,'light','indicator')];
+    const wheel=[];
+    for(const w of layout.wheels){
+      wheel.push(part(lathe(w.c,-w.width/2,w.width/2,()=>w.r,{axis:'y',nu:32,nv:12,k0:.15,k1:.15}),'robotRubber',{support:'wheel'}));
+      wheel.push(part(lathe(w.c,w.side*(w.width/2-.003),w.side*(w.width/2+.001),()=>w.r*.5,{axis:'y',nu:24,nv:8,k0:.1,k1:.1}),'robotMetal',{support:'hub'}));
+    }
     return {amr,wheel};
   }
 
   // ---- drawing ----
-  const VS = `attribute vec3 aPos; attribute vec3 aNrm;
-uniform mat4 uPV,uModel,uLightPV; uniform mat3 uRot; varying vec3 vN,vW; varying vec4 vShadow;
-void main(){vec4 w=uModel*vec4(aPos,1.0);vW=w.xyz;vN=uRot*aNrm;vShadow=uLightPV*w;gl_Position=uPV*w;}`;
+  const VS = `attribute vec3 aPos,aNrm;attribute vec2 aUV,aHem;
+uniform mat4 uPV,uModel,uLightPV; uniform mat3 uRot; varying vec3 vN,vW,vLocal;varying vec2 vUV,vHem;varying vec4 vShadow;
+void main(){vec4 w=uModel*vec4(aPos,1.0);vW=w.xyz;vLocal=aPos;vUV=aUV;vHem=aHem;vN=uRot*aNrm;vShadow=uLightPV*w;gl_Position=uPV*w;}`;
   const FS = `#extension GL_OES_standard_derivatives : enable
 precision highp float;
-varying vec3 vN,vW;varying vec4 vShadow;
+varying vec3 vN,vW,vLocal;varying vec2 vUV,vHem;varying vec4 vShadow;
 uniform vec3 uEye,uKey,uFill,uBase,uRimCol,uFadeTo,uSky,uGround;
-uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface;uniform sampler2D uShadow;
+uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface,uMetal,uRough,uTransmit,uTexture,uRobot;uniform sampler2D uShadow,uLabel;
 float noise(vec3 p){return fract(sin(dot(floor(p),vec3(12.9898,78.233,37.719)))*43758.5453);}
-float fleece(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
- return mix(mix(noise(vec3(i,0.0)),noise(vec3(i+vec2(1.0,0.0),0.0)),f.x),mix(noise(vec3(i+vec2(0.0,1.0),0.0)),noise(vec3(i+vec2(1.0,1.0),0.0)),f.x),f.y);}
+float fleece(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(noise(vec3(i,0.0)),noise(vec3(i+vec2(1.0,0.0),0.0)),f.x),mix(noise(vec3(i+vec2(0.0,1.0),0.0)),noise(vec3(i+vec2(1.0,1.0),0.0)),f.x),f.y);}
+// Metric foam UVs give sub-millimetre cells; the last component is distance to a membrane.
+vec3 foamCell(vec2 p){vec2 cell=floor(p),f=fract(p),nearest=vec2(0.0);float first=8.0,second=8.0;
+ for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++){vec2 grid=vec2(float(x),float(y)),id=cell+grid;
+ vec2 offset=grid+.18+.64*vec2(noise(vec3(id,3.0)),noise(vec3(id,19.0)))-f;float d=dot(offset,offset);
+ if(d<first){second=first;first=d;nearest=offset;}else second=min(second,d);}
+ return vec3(nearest,sqrt(second)-sqrt(first));}
 float depth(vec2 p){return dot(texture2D(uShadow,p),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0))*(255.0/256.0);}
-float shade(vec3 N){if(uShadowOn<0.5)return 1.0;vec3 q=vShadow.xyz/vShadow.w*.5+.5;if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0||q.z>1.0)return 1.0;
- float a=0.0,bias=max(.0008,.0018*(1.0-dot(N,uKey)));for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)a+=step(q.z-bias,depth(q.xy+vec2(float(x),float(y))*2.0/2048.0));return .22+.78*a/9.0;}
+float shadowPCF(vec3 q,vec2 gradient,vec2 uv,float bias){vec2 pixel=uv*2048.0-.5,base=floor(pixel),f=fract(pixel);float visibility=0.0;
+ for(int x=0;x<2;x++)for(int y=0;y<2;y++){vec2 tap=(base+vec2(float(x),float(y))+.5)/2048.0;float weight=mix(1.0-f.x,f.x,float(x))*mix(1.0-f.y,f.y,float(y));
+ visibility+=weight*step(q.z+dot(gradient,tap-q.xy)-bias,depth(tap));}return visibility;}
+float shade(vec3 N){if(uShadowOn<0.5)return 1.0;vec3 q=vShadow.xyz/vShadow.w*.5+.5;vec3 dx=dFdx(q),dy=dFdy(q);if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0||q.z>1.0)return 1.0;
+ // Compare each nearest depth texel against the receiver plane at that texel,
+ // rather than against the centre fragment's depth on a sloping surface.
+ float determinant=dx.x*dy.y-dx.y*dy.x;vec2 gradient=vec2(0.0);
+ if(abs(determinant)>.0000000001)gradient=vec2(dy.y*dx.z-dx.y*dy.z,dx.x*dy.z-dy.x*dx.z)/determinant;
+ vec2 centre=(floor(q.xy*2048.0)+.5)/2048.0;float gap=max(0.0,q.z+dot(gradient,centre-q.xy)-depth(centre)),radius=1.0+min(3.0,gap*150.0),a=0.0;
+ float bias=max(.000025,.00006*(1.0-dot(N,uKey)));
+ // Bilinear comparison weights make penumbrae continuous between map texels.
+ for(int x=0;x<2;x++)for(int y=0;y<2;y++)a+=shadowPCF(q,gradient,q.xy+(vec2(float(x),float(y))-.5)*radius/2048.0,bias);
+ return .12+.88*a*.25;}
+// Analytic studio environment: broad softboxes reflected in the materials, with roughness blur.
+vec3 studio(vec3 r,float rough){float hemi=clamp(r.z*.5+.5,0.0,1.0);vec3 env=mix(vec3(.045,.052,.065),vec3(.32,.37,.45),hemi);
+ float a=pow(max(0.0,dot(r,normalize(vec3(-.45,-.55,.8)))),mix(180.0,5.0,rough));
+ float b=pow(max(0.0,dot(r,normalize(vec3(.7,.25,.65)))),mix(260.0,7.0,rough));
+ return env+vec3(2.2,2.06,1.86)*a+vec3(.85,1.0,1.2)*b;}
 vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.0,1.0);}
-void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 base=uBase;
- if((uSurface>.5&&uSurface<1.5)||uSurface>3.5){float grain=sin(vW.x*210.0+sin(vW.y*19.0)*2.0)+.35*sin(vW.x*487.0+sin(vW.y*29.0));base*=.95+.025*grain;
- if(uSurface>3.5&&abs(N.z)>.8){float row=floor(vW.y*6.0),fy=fract(vW.y*6.0),fx=fract(vW.x*1.35+row*.37),seam=min(min(fy,1.0-fy),min(fx,1.0-fx));base*=.96+.07*noise(vec3(row,0,0));base*=mix(.72,1.0,smoothstep(.0,max(.005,fwidth(seam)*1.2),seam));}}
-
-
- if(uSurface>2.5&&uSurface<3.5){
-   vec2 uv=vW.xy+vW.z*vec2(.37,-.29);float visible=1.0-smoothstep(.35,2.5,max(fwidth(uv.x),fwidth(uv.y))*400.0);
-   float fine=fleece(uv*1800.0),loft=fleece(uv*550.0);
-   base*=.87+visible*(.20*fine+.12*loft);
-   N=normalize(N+visible*.40*vec3(fleece(uv*1800.0+vec2(17.0,3.0))-.5,fleece(uv*1800.0+vec2(5.0,29.0))-.5,0.0));
- }
+void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=0.0)discard;if(dot(N,V)<0.0)N=-N;vec3 base=uBase;if(uTexture>.5)base=pow(texture2D(uLabel,vUV).rgb,vec3(2.2));float rough=clamp(uRough,.08,.98);
+ if((uSurface>.5&&uSurface<1.5)||(uSurface>3.5&&uSurface<4.5)){float grain=sin(vLocal.x*210.0+sin(vLocal.y*19.0)*2.0)+.35*sin(vLocal.x*487.0+sin(vLocal.y*29.0));base*=.95+.025*grain;
+ if(uSurface>3.5&&abs(N.z)>.8){float row=floor(vLocal.y*6.0),fy=fract(vLocal.y*6.0),fx=fract(vLocal.x*1.35+row*.37),seam=min(min(fy,1.0-fy),min(fx,1.0-fx));base*=.96+.07*noise(vec3(row,0,0));base*=mix(.72,1.0,smoothstep(.0,max(.005,fwidth(seam)*1.2),seam));}}
+ if(uSurface>2.5&&uSurface<3.5){vec2 uv=vW.xy+vW.z*vec2(.37,-.29);float visible=1.0-smoothstep(.35,2.5,max(fwidth(uv.x),fwidth(uv.y))*400.0);base*=.87+visible*(.20*fleece(uv*1800.0)+.12*fleece(uv*550.0));N=normalize(N+visible*.20*vec3(fleece(uv*1800.0+vec2(17,3))-.5,fleece(uv*1800.0+vec2(5,29))-.5,0));}
+ if(uSurface>4.5&&uSurface<5.5){float visible=1.0-smoothstep(.2,1.0,fwidth(vLocal.z*1800.0));float brush=sin(vLocal.z*1800.0+sin(vLocal.y*19.0));rough+=visible*.025*brush;base*=.98+visible*.015*brush;}
+ if(uSurface>5.5&&uSurface<6.5){vec2 thread=vUV*1700.0,stitch=fract(thread)-.5;float visible=1.0-smoothstep(.25,1.2,max(fwidth(thread.x),fwidth(thread.y))),phase=(stitch.y+.62*abs(stitch.x))*6.283,knit=cos(phase);base*=.98+visible*.025*knit;
+ float collar=(1.0-smoothstep(-.001,0.0,vHem.y))*(1.0-smoothstep(.0045,.006,vHem.x)),rib=cos(abs(vHem.y)*5700.0);float seam=(1.0-smoothstep(.0004,.0018,abs(vHem.x-.0035)))*.12;float stitches=(1.0-smoothstep(.00015,.00065,abs(vHem.x-.0018)))*smoothstep(.35,.55,sin(abs(vHem.y)*3000.0));base*=1.0-seam-collar*(.15+.035*rib);base+=vec3(.035)*stitches;
+ vec3 tx=dFdx(vW)*dFdy(vUV.y)-dFdy(vW)*dFdx(vUV.y);if(length(tx)>.0000001){tx=normalize(tx);vec3 ty=normalize(cross(N,tx));N=normalize(N+visible*.025*sin(phase)*(tx*(.62*sign(stitch.x))+ty));}}
+ if(uSurface>6.5&&uSurface<7.5){float ripple=sin(vUV.y*110.0+vUV.x*14.0);rough+=.02*ripple;}
+ if(uSurface>7.5&&uSurface<8.5){vec2 uv=vUV*1350.0;float footprint=max(fwidth(uv.x),fwidth(uv.y)),visible=1.0-smoothstep(.25,.9,footprint),aa=max(.018,footprint*.65);vec3 cell=foamCell(uv);
+ float membrane=1.0-smoothstep(.025-aa,.075+aa,cell.z);base*=.985-visible*(.075*membrane+.012*dot(cell.xy,cell.xy));rough=clamp(rough+visible*.055*membrane,.8,.98);
+ vec3 tx=dFdx(vW)*dFdy(vUV.y)-dFdy(vW)*dFdx(vUV.y);if(length(tx)>.0000001){tx=normalize(tx);vec3 ty=normalize(cross(N,tx));N=normalize(N+visible*.10*(tx*cell.x+ty*cell.y));}}
  float nl=max(dot(N,uKey),0.0),nv=max(dot(N,V),.001),sh=shade(N);vec3 H=normalize(uKey+V);float nh=max(dot(N,H),0.0),vh=max(dot(V,H),0.0);
- float rough=clamp(sqrt(2.0/(uShine+2.0)),.12,.95),a=rough*rough,a2=a*a,den=nh*nh*(a2-1.0)+1.0,D=a2/(3.14159265*den*den+.0001),k=(rough+1.0)*(rough+1.0)/8.0,G=nv/(nv*(1.0-k)+k)*nl/(nl*(1.0-k)+k);
- vec3 F=mix(vec3(.035),vec3(.25),clamp(uSpec*.25,0.0,.6));F=F+(1.0-F)*pow(1.0-vh,5.0);vec3 spec=D*G*F/(4.0*nv*max(nl,.001));
- float hemi=.5+.5*N.z;vec3 ambient=mix(uGround,uSky,hemi);float fill=max(dot(N,uFill),0.0);
- vec3 col=base*(ambient+vec3(1.0,.97,.92)*nl*sh*1.35+vec3(.52,.63,.78)*fill*.22)+spec*nl*sh*min(1.0,uSpec)*.75;
- if(uSurface>2.5&&uSurface<3.5)col+=base*.18*pow(1.0-nv,2.5);
- col=mix(col,base*1.8,uEmit);col=mix(col,uFadeTo,uFade);col=aces(col*1.15);gl_FragColor=vec4(pow(col,vec3(1.0/2.2))*uAlpha,uAlpha);}`;
+ float a=rough*rough,a2=a*a,den=nh*nh*(a2-1.0)+1.0,D=a2/(3.14159265*den*den+.0001),k=(rough+1.0)*(rough+1.0)/8.0,G=nv/(nv*(1.0-k)+k)*nl/(nl*(1.0-k)+k);
+ vec3 f0=mix(vec3(.04),base,uMetal),F=f0+(1.0-f0)*pow(1.0-vh,5.0),spec=D*G*F/(4.0*nv*max(nl,.001));
+ vec3 ambient=mix(uGround,uSky,.5+.5*N.z)*(.8+.2*sh);ambient=mix(ambient,vec3(dot(ambient,vec3(.2126,.7152,.0722))),uRobot);float fill=max(dot(N,uFill),0.0);
+ vec3 diffuse=(1.0-uMetal)*base*mix(1.0,.45,uTransmit);vec3 col=diffuse*(ambient+mix(vec3(1.0,.96,.88),vec3(.96,.98,1.0),uRobot)*nl*sh*.95+vec3(.62,.72,.88)*fill*.18)+spec*nl*sh*min(1.3,uSpec);
+ vec3 fresnel=f0+(1.0-f0)*pow(1.0-nv,5.0);col+=studio(reflect(-V,N),rough)*fresnel*mix(.45,1.15,uMetal)*(1.0-rough*.45);
+ if(uSurface>5.5&&uSurface<6.5)col+=base*.07*pow(1.0-nv,2.5);
+ if(uTransmit>0.0)col=mix(col,base*.45+studio(refract(-V,N,.75),.65)*base*.7,uTransmit*.35);
+ col=mix(col,base*1.8,uEmit);col=mix(col,uFadeTo,uFade);col=aces(col);float alpha=mix(uAlpha,min(1.0,uAlpha+.35*pow(1.0-nv,3.0)),uTransmit);
+ gl_FragColor=vec4(pow(col,vec3(1.0/2.2))*alpha,alpha);}`;
   const DEPTH_VS=`attribute vec3 aPos;uniform mat4 uPV,uModel;void main(){gl_Position=uPV*uModel*vec4(aPos,1.0);}`;
   const DEPTH_FS=`precision highp float;void main(){vec4 d=fract(gl_FragCoord.z*vec4(16777216.0,65536.0,256.0,1.0));d-=d.xxyz*vec4(0.0,1.0/256.0,1.0/256.0,1.0/256.0);gl_FragColor=d*(256.0/255.0);}`;
   // sRGB hex (#rgb or #rrggbb) to linear RGB
@@ -373,11 +482,19 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     return [0, 2, 4].map((i) => Math.pow(parseInt(h.slice(i, i + 2), 16) / 255, 2.2));
   }
   // the materials ('light' is the violet glow)
+  const ROBOT_COLORS={metal:'#c8cfd7',shell:'#dce1e7',dark:'#24282e',rubber:'#171a1e',link:'#181b20',brand:'#c51f30'};
   const MATS = {
-    metal: { base: lin('#a9b1ba'), spec: 0.9, shine: 110, rim: 0.9 },
-    dark: { base: lin('#24282e'), spec: 0.55, shine: 60, rim: 1 },
+    robotMetal: {base:lin(ROBOT_COLORS.metal),spec:.9,shine:90,rough:.3,metal:.5,rim:.8},
+    robotShell: {base:lin(ROBOT_COLORS.shell),spec:.3,shine:25,rough:.48,metal:.08,rim:.5},
+    robotDark: {base:lin(ROBOT_COLORS.dark),spec:.35,shine:35,rough:.62,rim:.5},
+    robotRubber: {base:lin(ROBOT_COLORS.rubber),spec:.08,shine:5,rough:.9,rim:.1},
+    robotLink: {base:lin(ROBOT_COLORS.link),spec:.65,shine:95,rough:.3,metal:.32,rim:.5},
+    robotBrand: {base:lin(ROBOT_COLORS.brand),spec:.1,shine:10,rough:.7,rim:0},
+    metal: { base: lin('#b8c0c8'), spec: 1, shine: 110, rim: .9, metal:.94, rough:.32 },
+    dark: { base: lin('#24282e'), spec:.4, shine:30, rim:1, rough:.64 },
     glass: { base: lin('#07080c'), spec: 1.3, shine: 220, rim: 1.4 },
-    shell: { base: lin('#c9ced4'), spec: 0.3, shine: 30, rim: 0.8 },
+    shell: { base: lin('#c9ced4'), spec:.25, shine:20, rim:.8, rough:.78 },
+    rubber: {base:lin('#343941'),spec:.12,shine:4,rim:0,rough:.94},
     fabric: { base: lin('#7398c4'), spec: .08, shine: 3, rim: .3 },
     top: { base: lin('#6b737c'), spec: 0.25, shine: 24, rim: 0.5 },
     ball: { base: lin('#2a78d6'), spec: 0.7, shine: 80, rim: 0.6 },
@@ -385,16 +502,20 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     skin: {base:lin('#c89978'),spec:.1,shine:12,rim:.35}, shirt:{base:lin('#547d91'),spec:.12,shine:12,rim:.3}, denim:{base:lin('#33455c'),spec:.1,shine:10,rim:.3}, hair:{base:lin('#382e2b'),spec:.16,shine:14,rim:.3}, shoe:{base:lin('#353b44'),spec:.15,shine:18,rim:.3},
     floor:{base:lin('#966d49'),spec:.28,shine:45,rim:0},
     wood:{base:lin('#805638'),spec:.18,shine:24,rim:0},plaster:{base:lin('#e2d4b9'),spec:.08,shine:8,rim:0},fabric:{base:[1,1,1],spec:.08,shine:6,rim:0},rug:{base:lin('#706452'),spec:.03,shine:4,rim:0},
-    ceramic: { base: lin('#ece8e1'), spec: 0.6, shine: 90, rim: 0.6 },
-    liquid: { base: lin('#e0a526'), spec: 1.1, shine: 160, rim: 0.3 },
-    label: { base: lin('#efe7d4'), spec: 0.15, shine: 12, rim: 0.3 }, labelBand: { base: lin('#2d4f8c'), spec: 0.3, shine: 30, rim: 0.4 },
+    ceramic: { base: lin('#ece8e1'), spec:.85, shine:90, rim:.6, rough:.23 },
+    liquid: { base: lin('#c18a29'), spec:1.2, shine:180, rim:.3, rough:.16, transmit:.72, alpha:.42 },
+    label: { base: lin('#efe7d4'), spec: 0.15, shine: 12, rim: 0.3,rough:.8 }, labelBand: { base: lin('#2d4f8c'), spec: 0.3, shine: 30, rim: 0.4 },
+    foam: {base:lin('#f3ead6'),spec:.12,shine:8,rim:.1,rough:.86},
+    cotton: {base:lin('#536f95'),spec:.12,shine:8,rim:0,rough:.9},
+    bottleGlass:{base:lin('#5a3514'),spec:1.1,shine:180,rim:.4,rough:.12,transmit:1,alpha:.42},
+    pewter: {base:lin('#a4a5a2'),spec:1,shine:45,rim:.3,metal:.92,rough:.4}, gold:{base:lin('#bd9149'),spec:1,shine:60,rim:.3,metal:.88,rough:.3},
   };
   // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
   function model4(p, s) {
-    const R = p.R, k = s || 1;
-    return new Float32Array([R[0] * k, R[3] * k, R[6] * k, 0, R[1] * k, R[4] * k, R[7] * k, 0, R[2] * k, R[5] * k, R[8] * k, 0, p.t[0], p.t[1], p.t[2], 1]);
+    const R = p.R, k = Array.isArray(s)||ArrayBuffer.isView(s)?s:[s||1,s||1,s||1];
+    return new Float32Array([R[0] * k[0], R[3] * k[0], R[6] * k[0], 0, R[1] * k[1], R[4] * k[1], R[7] * k[1], 0, R[2] * k[2], R[5] * k[2], R[8] * k[2], 0, p.t[0], p.t[1], p.t[2], 1]);
   }
-  const rot3 = (R) => new Float32Array([R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]]);
+  const rot3 = (R,s) => {const k=Array.isArray(s)||ArrayBuffer.isView(s)?s:[1,1,1];return new Float32Array([R[0]/k[0], R[3]/k[0], R[6]/k[0], R[1]/k[1], R[4]/k[1], R[7]/k[1], R[2]/k[2], R[5]/k[2], R[8]/k[2]]);};
 
   function create(canvas) {
     const gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, depth: true });
@@ -405,8 +526,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface']) U[n] = gl.getUniformLocation(prog, n);
-    const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm');
+    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface','uMetal','uRough','uTransmit','uTexture','uLabel','uRobot']) U[n] = gl.getUniformLocation(prog, n);
+    const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm'), aUV=gl.getAttribLocation(prog,'aUV'), aHem=gl.getAttribLocation(prog,'aHem');
     const depthProg=gl.createProgram();gl.attachShader(depthProg,sh(gl.VERTEX_SHADER,DEPTH_VS));gl.attachShader(depthProg,sh(gl.FRAGMENT_SHADER,DEPTH_FS));gl.linkProgram(depthProg);
     if(!gl.getProgramParameter(depthProg,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(depthProg));
     const depthPos=gl.getAttribLocation(depthProg,'aPos'),depthPV=gl.getUniformLocation(depthProg,'uPV'),depthModel=gl.getUniformLocation(depthProg,'uModel');
@@ -415,17 +536,62 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     const shadowFB=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFB);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,shadow,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,shadowDepth);
     const shadowsSupported=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 
-    const self = { lost: false };
+    const self = { lost: false, labelStatus:new Map() };
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); self.lost = true; });
+    const labelWhite=gl.createTexture();gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,labelWhite);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([255,255,255,255]));
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.activeTexture(gl.TEXTURE0);
+    const labelTextures=new Map();
+    function labelTexture(artwork){
+      const key=JSON.stringify(artwork);if(labelTextures.has(key))return labelTextures.get(key);
+      const texture=gl.createTexture(),paper=document.createElement('canvas');paper.width=1024;paper.height=330;
+      const ctx=paper.getContext('2d'),red='#a11d2b',status={title:artwork.title||'',ready:!artwork.lettering,fallback:!artwork.lettering};self.labelStatus.set(key,status);
+      const uploadLabel=()=>{
+        gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,texture);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,paper);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+        // The physical label's aspect ratio is deliberately NPOT: WebGL1 needs clamp+linear, no mipmaps.
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.activeTexture(gl.TEXTURE0);
+      };
+      const paint=lettering=>{
+        ctx.fillStyle='#f3ead3';ctx.fillRect(0,0,paper.width,paper.height);
+        for(const x of [0,paper.width/2]){
+          if(lettering){const scale=Math.min(468/lettering.naturalWidth,190/lettering.naturalHeight),w=lettering.naturalWidth*scale,h=lettering.naturalHeight*scale;ctx.drawImage(lettering,x+256-w/2,5+(190-h)/2,w,h);}
+          else{ctx.fillStyle=red;ctx.textAlign='center';ctx.font='bold 74px "Snell Roundhand", "Apple Chancery", cursive';const words=(artwork.title||'').split(' ');ctx.fillText(words.shift()||'',x+256,77,440);ctx.fillText(words.join(' '),x+256,157,440);}
+          ctx.save();ctx.translate(x+256,251);ctx.scale(.48,.48);ctx.translate(-215,-120);ctx.fillStyle=red;
+          // A red stag in profile: lifted head, full branching antlers and four tapered legs.
+          ctx.fill(new Path2D('M105 132C135 111 215 110 260 125L285 110 295 83 300 55 307 43 324 46 328 63 341 73 339 82 322 84 313 103 310 134 285 155 275 190 268 232 254 232 259 187 264 160 225 163 213 191 204 234 190 234 198 188 205 163 162 159 146 179 134 224 120 224 131 175 142 154 119 151 103 142 88 128 78 122 85 118Z'));
+          ctx.strokeStyle=red;ctx.lineWidth=6;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke(new Path2D('M310 48C303 34 295 18 294 5M303 31 282 21M299 20 309 10M318 48C329 31 337 17 333 4M328 32 345 27M333 17 347 8'));
+          ctx.fillStyle='#f3ead3';ctx.beginPath();ctx.arc(325,65,2.5,0,TAU);ctx.fill();ctx.restore();
+        }
+        uploadLabel();
+      };
+      paint(null);labelTextures.set(key,texture);
+      if(artwork.lettering){const lettering=new Image();lettering.onload=()=>{if(self.lost)return;paint(lettering);status.ready=true;status.fallback=false;};lettering.onerror=()=>{status.ready=true;status.fallback=true;};lettering.src=artwork.lettering;}
+      return texture;
+    }
     let built = null, builtKey = '';
+    const meshCentre=m=>{
+      const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
+      for(let i=0;i<m.pos.length;i++) {const axis=i%3;lo[axis]=Math.min(lo[axis],m.pos[i]);hi[axis]=Math.max(hi[axis],m.pos[i]);}
+      return m.pos.length?lo.map((v,i)=>(v+hi[i])/2):[0,0,0];
+    };
     const upload = (m) => {
-      const b = gl.createBuffer(), n = gl.createBuffer(), i = gl.createBuffer();
+      const b = gl.createBuffer(), n = gl.createBuffer(), i = gl.createBuffer(), uv=gl.createBuffer(), hem=gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, m.pos, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, n); gl.bufferData(gl.ARRAY_BUFFER, m.nrm, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, i); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.STATIC_DRAW);
-      return {b,n,i,count:m.idx.length,src:m};
+      gl.bindBuffer(gl.ARRAY_BUFFER,uv);gl.bufferData(gl.ARRAY_BUFFER,m.uv||new Float32Array(m.pos.length/3*2),gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER,hem);gl.bufferData(gl.ARRAY_BUFFER,m.hem||new Float32Array(m.pos.length/3*2),gl.STATIC_DRAW);
+      return {b,n,i,uv,hem,count:m.idx.length,vertices:m.pos.length,src:m,centre:meshCentre(m)};
     };
-    const free=g=>{for(const x of [g.b,g.n,g.i])gl.deleteBuffer(x);};
+    const free=g=>{for(const x of [g.b,g.n,g.i,g.uv,g.hem])gl.deleteBuffer(x);};
+    const updateMesh=(g,m)=>{
+      for(const [buffer,data]of [[g.b,m.pos],[g.n,m.nrm]]){gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);}
+      for(const [key,buffer]of [['uv',g.uv],['hem',g.hem]])if(m[key]!==g.src[key]){gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,m[key]||new Float32Array(m.pos.length/3*2),gl.DYNAMIC_DRAW);}
+      if(m.idx!==g.src.idx){gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,m.idx,gl.DYNAMIC_DRAW);}g.src=m;g.centre=meshCentre(m);
+    };
+
     function build(m) {
       const key = JSON.stringify(m);
       if (key === builtKey) return built;
@@ -433,8 +599,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       const M = meshes(m), A = actorMeshes(m), gpu = [];
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
       built = {
-        M, gpu, amr:up(A.amr), wheel:up(A.wheel), body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
-        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },
+        M, gpu, amr:up([...A.amr,...A.wheel]), body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
+        hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },linkages:up(M.linkages),
         tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
       };
       built.gpu.push(built.tag.paper, built.tag.border, built.tag.ink, ...built.tag.cells);
@@ -458,6 +624,12 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       gpu.push(props.shadow);
       propsKey = key;
       return props;
+    }
+    let support=null,supportKey='';
+    function buildSupport(m,floor){
+      const key=JSON.stringify([m,floor]);if(key===supportKey)return support;
+      if(support)for(const p of support)free(p.g);
+      const A=actorMeshes(m,floor);support=[...A.amr,...A.wheel].map(p=>Object.assign({},p,{g:upload(p.mesh)}));supportKey=key;return support;
     }
     const clothGPU = new Map();
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
@@ -486,26 +658,24 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       gl.uniform3fv(U.uSky,o.game?[.30,.35,.42]:dark?[.34,.36,.42]:[.42,.44,.48]);gl.uniform3fv(U.uGround,o.game?[.10,.08,.06]:dark?[.1,.1,.12]:[.2,.19,.2]);
       gl.uniform3fv(U.uFadeTo, bg);
       const rimLight = dark ? lin('#d9d4ff') : lin('#55606a');
-      let current={base:[1,1,1],emit:0,spec:.2,shine:20,rim:0,fade:0,surface:0};const commands=[];
-      const setMat = (mat, fade, tint, exact) => {
-        const M=mats[mat]||mats.shell;current={base:exact||(tint?(o.game?tint:M.base.map((x,i)=>x*.25+tint[i]*.75)):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,rim:0,fade:fade||0,surface:mat==='floor'?4:mat==='wood'?1:mat==='plaster'?2:mat==='fabric'||mat==='rug'?3:0};if(mat==='light')current.base=tint||glow;gl.uniform1f(U.uSurface,current.surface);
-        if (mat === 'light') { gl.uniform3fv(U.uBase, tint || glow); gl.uniform1f(U.uEmit, 1); gl.uniform1f(U.uSpec, 0); gl.uniform1f(U.uShine, 1); gl.uniform1f(U.uRim, 0); }
-        else {
-          const M = mats[mat] || mats.shell;
-          gl.uniform3fv(U.uBase, exact || (tint ? o.game?tint:M.base.map((x, i) => x * 0.25 + tint[i] * 0.75) : M.base));
-          gl.uniform1f(U.uEmit, 0); gl.uniform1f(U.uSpec, M.spec); gl.uniform1f(U.uShine, M.shine); gl.uniform1f(U.uRim, (dark ? 0.42 : 0.32) * M.rim);
-        }
-        gl.uniform3fv(U.uRimCol, rimLight); gl.uniform1f(U.uFade, fade || 0);
+      let current;const commands=[];
+      const surfaceOf=mat=>({floor:4,wood:1,plaster:2,fabric:3,rug:3,metal:5,robotMetal:5,pewter:5,gold:5,cotton:6,liquid:7,foam:8,bottleGlass:9,glass:9}[mat]||0);
+      const applyMat=m=>{gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniform1f(U.uMetal,m.metal);gl.uniform1f(U.uRough,m.rough);gl.uniform1f(U.uTransmit,m.transmit);gl.uniform1f(U.uAlpha,m.alpha);gl.uniform1f(U.uRobot,m.robot||0);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,m.texture||labelWhite);gl.uniform1i(U.uLabel,1);gl.uniform1f(U.uTexture,m.texture?1:0);gl.activeTexture(gl.TEXTURE0);};
+      const setMat=(mat,fade,tint,exact,artwork)=>{
+        const M=mats[mat]||mats.shell;
+        current={base:mat==='light'?tint||glow:exact||(tint?(o.game?tint:M.base.map((x,i)=>x*.25+tint[i]*.75)):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,fade:fade||0,surface:surfaceOf(mat),metal:M.metal||0,rough:M.rough??Math.max(.15,Math.min(.9,Math.sqrt(2/(M.shine+2)))),transmit:M.transmit||0,alpha:M.alpha??1,robot:mat.startsWith('robot')?1:0,texture:artwork?labelTexture(artwork):null};
+        applyMat(current);
       };
-      const flat = (col, fade) => { current={base:col,emit:1,spec:0,shine:1,rim:0,fade:fade||0,surface:0};gl.uniform1f(U.uSurface,0); gl.uniform3fv(U.uBase, col); gl.uniform1f(U.uEmit, 1); gl.uniform1f(U.uSpec, 0); gl.uniform1f(U.uRim, 0); gl.uniform1f(U.uFade, fade || 0); };
+      const flat=(col,fade)=>{current={base:col,emit:1,spec:0,shine:1,fade:fade||0,surface:0,metal:0,rough:1,transmit:0,alpha:1};applyMat(current);};
+      const attributes=g=>{for(const [location,buffer,size]of [[aPos,g.b,3],[aNrm,g.n,3],[aUV,g.uv,2],[aHem,g.hem,2]]){if(location<0)continue;gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,0,0);}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);};
       const drawG = (g, pose, s) => {
         if(o.game){commands.push({g,pose,s,mat:current});return;}
-        gl.uniformMatrix4fv(U.uModel, false, model4(pose, s)); gl.uniformMatrix3fv(U.uRot, false, rot3(pose.R));
+        gl.uniformMatrix4fv(U.uModel, false, model4(pose, s)); gl.uniformMatrix3fv(U.uRot, false, rot3(pose.R,s));
         gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+        attributes(g); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
       };
-      const drawList = (list, pose, fade, tint, override) => { for (const p of list) { setMat(override||p.mat, fade, p.keepMaterial?null:tint); drawG(p.g, pose); } };
+      const drawList = (list, pose, fade, tint, override) => { for (const p of list) { setMat(p.keepMaterial?p.mat:override||p.mat, fade, p.keepMaterial?null:tint,undefined,p.artwork); drawG(p.g, pose); } };
       const ch = o.chest, at = (R, t) => ({ R: C.mul3(ch.R, R), t: RC.place(ch, t) });
       const pts = [];
       const keep = (p) => pts.push(RC.place(ch, p));
@@ -529,34 +699,38 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         // the shadows: faint discs just above the table, without writing depth, so they never hide what's on it
         gl.depthMask(false);
         for (const sh of o.game?[]:o.props.shadows||[]) for (const k of [1, 1.3, 1.65]) {
-          gl.uniform1f(U.uAlpha, 0.16 * sh.a); flat([0, 0, 0], 0);
+          flat([0, 0, 0], 0); gl.uniform1f(U.uAlpha, 0.16 * sh.a);
           drawG(PR.shadow, { R: sh.R, t: C.add(sh.t, C.mulv(sh.R, [0, 0, 0.0008])) }, sh.r * k);
         }
         gl.uniform1f(U.uAlpha, 1); gl.depthMask(true);
-        for (const b of o.props.bodies) drawList(PR.extra[b.key] || PR[b.kind] || [], b, 0, b.color ? lin(b.color) : null,b.material||null);
+        for (const b of o.props.bodies) drawList(PR.extra[b.key] || PR[b.kind] || [], b, 0, b.color ? lin(b.color) : null,b.material||(b.kind==='bottle'?'bottleGlass':null));
         const liveCloths = new Set();
         for (const c of [...(o.props.cloths || []),...(o.props.cables || [])]) {
           liveCloths.add(c.key);
           const mesh = c.radius ? cableMesh(c) : clothMesh(c);
           let g = clothGPU.get(c.key);
-          if (!g || g.count !== mesh.idx.length) { if(g)free(g); g = upload(mesh); clothGPU.set(c.key, g); }
-          else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
-          setMat(c.radius?'top':'fabric', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
+          if (!g || g.count !== mesh.idx.length || g.vertices !== mesh.pos.length) { if(g)free(g); g = upload(mesh); clothGPU.set(c.key, g); }
+          else updateMesh(g,mesh);
+          setMat(c.radius?'top':c.kind==='shirt'?'cotton':'fabric', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
-        // Beer: each stein's level surface, and the falling stream as a thin tube through its drops.
-        const meshes = [...(o.props.liquids || []).map((l) => ['liquid' + l.key, liquidMesh(l), l.color]), ...(o.props.streams || []).map((s, i) => ['stream' + i, cableMesh({ nodes: s.points.map((p) => ({ p })), radius: 0.0026, bend: 0, boot: false }), s.color])];
-        for (const [key, mesh, color] of meshes) {
+        // Amber surfaces and streams use the transparent pass; foam stays opaque.
+        const meshes = [...(o.props.liquids || []).map(l=>['liquid'+l.key+(l.layer||''),liquidMesh(l),l.color,l.layer,l.depth]),...(o.props.streams||[]).map((s,i)=>['stream'+i,LiquidRender.streamMesh(s),s.color,null,s.radii?.length?2*s.radii.reduce((a,r)=>a+r,0)/s.radii.length:.004])];
+        if(o.props.particles?.length)meshes.push(['beerDrops',LiquidRender.particleMesh(o.props.particles),o.props.streams?.[0]?.color||mats.liquid.base,null,.0024]);
+        for (const [key, mesh, color,layer,depth] of meshes) {
           liveCloths.add(key);
           let g = clothGPU.get(key);
-          if (!g || g.count !== mesh.idx.length) { if (g) free(g); g = upload(mesh); clothGPU.set(key, g); }
-          else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
-          setMat('liquid', 0, lin(color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
+          if (!g || g.count !== mesh.idx.length || g.vertices !== mesh.pos.length) { if (g) free(g); g = upload(mesh); clothGPU.set(key, g); }
+          else updateMesh(g,mesh);
+          setMat(layer==='foam'?'foam':'liquid', 0, Array.isArray(color)?color:lin(color));
+          if(layer!=='foam'&&Number.isFinite(depth)){current={...current,alpha:beerOpacity(depth)};applyMat(current);}
+          drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
         for (const [k, g] of clothGPU) if (!liveCloths.has(k)) { free(g); clothGPU.delete(k); }
       }
       const L=o.locomotion;
       if(o.body){
-        if(L){drawList(B.amr,at([1,0,0,0,1,0,0,0,1],[0,0,L.floor]),0);for(const side of [-1,1])drawList(B.wheel,at(RC.Ry((L.distance||0)/.07),[-.065,side*.19,L.floor+.075]),0);}
+        drawList(L?buildSupport(o.m,L.floor):B.amr,ch,o.fadeBody||0);
+        if(L){const b=supportLayout(o.m,L.floor).bounds;for(const x of [-1,1])for(const y of [-1,1])keep([b.c[0]+x*b.h[0],b.c[1]+y*b.h[1],L.floor]);}
         drawList(B.body, ch, o.fadeBody || 0);
         if (!o.eyes) {
           const pivot = [-o.m.back + 0.02, 0, o.m.up + 0.17], R = RC.Ry(-(o.headTilt || 0) * Math.PI / 180);
@@ -571,11 +745,13 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         drawList(B.fore, at(k.Rf, k.elbow), fade);
         // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
         if ((!a.reach || (a.live && !a.idle))) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
-        // a gripper the pointer can take (a.hot 1) is tinted violet, more so while it is dragged (2)
+        // Highlight the pickable gripper assembly without tinting its wrist motor or arm.
         const hot = a.hot ? glow.map((x) => x * (a.hot > 1 ? 1.25 : 1)) : null;
-        drawList(B.hand[a.side], at(k.R, k.wrist), fade, hot);
+        for(const p of B.hand[a.side]){setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(k.R,k.wrist));}
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
-        for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), fade, hot);
+        const linkage=gripperLayout(o.m,jaw,a.jawState);
+        for (const j of [1, -1]) for(const p of B.finger[j]){const pose=gripperFingerPose(p,j,linkage);setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(C.mul3(k.R,pose.R),C.add(k.wrist,C.mulv(k.R,pose.t))),pose.scale);}
+        for(const p of B.linkages){const pose=gripperPartPose(p,linkage);setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(C.mul3(k.R,pose.R),C.add(k.wrist,C.mulv(k.R,pose.t))));}
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       // the force arrows (o.forces: [{a: tail, b: tip, warn}]), over everything: they are often inside a gripper
@@ -592,7 +768,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
           const draw = (g) => {
             gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
             gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.i); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+            attributes(g); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
           };
           setMat('light', 0, f.warn ? warn : null);
           stretch(f.a, 0.0035, L - hl); draw(arrow.shaft);
@@ -605,10 +781,20 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         const rows=[row(rt,1/2.2),row(up,1/2.2),row(fw,1/4,-1),[0,0,0,1]],lightPV=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)lightPV[c*4+r]=rows[r][c];
         const bind=(g,pos,nrm)=>{gl.bindBuffer(gl.ARRAY_BUFFER,g.b);gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,3,gl.FLOAT,false,0,0);if(nrm!==null){gl.bindBuffer(gl.ARRAY_BUFFER,g.n);gl.enableVertexAttribArray(nrm);gl.vertexAttribPointer(nrm,3,gl.FLOAT,false,0,0);}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);};
         if(shadowsSupported){gl.disable(gl.DITHER);gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFB);gl.viewport(0,0,2048,2048);gl.clearColor(1,1,1,1);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.BLEND);gl.useProgram(depthProg);gl.uniformMatrix4fv(depthPV,false,lightPV);
-          for(const q of commands){gl.uniformMatrix4fv(depthModel,false,model4(q.pose,q.s));bind(q.g,depthPos,null);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);}
+          // Props can replace/delete the previous frame's attribute buffers.
+          // Depth needs position only; main paint restores every shaded attribute.
+          for(const location of [aPos,aNrm,aUV,aHem])if(location>=0&&location!==depthPos)gl.disableVertexAttribArray(location);
+          for(const q of commands.filter(q=>q.mat.alpha>=1)){gl.uniformMatrix4fv(depthModel,false,model4(q.pose,q.s));bind(q.g,depthPos,null);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);}
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.enable(gl.DITHER);clear();gl.useProgram(prog);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.uniformMatrix4fv(U.uPV,false,PV);gl.uniformMatrix4fv(U.uLightPV,false,lightPV);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shadow);gl.uniform1i(U.uShadow,0);gl.uniform1f(U.uShadowOn,shadowsSupported?1:0);gl.uniform3fv(U.uKey,light);gl.uniform1f(U.uAlpha,1);
-        for(const q of commands){const m=q.mat;gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniformMatrix4fv(U.uModel,false,model4(q.pose,q.s));gl.uniformMatrix3fv(U.uRot,false,rot3(q.pose.R));bind(q.g,aPos,aNrm);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);}
+        gl.uniform3fv(U.uFill,unit([.7,.25,.65]));
+        const paint=q=>{applyMat(q.mat);gl.uniformMatrix4fv(U.uModel,false,model4(q.pose,q.s));gl.uniformMatrix3fv(U.uRot,false,rot3(q.pose.R,q.s));attributes(q.g);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);};
+        for(const q of commands)if(q.mat.alpha>=1)paint(q);
+        const distance=q=>dot(C.sub(C.add(q.pose.t,C.mulv(q.pose.R,q.g.centre.map((v,i)=>v*(Array.isArray(q.s)||ArrayBuffer.isView(q.s)?q.s[i]:q.s??1)))),cam.eye),cam.fwd);
+        gl.depthMask(false);
+        for(const q of commands.filter(q=>q.mat.alpha<1).sort((a,b)=>distance(b)-distance(a)))paint(q);
+        gl.depthMask(true);gl.uniform1f(U.uAlpha,1);
+
       }
       return pts;
     };
@@ -616,5 +802,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     return self;
   }
 
-  return { meshes, actorMeshes, propMeshes, compoundMeshes, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
+  return { meshes, actorMeshes, supportLayout, gripperLayout,gripperFingerPose,gripperPartPose,robotPalette:ROBOT_COLORS, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beerOpacity, beveledBox, create, lin };
 });

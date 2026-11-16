@@ -10,7 +10,7 @@
 const POOL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
 function spawnWorker() {
   const base = /\/$|\.html?$/.test(location.pathname) ? '' : location.pathname + '/';
-  const w = new Worker(base + 'worker.js?v=ea67b086'), slot = { w, ready: false, busy: false, first: !S.pool.length };
+  const w = new Worker(base + 'worker.js?v=7867e648'), slot = { w, ready: false, busy: false, first: !S.pool.length };
   S.pool.push(slot);
   w.onmessage = (ev) => onWorker(ev.data, slot);
   w.onerror = (e) => { if (slot.first) status('Detector failed to start', 'bad'); else S.pool = S.pool.filter((x) => x !== slot); console.error(e); };
@@ -44,7 +44,7 @@ function onWorker(m, slot) {
   else if (m.type === 'tags' || m.type === 'board') {
     slot.busy = false;
     const c = camOf(m.src);
-    if (!c) return;
+    if (!c || c.session !== m.session) return;
     c.inflight = Math.max(0, c.inflight - 1);
     if (m.seq <= c.doneSeq) return; // overtaken by a later frame from another worker
     c.doneSeq = m.seq;
@@ -55,7 +55,7 @@ function onWorker(m, slot) {
     const cb = pending.get(m.purpose);
     if (cb) { pending.delete(m.purpose); cb(m.img); }
   } else if (m.type === 'error') {
-    if (m.of === 'frame') { slot.busy = false; const c = camOf(m.src); if (c) c.inflight = Math.max(0, c.inflight - 1); return; }
+    if (m.of === 'frame') { slot.busy = false; const c = camOf(m.src); if (c && c.session === m.session) { c.inflight = Math.max(0, c.inflight - 1); c.expect.delete(m.seq); } return; }
     if (m.of === 'init') { status('Could not load the detector', 'bad'); showEmpty('The detector didn’t load', 'OpenCV.js (about 10 MB) is fetched from a CDN the first time. Check your connection and reload the page.'); }
     if (m.of === 'calibrate') { $('solveBtn').disabled = S.views.length < MIN_VIEWS; $('solveBtn').textContent = 'Calibrate'; $('calibResult').innerHTML = `<div class="note warn"><svg class="i"><use href="#i-alert"/></svg><span>Calibration failed: ${escapeHtml(m.text)}</span></div>`; }
     console.warn('worker:', m.of, m.text);
@@ -71,7 +71,8 @@ function requestImage(type, args) {
 // { n, key (device id, or demo:k), label, demo (index or null), stream, track, video, overlay, el (its tile), cam (its
 //   intrinsics), lens, T (its pose in camera 1's frame from the saved rig, null if not placed), busy, seq, stats,
 //   last (its latest tags), local (its own poses), lastBoard, still }
-let devices = [];
+let devices = [], cameraSession = 0, cameraRun = 0, cameraStarting = false, demoStarting = null;
+const pendingCameras = new Set();
 const camOf = (key) => S.cams.find((c) => c.key === key) || null;
 async function listCameras() {
   const sel = $('camSel');
@@ -97,11 +98,11 @@ if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator
 $('camSel').onchange = () => {
   const v = $('camSel').value;
   if (v !== 'demo') { S.camId = v; store.set('camId', v); }
-  if (S.running) start();
+  if (S.running || cameraStarting) start();
 };
 $('resSel').value = S.res;
-$('resSel').onchange = () => { S.res = $('resSel').value; store.set('res', S.res); if (S.running && !S.demo) start(); };
-$('startBtn').onclick = () => (S.running ? stop() : start());
+$('resSel').onchange = () => { S.res = $('resSel').value; store.set('res', S.res); refreshCameraSettings(); if ((S.running || cameraStarting) && !S.demo) start(); };
+$('startBtn').onclick = () => (S.running || cameraStarting ? stop() : start());
 $('emptyStart').onclick = () => { if ($('camSel').value === 'demo') $('camSel').value = S.camId || $('camSel').options[0].value; start(); };
 $('emptyDemo').onclick = () => { $('camSel').value = 'demo'; start(); };
 $('emptyDemo').disabled = true;
@@ -120,14 +121,25 @@ async function start() {
   if (useDemo && !S.ready) { status('Demo starts once the detector loads', 'busy'); return; }
   const others = useDemo || S.demo ? [] : S.cams.map((c) => c.key).filter((k) => k && k !== first);
   stop(true);
+  const run = cameraRun;
+  cameraStarting = true; onCamsChanged();
   try {
-    if (useDemo) { await startDemo(); for (let k = 0; k < DEMO.cams.length; k++) await addCamera('demo:' + k); }
-    else {
-      await addCamera(first);
-      for (const k of others) await addCamera(k).catch((e) => console.warn(e));
+    if (useDemo) {
+      // A cancelled demo may still be rendering its initial tag images. Let it finish and dispose before another starts.
+      if (demoStarting) await demoStarting.catch(() => {});
+      if (run !== cameraRun) return;
+      const loading = startDemo(); demoStarting = loading;
+      try { await loading; } finally { if (demoStarting === loading) demoStarting = null; }
+      if (run !== cameraRun) { disposeDemo(S.demo); return; }
+      for (let k = 0; k < DEMO.cams.length && run === cameraRun; k++) await addCamera('demo:' + k, run);
     }
-    status(S.ready ? 'Detecting…' : 'Loading detector…', S.ready ? 'live' : 'busy');
-  } catch (e) { stop(true); camError(e); }
+    else {
+      await addCamera(first, run);
+      for (const k of others) { if (run !== cameraRun) return; await addCamera(k, run).catch((e) => { if (run === cameraRun) console.warn(e); }); }
+    }
+    if (run === cameraRun) status(S.ready ? 'Detecting…' : 'Loading detector…', S.ready ? 'live' : 'busy');
+  } catch (e) { if (run === cameraRun) { stop(true); camError(e); } }
+  finally { if (run === cameraRun) { cameraStarting = false; onCamsChanged(); } }
 }
 function camError(e) {
   console.warn(e);
@@ -149,41 +161,64 @@ function makeTile(c) {
   arrangeHandlers(c, el);
   return el;
 }
-async function addCamera(key) {
-  if (camOf(key)) return;
+async function addCamera(key, run = cameraRun) {
+  if (run !== cameraRun || camOf(key)) return;
   const demo = key.startsWith('demo:') ? +key.slice(5) : null;
-  let stream;
-  if (demo !== null) stream = S.demo.streams[demo];
-  else {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('This browser has no camera access here. Use Chrome or Edge over https.'), { name: 'NoAPI' });
-    const [w, h] = S.res.split('x').map(Number);
-    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: key ? { exact: key } : undefined, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 60 } } });
+  let stream, c, started = false;
+  try {
+    if (demo !== null) stream = S.demo.streams[demo];
+    else {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('This browser has no camera access here. Use Chrome or Edge over https.'), { name: 'NoAPI' });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { ...cameraCaptureCore.constraints(S.res, S.captureFps), deviceId: key ? { exact: key } : undefined } });
+    }
+    if (run !== cameraRun) return;
+    c = { key, session: ++cameraSession, demo, stream, track: stream.getVideoTracks()[0], inflight: 0, seq: 0, sentSeq: 0, doneSeq: 0, sinceFull: 0, forceFull: false, expect: new Map(), prevCtr: null, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
+    if (demo === null) {
+      const st = c.track.getSettings();
+      if (st.deviceId) c.key = st.deviceId;
+      if (camOf(c.key) || [...pendingCameras].some((x) => x.key === c.key)) return;
+    }
+    pendingCameras.add(c);
+    c.el = makeTile(c); c.video = c.el.querySelector('video'); c.overlay = c.el.querySelector('canvas');
+    $('stages').appendChild(c.el);
+    c.video.srcObject = stream;
+    c.video.addEventListener('loadedmetadata', () => { if (!c.gone) { updateCam(c); layoutTiles(); } });
+    await c.video.play();
+    if (c.gone || run !== cameraRun) return;
+    S.cams.push(c);
+    if (demo === null) {
+      if (S.cams.length === 1) { S.camId = c.key; store.set('camId', c.key); }
+      await listCameras(); // labels appear once the camera is allowed
+      if (c.gone || run !== cameraRun) return;
+      c.label = deviceLabel(c.key);
+    } else c.label = `Demo ${demo + 1}`;
+    await configureCameraCapture(c);
+    if (c.gone || run !== cameraRun) return;
+    onCamsChanged();
+    loopFrames(c);
+    started = true;
+  } catch (e) { if (run === cameraRun && !(c && c.gone)) throw e; }
+  finally {
+    if (c) { pendingCameras.delete(c); if (!started) disposeCamera(c); }
+    else if (stream && demo === null) stream.getTracks().forEach((t) => t.stop());
   }
-  const c = { key, demo, stream, track: stream.getVideoTracks()[0], inflight: 0, seq: 0, doneSeq: 0, sinceFull: 0, forceFull: false, expect: new Map(), prevCtr: null, last: null, local: new Map(), lastBoard: null, still: 0, T: null, stats: { frames: 0, dets: 0, ms: 0, t0: performance.now(), fps: 0, dfps: 0 } };
-  if (demo === null) {
-    const st = c.track.getSettings();
-    if (st.deviceId) c.key = st.deviceId;
-    if (camOf(c.key)) { stream.getTracks().forEach((t) => t.stop()); return; } // the default camera, already running
-  }
-  c.el = makeTile(c); c.video = c.el.querySelector('video'); c.overlay = c.el.querySelector('canvas');
-  $('stages').appendChild(c.el);
-  c.video.srcObject = stream;
-  c.video.addEventListener('loadedmetadata', () => { updateCam(c); layoutTiles(); });
-  await c.video.play();
-  S.cams.push(c);
-  if (demo === null) {
-    if (S.cams.length === 1) { S.camId = c.key; store.set('camId', c.key); }
-    await listCameras(); // labels appear once the camera is allowed
-    c.label = deviceLabel(c.key);
-  } else c.label = `Demo ${demo + 1}`;
-  onCamsChanged();
-  loopFrames(c);
+}
+function disposeCamera(c) {
+  if (!c.gone && c.demo === null) c.stream.getTracks().forEach((t) => t.stop());
+  c.gone = true;
+  if (c.video) c.video.srcObject = null;
+  if (c.el) c.el.remove();
+  pendingCameras.delete(c);
+  S.cams = S.cams.filter((x) => x !== c);
+}
+function disposeDemo(demo) {
+  if (!demo) return;
+  for (const stream of demo.streams) stream.getTracks().forEach((t) => t.stop());
+  demo.stop(); if (S.demo === demo) S.demo = null;
 }
 function removeCamera(c) {
-  if (S.cams.length === 1) { stop(); return; }
-  if (c.demo === null) c.stream.getTracks().forEach((t) => t.stop());
-  c.gone = true; c.video.srcObject = null; c.el.remove();
-  S.cams = S.cams.filter((x) => x !== c);
+  if ((S.cams.length === 1 && S.cams[0] === c) || (!S.cams.length && cameraStarting)) { stop(); return; }
+  disposeCamera(c);
   onCamsChanged();
 }
 // Rename a camera in place: its name turns into a text box; Enter or leaving it keeps the name, Escape doesn't. An
@@ -208,7 +243,7 @@ function renameCamera(c) {
   inp.addEventListener('blur', () => finish(true));
 }
 // Everything that shows a camera's name.
-function paintNames() { S.cams.forEach(paintTile); renderCalibCams(); renderRig(); paintAddCam(); listCameras(); }
+function paintNames() { S.cams.forEach(paintTile); renderCalibCams(); renderRig(); paintAddCam(); listCameras(); refreshCameraSettings(); }
 
 // After cameras come or go: number them, place them from the saved rig, and lay out their tiles.
 function onCamsChanged() {
@@ -220,12 +255,14 @@ function onCamsChanged() {
   $('stage').hidden = S.running;
   $('stages').classList.toggle('multi', S.cams.length > 1);
   $('arrangeWrap').hidden = S.cams.length < 2;
-  $('startBtn').innerHTML = S.running ? '<svg class="i"><use href="#i-stop"/></svg><span>Stop</span>' : '<svg class="i"><use href="#i-cam"/></svg><span>Start</span>';
-  $('startBtn').classList.toggle('primary', !S.running); $('startBtn').classList.toggle('outline', S.running);
+  const active = S.running || cameraStarting;
+  $('startBtn').innerHTML = active ? '<svg class="i"><use href="#i-stop"/></svg><span>Stop</span>' : '<svg class="i"><use href="#i-cam"/></svg><span>Start</span>';
+  $('startBtn').classList.toggle('primary', !active); $('startBtn').classList.toggle('outline', active);
   if (S.running && $('camSel').value !== (S.demo ? 'demo' : first) && [...$('camSel').options].some((o) => o.value === first)) $('camSel').value = first;
   for (const c of S.cams) updateCam(c);
   if (S.calibCam >= S.cams.length) S.calibCam = 0;
   paintAddCam(); setupFocus(); renderCalibCams(); renderCalib(); renderRig(); layoutTiles();
+  refreshCameraSettings();
 }
 // Each camera's pose in camera 1's frame, from the saved rig. Changing it moves the fused tracks, so they restart.
 // Each camera's corners are trusted to their own scatter plus a model error: how well the rig fitted that camera (its
@@ -242,9 +279,10 @@ function placeCams() {
   S.cams.forEach(paintTile);
 }
 function stop(quiet) {
-  for (const c of S.cams) { if (c.demo === null) c.stream.getTracks().forEach((t) => t.stop()); c.gone = true; c.video.srcObject = null; c.el.remove(); }
+  cameraRun++; cameraStarting = false;
+  for (const c of new Set([...S.cams, ...pendingCameras])) disposeCamera(c);
   S.cams = [];
-  if (S.demo) { S.demo.stop(); S.demo = null; }
+  disposeDemo(S.demo);
   const cb = $('camsBox'); cb.classList.remove('full'); document.documentElement.classList.remove('cams-full'); $('camsExit').hidden = true;
   if (document.fullscreenElement === cb) document.exitFullscreen();
   onCamsChanged();
@@ -260,7 +298,7 @@ function setupFocus() { const n = focusCams().length; $('focusWrap').hidden = !n
 $('focusSw').onclick = async () => {
   const on = $('focusSw').getAttribute('aria-checked') !== 'true';
   for (const c of focusCams()) {
-    try { const cur = c.track.getSettings(); await c.track.applyConstraints({ advanced: [on ? { focusMode: 'manual', focusDistance: cur.focusDistance } : { focusMode: 'continuous' }] }); } catch (e) { console.warn(e); }
+    try { const cur = c.track.getSettings(); await c.track.applyConstraints(cameraCaptureCore.mergeConstraints(c.track.getConstraints?.(), on ? { focusMode: 'manual', focusDistance: cur.focusDistance } : { focusMode: 'continuous' })); } catch (e) { console.warn(e); }
   }
   $('focusSw').setAttribute('aria-checked', String(on));
 };
@@ -443,24 +481,36 @@ function loopFrames(c) {
     if (!slot) return;
     let time = meta && meta.captureTime ? meta.captureTime : performance.now();
     if (Math.abs(time - performance.now()) > 1000) time = performance.now();
+    const seq = ++c.seq;
     slot.busy = true; c.inflight++;
-    const release = () => { slot.busy = false; c.inflight = Math.max(0, c.inflight - 1); };
-    const send = (pic) => {
-      if (c.gone) { pic.close(); release(); return; }
+    let reserved = true;
+    const release = () => {
+      if (!reserved) return;
+      reserved = false; slot.busy = false; c.inflight = Math.max(0, c.inflight - 1); c.expect.delete(seq);
+    };
+    const discard = (pic) => { try { pic.close(); } finally { release(); } };
+    try {
+      // Snapshot frame metadata before asynchronous bitmap preparation can finish out of capture order.
       const sizes = sizesMap();
       const bodies = S.bodies.map((b) => ({ id: b.id, members: b.members.map((x) => ({ id: x.id, R: x.R, t: x.t, size: sizes[x.id] || S.settings.tagSize })) }));
       const square = S.mode === 'calib' ? (S.demo ? DEMO.square : S.square / 1000) : 0;
       const plan = searchPlan(c, time / 1000);
-      if (plan) { c.sinceFull++; c.expect.set(c.seq + 1, plan.expect); } else c.sinceFull = 0;
-      const msg = { type: 'frame', rois: plan ? plan.rois : null, src: c.key, seq: ++c.seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn, learn: !!S.learn };
-      msg[pic instanceof ImageBitmap ? 'bitmap' : 'frame'] = pic;
-      slot.w.postMessage(msg, [pic]);
-    };
-    // The frame goes to the worker as a WebCodecs VideoFrame where the browser has them: the worker then reads just the
-    // pixels it searches, straight from the camera's own format. Otherwise as an ImageBitmap.
-    let vf = null;
-    if (HAS_VF) try { vf = new VideoFrame(v, { timestamp: Math.round(time * 1000) }); } catch (e) { vf = null; }
-    if (vf) send(vf); else createImageBitmap(v).then(send).catch(release);
+      const msg = { type: 'frame', rois: plan ? plan.rois : null, src: c.key, session: c.session, seq, time: time / 1000, mode: S.mode, cam: c.cam, square, sizes, defaultSize: S.settings.tagSize, bodies, raw: S.settings.pose === 'raw' && !S.learn, learn: !!S.learn };
+      const send = (pic) => {
+        if (c.gone || seq <= c.sentSeq || seq <= c.doneSeq) { discard(pic); return; }
+        try {
+          msg[pic instanceof ImageBitmap ? 'bitmap' : 'frame'] = pic;
+          if (plan) c.expect.set(seq, plan.expect);
+          slot.w.postMessage(msg, [pic]);
+          c.sentSeq = seq;
+          if (plan) c.sinceFull++; else c.sinceFull = 0;
+        } catch (e) { discard(pic); }
+      };
+      // WebCodecs preserves native luma; older browsers prepare an ImageBitmap instead.
+      let vf = null;
+      if (HAS_VF) try { vf = new VideoFrame(v, { timestamp: Math.round(time * 1000) }); } catch (e) { vf = null; }
+      if (vf) send(vf); else createImageBitmap(v).then(send).catch(release);
+    } catch (e) { release(); }
   };
   if (hasRVFC) v.requestVideoFrameCallback(step); else requestAnimationFrame(step);
 }
@@ -476,6 +526,7 @@ function tickStats(c, ms) {
   vs.innerHTML = many ? `<span>${st.dfps.toFixed(0)} fps</span><span>${st.ms.toFixed(0)} ms</span>${part ? `<span title="Share of the picture searched, on average">${part}</span>` : ''}`
     : `<span>${c.video.videoWidth}×${c.video.videoHeight}</span><span>camera ${st.fps.toFixed(0)} fps</span><span>detection ${st.dfps.toFixed(0)} fps in ${st.ms.toFixed(0)} ms</span>${part ? `<span>searching ${part} of the picture</span>` : ''}`;
   if (c === S.cams[0]) status(many ? `${S.cams.length} cameras, ${S.cams.reduce((s, x) => s + x.stats.dfps, 0).toFixed(0)} frames a second` : `${st.dfps.toFixed(0)} fps, ${st.ms.toFixed(0)} ms per frame`, 'live');
+  refreshCameraSettings();
 }
 
 // ---------------- tracking results ----------------

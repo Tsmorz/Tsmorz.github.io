@@ -143,6 +143,23 @@ layout: null
       <label class="switch"><input id="curve" type="checkbox" checked> Let the glide curve round hills</label>
     </details>
 
+    <details class="group aircraft-flight" data-sec="aircraft-flight">
+      <summary><h2>{{ site.data.glide.aircraft_flight.title }}</h2><span id="aircraftSummary" class="sum"></span></summary>
+      <p class="hint">{{ site.data.glide.aircraft_flight.intro }}</p>
+      <label class="flight-file">{{ site.data.glide.aircraft_flight.import }}<input id="aircraftFile" type="file" accept=".json,.jsn,application/json" multiple></label>
+      <div class="btns"><button id="aircraftFit" class="btn sm" type="button" disabled>{{ site.data.glide.aircraft_flight.fit }}</button><button id="aircraftClear" class="btn sm" type="button" disabled>{{ site.data.glide.aircraft_flight.clear }}</button></div>
+      <p id="aircraftOrigin" class="aircraft-origin" hidden></p>
+      <p id="flightRecordStatus" class="hint" role="status" aria-live="polite">{{ site.data.glide.aircraft_flight.empty }}</p>
+      <p class="hint">{{ site.data.glide.aircraft_flight.legend }}</p>
+      <div id="aircraftReplay" hidden><label for="aircraftTime">{{ site.data.glide.aircraft_flight.replay }}</label><input id="aircraftTime" type="range" min="0" max="1" step="1"><output id="aircraftSample" for="aircraftTime"></output></div>
+      <details><summary>{{ site.data.glide.aircraft_flight.photos }} <span id="aircraftPhotoCount"></span></summary><label class="flight-file">{{ site.data.glide.aircraft_flight.pictures }}<input id="aircraftPictures" type="file" accept="image/jpeg,.jpg" multiple></label><ol id="aircraftPhotos" class="aircraft-photos"></ol></details>
+      <details><summary>{{ site.data.glide.aircraft_flight.events }}</summary><ol id="aircraftEvents" class="aircraft-events"></ol></details>
+      <div class="btns"><button id="aircraftExportPlan" class="btn sm" type="button">{{ site.data.glide.aircraft_flight.plan_export }}</button><a id="aircraftPlan" class="btn sm" href="#" hidden>{{ site.data.glide.aircraft_flight.plan_open }}</a></div>
+      <p class="hint">{{ site.data.glide.aircraft_flight.plan_note }}</p>
+      <a class="btn sm" href="{{ site.data.glide.aircraft_flight.dashboard_url }}" target="_blank" rel="noopener noreferrer">{{ site.data.glide.aircraft_flight.device }}</a>
+      <p class="hint">{{ site.data.glide.aircraft_flight.connection }}</p>
+    </details>
+
     <details class="group plans-group" data-sec="plans"><summary><h2>Saved plans</h2></summary>
       <div class="btns"><select id="savedPlan" aria-label="Saved flight plan"><option value="">Choose a plan</option></select><button type="button" id="loadPlan" class="btn sm" disabled>Load</button><button type="button" id="deletePlan" class="btn sm" disabled>Delete</button></div>
       <div class="save-row"><input type="text" id="planName" placeholder="Plan name" aria-label="Plan name"><button type="button" id="savePlan" class="btn sm">Save</button></div>
@@ -216,6 +233,8 @@ layout: null
 <script src="soaring-core.js"></script>
 <script type="application/json" id="glide-content">{{ site.data.glide | jsonify }}</script>
 <script src="glide-app.js"></script>
+<script src="aircraft-flight.js"></script>
+<script src="aircraft-ui.js"></script>
 <script src="soaring-ui.js"></script>
 <script src="wind-ui.js"></script>
 </body>

@@ -12,7 +12,7 @@
   const { Simulator } = await import('/haptography/simulate.js');
   const sim = new Simulator({ seed: 71 });
   const originalInfo = sim.info.bind(sim);
-  sim.info = t => ({ ...originalInfo(t), flags: 15, haptic_rate_hz: 16000, erm_step_us: 0, clip_max_samples: 96000, clip_max_erm: 0 });
+  sim.info = t => ({ ...originalInfo(t), flags: 15, haptic_rate_hz: 16000, clip_max_samples: 96000 });
   const commands = [], parser = new W.StreamReader(); parser.synced = true;
   let input, timer, clipSamples = 0, chooserCalls = 0;
   const emit = (type, body) => input.enqueue(W.encodePacket(type, sim.number++ & 65535, body));
@@ -42,7 +42,7 @@
   // Refresh Web Serial availability after installing the fake API in this isolated test profile.
   $('connect').disabled = false;
   $('connect').click();
-  await wait(() => $('s-tach').classList.contains('on'), 'protocol 5 info');
+  await wait(() => $('s-tach').classList.contains('on'), 'protocol 6 info');
   $('rec-dataset').value = 'Serial fixture'; $('rec-label').value = 'Synthetic stream';
   $('record').click(); await sleep(1300); $('record').click();
   await wait(() => !$('after-record').hidden, 'serial recording saved');
@@ -50,12 +50,12 @@
   $('tab-recreate').click(); $('signal-kind').value = 'sine'; $('signal-kind').dispatchEvent(new Event('change', { bubbles: true }));
   $('signal-seconds').value = '0.3'; $('signal-seconds').dispatchEvent(new Event('change', { bubbles: true }));
   $('signal-strength').value = '20'; $('signal-strength').dispatchEvent(new Event('change', { bubbles: true }));
-  await wait(() => !$('play-actuators').disabled, 'protocol 5 playback enabled');
+  await wait(() => !$('play-actuators').disabled, 'protocol 6 playback enabled');
   $('play-actuators').click();
   await wait(() => $('variants').querySelectorAll('li').length === 1 && $('stop-actuators').disabled, 'serial upload, playback and board-clock measurement');
   assert(commands.includes(0x41) && commands.includes(0x42) && commands.includes(0x43), 'clip upload and playback commands');
   assert(commands.at(-1) === 0x46, 'playback finishes with STOP');
-  assert(!commands.includes(0x45) && !commands.includes(0x47), 'no ERM effect or pulse');
+  assert(!commands.includes(0x45) && !commands.includes(0x47), 'none of the ERM\'s old commands');
   // A Library tile uploads its own clip to the connected board.
   commands.length = 0; $('tab-library').click();
   $('waveform-grid').querySelector('[data-id=double-click] .wave-play').click();
@@ -66,5 +66,5 @@
   $('connect').click(); await wait(() => $('link-lamp').textContent === 'Connected', 'reconnect');
   assert(chooserCalls === 0, 'reconnect reuses authorized XIAO');
   $('connect').click(); await sleep(150);
-  return { result: 'PASS', recorded: 1, replayed: 1, protocol: 5, chooserCalls };
+  return { result: 'PASS', recorded: 1, replayed: 1, protocol: 6, chooserCalls };
 })()

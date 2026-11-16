@@ -220,7 +220,7 @@ function handlePacket({ type, body }) {
       break;
     case wire.PLAYBACK:
       addMessage(body.outcome === 2 ? "error" : "info",
-        `Played ${wire.PLAYBACK_KINDS[body.kind] ?? "something"} ${body.id} at ${body.level_percent}%: ` +
+        `Played ${wire.playbackKindName(body.kind) ?? "something"} ${body.id} at ${body.level_percent}%: ` +
         `${wire.PLAYBACK_OUTCOMES[body.outcome] ?? "?"}, ${((body.end_us - body.start_us) / 1000).toFixed(0)} ms`);
       break;
   }
@@ -305,7 +305,6 @@ function updateLamps() {
   lamp("s-tof", known ? Boolean(f & wire.INFO_TOF_OK) : null);
   // Actuators are optional on a recording device: one that didn't answer stays dark, not red
   lamp("s-tach", known && f & wire.INFO_TACHAMMER_OK ? true : null, "TacHammer, through the amp (lit when it answered at boot)");
-  lamp("s-erm", known && f & wire.INFO_ERM_OK ? true : null, "ERM, through the DRV2605L (lit when it answered at boot)");
   $("m-board").textContent = known ? hex4(info.board_id) : "—";
   if (known && info.version > wire.VERSION) {
     $("link-lamp").textContent = `Firmware v${info.version}: update the page`;
@@ -1266,7 +1265,7 @@ function drawReplay() {
   const strokes = a.strokes.map((s) => ({ t0: s.t0, t1: s.t1, color: getCss(s.direction === "away" ? "--band-away" : "--band-toward") }));
   const markers = loaded.session.playbacks.map((p) => ({
     t: (p.start_us - a.origin_us) * 1e-6,
-    label: `${wire.PLAYBACK_KINDS[p.kind] ?? "?"} ${p.id}`,
+    label: `${wire.playbackKindName(p.kind) ?? "?"} ${p.id}`,
   }));
   const common = { t0, t1, colors };
   if (viewAs === "spectrogram") {

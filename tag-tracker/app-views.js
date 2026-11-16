@@ -58,6 +58,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && CB.class
 function saveSettings() { S.settings = C.clampSettings(S.settings); store.set('settings', S.settings); }
 // the role pickers list Auto, None and every track
 function renderSettings() {
+  refreshCameraSettings();
   const r = S.settings.robot, ref = refKeyNow(), keys = trackKeys().filter((k) => k !== ref);
   for (const [id, k] of [['roleBody', 'body'], ['roleLeft', 'left'], ['roleRight', 'right']]) {
     const sel = $(id), opts = [['auto', 'Auto'], ['none', 'None'], ...keys.map((x) => [String(x), nameOf(x) + (isBody(x) ? ' (object)' : ` (#${x})`)])];
@@ -281,7 +282,7 @@ function setMode(m) {
   } else document.querySelector('.col').appendChild($('calibCard'));
   paintRobotBtns(); clearOverlays(); renderRig();
 }
-function stopTaskInput() { TB.grab = null; TB.ptr = null; TASK_HAPTIC.reset(); }
+function stopTaskInput() { TB.grab = null; TB.ptr = null; $('dragPlaneGuide').hidden = true; cancelTaskHaptics(); }
 const TABS = ['calib', 'track', 'tasks'];
 TABS.forEach((t, i) => {
   const b = $('tab-' + t);

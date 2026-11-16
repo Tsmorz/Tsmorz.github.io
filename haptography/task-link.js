@@ -72,6 +72,13 @@ export class CaptureLink {
     if (this.busy) throw new Error('Capture link busy.');
     return this.client.command(COMMAND.waveform, new Uint8Array([bytes[2], bytes[3]]));
   }
+  async stopTacHammer() {
+    // Native capture STOP affects only TacHammer; dashboard STOP_ALL also moves
+    // the grip servo and must never be used for contact release.
+    if (!this.ready) throw new Error('Capture TacHammer is not ready or its stream is stale.');
+    if (this.busy) throw new Error('Capture link busy.');
+    return this.client.command(COMMAND.stop);
+  }
   fail() {
     this.closed = true; this.client.close();
     this.rejectIdentity?.(this.error || new Error('Capture device disconnected.'));

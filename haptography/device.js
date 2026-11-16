@@ -1,9 +1,10 @@
 // Acknowledged commands on the recording device's existing serial stream. No serial port is
 // opened here: the recorder owns it, and forwards decoded ACK/PLAYBACK packets to this client.
-import { ACK, PLAYBACK, INFO_TACHAMMER_OK, INFO_ERM_OK, encodePacket } from "./wire.js";
-import { packClip, GRID, bandpass, interpolate, peak, driveSafe } from "./haptics-core.js";
+import { ACK, PLAYBACK, INFO_TACHAMMER_OK, encodePacket } from "./wire.js";
+import { packClip, GRID, bandpass, interpolate, driveSafe } from "./haptics-core.js";
 
-export const COMMAND = { begin: 0x41, data: 0x42, play: 0x43, waveform: 0x44, effect: 0x45, stop: 0x46, setProfile: 0x48 };
+// 0x45 and 0x47 were the ERM's ROM effect and pulse, before protocol 6.
+export const COMMAND = { begin: 0x41, data: 0x42, play: 0x43, waveform: 0x44, stop: 0x46, setProfile: 0x48 };
 const STATUS = ["ok", "bad command", "no actuator", "busy", "not ready", "too long", "gap in upload", "bad value", "device failure"];
 export const abortError = () => new DOMException("Stopped", "AbortError");
 export function checkAbort(signal) { if (signal?.aborted) throw abortError(); }
@@ -88,29 +89,25 @@ export class DeviceClient {
     } finally { this.commandPending = false; }
   }
 
-  async upload(drive, erm, info, signal, progress = () => {}) {
-    if (info?.flags != null && (!(info.flags & INFO_TACHAMMER_OK) || (erm && !(info.flags & INFO_ERM_OK)))) throw new Error("The selected actuator output is not ready.");
-    if (!driveSafe(drive) || (erm && (peak(erm) > 0.7 || erm.some(v => !Number.isFinite(v) || v < 0)))) throw new Error("Reduce the drive: preview exceeds the 70% peak or sustained drive limit.");
-    const rate = info?.haptic_rate_hz, step = info?.erm_step_us;
-    const clip = packClip(drive, erm, rate, step);
-    if (!(info?.clip_max_samples > 0) || clip.samples > info.clip_max_samples || clip.levels.length > info.clip_max_erm) {
+  async upload(drive, info, signal, progress = () => {}) {
+    if (info?.flags != null && !(info.flags & INFO_TACHAMMER_OK)) throw new Error("The actuator output is not ready.");
+    if (!driveSafe(drive)) throw new Error("Reduce the drive: preview exceeds the 70% peak or sustained drive limit.");
+    const clip = packClip(drive, info?.haptic_rate_hz);
+    if (!(info?.clip_max_samples > 0) || clip.samples > info.clip_max_samples) {
       throw new Error("This signal exceeds the device's clip capacity. Shorten the selection or duration.");
     }
-    await this.command(COMMAND.begin, body(8, (v) => { v.setUint32(0, clip.samples, true); v.setUint32(4, clip.levels.length, true); }), signal);
-    const total = clip.pcm.length + clip.levels.length;
-    let sent = 0;
-    for (const [track, bytes, stride] of [[0, clip.pcm, 2], [1, clip.levels, 1]]) {
-      for (let at = 0; at < bytes.length; at += 448) {
-        checkAbort(signal);
-        const part = bytes.subarray(at, at + 448);
-        await this.command(COMMAND.data, body(5 + part.length, (v, b) => { v.setUint8(0, track); v.setUint32(1, at / stride, true); b.set(part, 5); }), signal);
-        sent += part.length; progress(sent / total);
-      }
+    // CLIP_BEGIN's second length and CLIP_DATA's leading byte were the ERM track's: always 0 (protocols 3-6).
+    await this.command(COMMAND.begin, body(8, (v) => { v.setUint32(0, clip.samples, true); v.setUint32(4, 0, true); }), signal);
+    for (let at = 0; at < clip.pcm.length; at += 448) {
+      checkAbort(signal);
+      const part = clip.pcm.subarray(at, at + 448);
+      await this.command(COMMAND.data, body(5 + part.length, (v, b) => { v.setUint8(0, 0); v.setUint32(1, at / 2, true); b.set(part, 5); }), signal);
+      progress(Math.min(1, (at + part.length) / clip.pcm.length));
     }
     return clip;
   }
 
-  async play(drive, erm, info, signal, status = () => {}) {
+  async play(drive, info, signal, status = () => {}) {
     if (this.playing || this.stopping) throw new Error("A haptic playback is already in progress.");
     this.playing = true;
     const abort = this.playAbort = new AbortController();
@@ -124,7 +121,7 @@ export class DeviceClient {
     try {
       await this.command(COMMAND.stop, new Uint8Array(), signal);
       status("Uploading", 0);
-      const clip = await this.upload(drive, erm, info, signal, (p) => status("Uploading", p));
+      const clip = await this.upload(drive, info, signal, (p) => status("Uploading", p));
       await pause(300, signal); // pre-roll for the measurement filter
       const tag = this.tag = (this.tag + 1) & 0xffff;
       pending = this.wait((p) => p.type === PLAYBACK && p.body.kind === 2 && p.body.id === tag && p.body.outcome !== 1,

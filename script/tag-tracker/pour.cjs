@@ -15,6 +15,8 @@ module.exports = function ({ check }) {
   const bottle = { sections: BO.inside }, holds = (deg) => Pour.spout(tilted(deg), bottle).capacity;
   check(holds(0) > 0.00055 && holds(60) > 0.0005 && holds(110) < 0.00001, 'a full 0.5 l bottle keeps its beer past 60 degrees and is empty by 110: ' + JSON.stringify([0, 60, 90, 110].map((x) => Math.round(holds(x) * 1e6))));
   check(Pour.surface(tilted(10), 0.1, bottle).length === 0, "a bottle's hidden surface is not drawn");
+  const GL=require(root+'/tag-tracker/robot-gl'),stream=GL.cableMesh({nodes:[{p:[0,0,0]},{p:[0,0,-.1]}],radius:.006,radii:[.006,.003],boot:false});
+  check(Math.abs(Math.hypot(...stream.pos.slice(0,2))-.006)<1e-8&&Math.abs(Math.hypot(...stream.pos.slice(-3,-1))-.003)<1e-8,'a falling stream narrows as it accelerates rather than using one cable-like thickness');
 
   const play = () => {
     const g = T.create(T.mission(level, 'guided'), table, G), W = g.world, p = g.pour, A = p.from.body, B = p.to.body, hand = { R: I, t: [0, 0, 0.35], open: 1 };
@@ -47,34 +49,36 @@ module.exports = function ({ check }) {
     check(Math.abs(p.to.V - before - 2e-5) < 1e-12, 'beer falling into the mouth joins the mug');
   }
 
-  // A person's pour: grip the neck from above, bring the bottle beside the mug, tilt outward with the mouth low over
+  // A person's pour: grip the neck from the side, bring the bottle beside the mug, tilt outward with the mouth low over
   // the rim while aiming where the stream lands, stand it back up, carry it clear, set it down and let go.
-  const pourIt = ({ rate = 30, vmax = 0.15, beside = true } = {}) => {
+  const pourIt = ({ rate = 12, vmax = 0.10, beside = true } = {}) => {
     const s = play(), { p, A, B, hand, tick, run, at } = s, fin = G.finger.c[2];
-    const neck = at(A, [0, 0, BO.grip]); hand.t = C.add(neck, [0, 0, 0.2]); run(60); hand.t = C.add(neck, [0, 0, -fin]); run(80); hand.open = 0; run(60);
+    const neutral=R.Ry(-Math.PI/2),offset=C.mulv(neutral,[0,0,fin]),neck = at(A, [0, 0, BO.grip]);
+    hand.R=neutral;hand.t=C.add(C.sub(neck,offset),[0,0,.2]);run(60);hand.t=C.sub(neck,offset);run(80);hand.open=0;run(60);
     const held = !!s.W.hands[1].grip, Bc = at(B, [0, 0, 0]), Brim = at(B, [0, 0, S.H])[2], a0 = at(A, [0, 0, 0]), toB = [Bc[0] - a0[0], Bc[1] - a0[1]].map((x, _, v) => x / Math.hypot(...v));
     const roll = toB[1] > 0 ? -1 : 1, mouth = () => at(A, [0, 0, BO.H]);
     const lowestZ = () => { let m = Infinity; for (let k = 0; k < 16; k++) { const a = (k / 16) * 2 * Math.PI; for (const x of BO.outside) for (const z of [x.z0, x.z1]) m = Math.min(m, at(A, [x.r * Math.cos(a), x.r * Math.sin(a), z])[2]); } return m; };
     const clearance = () => { let m = Infinity; for (let k = 0; k < 16; k++) { const a = (k / 16) * 2 * Math.PI; for (const x of BO.outside) for (const z of [x.z0, x.z1]) { const q = at(A, [x.r * Math.cos(a), x.r * Math.sin(a), z]); if (Math.hypot(q[0] - Bc[0], q[1] - Bc[1]) < S.R + 0.008) m = Math.min(m, q[2] - Brim); } } return m; };
     for (let i = 0; i < 40; i++) { hand.t = C.add(hand.t, [0, 0, 0.001]); tick(); }
-    if (beside) { const goal = [Bc[0] - toB[0] * 0.095, Bc[1] - toB[1] * 0.095]; for (let i = 0; i < 240; i++) { const e = [goal[0] - hand.t[0], goal[1] - hand.t[1]], l = Math.hypot(...e) || 1, k = Math.min(1, vmax / 60 / l); hand.t = C.add(hand.t, [e[0] * k, e[1] * k, 0]); tick(); } }
+    if (beside) { const goal = [Bc[0] - toB[0] * 0.095-offset[0], Bc[1] - toB[1] * 0.095-offset[1]]; for (let i = 0; i < 240; i++) { const e = [goal[0] - hand.t[0], goal[1] - hand.t[1]], l = Math.hypot(...e) || 1, k = Math.min(1, vmax / 60 / l); hand.t = C.add(hand.t, [e[0] * k, e[1] * k, 0]); tick(); } }
     let tilt = 0, worst = 0;
-    for (let i = 0; i < 60 * 30 && !(p.from.V < p.V0 * 0.02 && !p.drops.length); i++) {
-      const recent = p.drops.filter((x) => x.from === p.from && x.age < 0.12), pouring = recent.length > 0;
-      const aim = pouring ? [0, 1].map((j) => recent.reduce((acc, x) => { const z = x.p[2] - Brim, vz = x.v[2], t = (vz + Math.sqrt(Math.max(0, vz * vz + 2 * 9.81 * Math.max(0, z)))) / 9.81; return acc + x.p[j] + x.v[j] * t; }, 0) / recent.length) : mouth().slice(0, 2);
-      const err = [Bc[0] - aim[0], Bc[1] - aim[1]], step = err.map((x) => x * (pouring && beside ? 0.06 : 0)), sl = Math.hypot(...step), k = sl > vmax / 60 ? vmax / 60 / sl : 1, c = clearance();
+    for (let i = 0; i < 60 * 55 && !(p.from.V < p.V0 * 0.02 && !p.drops.length); i++) {
+      const recent = p.drops.filter((x) => x.from === p.from && x.age < 0.08&&x.p[2]>Brim), pouring = recent.length > 0,total=recent.reduce((s,d)=>s+d.vol,0);
+      const jet=p.from.jet,flight=jet?(jet.velocity[2]+Math.sqrt(Math.max(0,jet.velocity[2]**2+2*9.81*Math.max(0,jet.point[2]-Brim))))/9.81:0;
+      const aim = jet?[0,1].map(j=>jet.point[j]+jet.velocity[j]*flight):pouring ? [0, 1].map((j) => recent.reduce((acc, x) => { const z = x.p[2] - Brim, vz = x.v[2], t = (vz + Math.sqrt(Math.max(0, vz * vz + 2 * 9.81 * Math.max(0, z)))) / 9.81; return acc + x.vol*(x.p[j] + x.v[j] * t); }, 0) / total) : mouth().slice(0, 2);
+      const err = [Bc[0] - aim[0], Bc[1] - aim[1]], step = err.map((x) => x * (pouring && beside ? 0.02 : 0)), sl = Math.hypot(...step), k = sl > vmax / 60 ? vmax / 60 / sl : 1, c = clearance();
       // vertical moves are made from where the hand really is, so a target never sinks into something it rests on
       const z = s.W.handPose(1).t[2];
       hand.t = [hand.t[0] + step[0] * k, hand.t[1] + step[1] * k, c < 0.012 || lowestZ() < 0.01 ? Math.max(hand.t[2], z) + 0.002 : Number.isFinite(c) && c > 0.035 && lowestZ() > 0.02 && mouth()[2] - Brim > 0.05 ? Math.min(hand.t[2], z) - 0.0008 : hand.t[2]];
-      if (!pouring || !beside || Math.hypot(...err) < 0.025) tilt = Math.min(170, tilt + rate / 60);
-      hand.R = R.Rx((roll * tilt * Math.PI) / 180); tick();
+      if (!pouring || !beside || Math.hypot(...err) < 0.008) tilt = Math.min(170, tilt + rate / 60);
+      hand.R = C.mul3(R.Rx((roll * tilt * Math.PI) / 180),neutral); tick();
       worst = Math.max(worst, Math.abs(s.total() / p.V0 - 1));
     }
     const poured = { bottle: p.from.V, mug: p.to.V, spilled: p.spilled, held, worst };
     hand.t = s.W.handPose(1).t.slice();
     // carry it, still tipped, back over where it stood; stand it up (rising only to keep clear of mug and table); lower it
     for (let i = 0; i < 300; i++) { const e = [a0[0] - hand.t[0], a0[1] - hand.t[1]], l = Math.hypot(...e); if (l < 0.005) break; const k = Math.min(1, 0.0015 / l); hand.t = [hand.t[0] + e[0] * k, hand.t[1] + e[1] * k, hand.t[2] + (clearance() < 0.015 ? 0.002 : 0)]; tick(); }
-    for (let i = 0; i < 200 && tilt > 0; i++) { tilt = Math.max(0, tilt - 1); hand.R = R.Rx((roll * tilt * Math.PI) / 180); const z = s.W.handPose(1).t[2]; if (clearance() < 0.015 || lowestZ() < 0.015) hand.t = [hand.t[0], hand.t[1], Math.max(hand.t[2], z) + 0.003]; tick(); }
+    for (let i = 0; i < 200 && tilt > 0; i++) { tilt = Math.max(0, tilt - 1); hand.R = C.mul3(R.Rx((roll * tilt * Math.PI) / 180),neutral); const z = s.W.handPose(1).t[2]; if (clearance() < 0.015 || lowestZ() < 0.015) hand.t = [hand.t[0], hand.t[1], Math.max(hand.t[2], z) + 0.003]; tick(); }
     for (let i = 0; i < 400 && Math.hypot(...[0, 1].map((j) => at(A, [0, 0, 0])[j] - Bc[j])) < 0.13; i++) { hand.t = C.add(hand.t, [-toB[0] * 0.0016, -toB[1] * 0.0016, 0]); tick(); }
     for (let i = 0; i < 300 && s.g.local(s.W.poseOf(A).t)[2] > 0.003; i++) { hand.t = C.add(s.W.handPose(1).t, [0, 0, -0.0015]); tick(); }
     hand.open = 1; run(40); hand.t = C.add(hand.t, [0, 0, 0.12]); run(150);
@@ -85,6 +89,10 @@ module.exports = function ({ check }) {
     check(poured.held && poured.mug > 0.94 * s.p.V0 && poured.spilled < level.pour.spill_limit * s.p.V0, 'gripped by the neck and tipped with the mouth low over the mug, the bottle empties into it: ' + JSON.stringify({ bottle: poured.bottle * 1e6, mug: poured.mug * 1e6, spilled: poured.spilled * 1e6 }));
     check(poured.worst < 1e-9, 'no beer is made or lost: bottle, mug, stream and table always add up to what was poured');
     check(s.g.complete && !s.p.spoiled && T.guidance(s.g).state === 'done', 'stood back up and released, the pour completes: ' + JSON.stringify({ guide: T.guidance(s.g).state, steps: s.g.steps, bottle: s.g.local(s.W.poseOf(s.A).t) }));
+    const view=s.p.view(),liquid=view.surfaces.find(x=>x.key==='mug'),GL=require(root+'/tag-tracker/robot-gl');
+    check(liquid.foam>.1&&liquid.phase>=0&&view.streams.length===view.radii.length,'mouth collection creates a persistent foam head independently of the conserved beer volume');
+    const mesh=GL.liquidMesh({...liquid,layer:'foam'});
+    check([...mesh.pos,...mesh.nrm].every(Number.isFinite)&&mesh.idx.every(i=>i<mesh.pos.length/3)&&mesh.pos.length>liquid.points.length*3,'foam and ripples form a finite curved surface instead of one flat fan');
     s.g.reset();
     check(s.p.from.V === s.p.V0 && s.p.to.V === 0 && !s.p.spilled && !s.p.drops.length && !s.p.spoiled && !s.g.complete, 'restart refills the bottle and empties the mug');
   }
@@ -103,7 +111,7 @@ module.exports = function ({ check }) {
   {
     const g = T.create(T.mission(level, 'guided'), table, G), b = g.byKey.get('mug');
     check(T.fallen(g) === null, 'props standing on the table have not fallen');
-    b.t = C.add(b.t, [0, 0, -0.2]); check(T.fallen(g) === 'Mug', 'a prop below the tabletop is reported by name');
+    b.t = C.add(b.t, [0, 0, -0.2]); check(T.fallen(g) === b.label, 'a prop below the tabletop is reported by name');
     const towel = T.create(T.mission(data.levels.find((l) => l.id === 'laundry'), 'guided'), table, G), c = towel.world.cloths[0];
     for (const [i, node] of c.nodes.entries()) if (i < c.nodes.length * 0.6) node.p = C.add(node.p, [0, 0, -0.2]);
     check(T.fallen(towel) === c.label, 'a towel mostly hanging below the tabletop has fallen');
