@@ -97,10 +97,6 @@ forbids "save area" features, so offline the page switches to a hillshade it dra
 `glide-path/lib/leaflet/` (1.9.4, source-map comment stripped), and MapLibre in `lib/maplibre/`, so the page loads with no network; bump `VERSION` in `sw.js`
 whenever `SHELL_FILES` changes (it lists every file of the page). The service worker also registers on `localhost`, so `script/serve` exercises it.
 
-The page was **Glide Reach at `/glide-reach/`** until 2026-11-10. `glide-reach/index.html` redirects to `/glide-path/`
-(keeping query and hash), and `glide-reach/sw.js` replaces the service worker browsers installed there: it unregisters
-itself and moves open tabs to the new address, deleting no caches (the terrain caches are shared). Leave both in place.
-
 ### DynaSoar ridge screen and local wind
 
 The name is **DynaSoar**; the URL remains `/glide-path/`, and existing `glide-reach-*` storage, shared plans and terrain caches are retained. The exact Dinosaur Park statue location (44.077964, −103.245844; Library of Congress survey) is the default when no launch or shared plan is saved. Its launch button never snaps to a neighbouring peak. Aircraft, branding, weather copy, screening explanations and landmark coordinates live in `_data/glide.yml`. `dyna-soar.png` is the generated cartoon; `glide-path/ARTWORK.md` records the reference and generation prompt.
