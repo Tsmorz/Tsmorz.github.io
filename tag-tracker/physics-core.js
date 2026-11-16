@@ -343,7 +343,7 @@
     W.setRobot = function (robot) { nextLinks = (robot && robot.links) || []; nextHands = (robot && robot.hands) || []; };
 
     // W.record, after each step (forces in N, the step's average; points in the world; speeds in m/s):
-    //   events: [{type: 'impact', t, speed (how fast they met), impulse (N s, its first substep), p, a, b}]
+    //   events: [{type: 'impact', t, speed (how fast they met), impulse (N s), force (N): its first fixed substep, p, a, b}]
     //   touches: [{a, b, force, slip (the surfaces' speed past each other), roll (how fast a rolling body travels), p}]
     //   hands: {side: {at (its centre of mass), force, torque (about `at`): everything on it; contacts: [{other, pad
     //     (±1 a jaw's pad, 0 the rest), f, p}]; squeeze, hold (2·mu·squeeze: the most the pads' friction holds);
@@ -804,7 +804,7 @@
         if (e.N <= 0) continue;
         const last = lastTouch.get(pair);
         if ((last === undefined || t - last > IMPACT.gap) && e.app >= IMPACT.speed) {
-          acc.events.push({ type: 'impact', t, speed: e.app, impulse: e.N, p: e.ct.p.slice(), a: who(e.ct.A, e.ct.sA), b: other(e.ct) });
+          acc.events.push({ type: 'impact', t, speed: e.app, impulse: e.N, force:e.N/H, p: e.ct.p.slice(), a: who(e.ct.A, e.ct.sA), b: other(e.ct) });
         }
         lastTouch.set(pair, t);
       }
@@ -860,7 +860,7 @@
   // What the operator of the hand on `side` should feel from a step's record, for a haptics board: contacts reach it
   // through the hand itself (via 'hand'), the prop it holds ('held') or its own arm ('arm'). Each names the material
   // touched (mat, and its MATERIALS id) and, for one through the held prop, that prop's (`through`).
-  //   impacts: [{mat, id, speed, via, through}]
+  //   impacts: [{mat, id, speed, impulse (N s), force (N, fixed contact substep), via, through}]
   //   touches: [{type: 'slide' | 'roll' | 'press', mat, id, speed, force, via, through}]
   // Sent as repeated state, a touch stops when it is no longer listed: a board should let it go after a short silence.
   function haptics(rec, side) {
@@ -879,7 +879,7 @@
     };
     for (const e of rec.events) {
       const r = route(e.a, e.b);
-      if (r) out.impacts.push({ mat: r.other.mat, id: MATERIALS[r.other.mat], speed: e.speed, via: r.via, through: r.through });
+      if (r) out.impacts.push({ mat: r.other.mat, id: MATERIALS[r.other.mat], speed: e.speed, impulse:e.impulse, force:e.force, via: r.via, through: r.through });
     }
     for (const c of rec.touches) {
       const r = route(c.a, c.b);

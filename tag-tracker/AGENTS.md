@@ -17,10 +17,10 @@ A self-contained AprilTag/robot page; `layout: null` renders `_data/tag_tasks.ym
 
 ## Look and navigation
 
-Use cool greys, ink, violet and Archivo; amber only for warnings. No orange, pills, monospace or shadows.
+Use cool greys, ink, violet and Archivo; amber only for warnings. No orange, rounded cards, pills, monospace or shadows.
 Panels have 1 px outlines and 4 px corners; reticle corner marks belong only on video.
 Tag colours keep their categorical slot in storage (eight slots, then labelled grey). Label x/y/z.
-Keep the generic silver/white Machine on one continuous support post and a broad foot; no human avatars, story rooms or rewards.
+Keep the generic cool-silver Machine with black joints/accents, one thin tubular mast and an AMR chassis; no human avatars, story rooms or rewards.
 
 Preserve Calibrate → Tracking → Tasks and the scene across tab switches. Tasks alone mounts
 `#gameHUD`; Tracking pauses and hides the task table (`tableShown`). No Physics or Forces UI.
@@ -130,6 +130,7 @@ Set neutral restores the `robotReady()` hand rotation, preserves position/openin
 
 Task feedback uses six-byte v2 finite TacHammer commands: CLICK for contacts/wrist stops, KNOCK for seating and
 BUZZ_50HZ under load. BLE is capped at 10 Hz, USB/ESB at 25 Hz. Coalesce contacts until separation; never replay dropped events.
+Scale physical clicks from fixed-substep `event.force`, never render-frame averages or speed alone; retain discrete wrist-stop/detent cues.
 `TaskHaptics` adapts constant loads toward a faint floor; current force and motion set rumble amplitude,
 capped by the selected peak (default/max 75%). Refresh finite 300 ms rumble at 10 Hz; release stops renewal.
 No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). Test pulse uses the selected peak.
@@ -137,8 +138,7 @@ Firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready 
 get nothing; drop busy writes, never queue. Reset on task change, off, blur and hidden pages. ACK means
 acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry and 120 ms ACK timeouts.
 
-Voice preserves Tasks unless explicitly switching tabs. Bluetooth PTT follows ACT `keys`, not paused streams.
-Keep ordered writes, epoch cancellation, optional audio and `audio_wire.h`/ADPCM. USB/ESB has no mic; computer mic remains available.
+Voice preserves Tasks unless switching tabs. PTT follows ACT `keys`, not paused streams. Preserve ordered writes, epoch cancellation, optional `audio_wire.h`/ADPCM; USB/ESB uses the computer mic.
 
 Stream drops in-flight messages. UDP accepts localhost/`tsmorz.github.io` unless `--origin` adds one.
 Print at true size, rejecting fit-to-page. Setup applies via Next/Print/phone actions, never dialog close.

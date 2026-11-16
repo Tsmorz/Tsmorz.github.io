@@ -100,7 +100,7 @@
     const out = {}, cx = -0.075, wy = Math.max(0.09, m.half - 0.055), zc = m.up - 0.1, hz = m.up + 0.17, hx = -m.back + 0.01;
     out.body = [
       part(blob([cx, 0, zc], [0.072, wy, 0.15], 0.2, 0.22, { nu: 48, nv: 32 }), 'robotShell'),
-      part(blob([cx + 0.062, 0, zc + 0.01], [0.014, wy * 0.8, 0.115], 0.18, 0.18, { nu: 40, nv: 24 }), 'robotMetal'),
+      part(blob([cx + 0.062, 0, zc + 0.01], [0.014, wy * 0.8, 0.115], 0.18, 0.18, { nu: 40, nv: 24 }), 'robotDark'),
       part(blob([cx + 0.077, 0, -0.088], [0.004, 0.05, 0.005], 0.5, 0.3, { nu: 20, nv: 8 }), 'light'),
       part(blob([cx + 0.077, 0, zc - 0.11], [0.004, 0.008, 0.008], 1, 1, { nu: 12, nv: 8 }), 'light'),
       part(blob([cx - 0.088, 0, zc + 0.01], [0.028, wy * 0.62, 0.11], 0.25, 0.25), 'robotDark'),
@@ -142,10 +142,10 @@
     const mir = (c, j) => [c[0], j * c[1], c[2]];
     out.finger = {};
     for (const j of [1, -1]) out.finger[j] = [
-      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'robotMetal', {grip:true}),
+      part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'robotDark', {grip:true}),
       part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'robotRubber', {tip:true,grip:true}),
     ];
-    const base=supportLayout(m).base;
+    const base=supportLayout(m).bounds;
     out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], ...[-1,1].flatMap(x=>[-1,1].map(y=>[base.c[0]+x*base.h[0],y*base.h[1],base.c[2]-base.h[2]])), [0, 0, 0]];
     return out;
   }
@@ -348,23 +348,30 @@
     return out;
   }
 
-  // Shared with the flat fallback. The post is one uninterrupted section from the grounded
-  // base into the torso; collars and full-height ribs reinforce it without introducing joints.
+  // Shared with the flat fallback. A low mobile chassis carries one uninterrupted tube;
+  // changing the floor height lengthens only that tube, never the arm/shoulder frames.
   function supportLayout(m,floor=m.up-.59) {
-    const cx=-.075,bottom=floor+.045,top=Math.max(bottom+.08,m.up-.22),height=top-bottom;
-    const post={c:[cx,0,(bottom+top)/2],h:[.06,.065,height/2]};
-    return {floor,base:{c:[cx,0,floor+.025],h:[.19,.21,.025]},post,
-      collar:{c:[cx,0,bottom+.018],h:[.084,.092,.025]},cap:{c:[cx,0,top-.006],h:[.075,.09,.012]},
-      ribs:[-1,1].map(s=>({c:[cx,s*.066,post.c[2]],h:[.052,.009,post.h[2]]})),
-      bolts:[-1,1].flatMap(x=>[-1,1].map(y=>[cx+x*.145,y*.165,floor+.051]))};
+    const cx=-.075,bottom=floor+.121,top=Math.max(bottom+.08,m.up-.22),r=.031,height=top-bottom;
+    return {floor,base:{c:[cx,0,floor+.083],h:[.175,.168,.032]},
+      bounds:{c:[cx,0,floor+.064],h:[.183,.199,.064]},
+      bumper:{c:[cx,0,floor+.061],h:[.183,.176,.016]},deck:{c:[cx,0,floor+.118],h:[.153,.146,.010]},
+      post:{c:[cx,0,(bottom+top)/2],h:[r,r,height/2],r},
+      collar:{c:[cx,0,floor+.13],h:[.045,.045,.018],r:.045},cap:{c:[cx,0,top-.005],h:[.042,.042,.015],r:.042},
+      wheels:[-1,1].flatMap(x=>[-1,1].map(side=>({c:[cx+x*.112,side*.182,floor+.046],r:.046,width:.032,side}))),
+      sensor:{c:[cx+.174,0,floor+.088],h:[.004,.059,.011]},indicator:{c:[cx+.179,0,floor+.09],h:[.002,.018,.002]}};
   }
   // The support lives in the chest frame. Keeping it separate lets tasks extend the same
   // single post to the actual floor without scaling the robot or its kinematic dimensions.
   function actorMeshes(m,floor) {
-    const layout=supportLayout(m,floor),box=(s,mat,role)=>part(blob(s.c,s.h,.18,.2,{nu:32,nv:20}),mat,{support:role});
-    const amr=[box(layout.base,'robotMetal','base'),box(layout.post,'robotShell','post'),box(layout.collar,'robotMetal','collar'),box(layout.cap,'robotMetal','cap'),...layout.ribs.map(s=>box(s,'robotMetal','rib'))];
-    for(const p of layout.bolts)amr.push(part(lathe(p,-.002,.004,()=>.006,{nu:12,nv:4,k0:.04,k1:.04}),'robotDark',{support:'bolt'}));
-    return {amr,wheel:[]};
+    const layout=supportLayout(m,floor),box=(s,mat,role)=>part(blob(s.c,s.h,.26,.3,{nu:40,nv:20}),mat,{support:role});
+    const tube=(s,mat,role)=>part(lathe([s.c[0],s.c[1],0],s.c[2]-s.h[2],s.c[2]+s.h[2],()=>s.r,{nu:40,nv:20,k0:.015,k1:.015}),mat,{support:role});
+    const amr=[box(layout.bumper,'robotDark','bumper'),box(layout.base,'robotMetal','base'),box(layout.deck,'robotShell','deck'),tube(layout.post,'robotMetal','post'),tube(layout.collar,'robotDark','collar'),tube(layout.cap,'robotDark','cap'),box(layout.sensor,'glass','sensor'),box(layout.indicator,'light','indicator')];
+    const wheel=[];
+    for(const w of layout.wheels){
+      wheel.push(part(lathe(w.c,-w.width/2,w.width/2,()=>w.r,{axis:'y',nu:32,nv:12,k0:.15,k1:.15}),'robotRubber',{support:'wheel'}));
+      wheel.push(part(lathe(w.c,w.side*(w.width/2-.003),w.side*(w.width/2+.001),()=>w.r*.5,{axis:'y',nu:24,nv:8,k0:.1,k1:.1}),'robotMetal',{support:'hub'}));
+    }
+    return {amr,wheel};
   }
 
   // ---- drawing ----
@@ -375,7 +382,7 @@ void main(){vec4 w=uModel*vec4(aPos,1.0);vW=w.xyz;vLocal=aPos;vUV=aUV;vHem=aHem;
 precision highp float;
 varying vec3 vN,vW,vLocal;varying vec2 vUV,vHem;varying vec4 vShadow;
 uniform vec3 uEye,uKey,uFill,uBase,uRimCol,uFadeTo,uSky,uGround;
-uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface,uMetal,uRough,uTransmit,uTexture;uniform sampler2D uShadow,uLabel;
+uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface,uMetal,uRough,uTransmit,uTexture,uRobot;uniform sampler2D uShadow,uLabel;
 float noise(vec3 p){return fract(sin(dot(floor(p),vec3(12.9898,78.233,37.719)))*43758.5453);}
 float fleece(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(noise(vec3(i,0.0)),noise(vec3(i+vec2(1.0,0.0),0.0)),f.x),mix(noise(vec3(i+vec2(0.0,1.0),0.0)),noise(vec3(i+vec2(1.0,1.0),0.0)),f.x),f.y);}
 float depth(vec2 p){return dot(texture2D(uShadow,p),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0))*(255.0/256.0);}
@@ -400,8 +407,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
  float nl=max(dot(N,uKey),0.0),nv=max(dot(N,V),.001),sh=shade(N);vec3 H=normalize(uKey+V);float nh=max(dot(N,H),0.0),vh=max(dot(V,H),0.0);
  float a=rough*rough,a2=a*a,den=nh*nh*(a2-1.0)+1.0,D=a2/(3.14159265*den*den+.0001),k=(rough+1.0)*(rough+1.0)/8.0,G=nv/(nv*(1.0-k)+k)*nl/(nl*(1.0-k)+k);
  vec3 f0=mix(vec3(.04),base,uMetal),F=f0+(1.0-f0)*pow(1.0-vh,5.0),spec=D*G*F/(4.0*nv*max(nl,.001));
- vec3 ambient=mix(uGround,uSky,.5+.5*N.z)*(.8+.2*sh);float fill=max(dot(N,uFill),0.0);
- vec3 diffuse=(1.0-uMetal)*base*mix(1.0,.45,uTransmit);vec3 col=diffuse*(ambient+vec3(1.0,.96,.88)*nl*sh*.95+vec3(.62,.72,.88)*fill*.18)+spec*nl*sh*min(1.3,uSpec);
+ vec3 ambient=mix(uGround,uSky,.5+.5*N.z)*(.8+.2*sh);ambient=mix(ambient,vec3(dot(ambient,vec3(.2126,.7152,.0722))),uRobot);float fill=max(dot(N,uFill),0.0);
+ vec3 diffuse=(1.0-uMetal)*base*mix(1.0,.45,uTransmit);vec3 col=diffuse*(ambient+mix(vec3(1.0,.96,.88),vec3(.96,.98,1.0),uRobot)*nl*sh*.95+vec3(.62,.72,.88)*fill*.18)+spec*nl*sh*min(1.3,uSpec);
  vec3 fresnel=f0+(1.0-f0)*pow(1.0-nv,5.0);col+=studio(reflect(-V,N),rough)*fresnel*mix(.45,1.15,uMetal)*(1.0-rough*.45);
  if(uSurface>5.5&&uSurface<6.5)col+=base*.07*pow(1.0-nv,2.5);
  if(uTransmit>0.0)col=mix(col,base*.45+studio(refract(-V,N,.75),.65)*base*.7,uTransmit*.35);
@@ -417,11 +424,12 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     return [0, 2, 4].map((i) => Math.pow(parseInt(h.slice(i, i + 2), 16) / 255, 2.2));
   }
   // the materials ('light' is the violet glow)
+  const ROBOT_COLORS={metal:'#c8cfd7',shell:'#dce1e7',dark:'#24282e',rubber:'#171a1e'};
   const MATS = {
-    robotMetal: {base:lin('#d8dbde'),spec:.9,shine:90,rough:.3,metal:.38,rim:.8},
-    robotShell: {base:lin('#eceeed'),spec:.3,shine:25,rough:.56,metal:.05,rim:.5},
-    robotDark: {base:lin('#42474b'),spec:.45,shine:40,rough:.55,rim:.5},
-    robotRubber: {base:lin('#303336'),spec:.08,shine:5,rough:.9,rim:.1},
+    robotMetal: {base:lin(ROBOT_COLORS.metal),spec:.9,shine:90,rough:.3,metal:.5,rim:.8},
+    robotShell: {base:lin(ROBOT_COLORS.shell),spec:.3,shine:25,rough:.48,metal:.08,rim:.5},
+    robotDark: {base:lin(ROBOT_COLORS.dark),spec:.35,shine:35,rough:.62,rim:.5},
+    robotRubber: {base:lin(ROBOT_COLORS.rubber),spec:.08,shine:5,rough:.9,rim:.1},
     metal: { base: lin('#b8c0c8'), spec: 1, shine: 110, rim: .9, metal:.94, rough:.32 },
     dark: { base: lin('#24282e'), spec:.4, shine:30, rim:1, rough:.64 },
     glass: { base: lin('#07080c'), spec: 1.3, shine: 220, rim: 1.4 },
@@ -458,7 +466,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface','uMetal','uRough','uTransmit','uTexture','uLabel']) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface','uMetal','uRough','uTransmit','uTexture','uLabel','uRobot']) U[n] = gl.getUniformLocation(prog, n);
     const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm'), aUV=gl.getAttribLocation(prog,'aUV'), aHem=gl.getAttribLocation(prog,'aHem');
     const depthProg=gl.createProgram();gl.attachShader(depthProg,sh(gl.VERTEX_SHADER,DEPTH_VS));gl.attachShader(depthProg,sh(gl.FRAGMENT_SHADER,DEPTH_FS));gl.linkProgram(depthProg);
     if(!gl.getProgramParameter(depthProg,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(depthProg));
@@ -531,7 +539,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
       const M = meshes(m), A = actorMeshes(m), gpu = [];
       const up = (list) => list.map((p) => { const g = upload(p.mesh); gpu.push(g); return Object.assign({}, p, { g }); });
       built = {
-        M, gpu, amr:up(A.amr), wheel:up(A.wheel), body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
+        M, gpu, amr:up([...A.amr,...A.wheel]), body: up(M.body), head: up(M.head), bar: up(M.bar), mount: { 1: up(M.mount[1]), '-1': up(M.mount[-1]) }, upper: up(M.upper), fore: up(M.fore), foreLight: up(M.foreLight),
         hand: { 1: up(M.hand[1]), '-1': up(M.hand[-1]) }, finger: { 1: up(M.finger[1]), '-1': up(M.finger[-1]) },
         tag: { paper: upload(M.tag.paper), border: upload(M.tag.border), ink: upload(M.tag.ink), cells: M.tag.cells.map(upload) },
       };
@@ -561,7 +569,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     function buildSupport(m,floor){
       const key=JSON.stringify([m,floor]);if(key===supportKey)return support;
       if(support)for(const p of support)free(p.g);
-      support=actorMeshes(m,floor).amr.map(p=>Object.assign({},p,{g:upload(p.mesh)}));supportKey=key;return support;
+      const A=actorMeshes(m,floor);support=[...A.amr,...A.wheel].map(p=>Object.assign({},p,{g:upload(p.mesh)}));supportKey=key;return support;
     }
     const clothGPU = new Map();
     function clear() { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
@@ -592,10 +600,10 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
       const rimLight = dark ? lin('#d9d4ff') : lin('#55606a');
       let current;const commands=[];
       const surfaceOf=mat=>({floor:4,wood:1,plaster:2,fabric:3,rug:3,metal:5,robotMetal:5,pewter:5,gold:5,cotton:6,liquid:7,foam:8,bottleGlass:9,glass:9}[mat]||0);
-      const applyMat=m=>{gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniform1f(U.uMetal,m.metal);gl.uniform1f(U.uRough,m.rough);gl.uniform1f(U.uTransmit,m.transmit);gl.uniform1f(U.uAlpha,m.alpha);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,m.texture||labelWhite);gl.uniform1i(U.uLabel,1);gl.uniform1f(U.uTexture,m.texture?1:0);gl.activeTexture(gl.TEXTURE0);};
+      const applyMat=m=>{gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniform1f(U.uMetal,m.metal);gl.uniform1f(U.uRough,m.rough);gl.uniform1f(U.uTransmit,m.transmit);gl.uniform1f(U.uAlpha,m.alpha);gl.uniform1f(U.uRobot,m.robot||0);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,m.texture||labelWhite);gl.uniform1i(U.uLabel,1);gl.uniform1f(U.uTexture,m.texture?1:0);gl.activeTexture(gl.TEXTURE0);};
       const setMat=(mat,fade,tint,exact,artwork)=>{
         const M=mats[mat]||mats.shell;
-        current={base:mat==='light'?tint||glow:exact||(tint?(o.game?tint:M.base.map((x,i)=>x*.25+tint[i]*.75)):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,fade:fade||0,surface:surfaceOf(mat),metal:M.metal||0,rough:M.rough??Math.max(.15,Math.min(.9,Math.sqrt(2/(M.shine+2)))),transmit:M.transmit||0,alpha:M.alpha??1,texture:artwork?labelTexture(artwork):null};
+        current={base:mat==='light'?tint||glow:exact||(tint?(o.game?tint:M.base.map((x,i)=>x*.25+tint[i]*.75)):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,fade:fade||0,surface:surfaceOf(mat),metal:M.metal||0,rough:M.rough??Math.max(.15,Math.min(.9,Math.sqrt(2/(M.shine+2)))),transmit:M.transmit||0,alpha:M.alpha??1,robot:mat.startsWith('robot')?1:0,texture:artwork?labelTexture(artwork):null};
         applyMat(current);
       };
       const flat=(col,fade)=>{current={base:col,emit:1,spec:0,shine:1,fade:fade||0,surface:0,metal:0,rough:1,transmit:0,alpha:1};applyMat(current);};
@@ -660,7 +668,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
       const L=o.locomotion;
       if(o.body){
         drawList(L?buildSupport(o.m,L.floor):B.amr,ch,o.fadeBody||0);
-        if(L){const b=supportLayout(o.m,L.floor).base;for(const x of [-1,1])for(const y of [-1,1])keep([b.c[0]+x*b.h[0],b.c[1]+y*b.h[1],L.floor]);}
+        if(L){const b=supportLayout(o.m,L.floor).bounds;for(const x of [-1,1])for(const y of [-1,1])keep([b.c[0]+x*b.h[0],b.c[1]+y*b.h[1],L.floor]);}
         drawList(B.body, ch, o.fadeBody || 0);
         if (!o.eyes) {
           const pivot = [-o.m.back + 0.02, 0, o.m.up + 0.17], R = RC.Ry(-(o.headTilt || 0) * Math.PI / 180);
@@ -727,5 +735,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     return self;
   }
 
-  return { meshes, actorMeshes, supportLayout, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
+  return { meshes, actorMeshes, supportLayout, robotPalette:ROBOT_COLORS, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
 });

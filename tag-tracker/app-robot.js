@@ -293,7 +293,7 @@ function drawRobotGL(gl, o, w, h, now) {
 function drawRobotFlat(c, o, h, now) {
   const sc = RB.scene, m = sc.m, ch = sc.chest, P = (p) => RCORE.place(ch, p), f = h / 2 / Math.tan(((o.fov || 45) * Math.PI) / 360);
   const items = [], pts = [];
-  const ink = K.text, fill = K.surface, well = K.well;
+  const palette=RobotGL.robotPalette,ink=K.text,fill=palette.metal,well=palette.dark;
   const seg = (a, b, r, fc, sc2, al) => {
     const p = o.project(a), q = o.project(b);
     pts.push(a, b);
@@ -323,14 +323,23 @@ function drawRobotFlat(c, o, h, now) {
   };
   const bodyAl = gameView() || sc.bodyLive ? 1 : 0.45;
   if (sc.body) {
-    const floor=tableShown()?TB.world.floorZ-ch.t[2]:undefined,support=RobotGL.supportLayout(m,floor),silver='#cbd2d9',white='#f0f2f4',z1=m.up+.03;
-    for(const s of [support.base,support.collar,support.cap,...support.ribs])boxAt(s.c,s.h,silver,white,bodyAl);
-    boxAt(support.post.c,support.post.h,white,silver,bodyAl);
-    boxAt([-.075,0,m.up-.1],[.072,Math.max(.09,m.half-.055),.15],white,silver,bodyAl);
+    const floor=tableShown()?TB.world.floorZ-ch.t[2]:undefined,support=RobotGL.supportLayout(m,floor),silver=palette.metal,white=palette.shell,z1=m.up+.03;
+    boxAt(support.bumper.c,support.bumper.h,well,well,bodyAl);
+    boxAt(support.base.c,support.base.h,silver,silver,bodyAl);
+    boxAt(support.deck.c,support.deck.h,white,silver,bodyAl);
+    for(const s of [support.collar,support.cap])boxAt(s.c,s.h,well,well,bodyAl);
+    const post=support.post,r=post.r;
+    seg(P(C.add(post.c,[0,0,-post.h[2]+r])),P(C.add(post.c,[0,0,post.h[2]-r])),r,silver,ink,bodyAl);
+    for(const w of support.wheels)ball(P(w.c),w.r,palette.rubber,ink,bodyAl);
+    boxAt(support.sensor.c,support.sensor.h,well,well,bodyAl);
+    boxAt(support.indicator.c,support.indicator.h,K.accent,K.accent,bodyAl);
+    const wy=Math.max(.09,m.half-.055);
+    boxAt([-.075,0,m.up-.1],[.072,wy,.15],white,silver,bodyAl);
+    boxAt([-.013,0,m.up-.09],[.014,wy*.8,.115],well,well,bodyAl);
     const hx = -m.back, head = P([hx, 0, m.up + 0.17]);
     seg(P([hx, 0, z1 - 0.01]), head, 0.035, fill, ink, bodyAl);
-    ball(head, 0.085, fill, ink, bodyAl);
-    seg(P([hx + 0.075, -0.035, m.up + 0.18]), P([hx + 0.075, 0.035, m.up + 0.18]), 0.014, ink, ink, bodyAl);
+    ball(head, 0.085, white, ink, bodyAl);
+    seg(P([hx + 0.075, -0.035, m.up + 0.18]), P([hx + 0.075, 0.035, m.up + 0.18]), 0.014, well, well, bodyAl);
     seg(P([-m.back, -m.half, m.up]), P([-m.back, m.half, m.up]), 0.035, well, ink, bodyAl);
   } else if (sc.arms.length === 2) {
     // two arms and no body: a bar between the shoulders on a small mount
@@ -354,9 +363,9 @@ function drawRobotFlat(c, o, h, now) {
     const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(jy.map((x) => x * v), bk.map((x) => x * (w || 0))))));
     const G = RCORE.gripper(m), g2 = (a.jaw === undefined ? G.gapMax : a.jaw) / 2 + G.finger.c[1], tip = 0.07 + G.fl;
     const hot=hotOf(a),edge=hot?K.accent:ink;
-    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, hot?K.accent:well, edge, al);
-    seg(at(0.07, g2), at(tip, g2), 0.009, hot?K.accent:fill, edge, al);
-    seg(at(0.07, -g2), at(tip, -g2), 0.009, hot?K.accent:fill, edge, al);
+    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, hot?K.accent:fill, edge, al);
+    seg(at(0.07, g2), at(tip, g2), 0.009, hot?K.accent:well, edge, al);
+    seg(at(0.07, -g2), at(tip, -g2), 0.009, hot?K.accent:well, edge, al);
     ball(at(0.045, 0, 0.032), 0.01, K.accent, K.accent, al);
   }
   tableFlat(face, seg, ball);

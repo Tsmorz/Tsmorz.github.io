@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import H from '../../tag-tracker/haptic-core.js';
+import P from '../../tag-tracker/physics-core.js';
+import { fallingImpact,handTableImpact } from './task-impact-fixture.mjs';
 
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function rig({transport='capture',rate=25}={}){
@@ -10,14 +12,14 @@ function rig({transport='capture',rate=25}={}){
   const d=H.dispatcher();
   const tick=async(now,extra={})=>{board.actT=now;d.tick({boards:[board],world,arms:[],now,enabled:true,...extra});await settle();};
   const force=value=>{world.record.hands[1].force=[0,0,value];};
-  const impact=(t,side=1)=>{world.record.events=[{type:'impact',t,impulse:.2,a:{id:side,side},b:{id:22}}];};
+  const impact=(t,side=1,force=48)=>{world.record.events=[{type:'impact',t,force,impulse:force*P.H,a:{id:side,side},b:{id:22}}];};
   return {sent,world,board,d,tick,force,impact,ids:()=>sent.map(b=>b[2])};
 }
 
-test('clicks use the selected peak; rumble follows force, updates at 10 Hz and adapts at rest',async()=>{
+test('contact clicks scale with force; rumble retains its own 10 Hz force curve and adapts at rest',async()=>{
   for(const level of [37,75]){
     const r=rig();r.force(12);
-    await r.tick(0,{level});assert.equal(r.sent[0][3],level);
+    await r.tick(0,{level});assert.equal(r.sent[0][3],H.impactLevel(12,level));
     await r.tick(149,{level});assert.deepEqual(r.ids(),[1]);
     await r.tick(150,{level});const first=r.sent.at(-1)[3];
     assert.ok(first>level*.5&&first<level);
@@ -34,6 +36,55 @@ test('clicks use the selected peak; rumble follows force, updates at 10 Hz and a
     r.world.hands[1].body.v=[.2,0,0];await r.tick(5250,{level});
     assert.ok(r.sent.at(-1)[3]>level*.6,'starting movement again restores force feedback');
     assert.ok(r.sent.every(b=>b[0]===2&&b[1]===2&&b[3]<=level&&b[4]===0&&b[5]===0));
+  }
+});
+
+test('equal-speed real impacts scale with mass/force rather than speed or a fixed selected peak',async()=>{
+  const forces=[],levels=[],speeds=[];
+  for(const mass of [.015,.03,.1,.3,1]){
+    const {world,event}=fallingImpact({mass}),r=rig();
+    r.d.tick({boards:[r.board],world,arms:[],now:0,enabled:true,level:75});await settle();
+    assert.equal(r.sent.length,1);assert.equal(r.sent[0][2],1);assert.equal(r.sent[0][3],H.impactLevel(event.force));
+    assert.ok(Math.abs(event.force-event.impulse/P.H)<1e-12);
+    assert.equal(P.haptics(world.record,1).impacts[0].force,event.force);assert.equal(P.haptics(world.record,1).impacts[0].impulse,event.impulse);
+    assert.equal(r.board.hapticLast.force,event.force);
+    forces.push(event.force);levels.push(r.sent[0][3]);speeds.push(event.speed);
+  }
+  assert.ok(Math.max(...speeds)-Math.min(...speeds)<1e-9);
+  assert.ok(forces.every((v,i)=>!i||v>forces[i-1]));assert.ok(levels.every((v,i)=>!i||v>levels[i-1]));
+  assert.deepEqual(levels,[6,9,16,25,38]);
+});
+
+test('gentle, firm and hard actual hand/table impacts have distinct useful grades at every render rate',async()=>{
+  const expected=[20,29,63,75];
+  for(const dt of [1/30,1/60,1/120]){
+    const levels=[];
+    for(const speed of [.06,.12,.5,1]){
+      const {world,event}=handTableImpact({speed,dt}),r=rig();
+      r.d.tick({boards:[r.board],world,arms:[],now:0,enabled:true,level:75});await settle();
+      assert.equal(r.sent.length,1);levels.push(r.sent[0][3]);assert.equal(r.sent[0][3],H.impactLevel(event.force));
+    }
+    assert.deepEqual(levels,expected);
+  }
+});
+
+test('fixed-substep impact force and encoded amplitude do not dilute with render-frame averaging',async()=>{
+  const records=[];
+  for(const dt of [1/30,1/60,1/120,1/240]){
+    const {world,event,averageForce}=fallingImpact({dt}),r=rig();
+    r.d.tick({boards:[r.board],world,arms:[],now:0,enabled:true});await settle();
+    records.push({force:event.force,averageForce,level:r.sent[0][3]});
+  }
+  assert.ok(records.every(r=>Math.abs(r.force-10.5667313)<1e-6&&r.level===16));
+  assert.ok(records[3].averageForce>records[0].averageForce*7.9,'frame-averaged force differs while the collision and haptic grade stay identical');
+});
+
+test('real high-force impacts cap at the selected maximum while discrete wrist stops retain that maximum',async()=>{
+  for(const peak of [37,75,100]){
+    const {world}=fallingImpact({mass:1,high:true}),r=rig();
+    r.d.tick({boards:[r.board],world,arms:[],now:0,enabled:true,level:peak});await settle();
+    assert.equal(r.sent[0][3],Math.min(75,peak));
+    const stop=rig();await stop.tick(0,{level:peak,arms:[{side:1,wristStop:1}]});assert.equal(stop.sent[0][3],Math.min(75,peak));
   }
 });
 

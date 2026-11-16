@@ -4,9 +4,14 @@
 })(typeof self!=='undefined'?self:this,function(){
   'use strict';
   const MAX_LEVEL=75;
+  // Normal impulse / the fixed 240 Hz contact step gives impact force in N, independent
+  // of render-frame averaging. 240 N spans measured gentle/firm/hard task collisions;
+  // square-root compression keeps light taps perceptible without flattening them at 75%.
+  const IMPACT_FORCE=240,CONTACT_STEP=1/240;
   const CLICK=1,KNOCK=3,RUMBLE=6,SUSTAIN_MS=150,RELEASE_MS=100,CLICK_MS=140;
   const norm=v=>Math.hypot(...(v||[0,0,0]));
   const level=value=>Math.max(1,Math.min(MAX_LEVEL,Math.round(Number.isFinite(value)?value:MAX_LEVEL)));
+  const impactLevel=(force,peak=MAX_LEVEL)=>Math.max(1,Math.round(level(peak)*Math.sqrt(Math.min(1,Math.max(0,Number.isFinite(force)?force:0)/IMPACT_FORCE))));
   function settings(saved){
     return {version:2,enabled:saved?.enabled!==false,level:level(saved?.version===2?saved.level:MAX_LEVEL)};
   }
@@ -15,7 +20,7 @@
   }
   function cue(W,side){
     const h=W.hands[side],rec=W.record,hand=rec?.hands?.[side],grip=h?.grip?.body;
-    let load=norm(hand?.force),reason='contact force',event=null,pair=null,impulse=-Infinity;
+    let load=norm(hand?.force),reason='contact force',event=null,pair=null,impactForce=0;
     const involved=x=>x&&(x.side===+side||grip&&x.id===grip.id);
     const key=e=>{const x=involved(e.a)?e.b:e.a;return x&&[x.kind,x.id??x.link??x.side].join(':');};
     for(const c of [...(W.cloths||[]),...(W.cables||[])]){
@@ -25,14 +30,15 @@
     const slip=hand?.grip?.slipping;
     if(slip){load=Math.max(load,2);reason='grip slipping';}
     for(const e of rec?.events||[]){
-      if(e.type==='impact'&&(involved(e.a)||involved(e.b))&&(e.impulse||0)>impulse){
-        impulse=e.impulse||0;event='impact:'+e.t+':'+e.a?.id+':'+e.b?.id;pair=key(e);
+      const force=Number.isFinite(e.force)?Math.max(0,e.force):Math.max(0,e.impulse||0)/CONTACT_STEP;
+      if(e.type==='impact'&&(involved(e.a)||involved(e.b))&&(!event||force>impactForce)){
+        impactForce=force;event='impact:'+e.t+':'+e.a?.id+':'+e.b?.id;pair=key(e);
       }
     }
     const at=grip?.insertion?.clickAt,seatEvent=at!=null&&W.time-at<.15?grip.id+':'+at:null;
     const contacts=(rec?.touches||[]).filter(e=>involved(e.a)||involved(e.b)).map(key);
     const motion=Math.min(1,Math.max(0,norm(h?.body?.v)-.015)/.12+Math.max(0,norm(h?.body?.w)-.1)/1.5);
-    return {load,reason,event,pair,contacts,motion,seatEvent};
+    return {load,reason,event,pair,impactForce,contacts,motion,seatEvent};
   }
   // No write queue: impacts are disposable, not delayed until a busy link becomes free.
   // CLICK/KNOCK self-end in 6/12 ms; 50 Hz rumble self-ends in 300 ms.
@@ -84,15 +90,17 @@
           // Movement onset restores feedback while carrying; steady motion habituates too.
           const change=Math.min(1,Math.abs(c.load-s.baseline)/Math.max(.12,c.load,s.baseline));
           const gain=Math.min(1,c.load/12)*(.035+.965*Math.max(change,Math.max(0,c.motion-s.motionBase)));
-          const bytes=packet(click?level(drive):Math.max(1,Math.round(level(drive)*gain)),click?(seated?KNOCK:CLICK):RUMBLE),ch=b.hapticCharacteristic;
+          const contactForce=impact?c.impactForce:c.load;
+          const strength=click?(limit||seated?level(drive):impactLevel(contactForce,drive)):Math.max(1,Math.round(level(drive)*gain));
+          const bytes=packet(strength,click?(seated?KNOCK:CLICK):RUMBLE),ch=b.hapticCharacteristic;
           const reason=click?(limit?'wrist rotation limit':seated?'connector seated':impact?'contact impact':'contact began'):c.reason;
           try{
             const write=ch.writeValueWithResponse?ch.writeValueWithResponse(bytes):ch.writeValue(bytes);
-            Promise.resolve(write).then(()=>{if(b.hapticCharacteristic!==ch)return;b.hapticLast={at:now,side,reason,kind:click?'click':'rumble',waveform:bytes[2],level:bytes[3]};},e=>{if(b.hapticCharacteristic!==ch)return;b.hapticError=String(e.message||e);b.hapticRetryAfter=ch.transient?now+250:null;}).finally(()=>{if(b.hapticCharacteristic===ch)b.hapticBusy=false;});
+            Promise.resolve(write).then(()=>{if(b.hapticCharacteristic!==ch)return;b.hapticLast={at:now,side,reason,kind:click?'click':'rumble',waveform:bytes[2],level:bytes[3],...(click&&!limit&&!seated?{force:contactForce}:{})};},e=>{if(b.hapticCharacteristic!==ch)return;b.hapticError=String(e.message||e);b.hapticRetryAfter=ch.transient?now+250:null;}).finally(()=>{if(b.hapticCharacteristic===ch)b.hapticBusy=false;});
           }catch(e){b.hapticError=String(e.message||e);b.hapticRetryAfter=ch.transient?now+250:null;b.hapticBusy=false;}
         }
       }
     };
   }
-  return {packet,cue,dispatcher,level,settings,MAX_LEVEL};
+  return {packet,cue,dispatcher,level,impactLevel,settings,MAX_LEVEL,IMPACT_FORCE};
 });

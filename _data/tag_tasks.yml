@@ -597,10 +597,10 @@ haptics:
   capture_status: Capture USB · IMU orientation and TacHammer
   calibrating: Task feedback pauses while the capture gyro calibrates.
   label: TacHammer task feedback
-  strength: Drive level
-  help: A sharp TacHammer click marks fresh contact, impacts and wrist stops. Low rumble
+  strength: Peak drive level
+  help: Sharp TacHammer clicks grow with impact force. Wrist stops give a crisp limit cue. Low rumble
     follows the current force while moving and fades quickly to a slight buzz at rest.
-    Drive level sets the peak (75% by default).
+    Peak drive sets the maximum (75% by default). Test pulse uses that selected peak.
     ERM and gripper-servo commands are not sent.
   routing: Haptic hand
   sides:

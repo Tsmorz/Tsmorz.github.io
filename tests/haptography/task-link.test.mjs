@@ -4,6 +4,8 @@ import { CaptureLink } from '../../haptography/task-link.js';
 import * as W from '../../haptography/wire.js';
 import { fixtureStream } from './fixture.mjs';
 import TaskHaptics from '../../tag-tracker/haptic-core.js';
+import Controller from '../../tag-tracker/controller-link.js';
+import { fallingImpact } from './task-impact-fixture.mjs';
 
 test('task drive settings use real percentages and migrate legacy force scaling to 75 percent',()=>{
   assert.deepEqual(TaskHaptics.settings(),{version:2,enabled:true,level:75});
@@ -14,12 +16,12 @@ test('task drive settings use real percentages and migrate legacy force scaling 
   assert.equal(TaskHaptics.level(0),1);
 });
 
-test('light and heavy contacts send the selected drive percentage without force attenuation',async()=>{
-  for(const force of [.2,5,200])for(const level of [undefined,37]){
+test('contact onset strength grades force below the selected percentage cap',async()=>{
+  for(const force of [.2,5,240,1000])for(const level of [undefined,37]){
     const sent=[],b={state:'live',act:{tachammerReady:true},actT:0,hapticSide:'1',hapticCharacteristic:{writeValueWithResponse:bytes=>{sent.push(bytes);return Promise.resolve();}}};
     TaskHaptics.dispatcher().tick({boards:[b],world:{hands:{1:{}},record:{hands:{1:{force:[force,0,0]}}}},arms:[],now:0,enabled:true,level});
     await new Promise(resolve=>setImmediate(resolve));
-    assert.equal(sent.length,1);assert.equal(sent[0][3],level??75);
+    assert.equal(sent.length,1);assert.equal(sent[0][3],TaskHaptics.impactLevel(force,level));
   }
 });
 
@@ -99,7 +101,7 @@ test('firmware refusal is surfaced and not retried', async () => {
   finally { await p.link.close(); }
 });
 
-test('real task dispatcher sends the selected 75 percent even for light contact while retaining readiness and hand gating', async () => {
+test('real task dispatcher sends force-graded native capture percentages while retaining readiness and hand gating', async () => {
   const p = peer(); await p.link.open();
   try {
     const b = { state: 'live', act: { tachammerReady: true }, actT: 0, hapticSide: '1', hapticRateHz: 25,
@@ -113,12 +115,31 @@ test('real task dispatcher sends the selected 75 percent even for light contact 
     d.tick({ boards: [b], world, arms: [], now: 0, enabled: true, level: 75 });
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(p.commands.length, 1); assert.equal(p.commands[0].type, 0x44);
-    assert.equal(p.commands[0].body[1], 75);
+    assert.equal(p.commands[0].body[1], TaskHaptics.impactLevel(.2));
     p.advance(150);
     d.tick({ boards: [b], world, arms: [], now: 150, enabled: true, level: 75 });
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x44,1,75],[0x44,6,1]]);
+    assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x44,1,TaskHaptics.impactLevel(.2)],[0x44,6,1]]);
     b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
     assert.equal(p.commands.length, 2);
   } finally { await p.link.close(); }
+});
+
+test('real mass-dependent impact grades reach capture waveform ACKs and USB/ESB frames unchanged',async()=>{
+  const p=peer();await p.link.open();
+  try{
+    const levels=[];
+    for(const mass of [.015,.03,.1,.3,1]){
+      const {world,event}=fallingImpact({mass}),peak=75;
+      const b={transport:'capture',motion:{ready:true},state:'live',act:{tachammerReady:true},actT:0,hapticSide:'1',hapticRateHz:25,hapticCharacteristic:{writeValueWithResponse:bytes=>p.link.command(bytes)}};
+      TaskHaptics.dispatcher().tick({boards:[b],world,arms:[],now:0,enabled:true,level:peak});
+      await new Promise(resolve=>setImmediate(resolve));
+      const expected=TaskHaptics.impactLevel(event.force,peak),actual=p.commands.at(-1);levels.push(actual.body[1]);
+      assert.deepEqual([actual.type,...actual.body],[0x44,1,expected]);assert.equal(b.hapticLast.level,expected);
+      const frames=[],packet=TaskHaptics.packet(expected,1),parser=Controller.parser(f=>frames.push(f));
+      parser.push(Controller.frame({type:Controller.TYPE.COMMAND,board:23,pipe:1,stamp:100,payload:packet}));
+      assert.deepEqual([...frames[0].payload],[2,2,1,expected,0,0]);
+    }
+    assert.deepEqual(levels,[6,9,16,25,38]);assert.equal(p.commands.length,5);
+  }finally{await p.link.close();}
 });
