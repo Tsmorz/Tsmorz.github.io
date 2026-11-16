@@ -31,7 +31,7 @@
     for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++, k++) {
       const u = i / nu, v = j / nv, p = fn(u, v);
       const du = sub(fn(Math.min(1, u + e), v), fn(Math.max(0, u - e), v)), dv = sub(fn(u, Math.min(1, v + e)), fn(u, Math.max(0, v - e)));
-      const o = out(p);
+      const o = out(p,u,v);
       let nn = unit(cross(du, dv)) || unit(o) || [0, 0, 1];
       if (dot(nn, o) < 0) nn = [-nn[0], -nn[1], -nn[2]];
       pos.set(p, 3 * k); nrm.set(nn, 3 * k);
@@ -196,13 +196,39 @@
     }
     return out;
   }
+  // Arc-length, shape-preserving Hermite interpolation avoids the radial ringing of an
+  // unconstrained cubic around a tall wall, rounded lip or narrow bottle shoulder.
+  function profileSampler(points){
+    const at=[0];for(let i=1;i<points.length;i++)at.push(at[i-1]+Math.hypot(...points[i].map((v,k)=>v-points[i-1][k])));
+    const slopes=[0,1].map(k=>points.slice(1).map((p,i)=>(p[k]-points[i][k])/(at[i+1]-at[i])));
+    const tangents=[0,1].map(k=>points.map((_,i)=>{
+      if(!i)return slopes[k][0];if(i===points.length-1)return slopes[k].at(-1);
+      const a=slopes[k][i-1],b=slopes[k][i];if(a*b<=0)return 0;
+      const h=at[i]-at[i-1],j=at[i+1]-at[i],w1=2*j+h,w2=j+2*h;return (w1+w2)/(w1/a+w2/b);
+    }));
+    return v=>{const d=Math.max(0,Math.min(1,v))*at.at(-1);let i=0;while(i<points.length-2&&at[i+1]<d)i++;
+      const h=at[i+1]-at[i],t=(d-at[i])/h,a=2*t*t*t-3*t*t+1,b=t*t*t-2*t*t+t,c=-2*t*t*t+3*t*t,e=t*t*t-t*t;
+      return [0,1].map(k=>a*points[i][k]+b*h*tangents[k][i]+c*points[i+1][k]+e*h*tangents[k][i+1]);};
+  }
+  function steinHandleMesh(s){
+    const h=s.handle,r=.01,x=h.x-r,top=h.z1-.005,bottom=h.z0+.005,straight=x-s.wall,vertical=top-bottom-2*r,arc=r*Math.PI/2,total=2*straight+2*arc+vertical;
+    const path=v=>{
+      let d=v*total;
+      if(d<straight)return {p:[s.wall+d,0,top],t:[1,0,0]};d-=straight;
+      if(d<arc){const a=Math.PI/2-d/r;return {p:[x+r*Math.cos(a),0,top-r+r*Math.sin(a)],t:[Math.sin(a),0,-Math.cos(a)]};}d-=arc;
+      if(d<vertical)return {p:[h.x,0,top-r-d],t:[0,0,-1]};d-=vertical;
+      if(d<arc){const a=-d/r;return {p:[x+r*Math.cos(a),0,bottom+r+r*Math.sin(a)],t:[Math.sin(a),0,-Math.cos(a)]};}d-=arc;
+      return {p:[x-d,0,bottom],t:[-1,0,0]};
+    };
+    return surface((u,v)=>{const {p,t}=path(v),a=u*TAU;return [p[0]+t[2]*h.r*Math.sin(a),h.w*Math.cos(a),p[2]-t[0]*h.r*Math.sin(a)];},24,112,(p,u,v)=>sub(p,path(v).p));
+  }
   function compoundMeshes(pieces) {
     // A revolved body (bowl, stein): one smooth surface from its profile, plus any pieces marked `show` (a handle).
     const profile = pieces.find(s => s.bowlProfile || s.profile), revolved = [];
     if (profile) {
       const prof = profile.bowlProfile || profile.profile;
       // One continuous, smoothly shaded surface through the foot, outside, rounded lip and hollow inside.
-      const point = (v) => {
+      const point = profile.smoothProfile?profileSampler(prof):(v) => {
         const t = v * (prof.length - 1), i = Math.min(prof.length - 2, Math.floor(t)), f = t - i;
         const at = (n) => prof[Math.max(0, Math.min(prof.length - 1, n))];
         const [a,b,c,d] = [at(i-1),at(i),at(i+1),at(i+2)];
@@ -216,7 +242,8 @@
       if (profile && !s.show) continue;
       const R = s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1], p = s.p || [0, 0, 0];
       const meshes = [];
-      if(s.type==='trim')meshes.push(torus([0,0,0],s.r,s.h));
+      if(s.type==='stein-handle')meshes.push(steinHandleMesh(s));
+      else if(s.type==='trim')meshes.push(torus([0,0,0],s.r,s.h));
       else if(s.type==='lozenges'){
         for(let row=0;row<3;row++)for(let j=0;j<18;j++)meshes.push(surface((u,v)=>{
           const a=(j+(row%2)*.5)*TAU/18+(u+v-1)*TAU/38;
@@ -225,12 +252,15 @@
       }
       else if(s.type==='ellipsoid'){meshes.push(blob([0,0,0],s.r,1,1,{nu:24,nv:16}));}
       else if (s.type === 'cylinder') {
-        meshes.push(surface((u, v) => [s.r * Math.cos(TAU * u), s.r * Math.sin(TAU * u), (v * 2 - 1) * s.h], 32, 2, (p) => [p[0], p[1], 0]));
+        const segments=s.artwork?96:32,offset=s.artwork?-3*Math.PI/4:0;
+        const side=surface((u, v) => [s.r * Math.cos(TAU*u+offset), s.r * Math.sin(TAU*u+offset), (v * 2 - 1) * s.h],segments,2,p=>[p[0],p[1],0]);
+        if(s.artwork){side.uv=new Float32Array((segments+1)*3*2);for(let j=0;j<=2;j++)for(let i=0;i<=segments;i++)side.uv.set([i/segments,j/2],(j*(segments+1)+i)*2);}
+        meshes.push(side);
         if(!s.visual)for (const sign of [-1, 1]) meshes.push(surface((u, v) => [s.r * v * Math.cos(TAU * u), s.r * v * Math.sin(TAU * u), sign * s.h], 32, 2, () => [0, 0, sign]));
       } else meshes.push(...beveledBox(s.h,s.bevel===0?.00001:Math.min(s.bevel||.009,...s.h.map(h=>h*(s.bevel?.95:.28)))));
       for (const m of meshes) {
         for (let i = 0; i < m.pos.length; i += 3) { m.pos.set(C.add(C.mulv(R, [...m.pos.slice(i, i + 3)]), p), i); m.nrm.set(C.mulv(R, [...m.nrm.slice(i, i + 3)]), i); }
-        result.push(part(m,s.material||'ceramic',{keepMaterial:!!s.material}));
+        result.push(part(m,s.material||'ceramic',{keepMaterial:!!s.material,...(s.artwork?{artwork:s.artwork}:{})}));
       }
     }
     return result;
@@ -345,7 +375,7 @@ void main(){vec4 w=uModel*vec4(aPos,1.0);vW=w.xyz;vLocal=aPos;vUV=aUV;vHem=aHem;
 precision highp float;
 varying vec3 vN,vW,vLocal;varying vec2 vUV,vHem;varying vec4 vShadow;
 uniform vec3 uEye,uKey,uFill,uBase,uRimCol,uFadeTo,uSky,uGround;
-uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface,uMetal,uRough,uTransmit;uniform sampler2D uShadow;
+uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface,uMetal,uRough,uTransmit,uTexture;uniform sampler2D uShadow,uLabel;
 float noise(vec3 p){return fract(sin(dot(floor(p),vec3(12.9898,78.233,37.719)))*43758.5453);}
 float fleece(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(noise(vec3(i,0.0)),noise(vec3(i+vec2(1.0,0.0),0.0)),f.x),mix(noise(vec3(i+vec2(0.0,1.0),0.0)),noise(vec3(i+vec2(1.0,1.0),0.0)),f.x),f.y);}
 float depth(vec2 p){return dot(texture2D(uShadow,p),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0))*(255.0/256.0);}
@@ -358,7 +388,7 @@ vec3 studio(vec3 r,float rough){float hemi=clamp(r.z*.5+.5,0.0,1.0);vec3 env=mix
  float b=pow(max(0.0,dot(r,normalize(vec3(.7,.25,.65)))),mix(260.0,7.0,rough));
  return env+vec3(2.2,2.06,1.86)*a+vec3(.85,1.0,1.2)*b;}
 vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.0,1.0);}
-void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 base=uBase;float rough=clamp(uRough,.08,.98);
+void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=0.0)discard;if(dot(N,V)<0.0)N=-N;vec3 base=uBase;if(uTexture>.5)base=pow(texture2D(uLabel,vUV).rgb,vec3(2.2));float rough=clamp(uRough,.08,.98);
  if((uSurface>.5&&uSurface<1.5)||(uSurface>3.5&&uSurface<4.5)){float grain=sin(vLocal.x*210.0+sin(vLocal.y*19.0)*2.0)+.35*sin(vLocal.x*487.0+sin(vLocal.y*29.0));base*=.95+.025*grain;
  if(uSurface>3.5&&abs(N.z)>.8){float row=floor(vLocal.y*6.0),fy=fract(vLocal.y*6.0),fx=fract(vLocal.x*1.35+row*.37),seam=min(min(fy,1.0-fy),min(fx,1.0-fx));base*=.96+.07*noise(vec3(row,0,0));base*=mix(.72,1.0,smoothstep(.0,max(.005,fwidth(seam)*1.2),seam));}}
  if(uSurface>2.5&&uSurface<3.5){vec2 uv=vW.xy+vW.z*vec2(.37,-.29);float visible=1.0-smoothstep(.35,2.5,max(fwidth(uv.x),fwidth(uv.y))*400.0);base*=.87+visible*(.20*fleece(uv*1800.0)+.12*fleece(uv*550.0));N=normalize(N+visible*.20*vec3(fleece(uv*1800.0+vec2(17,3))-.5,fleece(uv*1800.0+vec2(5,29))-.5,0));}
@@ -406,7 +436,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     wood:{base:lin('#805638'),spec:.18,shine:24,rim:0},plaster:{base:lin('#e2d4b9'),spec:.08,shine:8,rim:0},fabric:{base:[1,1,1],spec:.08,shine:6,rim:0},rug:{base:lin('#706452'),spec:.03,shine:4,rim:0},
     ceramic: { base: lin('#ece8e1'), spec:.85, shine:90, rim:.6, rough:.23 },
     liquid: { base: lin('#c18a29'), spec:1.2, shine:180, rim:.3, rough:.13, transmit:1, alpha:.42 },
-    label: { base: lin('#efe7d4'), spec: 0.15, shine: 12, rim: 0.3 }, labelBand: { base: lin('#2d4f8c'), spec: 0.3, shine: 30, rim: 0.4 },
+    label: { base: lin('#efe7d4'), spec: 0.15, shine: 12, rim: 0.3,rough:.8 }, labelBand: { base: lin('#2d4f8c'), spec: 0.3, shine: 30, rim: 0.4 },
     foam: {base:lin('#f3ead6'),spec:.12,shine:8,rim:.1},
     cotton: {base:lin('#536f95'),spec:.12,shine:8,rim:0,rough:.9},
     bottleGlass:{base:lin('#5a3514'),spec:1.1,shine:180,rim:.4,rough:.12,transmit:1,alpha:.42},
@@ -428,7 +458,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     const U = {};
-    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface','uMetal','uRough','uTransmit']) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ['uPV', 'uModel', 'uRot', 'uEye', 'uKey', 'uFill', 'uBase', 'uRimCol', 'uFadeTo', 'uSky', 'uGround', 'uSpec', 'uShine', 'uRim', 'uEmit', 'uFade', 'uAlpha','uLightPV','uShadow','uShadowOn','uSurface','uMetal','uRough','uTransmit','uTexture','uLabel']) U[n] = gl.getUniformLocation(prog, n);
     const aPos = gl.getAttribLocation(prog, 'aPos'), aNrm = gl.getAttribLocation(prog, 'aNrm'), aUV=gl.getAttribLocation(prog,'aUV'), aHem=gl.getAttribLocation(prog,'aHem');
     const depthProg=gl.createProgram();gl.attachShader(depthProg,sh(gl.VERTEX_SHADER,DEPTH_VS));gl.attachShader(depthProg,sh(gl.FRAGMENT_SHADER,DEPTH_FS));gl.linkProgram(depthProg);
     if(!gl.getProgramParameter(depthProg,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(depthProg));
@@ -438,8 +468,40 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     const shadowFB=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFB);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,shadow,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,shadowDepth);
     const shadowsSupported=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 
-    const self = { lost: false };
+    const self = { lost: false, labelStatus:new Map() };
     canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); self.lost = true; });
+    const labelWhite=gl.createTexture();gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,labelWhite);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array([255,255,255,255]));
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.activeTexture(gl.TEXTURE0);
+    const labelTextures=new Map();
+    function labelTexture(artwork){
+      const key=JSON.stringify(artwork);if(labelTextures.has(key))return labelTextures.get(key);
+      const texture=gl.createTexture(),paper=document.createElement('canvas');paper.width=1024;paper.height=330;
+      const ctx=paper.getContext('2d'),red='#a11d2b',status={title:artwork.title||'',ready:!artwork.lettering,fallback:!artwork.lettering};self.labelStatus.set(key,status);
+      const uploadLabel=()=>{
+        gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,texture);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,paper);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);
+        // The physical label's aspect ratio is deliberately NPOT: WebGL1 needs clamp+linear, no mipmaps.
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.activeTexture(gl.TEXTURE0);
+      };
+      const paint=lettering=>{
+        ctx.fillStyle='#f3ead3';ctx.fillRect(0,0,paper.width,paper.height);
+        for(const x of [0,paper.width/2]){
+          if(lettering){const scale=Math.min(468/lettering.naturalWidth,190/lettering.naturalHeight),w=lettering.naturalWidth*scale,h=lettering.naturalHeight*scale;ctx.drawImage(lettering,x+256-w/2,5+(190-h)/2,w,h);}
+          else{ctx.fillStyle=red;ctx.textAlign='center';ctx.font='bold 74px "Snell Roundhand", "Apple Chancery", cursive';const words=(artwork.title||'').split(' ');ctx.fillText(words.shift()||'',x+256,77,440);ctx.fillText(words.join(' '),x+256,157,440);}
+          ctx.save();ctx.translate(x+256,251);ctx.scale(.48,.48);ctx.translate(-215,-120);ctx.fillStyle=red;
+          // A red stag in profile: lifted head, full branching antlers and four tapered legs.
+          ctx.fill(new Path2D('M105 132C135 111 215 110 260 125L285 110 295 83 300 55 307 43 324 46 328 63 341 73 339 82 322 84 313 103 310 134 285 155 275 190 268 232 254 232 259 187 264 160 225 163 213 191 204 234 190 234 198 188 205 163 162 159 146 179 134 224 120 224 131 175 142 154 119 151 103 142 88 128 78 122 85 118Z'));
+          ctx.strokeStyle=red;ctx.lineWidth=6;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke(new Path2D('M310 48C303 34 295 18 294 5M303 31 282 21M299 20 309 10M318 48C329 31 337 17 333 4M328 32 345 27M333 17 347 8'));
+          ctx.fillStyle='#f3ead3';ctx.beginPath();ctx.arc(325,65,2.5,0,TAU);ctx.fill();ctx.restore();
+        }
+        uploadLabel();
+      };
+      paint(null);labelTextures.set(key,texture);
+      if(artwork.lettering){const lettering=new Image();lettering.onload=()=>{if(self.lost)return;paint(lettering);status.ready=true;status.fallback=false;};lettering.onerror=()=>{status.ready=true;status.fallback=true;};lettering.src=artwork.lettering;}
+      return texture;
+    }
     let built = null, builtKey = '';
     const meshCentre=m=>{
       const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
@@ -530,10 +592,10 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
       const rimLight = dark ? lin('#d9d4ff') : lin('#55606a');
       let current;const commands=[];
       const surfaceOf=mat=>({floor:4,wood:1,plaster:2,fabric:3,rug:3,metal:5,robotMetal:5,pewter:5,gold:5,cotton:6,liquid:7,foam:8,bottleGlass:9,glass:9}[mat]||0);
-      const applyMat=m=>{gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniform1f(U.uMetal,m.metal);gl.uniform1f(U.uRough,m.rough);gl.uniform1f(U.uTransmit,m.transmit);gl.uniform1f(U.uAlpha,m.alpha);};
-      const setMat=(mat,fade,tint,exact)=>{
+      const applyMat=m=>{gl.uniform3fv(U.uBase,m.base);gl.uniform1f(U.uEmit,m.emit);gl.uniform1f(U.uSpec,m.spec);gl.uniform1f(U.uShine,m.shine);gl.uniform1f(U.uRim,0);gl.uniform1f(U.uFade,m.fade);gl.uniform1f(U.uSurface,m.surface);gl.uniform1f(U.uMetal,m.metal);gl.uniform1f(U.uRough,m.rough);gl.uniform1f(U.uTransmit,m.transmit);gl.uniform1f(U.uAlpha,m.alpha);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,m.texture||labelWhite);gl.uniform1i(U.uLabel,1);gl.uniform1f(U.uTexture,m.texture?1:0);gl.activeTexture(gl.TEXTURE0);};
+      const setMat=(mat,fade,tint,exact,artwork)=>{
         const M=mats[mat]||mats.shell;
-        current={base:mat==='light'?tint||glow:exact||(tint?(o.game?tint:M.base.map((x,i)=>x*.25+tint[i]*.75)):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,fade:fade||0,surface:surfaceOf(mat),metal:M.metal||0,rough:M.rough??Math.max(.15,Math.min(.9,Math.sqrt(2/(M.shine+2)))),transmit:M.transmit||0,alpha:M.alpha??1};
+        current={base:mat==='light'?tint||glow:exact||(tint?(o.game?tint:M.base.map((x,i)=>x*.25+tint[i]*.75)):M.base),emit:mat==='light'?1:0,spec:M.spec,shine:M.shine,fade:fade||0,surface:surfaceOf(mat),metal:M.metal||0,rough:M.rough??Math.max(.15,Math.min(.9,Math.sqrt(2/(M.shine+2)))),transmit:M.transmit||0,alpha:M.alpha??1,texture:artwork?labelTexture(artwork):null};
         applyMat(current);
       };
       const flat=(col,fade)=>{current={base:col,emit:1,spec:0,shine:1,fade:fade||0,surface:0,metal:0,rough:1,transmit:0,alpha:1};applyMat(current);};
@@ -545,7 +607,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
         attributes(g); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
       };
-      const drawList = (list, pose, fade, tint, override) => { for (const p of list) { setMat(p.keepMaterial?p.mat:override||p.mat, fade, p.keepMaterial?null:tint); drawG(p.g, pose); } };
+      const drawList = (list, pose, fade, tint, override) => { for (const p of list) { setMat(p.keepMaterial?p.mat:override||p.mat, fade, p.keepMaterial?null:tint,undefined,p.artwork); drawG(p.g, pose); } };
       const ch = o.chest, at = (R, t) => ({ R: C.mul3(ch.R, R), t: RC.place(ch, t) });
       const pts = [];
       const keep = (p) => pts.push(RC.place(ch, p));
@@ -665,5 +727,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     return self;
   }
 
-  return { meshes, actorMeshes, supportLayout, propMeshes, compoundMeshes, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
+  return { meshes, actorMeshes, supportLayout, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
 });

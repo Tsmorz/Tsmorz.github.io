@@ -231,6 +231,9 @@ levels:
     - 0
     mass: 0.3
     label: Weissbier bottle
+    artwork:
+      title: Münchener Weißbier
+      lettering: assets/weissbier-lettering.svg
     color: '#5a3514'
     mat: ceramic
     show_label: true

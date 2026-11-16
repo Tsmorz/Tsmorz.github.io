@@ -17,9 +17,8 @@ A self-contained AprilTag/robot page; `layout: null` renders `_data/tag_tasks.ym
 
 ## Look and navigation
 
-Use cool anodised greys, ink, violet accents and Archivo; amber only for warnings. No orange,
-rounded cards, pills, monospace labels or shadows. Panels have 1 px outlines and 4 px corners.
-Reticle corner marks belong only on video.
+Use cool greys, ink, violet and Archivo; amber only for warnings. No orange, pills, monospace or shadows.
+Panels have 1 px outlines and 4 px corners; reticle corner marks belong only on video.
 Tag colours keep their categorical slot in storage (eight slots, then labelled grey). Label x/y/z.
 Keep the generic silver/white Machine on one continuous support post and a broad foot; no human avatars, story rooms or rewards.
 
@@ -31,9 +30,8 @@ show head tilt only in robot-eye view. Popups close with an accessible ×; do no
 
 ## Tracking contracts
 
-- OpenCV.js is pinned to `@techstark/opencv-js@4.12.0-release.1`; Transformers to `4.3.2`, CDN-loaded,
-  not vendored. AprilTags use corner refinement and the half-pixel OpenCV pixel-centre shift.
-  ChArUco uses DICT_5X5_100 so it cannot collide with the tag dictionary.
+- OpenCV.js is pinned to `@techstark/opencv-js@4.12.0-release.1`; Transformers to `4.3.2`, CDN-loaded.
+  AprilTags use corner refinement and the half-pixel shift; ChArUco uses DICT_5X5_100 to avoid tag collisions.
 - Poses are always the camera's true poses. Mirror, Flip and Blur affect the picture and overlay only
   (`TagCore.displayMap`), never detection, fusion, plots, recordings or robot input.
 - Lens calibrations are keyed by the device's own label, never its user-visible name.
@@ -72,10 +70,10 @@ side-prefixed links. Rigid grip loads sum joint and pad forces; internal cancell
 Match compound rendering/collision dimensions, openings and parallel-axis inertia; never renumber wire `MATERIALS` IDs.
 Keep fixed 240 Hz substeps, contact friction, warm starting, sleeping and bounded reactions together.
 
-Every task starts idle arms in the one top-level `ready.joints` pose in `tag_tasks.yml` (degrees); no
-task carries its own. It never overrides AprilTag input. Preserve the elbow when the mouse takes a ready
-hand. Seed idle joints without a first-frame IK solve, clear idle slew on tab changes, and apply task
-camera placement before drawing. Stationary real body/wrist tags auto-calibrate after 0.8 s.
+Every task starts from top-level `ready.joints` in `tag_tasks.yml` (degrees), never a task-local pose.
+Restart rebases live tag input through `RB.taskInput`; never mutate Tracking calibration or source poses.
+Preserve the elbow on mouse takeover. Seed idle joints without first-frame IK, clear idle slew on tab
+changes, and place the task camera before drawing. Stationary real tags auto-calibrate after 0.8 s.
 Use `handIK`/`wrist` for task orientation commands: wrist stops never recruit the arm. Preserve `positionPending`/`positionGoal` in `RB.prev` to avoid recovery branch jumps or oscillation.
 Keep requested wrist Euler angles unwrapped past stops. Contact reconstruction must seed the commanded elbow
 and use position-only IK costs; wrist limits must never recruit the shoulder. `wristStop` identifies stop edges.
@@ -86,9 +84,11 @@ Keep `bowl`, `sort`, `tray`, `pour`, `laundry` freely selectable in order, with 
 `TaskCore.mission` accepts legacy mode arguments but never changes the task. Retired Small/Full settings
 normalize to `tasks`; keep old score namespaces separate. Changed objectives need new revisions.
 `TaskCore.fallen` immediately restarts with a notice. Timers use monotonic elapsed time.
+Restart atomically reseeds robot/props/history. `W.initialize` settles rigid supports with task clocks/mechanisms paused.
+Cancel pointer capture, clear feedback/`ContactSound.reset()`, and abort the old frame before feedback or contact reconstruction.
 
-Guidance reads actual constraints; never move props or award success. Preserve the empty-gripper
-retreat between blocks, wrong-prop/missing-hand/layer hints and visible destinations/objectives.
+Guidance reads actual constraints; never move props or award success. Preserve empty-gripper retreat,
+wrong-prop/missing-hand/layer hints and visible destinations/objectives.
 
 `balance` monitors ball/rim geometry every physics substep, including before grasping the tray.
 A rim hit or lost load invalidates the attempt until restart. Require both a clean elevated two-hand
@@ -97,9 +97,8 @@ hold and released set-down. Test actual contacts, not just a ball parked at its 
 No automated fabric-fold playthroughs: Tony tests folding by hand; scripted folds vary with rounding.
 Static pattern, mesh, guidance and loading checks are fine. `laundry` uses the thin `shirt` cut pattern,
 with cuffs, hem and shoulders from material landmarks; do not replace it with a rectangular plush towel.
-`halfThickness` is contact radius; `pile` is visual nap. Render helpers follow physical nodes without mutation; cotton UV/hem coordinates stay in the material frame.
-Rebuild GPU buffers on topology changes; refresh indices when topology changes at equal size. `bend_memory` sets creases only on supported, released fabric;
-setting them while held preserves unwanted arches. Fabric pressed into the table leaves through its top.
+`halfThickness` is contact radius; `pile` is nap. Render helpers follow nodes without mutation; cotton UV/hem stays in material coordinates. Refresh GPU indices even for equal-size topology changes.
+`bend_memory` sets creases only on supported, released fabric; setting them while held preserves arches. Fabric pressed into the table leaves through its top.
 Grips use finite barycentric patches, not single vertices; bound reactions across captured layers.
 Losing a patch while closed requires reopening (`clothSlip`). Grab markers show at the actual landmarks;
 show shoulder destinations once the hem is held. Preserve sleeve/hem/compactness checks so a bundle cannot pass.
@@ -109,7 +108,8 @@ show shoulder destinations once the hem is held. Preserve sleeve/hem/compactness
 In `pour-core.js`, preserve beer conservation and mouth-only collection; solid hits spill. Liquid render tails, bubbles and spray never change volume.
 `CONTAINER`, `flow` and `spill_limit` govern geometry, flow and failure. `grip_zone` restricts the
 stein to its handle; `BOTTLE.grip` keeps the bottle mouth clear of the palm. Decorative `visual` pieces have no collision or mass; stream widths follow flow/speed. Foam never changes beer volume. The left arm pours
-outward: inward roll hits its forearm limit. Keep `visual` labels ≥1 mm proud; cylindrical labels have no end caps. Draw transparent meshes after opaque ones with depth writes off, sorted by actual mesh centre.
+outward: inward roll hits its forearm limit. Labels stay ≥1 mm proud, with no end caps. Bottle artwork comes from `_data/tag_tasks.yml`; lettering uses outlined SVG, never a system font dependency.
+Draw transparent meshes after opaque ones with depth writes off, sorted by actual mesh centre. Restore texture units and upload flags after label uploads.
 `connector-fixture.json` is test-only; keep its cable and insertion code.
 
 Firmware belongs in `../nrf-controller`; `decodeImuBatch` matches `src/sysid_wire.h`. Preserve C/JS parity
@@ -122,8 +122,8 @@ Relative orientation needs stationary gyro calibration and per-hand neutral; IMU
 Mute task pulses until gyro bias calibration finishes, or the actuator prevents its own stillness check.
 Blur/hidden/dialogs/stale delivery hold rotation and resume on fresh samples in the same estimator epoch;
 an epoch change requires recentering. Calibration stays in memory and clears on hand/frame changes.
-Tasks/restarts call `rebaseCaptureOrientations`: `Control.retarget` aligns the ready hand only within
-the same live estimator epoch. View changes must preserve neutral; never bypass a real stream reset.
+Tasks/restarts call `rebaseCaptureOrientations`: hold ready while `Control.retarget` awaits fresh samples
+in the same estimator epoch. Views preserve neutral; never bypass a real stream reset.
 Use PLAY_WAVEFORM with matching ACKs, no retries and fresh INFO/stream activity.
 Set neutral restores the `robotReady()` hand rotation, preserves position/opening and clears wrist unwrap history. `Control.zero` uses chest `basis`, never jaw orientation: cable-axis roll, transverse pitch, board-up yaw.
 `SENSOR_TO_ROBOT`: raw X → pitch (+Y), raw Y → cable-axis roll (-X), raw Z → yaw (+Z).
@@ -141,10 +141,10 @@ Voice preserves Tasks unless explicitly switching tabs. Bluetooth PTT follows AC
 Keep ordered writes, epoch cancellation, optional audio and `audio_wire.h`/ADPCM. USB/ESB has no mic; computer mic remains available.
 
 Stream drops in-flight messages. UDP accepts localhost/`tsmorz.github.io` unless `--origin` adds one.
-Print at true size, rejecting fit-to-page. Setup applies only via Next/Print/phone actions, never dialog close.
+Print at true size, rejecting fit-to-page. Setup applies via Next/Print/phone actions, never dialog close.
 
 ## Regression entry points
 
 `teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `advanced.cjs` (5l), `controller-link.cjs` (5m),
-`pour.cjs` (5n), `voice.cjs` (5p). `capture-browser.js` covers IMU, neutral, hold/resume and haptics.
+`pour.cjs` (5n), `voice.cjs` (5p). Capture/restart browser checks cover IMU, neutral, live input and quiet reset.
 Use actual IK/contacts in browser tests: open fully, retreat smoothly. Repeat on a phone; state hardware limits.

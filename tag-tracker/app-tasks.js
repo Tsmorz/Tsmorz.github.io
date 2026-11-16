@@ -12,8 +12,8 @@ const taskTime=t=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0'
 function taskLevel(id){
   if(!taskCatalog().some(l=>l.id===id))return;
   S.settings.robot.level=id;S.settings.robot.props='arcade';
-  rebaseCaptureOrientations();
-  TASK.guide=null;TASK.notice=null;TASK.hudSig='';TASK.moved=false;TB.n++;TB.drive.clear();TB.grab=null;RB.prev.clear();RB.slew.clear();selectPlayHand('1');
+  resetTaskRobot();
+  TASK.guide=null;TASK.notice=null;TASK.hudSig='';TASK.moved=false;TB.n++;selectPlayHand('1');
   saveSettings();paintRobotBtns();paintTasks(true);
 }
 function paintTaskVisibility(){

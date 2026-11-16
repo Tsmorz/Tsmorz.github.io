@@ -81,10 +81,12 @@
   function voices(ctx, out) {
     const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = noise.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    const loops = new Map(), nyq = ctx.sampleRate / 2.2;
+    const loops = new Map(), sources=new Set(), nyq = ctx.sampleRate / 2.2, bus=ctx.createGain();
+    bus.connect(out);
+    const watch=src=>{sources.add(src);src.onended=()=>{sources.delete(src);src.disconnect();};return src;};
     const panner = (pan) => {
-      if (!ctx.createStereoPanner) return out;
-      const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan || 0)); p.connect(out);
+      if (!ctx.createStereoPanner) return bus;
+      const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan || 0)); p.connect(bus);
       return p;
     };
     function hit(e, pan, t) {
@@ -93,11 +95,11 @@
       const dst = panner(pan);
       for (const m of v.modes) {
         if (m.f > nyq) continue;
-        const o = ctx.createOscillator(), g = ctx.createGain();
+        const o = watch(ctx.createOscillator()), g = ctx.createGain();
         o.frequency.value = m.f; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(m.amp * v.gain, t + 0.001); g.gain.setTargetAtTime(0, t + 0.001, m.decay);
         o.connect(g); g.connect(dst); o.start(t); o.stop(t + 0.002 + m.decay * 7);
       }
-      const n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      const n = watch(ctx.createBufferSource()), f = ctx.createBiquadFilter(), g = ctx.createGain();
       n.buffer = noise; f.type = 'bandpass'; f.frequency.value = Math.min(v.click.f, nyq); f.Q.value = 0.8;
       g.gain.setValueAtTime(v.click.amp * v.gain, t); g.gain.setTargetAtTime(0, t, v.click.decay);
       n.connect(f); f.connect(g); g.connect(dst); n.start(t, Math.random() * 0.5); n.stop(t + v.click.decay * 8);
@@ -111,7 +113,7 @@
         let l = loops.get(key);
         if (!l) {
           if (loops.size >= 8) continue;
-          const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+          const src = watch(ctx.createBufferSource()), f = ctx.createBiquadFilter(), g = ctx.createGain();
           src.buffer = noise; src.loop = true; f.type = 'bandpass'; f.frequency.value = v.f; g.gain.setValueAtTime(0, t);
           src.connect(f); f.connect(g); g.connect(panner(panOf ? panOf(tc.p) : 0)); src.start(t, Math.random());
           loops.set(key, (l = { src, f, g }));
@@ -120,7 +122,8 @@
       }
       for (const [key, l] of loops) if (!seen.has(key)) fade(key, l, t);
     }
-    return { hit, touches, stop: (t) => { for (const [key, l] of loops) fade(key, l, t); } };
+    return { hit, touches, stop: (t) => { for (const [key, l] of loops) fade(key, l, t); },
+      reset(t){for(const src of sources){src.stop(t);src.disconnect();}sources.clear();loops.clear();bus.disconnect();} };
   }
   // The output stage: a master gain, then a limiter that only catches peaks (so the loudness still follows the speed).
   function master(ctx, level) {
@@ -138,7 +141,7 @@
     const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
     if (!AC) return null;
     let ctx = null, gain = null, V = null, on = false, duck = false;
-    const impacts=impactGate();
+    let impacts=impactGate();
     function init() {
       if (ctx) return;
       ctx = new AC();
@@ -165,6 +168,7 @@
         V.touches(rec, panOf, now);
       },
       stop() { if (ctx) V.stop(ctx.currentTime); },
+      reset() { impacts=impactGate();if(ctx){V.reset(ctx.currentTime);V=voices(ctx,gain);} },
       get on() { return on; },
     };
     return self;

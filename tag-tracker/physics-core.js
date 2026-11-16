@@ -304,10 +304,35 @@
     // a body's shape frame (the ball's centre, the mug's base) at pos, turned R
     function place(b, pos, R) { b.R = R.slice(); b.q = qOf(R); b.t = add(pos, mulv(R, scale(b.off, -1))); b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.asleep = false; b.still = 0; b.lost = 0; b.group = []; b.externalImpulse = null; b.insertion = null; }
     W.reset = function () {
-      for (const k of Object.keys(W.hands)) W.hands[k].grip = null;
+      W.resetRobot();
       W.bodies.forEach((b, i) => place(b, W.starts[i].pos, W.starts[i].R));
       W.cloths.forEach((c) => c.reset()); W.cables.forEach(c => c.reset());
       W.warm.clear(); W.record = null; lastTouch.clear(); W.respawns = 0; W.carry = 0;
+    };
+    // A task reset has no path from the old hands/arms to the new ones. Seed both
+    // ends of interpolation, fresh jaws and free-body state without taking a step.
+    W.resetRobot = function (robot) {
+      W.hands={};prevLinks=new Map();nextLinks=robot?.links||[];nextHands=robot?.hands||[];
+      for(const L of nextLinks)prevLinks.set(L.id,{a:L.a.slice(),b:L.b.slice()});
+      for(const hd of nextHands){
+        const body=handBody(G),pose={R:hd.pose.R.slice(),t:hd.pose.t.slice()},gap=Math.max(0,Math.min(1,hd.opening??1))*G.gapMax;
+        body.side=hd.side;place(body,pose.t,pose.R);body.sp=handSpheres(G,gap);
+        W.hands[hd.side]={side:hd.side,body,gap,target:gap,grip:null,F:0,touch:[null,null],pads:[[],[]],aim:pose};
+      }
+      W.warm.clear();W.record=null;lastTouch.clear();touching.length=0;acc=null;W.carry=0;
+    };
+    // Prepare rigid supports before exposing a new task. This is physical settling,
+    // not an impact mute: retain supported poses and warm contacts, while task clocks
+    // and mechanisms have not started. A garment's initial load needs no rigid settle.
+    W.initialize = function (robot) {
+      W.resetRobot(robot);
+      if(!W.bodies.some(b=>!b.fixed))return;
+      const time=W.time,mechanisms=W.mechanisms;W.mechanisms=[];
+      try{for(let i=0;i<240;i++)W.step(H);}finally{
+        W.mechanisms=mechanisms;const elapsed=W.time-time;W.time=time;
+        for(const [key,at]of lastTouch)lastTouch.set(key,at-elapsed);
+        W.record=null;W.carry=0;
+      }
     };
     // where the page draws a body's shape (or a hand's wrist)
     W.poseOf = (b) => ({ R: b.R, t: add(b.t, mulv(b.R, b.off)) });

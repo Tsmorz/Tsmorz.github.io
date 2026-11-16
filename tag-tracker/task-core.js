@@ -21,7 +21,7 @@
     stein: { shape: { sections: [{ z0: 0, z1: STEIN.H - STEIN.floor, r: STEIN.Ri }] }, floor: STEIN.floor },
     bottle: { shape: { sections: BOTTLE.inside }, floor: BOTTLE.floor, flow: 0.00016 },
   };
-  function geometry(kind) {
+  function geometry(kind,artwork) {
     if (kind === 'plug-rest') return [box([0,0,.004],[.028,.024,.004]),box([0,0,.035],[.020,.005,.027])];
     if (kind === 'usb-plug') return [box([0,0,0],[.020,.007,.0055]),box([.024,0,.00115],[.004,.0042,.00015]),box([.024,0,-.00115],[.004,.0042,.00015]),box([.024,.004,0],[.004,.0002,.001]),box([.024,-.004,0],[.004,.0002,.001])];
     if (kind === 'usb-port') return [box([.005,0,.0035],[.005,.008,.002]),box([.005,0,-.0035],[.005,.008,.002]),box([.005,.0062,0],[.005,.0016,.0015]),box([.005,-.0062,0],[.005,.0016,.0015]),box([.006,0,0],[.004,.0028,.0003]),box([.011,0,0],[.001,.008,.006]),box([.012,0,-.034],[.012,.022,.028])];
@@ -46,11 +46,12 @@
       // The renderer revolves `profile`; collision uses a floor disc, a ring of wall segments and a D-shaped handle.
       const R = STEIN.R, Ri = STEIN.Ri, H = STEIN.H, wall = (R - Ri) / 2, n = 28, hx = STEIN.handle;
       const profile = [[0,0],[R-.002,0],[R,.003],[R,H-.004],[R-.0015,H],[Ri+.0015,H],[Ri,H-.004],[Ri,STEIN.floor+.002],[Ri-.002,STEIN.floor],[0,STEIN.floor]];
-      const parts = [{ ...cyl([0, 0, STEIN.floor / 2], R, STEIN.floor / 2), profile }];
+      const parts = [{ ...cyl([0, 0, STEIN.floor / 2], R, STEIN.floor / 2), profile, smoothProfile:true }];
       for (let i = 0; i < n; i++) { const a = i * 2 * Math.PI / n, rr = Ri + wall; parts.push({ ...box([rr * Math.cos(a), rr * Math.sin(a), (STEIN.floor + H) / 2], [wall, rr * Math.tan(Math.PI / n) * 1.05, (H - STEIN.floor) / 2]), R: rz(a) }); }
       // the handle: a vertical bar joined to the wall by two arms, all 18 mm thick across y so the pads can close on it
-      parts.push({ ...box([hx.x, 0, (hx.z0 + hx.z1) / 2], [hx.r, hx.w, (hx.z1 - hx.z0) / 2]), show: true });
-      for (const z of [hx.z0 + .005, hx.z1 - .005]) parts.push({ ...box([(R - .002 + hx.x - hx.r) / 2, 0, z], [(hx.x - hx.r - R + .002) / 2 + .001, hx.w, .005]), show: true });
+      parts.push(box([hx.x, 0, (hx.z0 + hx.z1) / 2], [hx.r, hx.w, (hx.z1 - hx.z0) / 2]));
+      for (const z of [hx.z0 + .005, hx.z1 - .005]) parts.push(box([(R - .002 + hx.x - hx.r) / 2, 0, z], [(hx.x - hx.r - R + .002) / 2 + .001, hx.w, .005]));
+      parts.push({type:'stein-handle',p:[0,0,0],handle:hx,wall:R-.002,visual:true,show:true,material:'ceramic'});
       parts.push(...[.009,H-.005].map(z=>({type:'trim',p:[0,0,z],r:R+.001,h:.002,visual:true,show:true,material:'pewter'})),
         {type:'lozenges',p:[0,0,.063],r:R+.0015,h:.038,visual:true,show:true,material:'labelBand'},
         {type:'ellipsoid',p:[-.052,0,.07],r:[.002,.022,.029],visual:true,show:true,material:'gold'},
@@ -59,15 +60,11 @@
       return parts;
     }
     if (kind === 'bottle') {
-      // Collision: solid stacked cylinders. Drawn: one smooth brown-glass revolve plus a paper label and band.
-      const parts = BOTTLE.outside.map((x, i) => ({ ...cyl([0, 0, (x.z0 + x.z1) / 2], x.r, (x.z1 - x.z0) / 2), ...(i ? {} : { profile: [[0,0],[.034,0],[.036,.004],[.036,.145],[.031,.158],[.023,.171],[.0155,.184],[.0135,.196],[.0135,.231],[.0152,.233],[.0152,.24],[.011,.241],[.0105,.237],[.0105,.228]] }) }));
-      // (paper stands ~1 mm proud of the glass so the two surfaces never fight in the depth buffer)
-      parts.push({ ...cyl([0, 0, .075], .0372, .038), visual: true, show: true, material: 'label' }, { ...cyl([0, 0, .116], .0373, .003), visual: true, show: true, material: 'labelBand' }, { ...cyl([0, 0, .212], .0145, .012), visual: true, show: true, material: 'label' },
-        {type:'lozenges',p:[0,0,.075],r:.0385,h:.024,visual:true,show:true,material:'labelBand'},
-        ...[.036,.112,.2,.224].map(z=>({type:'trim',p:[0,0,z],r:z>.15?.0155:.038,h:.0015,visual:true,show:true,material:'gold'})),
-        {type:'ellipsoid',p:[-.039,0,.078],r:[.002,.022,.029],visual:true,show:true,material:'gold'},
-        {type:'ellipsoid',p:[-.041,0,.078],r:[.002,.019,.026],visual:true,show:true,material:'labelBand'},
-        {type:'ellipsoid',p:[-.043,0,.08],r:[.002,.008,.016],visual:true,show:true,material:'label'});
+      // Collision stays solid stacked cylinders. The only decoration is one paper label;
+      // the neck remains clear for the gripper and the actual glass mouth remains open.
+      const parts = BOTTLE.outside.map((x, i) => ({ ...cyl([0, 0, (x.z0 + x.z1) / 2], x.r, (x.z1 - x.z0) / 2), ...(i ? {} : { smoothProfile:true,profile: [[0,0],[.034,0],[.036,.004],[.036,.145],[.031,.158],[.023,.171],[.0155,.184],[.0135,.196],[.0135,.231],[.0152,.233],[.0152,.24],[.011,.241],[.0105,.237],[.0105,.228]] }) }));
+      // Shape-preserving glass interpolation never exceeds 36 mm here; paper is 1.5 mm proud.
+      parts.push({ ...cyl([0, 0, .075], .0375, .038), visual:true,show:true,material:'label',artwork:artwork||{} });
       return parts;
     }
     if (kind === 'tray') return [box([0, 0, 0], [0.085, 0.19, 0.006]), ...[-1, 1].flatMap((s) => [box([s * 0.081, 0, 0.014], [0.004, 0.19, 0.014]), box([0, s * 0.186, 0.014], [0.085, 0.004, 0.014])])];
@@ -87,7 +84,7 @@
     const at = (p) => C.add(table.t, C.mulv(table.R, p));
     for (const s of level.objects || []) {
       const zone = s.kind === 'stein' ? { grip_zone: { min: [STEIN.R + .002, -.03, .02], max: [STEIN.handle.x + .03, .03, STEIN.H + .01] } } : {};
-      const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, ...zone, pieces: geometry(s.kind) }, at(s.at), C.mul3(table.R, s.R || I));
+      const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, ...zone, pieces: geometry(s.kind,s.artwork) }, at(s.at), C.mul3(table.R, s.R || I));
       Object.assign(b, { key: s.key, color: s.color, label: s.label }); byKey.set(s.key, b);
     }
     for (const s of level.cloths || []) { const c = Cloth.towel(s, table); W.cloths.push(c); byKey.set(s.key, c); }

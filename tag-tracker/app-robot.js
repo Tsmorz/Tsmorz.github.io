@@ -13,7 +13,7 @@ const RB = { cal: null, last: new Map(), seen: new Set(), prev: new Map(), jhist
 // the table (below): its physics world, the hands moved with the mouse
 const PHYS = window.PhysicsCore;
 const TABLE = { size: [0.5, 0.9], thick: 0.03, legs: 0.72 };
-const TB = { world: null, game: null, sig: '', t: 0, n: 0, drive: new Map(), grab: null, lastSide: null, ptr: null, hover: null };
+const TB = { world: null, game: null, sig: '', t: 0, n: 0, generation:0, drive: new Map(), grab: null, lastSide: null, ptr: null, hover: null };
 // The table's contacts as sound (sound.js), off until turned on (the speaker button, M, or "sound on"). It goes quiet
 // while the microphone listens for a voice command or note, and while the page is hidden.
 const SND = window.ContactSound ? ContactSound.create() : null;
@@ -160,7 +160,22 @@ function robotUpdate(now) {
   } else if (!cal) cal = robotCalibrate(roles, m);
   const poses = { body: roles.body !== null ? RB.last.get(roles.body) : null, arms: {} };
   for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
-  const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
+  const input=RB.taskInput;
+  if(input&&(input.cal!==RB.cal||input.frame!==S.settings.frame||input.sig!==sig))RB.taskInput=null;
+  const rebased=gameView()&&RB.taskInput;
+  const tg = RCORE.targets(cal, poses, { scale: rebased?1:S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
+  RB.rawChest=tg.chest;
+  if(gameView()&&RB.taskInput){
+    const base=RB.taskInput;
+    if(base.bodyPending&&fresh(roles.body)){base.chest=tg.chest;base.bodyPending=false;base.arms.clear();}
+    tg.chest=base.bodyPending?base.readyChest:C.compose(C.compose(tg.chest,C.inverse(base.chest)),base.readyChest);
+    for(const a of tg.arms){
+      const ready=RCORE.fk(m,a.side,robotReady()),key=a.key+'|'+a.side;
+      let origin=base.arms.get(key);
+      if(!origin&&!base.bodyPending&&fresh(a.key)){origin={R:a.target.R.slice(),t:a.target.t.slice()};base.arms.set(key,origin);}
+      a.target=origin?{t:C.add(ready.wrist,C.sub(a.target.t,origin.t).map(v=>v*S.settings.robot.scale)),R:C.mul3(C.mul3(a.target.R,C.tr3(origin.R)),ready.R)}:{t:ready.wrist,R:ready.R};
+    }
+  }
   const arms = tg.arms.map((a) => {
     const captureR = captureHandRotation(a.side, now * 1000, tg.chest, m);
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev.tag || prev : null, { prefer });
@@ -367,7 +382,34 @@ function drawRobotFlat(c, o, h, now) {
 // (their pose, and how open the operator wants them: a hand moved with the mouse, else the servo on the board fixed to
 // that hand's track, else open) go to the physics, which steps by the time since the last frame.
 const tableSig = (sc) => [S.settings.robot.props, S.settings.robot.playMode, S.settings.robot.level, S.settings.frame, TB.n, sc.preview ? 'p' : '', JSON.stringify(sc.m)].join('|');
+function taskRobotState(sc){
+  const links=[],hands=[],P=p=>RCORE.place(sc.chest,p);
+  for(const a of sc.arms){const k=RCORE.fk(sc.m,a.side,a.q);links.push({id:a.side+'u',a:P(k.shoulder),b:P(k.elbow),r:.04},{id:a.side+'f',a:P(k.elbow),b:P(k.wrist),r:.032});hands.push({side:a.side,pose:{R:C.mul3(sc.chest.R,k.R),t:P(k.wrist)},opening:a.open});}
+  return {links,hands};
+}
+function resetTaskRobot(sc=RB.scene){
+  const pointer=TB.grab?.id;TB.grab=null;
+  if(pointer!=null&&plot.hasPointerCapture?.(pointer))plot.releasePointerCapture(pointer);
+  TB.drive.clear();TB.ptr=null;TB.hover=null;TB.lastSide=null;plot.style.cursor='';$('dragPlaneGuide').hidden=true;
+  RB.prev.clear();RB.slew.clear();RB.slewT=performance.now()/1000;
+  if(sc){
+    const raw=RB.rawChest||sc.chest,readyChest={R:RCORE.upright([raw.R[0],raw.R[3],raw.R[6]]),t:raw.t.slice()};
+    RB.taskInput={cal:RB.cal,frame:S.settings.frame,sig:robotSig(),chest:raw,readyChest,bodyPending:sc.bodyKey!=null,arms:new Map()};
+    sc.chest=readyChest;sc.anchor=null;
+    sc.arms=[1,-1].map(side=>{
+      const old=sc.arms.find(a=>a.side===side),q=robotReady().slice(),k=RCORE.fk(sc.m,side,q);
+      RB.slew.set(side,{q:q.slice(),v:Array(7).fill(0)});
+      if(old?.key!=null)RB.prev.set(old.key,{side,q:q.slice(),elbow:k.elbow,tag:{q:q.slice(),elbow:k.elbow}});
+      return {...old,side,q,open:1,jaw:RCORE.gripper(sc.m).gapMax,wristStop:0,reach:true,gap:0,driven:false,idle:true};
+    });RB.scene=sc;
+  }
+  rebaseCaptureOrientations();
+  TB.generation++;TB.t=performance.now();TB.heard=null;
+  TASK_HAPTIC.reset();for(const b of S.boards)b.hapticLast=null;
+  SND?.reset?.();
+}
 function placeTable(sc) {
+  resetTaskRobot(sc);
   const m = sc.m, G = RCORE.gripper(m), w = RCORE.fk(m, 1, RCORE.HOME).wrist, tip = w[0] + 0.07 + G.fl;
   const anchor = sc.anchor || sc.chest;
   const R = RCORE.upright([anchor.R[0], anchor.R[3], anchor.R[6]]), ch = { R, t: anchor.t };
@@ -379,15 +421,14 @@ function placeTable(sc) {
   const spots = kind === 'cup' ? { ball: [tip + 0.045 - cx, w[1]], cup: [tip + 0.105 - cx, -w[1]] } : { ball: [tip + 0.05 - cx, 0] };
   TB.game = kind === 'arcade' ? TaskCore.create(currentTask(), table, G) : null;
   TB.world = TB.game ? TB.game.world : PHYS.scene(kind, table, G, spots, Math.PI);
+  TB.world.initialize(taskRobotState(sc));
   taskPlaced();
   TB.t = performance.now();
 }
 function resetTable() {
   if (S.settings.robot.props === 'off') return 'The table is off';
-  if (TB.game) TB.game.reset(); else if (TB.world) TB.world.reset();
-  taskPlaced();
-  TB.drive.clear(); TB.grab = null; RB.prev.clear(); RB.slew.clear(); paintRobotBtns();
-  rebaseCaptureOrientations();
+  robotUpdate(performance.now()/1000);
+  TASK.notice=null;placeTable(RB.scene);TB.sig=tableSig(RB.scene);paintRobotBtns();
   return 'Task restarted';
 }
 // how open an arm's gripper should be, 0 to 1
@@ -405,17 +446,13 @@ function tableStep(sc) {
   if (!sc || S.settings.robot.props === 'off' || !PHYS) { TB.world = null; TB.game = null; TB.sig = ''; if (SND) SND.stop(); return; }
   const sig = tableSig(sc);
   if (!TB.world || sig !== TB.sig) { TB.sig = sig; placeTable(sc); }
-  const W = TB.world, m = sc.m, links = [], hands = [], P = (p) => RCORE.place(sc.chest, p);
-  for (const a of sc.arms) {
-    const k = RCORE.fk(m, a.side, a.q);
-    links.push({ id: a.side + 'u', a: P(k.shoulder), b: P(k.elbow), r: 0.04 }, { id: a.side + 'f', a: P(k.elbow), b: P(k.wrist), r: 0.032 });
-    hands.push({ side: a.side, pose: { R: C.mul3(sc.chest.R, k.R), t: P(k.wrist) }, opening: a.open });
-  }
-  W.setRobot({ links, hands });
+  const W = TB.world, m = sc.m,generation=TB.generation;
+  W.setRobot(taskRobotState(sc));
   const t = performance.now();
   const previous = W.time;
   W.step((t - TB.t) / 1000); TB.t = t;
   if (TB.game) stepTask(W.time - previous);
+  if(TB.world!==W||TB.generation!==generation)return;
   sendTaskHaptics(W, sc, t);
   if (SND && W.record && W.record.time !== TB.heard) { TB.heard = W.record.time; SND.play(W.record, panOf); }
   // the arm drawn to where its hand is: the table or a prop may have stopped it short of where the arm was sent

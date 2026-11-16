@@ -60,9 +60,13 @@ function captureHandRotation(side,now,chest=RB.scene?.chest,m=RB.scene?.m){
   for(const b of S.boards){
     const control=b.captureControl;
     if(b.transport!=='capture'||!control?.neutral||control.neutral.side!==side)continue;
-    if(control.needsTaskPose&&active&&chest&&m){
+    if(control.needsTaskPose&&chest&&m){
       const R=C.mul3(chest.R,RCORE.fk(m,side,robotReady()).R);
-      control.retarget(b.motion,R,side,S.settings.frame,now,chest.R);
+      if(!active||!control.retarget(b.motion,R,side,S.settings.frame,now,chest.R)){
+        control.last=R.slice();
+        control.rotation(b.motion,side,S.settings.frame,now,active&&b.state==='live');
+        return R;
+      }
     }
     return control.rotation(b.motion,side,S.settings.frame,now,active&&b.state==='live');
   }

@@ -27,7 +27,7 @@ function page(side){
     ['drive'+side,selected],['capture'+side,{...prev}],['wrist-tag',{...prev,side,tag:{keep:true}}],['drive'+(-side),{...prev,side:-side}]
   ]),slew:new Map([[side,{q:prev.q.slice(),v:[0,0,0,0,.2,-.3,.1]}]])};
   const context=vm.createContext({C,RCORE:R,CaptureOrientation:O,RB,TB:{drive:new Map([[side,drive]])},S:{boards:[board,other],settings:{frame:'camera'}},
-    TASK_DATA:{link:{capture_neutral_help:'help',capture_still:'still',capture_on:'on'}},$,robotReady:()=>ready.slice(),gameView:()=>true,
+    TASK_DATA:{link:{capture_neutral_help:'help',capture_still:'still',capture_on:'on'}},V:{},$,robotReady:()=>ready.slice(),gameView:()=>true,
     performance:{now:()=>1000},document:{hidden:false,hasFocus:()=>true,addEventListener(){}},window:{addEventListener(){}},paintControllerPanel(){}});
   vm.runInContext(source,context);
   return {context,board,other,drive,RB,base,side,selected,nodes};
@@ -59,4 +59,18 @@ test('refused Set neutral preserves the existing wrist request and mouse control
   p.context.zeroCaptureOrientation(p.board);
   assert.equal(p.board.captureControl.neutral,before.neutral);assert.deepEqual(p.drive.R,before.R);assert.equal(p.selected.wristInput,before.wrist);
   assert.equal(p.nodes.get('ctlConnectionStatus').textContent,'still');
+});
+
+test('a restart holds the ready hand until fresh capture data can retarget without hiding a stream reset',()=>{
+  for(const side of [1,-1])for(const reset of [false,true])for(const inactive of [false,true]){
+    const p=page(side),control=p.board.captureControl,epoch=p.board.motion.epoch;
+    control.needsTaskPose=true;p.board.motion={...p.board.motion,at:700,epoch:epoch+(reset?1:0)};p.context.document.hidden=inactive;
+    const target=p.context.captureHandRotation(side,1000);
+    assert.ok(angle(target,p.base)<1e-7);assert.ok(angle(control.last,p.base)<1e-7);assert.equal(control.needsTaskPose,true);
+    assert.equal(control.recenterRequired,reset);
+    p.board.motion={...p.board.motion,at:1000};p.context.document.hidden=false;
+    assert.ok(angle(p.context.captureHandRotation(side,1000),p.base)<1e-7);
+    assert.equal(control.needsTaskPose,reset);assert.equal(control.recenterRequired,reset);
+    assert.equal(control.neutral.epoch,epoch);
+  }
 });
