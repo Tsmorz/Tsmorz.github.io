@@ -222,7 +222,14 @@
       if (profile && !s.show) continue;
       const R = s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1], p = s.p || [0, 0, 0];
       const meshes = [];
-      if(s.type==='ellipsoid'){meshes.push(blob([0,0,0],s.r,1,1,{nu:24,nv:16}));}
+      if(s.type==='trim')meshes.push(torus([0,0,0],s.r,s.h));
+      else if(s.type==='lozenges'){
+        for(let row=0;row<3;row++)for(let j=0;j<18;j++)meshes.push(surface((u,v)=>{
+          const a=(j+(row%2)*.5)*TAU/18+(u+v-1)*TAU/38;
+          return [s.r*Math.cos(a),s.r*Math.sin(a),(row-1)*s.h/1.5+(v-u)*s.h/3];
+        },2,2,p=>[p[0],p[1],0]));
+      }
+      else if(s.type==='ellipsoid'){meshes.push(blob([0,0,0],s.r,1,1,{nu:24,nv:16}));}
       else if (s.type === 'cylinder') {
         meshes.push(surface((u, v) => [s.r * Math.cos(TAU * u), s.r * Math.sin(TAU * u), (v * 2 - 1) * s.h], 32, 2, (p) => [p[0], p[1], 0]));
         for (const sign of [-1, 1]) meshes.push(surface((u, v) => [s.r * v * Math.cos(TAU * u), s.r * v * Math.sin(TAU * u), sign * s.h], 32, 2, () => [0, 0, sign]));
@@ -284,9 +291,29 @@
   // A liquid's flat surface: a fan over its outline (world points), facing `up`.
   function liquidMesh(l) {
     const pts = l.points, n = pts.length, c = pts.reduce((a, p) => C.add(a, p.map((v) => v / n)), [0, 0, 0]), pos = [...c], nrm = [...l.up], idx = [];
-    for (const p of pts) { pos.push(...p); nrm.push(...l.up); }
     const flip = n > 1 && dot(cross(sub(pts[0], c), sub(pts[1], c)), l.up) < 0;
-    for (let i = 0; i < n; i++) { const a = 1 + i, b = 1 + ((i + 1) % n); idx.push(0, ...(flip ? [b, a] : [a, b])); }
+    const phase=l.phase||0,foam=l.layer==='foam',coverage=foam?.93:1;
+    if(foam)for(let i=0;i<3;i++)pos[i]+=l.up[i]*(.0025+.004*(l.foam||0));
+    const vertex=(r,i)=>{
+      const a=i*TAU/n,rr=r*coverage*(foam?1+.018*Math.sin(a*7+phase):1),delta=sub(pts[i],c);
+      const ripple=(l.agitation||0)*.0012*Math.sin(r*23-phase*16)*(1-r*r);
+      const froth=foam?.001*(Math.sin(a*17+r*41)*Math.sin(a*11-r*53)+1):0;
+      const height=ripple+froth+(foam?.0015+.004*(l.foam||0):0);
+      pos.push(...C.add(C.add(c,delta.map(x=>x*rr)),l.up.map(x=>x*height)));nrm.push(...l.up);
+    };
+    const triangle=(a,b,c)=>idx.push(a,...(flip?[c,b]:[b,c]));
+    for(let ring=1;ring<=8;ring++){
+      for(let i=0;i<n;i++)vertex(ring/8,i);
+      for(let i=0;i<n;i++){
+        const a=1+(ring-1)*n+i,b=1+(ring-1)*n+(i+1)%n;
+        if(ring===1)triangle(0,a,b);
+        else{const p=a-n,q=b-n;triangle(p,a,b);triangle(p,b,q);}
+      }
+    }
+    // Normals follow the ripples and foam, so highlights move with the surface.
+    nrm.fill(0);
+    for(let i=0;i<idx.length;i+=3){const ids=idx.slice(i,i+3),p=ids.map(j=>pos.slice(j*3,j*3+3)),nn=cross(sub(p[1],p[0]),sub(p[2],p[0]));for(const j of ids)for(let k=0;k<3;k++)nrm[j*3+k]+=nn[k];}
+    for(let i=0;i<nrm.length;i+=3)nrm.splice(i,3,...(unit(nrm.slice(i,i+3))||l.up));
     return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), idx: new Uint16Array(idx) };
   }
   function cableMesh(c) {
@@ -305,7 +332,8 @@
       for(let j=0;j<sides;j++){
         const a=j*TAU/sides,n=C.add(u.map(x=>x*Math.cos(a)),v.map(x=>x*Math.sin(a)));
         const distance=Math.min(i,points.length-1-i)*(c.nodes.length>1?C.norm(sub(nodes[1],nodes[0]))/steps:0),boot=c.boot===false?1:1+Math.max(0,1-distance/.012)*.8;
-        pos.push(...C.add(p,n.map(x=>x*c.radius*boot)));nrm.push(...n);
+        const f=i/(points.length-1)*(nodes.length-1),j0=Math.min(nodes.length-1,Math.floor(f)),j1=Math.min(nodes.length-1,j0+1),radius=c.radii?c.radii[j0]+(c.radii[j1]-c.radii[j0])*(f-j0):c.radius;
+        pos.push(...C.add(p,n.map(x=>x*radius*boot)));nrm.push(...n);
         if(i<points.length-1){const k=i*sides+j,l=i*sides+(j+1)%sides;idx.push(k,l,k+sides,l,l+sides,k+sides);}
       }
     }return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
@@ -388,6 +416,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
     ceramic: { base: lin('#ece8e1'), spec: 0.6, shine: 90, rim: 0.6 },
     liquid: { base: lin('#e0a526'), spec: 1.1, shine: 160, rim: 0.3 },
     label: { base: lin('#efe7d4'), spec: 0.15, shine: 12, rim: 0.3 }, labelBand: { base: lin('#2d4f8c'), spec: 0.3, shine: 30, rim: 0.4 },
+    foam: {base:lin('#f3ead6'),spec:.12,shine:8,rim:.1},
+    pewter: {base:lin('#a4a5a2'),spec:.7,shine:45,rim:.3}, gold:{base:lin('#bd9149'),spec:.6,shine:60,rim:.3},
   };
   // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
   function model4(p, s) {
@@ -544,13 +574,13 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
           setMat(c.radius?'top':'fabric', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
         // Beer: each stein's level surface, and the falling stream as a thin tube through its drops.
-        const meshes = [...(o.props.liquids || []).map((l) => ['liquid' + l.key, liquidMesh(l), l.color]), ...(o.props.streams || []).map((s, i) => ['stream' + i, cableMesh({ nodes: s.points.map((p) => ({ p })), radius: 0.0026, bend: 0, boot: false }), s.color])];
-        for (const [key, mesh, color] of meshes) {
+        const meshes = [...(o.props.liquids || []).map((l) => ['liquid' + l.key + (l.layer||''), liquidMesh(l), l.color,l.layer]), ...(o.props.streams || []).map((s, i) => ['stream' + i, cableMesh({ nodes: s.points.map((p) => ({ p })), radii:s.radii, radius: 0.0026, bend: 0, boot: false }), s.color])];
+        for (const [key, mesh, color,layer] of meshes) {
           liveCloths.add(key);
           let g = clothGPU.get(key);
           if (!g || g.count !== mesh.idx.length) { if (g) free(g); g = upload(mesh); clothGPU.set(key, g); }
           else { gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.bufferData(gl.ARRAY_BUFFER, mesh.pos, gl.DYNAMIC_DRAW); gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.bufferData(gl.ARRAY_BUFFER, mesh.nrm, gl.DYNAMIC_DRAW); }
-          setMat('liquid', 0, lin(color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
+          setMat(layer==='foam'?'foam':'liquid', 0, lin(color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
         for (const [k, g] of clothGPU) if (!liveCloths.has(k)) { free(g); clothGPU.delete(k); }
       }

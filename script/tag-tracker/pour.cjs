@@ -15,6 +15,8 @@ module.exports = function ({ check }) {
   const bottle = { sections: BO.inside }, holds = (deg) => Pour.spout(tilted(deg), bottle).capacity;
   check(holds(0) > 0.00055 && holds(60) > 0.0005 && holds(110) < 0.00001, 'a full 0.5 l bottle keeps its beer past 60 degrees and is empty by 110: ' + JSON.stringify([0, 60, 90, 110].map((x) => Math.round(holds(x) * 1e6))));
   check(Pour.surface(tilted(10), 0.1, bottle).length === 0, "a bottle's hidden surface is not drawn");
+  const GL=require(root+'/tag-tracker/robot-gl'),stream=GL.cableMesh({nodes:[{p:[0,0,0]},{p:[0,0,-.1]}],radius:.006,radii:[.006,.003],boot:false});
+  check(Math.abs(Math.hypot(...stream.pos.slice(0,2))-.006)<1e-8&&Math.abs(Math.hypot(...stream.pos.slice(-3,-1))-.003)<1e-8,'a falling stream narrows as it accelerates rather than using one cable-like thickness');
 
   const play = () => {
     const g = T.create(T.mission(level, 'guided'), table, G), W = g.world, p = g.pour, A = p.from.body, B = p.to.body, hand = { R: I, t: [0, 0, 0.35], open: 1 };
@@ -85,6 +87,10 @@ module.exports = function ({ check }) {
     check(poured.held && poured.mug > 0.94 * s.p.V0 && poured.spilled < level.pour.spill_limit * s.p.V0, 'gripped by the neck and tipped with the mouth low over the mug, the bottle empties into it: ' + JSON.stringify({ bottle: poured.bottle * 1e6, mug: poured.mug * 1e6, spilled: poured.spilled * 1e6 }));
     check(poured.worst < 1e-9, 'no beer is made or lost: bottle, mug, stream and table always add up to what was poured');
     check(s.g.complete && !s.p.spoiled && T.guidance(s.g).state === 'done', 'stood back up and released, the pour completes: ' + JSON.stringify({ guide: T.guidance(s.g).state, steps: s.g.steps, bottle: s.g.local(s.W.poseOf(s.A).t) }));
+    const view=s.p.view(),liquid=view.surfaces.find(x=>x.key==='mug'),GL=require(root+'/tag-tracker/robot-gl');
+    check(liquid.foam>.1&&liquid.phase>=0&&view.streams.length===view.radii.length,'mouth collection creates a persistent foam head independently of the conserved beer volume');
+    const mesh=GL.liquidMesh({...liquid,layer:'foam'});
+    check([...mesh.pos,...mesh.nrm].every(Number.isFinite)&&mesh.idx.every(i=>i<mesh.pos.length/3)&&mesh.pos.length>liquid.points.length*3,'foam and ripples form a finite curved surface instead of one flat fan');
     s.g.reset();
     check(s.p.from.V === s.p.V0 && s.p.to.V === 0 && !s.p.spilled && !s.p.drops.length && !s.p.spoiled && !s.g.complete, 'restart refills the bottle and empties the mug');
   }
@@ -103,7 +109,7 @@ module.exports = function ({ check }) {
   {
     const g = T.create(T.mission(level, 'guided'), table, G), b = g.byKey.get('mug');
     check(T.fallen(g) === null, 'props standing on the table have not fallen');
-    b.t = C.add(b.t, [0, 0, -0.2]); check(T.fallen(g) === 'Mug', 'a prop below the tabletop is reported by name');
+    b.t = C.add(b.t, [0, 0, -0.2]); check(T.fallen(g) === b.label, 'a prop below the tabletop is reported by name');
     const towel = T.create(T.mission(data.levels.find((l) => l.id === 'laundry'), 'guided'), table, G), c = towel.world.cloths[0];
     for (const [i, node] of c.nodes.entries()) if (i < c.nodes.length * 0.6) node.p = C.add(node.p, [0, 0, -0.2]);
     check(T.fallen(towel) === c.label, 'a towel mostly hanging below the tabletop has fallen');

@@ -51,13 +51,23 @@
       // the handle: a vertical bar joined to the wall by two arms, all 18 mm thick across y so the pads can close on it
       parts.push({ ...box([hx.x, 0, (hx.z0 + hx.z1) / 2], [hx.r, hx.w, (hx.z1 - hx.z0) / 2]), show: true });
       for (const z of [hx.z0 + .005, hx.z1 - .005]) parts.push({ ...box([(R - .002 + hx.x - hx.r) / 2, 0, z], [(hx.x - hx.r - R + .002) / 2 + .001, hx.w, .005]), show: true });
+      parts.push(...[.009,H-.005].map(z=>({type:'trim',p:[0,0,z],r:R+.001,h:.002,visual:true,show:true,material:'pewter'})),
+        {type:'lozenges',p:[0,0,.063],r:R+.0015,h:.038,visual:true,show:true,material:'labelBand'},
+        {type:'ellipsoid',p:[-.052,0,.07],r:[.002,.022,.029],visual:true,show:true,material:'gold'},
+        {type:'ellipsoid',p:[-.054,0,.07],r:[.002,.019,.026],visual:true,show:true,material:'labelBand'},
+        {type:'ellipsoid',p:[-.056,0,.071],r:[.002,.009,.016],visual:true,show:true,material:'label'});
       return parts;
     }
     if (kind === 'bottle') {
       // Collision: solid stacked cylinders. Drawn: one smooth brown-glass revolve plus a paper label and band.
-      const parts = BOTTLE.outside.map((x, i) => ({ ...cyl([0, 0, (x.z0 + x.z1) / 2], x.r, (x.z1 - x.z0) / 2), ...(i ? {} : { profile: [[0,0],[.034,0],[.036,.004],[.036,.145],[.031,.158],[.023,.171],[.0155,.184],[.0135,.196],[.0135,.231],[.0152,.233],[.0152,.24],[.011,.241],[0,.241]] }) }));
+      const parts = BOTTLE.outside.map((x, i) => ({ ...cyl([0, 0, (x.z0 + x.z1) / 2], x.r, (x.z1 - x.z0) / 2), ...(i ? {} : { profile: [[0,0],[.034,0],[.036,.004],[.036,.145],[.031,.158],[.023,.171],[.0155,.184],[.0135,.196],[.0135,.231],[.0152,.233],[.0152,.24],[.011,.241],[.0105,.237],[.0105,.228]] }) }));
       // (paper stands ~1 mm proud of the glass so the two surfaces never fight in the depth buffer)
-      parts.push({ ...cyl([0, 0, .075], .0372, .038), visual: true, show: true, material: 'label' }, { ...cyl([0, 0, .116], .0373, .003), visual: true, show: true, material: 'labelBand' }, { ...cyl([0, 0, .212], .0145, .012), visual: true, show: true, material: 'label' });
+      parts.push({ ...cyl([0, 0, .075], .0372, .038), visual: true, show: true, material: 'label' }, { ...cyl([0, 0, .116], .0373, .003), visual: true, show: true, material: 'labelBand' }, { ...cyl([0, 0, .212], .0145, .012), visual: true, show: true, material: 'label' },
+        {type:'lozenges',p:[0,0,.075],r:.0385,h:.024,visual:true,show:true,material:'labelBand'},
+        ...[.036,.112,.2,.224].map(z=>({type:'trim',p:[0,0,z],r:z>.15?.0155:.038,h:.0015,visual:true,show:true,material:'gold'})),
+        {type:'ellipsoid',p:[-.039,0,.078],r:[.002,.022,.029],visual:true,show:true,material:'gold'},
+        {type:'ellipsoid',p:[-.041,0,.078],r:[.002,.019,.026],visual:true,show:true,material:'labelBand'},
+        {type:'ellipsoid',p:[-.043,0,.08],r:[.002,.008,.016],visual:true,show:true,material:'label'});
       return parts;
     }
     if (kind === 'tray') return [box([0, 0, 0], [0.085, 0.19, 0.006]), ...[-1, 1].flatMap((s) => [box([s * 0.081, 0, 0.014], [0.004, 0.19, 0.014]), box([0, s * 0.186, 0.014], [0.085, 0.004, 0.014])])];

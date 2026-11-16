@@ -71,7 +71,7 @@
   // A container's liquid. spec: {shape, floor (m above the body's base), volume (m³), flow (most m³/s its mouth passes)}.
   function vessel(body, spec) {
     const m = mouth(spec.shape);
-    return { body, shape: spec.shape, r: m.r, h: m.z1, floor: spec.floor, flow: spec.flow || Infinity, V0: spec.volume || 0, V: spec.volume || 0, a: [0, 0, 0], vPrev: null, n: [0, 0, 1], d: 0, pouring: 0 };
+    return { body, shape: spec.shape, r: m.r, h: m.z1, floor: spec.floor, flow: spec.flow || Infinity, V0: spec.volume || 0, V: spec.volume || 0, a: [0, 0, 0], vPrev: null, n: [0, 0, 1], d: 0, pouring: 0, agitation:0, foam:0 };
   }
   // The inner frame of a stein: origin at the centre of its inner floor, z along its axis.
   const inner = (W, v) => { const p = W.poseOf(v.body); return { R: p.R, t: C.add(p.t, C.mulv(p.R, [0, 0, v.floor])) }; };
@@ -81,6 +81,7 @@
     const state = { vessels, drops: [], spilled: 0, caught: 0, poured: 0, table };
     state.step = (dt) => {
       for (const v of vessels) {
+        v.agitation*=Math.exp(-dt/.35);v.foam*=Math.exp(-dt/35);
         const b = v.body, vel = b.v.slice();
         // the stein's acceleration, smoothed over ~60 ms so contact jitter doesn't slosh
         if (v.vPrev) { const acc = C.sub(vel, v.vPrev).map((x) => x / dt), k = Math.min(1, dt / 0.06); v.a = v.a.map((x, i) => x + (acc[i] - x) * k); }
@@ -100,7 +101,7 @@
           v.V -= out; v.pouring = out / dt; v.lip = at; state.poured += out;
           const last = state.drops[state.drops.length - 1];
           if (last && last.from === v && last.age < 0.02 && last.vol < 5e-6) last.vol += out;
-          else state.drops.push({ p: C.add(at, along.map((x) => x * 0.003)), v: C.add(rim, along.map((x) => x * speed)), vol: out, age: 0, from: v, t: W.time });
+          else state.drops.push({ p: C.add(at, along.map((x) => x * 0.003)), v: C.add(rim, along.map((x) => x * speed)), flow:out/dt, vol: out, age: 0, from: v, t: W.time });
         }
       }
       // Drops fall freely; one inside another stein's opening below its rim joins it, one at the table is spilled.
@@ -114,7 +115,7 @@
           const f = inner(W, v), q = C.mulv(C.tr3(f.R), C.sub(d.p, f.t)), q0 = C.mulv(C.tr3(f.R), C.sub(before, f.t));
           if (q0[2] >= v.h && q[2] < v.h) {
             const k = (q0[2] - v.h) / (q0[2] - q[2]);
-            if (Math.hypot(q0[0] + k * (q[0] - q0[0]), q0[1] + k * (q[1] - q0[1])) < v.r) { v.V += d.vol; state.caught += d.vol; gone = true; break; }
+            if (Math.hypot(q0[0] + k * (q[0] - q0[0]), q0[1] + k * (q[1] - q0[1])) < v.r) { v.V += d.vol; v.agitation=Math.min(1,v.agitation+d.vol*2e5);v.foam=Math.min(1,v.foam+d.vol*1e4);state.caught += d.vol; gone = true; break; }
           }
         }
         // Anything solid it hits instead (a wall, a handle, a bottle) splashes it off to the table: spilled.
@@ -128,20 +129,22 @@
       state.drops = keep;
     };
     // For drawing: each stein's surface outline in the world, and the stream as chains of nearby drops.
-    state.view = () => ({
+    state.view = () => {
+      const chains=state.drops.slice().reverse().reduce((chains,d)=>{
+        const last=chains.at(-1),tail=last?.at(-1);
+        if(tail&&tail.from===d.from&&C.norm(C.sub(tail.p,d.p))<.05)last.push(d);
+        else chains.push(d.from.pouring>0&&!chains.some(c=>c[0].from===d.from)&&C.norm(C.sub(d.from.lip,d.p))<.05?[{p:d.from.lip,from:d.from,flow:d.flow,v:d.v},d]:[d]);
+        return chains;
+      },[]).filter(c=>c.length>1);
+      return {
       surfaces: vessels.filter((v) => v.V > 2e-6 && v.shape.sections.length === 1).map((v) => {
         const f = inner(W, v), d = level(v.n, v.V, v.shape), shown = { sections: v.shape.sections.map((x) => ({ ...x, r: x.r * 0.995 })) };
-        return { key: v.body.key, points: surface(v.n, d, shown).map((p) => C.add(f.t, C.mulv(f.R, p))), up: C.mulv(f.R, v.n) };
+        return { key: v.body.key, points: surface(v.n, d, shown).map((p) => C.add(f.t, C.mulv(f.R, p))), up: C.mulv(f.R, v.n), phase:W.time, agitation:v.agitation, foam:v.foam };
       }),
-      // newest drops first, so a stream still pouring starts at its stein's lip
-      streams: state.drops.slice().reverse().reduce((chains, d) => {
-        const last = chains[chains.length - 1], tail = last && last[last.length - 1];
-        if (tail && tail.from === d.from && C.norm(C.sub(tail.p, d.p)) < 0.05) last.push(d);
-        else chains.push(d.from.pouring > 0 && !chains.some((c) => c[0].from === d.from) && C.norm(C.sub(d.from.lip, d.p)) < 0.05 ? [{ p: d.from.lip, from: d.from }, d] : [d]);
-        return chains;
-      }, []).filter((c) => c.length > 1).map((c) => c.map((d) => d.p)),
-    });
-    state.reset = () => { for (const v of vessels) { v.V = v.V0; v.a = [0, 0, 0]; v.vPrev = null; v.pouring = 0; } state.drops = []; state.spilled = 0; state.caught = 0; state.poured = 0; };
+      streams:chains.map(c=>c.map(d=>d.p)),
+      radii:chains.map(c=>c.map(d=>Math.max(.0008,Math.min(.006,Math.sqrt((d.flow||0)/(Math.PI*Math.max(.05,C.norm(d.v)))))))),
+    };};
+    state.reset = () => { for (const v of vessels) { v.V = v.V0; v.a = [0, 0, 0]; v.vPrev = null; v.pouring = 0;v.agitation=0;v.foam=0; } state.drops = []; state.spilled = 0; state.caught = 0; state.poured = 0; };
     return state;
   }
   return { cylinder, volumeBelow, spout, level, surface, vessel, pour };

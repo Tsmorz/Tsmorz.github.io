@@ -308,8 +308,8 @@ levels:
     - 0
     - 1
     mass: 0.25
-    label: Mug
-    color: "#8f9aa6"
+    label: Bavarian stein
+    color: "#e9e3d2"
     mat: ceramic
     show_label: true
   pour:
@@ -353,7 +353,7 @@ levels:
     - The palm is wider than the neck is long. Grip high on the neck, with the palm
       just above the cap.
     - Pour outward, toward the mug on the robot's left. Rolling the other way runs
-      the forearm into its limit and the arm swings round to reach.
+      the forearm into its stop. Turn back, then reposition the bottle.
     - A bottle glugs. Tilting further than the neck can pass only moves the stream;
       it doesn't pour faster.
     - The beer stays level as the bottle turns, and a quick start or stop sloshes it.
@@ -697,8 +697,9 @@ haptics:
   calibrating: Task feedback pauses while the capture gyro calibrates.
   label: TacHammer task feedback
   strength: Drive level
-  help: A sharp TacHammer click marks contact and impacts. A low rumble follows while
-    force stays applied. Both use the selected drive level (75% by default).
+  help: A sharp TacHammer click marks fresh contact, impacts and wrist stops. Low rumble
+    follows the current force while moving and fades quickly to a slight buzz at rest.
+    Drive level sets the peak (75% by default).
     ERM and gripper-servo commands are not sent.
   routing: Haptic hand
   sides:

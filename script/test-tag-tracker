@@ -713,6 +713,14 @@ if (run('5h')) {
   const seed={q:RC.HOME}, target=C.add(L.wrist,[.025,0,.015]), base=RC.handIK(m,1,{t:target,R:L.R},seed);
   const turned=RC.handIK(m,1,{t:target,R:C.mul3(L.R,RC.Rz(Math.PI))},seed);
   check(near(base.q.slice(0,4),turned.q.slice(0,4),1e-12)&&near(RC.fk(m,1,turned.q).wrist,target,1e-9), 'translation still moves the arm, independently of a saturated wrist command');
+  for(const side of [1,-1]){
+    const q=[.2,.15,.1,1.2,1.9,.9,.5],k=RC.fk(m,side,q),t=C.add(k.wrist,[.002,-.001,.001]),opts={prefer:false,swing:.5*D};
+    const a=RC.handIK(m,side,{t,R:k.R},{q,elbow:k.elbow},opts),b=RC.handIK(m,side,{t,R:C.mul3(RC.Rx(.2),k.R)},{q,elbow:k.elbow},opts);
+    check(C.norm(C.sub(a.elbow,k.elbow))<.004&&near(a.q.slice(0,4),b.q.slice(0,4),1e-12)&&near(RC.fk(m,side,a.q).wrist,t,1e-9), 'contact deflection preserves the commanded elbow without psi, independently of wrist deflection on side '+side);
+    const want=q.slice();want[5]=RC.JOINTS[5].hi+.1;
+    const stop=RC.wrist(m,side,q,RC.fk(m,side,want).R,q.slice(4));
+    check((stop.wristStop&8)!==0&&stop.limited,'wrist saturation identifies the joint and stop direction on side '+side);
+  }
 
   let worstP = 0, worstR = 0, over1 = 0, over5 = 0;
   for (let k = 0; k < N; k++) {
@@ -1154,7 +1162,7 @@ if (run('5i')) {
   check(Object.values(P.MATERIALS).every((v, i, a) => Number.isInteger(v) && v > 0 && a.indexOf(v) === i) && P.MATERIALS.wood === 1 && P.MATERIALS.ceramic === 2 && P.MATERIALS.rubber === 3 && P.MATERIALS.aluminium === 4 && P.MATERIALS.stone === 5,
     'materials keep their ids (they go over the air): wood 1, ceramic 2, rubber 3, aluminium 4, stone 5');
   {
-    // a ball dropped 13 cm bounces: impacts, rubber on wood, the first at the speed it fell to, each about the
+    // a ball dropped 13 cm bounces: impacts, stainless steel on wood, the first at the speed it fell to, each about the
     // restitution times the last; none once it rests
     let Wr = P.world({ table, gripper: G }), ev = [];
     const bd = Wr.add('ball', [0.05, 0, 0.15]);
@@ -1162,7 +1170,7 @@ if (run('5i')) {
     const fall = Math.sqrt(2 * 9.81 * (0.15 - P.BALL.r)), e0 = ev[0] || { a: {}, b: {} }, rest = [];
     run(Wr, 60, () => rest.push(...Wr.record.events));
     const ratios = ev.slice(1).map((e, i) => e.speed / ev[i].speed), high = ev.length > 1 ? (ev[1].t - ev[0].t) ** 2 * 9.81 / 8 : 0;
-    check(ev.length >= 4 && Math.abs(e0.speed - fall) < 0.03 * fall && ev.every((e) => e.a.mat === 'rubber' && e.b.kind === 'table' && e.b.mat === 'wood' && Math.abs(e.p[2]) < 0.005) && ratios.every((r) => r > 0.45 && r < 0.7) && Math.abs(high - 0.13 * P.BALL.e ** 2) < 0.006 && !rest.length,
+    check(ev.length >= 4 && Math.abs(e0.speed - fall) < 0.03 * fall && ev.every((e) => e.a.mat === 'stainless' && e.b.kind === 'table' && e.b.mat === 'wood' && Math.abs(e.p[2]) < 0.005) && ratios.every((r) => r > 0.45 && r < 0.7) && Math.abs(high - 0.13 * P.BALL.e ** 2) < 0.006 && !rest.length,
       `a ball dropped 13 cm bounces: impacts at ${ev.map((e) => e.speed.toFixed(2)).join(', ')} m/s (it fell to ${fall.toFixed(2)}), the first bounce ${(high * 100).toFixed(1)} cm high; none once it rests`);
     // thrown low with backspin onto a lacquered table (its grip 0.12): it bounces, skids (slipping less and less) and
     // rolls; the record's slip falls at the rate friction gives: mu·g·(1 + 5/2) for a solid ball, less the rolling
@@ -1213,11 +1221,11 @@ if (run('5i')) {
       if (Wr.record) { felt.push(...P.haptics(Wr.record, 1).impacts); heard.push(...Wr.record.events); }
     });
     go(30, null, 1); go(60, null, 0);
-    const grasp = felt.filter((x) => x.via === 'hand' && x.mat === 'rubber'), padHits = heard.filter((x) => (x.a.part === 'pad' || x.b.part === 'pad'));
+    const grasp = felt.filter((x) => x.via === 'hand' && x.mat === 'stainless'), padHits = heard.filter((x) => (x.a.part === 'pad' || x.b.part === 'pad'));
     felt = [];
     go(60, (s) => ({ R: I, t: [0, 0, P.BALL.r - G.finger.c[2] + 0.1 * s] }), 0); go(60, null, 0);
     const g = Wr.record.hands[1].grip || {}, w = P.BALL.mass * 9.81;
-    check(grasp.length >= 1 && padHits.length >= 1 && heard.some((x) => x.a.id === far.id && x.b.kind === 'table') && felt.every((x) => x.mat === 'rubber'),
+    check(grasp.length >= 1 && padHits.length >= 1 && heard.some((x) => x.a.id === far.id && x.b.kind === 'table') && felt.every((x) => x.mat === 'stainless'),
       `closing on the ball is an impact on the pads (felt: ${grasp.map((x) => (x.speed * 100).toFixed(0) + ' cm/s').join(', ')}); a ball dropped elsewhere is heard but not felt`);
     check(g.kind === 'ball' && Math.abs(g.load - w) < 0.1 * w && g.force[2] < 0 && !g.slipping && g.use < 1 && Wr.record.hands[1].hold > g.load,
       `held up, the grip carries the ball's weight (${(g.load || 0).toFixed(3)} N, ${w.toFixed(3)} N), down on the fingers, within what the pads hold (${Wr.record.hands[1].hold.toFixed(1)} N)`);
@@ -1225,8 +1233,8 @@ if (run('5i')) {
     felt = [];
     go(24, (s) => ({ R: I, t: [0.12 * s, 0, P.BALL.r - G.finger.c[2] + 0.03] }), 0); go(10, null, 0);
     const knock = felt.find((x) => x.via === 'held') || {};
-    check(knock.mat === 'ceramic' && knock.id === 2 && knock.through === 'rubber' && knock.speed > 0.15,
-      `knocked into a mug, the operator feels it through the ball: ceramic, through rubber, at ${((knock.speed || 0) * 100).toFixed(0)} cm/s`);
+    check(knock.mat === 'ceramic' && knock.id === 2 && knock.through === 'stainless' && knock.speed > 0.15,
+      `knocked into a mug, the operator feels it through the ball: ceramic, through stainless steel, at ${((knock.speed || 0) * 100).toFixed(0)} cm/s`);
   }
   // the servo on the operator's hand: its bytes, where it is, and how open that makes the gripper
   const st = { railOn: true, servoReady: true, analogReady: true, keys: 5, servoPulseUs: 0, feedbackMv: 1650, railMv: 3300, joyMv: [10, 20] };
@@ -1252,6 +1260,15 @@ if (run('5i')) {
   const skid = lv({ slip: 1, roll: 1.5 });
   check(one({ roll: 0.3 }, 'roll') && !one({ roll: 0.3 }, 'slide') && Math.abs(one({ roll: 0.6 }, 'roll').gain - 2 * one({ roll: 0.3 }, 'roll').gain) < 1e-12 && Math.abs(one({ slip: 0.4 }, 'slide').gain - 2 * one({ slip: 0.2 }, 'slide').gain) < 1e-12 && one({ slip: 0.4 }, 'slide').f > one({ slip: 0.2 }, 'slide').f && skid.length === 2 && !lv({ roll: 0.01 }).length,
     'a touch\'s sounds: rolling rumbles and sliding hisses, each as loud as its speed (twice as fast, twice as loud), a skid does both, and a still touch is silent');
+  const steel=lv({a:{mat:'stainless'},roll:.3}),robot=hit('aluminium','aluminium',1);
+  check(steel.some(v=>v.type==='grain')&&steel.find(v=>v.type==='roll').f<one({roll:.3},'roll').f&&ring(robot)<.05&&robot.modes.every(m=>m.f<1000)&&P.MATERIALS.stainless===6,
+    'a steel marble has a heavy rolling body and upper grain; robot metal makes a short low knock; existing wire material IDs stay fixed');
+  const gate=S.impactGate(),event={type:'impact',t:0,impulse:.1,a:{kind:'hand',id:1},b:{kind:'ball',id:2}};
+  const first=gate({time:.01,events:[event,{...event,impulse:.2}],touches:[]});
+  const chatter=gate({time:.08,events:[{...event,t:.07}],touches:[event]});
+  gate({time:.2,events:[],touches:[event]});
+  const held=gate({time:.25,events:[{...event,t:.24}],touches:[]}),fresh=gate({time:.5,events:[{...event,t:.49}],touches:[]});
+  check(first.length===1&&first[0].impulse===.2&&!chatter.length&&!held.length&&fresh.length===1,'audio coalesces jaw features and contact chatter, then rearms after real separation');
 }
 
 if (run('5j')) {

@@ -170,7 +170,7 @@ function robotUpdate(now) {
     // each new pose's joint angles, for the Joint angles plot (the arm's side kept, so a recalibration that swaps sides shows)
     const ts = RB.last.get(a.key).time, h = RB.jhist.get(a.key) || [];
     if (!h.length || h[h.length - 1].time !== ts) { h.push({ time: ts, q: s.q.slice(), side: a.side }); while (h.length && h[0].time < ts - S.settings.span - 1) h.shift(); RB.jhist.set(a.key, h); }
-    return { key: a.key, side: a.side, q: s.q, reach: s.reach, gap: s.gap, live: fresh(a.key) };
+    return { key: a.key, side: a.side, q: s.q, wristStop: s.wristStop || 0, reach: s.reach, gap: s.gap, live: fresh(a.key) };
   });
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
   const withBody = preview || roles.body !== null || S.settings.robot.props === 'arcade';
@@ -178,7 +178,7 @@ function robotUpdate(now) {
     const q = robotReady(), captureR = captureHandRotation(side, now * 1000), key = 'capture' + side;
     const s = captureR ? RCORE.wrist(m, side, q, C.mul3(C.tr3(tg.chest.R), captureR), RB.prev.get(key)?.wristInput) : null;
     if (s) RB.prev.set(key, s);
-    arms.push({ key: null, side, q: s ? s.q : q, reach: true, gap: 0, live: !!s, idle: !s });
+    arms.push({ key: null, side, q: s ? s.q : q, wristStop: s?.wristStop || 0, reach: true, gap: 0, live: !!s, idle: !s });
   }
   // a hand moved with the mouse goes where it was dragged, not where its tag is (the tag still rides on it). It was put
   // there in the world (by the table), so it stays there when the body moves: the arm reaches to keep it
@@ -188,7 +188,7 @@ function robotUpdate(now) {
     const captureR = captureHandRotation(side, now * 1000);
     const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.handIK(m, side, { R: C.mul3(Rc, captureR || d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || {q:robotReady()}, { prefer });
     RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, side });
-    const a = arms.find((x) => x.side === side), set = { q: s.q, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
+    const a = arms.find((x) => x.side === side), set = { q: s.q, wristStop: s.wristStop || 0, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
     if (a) Object.assign(a, set); else arms.push(Object.assign({ key: null, side }, set));
   }
   // the arm's motors: each joint follows its target only as fast as it can turn and speed up (RobotCore.slew)
@@ -416,7 +416,9 @@ function tableStep(sc) {
     const h = W.hands[a.side], P = W.handPose(a.side);
     if (!h || !P) continue;
     a.jaw = h.gap;
-    const k = RCORE.fk(m, a.side, a.q), s = RCORE.handIK(m, a.side, { R: C.mul3(Rt, P.R), t: C.mulv(Rt, C.sub(P.t, sc.chest.t)) }, { q: a.q, elbow: k.elbow }, { prefer: S.settings.robot.elbows ? undefined : false });
+    // Contact deflection must preserve the commanded elbow branch, rather than re-optimise
+    // its posture on every solver fluctuation. The command already carries elbow preference.
+    const k = RCORE.fk(m, a.side, a.q), s = RCORE.handIK(m, a.side, { R: C.mul3(Rt, P.R), t: C.mulv(Rt, C.sub(P.t, sc.chest.t)) }, { q: a.q, elbow: k.elbow }, { prefer:false, swing:.5*Math.PI/180 });
     a.q = s.q;
   }
 }
@@ -456,7 +458,7 @@ function pourDraw() {
   if (!p) return {};
   // the stream in the beer's colour; the surface in a glass, its head of foam
   const v = p.view(), spec = TB.game.level.pour, color = spec.color || '#e0a526', foam = spec.foam || color;
-  return { liquids: v.surfaces.filter((x) => x.points.length > 2).map((x) => ({ ...x, color: foam })), streams: v.streams.map((points) => ({ points, color })) };
+  return { liquids: v.surfaces.filter(x=>x.points.length>2).flatMap(x=>[{...x,color},...(x.foam>.01?[{...x,color:foam,layer:'foam'}]:[])]), streams: v.streams.map((points,i) => ({ points, radii:v.radii[i], color })) };
 }
 // drawn flat (no WebGL): the table's top, the ball, the cup as a fat stroke from its base to its rim
 function tableFlat(face, seg, ball) {
@@ -468,6 +470,7 @@ function tableFlat(face, seg, ball) {
     const p = W.poseOf(b);
     if (b.kind === 'ball') ball(p.t, PHYS.BALL.r, '#2a78d6', K.text, 1);
     else if (b.pieces) for (const s of b.pieces) {
+      if(s.visual)continue;
       if (s.type === 'cylinder') { const R = C.mul3(p.R, s.R || [1, 0, 0, 0, 1, 0, 0, 0, 1]), t = C.add(p.t, C.mulv(p.R, s.p)); seg(C.add(t, C.mulv(R, [0, 0, -s.h])), C.add(t, C.mulv(R, [0, 0, s.h])), s.r, b.color || K.surface, K.text, 1); }
       else {
         const vs = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]].map((v) => C.add(p.t, C.mulv(p.R, C.add(s.p, C.mulv(s.R || [1,0,0,0,1,0,0,0,1], v.map((x,i) => x*s.h[i]))))));

@@ -158,7 +158,9 @@
     const want = choices.reduce((a,b) => distance(a) <= distance(b) ? a : b);
     const out = q.slice();
     for (let i=0;i<3;i++) out[i+4] = clamp(want[i], JOINTS[i+4].lo, JOINTS[i+4].hi);
-    return { q: out, wristInput: want, limited: want.some((v,i) => Math.abs(v-out[i+4])>1e-9) };
+    // Distinguish the joint and stop direction; a held stop must not click every frame.
+    const wristStop=want.reduce((mask,v,i)=>mask|(v<JOINTS[i+4].lo-.01?1<<(i*2):v>JOINTS[i+4].hi+.01?2<<(i*2):0),0);
+    return { q: out, wristInput: want, wristStop, limited: want.some((v,i) => Math.abs(v-out[i+4])>1e-9) };
   }
 
   // Position and orientation are separate controls. Solve translation with the previous hand
@@ -167,7 +169,7 @@
     const seed = prev || {q: HOME}, k = fk(m, side, seed.q);
     const s = norm(sub(k.wrist,target.t)) < 1e-9
       ? { q: seed.q.slice(), elbow: k.elbow, wrist: k.wrist, psi: seed.psi, reach: true, gap: 0 }
-      : ik(m, side, {R:k.R,t:target.t}, seed, opts);
+      : ik(m, side, {R:k.R,t:target.t}, Object.assign({elbow:k.elbow},seed), Object.assign({},opts,{positionOnly:true}));
     return Object.assign(s, wrist(m,side,s.q,target.R,prev && prev.wristInput));
   }
 
@@ -203,11 +205,11 @@
       const Ru = cols(xU, cross(zU, xU), zU);
       const q = anglesFrom(side, Ru, q4, target.R, prevQ);
       const low = Math.max(0, elbow[2] - wrist[2]), out = Math.max(0, -side * (elbow[1] - sh[1]));
-      let cost = W.low * low * low + W.out * out * out + W.sink * (elbow[2] - sh[2]) + W.limits * excess(q);
+      let cost = W.low * low * low + W.out * out * out + W.sink * (elbow[2] - sh[2]) + W.limits * excess(o.positionOnly?q.map((v,i)=>i<4?v:0):q);
       if (prevE) { const e = sub(elbow, prevE); cost += W.steady * dot(e, e); }
       // and the joints steady: with the arm straight (or nearly) the elbow barely moves round the circle, and the upper
       // arm's turn trades freely against the forearm's, so only this keeps them from jumping
-      if (prevQ) for (let j = 0; j < 7; j++) { const e = Math.atan2(Math.sin(q[j] - prevQ[j]), Math.cos(q[j] - prevQ[j])); cost += W.turn * e * e; }
+      if (prevQ) for (let j = 0; j < (o.positionOnly?4:7); j++) { const e = Math.atan2(Math.sin(q[j] - prevQ[j]), Math.cos(q[j] - prevQ[j])); cost += W.turn * e * e; }
       return { q, psi, elbow, cost };
     };
     const K = 120, wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
@@ -217,9 +219,9 @@
     // Following a previous solution, the elbow only swings a little each time (`swing`, rad): it searches near where
     // it was, and heads for a much better place elsewhere (`better`) by that much at a time instead of jumping there.
     // ψ is measured from the elbow it had (or, with the arm straight, the ψ it had).
-    if (prev && prev.psi !== undefined && o.swing !== Infinity) {
+    if (prev && (prev.psi !== undefined || prevE) && o.swing !== Infinity) {
       const swing = o.swing || PREFER.swing, r = L1 * sb, c = add(sh, scale(n, L1 * cb));
-      let p0 = prev.psi;
+      let p0 = prev.psi ?? 0;
       if (prevE && r > 0.01) { const e = sub(prevE, c); if (Math.abs(dot(e, u)) + Math.abs(dot(e, v)) > 0.2 * r) p0 = Math.atan2(dot(e, v), dot(e, u)); }
       let near = null;
       for (let k = -12; k <= 12; k++) { const s = at(p0 + (k * swing) / 12); if (!near || s.cost < near.cost) near = s; }

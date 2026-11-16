@@ -1,7 +1,6 @@
 # Tag Tracker
 
-A self-contained page with `layout: null` front matter to render `_data/tag_tasks.yml`. The classic
-scripts in `index.html` share one global scope. The page tracks AprilTags and drives a simulated robot.
+A self-contained AprilTag/robot page; `layout: null` renders `_data/tag_tasks.yml`. Classic scripts share one global scope.
 
 ## Editing and checking
 
@@ -9,10 +8,8 @@ scripts in `index.html` share one global scope. The page tracks AprilTags and dr
 - `app-*.js` files may declare functions and wire handlers at load, but cannot read or call later files.
   Startup calls belong in the boot script at the end of `index.html`. Keep its script order intact.
 - Avoid top-level names belonging to `window` (`name`, `status`, `stop`, `print`, `on...`).
-- Run `node --check` on edited JS, then `task versions`: every script's `?v=` must match its content.
-  The worker's version also covers `tracker-core.js`, which it imports with the same query.
-- Keep no-DOM logic in the cores. `script/test-tag-tracker` is `task check:tag-tracker`; select sections
-  while iterating, e.g. `task check:tag-tracker -- 5j 5k 5q`. Sections reseed their random numbers. Time with `budget()`, never `check()`.
+- Run `node --check` on edited JS, then `task versions`; the worker version also covers its imported `tracker-core.js`.
+- Keep no-DOM logic in cores. `task check:tag-tracker -- 5j 5k 5q` selects reseeded test sections; time with `budget()`, never `check()`.
 - Build before browser checks. `task shot -- /tag-tracker/ --eval-file script/tag-tracker/<test>.js`
   fails on page exceptions. Inspect the PNG; repeat with `--phone`. Headless WebGL needs Metal.
 - Run `task ci` before finishing. OpenCV detection/calibration tests are optional when the pinned npm
@@ -24,7 +21,7 @@ Use cool anodised greys, ink, violet accents and Archivo; amber only for warning
 rounded cards, pills, monospace labels or shadows. Panels have 1 px outlines and 4 px corners.
 Reticle corner marks belong only on video.
 Tag colours keep their categorical slot in storage (eight slots, then labelled grey). Label x/y/z.
-The robot has one generic look, the Machine; don't restore human avatars, story rooms or rewards.
+Keep the generic Machine robot; no human avatars, story rooms or rewards.
 
 Preserve Calibrate → Tracking → Tasks and the scene across tab switches. Tasks alone mounts
 `#gameHUD`; Tracking pauses and hides the task table (`tableShown`). No Physics or Forces UI.
@@ -69,17 +66,16 @@ head camera, including its tilt. Calibrate robot reads un-tared poses.
 
 Keep limited-spring physical hands and collisions with the other arm/gripper; exclude their own
 side-prefixed links. Rigid grip loads sum joint and pad forces; internal cancellation is not external load.
-Match compound rendering/collision dimensions, hollow openings and piece/parallel-axis inertia.
-Material IDs in `MATERIALS` go over the air: never renumber.
+Match compound rendering/collision dimensions, openings and parallel-axis inertia; never renumber wire `MATERIALS` IDs.
 Keep fixed 240 Hz substeps, contact friction, warm starting, sleeping and bounded reactions together.
 
-AprilTags remain the default input; `app-tasks.js` defines mouse and keyboard bindings.
 Every task starts idle arms in the one top-level `ready.joints` pose in `tag_tasks.yml` (degrees); no
 task carries its own. It never overrides AprilTag input. Preserve the elbow when the mouse takes a ready
 hand. Seed idle joints without a first-frame IK solve, clear idle slew on tab changes, and apply task
 camera placement before drawing. Stationary real body/wrist tags auto-calibrate after 0.8 s.
 Use `handIK`/`wrist` for task orientation commands: wrist stops never recruit shoulder or elbow motion.
-Keep the requested wrist Euler branch unwrapped past stops; otherwise a large turn flips to the opposite stop.
+Keep requested wrist Euler angles unwrapped past stops. Contact reconstruction must seed the commanded elbow
+and use position-only IK costs; wrist limits must never recruit the shoulder. `wristStop` identifies stop edges.
 
 ## The five tasks
 
@@ -120,47 +116,41 @@ Waking a resting towel must still permit a real grasp.
 
 In `pour-core.js`, preserve beer conservation and mouth-only collection; solid hits spill.
 `CONTAINER`, `flow` and `spill_limit` govern geometry, flow and failure. `grip_zone` restricts the
-stein to its handle; `BOTTLE.grip` keeps the bottle mouth clear of the palm. The left arm pours
+stein to its handle; `BOTTLE.grip` keeps the bottle mouth clear of the palm. Decorative `visual` pieces have no collision or mass; stream widths follow flow/speed. Foam never changes beer volume. The left arm pours
 outward: inward roll hits its forearm limit. Keep `visual` labels ≥1 mm proud to avoid z-fighting.
-The USB fixture (`connector-fixture.json`) is test-only and keeps the cable and insertion code.
+`connector-fixture.json` is test-only; keep its cable and insertion code.
 
-Controller firmware belongs in `../nrf-controller`. `decodeImuBatch` matches `src/sysid_wire.h`;
-TP/1 framing/freshness (`src/teleop_wire.*`, `teleop_policy.*`) keeps C/JS byte parity. USB/ESB is a
-separate 1 Mbaud image. Source clocks survive gateway forwarding and reboot; USB replaces duplicate
-BLE links. Never open a serial console on the page's port, start an unseen camera track, or fuse IMU
-into anything but a live, aligned Filtered track.
+Firmware belongs in `../nrf-controller`; `decodeImuBatch` matches `src/sysid_wire.h`. Preserve C/JS parity
+for TP/1 framing/freshness (`src/teleop_wire.*`, `teleop_policy.*`); USB/ESB uses a separate 1 Mbaud image.
+Source clocks survive gateway forwarding/reboot; USB replaces duplicate BLE. Never open a console on
+the page's port, start an unseen camera, or fuse IMU outside a live, aligned Filtered track.
 
-Capture USB uses its native raw IMU via `capture-core.js`/`app-capture.js`, never the TP/VQF
-decoder or a teleop firmware flash. Relative orientation requires a stationary gyro calibration
-and per-hand neutral pose; IMU never supplies translation. Keep task pulses muted until gyro bias
-calibration finishes, or the actuator can prevent its own stillness check. Blur, hidden pages, dialogs
-and stale delivery hold the last rotation and resume with fresh samples in the same estimator epoch.
-An epoch change requires recentering. Keep calibration in memory and clear it on hand/task/frame
-changes. Capture cues use PLAY_WAVEFORM, matching ACKs, no retries and fresh INFO/stream activity.
-Capture `Control.zero` takes the chest rotation as `basis`: cable-axis roll, transverse pitch and board-up
-yaw stay in that reference frame, independently of the gripper's neutral roll. Never anchor those axes to its jaws.
-`SENSOR_TO_ROBOT` maps raw X to pitch (+Y), raw Y to cable-axis roll (-X), and raw Z to yaw (+Z).
+Capture USB uses native raw IMU via `capture-core.js`/`app-capture.js`, never TP/VQF or teleop firmware.
+Relative orientation needs stationary gyro calibration and per-hand neutral; IMU supplies no translation.
+Mute task pulses until gyro bias calibration finishes, or the actuator prevents its own stillness check.
+Blur/hidden/dialogs/stale delivery hold rotation and resume on fresh samples in the same estimator epoch;
+an epoch change requires recentering. Calibration stays in memory and clears on hand/task/frame changes.
+Use PLAY_WAVEFORM with matching ACKs, no retries and fresh INFO/stream activity.
+`Control.zero` uses chest `basis`, never jaw orientation: cable-axis roll, transverse pitch, board-up yaw.
+`SENSOR_TO_ROBOT`: raw X → pitch (+Y), raw Y → cable-axis roll (-X), raw Z → yaw (+Z).
 
-Task feedback uses finite TacHammer CLICK for impact/contact onset, KNOCK for seating and BUZZ_50HZ
-under sustained load: six-byte version-2 commands, at the selected drive level (default and maximum 75%), BLE
-10 Hz, USB/ESB up to 25 Hz. Rumble bursts self-end after 300 ms; renew only while loaded. Impacts take
-priority and dropped clicks never replay. Test pulse uses the same selected level. No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). The
-firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
-get nothing; drop busy writes, never queue. Reset cues on task change, off, blur and hidden pages. ACK
-is acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry, 120 ms ACK timeouts.
+Task feedback uses six-byte v2 finite TacHammer commands: CLICK for contacts/wrist stops, KNOCK for seating and
+BUZZ_50HZ under load. BLE is capped at 10 Hz, USB/ESB at 25 Hz. Coalesce contacts until separation; never replay dropped events.
+`TaskHaptics` adapts constant loads toward a faint floor; current force and motion set rumble amplitude,
+capped by the selected peak (default/max 75%). Refresh finite 300 ms rumble at 10 Hz; release stops renewal.
+No ERM, servo-motion or STOP_ALL writes (STOP_ALL releases a servo). Test pulse uses the selected peak.
+Firmware acquires the power rail. Unmapped, simulated, stale (>500 ms), unready or disconnected boards
+get nothing; drop busy writes, never queue. Reset on task change, off, blur and hidden pages. ACK means
+acceptance, not motion. Keep 100 ms source freshness, 50 ms gateway expiry and 120 ms ACK timeouts.
 
-Voice uses whole utterances and preserves Tasks unless explicitly changing tabs. Bluetooth PTT follows
-ACT `keys`, not paused data-event streams. Keep ordered writes, epoch-scoped cancellation, optional audio
-service and the `audio_wire.h`/ADPCM contract. USB/ESB has no mic stream; computer mic remains available.
+Voice preserves Tasks unless explicitly switching tabs. Bluetooth PTT follows ACT `keys`, not paused streams.
+Keep ordered writes, epoch cancellation, optional audio and `audio_wire.h`/ADPCM. USB/ESB has no mic; computer mic remains available.
 
-Stream drops an in-flight message rather than queueing. The UDP bridge accepts only localhost and
-`tsmorz.github.io` unless `--origin` adds one. Printing uses true paper size and rejects fit-to-page.
-Setup choices apply only through Next/Print/phone actions, never merely by closing the dialog.
+Stream drops in-flight messages. UDP accepts localhost/`tsmorz.github.io` unless `--origin` adds one.
+Print at true size, rejecting fit-to-page. Setup applies only via Next/Print/phone actions, never dialog close.
 
 ## Regression entry points
 
-`teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `advanced.cjs` (5l),
-`controller-link.cjs` (5m), `pour.cjs` (5n), `voice.cjs` (5p). `capture-browser.js` covers raw IMU,
-neutral poses, hold/recenter and simultaneous haptics. Other browser tests run actual IK and contacts:
-move hands as a player does (open fully, then retreat smoothly). Repeat responsive checks on a phone.
-State what has not run on real hardware.
+`teleop.cjs` (5j), `guidance.cjs` (5k), `balance.cjs` (5q), `advanced.cjs` (5l), `controller-link.cjs` (5m),
+`pour.cjs` (5n), `voice.cjs` (5p). `capture-browser.js` covers IMU, neutral, hold/resume and haptics.
+Use actual IK/contacts in browser tests: open fully, retreat smoothly. Repeat on a phone; state hardware limits.

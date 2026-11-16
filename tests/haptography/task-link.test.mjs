@@ -117,7 +117,7 @@ test('real task dispatcher sends the selected 75 percent even for light contact 
     p.advance(150);
     d.tick({ boards: [b], world, arms: [], now: 150, enabled: true, level: 75 });
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x44,1,75],[0x44,6,75]]);
+    assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x44,1,75],[0x44,6,1]]);
     b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
     assert.equal(p.commands.length, 2);
   } finally { await p.link.close(); }

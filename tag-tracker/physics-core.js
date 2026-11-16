@@ -123,7 +123,7 @@
   // What things are made of. The ids are meant to go over the air to a haptics board's library (an nrf-controller
   // looks a contact up by material and speed), so an entry keeps its id for good. The table is wood, the floor stone,
   // the robot aluminium with rubber pads.
-  const MATERIALS = { wood: 1, ceramic: 2, rubber: 3, aluminium: 4, stone: 5 };
+  const MATERIALS = { wood: 1, ceramic: 2, rubber: 3, aluminium: 4, stone: 5, stainless: 6 };
   // An impact: a pair that starts touching (after `gap` s apart) at `speed` m/s or more.
   const IMPACT = { speed: 0.03, gap: 0.03 };
 
@@ -183,7 +183,7 @@
   }
   function ballBody() {
     const r = BALL.r, I = 0.4 * BALL.mass * r * r;
-    return makeBody('ball', { m: BALL.mass, Ib: diag([I, I, I]), off: [0, 0, 0], sp: [{ p: [0, 0, 0], r }], bound: r, mu: BALL.mu, e: BALL.e, crr: BALL.crr, rollR: r, mat: 'rubber' });
+    return makeBody('ball', { m: BALL.mass, Ib: diag([I, I, I]), off: [0, 0, 0], sp: [{ p: [0, 0, 0], r }], bound: r, mu: BALL.mu, e: BALL.e, crr: BALL.crr, rollR: r, mat: 'stainless' });
   }
   function cupBody() {
     const M = cupMassProps(), sp = cupSpheres().map((s) => ({ p: sub(s.p, M.com), r: s.r }));

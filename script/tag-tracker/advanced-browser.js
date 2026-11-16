@@ -14,6 +14,6 @@
   const feedback=TaskHaptics.dispatcher(),now=performance.now();
   feedback.tick({boards:[b],world:W,arms:RB.scene.arms,now,enabled:true,active:true});await wait(20);
   feedback.tick({boards:[b],world:W,arms:RB.scene.arms,now:now+160,enabled:true,active:true});await wait(20);
-  assert(writes.map(x=>x[2]).join(',')==='1,6'&&writes.every(x=>x[0]===2&&x[1]===2&&x[3]===75),'the real grip load clicks on contact, then rumbles at the selected 75 percent');
+  assert(writes.map(x=>x[2]).join(',')==='1,6'&&writes[0][3]===75&&writes[1][3]>0&&writes[1][3]<=75&&writes.every(x=>x[0]===2&&x[1]===2),'the real grip load clicks on contact, then rumbles in proportion to force under the selected 75 percent peak');
   return {passed:true,realRobotGrip:true,tacHammerOnly:true,contactClick:true,sustainedRumble:true};
 })()
