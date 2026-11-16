@@ -687,6 +687,8 @@ if (run('5g')) {
 
 if (run('5h')) {
   console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a screen; its settings');
+  require('./tag-tracker/gripper-stability.cjs')({check});
+  require('./tag-tracker/cloth-render.cjs')({check});
   const RC = require(path.join(__dirname, '..', 'tag-tracker/robot-core.js'));
   const m = RC.model(), D = Math.PI / 180, N = 2000;
   for(const rotation of [[0,0,0],[.4,-.7,.9]])for(const axis of [0,1,2])for(const sign of [-1,1]){
@@ -1333,7 +1335,7 @@ function testBridge() {
 
 let cvPkg = null;
 try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
-if(run('5n')){console.log('5n. beer poured between steins by the handle, and props off the table');require('./tag-tracker/pour.cjs')({check,near});}
+if(run('5n')){console.log('5n. beer poured between steins by the handle, and props off the table');require('./tag-tracker/liquid-render.cjs')({check});require('./tag-tracker/pour.cjs')({check,near});}
 const bridged = Promise.all([run('5d') ? testBridge() : Promise.resolve(),run('5l') ? require('./tag-tracker/advanced.cjs')({check,near}) : Promise.resolve(),run('5m') ? require('./tag-tracker/controller-link.cjs')({check,near}) : Promise.resolve()]);
 if (!run('6') && !run('6b')) bridged.then(finish);
 else if (!cvPkg) bridged.then(() => {

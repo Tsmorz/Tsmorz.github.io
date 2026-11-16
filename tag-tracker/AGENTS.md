@@ -55,7 +55,7 @@ show head tilt only in robot-eye view. Popups close with an accessible ×; do no
 
 ## Robot, table and input
 
-Keep `robot-core.js`'s `MIN_BEND` (straight elbows are singular), bounded elbow swing and motor slew.
+Keep `MIN_BEND` (straight elbows are singular) and bounded elbow swing. `handIK` stops at feasible shoulder/elbow limits; `slew` cancels outward momentum at hard stops.
 `robot.scale` is shared by the Task sensitivity slider and Tracking's Motion × selector. Scale
 AprilTag translation from calibrated wrist home and incremental mouse/keyboard travel, never wrist
 rotation or chest motion. Changing gain must not rescale an existing mouse target or reset its IK seed.
@@ -76,7 +76,7 @@ Every task starts idle arms in the one top-level `ready.joints` pose in `tag_tas
 task carries its own. It never overrides AprilTag input. Preserve the elbow when the mouse takes a ready
 hand. Seed idle joints without a first-frame IK solve, clear idle slew on tab changes, and apply task
 camera placement before drawing. Stationary real body/wrist tags auto-calibrate after 0.8 s.
-Use `handIK`/`wrist` for task orientation commands: wrist stops never recruit shoulder or elbow motion.
+Use `handIK`/`wrist` for task orientation commands: wrist stops never recruit the arm. Preserve `positionPending`/`positionGoal` in `RB.prev` to avoid recovery branch jumps or oscillation.
 Keep requested wrist Euler angles unwrapped past stops. Contact reconstruction must seed the commanded elbow
 and use position-only IK costs; wrist limits must never recruit the shoulder. `wristStop` identifies stop edges.
 
@@ -97,8 +97,8 @@ hold and released set-down. Test actual contacts, not just a ball parked at its 
 No automated fabric-fold playthroughs: Tony tests folding by hand; scripted folds vary with rounding.
 Static pattern, mesh, guidance and loading checks are fine. `laundry` uses the thin `shirt` cut pattern,
 with cuffs, hem and shoulders from material landmarks; do not replace it with a rectangular plush towel.
-`halfThickness` is the contact radius; `pile` is visual nap. Rendering must follow the physical nodes.
-Rebuild GPU buffers on topology changes. `bend_memory` sets creases only on supported, released fabric;
+`halfThickness` is contact radius; `pile` is visual nap. Render helpers follow physical nodes without mutation; cotton UV/hem coordinates stay in the material frame.
+Rebuild GPU buffers on topology changes; refresh indices when topology changes at equal size. `bend_memory` sets creases only on supported, released fabric;
 setting them while held preserves unwanted arches. Fabric pressed into the table leaves through its top.
 Grips use finite barycentric patches, not single vertices; bound reactions across captured layers.
 Losing a patch while closed requires reopening (`clothSlip`). Grab markers show at the actual landmarks;
@@ -106,10 +106,10 @@ show shoulder destinations once the hem is held. Preserve sleeve/hem/compactness
 
 ## Pouring and controller contracts
 
-In `pour-core.js`, preserve beer conservation and mouth-only collection; solid hits spill.
+In `pour-core.js`, preserve beer conservation and mouth-only collection; solid hits spill. Liquid render tails, bubbles and spray never change volume.
 `CONTAINER`, `flow` and `spill_limit` govern geometry, flow and failure. `grip_zone` restricts the
 stein to its handle; `BOTTLE.grip` keeps the bottle mouth clear of the palm. Decorative `visual` pieces have no collision or mass; stream widths follow flow/speed. Foam never changes beer volume. The left arm pours
-outward: inward roll hits its forearm limit. Keep `visual` labels ≥1 mm proud to avoid z-fighting.
+outward: inward roll hits its forearm limit. Keep `visual` labels ≥1 mm proud; cylindrical labels have no end caps. Draw transparent meshes after opaque ones with depth writes off, sorted by actual mesh centre.
 `connector-fixture.json` is test-only; keep its cable and insertion code.
 
 Firmware belongs in `../nrf-controller`; `decodeImuBatch` matches `src/sysid_wire.h`. Preserve C/JS parity

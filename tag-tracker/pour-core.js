@@ -71,15 +71,17 @@
   // A container's liquid. spec: {shape, floor (m above the body's base), volume (m³), flow (most m³/s its mouth passes)}.
   function vessel(body, spec) {
     const m = mouth(spec.shape);
-    return { body, shape: spec.shape, r: m.r, h: m.z1, floor: spec.floor, flow: spec.flow || Infinity, V0: spec.volume || 0, V: spec.volume || 0, a: [0, 0, 0], vPrev: null, n: [0, 0, 1], d: 0, pouring: 0, agitation:0, foam:0 };
+    return { body, shape: spec.shape, r: m.r, h: m.z1, floor: spec.floor, flow: spec.flow || Infinity, V0: spec.volume || 0, V: spec.volume || 0, a: [0, 0, 0], vPrev: null, n: [0, 0, 1], d: 0, pouring: 0, agitation:0, foam:0, receiving:null, visualSplashAt:-Infinity };
   }
   // The inner frame of a stein: origin at the centre of its inner floor, z along its axis.
   const inner = (W, v) => { const p = W.poseOf(v.body); return { R: p.R, t: C.add(p.t, C.mulv(p.R, [0, 0, v.floor])) }; };
   // One pour: the steins in `vessels`, the falling drops, and what reached the table. Call each physics substep.
   // solid(p, skip): whether p is inside a body other than skip, so a drop that hits it splashes rather than passing through.
   function pour(W, vessels, table, solid = null) {
-    const state = { vessels, drops: [], spilled: 0, caught: 0, poured: 0, table };
+    const state = { vessels, drops: [], spilled: 0, caught: 0, poured: 0, table, time:0, visualImpacts:[] };
     state.step = (dt) => {
+      state.time+=dt;
+      state.visualImpacts=state.visualImpacts.filter(e=>state.time-e.at<.24);
       for (const v of vessels) {
         v.agitation*=Math.exp(-dt/.35);v.foam*=Math.exp(-dt/35);
         const b = v.body, vel = b.v.slice();
@@ -115,7 +117,17 @@
           const f = inner(W, v), q = C.mulv(C.tr3(f.R), C.sub(d.p, f.t)), q0 = C.mulv(C.tr3(f.R), C.sub(before, f.t));
           if (q0[2] >= v.h && q[2] < v.h) {
             const k = (q0[2] - v.h) / (q0[2] - q[2]);
-            if (Math.hypot(q0[0] + k * (q[0] - q0[0]), q0[1] + k * (q[1] - q0[1])) < v.r) { v.V += d.vol; v.agitation=Math.min(1,v.agitation+d.vol*2e5);v.foam=Math.min(1,v.foam+d.vol*1e4);state.caught += d.vol; gone = true; break; }
+            const entry=[q0[0]+k*(q[0]-q0[0]),q0[1]+k*(q[1]-q0[1]),v.h];
+            if (Math.hypot(entry[0],entry[1]) < v.r) {
+              v.V += d.vol; v.agitation=Math.min(1,v.agitation+d.vol*2e5);v.foam=Math.min(1,v.foam+d.vol*1e4);state.caught += d.vol; gone = true;
+              // Render-only continuation and splash timing. Accounted drops still join only through the mouth.
+              v.receiving={local:entry,velocity:C.mulv(C.tr3(f.R),d.v),flow:d.flow||d.from.flow,from:d.from,at:state.time};
+              if(state.time-v.visualSplashAt>.045){
+                v.visualSplashAt=state.time;state.visualImpacts.push({vessel:v,local:entry,at:state.time,seed:Math.round(state.time*1000)});
+                if(state.visualImpacts.length>8)state.visualImpacts.shift();
+              }
+              break;
+            }
           }
         }
         // Anything solid it hits instead (a wall, a handle, a bottle) splashes it off to the table: spilled.
@@ -130,21 +142,47 @@
     };
     // For drawing: each stein's surface outline in the world, and the stream as chains of nearby drops.
     state.view = () => {
-      const chains=state.drops.slice().reverse().reduce((chains,d)=>{
+      const allChains=state.drops.slice().reverse().reduce((chains,d)=>{
         const last=chains.at(-1),tail=last?.at(-1);
         if(tail&&tail.from===d.from&&C.norm(C.sub(tail.p,d.p))<.05)last.push(d);
         else chains.push(d.from.pouring>0&&!chains.some(c=>c[0].from===d.from)&&C.norm(C.sub(d.from.lip,d.p))<.05?[{p:d.from.lip,from:d.from,flow:d.flow,v:d.v},d]:[d]);
         return chains;
-      },[]).filter(c=>c.length>1);
+      },[]),chains=allChains.filter(c=>c.length>1),particles=[];
+      const shown=new Map();
+      const surfaces=vessels.filter((v)=>v.V>2e-6&&v.shape.sections.length===1).map(v=>{
+        const f=inner(W,v),d=level(v.n,v.V,v.shape),shape={sections:v.shape.sections.map(x=>({...x,r:x.r*.995}))};
+        const at=q=>C.add(f.t,C.mulv(f.R,q)),ontoSurface=q=>{
+          const r=Math.hypot(q[0],q[1]),k=r>v.r*.91?v.r*.91/r:1,x=q[0]*k,y=q[1]*k;
+          return [x,y,clamp((d-v.n[0]*x-v.n[1]*y)/(Math.abs(v.n[2])<1e-5?1:v.n[2]),0,v.h)];
+        };
+        const receiving=v.receiving&&state.time-v.receiving.at<.12?v.receiving:null;
+        const hit=receiving?ontoSurface(C.add(receiving.local,receiving.velocity.map(x=>x*.055))):null;
+        shown.set(v,{f,d,at,ontoSurface,hit});
+        if(receiving&&hit){
+          const top=receiving.local,points=Array.from({length:6},(_,i)=>{const t=i/5,q=top.map((x,j)=>x+(hit[j]-x)*t);return {p:at(q),from:receiving.from,flow:receiving.flow,v:C.mulv(f.R,receiving.velocity)};});
+          chains.push(points);
+        }
+        return {key:v.body.key,points:surface(v.n,d,shape).map(at),up:C.mulv(f.R,v.n),phase:state.time,agitation:v.agitation,foam:v.foam,
+          impact:hit?{point:at(hit),strength:v.agitation}:null};
+      });
+      // Single separated flow packets remain visible as tiny elongated droplets, not 5 ml spheres.
+      for(const chain of allChains)if(chain.length===1){const d=chain[0];particles.push({p:d.p.slice(),velocity:d.v.slice(),r:.0012,stretch:1.7});}
+      for(const e of state.visualImpacts){
+        const s=shown.get(e.vessel);if(!s)continue;
+        const age=state.time-e.at,base=s.at(s.ontoSurface(e.local)),up=C.mulv(s.f.R,e.vessel.n),tangent=C.mulv(s.f.R,[1,0,0]),side=C.mulv(s.f.R,[0,1,0]);
+        for(let k=0;k<2;k++){
+          const a=e.seed*.37+k*2.4,velocity=C.add(up.map(x=>x*(.19+.025*k)),C.add(tangent.map(x=>x*Math.cos(a)*.07),side.map(x=>x*Math.sin(a)*.07)));
+          const p=C.add(base,C.add(velocity.map(x=>x*age),[0,0,-.5*G*age*age]));
+          if(dot(C.sub(p,base),up)<.0002)continue;
+          particles.push({p,velocity:C.add(velocity,[0,0,-G*age]),r:.00065+.0002*k,stretch:1.3});
+        }
+      }
       return {
-      surfaces: vessels.filter((v) => v.V > 2e-6 && v.shape.sections.length === 1).map((v) => {
-        const f = inner(W, v), d = level(v.n, v.V, v.shape), shown = { sections: v.shape.sections.map((x) => ({ ...x, r: x.r * 0.995 })) };
-        return { key: v.body.key, points: surface(v.n, d, shown).map((p) => C.add(f.t, C.mulv(f.R, p))), up: C.mulv(f.R, v.n), phase:W.time, agitation:v.agitation, foam:v.foam };
-      }),
+      surfaces,phase:state.time,particles:particles.slice(0,48),
       streams:chains.map(c=>c.map(d=>d.p)),
       radii:chains.map(c=>c.map(d=>Math.max(.0008,Math.min(.006,Math.sqrt((d.flow||0)/(Math.PI*Math.max(.05,C.norm(d.v)))))))),
     };};
-    state.reset = () => { for (const v of vessels) { v.V = v.V0; v.a = [0, 0, 0]; v.vPrev = null; v.pouring = 0;v.agitation=0;v.foam=0; } state.drops = []; state.spilled = 0; state.caught = 0; state.poured = 0; };
+    state.reset = () => { for (const v of vessels) { v.V = v.V0; v.a = [0, 0, 0]; v.vPrev = null; v.pouring = 0;v.agitation=0;v.foam=0;v.receiving=null;v.visualSplashAt=-Infinity; } state.drops = []; state.spilled = 0; state.caught = 0; state.poured = 0;state.time=0;state.visualImpacts=[]; };
     return state;
   }
   return { cylinder, volumeBelow, spout, level, surface, vessel, pour };

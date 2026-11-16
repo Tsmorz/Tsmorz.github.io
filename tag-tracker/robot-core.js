@@ -45,7 +45,7 @@
   ];
   // Arms at the sides, forearms forward, palms in.
   const HOME = [0, 0, 0, 90 * DEG, 0, 0, 0];
-  // The IK never straightens an elbow past this. A straight arm is the singular pose: the elbow's circle shrinks to a
+  // IK and motor stops never straighten an elbow past this. A straight arm is the singular pose: the elbow's circle shrinks to a
   // point, so where it would bend (ψ) is no longer defined and the upper arm's turn trades freely against the forearm's.
   // Kept a little bent, the elbow always has a side to bend to (the preferred one: down and out), so an arm that has
   // reached as far as it goes bends straight back out of it, smoothly, the moment the target comes back. 5° costs 0.4 mm
@@ -68,6 +68,10 @@
       const step = v[i] * dt;
       if (e !== 0 && Math.sign(step) === Math.sign(e) && Math.abs(step) >= Math.abs(e)) { q[i] = cmd[i]; v[i] = dt > 0 ? e / dt : 0; }
       else q[i] += step;
+      // Acceleration limits describe the motor, not permission to coast through a hard stop.
+      // An abrupt pointer reversal can still leave outward velocity at the boundary.
+      const joint=JOINTS[i],lo=i===3?Math.max(joint.lo,MIN_BEND):joint.lo,bounded=clamp(q[i],lo,joint.hi);
+      if(bounded!==q[i]){q[i]=bounded;if(v[i]*(q[i]===joint.hi?1:-1)>0)v[i]=0;}
     }
     return { q, v };
   }
@@ -166,10 +170,42 @@
   // Position and orientation are separate controls. Solve translation with the previous hand
   // rotation, then fit the requested wrist rotation within its own stops.
   function handIK(m, side, target, prev, opts) {
-    const seed = prev || {q: HOME}, k = fk(m, side, seed.q);
-    const s = norm(sub(k.wrist,target.t)) < 1e-9
-      ? { q: seed.q.slice(), elbow: k.elbow, wrist: k.wrist, psi: seed.psi, reach: true, gap: 0 }
-      : ik(m, side, {R:k.R,t:target.t}, Object.assign({elbow:k.elbow},seed), Object.assign({},opts,{positionOnly:true}));
+    const seed = Object.assign({},prev||{q:HOME});
+    seed.q=seed.q.map((v,i)=>clamp(v,JOINTS[i].lo,JOINTS[i].hi));
+    const k = fk(m, side, seed.q), weights=Object.assign({},opts,{positionOnly:true,hardArmLimits:true});
+    const still=()=>({q:seed.q.slice(),elbow:k.elbow,wrist:k.wrist,psi:seed.psi,reach:true,gap:0});
+    const solve=t=>ik(m,side,{R:k.R,t},Object.assign({elbow:k.elbow},seed),weights);
+    let s = norm(sub(k.wrist,target.t)) < 1e-9
+      ? still() : solve(target.t);
+    const legal=q=>q.slice(0,4).every((v,i)=>v>=JOINTS[i].lo-1e-9&&v<=JOINTS[i].hi+1e-9);
+    if(seed.positionPending||!legal(s.q)){
+      const kept=seed.positionPending&&seed.positionGoal&&norm(sub(seed.positionGoal.t,target.t))<1e-9?seed.positionGoal:null;
+      const global=kept?kept.solution:ik(m,side,{R:k.R,t:target.t},Object.assign({elbow:k.elbow},seed),Object.assign({},weights,{swing:Infinity}));
+      if(legal(global.q)){
+        // A large input step can need another legal elbow branch. Keep its target and
+        // approach that branch continuously instead of mistaking a local search boundary
+        // for an arm stop and permanently throwing away a reachable pointer position.
+        const step=weights.swing||PREFER.swing,largest=Math.max(...global.q.slice(0,4).map((v,i)=>Math.abs(v-seed.q[i]))),f=Math.min(1,step/largest);
+        s=Object.assign({},global,{q:seed.q.map((v,i)=>i<4?v+(global.q[i]-v)*f:v),positionPending:f<1,reach:f===1&&global.reach});
+        if(s.positionPending)s.positionGoal=kept||{t:target.t.slice(),solution:global};
+        if(s.positionPending)delete s.psi;
+        const pose=fk(m,side,s.q);s.wrist=pose.wrist;s.elbow=pose.elbow;s.gap=norm(sub(target.t,s.wrist));
+        return Object.assign(s,wrist(m,side,s.q,target.R,prev&&prev.wristInput));
+      }
+    }
+    if(!legal(s.q)){
+      // A distance-reachable point can still require an impossible shoulder/upper-arm angle.
+      // Stop along the requested translation at its first feasible arm boundary; wrist
+      // orientation remains an independent request and cannot pull the arm through a stop.
+      let lo=0,hi=1,best=still();
+      for(let i=0;i<16;i++){
+        const t=(lo+hi)/2,candidate=solve(add(k.wrist,scale(sub(target.t,k.wrist),t)));
+        if(legal(candidate.q)){lo=t;best=candidate;}else hi=t;
+      }
+      s=best;s.positionLimited=true;s.reach=false;
+      for(let i=0;i<4;i++)s.q[i]=clamp(s.q[i],JOINTS[i].lo,JOINTS[i].hi);
+      const pose=fk(m,side,s.q);s.wrist=pose.wrist;s.elbow=pose.elbow;s.gap=norm(sub(target.t,s.wrist));
+    }
     return Object.assign(s, wrist(m,side,s.q,target.R,prev && prev.wristInput));
   }
 
@@ -210,6 +246,7 @@
       // and the joints steady: with the arm straight (or nearly) the elbow barely moves round the circle, and the upper
       // arm's turn trades freely against the forearm's, so only this keeps them from jumping
       if (prevQ) for (let j = 0; j < (o.positionOnly?4:7); j++) { const e = Math.atan2(Math.sin(q[j] - prevQ[j]), Math.cos(q[j] - prevQ[j])); cost += W.turn * e * e; }
+      if(o.hardArmLimits&&q.slice(0,4).some((v,i)=>v<JOINTS[i].lo-1e-9||v>JOINTS[i].hi+1e-9))cost=Infinity;
       return { q, psi, elbow, cost };
     };
     const K = 120, wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));

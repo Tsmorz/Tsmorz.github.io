@@ -187,7 +187,14 @@ function robotUpdate(now) {
     if (d.frame !== S.settings.frame) { TB.drive.delete(side); continue; } // (another frame: its world is a different one)
     const captureR = captureHandRotation(side, now * 1000, tg.chest, m);
     const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.handIK(m, side, { R: C.mul3(Rc, captureR || d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || {q:robotReady()}, { prefer });
-    RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, side });
+    if(s.positionLimited){
+      const accepted=C.add(tg.chest.t,C.mulv(tg.chest.R,s.wrist)),delta=C.sub(accepted,d.t),n=TB.grab?.side===side?TB.grab.n:null;
+      // Discard movement beyond a hard arm stop so reversing the pointer works immediately.
+      // A moving chest can make the locked drag plane unreachable; retain that plane's
+      // world target instead of projecting it upward or sideways to fit the arm.
+      if(!n||Math.abs(delta.reduce((v,x,i)=>v+x*n[i],0))<1e-6)d.t=accepted;
+    }
+    RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, positionPending:s.positionPending, positionGoal:s.positionGoal, side });
     const a = arms.find((x) => x.side === side), set = { q: s.q, wristStop: s.wristStop || 0, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
     if (a) Object.assign(a, set); else arms.push(Object.assign({ key: null, side }, set));
   }
@@ -459,7 +466,7 @@ function pourDraw() {
   if (!p) return {};
   // the stream in the beer's colour; the surface in a glass, its head of foam
   const v = p.view(), spec = TB.game.level.pour, color = spec.color || '#e0a526', foam = spec.foam || color;
-  return { liquids: v.surfaces.filter(x=>x.points.length>2).flatMap(x=>[{...x,color},...(x.foam>.01?[{...x,color:foam,layer:'foam'}]:[])]), streams: v.streams.map((points,i) => ({ points, radii:v.radii[i], color })) };
+  return { liquids: v.surfaces.filter(x=>x.points.length>2).flatMap(x=>[{...x,color},...(x.foam>.01?[{...x,color:foam,layer:'foam'}]:[])]), streams: v.streams.map((points,i) => ({ points, radii:v.radii[i], phase:v.phase, color })), particles:v.particles };
 }
 // drawn flat (no WebGL): the table's top, the ball, the cup as a fat stroke from its base to its rim
 function tableFlat(face, seg, ball) {
