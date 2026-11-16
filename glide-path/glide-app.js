@@ -8,7 +8,7 @@ const SAVE_R = RT + 1, SAVE_R_LOW = RT;   // a saved area: 9 × 9 tiles at zoom 
 const SAVED = 'glide-terrain-saved', RUNTIME = 'glide-terrain-runtime';
 const terrUrl = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
 const M_HILL = { ...CONTENT.landmark, snap: 0 }; // Exact landmark location; never snap a launch onto another peak.
-let soaringUI = null, windUI = null;
+let soaringUI = null, windUI = null, aircraftUI = null;
 // Map overlay colours: the site's chart palette (violet, teal, red, gold), checked with the dataviz validator for colour-blind
 // separation. `light` for the street, topo and shaded maps; `img` (mid-tone steps, with light lines on dark casings) over
 // satellite imagery, where each region also gets a solid outline. `C` is the one in use (restyle()).
@@ -424,6 +424,7 @@ function restyle() {
   routeLine.setStyle({ color: C.route }); routeEnd.setStyle({ color: C.casing, fillColor: C.route });
   profTicks.eachLayer(t => t.setStyle({ color: C.line, fillColor: C.casing }));
   const key = document.querySelector('.legend-box'); if (key) key.classList.toggle('on-img', base === sat);
+  aircraftUI?.render();
 }
 restyle();
 const areaBoxes = L.layerGroup().addTo(map);
@@ -502,6 +503,7 @@ function load3d() {
       base: () => baseName(base), overlay: () => overlay, canvas: overlayCanvas, circle: G.circle,
       profile: () => soaringUI?.view === 'soaring' ? null : PROF, profileColour: () => profileColour(PROF),
       wind:()=>windUI?.features()||[], windShade:()=>windUI?.shade()||null,
+      aircraft: () => aircraftUI?.features() || [],
       ridgeLabel: CONTENT.orientation.ridge, soaring: () => soaringUI?.features() || { key: '', items: [] }, onSoaring: index => soaringUI?.selectIndex(index),
       onViewport: () => { if (!view3d?.flying) windUI?.render(); }, onCamera: cameraChanged, onHover: point => mapHover(point, p => view3d.project(p)), onOut: () => { if (cursorFrom === 'map') hideCursor(); }, onInspect: routeAt, onTap: mapTap, onMoveLaunch: (lat, lon) => setLaunch(lat, lon)
     });

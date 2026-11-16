@@ -465,14 +465,14 @@ console.log('7. service worker');
   const get = (url, mode = 'cors') => run('fetch', { request: { url, method: 'GET', mode } });
 
   await run('install', {});
-  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 26, 'install caches the page, its script and styles, the core, the planning logic, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
+  check((await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx))).size() === 28, 'install caches the page, its script and styles, the core, the planning logic, the worker, the 3D view, the manifest, icons, Leaflet and MapLibre');
   let verification;
   await run('message', { data: { type: 'verify-shell' }, ports: [{ postMessage: r => { verification = r; } }] });
-  check(verification.present === 26 && verification.total === 26, 'offline verification checks every installed page file');
+  check(verification.present === 28 && verification.total === 28, 'offline verification checks every installed page file');
   const shellCache = await caches.open('glide-shell-' + vm.runInContext('VERSION', ctx));
   await shellCache.delete('glide-plan.js');
   await run('message', { data: { type: 'verify-shell' }, ports: [{ postMessage: r => { verification = r; } }] });
-  check(verification.present === 25 && verification.total === 26, 'verification detects an evicted planning script');
+  check(verification.present === 27 && verification.total === 28, 'verification detects an evicted planning script');
   await shellCache.put('glide-plan.js', resp('shell:glide-plan.js'));
   const shellFiles = vm.runInContext('SHELL_FILES', ctx).filter(f => f !== './');
   const missing = shellFiles.filter(f => !fs.existsSync(path.join(__dirname, '..', 'glide-path', f)));

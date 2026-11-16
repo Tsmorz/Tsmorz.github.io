@@ -484,3 +484,18 @@ dl.stats { font-size: 11px; gap: 6px 10px; }dl.stats dd { font-size: 10px; }
 .city-results button:hover { border-color: var(--accent); }
 
 .city-search input[type=search] { font-size: 16px; }
+
+/* Local aircraft records stay separate from the planning controls and simulated route. */
+.flight-file { display: block; margin: 12px 0; font-size: 13px; color: var(--ink-2); }
+.flight-file input { display: block; max-width: 100%; margin-top: 6px; font-size: 13px; }
+.aircraft-flight .btns { flex-wrap: wrap; }
+.aircraft-flight > details { margin: 12px 0; }
+.aircraft-flight summary { cursor: pointer; }
+#aircraftReplay { display: grid; gap: 6px; font-size: 13px; margin: 12px 0; }
+#aircraftSample { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.aircraft-photos, .aircraft-events { padding-left: 18px; font-size: 12px; overflow-wrap: anywhere; max-height: 350px; overflow-y: auto; }
+.aircraft-photos li { margin: 8px 0; }
+.aircraft-photo { display: block; max-width: 100%; max-height: 240px; object-fit: contain; }
+.aircraft-photo-detail { padding: 8px; border: 1px solid var(--line); border-radius: 6px; margin-top: 6px; }
+
+.aircraft-origin { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
