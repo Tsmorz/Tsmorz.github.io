@@ -1,9 +1,9 @@
 // task shot -- /tag-tracker/ --eval-file script/tag-tracker/guided-browser.js
 (async()=>{
   const wait=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,msg)=>{if(!ok)throw new Error(msg);},until=async(fn,msg,ms=4500)=>{const start=performance.now();while(!fn()&&performance.now()-start<ms)await wait(40);assert(fn(),msg);};
-  assert(S.settings.robot.actor==='robot'&&S.settings.robot.playMode==='guided'&&!window.CharacterCore,'the workbench starts robot-only without the human runtime');
+  assert(S.settings.robot.actor==='robot'&&S.settings.robot.playMode==='tasks'&&!window.CharacterCore,'the workbench starts robot-only without the human runtime');
   document.querySelectorAll('dialog[open]').forEach(d=>d.close());
-  setCampaignMode('guided');taskLevel('sort');await wait(350);
+  taskLevel('sort');await wait(350);
   assert(TB.game.level.objects.length===2&&$('guidePlan').open&&$('guidePlanList').textContent.includes('same gripper'),'the two-block task immediately explains sequential one-gripper placement');
   assert(!document.querySelector('[data-level="laundry"]').disabled,'every task can be selected without story unlocks');
   assert($('taskLabels').textContent.includes('outline A')&&$('taskLabels').textContent.includes('outline B'),'both destinations have visible identities');
@@ -25,16 +25,16 @@
   }
   await until(()=>g.complete,'one gripper completes the two-block placement');
   assert(g.heldBy.get('a').size===1&&g.heldBy.get('b').size===1&&g.heldBy.get('a').has(1)&&g.heldBy.get('b').has(1)&&TASK.guide.state==='done','both blocks used the same physical gripper and receive a clear completion cue');
-  assert(JSON.parse(localStorage.getItem('tag-tracker-guided')).sort,'the guided result saves');
+  assert(JSON.parse(localStorage.getItem('tag-tracker-tasks')).sort,'the task result saves');
   $('gameEyes').click();$('gameTilt').value=-45;$('gameTilt').dispatchEvent(new Event('input'));await wait(100);
   const eye=plotOrbit().o.eye,expected=TaskCore.headCamera(RB.scene.chest,RB.scene.m,-45,plot.clientWidth,plot.clientHeight).eye;
   assert(C.norm(C.sub(eye,expected))<1e-8,'the tilting robot head camera is retained');setRobotView('orbit');
-  setCampaignMode('practice');await wait(250);assert(TB.game.level.objects.length===2&&$('guidePlanList').textContent.includes('B'),'the full challenge still has exactly two blocks and matching instructions');
-  for(const l of TASK_DATA.levels){taskLevel(l.id);await wait(l.id==='laundry'?450:100);assert(TB.game.level.id===l.id&&TASK.guide&&$('guideTitle').textContent,'each full task loads with guidance');}
+  await wait(250);assert(TB.game.level.objects.length===2&&$('guidePlanList').textContent.includes('B'),'the placement task keeps two blocks and matching instructions');
+  for(const l of TASK_DATA.levels){taskLevel(l.id);await wait(l.id==='laundry'?450:100);assert(TB.game.level.id===l.id&&TASK.guide&&$('guideTitle').textContent,'each task loads with guidance');}
   assert(TASK_DATA.levels.length===5&&$('workbenchTask').options.length===5,'the task picker contains exactly five choices');
-  assert(TB.world.cloths.length===1,'the full challenge contains one fluffy towel');
-  setCampaignMode('guided');taskLevel('sort');await wait(300);assert(TB.game.level.objects.length===2&&!TB.game.complete,'switching back restores the small two-block exercise');
-  $('gameSettingsBtn').click();assert(!$('handControls')&&!document.querySelector('[data-nudge]'),'the obsolete hand command bar is removed');$('gameSettingsClose').click();
+  assert(TB.world.cloths.length===1&&TB.world.cloths[0].kind==='shirt','the fabric task contains one thin T-shirt');
+  taskLevel('sort');await wait(300);assert(TB.game.level.objects.length===2&&!TB.game.complete,'returning to placement starts the same two-block task');
+  assert(!$('gameSettings')&&!$('campaignMode'),'retired task settings and challenge modes are removed');
   assert(document.documentElement.scrollWidth<=innerWidth+1,'the layout fits the viewport');
-  return {passed:true,robotOnly:true,twoBlocksOneGripper:true,liveHints:true,headCamera:true,fullChallenges:true,viewport:[innerWidth,innerHeight]};
+  return {passed:true,robotOnly:true,twoBlocksOneGripper:true,liveHints:true,headCamera:true,fiveTasks:true,viewport:[innerWidth,innerHeight]};
 })()

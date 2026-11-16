@@ -2,7 +2,7 @@
 (async()=>{
   const wait=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,msg)=>{if(!ok)throw Error(msg);};
   const until=async(fn,msg,ms=6500)=>{const start=performance.now();while(!fn()&&performance.now()-start<ms)await wait(40);assert(fn(),msg);};
-  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');setCampaignMode('guided');taskLevel('tray');await wait(500);
+  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');taskLevel('tray');await wait(500);
   const W=TB.world,g=TB.game,T=W.table,at=p=>C.add(T.t,C.mulv(T.R,p)),drives=Object.fromEntries([1,-1].map(s=>[s,driveOf(RB.scene.arms.find(a=>a.side===s))]));
   let x=-.105,z=.13;
   const aim=()=>{for(const [side,d]of Object.entries(drives)){d.R=T.R.slice();d.t=at([x,+side*.186,z]);}};

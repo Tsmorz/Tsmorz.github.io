@@ -38,5 +38,3 @@ async function addSerialBoard(){
 $('boardSerial').onclick=addSerialBoard;
 navigator.serial?.addEventListener('disconnect',e=>{for(const link of SERIAL_LINKS)if(link.port===e.target)link.close().catch(()=>{});});
 window.addEventListener('pagehide',()=>{for(const link of SERIAL_LINKS)link.close().catch(()=>{});});
-
-$('taskSerial').onclick=()=>{$('gameSettings').close();addSerialBoard();};$('taskBluetooth').onclick=()=>{$('gameSettings').close();addBoard();};

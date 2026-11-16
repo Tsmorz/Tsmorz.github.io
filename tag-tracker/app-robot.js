@@ -125,7 +125,7 @@ function setMotionScale(value) { S.settings.robot.scale = Number(value); saveSet
 paintScale();
 $('robotScale').onchange = () => setMotionScale($('robotScale').value);
 $('taskMotionScale').oninput = () => setMotionScale($('taskMotionScale').value);
-$('taskMotionReset').onclick = () => setMotionScale(1);
+
 $('robotClearBtn').onclick = clearRobotCal;
 plot.addEventListener('keydown', (e) => { if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey && !e.altKey && S.settings.show3d === 'robot') { e.preventDefault(); calibrateRobot(); } });
 
@@ -162,7 +162,7 @@ function robotUpdate(now) {
   for (const a of roles.arms) poses.arms[a.key] = RB.last.get(a.key);
   const tg = RCORE.targets(cal, poses, { scale: S.settings.robot.scale }), prefer = S.settings.robot.elbows ? undefined : false;
   const arms = tg.arms.map((a) => {
-    const captureR = captureHandRotation(a.side, now * 1000);
+    const captureR = captureHandRotation(a.side, now * 1000, tg.chest, m);
     const prev = RB.prev.get(a.key), s = RCORE.ik(m, a.side, a.target, prev && prev.side === a.side ? prev.tag || prev : null, { prefer });
     const tag = { q:s.q, elbow:s.elbow, psi:s.psi };
     if (captureR) Object.assign(s,RCORE.wrist(m,a.side,s.q,C.mul3(C.tr3(tg.chest.R),captureR),prev?.wristInput));
@@ -175,7 +175,7 @@ function robotUpdate(now) {
   // a preview, or a body with one arm, shows the missing arms hanging in the start pose
   const withBody = preview || roles.body !== null || S.settings.robot.props === 'arcade';
   if (withBody) for (const side of [1, -1]) if (!arms.some((a) => a.side === side)) {
-    const q = robotReady(), captureR = captureHandRotation(side, now * 1000), key = 'capture' + side;
+    const q = robotReady(), captureR = captureHandRotation(side, now * 1000, tg.chest, m), key = 'capture' + side;
     const s = captureR ? RCORE.wrist(m, side, q, C.mul3(C.tr3(tg.chest.R), captureR), RB.prev.get(key)?.wristInput) : null;
     if (s) RB.prev.set(key, s);
     arms.push({ key: null, side, q: s ? s.q : q, wristStop: s?.wristStop || 0, reach: true, gap: 0, live: !!s, idle: !s });
@@ -185,7 +185,7 @@ function robotUpdate(now) {
   const Rc = C.tr3(tg.chest.R);
   for (const [side, d] of TB.drive) {
     if (d.frame !== S.settings.frame) { TB.drive.delete(side); continue; } // (another frame: its world is a different one)
-    const captureR = captureHandRotation(side, now * 1000);
+    const captureR = captureHandRotation(side, now * 1000, tg.chest, m);
     const pk = 'drive' + side, prev = RB.prev.get(pk), s = RCORE.handIK(m, side, { R: C.mul3(Rc, captureR || d.R), t: C.mulv(Rc, C.sub(d.t, tg.chest.t)) }, prev || {q:robotReady()}, { prefer });
     RB.prev.set(pk, { q: s.q, elbow: s.elbow, psi: s.psi, wristInput:s.wristInput, side });
     const a = arms.find((x) => x.side === side), set = { q: s.q, wristStop: s.wristStop || 0, reach: s.reach, gap: s.gap, live: true, idle: false, driven: true };
@@ -330,10 +330,10 @@ function drawRobotFlat(c, o, h, now) {
     const fd = [-H[2], -H[5], -H[8]], jy = [H[1], H[4], H[7]], bk = [H[0], H[3], H[6]];
     const at = (u, v, w) => P(C.add(k.wrist, C.add(fd.map((x) => x * u), C.add(jy.map((x) => x * v), bk.map((x) => x * (w || 0))))));
     const G = RCORE.gripper(m), g2 = (a.jaw === undefined ? G.gapMax : a.jaw) / 2 + G.finger.c[1], tip = 0.07 + G.fl;
-    const gInk = hotOf(a) ? K.accent : ink;
-    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, well, gInk, al);
-    seg(at(0.07, g2), at(tip, g2), 0.009, fill, gInk, al);
-    seg(at(0.07, -g2), at(tip, -g2), 0.009, fill, gInk, al);
+    seg(at(0.045, -G.body.h[1]), at(0.045, G.body.h[1]), 0.022, well, ink, al);
+    seg(at(0.07, g2), at(tip, g2), 0.009, fill, ink, al);
+    seg(at(0.07, -g2), at(tip, -g2), 0.009, fill, ink, al);
+    if(hotOf(a))for(const j of [-1,1])seg(at(tip-.012,j*g2),at(tip,j*g2),.01,K.accent,K.accent,al);
     ball(at(0.045, 0, 0.032), 0.01, K.accent, K.accent, al);
   }
   tableFlat(face, seg, ball);
@@ -379,7 +379,7 @@ function resetTable() {
   if (TB.game) TB.game.reset(); else if (TB.world) TB.world.reset();
   taskPlaced();
   TB.drive.clear(); TB.grab = null; RB.prev.clear(); RB.slew.clear(); paintRobotBtns();
-  clearCaptureOrientations();
+  rebaseCaptureOrientations();
   return 'Task restarted';
 }
 // how open an arm's gripper should be, 0 to 1

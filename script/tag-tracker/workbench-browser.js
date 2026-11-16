@@ -76,9 +76,12 @@
   key(plot, '2'); assert(TASK.hand === '-1', '2 selects the right gripper');
   key(plot, '3'); assert(chosenHands().length === 2, '3 selects both grippers');
   key(plot, '1');
-  $('gameSettingsBtn').click();
-  assert($('gameSettings').open && !$('handControls'), 'task settings open without the obsolete command bar');
-  $('gameSettingsClose').click();
+  assert(!$('gameSettingsBtn')&&!$('gameSettings')&&!$('campaignMode'),'task settings and alternate challenges are removed');
+  assert($('taskHapticStrength').closest('.game-actions')&&$('taskMotionScale').closest('.game-actions'),'haptic strength and motion sensitivity live together on the task bar');
+  setRobotView('orbit');assert(!visible($('gameTiltField')),'head tilt is hidden in the outside view');
+  setRobotView('eyes');assert(visible($('gameTiltField')),'head tilt appears in robot-eye view');
+  $('gameController').click();assert(visible($('controllerPanel')),'the controller popup opens');
+  $('ctlClose').click();assert(!visible($('controllerPanel'))&&S.tab==='tasks','the popup X closes in place');
   $('gameTilt').value = -45; $('gameTilt').dispatchEvent(new Event('input'));
   assert(S.settings.robot.headTilt === -45, 'the head slider still tilts the wide camera');
   setRobotView('orbit');
@@ -86,5 +89,10 @@
   $('tab-tasks').click(); assert(S.settings.show3d === 'robot' && gameView(), 'Tasks always shows the robot');
   $('tab-track').click(); assert(S.settings.show3d === 'tags' && document.querySelector('[data-show3d="tags"]').getAttribute('aria-checked') === 'true', 'Tracking restores its saved Tags view and selected control');
   $('tab-tasks').click();
+  taskLevel('laundry');await wait(450);
+  const shirt=TB.world.cloths[0];
+  assert(shirt.kind==='shirt'&&shirt.halfThickness===.001&&!shirt.pile&&shirt.landmarks.cuffs.length===2,'the fabric task loads a thin cut-pattern T-shirt');
+  const meshes=RobotGL.meshes(RB.scene.m);
+  assert([1,-1].every(j=>meshes.finger[j].filter(p=>p.tip).length===1)&&[1,-1].every(j=>meshes.hand[j].every(p=>!p.tip)),'only the grasp pads are eligible for pointer highlighting');
   return { passed: true, persistentTabs: true, preservedTask: true, eyeArrowControls: true, viewport: [innerWidth,innerHeight] };
 })()

@@ -80,19 +80,8 @@
     }
     throw new Error('Unknown task geometry: ' + kind);
   }
-  // Small tasks retain the full challenge as a separate selectable variant.
-  function mission(level, mode) {
-    if (mode !== 'guided' || !level.guided) return level;
-    const l=JSON.parse(JSON.stringify(level)),s=l.guided;
-    l.name=s.name;l.brief=s.brief;l.par=s.par;
-    l.objects=(s.objects || l.objects || []).filter(o=>!s.keep || s.keep.includes(o.key));
-    l.cloths=(s.cloths || l.cloths || []).filter(o=>!s.keep || s.keep.includes(o.key));
-    for(const o of l.objects)if(s.placements&&s.placements[o.key])o.at=s.placements[o.key];
-    l.goals=s.goals || (s.goal_indices?s.goal_indices.map(i=>l.goals[i]):l.goals.slice(0,s.goal_count));
-    if(s.goal_x!==undefined)for(const r of l.goals)if(r.at)r.at[0]=s.goal_x;
-    if(s.markers)l.markers=s.markers;
-    return l;
-  }
+  // One canonical definition per task; legacy callers may still pass a mode argument.
+  const mission = level => level;
   function create(level, table, gripper) {
     const W = P.world({ table, gripper }), byKey = new Map();
     const at = (p) => C.add(table.t, C.mulv(table.R, p));

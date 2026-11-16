@@ -4,12 +4,12 @@ module.exports=function({check,near}){
   const C=require(root+'/tag-tracker/tracker-core'),T=require(root+'/tag-tracker/task-core'),R=require(root+'/tag-tracker/robot-core'),GL=require(root+'/tag-tracker/robot-gl');
   const data=JSON.parse(spawnSync('ruby',['-ryaml','-rjson','-e','puts JSON.generate(YAML.load_file(ARGV[0]))',root+'/_data/tag_tasks.yml'],{encoding:'utf8'}).stdout);
   const I=[1,0,0,0,1,0,0,0,1],G=R.gripper(R.model()),table={R:I,t:[0,0,0],size:[.5,.9],thick:.03},create=id=>T.create(T.mission(data.levels.find(l=>l.id===id),'guided'),table,G);
-  check(C.DEFAULTS.robot.actor==='robot'&&C.DEFAULTS.robot.playMode==='guided'&&C.DEFAULTS.robot.level==='bowl','new visitors start with robot manipulation, without a story prologue');
+  check(C.DEFAULTS.robot.actor==='robot'&&C.DEFAULTS.robot.playMode==='tasks'&&C.DEFAULTS.robot.level==='bowl','new visitors start with robot manipulation, without a story prologue');
   const old=C.clampSettings({robot:{actor:'teen',playMode:'story',level:'door'}});
-  check(old.robot.actor==='robot'&&old.robot.playMode==='guided'&&old.robot.level==='bowl','stored human/story/door settings migrate to the robot workbench');
+  check(old.robot.actor==='robot'&&old.robot.playMode==='tasks'&&old.robot.level==='bowl','stored human/story/door settings migrate to the robot workbench');
   for(const raw of data.levels){
     const before=JSON.stringify(raw),l=T.mission(raw,'guided'),g=T.create(l,table,G);
-    check(JSON.stringify(raw)===before&&T.mission(raw,'practice')===raw,'small '+l.id+' does not change the full challenge');
+    check(JSON.stringify(raw)===before&&T.mission(raw,'practice')===raw,l.id+' has one canonical definition regardless of retired mode');
     check(!l.travel&&!l.story&&l.guide.plan.length>=3&&l.guide.tips.length&&l.goals.every(r=>g.byKey.has(r.object)&&(!r.target||g.byKey.has(r.target))),l.id+' has a stationary task, valid objectives and useful instructions');
     const hint=T.guidance(g);check((l.guide.stages?.[hint.state]||data.guidance.stages[hint.state])&&g.byKey.has(hint.object),l.id+' begins with a valid contextual hint');
   }
@@ -44,12 +44,10 @@ module.exports=function({check,near}){
   check(T.guidance(bowl).state==='wrong'&&T.guidance(bowl).held==='bowl','holding a vessel instead of the requested ball is explained');
   const tray=create('tray');tray.world.hands[1]={grip:{body:tray.byKey.get('tray')}};
   check(T.guidance(tray).state==='dual','one held tray rim prompts using the second gripper');
-  const cloth=create('laundry'),towel=cloth.byKey.get('towel');towel.pins.set('1',{i:0});
-  check(T.guidance(cloth).state==='towel_first_grab','one towel corner still asks for both first-fold corners');
-  towel.foldStage=1;for(const [i,n]of towel.nodes.entries()){const p=towel.material[i];n.p=[Math.abs(p[0]),p[1],.005];}
-  check(T.guidance(cloth).state==='towel_second_grab','the released first fold prompts regripping the doubled edge');
+  const cloth=create('laundry'),shirt=cloth.byKey.get('shirt');
+  check(shirt.kind==='shirt'&&shirt.halfThickness===.001&&!shirt.pile&&shirt.landmarks.cuffs.length===2&&shirt.landmarks.hem.length===2,'the fabric task is a thin unpadded T-shirt with real cuff and hem landmarks');
+  check(T.guidance(cloth).state==='shirt_left','the shirt begins by identifying the first sleeve');
   tray.balance.rimHit=true;check(T.guidance(tray).state==='tray_retry','a rim collision explicitly asks for a new clean attempt');
-  towel.pins.set('-1',{i:0,throughFold:false});check(T.guidance(cloth).state==='towel_layers','catching only one ply prompts lowering the pads around both layers and regripping');
   const meshes=GL.actorMeshes(R.model());check([...meshes.amr,...meshes.wheel].every(p=>p.mesh.pos.every(Number.isFinite)),'robot AMR meshes remain available');
   const html=fs.readFileSync(root+'/tag-tracker/index.html','utf8');
   check(!/playActor|grandmaLine|character-core|travel-core|rewardToken/.test(html),'the page loads no boy, story, home rewards or travel scripts');

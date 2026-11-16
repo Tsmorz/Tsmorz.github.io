@@ -10,9 +10,8 @@ levels:
   name: Ball in the bowl
   hands: 1
   skill: First grasp
-  brief: Pick up the blue ball and release it inside the wide bowl. Take your time.
-  hint: Close around the ball, lift, move over the opening, then release. A settled
-    ball counts.
+  brief: Pick up the ball, move it over the bowl, and open the gripper. Let the ball settle inside.
+  hint: Close around the ball, lift, move over the opening, then release. A settled ball counts.
   par: 90
   objects:
   - key: ball
@@ -22,15 +21,15 @@ levels:
     - 0.18
     - 0.02
     label: Ball
-    color: "#2a78d6"
+    color: '#2a78d6'
   - key: bowl
     kind: bowl
     at:
-    - 0.04
-    - -0.17
+    - 0
+    - 0.03
     - 0
     label: Bowl
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.22
   goals:
   - type: inside
@@ -38,63 +37,49 @@ levels:
     target: bowl
     label: Release the ball in the bowl
     destination: the bowl
-  guided:
-    keep:
-    - ball
-    - bowl
-    goal_count: 1
-    par: 90
-    placements:
-      bowl:
-      - 0
-      - 0.03
-      - 0
-    name: Ball in the bowl
-    brief: Pick up the ball, move it over the bowl, and open the gripper. Let the
-      ball settle inside.
   guide:
     plan:
     - Open either gripper and centre the ball between its two pads.
     - Close until the ball stays between the pads. Lift it clear of the table.
     - Move over the bowl, lower just above the opening, then open the gripper.
     tips:
-    - Close around the ball, lift, move over the opening, then release. A settled
-      ball counts.
-    - If the jaws close without gripping, open them and centre the prop between both
-      pads before trying again.
+    - Close around the ball, lift, move over the opening, then release. A settled ball counts.
+    - If the jaws close without gripping, open them and centre the prop between both pads before trying
+      again.
+  cloths: []
+  revision: 2
 - id: sort
   name: Place two blocks
   hands: 1
   skill: Placement
-  brief: Use one gripper to place A in outline A, then B in outline B. Release each
-    block and lift clear before picking up the next.
+  brief: Use one gripper to place A in outline A, then B in outline B. Move them one at a time.
   hint: Lift clear of the other blocks. Letters identify the targets as well as colour.
-  par: 150
+  par: 105
   objects:
   - key: a
     kind: block
     at:
-    - -0.12
-    - 0.25
+    - -0.06
+    - 0.18
     - 0.025
     label: A
-    color: "#2a78d6"
+    color: '#2a78d6'
     mass: 0.09
   - key: b
     kind: block
     at:
-    - -0.12
+    - -0.06
     - 0
     - 0.025
     label: B
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.09
   goals:
   - label: A in its outline
     object: a
     type: place
     at:
-    - 0.1
+    - 0.015
     - 0.25
     - 0.025
     tolerance:
@@ -107,7 +92,7 @@ levels:
     object: b
     type: place
     at:
-    - 0.1
+    - 0.015
     - 0
     - 0.025
     tolerance:
@@ -116,70 +101,40 @@ levels:
     - 0.01
     upright: true
     destination: outline B
-  guided:
-    keep:
-    - a
-    - b
-    goal_count: 2
-    par: 105
-    goal_x: 0.015
-    name: Place two blocks
-    brief: Use one gripper to place A in outline A, then B in outline B. Move them
-      one at a time.
-    placements:
-      a:
-      - -0.06
-      - 0.18
-      - 0.025
-      b:
-      - -0.06
-      - 0
-      - 0.025
   guide:
     plan:
-    - Open one gripper and put the pads around the upper half of A. Keep the gripper
-      body above the table. Close, then lift A clear.
+    - Open one gripper and put the pads around the upper half of A. Keep the gripper body above the
+      table. Close, then lift A clear.
     - Carry A over the outline labelled A. Lower it onto the table and open the gripper.
-    - Keep the empty gripper open and lift it clear of A. Then use the same gripper
-      to pick up B.
+    - Keep the empty gripper open and lift it clear of A. Then use the same gripper to pick up B.
     - Place B in outline B and release it. Both blocks must stay upright and still.
     tips:
     - One gripper means one block at a time. You do not need to hold both blocks together.
-    - The letter above each block matches the letter beside its destination. A and
-      B each have their own outline.
-    - Keep the bulky gripper body above the table. Aim the pads a little above the
-      block’s centre, then close around its upper half.
-    - If a closed gripper does not lift the block, open it, centre the block between
-      both pads, then close again.
-    - Lift before moving sideways. If the block scrapes along the table, it can slip
-      out of the gripper.
-    - Q lifts the selected gripper and E lowers it while the view has focus. Alt-drag
-      changes the mouse movement plane.
-    full_plan:
-    - Open one gripper and put the pads around the upper half of A. Keep the gripper
-      body above the table. Close, then lift A clear.
-    - Carry A over the outline labelled A. Lower it onto the table and open the gripper.
-    - Keep the empty gripper open and lift it clear of A. Then use the same gripper
-      to pick up B.
-    - Place B in outline B and release it. Both blocks must stay upright and still.
-    full_tips:
-    - The full challenge puts the two targets farther away. Both blocks must stay
-      upright and still.
+    - The letter above each block matches the letter beside its destination. A and B each have their
+      own outline.
+    - Keep the bulky gripper body above the table. Aim the pads a little above the block’s centre,
+      then close around its upper half.
+    - If a closed gripper does not lift the block, open it, centre the block between both pads, then
+      close again.
+    - Lift before moving sideways. If the block scrapes along the table, it can slip out of the gripper.
+    - Q lifts the selected gripper and E lowers it while the view has focus. Alt-drag changes the
+      mouse movement plane.
     stages:
       approach:
         title: Line up with the upper half of {object}
-        text: Open the gripper. Put its pads on opposite sides of {object}, a little
-          above the centre. Keep the bulky gripper body clear of the table.
-  revision: 2
+        text: Open the gripper. Put its pads on opposite sides of {object}, a little above the centre.
+          Keep the bulky gripper body clear of the table.
+  revision: 3
+  cloths: []
 - id: tray
   name: Balance a loaded tray
   hands: 2
   skill: Carry together
-  brief: Grip both side rims, lift the loaded tray and hold it level for one second.
-    Set it on its outline without the ball touching a rim.
-  hint: Move both grippers gently together. If the ball hits a side, restart and try
-    a slower, more level lift.
-  par: 240
+  brief: Grip both side rims, lift the loaded tray and hold it level for one second. Set it on its
+    outline without the ball touching a rim.
+  hint: Move both grippers gently together. If the ball hits a side, restart and try a slower, more
+    level lift.
+  par: 168
   objects:
   - key: tray
     kind: tray
@@ -188,7 +143,7 @@ levels:
     - 0
     - 0.006
     label: Tray
-    color: "#168a73"
+    color: '#168a73'
     mass: 0.35
   - key: ball
     kind: ball
@@ -197,7 +152,7 @@ levels:
     - 0
     - 0.038
     label: Ball
-    color: "#2a78d6"
+    color: '#2a78d6'
   goals:
   - type: balance
     object: tray
@@ -206,7 +161,7 @@ levels:
     object: tray
     type: place
     at:
-    - 0.115
+    - 0.015
     - 0
     - 0.006
     tolerance:
@@ -221,62 +176,51 @@ levels:
     target: tray
     label: Keep the ball clear of every rim
     destination: the centre of the tray
-  guided:
-    keep:
-    - tray
-    - ball
-    goal_count: 3
-    par: 168
-    name: Balance a loaded tray
-    goal_x: 0.015
-    brief: Grip both side rims, lift the loaded tray and hold it level for one second.
-      Set it on its outline without the ball touching a rim.
   guide:
     plan:
-    - Centre one open gripper on each side rim of the tray, away from the ball. Close
-      both around the rims.
-    - Select both grippers (3). Raise them gently together until the lift objective
-      is checked; hold level for one second.
-    - Carry the tray to its outline slowly, lower evenly, then open both grippers.
-      The ball must never touch a side.
+    - Centre one open gripper on each side rim of the tray, away from the ball. Close both around
+      the rims.
+    - Select both grippers (3). Raise them gently together until the lift objective is checked; hold
+      level for one second.
+    - Carry the tray to its outline slowly, lower evenly, then open both grippers. The ball must never
+      touch a side.
     tips:
     - Watch the ball, not just the tray. Small wrist tilts make the ball roll.
-    - If the ball hits a rim or falls off, choose Restart task. A new attempt starts
-      with the ball centred.
-    - Select 3 to move both hands together. Use small movements and keep both wrists
-      at the same height.
+    - If the ball hits a rim or falls off, choose Restart task. A new attempt starts with the ball
+      centred.
+    - Select 3 to move both hands together. Use small movements and keep both wrists at the same height.
     stages:
       tray_lift:
         title: Lift both rims evenly
-        text: Both grippers are holding the tray. Raise them together gently; keep
-          the ball away from every rim.
+        text: Both grippers are holding the tray. Raise them together gently; keep the ball away from
+          every rim.
       tray_hold:
         title: Hold the tray level
-        text: Keep both grippers still for one second. Watch the ball and make small
-          wrist corrections before it rolls toward a rim.
+        text: Keep both grippers still for one second. Watch the ball and make small wrist corrections
+          before it rolls toward a rim.
       tray_move:
         title: Lower onto the tray outline
-        text: The clean lift is complete. Move slowly over the outline, lower evenly
-          and release both grippers. Keep the ball clear of the sides.
+        text: The clean lift is complete. Move slowly over the outline, lower evenly and release both
+          grippers. Keep the ball clear of the sides.
       tray_retry:
         title: Ball touched a rim — restart
-        text: This attempt cannot finish. Set the tray down, then choose Restart task.
-          Lift more slowly and keep both wrists level next time.
-  revision: 2
+        text: This attempt cannot finish. Set the tray down, then choose Restart task. Lift more slowly
+          and keep both wrists level next time.
+  revision: 3
   balance:
     tray: tray
     ball: ball
     min_height: 0.07
     seconds: 1.0
+  cloths: []
 - id: pour
-  revision: 2
+  revision: 3
   name: Pour a Weissbier
   hands: 1
   skill: Steady pouring from a bottle
-  brief: Lift the Weissbier bottle by its neck and pour it all into the mug without
-    spilling. Stand the bottle back up on the table.
-  hint: Grip the neck from above and pour sideways with I/P, slowly, keeping the stream
-    in the mug.
+  brief: Lift the Weissbier bottle by its neck and pour it all into the mug without spilling. Stand
+    the bottle back up on the table.
+  hint: Grip the neck from above and pour sideways with I/P, slowly, keeping the stream in the mug.
   par: 120
   objects:
   - key: bottle
@@ -287,7 +231,7 @@ levels:
     - 0
     mass: 0.3
     label: Weissbier bottle
-    color: "#5a3514"
+    color: '#5a3514'
     mat: ceramic
     show_label: true
   - key: mug
@@ -296,7 +240,6 @@ levels:
     - -0.03
     - 0.2
     - 0
-    # handle turned away from the bottle, out of the stream's way
     R:
     - 0
     - -1
@@ -309,7 +252,7 @@ levels:
     - 1
     mass: 0.25
     label: Bavarian stein
-    color: "#e9e3d2"
+    color: '#e9e3d2'
     mat: ceramic
     show_label: true
   pour:
@@ -317,8 +260,8 @@ levels:
     to: mug
     litres: 0.5
     spill_limit: 0.05
-    color: "#e0a33c"
-    foam: "#f3ead6"
+    color: '#e0a33c'
+    foam: '#f3ead6'
   goals:
   - type: pour
     object: bottle
@@ -341,29 +284,27 @@ levels:
       grab: Grab the neck
       target: Pour into here
     plan:
-    - Lift the gripper well above the bottle, open it and come down over the neck
-      with the pads either side of it. Close.
-    - Lift the bottle until its base clears the mug's rim, and carry it over so the
-      neck is above the mug.
-    - Tilt sideways slowly with I/P. The beer reaches the mouth at about 75 degrees;
-      keep the stream in the mug and follow it with the hand as the bottle empties.
-    - Stand the bottle back up, carry it clear of the mug, lower it onto the table
-      and open the gripper.
+    - Lift the gripper well above the bottle, open it and come down over the neck with the pads either
+      side of it. Close.
+    - Lift the bottle until its base clears the mug's rim, and carry it over so the neck is above
+      the mug.
+    - Tilt sideways slowly with I/P. The beer reaches the mouth at about 75 degrees; keep the stream
+      in the mug and follow it with the hand as the bottle empties.
+    - Stand the bottle back up, carry it clear of the mug, lower it onto the table and open the gripper.
     tips:
-    - The palm is wider than the neck is long. Grip high on the neck, with the palm
-      just above the cap.
-    - Pour outward, toward the mug on the robot's left. Rolling the other way runs
-      the forearm into its stop. Turn back, then reposition the bottle.
-    - A bottle glugs. Tilting further than the neck can pass only moves the stream;
-      it doesn't pour faster.
-    - The beer stays level as the bottle turns, and a quick start or stop sloshes it.
-      Spilling more than 5% ends the attempt; press Restart task to try again.
+    - The palm is wider than the neck is long. Grip high on the neck, with the palm just above the
+      cap.
+    - Pour outward, toward the mug on the robot's left. Rolling the other way runs the forearm into
+      its stop. Turn back, then reposition the bottle.
+    - A bottle glugs. Tilting further than the neck can pass only moves the stream; it doesn't pour
+      faster.
+    - The beer stays level as the bottle turns, and a quick start or stop sloshes it. Spilling more
+      than 5% ends the attempt; press Restart task to try again.
     - Shift + I/P turns the wrist in fine steps.
     stages:
       pour_grab:
         title: Grab the bottle by its neck
-        text: Come down over the marked neck with the gripper open, pads either side
-          of it, and close.
+        text: Come down over the marked neck with the gripper open, pads either side of it, and close.
       pour_lift:
         title: Lift it upright
         text: Raise the bottle straight up until its base clears the mug's rim.
@@ -372,91 +313,69 @@ levels:
         text: Carry it smoothly until the neck is above the mug's opening.
       pour_tilt:
         title: Tilt slowly to pour
-        text: Tilt sideways with I/P until the beer runs into the mug. Keep the stream
-          in the mug and tilt further as the bottle empties.
+        text: Tilt sideways with I/P until the beer runs into the mug. Keep the stream in the mug
+          and tilt further as the bottle empties.
       pour_set_down:
         title: Stand the bottle back up
-        text: Turn it upright, carry it clear of the mug, lower it onto the table and
-          open the gripper.
+        text: Turn it upright, carry it clear of the mug, lower it onto the table and open the gripper.
       pour_spilled:
         title: Too much beer spilled
-        text: More than 5% reached the table. Press Restart task to refill the bottle
-          and try again.
+        text: More than 5% reached the table. Press Restart task to refill the bottle and try again.
       done:
         title: Poured without spilling
         text: The Weissbier is in the mug and the bottle is standing on the table.
 - id: laundry
-  revision: 3
-  name: Fold a fluffy towel
+  revision: 4
+  name: Fold a T-shirt
   hands: 2
-  skill: Two folds in soft fabric
-  brief: Fold the far edge toward you and release it. Regrip both layers of the aligned
-    open edge, fold them back onto the crease and release a four-layer stack.
-  hint: Release between folds. On the second grasp, centre the pads around both aligned
-    open edges, then lift and turn them back toward the crease.
-  par: 360
+  skill: Fold thin cotton fabric
+  brief: Fold each sleeve inward, then bring the two hem corners up to the shoulders. Release the
+    shirt on the folding pad.
+  hint: Pinch a marked cuff, fold the sleeve onto the body and release. Then use both grippers to
+    bring the hem up to the shoulders.
+  par: 240
   objects: []
   cloths:
-  - key: towel
-    kind: towel
-    label: Fluffy towel
+  - key: shirt
+    kind: shirt
+    label: Cotton T-shirt
     at:
-    - -0.09
+    - -0.07
     - 0
     - 0
-    width: 0.24
-    height: 0.32
-    resolution: 13
+    width: 0.28
+    height: 0.4
+    body_span: 0.22
+    resolution: 17
     iterations: 10
-    mass: 0.06
-    thickness: 0.006
-    pile: 0.0025
-    bend_compliance: 15.0
-    bend_memory: 3
-    color: "#c5b49a"
-    fold_axes: xx
+    mass: 0.035
+    thickness: 0.002
+    pile: 0
+    bend_compliance: 30.0
+    bend_memory: 2
+    color: '#536f95'
   goals:
   - type: fold
-    object: towel
-    folds: 2
-    label: Two folds, four layers, released and settled
+    object: shirt
+    label: Sleeves tucked, hem folded up, released and settled
     at:
-    - -0.14
+    - -0.035
     - 0
-    - 0.025
+    - 0.015
     tolerance:
-    - 0.065
-    - 0.065
-    - 0.045
+    - 0.1
+    - 0.12
+    - 0.04
     destination: the folding pad
   markers:
   - at:
-    - -0.14
+    - -0.035
     - 0
     - 0.001
     size:
-    - 0.12
-    - 0.35
-    label: Four-layer towel
-  guided:
-    name: Fold a fluffy towel
-    brief: Fold the far edge toward you and release it. Regrip both layers of the
-      aligned open edge, fold them back onto the crease and release a four-layer stack.
-    par: 360
-    goals:
-    - type: fold
-      object: towel
-      folds: 2
-      label: Two folds, four layers, released and settled
-      at:
-      - -0.14
-      - 0
-      - 0.025
-      tolerance:
-      - 0.08
-      - 0.075
-      - 0.05
-      destination: the folding pad
+    - 0.19
+    - 0.25
+    label: Folded T-shirt
   camera:
     at:
     - -0.09
@@ -468,65 +387,46 @@ levels:
     - 0.65
   guide:
     plan:
-    - Pinch the two marked far corners, one per gripper. Lift them and bring the
-      far edge toward you onto the near edge. Lower and release both grippers.
-    - Lift the open grippers clear. Regrip both layers at each marked end of the
-      aligned open edge. Centre the pads between the two layers.
-    - Lift the doubled open edge and bring it back onto the crease, keeping the grippers
-      facing down. Lower gently and release to leave four layers on the pad.
-    - Open both grippers and lift clear. Let the towel settle; a single fold or a
-      crumpled bundle will not finish.
+    - Pinch the marked cuff with either gripper. Lift it just clear of the table and lay the sleeve
+      inward over the shirt body. Open and lift clear.
+    - Repeat with the other sleeve. Keep the thin cotton spread flat rather than pulling it into a
+      bundle.
+    - Use one open gripper at each marked hem corner. Close around the fabric, lift, and bring both
+      corners up to the shoulders.
+    - Lower gently, open both grippers and lift clear. Let the folded shirt settle on its pad.
     tips:
-    - The towel has a soft fabric core, a thick plush nap and clearly visible edges. Aim
-      the pads around its edge, with the palm above the table.
-    - For the second fold, the grab markers sit where the two open corners meet. Centre
-      the gripper there so it catches both layers, not just the top corner.
-    - Keep the jaws facing down for both folds. Select 3 to move both hands together;
-      use Q/E to lift and lower. You can complete this task without turning the wrists.
-    - Release and regrip between folds. If an edge slips, open the jaws, centre the
-      doubled edge and close again.
+    - The shirt is thin cotton with no plush pile. Tilt the tips down toward the table; the cuffs and hem corners are the grab points.
+    - Use a low movement sensitivity for small corrections. Keep the palm above the table and put
+      only the gripper tips around the fabric.
+    - Release each sleeve before taking the next fold. Open fully and reposition if a grip slips.
     labels:
+      left_cuff: Fold this sleeve
+      right_cuff: Fold this sleeve
+      hem: Grab this hem corner
       target: Bring it here
-      first: Grab this corner
-      second: Grab both layers
     stages:
-      towel_first_grab:
-        title: Pinch the two far corners
-        text: Use one gripper at each marked corner of the far edge. Close around
-          a small patch and keep the palm above the towel.
-      towel_first_move:
-        title: Bring the far edge toward you
-        text: Lift both far corners and bring them onto the near corners. Keep the
-          jaws facing down and lower gently before releasing.
-      towel_first_release:
-        title: Release the first fold
-        text: The opposite edges line up. Open both grippers and lift clear, leaving
-          the towel folded in half.
-      towel_second_grab:
-        title: Grip both aligned open edges
-        text: Pinch both towel layers at each marked end of the open edge. Centre
-          the pads between the layers before closing.
-      towel_second_move:
-        title: Bring the doubled edge back to the crease
-        text: Lift both layers of the open edge and bring them back onto the marked
-          crease. Keep the jaws down, lower gently and open both grippers.
-      towel_release:
-        title: Release the four-layer towel
-        text: Both folds line up. Open both grippers and lift clear. The four-layer
-          stack must stay compact and settle on its pad.
-      towel_tidy:
-        title: Line up the final fold
-        text: Regrip both layers at the marked open edge and bring them onto the crease.
-          Lower gently, release and let the four layers settle.
-      towel_repair:
-        title: Line up the first fold again
-        text: The first fold slipped open. Line up its two open edges again before
-          making the second fold.
-      towel_layers:
-        title: Catch both towel layers
-        text: A gripper has only the top layer. Open it, lower the pads around both
-          aligned edges, then close again. Pulling one layer would open the first
-          fold.
+      shirt_left:
+        title: Fold the first sleeve inward
+        text: Pinch the marked cuff, lift it slightly and lay the sleeve over the shirt body. Open
+          and lift clear.
+      shirt_right:
+        title: Fold the other sleeve inward
+        text: Pinch the other marked cuff and lay its sleeve over the body. Release it before taking
+          the hem.
+      shirt_sleeve_release:
+        title: Release the folded sleeve
+        text: Open the gripper and lift clear so the sleeve rests flat on the shirt body.
+      shirt_hem:
+        title: Take both hem corners
+        text: Put one gripper at each marked hem corner and close around the thin fabric.
+      shirt_fold:
+        title: Bring the hem up to the shoulders
+        text: Lift the two hem corners together, carry them toward the shoulders and lower them onto
+          the shirt.
+      shirt_release:
+        title: Release the folded T-shirt
+        text: Open both grippers and lift clear. Leave the sleeves tucked and the hem aligned with
+          the shoulders.
 navigation:
   calibrate: Calibrate
   tracking: Tracking
@@ -557,18 +457,13 @@ physics: Rigid contacts, friction-limited grasps, deformable XPBD fabric and an 
   physical approximations; connector forces are representative, not measured hardware
   calibration.
 ui:
-  settings: Task settings
   task: Task
   next: Next task
   finish: Task complete
-  setup: Camera & AprilTags
-  return: Back to tasks
   outside: Outside view
   eyes: Robot eyes
   tilt: Head camera tilt
   tags: Resume AprilTags
-  guided: Small tasks
-  practice: Full challenges
   picker: Choose a task
   plan: Step-by-step instructions
   tips: Stuck? Try these hints
@@ -583,11 +478,13 @@ ui:
   sound_title: Contact sounds from the table (or press M)
   haptics: Haptics
   haptics_title: TacHammer clicks and knocks sent to connected controllers
+  close: Close
   controller: Controller
   controller_title: Connect controllers and capture devices
   controller_hand: Haptics to
   fell: "{prop} fell off the table, so the task restarted. Keep props over the table."
 motion:
+  short: Movement
   label: Movement sensitivity
   help: Below 1× gives finer movement; above 1× moves farther. Applies to mouse drags,
     keyboard moves and AprilTag hand movement. Wrist rotation stays 1:1.
@@ -718,8 +615,7 @@ haptics:
   error: A controller write failed. Reconnect the controller.
 scores:
   title: Leaderboard
-  scope: Best completion times on this device. Small tasks and full challenges are
-    ranked separately. Set your player name in Task settings.
+  scope: Best completion times on this device for these five tasks.
   empty: No completed times yet
   best: Best time
   rank: Rank

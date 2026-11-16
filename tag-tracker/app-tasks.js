@@ -3,12 +3,8 @@
 const TASK_DATA=JSON.parse($('teleopData').textContent);
 const taskCatalog=()=>TASK_DATA.levels;
 const SCORE={rows:TaskScores.clean(store.get('task-scores',[])),player:TaskScores.player(store.get('task-player','Player 1'))};
-const TASK={saved:{},records:{guided:{},practice:{}},painted:'',hand:'1',trackingView:S.settings.show3d,stored:false,moved:false,guide:null};
-for(const mode of ['guided','practice'])try{
-  const key=mode==='practice'?'tag-tracker-teleop':'tag-tracker-guided',raw=localStorage.getItem(key)||(mode==='guided'?localStorage.getItem('tag-tracker-story'):null);
-  TASK.records[mode]=TaskCore.progress(JSON.parse(raw||'{}'),taskCatalog());
-}catch(_){/* storage unavailable */}
-TASK.saved=TASK.records[S.settings.robot.playMode];
+const TASK={saved:{},painted:'',hand:'1',trackingView:S.settings.show3d,stored:false,moved:false,guide:null};
+try{TASK.saved=TaskCore.progress(JSON.parse(localStorage.getItem('tag-tracker-tasks')||'{}'),taskCatalog());}catch(_){/* storage unavailable */}
 if(!taskCatalog().some(l=>l.id===S.settings.robot.level))S.settings.robot.level='bowl';
 const gameView=()=>S.settings.show3d==='robot'&&S.settings.robot.props==='arcade'&&S.tab==='tasks';
 const currentTask=()=>TaskCore.mission(taskCatalog().find(l=>l.id===S.settings.robot.level)||taskCatalog()[0],S.settings.robot.playMode);
@@ -16,7 +12,7 @@ const taskTime=t=>`${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,'0'
 function taskLevel(id){
   if(!taskCatalog().some(l=>l.id===id))return;
   S.settings.robot.level=id;S.settings.robot.props='arcade';
-  clearCaptureOrientations();
+  rebaseCaptureOrientations();
   TASK.guide=null;TASK.notice=null;TASK.hudSig='';TASK.moved=false;TB.n++;TB.drive.clear();TB.grab=null;RB.prev.clear();RB.slew.clear();selectPlayHand('1');
   saveSettings();paintRobotBtns();paintTasks(true);
 }
@@ -26,7 +22,7 @@ function paintTaskVisibility(){
   document.body.classList.toggle('teleop-active',gameView());document.body.classList.toggle('game-screen',gameView());
   $('gameHUD').hidden=!gameView();
   if(!robot)$('taskLabels').replaceChildren();
-  if(TASK.controlHomes){mountGameControls();paintGameHUD();paintGameCamera();}
+  paintGameHUD();paintGameCamera();
 }
 function paintTasks(force){
   const l=currentTask(),g=TB.game,active=g&&g.level.id===l.id?g:null;
@@ -65,7 +61,7 @@ function stepTask(dt){
   TASK.guide=TaskCore.guidance(g);
   if(g.complete&&!TASK.stored){
     TASK.stored=true;SCORE.rows=TaskScores.record(SCORE.rows,g.level,S.settings.robot.playMode,SCORE.player,g.elapsed);store.set('task-scores',SCORE.rows);paintLeaderboard();TASK.saved[g.level.id]=TaskCore.best(TASK.saved[g.level.id],g);
-    try{localStorage.setItem(S.settings.robot.playMode==='practice'?'tag-tracker-teleop':'tag-tracker-guided',JSON.stringify(TASK.saved));}catch(_){robotSay('Task complete. This browser could not save the result.',true);}
+    try{localStorage.setItem('tag-tracker-tasks',JSON.stringify(TASK.saved));}catch(_){robotSay('Task complete. This browser could not save the result.',true);}
   }
   paintTasks();paintGameHUD();paintNotice();
 }
@@ -106,8 +102,9 @@ function paintTaskLabels(o,w,h){
   for(const b of W.bodies)if(b.label&&!marked.has(b.key)&&(TB.game.level.goals.some(r=>r.object===b.key)||(TB.game.level.objects||[]).some(s=>s.key===b.key&&s.show_label)))labels.push({p:C.add(W.poseOf(b).t,[0,0,b.kind==='cup'?.11:b.kind==='rack'?.15:b.kind==='bowl'?.08:b.kind==='stein'?.12:b.kind==='bottle'?.25:.045]),text:b.label,active:TASK.guide&&TASK.guide.object===b.key});
   for(const cloth of W.cloths)if(cloth.kind==='shirt'){
     const state=TASK.guide?.state,names=TB.game.level.guide.labels;
-    const points=state==='shirt_left'?[[cloth.landmarks.cuffs[0],names.left_cuff]]:state==='shirt_right'?[[cloth.landmarks.cuffs[1],names.right_cuff]]:['shirt_hem','shirt_fold'].includes(state)?cloth.landmarks.hem.map(i=>[i,names.hem]):[];
-    for(const [i,text] of points)labels.push({p:C.add(cloth.nodes[i].p,C.mulv(W.table.R,[0,0,.018])),text,active:true});
+    const target=state==='shirt_fold';
+    const points=state==='shirt_left'?[[cloth.landmarks.cuffs[0],names.left_cuff]]:state==='shirt_right'?[[cloth.landmarks.cuffs[1],names.right_cuff]]:state==='shirt_hem'?cloth.landmarks.hem.map(i=>[i,names.hem]):target?cloth.landmarks.shoulders.map(i=>[i,names.target]):[];
+    for(const [i,text] of points)labels.push({p:C.add(cloth.nodes[i].p,C.mulv(W.table.R,[0,0,.018])),text,active:true,pin:target?'target':'grab'});
   }
   for(const cloth of W.cloths)if(cloth.kind==='towel'&&TB.game.level.goals.some(r=>r.type==='fold'&&r.folds===2)){
     const second=cloth.foldStage===1,state=TASK.guide?.state,names=TB.game.level.guide.labels;
@@ -179,9 +176,6 @@ plot.addEventListener('keydown', (e) => {
   else if (e.key.toLowerCase() === 'i' || e.key.toLowerCase() === 'p') { e.preventDefault(); playTurn(e.key.toLowerCase() === 'i' ? -1 : 1,e.shiftKey,true); }
   else if (e.key.toLowerCase() === 'j' || e.key.toLowerCase() === 'k') { e.preventDefault(); playTurn(e.key.toLowerCase() === 'j' ? -1 : 1,e.shiftKey); }
 });
-function paintCampaignMode(){document.querySelectorAll('[data-campaign-mode]').forEach(b=>b.setAttribute('aria-checked',String(b.dataset.campaignMode===S.settings.robot.playMode)));}
-function setCampaignMode(mode){if(!['guided','practice'].includes(mode))return;S.settings.robot.playMode=mode;TASK.saved=TASK.records[mode];TASK.catalogKey='';paintCampaignMode();taskLevel(S.settings.robot.level);}
-$('campaignMode').onclick=e=>{const b=e.target.closest('[data-campaign-mode]');if(b)setCampaignMode(b.dataset.campaignMode);};
 function paintGameHUD(){
   if(!gameView())return;
   const l=currentTask(),g=TB.game,guide=TASK.guide||{state:'approach',index:0,object:l.goals[0].object},done=g&&g.level.id===l.id&&g.complete;
@@ -192,31 +186,26 @@ function paintGameHUD(){
   $('gameTitle').textContent=l.name;$('gameObjective').textContent=l.brief;
   $('guideTitle').textContent=format(text.title);$('guideText').textContent=format(text.text);
   $('guideGoals').innerHTML=l.goals.map((r,i)=>`<li data-done="${!!(g&&g.steps[i])}" data-active="${i===guide.index}">${escapeHtml(r.label)}</li>`).join('');
-  const planKey=l.id+S.settings.robot.playMode;if(TASK.planKey!==planKey){TASK.planKey=planKey;$('guidePlanList').innerHTML=(S.settings.robot.playMode==='practice'&&l.guide.full_plan||l.guide.plan).map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guideTipsList').innerHTML=(S.settings.robot.playMode==='practice'&&l.guide.full_tips||l.guide.tips).map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guidePlan').open=l.id==='sort'||l.id==='laundry';}
+  const planKey=l.id+S.settings.robot.playMode;if(TASK.planKey!==planKey){TASK.planKey=planKey;$('guidePlanList').innerHTML=l.guide.plan.map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guideTipsList').innerHTML=l.guide.tips.map(p=>`<li>${escapeHtml(p)}</li>`).join('');$('guidePlan').open=l.id==='sort'||l.id==='laundry';}
   $('gameNext').hidden=$('taskNext').hidden;$('gameTags').hidden=!TB.drive.size||!RB.cal;
 }
 $('gameNext').onclick=()=>$('taskNext').click();$('guideRestart').onclick=()=>resetTable();$('gameTags').onclick=()=>$('tagsDriveBtn').click();
-$('gameSettingsBtn').onclick=()=>$('gameSettings').showModal();$('gameSettingsClose').onclick=()=>$('gameSettings').close();
-$('gameSetupBtn').onclick=()=>{$('gameSettings').close();setMode('track');openSetup(0);};
 $('gameEyes').onclick=()=>setRobotView(S.settings.robot.view==='eyes'?'orbit':'eyes');
 $('gameTilt').onchange=()=>saveSettings();$('gameTilt').oninput=()=>setHeadTilt(+$('gameTilt').value);
-function paintGameCamera(){$('gameEyes').textContent=S.settings.robot.view==='eyes'?TASK_DATA.ui.outside:TASK_DATA.ui.eyes;$('gameEyes').setAttribute('aria-pressed',String(S.settings.robot.view==='eyes'));$('gameTilt').value=S.settings.robot.headTilt;}
-for(const node of [$('taskPanel'),$('robotPlayControls'),document.querySelector('.card3d>.card-h'),document.querySelector('.plot3d>.vbtns')]){
-  const mark=document.createComment('task setup home');node.before(mark);TASK.controlHomes=TASK.controlHomes||[];TASK.controlHomes.push({node,mark});
-}
-function mountGameControls(){for(const {node,mark} of TASK.controlHomes){if(gameView())$('gameSettingsTools').append(node);else mark.after(node);}}
-paintCampaignMode();paintTasks(true);paintTaskVisibility();
+function paintGameCamera(){$('gameEyes').textContent=S.settings.robot.view==='eyes'?TASK_DATA.ui.outside:TASK_DATA.ui.eyes;$('gameEyes').setAttribute('aria-pressed',String(S.settings.robot.view==='eyes'));$('gameTilt').value=S.settings.robot.headTilt;$('gameTiltField').hidden=S.settings.robot.view!=='eyes';$('headTilt').closest('label').hidden=S.settings.robot.view!=='eyes';}
+paintTasks(true);paintTaskVisibility();
 
 // Haptics follow the task's physical contact record, never a canned level animation.
 const TASK_HAPTIC=TaskHaptics.dispatcher();
 let taskHapticSettings=TaskHaptics.settings(store.get('task-haptics',{})),taskHapticPaint=0;
 store.set('task-haptics',taskHapticSettings);
-$('taskHaptics').checked=taskHapticSettings.enabled!==false;$('taskHapticStrength').value=taskHapticSettings.level;
-function setTaskHaptics(on){taskHapticSettings.enabled=!!on;store.set('task-haptics',taskHapticSettings);TASK_HAPTIC.reset();$('taskHaptics').checked=!!on;paintHapticsBtn();}
+$('taskHapticStrength').value=taskHapticSettings.level;
+function setTaskHaptics(on){taskHapticSettings.enabled=!!on;store.set('task-haptics',taskHapticSettings);TASK_HAPTIC.reset();paintHapticsBtn();}
 function paintHapticsBtn(){const on=taskHapticSettings.enabled!==false,b=$('gameHaptics'),value=taskHapticSettings.level+'%';b.textContent=TASK_DATA.ui.haptics+' '+value;$('taskHapticLevel').textContent=value;b.setAttribute('aria-pressed',String(on));b.classList.toggle('primary',on);b.classList.toggle('outline',!on);}
-$('taskHaptics').onchange=()=>setTaskHaptics($('taskHaptics').checked);$('gameHaptics').onclick=()=>setTaskHaptics(taskHapticSettings.enabled===false);paintHapticsBtn();
+$('gameHaptics').onclick=()=>setTaskHaptics(taskHapticSettings.enabled===false);paintHapticsBtn();
 // The Controller panel: connect boards from the task screen and choose which hand's cues each one plays.
 $('gameController').onclick=()=>{const p=$('controllerPanel');p.hidden=!p.hidden;$('gameController').setAttribute('aria-expanded',String(!p.hidden));paintControllerPanel(true);};
+$('ctlClose').onclick=()=>{$('controllerPanel').hidden=true;$('gameController').setAttribute('aria-expanded','false');$('gameController').focus();};
 $('ctlBle').onclick=()=>addBoard();$('ctlSerial').onclick=()=>addSerialBoard();
 let controllerSig='';
 function paintControllerPanel(force){
@@ -237,10 +226,10 @@ function paintControllerPanel(force){
 }
 $('taskHapticStrength').oninput=()=>{taskHapticSettings.level=TaskHaptics.level(+$('taskHapticStrength').value);$('taskHapticStrength').value=taskHapticSettings.level;store.set('task-haptics',taskHapticSettings);paintHapticsBtn();};
 function sendTaskHaptics(W,sc,now){
-  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,level:taskHapticSettings.level,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('gameSettings').open&&!$('setupDlg').open});
+  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,level:taskHapticSettings.level,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('setupDlg').open&&!$('settingsDlg').open});
   if(now-taskHapticPaint<250)return;taskHapticPaint=now;
   const live=S.boards.filter(b=>!b.sim&&b.state==='live'),ready=live.filter(b=>b.act?.tachammerReady&&now-b.actT<500&&(b.transport!=='capture'||b.motion?.ready)),last=ready.map(b=>b.hapticLast).filter(x=>x&&now-x.at<750),text=!taskHapticSettings.enabled?TASK_DATA.haptics.off:!live.length?TASK_DATA.haptics.disconnected:!ready.length?(live.some(b=>b.transport==='capture'&&!b.motion?.ready)?TASK_DATA.haptics.calibrating:TASK_DATA.haptics.unavailable):last.length?TASK_DATA.haptics.sent:TASK_DATA.haptics.ready;
-  $('taskHapticStatus').textContent=$('ctlStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;paintControllerPanel();
+  $('ctlStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;paintControllerPanel();
 }
 window.addEventListener('blur',()=>TASK_HAPTIC.reset());
 

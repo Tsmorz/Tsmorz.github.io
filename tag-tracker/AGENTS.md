@@ -26,7 +26,8 @@ Keep the generic Machine robot; no human avatars, story rooms or rewards.
 Preserve Calibrate → Tracking → Tasks and the scene across tab switches. Tasks alone mounts
 `#gameHUD`; Tracking pauses and hides the task table (`tableShown`). No Physics or Forces UI.
 `S.tab` selects the page; `S.mode` selects calibration/tracking detection. Keep setup in Settings
-and Task settings, with Sound, Haptics and Controller available on the task bar.
+with Sound, Haptics and Controller on the task bar. Keep haptic strength and movement sensitivity inline;
+show head tilt only in robot-eye view. Popups close with an accessible ×; do not restore task settings.
 
 ## Tracking contracts
 
@@ -79,10 +80,10 @@ and use position-only IK costs; wrist limits must never recruit the shoulder. `w
 
 ## The five tasks
 
-Keep `bowl`, `sort`, `tray`, `pour`, `laundry` freely selectable, in order; removed IDs fall back to
-`bowl`. Both placement variants need two blocks. `TaskCore.fallen` immediately restarts with a notice.
-`TaskCore.mission` must not mutate its full variant. Separate small/full records; changed objectives
-need new revisions. Timers use monotonic elapsed time.
+Keep `bowl`, `sort`, `tray`, `pour`, `laundry` freely selectable in order, with one canonical definition each.
+`TaskCore.mission` accepts legacy mode arguments but never changes the task. Retired Small/Full settings
+normalize to `tasks`; keep old score namespaces separate. Changed objectives need new revisions.
+`TaskCore.fallen` immediately restarts with a notice. Timers use monotonic elapsed time.
 
 Guidance reads actual constraints; never move props or award success. Preserve the empty-gripper
 retreat between blocks, wrong-prop/missing-hand/layer hints and visible destinations/objectives.
@@ -91,26 +92,15 @@ retreat between blocks, wrong-prop/missing-hand/layer hints and visible destinat
 A rim hit or lost load invalidates the attempt until restart. Require both a clean elevated two-hand
 hold and released set-down. Test actual contacts, not just a ball parked at its final coordinates.
 
-No automated towel tests: Tony tests by hand; scripted folds vary with last-digit rounding.
-Keep the fabric core, plush nap, layer contact and closed `clothSurface` shell, 3× finer than the
-physics grid; never smooth the nodes themselves. `halfThickness` is its contact radius; `radius`
-identifies cables in rendering. Rebuild GPU buffers when topology changes.
-Plush sleep tolerates ≤3% chattering corner nodes, or a folded towel stays awake on some platforms.
-`bend_memory` sets creases only while released and where both link ends touch something: a set taken
-while held or hanging props up arches and fails `compact`. Bending stiffer than `bend_compliance` 15
-springs the first fold open. Fabric pressed into the table leaves through its top, never the bottom.
-
-Grips use finite barycentric material patches; a single pinned vertex permits free spinning. Clamp
-both actual halves at the doubled open edge. Jaws that lose a patch while closed stay empty until
-reopened (`clothSlip`). Grab markers show only during grab states, destinations once both are held.
-Bound total force across captured layers. Plush patches may yield in bending under measured moment,
-keeping a shared grip centre, sideways twist constraint and reactions. Solve layer contact and table
-friction with stretch (late projections leave strain); keep a contact's side across a substep.
-
-The `xx` objective requires a released first-fold checkpoint, both second grasps, overlapping material
-quarters, a spread footprint and released settling. Loose fluffy corners are allowed; one fold or a
-crushed bundle is not. First fold toward the robot, then return the doubled open edge to the crease.
-Waking a resting towel must still permit a real grasp.
+No automated fabric-fold playthroughs: Tony tests folding by hand; scripted folds vary with rounding.
+Static pattern, mesh, guidance and loading checks are fine. `laundry` uses the thin `shirt` cut pattern,
+with cuffs, hem and shoulders from material landmarks; do not replace it with a rectangular plush towel.
+`halfThickness` is the contact radius; `pile` is visual nap. Rendering must follow the physical nodes.
+Rebuild GPU buffers on topology changes. `bend_memory` sets creases only on supported, released fabric;
+setting them while held preserves unwanted arches. Fabric pressed into the table leaves through its top.
+Grips use finite barycentric patches, not single vertices; bound reactions across captured layers.
+Losing a patch while closed requires reopening (`clothSlip`). Grab markers show at the actual landmarks;
+show shoulder destinations once the hem is held. Preserve sleeve/hem/compactness checks so a bundle cannot pass.
 
 ## Pouring and controller contracts
 
@@ -129,7 +119,9 @@ Capture USB uses native raw IMU via `capture-core.js`/`app-capture.js`, never TP
 Relative orientation needs stationary gyro calibration and per-hand neutral; IMU supplies no translation.
 Mute task pulses until gyro bias calibration finishes, or the actuator prevents its own stillness check.
 Blur/hidden/dialogs/stale delivery hold rotation and resume on fresh samples in the same estimator epoch;
-an epoch change requires recentering. Calibration stays in memory and clears on hand/task/frame changes.
+an epoch change requires recentering. Calibration stays in memory and clears on hand/frame changes.
+Tasks/restarts call `rebaseCaptureOrientations`: `Control.retarget` aligns the ready hand only within
+the same live estimator epoch. View changes must preserve neutral; never bypass a real stream reset.
 Use PLAY_WAVEFORM with matching ACKs, no retries and fresh INFO/stream activity.
 `Control.zero` uses chest `basis`, never jaw orientation: cable-axis roll, transverse pitch, board-up yaw.
 `SENSOR_TO_ROBOT`: raw X → pitch (+Y), raw Y → cable-axis roll (-X), raw Z → yaw (+Z).

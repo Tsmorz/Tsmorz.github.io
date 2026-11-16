@@ -150,7 +150,7 @@
     out.finger = {};
     for (const j of [1, -1]) out.finger[j] = [
       part(blob(mir(G.finger.c, j), G.finger.h, 0.2, 0.2, { nu: 20, nv: 16 }), 'dark'),
-      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'shell'),
+      part(blob(mir(G.pad.c, j), G.pad.h, 0.3, 0.3, { nu: 12, nv: 8 }), 'shell', {tip:true}),
     ];
     out.extent = [[cx, wy, zc + 0.15], [cx, -wy, zc + 0.15], [hx, 0, hz + 0.09], [cx, 0.11, z0 - 0.29], [cx, -0.11, z0 - 0.29], [0, 0, 0]];
     return out;
@@ -601,11 +601,11 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(dot(N,V)<0.0)N=-N;vec3 
         drawList(B.fore, at(k.Rf, k.elbow), fade);
         // the wrist light: violet while its tag is tracked, amber while the hand is out of reach
         if ((!a.reach || (a.live && !a.idle))) for (const p of B.foreLight) { setMat('light', 0, a.reach ? null : warn); drawG(p.g, at(k.Rf, k.elbow)); }
-        // a gripper the pointer can take (a.hot 1) is tinted violet, more so while it is dragged (2)
+        // Only the grasp pads highlight at the open/close hit target; the palm and fingers keep their material.
         const hot = a.hot ? glow.map((x) => x * (a.hot > 1 ? 1.25 : 1)) : null;
-        drawList(B.hand[a.side], at(k.R, k.wrist), fade, hot);
+        drawList(B.hand[a.side], at(k.R, k.wrist), fade);
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
-        for (const j of [1, -1]) drawList(B.finger[j], at(k.R, C.add(k.wrist, C.mulv(k.R, [0, (j * jaw) / 2, 0]))), fade, hot);
+        for (const j of [1, -1]) for(const p of B.finger[j]){setMat(p.mat,fade,p.tip?hot:null);drawG(p.g,at(k.R,C.add(k.wrist,C.mulv(k.R,[0,j*jaw/2,0]))));}
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
       // the force arrows (o.forces: [{a: tail, b: tip, warn}]), over everything: they are often inside a gripper

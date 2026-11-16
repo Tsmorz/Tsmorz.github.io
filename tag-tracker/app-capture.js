@@ -51,16 +51,22 @@ function stopCaptureOrientation(b){
   if(d&&control.last)d.R=control.last.slice();
   control?.clear();paintControllerPanel(true);
 }
-function captureHandRotation(side,now){
-  const active=gameView()&&!document.hidden&&document.hasFocus()&&!$('setupDlg').open&&!$('gameSettings').open&&!V.rec&&!V.boardTake&&!V.opening;
+function captureHandRotation(side,now,chest=RB.scene?.chest,m=RB.scene?.m){
+  const active=gameView()&&!document.hidden&&document.hasFocus()&&!$('setupDlg').open&&!$('settingsDlg').open&&!V.rec&&!V.boardTake&&!V.opening;
   for(const b of S.boards){
     const control=b.captureControl;
     if(b.transport!=='capture'||!control?.neutral||control.neutral.side!==side)continue;
+    if(control.needsTaskPose&&active&&chest&&m){
+      const R=C.mul3(chest.R,RCORE.fk(m,side,robotReady()).R);
+      control.retarget(b.motion,R,side,S.settings.frame,now,chest.R);
+    }
     return control.rotation(b.motion,side,S.settings.frame,now,active&&b.state==='live');
   }
   return null;
 }
 function clearCaptureOrientations(){for(const b of S.boards)b.captureControl?.clear();}
+// A task restart has a new ready hand pose, but the live sensor's calibration is still valid.
+function rebaseCaptureOrientations(){for(const b of S.boards)if(b.captureControl?.neutral)b.captureControl.needsTaskPose=true;}
 // Hold while away; Control resumes the same neutral when fresh samples and focus return.
 function pauseCaptureOrientations(){for(const b of S.boards)if(b.captureControl?.neutral)b.captureControl.paused=true;}
 window.addEventListener('blur',pauseCaptureOrientations);

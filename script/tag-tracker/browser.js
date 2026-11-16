@@ -4,7 +4,7 @@
   const assert = (ok, message) => { if (!ok) throw new Error(message); };
   const until = async (fn, message, timeout = 3500) => { const t = performance.now(); while (!fn() && performance.now() - t < timeout) await wait(50); assert(fn(), message); };
   document.querySelectorAll('dialog[open]').forEach((d) => d.close());
-  setMode('tasks');setCampaignMode('practice'); taskLevel('bowl'); await wait(400);
+  setMode('tasks'); taskLevel('bowl'); await wait(400);
   assert(TASK_DATA.levels.length === 5 && $('taskLevels').children.length === TASK_DATA.levels.length, 'all levels are available');
   assert(!robotGL().lost, 'WebGL robot renderer is available');
   assert(!document.querySelector('[data-nudge]')&&!document.querySelector('[data-hand]'),'the obsolete command bar stays removed');
@@ -22,7 +22,7 @@
   const bowl = W.poseOf(TB.game.byKey.get('bowl')).t;
   d.t = C.sub(C.add(bowl, [0, 0, 0.16]), offset); await wait(2200); d.open = 1;
   await until(() => TB.game.complete, 'a released ball physically lands in the bowl and completes the level', 4500);
-  assert(!$('taskNext').hidden && TASK.saved.bowl && JSON.parse(localStorage.getItem('tag-tracker-teleop')).bowl, 'completion exposes the next level and saves the personal best');
+  assert(!$('taskNext').hidden && TASK.saved.bowl && JSON.parse(localStorage.getItem('tag-tracker-tasks')).bowl, 'completion exposes the next level and saves the personal best');
   $('taskNext').click(); await wait(300);
   assert(TB.game.level.id === 'sort' && !TB.game.complete && !TB.drive.size, 'next level starts fresh');
   // A real head-mounted projection, including drag and keyboard controls, rather than an orbit-camera preset.
@@ -36,7 +36,7 @@
   assert(S.settings.robot.headTilt===-45&&hand.t[2]>beforeZ,'the eye-view arrow lifts the selected hand while the slider retains head tilt');
   // Exercise every new mesh and objective view in a live browser.
   for (const l of TASK_DATA.levels) { taskLevel(l.id); await wait(l.id === 'laundry' ? 700 : 120); assert(TB.world && TB.game.level.id === l.id, l.id + ' scene loads'); }
-  assert(TB.world.cloths.length === 1 && TB.world.cloths.every((c) => c.nodes.every((n) => n.p.every(Number.isFinite))), 'the thick towel simulates and renders');
+  assert(TB.world.cloths.length === 1 && TB.world.cloths.every((c) => c.nodes.every((n) => n.p.every(Number.isFinite))), 'the thin shirt initializes and renders');
   assert(document.documentElement.scrollWidth <= innerWidth + 1, 'the layout has no horizontal page overflow');
   const guide=document.querySelector('.workbench-guide').getBoundingClientRect();
   assert(guide.right<=innerWidth+1&&guide.bottom<=innerHeight+1,'guidance stays inside the viewport');

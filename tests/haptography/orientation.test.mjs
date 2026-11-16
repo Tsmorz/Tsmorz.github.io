@@ -127,6 +127,20 @@ test('neutral calibration refuses unready or stale data',()=>{
   assert.equal(control.zero(sample,I,0,'camera',s.now),false);
 });
 
+test('a new task retargets the ready hand using the calibrated live sensor, without masking a reset',()=>{
+  const s=stream(),control=new O.Control();s.run(2.1);control.zero(s.estimator.snapshot,I,1,'camera',s.now);
+  const sample=s.run(.3,[0,0,60]),ready=R.fk(R.model(),1,R.HOME).R;
+  control.needsTaskPose=true;
+  assert.ok(control.retarget(sample,ready,1,'camera',s.now,I));
+  assert.equal(control.needsTaskPose,false);
+  assert.ok(C.angleOf(C.mul3(control.rotation(sample,1,'camera',s.now,true),C.tr3(ready)))<1e-7);
+  const next=s.run(.2,[0,0,60]);
+  assert.ok(C.angleOf(C.mul3(control.rotation(next,1,'camera',s.now,true),C.tr3(ready)))>.15);
+  assert.equal(control.retarget({...next,epoch:next.epoch+1},ready,1,'camera',s.now,I),false);
+  assert.equal(control.retarget(next,ready,-1,'camera',s.now,I),false);
+  assert.equal(control.retarget(next,ready,1,'tag',s.now,I),false);
+});
+
 test('cable-axis roll, cable-end pitch and board-up yaw map to the matching gripper axes',()=>{
   const m=R.model();
   // USB toward the operator: raw X is transverse/pitch, raw Y is cable-axis roll,

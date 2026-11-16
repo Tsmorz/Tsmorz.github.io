@@ -4,7 +4,7 @@
 (async()=>{
   const wait=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,msg)=>{if(!ok)throw new Error(typeof msg==='function'?msg():msg);};
   const until=async(fn,msg,ms=6000)=>{const t=performance.now();while(!fn()&&performance.now()-t<ms)await wait(40);assert(fn(),msg);};
-  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');setCampaignMode('guided');taskLevel('pour');await wait(700);
+  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');taskLevel('pour');await wait(700);
   const W=TB.world,g=TB.game,p=g.pour,A=p.from.body,B=p.to.body,S=TaskCore.STEIN,BO=TaskCore.BOTTLE,T=W.table,vec=v=>C.mulv(T.R,v),at=(b,q)=>{const s=W.poseOf(b);return C.add(s.t,C.mulv(s.R,q));};
   assert(TASK.guide.state==='pour_grab'&&$('taskLabels').textContent.includes(g.level.guide.labels.grab),'the task opens on the neck marker');
   const d=driveOf(RB.scene.arms.find(a=>a.side===1)),fin=RCORE.gripper(RB.scene.m).finger.c[2],up=v=>vec([0,0,v]),L=q=>g.local(q),hand=()=>W.handPose(1).t;

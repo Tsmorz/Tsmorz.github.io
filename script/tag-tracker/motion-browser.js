@@ -4,11 +4,9 @@
   document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');setRobotView('orbit');await sleep(250);
   const slider=$('taskMotionScale'),value=$('taskMotionValue');
   const gain=n=>{slider.value=n;slider.dispatchEvent(new Event('input'));};
-  $('gameSettingsBtn').click();
-  assert(slider.getBoundingClientRect().height>0&&slider.closest('#gameSettings'),'sensitivity slider is visible in Task settings');
+  assert(slider.getBoundingClientRect().height>0&&slider.closest('.game-actions'),'sensitivity slider is visible in the task bar');
   assert(slider.min==='0.1'&&slider.max==='5','fine movement and larger movement are both available');
   gain(.25);assert(value.textContent==='0.25×'&&$('robotScale').value==='0.25'&&store.get('settings').robot.scale===.25,'slider, Tracking selector and persisted gain agree');
-  $('gameSettingsClose').click();
   // Synthetic pointers use the real picking, ray/plane drag, reach and contact code. Native
   // pointer capture requires a trusted pointer, so only capture itself is stubbed here.
   const capture=plot.setPointerCapture;plot.setPointerCapture=()=>{};
@@ -63,9 +61,9 @@
     handDrop(edge.e);
   }finally{plot.setPointerCapture=capture;TB.grab=null;}
   $('robotScale').value='2';$('robotScale').dispatchEvent(new Event('change'));
-  assert(slider.value==='2'&&value.textContent==='2×','Tracking selector also updates Task settings');
-  $('taskMotionReset').click();assert(S.settings.robot.scale===1&&slider.value==='1'&&value.textContent==='1×','reset restores normal sensitivity');
-  taskLevel('bowl');draw3d();$('gameSettingsBtn').click();
-  assert(document.documentElement.scrollWidth<=innerWidth+1,'settings fit the viewport');
+  assert(slider.value==='2'&&value.textContent==='2×','Tracking selector also updates the task bar');
+  setMotionScale(1);assert(S.settings.robot.scale===1&&slider.value==='1'&&value.textContent==='1×','reset restores normal sensitivity');
+  taskLevel('bowl');draw3d();
+  assert(document.documentElement.scrollWidth<=innerWidth+1,'controls fit the viewport');
   return {passed:true,mouseGains:[.25,1,2],aprilTagGains:true,keyboardGain:true,noTargetJump:true,persisted:true,viewport:[innerWidth,innerHeight]};
 })()

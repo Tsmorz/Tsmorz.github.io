@@ -261,7 +261,7 @@ const VOICE_ACTIONS={
   fit:()=>{if(S.tab==='calib')setMode('track');fitView();return 'View fitted';},
   reset:()=>{if(S.tab==='calib')setMode('track');resetView();return 'View reset';},
   robot:()=>{if(S.tab==='calib')setMode('track');if(S.settings.show3d!=='robot')document.querySelector('[data-show3d="robot"]').click();return calibrateRobot();},
-  settings:()=>{if(gameView())$('gameSettings').showModal();else openSettings();return 'Settings';},
+  settings:()=>{openSettings();return 'Settings';},
   table:()=>{if(S.tab!=='tasks')setMode('tasks');return resetTable();},
   eyes:()=>{if(S.tab==='calib')setMode('track');setRobotView('eyes');return 'Robot eyes';},
   outside:()=>{if(S.tab==='calib')setMode('track');setRobotView('orbit');return 'Outside view';},

@@ -2,7 +2,7 @@
 // (Cable physics and insertion run headless against connector-fixture.json in advanced.cjs.)
 (async()=>{
   const wait=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,msg)=>{if(!ok)throw Error(msg);};
-  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');setCampaignMode('guided');taskLevel('pour');await wait(500);
+  document.querySelectorAll('dialog[open]').forEach(d=>d.close());setMode('tasks');taskLevel('pour');await wait(500);
   const W=TB.world,g=TB.game,bottle=g.pour.from.body,BO=TaskCore.BOTTLE,vec=p=>C.mulv(W.table.R,p),fin=RCORE.gripper(RB.scene.m).finger.c[2];
   const d=driveOf(RB.scene.arms.find(a=>a.side===1)),pose=W.poseOf(bottle),neck=C.add(pose.t,C.mulv(pose.R,[0,0,BO.H-.028])),offset=C.mulv(d.R,[0,0,fin]);
   // Approach the neck with the forward-facing hand; a 90-degree wrist tilt exceeds its stop.

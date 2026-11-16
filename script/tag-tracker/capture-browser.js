@@ -112,8 +112,8 @@
     if(visible)Object.defineProperty(document,'hidden',visible);else delete document.hidden;
     document.dispatchEvent(new Event('visibilitychange'));await wait(()=>!b.captureControl.paused,'visible page resumes without Set neutral');
     assert(b.captureControl.neutral===neutral,'visibility preserves the original neutral');
-    $('gameSettingsBtn').click();await sleep(100);assert(b.captureControl.paused,'task settings hold orientation');
-    $('gameSettingsClose').click();await wait(()=>!b.captureControl.paused,'closing task settings resumes orientation');
+    openSettings();await sleep(100);assert(b.captureControl.paused,'task settings hold orientation');
+    $('settingsClose').click();await wait(()=>!b.captureControl.paused,'closing task settings resumes orientation');
     assert(b.captureControl.neutral===neutral,'task settings do not need another neutral');
   }finally{
     if(focused)Object.defineProperty(document,'hasFocus',focused);else delete document.hasFocus;
@@ -128,7 +128,14 @@
   const tabNeutral=b.captureControl.neutral;
   setMode('tasks');await wait(()=>!b.captureControl.paused,'returning to Tasks automatically resumes orientation');
   assert(b.captureControl.neutral===tabNeutral,'switching tabs preserves the neutral pose');
-  taskLevel('sort');assert(!b.captureControl.neutral,'task changes clear IMU calibration');
+  taskLevel('sort');await wait(()=>!b.captureControl.needsTaskPose&&!b.captureControl.paused,'new task automatically aligns the calibrated device');
+  assert(b.captureControl.neutral&&b.captureControl.neutral.epoch===b.motion.epoch,'task changes preserve the live sensor calibration');
+  const afterTask=b.captureControl.last.slice();speed=40;await sleep(450);speed=0;await sleep(150);
+  assert(C.angleOf(C.mul3(b.captureControl.last,C.tr3(afterTask)))>.15,'orientation works in the new task without Set neutral');
+  resetTable();await wait(()=>!b.captureControl.needsTaskPose,'restart automatically aligns the ready hand');
+  const beforeViews=b.captureControl.neutral;
+  setRobotView('eyes');await sleep(120);setRobotView('orbit');await sleep(120);
+  assert(b.captureControl.neutral===beforeViews&&!b.captureControl.paused,'outside and robot-eye views preserve neutral');
   await b.serialLink.close();assert(closed&&b.state!=='live'&&!b.hapticCharacteristic,'disconnect releases motion and haptic transport');
   assert($('ctlConnectionStatus').textContent===TASK_DATA.link.capture_lost,'disconnect replaces the active-orientation notice');
   assert(document.documentElement.scrollWidth<=innerWidth+1,'controller panel fits viewport');

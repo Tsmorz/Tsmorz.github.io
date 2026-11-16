@@ -2,7 +2,7 @@
 (async()=>{
   const sleep=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,msg)=>{if(!ok)throw Error(msg);};
   document.querySelectorAll('dialog[open]').forEach(d=>d.close());
-  setMode('tasks');setCampaignMode('guided');taskLevel('pour');await sleep(500);
+  setMode('tasks');taskLevel('pour');await sleep(500);
   const W=TB.world,p=TB.game.pour,A=p.from.body,B=p.to.body,T=W.table;
   A.fixed=true;A.R=C.mul3(T.R,RCORE.Rx(-110*Math.PI/180));A.q=PHYS.qOf(A.R);
   const n=C.mulv(C.tr3(A.R),[0,0,1]),lip=PourCore.spout(n,p.from.shape).p;
