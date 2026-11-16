@@ -79,10 +79,12 @@ function markerList(){
 }
 function taskMarkers(bodies,compounds){
   if(!TB.game)return;const T=TB.world.table;
+  const fabric=TB.world.cloths.some(c=>c.kind==='shirt');
   markerList().forEach((r,i)=>{
-    const [x,y]=r.size.map(v=>v/2),z=.0007,key='__target'+i,active=TASK.guide&&TASK.guide.at&&Math.hypot(r.at[0]-TASK.guide.at[0],r.at[1]-TASK.guide.at[1])<.025,th=active?.002:.001;
+    const [x,y]=r.size.map(v=>v/2),z=fabric?.00005:.0007,key='__target'+i,active=TASK.guide&&TASK.guide.at&&Math.hypot(r.at[0]-TASK.guide.at[0],r.at[1]-TASK.guide.at[1])<.025,th=active?.002:.001;
     compounds[key]=[{type:'box',p:[-x,0,0],h:[th,y,z]},{type:'box',p:[x,0,0],h:[th,y,z]},{type:'box',p:[0,-y,0],h:[x,th,z]},{type:'box',p:[0,y,0],h:[x,th,z]}];
-    bodies.push({key,R:T.R,t:C.add(T.t,C.mulv(T.R,r.at)),color:active?K.accent:K.muted});
+    // The folding destination is ink on the table, below even one cotton layer.
+    bodies.push({key,R:T.R,t:C.add(T.t,C.mulv(T.R,fabric?[r.at[0],r.at[1],z]:r.at)),color:active?K.accent:K.muted});
   });
 }
 function benchDecoration(bodies,compounds){
@@ -103,8 +105,8 @@ function paintTaskLabels(o,w,h){
   for(const cloth of W.cloths)if(cloth.kind==='shirt'){
     const state=TASK.guide?.state,names=TB.game.level.guide.labels;
     const target=state==='shirt_fold';
-    const points=state==='shirt_left'?[[cloth.landmarks.cuffs[0],names.left_cuff]]:state==='shirt_right'?[[cloth.landmarks.cuffs[1],names.right_cuff]]:state==='shirt_hem'?cloth.landmarks.hem.map(i=>[i,names.hem]):target?cloth.landmarks.shoulders.map(i=>[i,names.target]):[];
-    for(const [i,text] of points)labels.push({p:C.add(cloth.nodes[i].p,C.mulv(W.table.R,[0,0,.018])),text,active:true,pin:target?'target':'grab'});
+    const cuff=i=>ClothCore.cuffCenter(cloth,i)||cloth.nodes[cloth.landmarks.cuffs[i]].p,points=state==='shirt_left'?[[cuff(0),names.left_cuff]]:state==='shirt_right'?[[cuff(1),names.right_cuff]]:state==='shirt_hem'?cloth.landmarks.hem.map(i=>[cloth.nodes[i].p,names.hem]):target?cloth.landmarks.shoulders.map(i=>[cloth.nodes[i].p,names.target]):[];
+    for(const [point,text] of points)labels.push({p:C.add(point,C.mulv(W.table.R,[0,0,.018])),text,active:true,pin:target?'target':'grab'});
   }
   for(const cloth of W.cloths)if(cloth.kind==='towel'&&TB.game.level.goals.some(r=>r.type==='fold'&&r.folds===2)){
     const second=cloth.foldStage===1,state=TASK.guide?.state,names=TB.game.level.guide.labels;
@@ -124,10 +126,10 @@ function chosenHands() {
   for (const side of sides) if (!sc.arms.some((a) => a.side === side)) sc.arms.push({ side, key: null, q: RCORE.HOME.slice(), reach: true, live: false, idle: true });
   return sc.arms.filter((a) => sides.includes(a.side));
 }
-function playNudge(name,fine=false) {
+function playNudge(name) {
   const moves = { forward: [1, 0, 0], back: [-1, 0, 0], left: [0, 1, 0], right: [0, -1, 0], up: [0, 0, 1], down: [0, 0, -1] };
   const sc = RB.scene, hs = chosenHands(); if (!sc || !hs.length) return;
-  const local = moves[name], R = TB.world ? TB.world.table.R : sc.chest.R, delta = C.mulv(R, local.map((v) => v * (fine?.0002:.012) * S.settings.robot.scale));
+  const local = moves[name], R = TB.world ? TB.world.table.R : sc.chest.R, delta = C.mulv(R, local.map((v) => v * .012 * S.settings.robot.scale));
   // Both share the same displacement. Stop both at the first reach limit, preserving their separation.
   let fraction = 1;
   for (const a of hs) {
@@ -146,8 +148,6 @@ function playNudge(name,fine=false) {
   TASK.moved = true; plot.focus({preventScroll:true});
 }
 function playGrasp(open) { for (const a of chosenHands()) driveOf(a).open = open; TASK.moved = true; plot.focus({preventScroll:true}); }
-function playTurn(sign,fine=false,sideways=false) { for (const a of chosenHands()) { const d = driveOf(a); d.R = C.mul3(d.R, RCORE[sideways?'Rx':'Ry'](sign * (fine?.002:Math.PI/36))); } TASK.moved = true; plot.focus({preventScroll:true}); }
-function playRoll(sign,fine=false) { for (const a of chosenHands()) { const d = driveOf(a); d.R = C.mul3(d.R, C.rodrigues([0, 0, sign * (fine?.002:Math.PI/36)])); } TASK.moved = true; plot.focus({preventScroll:true}); }
 function selectPlayHand(hand) {
   TASK.hand = hand;
   document.querySelectorAll('[data-hand]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.hand === hand)));
@@ -171,10 +171,7 @@ plot.addEventListener('keydown', (e) => {
   const arrows = S.settings.robot.view === 'eyes' ? { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' } : {};
   const name = arrows[e.key] || { w: 'forward', s: 'back', a: 'left', d: 'right', q: 'up', e: 'down' }[e.key.toLowerCase()];
   if (['1', '2', '3'].includes(e.key)) { e.preventDefault(); selectPlayHand({ 1: '1', 2: '-1', 3: 'both' }[e.key]); }
-  if (name) { e.preventDefault(); playNudge(name,e.shiftKey); }
-  else if (e.key.toLowerCase() === 'u' || e.key.toLowerCase() === 'o') { e.preventDefault(); playRoll(e.key.toLowerCase() === 'u' ? -1 : 1,e.shiftKey); }
-  else if (e.key.toLowerCase() === 'i' || e.key.toLowerCase() === 'p') { e.preventDefault(); playTurn(e.key.toLowerCase() === 'i' ? -1 : 1,e.shiftKey,true); }
-  else if (e.key.toLowerCase() === 'j' || e.key.toLowerCase() === 'k') { e.preventDefault(); playTurn(e.key.toLowerCase() === 'j' ? -1 : 1,e.shiftKey); }
+  if (name) { e.preventDefault(); playNudge(name); }
 });
 function paintGameHUD(){
   if(!gameView())return;
@@ -209,9 +206,20 @@ paintTasks(true);paintTaskVisibility();
 // Haptics follow the task's physical contact record, never a canned level animation.
 const TASK_HAPTIC=TaskHaptics.dispatcher();
 let taskHapticSettings=TaskHaptics.settings(store.get('task-haptics',{})),taskHapticPaint=0;
+let taskHapticReleaseTimer=null;
+function taskHapticsActive(){return S.tab==='tasks'&&!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('setupDlg').open&&!$('settingsDlg').open&&!$('controlsDlg').open;}
+function pumpTaskHapticRelease(force=false){
+  clearTimeout(taskHapticReleaseTimer);taskHapticReleaseTimer=null;
+  // When visible again the ordinary physics frames own the latest contact state.
+  if(!force&&taskHapticsActive()&&taskHapticSettings.enabled!==false&&TB.world)return;
+  const now=performance.now();
+  TASK_HAPTIC.tick({boards:S.boards,world:TB.world,arms:RB.scene?.arms||[],now,enabled:false,active:false});
+  if(TASK_HAPTIC.hasRumble(now))taskHapticReleaseTimer=setTimeout(()=>pumpTaskHapticRelease(),40);
+}
+function cancelTaskHaptics(){TASK_HAPTIC.reset();pumpTaskHapticRelease(true);}
 store.set('task-haptics',taskHapticSettings);
 $('taskHapticStrength').value=taskHapticSettings.level;
-function setTaskHaptics(on){taskHapticSettings.enabled=!!on;store.set('task-haptics',taskHapticSettings);TASK_HAPTIC.reset();paintHapticsBtn();}
+function setTaskHaptics(on){taskHapticSettings.enabled=!!on;store.set('task-haptics',taskHapticSettings);cancelTaskHaptics();paintHapticsBtn();}
 function paintHapticsBtn(){const on=taskHapticSettings.enabled!==false,b=$('gameHaptics'),value=taskHapticSettings.level+'%';b.textContent=TASK_DATA.ui.haptics+' '+value;$('taskHapticLevel').textContent=value;b.setAttribute('aria-pressed',String(on));b.classList.toggle('primary',on);b.classList.toggle('outline',!on);}
 $('gameHaptics').onclick=()=>setTaskHaptics(taskHapticSettings.enabled===false);paintHapticsBtn();
 // The Controller panel: connect boards from the task screen and choose which hand's cues each one plays.
@@ -237,12 +245,13 @@ function paintControllerPanel(force){
 }
 $('taskHapticStrength').oninput=()=>{taskHapticSettings.level=TaskHaptics.level(+$('taskHapticStrength').value);$('taskHapticStrength').value=taskHapticSettings.level;store.set('task-haptics',taskHapticSettings);paintHapticsBtn();};
 function sendTaskHaptics(W,sc,now){
-  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,level:taskHapticSettings.level,active:!document.hidden&&!V.rec&&!V.boardTake&&!V.opening&&!S.boards.some(b=>b.audioClosing)&&document.hasFocus()&&S.settings.robot.props==='arcade'&&!$('setupDlg').open&&!$('settingsDlg').open&&!$('controlsDlg').open});
+  TASK_HAPTIC.tick({boards:S.boards,world:W,arms:sc.arms,now,enabled:taskHapticSettings.enabled!==false,level:taskHapticSettings.level,active:taskHapticsActive()});
   if(now-taskHapticPaint<250)return;taskHapticPaint=now;
   const live=S.boards.filter(b=>!b.sim&&b.state==='live'),ready=live.filter(b=>b.act?.tachammerReady&&now-b.actT<500&&(b.transport!=='capture'||b.motion?.ready)),last=ready.map(b=>b.hapticLast).filter(x=>x&&now-x.at<750),text=!taskHapticSettings.enabled?TASK_DATA.haptics.off:!live.length?TASK_DATA.haptics.disconnected:!ready.length?(live.some(b=>b.transport==='capture'&&!b.motion?.ready)?TASK_DATA.haptics.calibrating:TASK_DATA.haptics.unavailable):last.length?TASK_DATA.haptics.sent:TASK_DATA.haptics.ready;
   $('ctlStatus').textContent=live.some(b=>b.hapticError)?TASK_DATA.haptics.error:text;paintControllerPanel();
 }
-window.addEventListener('blur',()=>TASK_HAPTIC.reset());
+window.addEventListener('blur',cancelTaskHaptics);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelTaskHaptics();});
 
 $('taskPlayer').value=SCORE.player;
 $('taskPlayer').onchange=()=>{SCORE.player=TaskScores.player($('taskPlayer').value);$('taskPlayer').value=SCORE.player;store.set('task-player',SCORE.player);paintLeaderboard();};

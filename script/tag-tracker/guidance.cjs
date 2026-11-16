@@ -45,8 +45,30 @@ module.exports=function({check,near}){
   const tray=create('tray');tray.world.hands[1]={grip:{body:tray.byKey.get('tray')}};
   check(T.guidance(tray).state==='dual','one held tray rim prompts using the second gripper');
   const cloth=create('laundry'),shirt=cloth.byKey.get('shirt');
-  check(shirt.kind==='shirt'&&shirt.halfThickness===.001&&!shirt.pile&&shirt.landmarks.cuffs.length===2&&shirt.landmarks.hem.length===2,'the fabric task is a thin unpadded T-shirt with real cuff and hem landmarks');
+  check(shirt.kind==='shirt'&&shirt.panels===2&&shirt.halfThickness===.0003&&!shirt.pile&&shirt.landmarks.cuffs.length===2&&shirt.landmarks.hem.length===2,'the fabric task is a thin unpadded T-shirt with real cuff and hem landmarks');
   check(T.guidance(cloth).state==='shirt_left','the shirt begins by identifying the first sleeve');
+  // Static guidance state only: no garment movement or folding trajectory.
+  const Cloth=require(root+'/tag-tracker/cloth-core'),folded=Cloth.folded;
+  const cuffAnchor=shirt.openingAnchors.cuffs[0],cuffCenter=Cloth.cuffCenter(shirt,0);
+  check(cuffAnchor.ids.length===2&&Math.abs(cuffAnchor.w.reduce((a,b)=>a+b,0)-1)<1e-12&&C.norm(C.sub(cuffCenter,shirt.nodes[shirt.landmarks.cuffs[0]].p))>.003,'the cuff grab point follows the actual opening center rather than a nearby objective vertex');
+  try{
+    Cloth.folded=c=>c===shirt?{sleeves:[true,false],complete:false}:folded(c);
+    shirt.pins.set('1',{i:shirt.landmarks.cuffs[0],materialPoints:[[0,0,0]]});
+    check(T.guidance(cloth).state==='shirt_right','a held body patch does not become a sleeve grip because its nearest mesh vertex is on the cuff');
+    shirt.pins.set('1',{i:shirt.material.findIndex(p=>Math.abs(p[1])<.01),materialPoints:[cuffAnchor.materialPoint.slice()]});
+    check(T.guidance(cloth).state==='shirt_sleeve_release','continuous sleeve capture at the true cuff center uses its barycentric material location');
+    shirt.pins.get('1').loaded=false;
+    check(T.guidance(cloth).state==='shirt_right','an unpressurized sleeve candidate is not reported as a held sleeve that needs releasing');
+    Cloth.folded=c=>c===shirt?{sleeves:[true,true],complete:false}:folded(c);
+    shirt.pins.set('-1',{i:shirt.landmarks.hem[0],loaded:false});
+    check(T.guidance(cloth).state==='shirt_hem','two unpressurized candidates do not instruct a two-hand hem fold');
+    shirt.pins.get('1').loaded=true;shirt.pins.get('-1').loaded=true;
+    shirt.pins.get('1').materialPoints=[[0,0,0]];
+    check(T.guidance(cloth).state==='shirt_fold','two actual loaded grips advance to moving the hem');
+    shirt.pins.delete('-1');Cloth.folded=c=>c===shirt?{sleeves:[true,false],complete:false}:folded(c);
+    shirt.pins.set('1',{i:shirt.landmarks.cuffs[0]});
+    check(T.guidance(cloth).state==='shirt_sleeve_release','legacy vertex grips retain their sleeve-release hint');
+  }finally{Cloth.folded=folded;shirt.pins.clear();}
   tray.balance.rimHit=true;check(T.guidance(tray).state==='tray_retry','a rim collision explicitly asks for a new clean attempt');
   const meshes=GL.actorMeshes(R.model());check([...meshes.amr,...meshes.wheel].every(p=>p.mesh.pos.every(Number.isFinite)),'robot AMR meshes remain available');
   const html=fs.readFileSync(root+'/tag-tracker/index.html','utf8');

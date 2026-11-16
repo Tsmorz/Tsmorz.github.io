@@ -117,8 +117,8 @@ levels:
     - If a closed gripper does not lift the block, open it, centre the block between both pads, then
       close again.
     - Lift before moving sideways. If the block scrapes along the table, it can slip out of the gripper.
-    - Q lifts the selected gripper and E lowers it while the view has focus. Alt-drag changes the
-      mouse movement plane.
+    - Q lifts the selected gripper and E lowers it while the view has focus. Use Movement
+      to adjust how far each key press moves it.
     stages:
       approach:
         title: Line up with the upper half of {object}
@@ -214,13 +214,13 @@ levels:
     seconds: 1.0
   cloths: []
 - id: pour
-  revision: 3
+  revision: 4
   name: Pour a Weissbier
   hands: 1
   skill: Steady pouring from a bottle
   brief: Lift the Weissbier bottle by its neck and pour it all into the mug without spilling. Stand
     the bottle back up on the table.
-  hint: Grip the neck from above and pour sideways with I/P, slowly, keeping the stream in the mug.
+  hint: Grip the neck from the side, leave its mouth clear and tilt slowly with the capture device or wrist tag.
   par: 120
   objects:
   - key: bottle
@@ -287,23 +287,23 @@ levels:
       grab: Grab the neck
       target: Pour into here
     plan:
-    - Lift the gripper well above the bottle, open it and come down over the neck with the pads either
-      side of it. Close.
+    - Open the gripper and approach the neck from the side, with a pad either side of it. Keep the
+      palm beside the bottle so the open mouth is clear. Close.
     - Lift the bottle until its base clears the mug's rim, and carry it over so the neck is above
       the mug.
-    - Tilt sideways slowly with I/P. The beer reaches the mouth at about 75 degrees; keep the stream
+    - Tilt sideways slowly with the capture device or wrist tag. The beer reaches the mouth at about 75 degrees; keep the stream
       in the mug and follow it with the hand as the bottle empties.
     - Stand the bottle back up, carry it clear of the mug, lower it onto the table and open the gripper.
     tips:
-    - The palm is wider than the neck is long. Grip high on the neck, with the palm just above the
-      cap.
+    - Grip high on the neck with the fingers pointing across it. A palm above the mouth blocks the
+      stream; beer that hits the gripper spills.
     - Pour outward, toward the mug on the robot's left. Rolling the other way runs the forearm into
       its stop. Turn back, then reposition the bottle.
     - A bottle glugs. Tilting further than the neck can pass only moves the stream; it doesn't pour
       faster.
     - The beer stays level as the bottle turns, and a quick start or stop sloshes it. Spilling more
       than 5% ends the attempt; press Restart task to try again.
-    - Shift + I/P turns the wrist in fine steps.
+    - Use the capture device or wrist tags to tilt the gripper.
     stages:
       pour_grab:
         title: Grab the bottle by its neck
@@ -316,7 +316,7 @@ levels:
         text: Carry it smoothly until the neck is above the mug's opening.
       pour_tilt:
         title: Tilt slowly to pour
-        text: Tilt sideways with I/P until the beer runs into the mug. Keep the stream in the mug
+        text: Tilt sideways with the capture device or wrist tag until the beer runs into the mug. Keep the stream in the mug
           and tilt further as the bottle empties.
       pour_set_down:
         title: Stand the bottle back up
@@ -328,14 +328,14 @@ levels:
         title: Poured without spilling
         text: The Weissbier is in the mug and the bottle is standing on the table.
 - id: laundry
-  revision: 4
+  revision: 5
   name: Fold a T-shirt
   hands: 2
   skill: Fold thin cotton fabric
   brief: Fold each sleeve inward, then bring the two hem corners up to the shoulders. Release the
     shirt on the folding pad.
-  hint: Pinch a marked cuff, fold the sleeve onto the body and release. Then use both grippers to
-    bring the hem up to the shoulders.
+  hint: Open the jaws around a marked cuff, close and fold the sleeve onto the body. Release, then
+    use both grippers to bring the hem up to the shoulders.
   par: 240
   objects: []
   cloths:
@@ -349,13 +349,22 @@ levels:
     width: 0.28
     height: 0.4
     body_span: 0.22
-    resolution: 17
-    iterations: 10
-    mass: 0.035
-    thickness: 0.002
+    neck_radius: 0.034
+    neck_back_depth: 0.008
+    resolution: 13
+    iterations: 4
+    panels: 2
+    areal_density: 0.18
+    thickness: 0.0006
     pile: 0
-    bend_compliance: 30.0
-    bend_memory: 2
+    warp_stiffness: 600
+    weft_stiffness: 250
+    shear_stiffness: 25
+    bend_warp: 0.000012
+    bend_weft: 0.000008
+    friction: 0.5
+    self_friction: 0.45
+    air_drag: 0.35
     color: '#536f95'
   goals:
   - type: fold
@@ -390,7 +399,8 @@ levels:
     - 0.65
   guide:
     plan:
-    - Pinch the marked cuff with either gripper. Lift it just clear of the table and lay the sleeve
+    - Open the jaws fully and centre them on the cuff marker. Point the fingers down, lower the
+      tips around the cuff edges, then close. Lift just clear of the table and lay the sleeve
       inward over the shirt body. Open and lift clear.
     - Repeat with the other sleeve. Keep the thin cotton spread flat rather than pulling it into a
       bundle.
@@ -398,7 +408,8 @@ levels:
       corners up to the shoulders.
     - Lower gently, open both grippers and lift clear. Let the folded shirt settle on its pad.
     tips:
-    - The shirt is thin cotton with no plush pile. Tilt the tips down toward the table; the cuffs and hem corners are the grab points.
+    - Cuff markers follow the centres of the actual openings. Start with the jaws open so the
+      fingers approach the fabric's outer edges.
     - Use a low movement sensitivity for small corrections. Keep the palm above the table and put
       only the gripper tips around the fabric.
     - Release each sleeve before taking the next fold. Open fully and reposition if a grip slips.
@@ -410,12 +421,12 @@ levels:
     stages:
       shirt_left:
         title: Fold the first sleeve inward
-        text: Pinch the marked cuff, lift it slightly and lay the sleeve over the shirt body. Open
-          and lift clear.
+        text: Open around the marked cuff centre, close and lift it slightly. Lay the sleeve over
+          the shirt body, then open and lift clear.
       shirt_right:
         title: Fold the other sleeve inward
-        text: Pinch the other marked cuff and lay its sleeve over the body. Release it before taking
-          the hem.
+        text: Open around the other cuff centre, close and lay its sleeve over the body. Release
+          it before taking the hem.
       shirt_sleeve_release:
         title: Release the folded sleeve
         text: Open the gripper and lift clear so the sleeve rests flat on the shirt body.
@@ -440,29 +451,65 @@ controls:
     eyes: up/down lift/lower the selected gripper, left/right move it sideways), 1/2/3
     select left/right/both grippers, F to fit, R to reset the view, C to calibrate
     the robot, T to reset the table, M to turn its sound on or off. Drag a robot hand
-    to move it across the view (Alt for the other way), scroll on it to open and close
-    its gripper (Shift to tilt it), Space to open or close it.'
+    to move it across the view, scroll on it to open and close
+    its gripper, Space to open or close it.'
   intro: AprilTags drive the grippers. You can also drag a gripper with the mouse.
     Scroll down on it to close, up to open; Space toggles the selected gripper.
   keyboard: Click a gripper to select it, or press 1 for left, 2 for right, 3 for
     both. W/S forward/back, A/D sideways, Q/E lift/lower. In Robot eyes, ↑/↓ lift/lower
-    and ←/→ move sideways. Space opens/closes. J/K tilt forward/back, I/P tilt sideways
-    and U/O roll the wrist. Alt-drag changes the mouse movement plane. Hold Shift
-    for 0.2 mm steps and fine wrist turns.
+    and ←/→ move sideways. Space opens/closes. Use Movement to adjust travel.
+    The capture device or wrist tags control gripper orientation.
   scoring: One star for finishing, one for the target time, one for no dropped props.
     Best results stay in this browser.
 camera:
   label: First person
   help: Look through the robot’s wide head camera. Tilt with the slider. With the
     view focused, ↑/↓ lift/lower the selected gripper and ←/→ move it sideways.
+camera_capture:
+  title: Camera capture
+  resolution: Resolution
+  frame_rate: Preferred frame rate
+  frame_rates:
+  - {value: max, label: Highest available}
+  - {value: '60', label: 60 fps}
+  - {value: '30', label: 30 fps}
+  resolutions:
+  - {value: 640x360, label: 640 × 360}
+  - {value: 640x480, label: 640 × 480}
+  - {value: 1280x720, label: 1280 × 720}
+  - {value: 1920x1080, label: 1920 × 1080}
+  help: Start with 720p and the Fast detector. Try 640 × 360 for less processing while
+    keeping the same picture shape. Frame rate depends on the camera and lighting;
+    the browser may deliver less than requested.
+  empty: Start a camera to see its capture settings. Opening Settings leaves the camera off.
+  demo: The demo uses simulated cameras. Capture controls apply to a real camera.
+  configured: '{width} × {height} · configured {fps} fps'
+  delivered: ' · delivered {fps} fps · detection {detection} fps'
+  maximum: ' · camera reports up to {fps} fps (depends on resolution)'
+  unknown: unknown
+  exposure: Exposure
+  exposure_current: Camera setting
+  exposures:
+  - {value: auto, label: Automatic}
+  - {value: '120', label: '1/120 s'}
+  - {value: '250', label: '1/250 s'}
+  exposure_help: Short exposures reduce motion blur but need more light. Exposure choices
+    are not saved in this browser.
+  exposure_unavailable: Manual exposure is not available through this browser. Add bright,
+    even light onto the tags to help reduce motion blur. Turn off macOS video effects
+    and Center Stage while tracking.
+  exposure_actual: 'Current exposure: {ms} ms.'
+  exposure_failed: The camera did not accept that exposure. Its current setting is shown.
+  frame_rate_failed: The camera did not accept that frame rate. Its current setting is shown.
+  applying: Applying camera settings…
 controls_help:
   button: Keyboard and mouse controls
   title: Keyboard and mouse
   intro: Click the robot scene to focus it before using these keys. Select a gripper,
-    then move, turn or open it. With capture-device orientation on, mouse and keyboard
-    control position and grip; wrist keys work when capture orientation is off.
-  note: Movement keys step 12 mm × Movement, or 0.2 mm with Shift. Wrist keys turn 5°,
-    or about 0.1° with Shift. Mouse and keyboard take over a gripper’s position; choose
+    then move or open it. The capture device or wrist tags control gripper orientation;
+    mouse and keyboard control position and grip.
+  note: Movement keys step 12 mm × Movement. Use the Movement slider for smaller steps.
+    Mouse and keyboard take over a gripper’s position; choose
     Resume AprilTags to return position control to your wrist tags. Close with Escape or ×.
   layout_label: Keyboard layout
   legend: Highlighted keys have a use here. Hover, focus or tap one to see it below.
@@ -498,18 +545,18 @@ controls_help:
       label: US QWERTY
       rows:
       - [{label: '`', shift: '~'}, {label: '1', shift: '!', action: left}, {label: '2', shift: '@', action: right}, {label: '3', shift: '#', action: both}, {label: '4', shift: '$'}, {label: '5', shift: '%'}, {label: '6', shift: '^'}, {label: '7', shift: '&'}, {label: '8', shift: '*'}, {label: '9', shift: '('}, {label: '0', shift: ')'}, {label: '-', shift: '_', action: zoom_out}, {label: '=', shift: '+', action: zoom_in}, {label: '⌫', width: 2}]
-      - [{label: Tab, width: 1.5}, {label: Q, action: up}, {label: W, action: forward}, {label: E, action: down}, {label: R, action: camera_reset}, {label: T, action: restart}, {label: Y}, {label: U, action: roll_minus}, {label: I, action: sideways_minus}, {label: O, action: roll_plus}, {label: P, action: sideways_plus}, {label: '[', shift: '{'}, {label: ']', shift: '}'}, {label: '\', shift: '|', width: 1.5}]
-      - [{label: Caps, width: 1.75}, {label: A, action: leftward}, {label: S, action: back}, {label: D, action: rightward}, {label: F, action: fit}, {label: G}, {label: H}, {label: J, action: tilt_forward}, {label: K, action: tilt_back}, {label: L}, {label: ';', shift: ':'}, {label: "'", shift: '"'}, {label: Enter, width: 2.25}]
-      - [{label: Shift, width: 2.25, action: shift}, {label: Z}, {label: X}, {label: C, action: calibrate}, {label: V, action: voice}, {label: B}, {label: N}, {label: M, action: sound}, {label: ',', shift: '<'}, {label: '.', shift: '>'}, {label: '/', shift: '?'}, {label: Shift, width: 2.75, action: shift}]
-      - [{label: Ctrl, width: 1.25}, {label: Win, width: 1.25}, {label: Alt, width: 1.25, action: alt}, {label: Space, width: 6.25, action: grasp}, {label: Alt, width: 1.25, action: alt}, {label: Win, width: 1.25}, {label: Menu, width: 1.25}, {label: Ctrl, width: 1.25}]
+      - [{label: Tab, width: 1.5}, {label: Q, action: up}, {label: W, action: forward}, {label: E, action: down}, {label: R, action: camera_reset}, {label: T, action: restart}, {label: Y}, {label: U}, {label: I}, {label: O}, {label: P}, {label: '[', shift: '{'}, {label: ']', shift: '}'}, {label: '\', shift: '|', width: 1.5}]
+      - [{label: Caps, width: 1.75}, {label: A, action: leftward}, {label: S, action: back}, {label: D, action: rightward}, {label: F, action: fit}, {label: G}, {label: H}, {label: J}, {label: K}, {label: L}, {label: ';', shift: ':'}, {label: "'", shift: '"'}, {label: Enter, width: 2.25}]
+      - [{label: Shift, width: 2.25}, {label: Z}, {label: X}, {label: C, action: calibrate}, {label: V, action: voice}, {label: B}, {label: N}, {label: M, action: sound}, {label: ',', shift: '<'}, {label: '.', shift: '>'}, {label: '/', shift: '?'}, {label: Shift, width: 2.75}]
+      - [{label: Ctrl, width: 1.25}, {label: Win, width: 1.25}, {label: Alt, width: 1.25}, {label: Space, width: 6.25, action: grasp}, {label: Alt, width: 1.25}, {label: Win, width: 1.25}, {label: Menu, width: 1.25}, {label: Ctrl, width: 1.25}]
     - id: de
       label: German QWERTZ
       rows:
-      - [{label: '^', shift: '°'}, {label: '1', shift: '!', action: left}, {label: '2', shift: '"', action: right}, {label: '3', shift: '§', action: both}, {label: '4', shift: '$'}, {label: '5', shift: '%'}, {label: '6', shift: '&'}, {label: '7', shift: '/'}, {label: '8', shift: '('}, {label: '9', shift: ')'}, {label: '0', shift: '=', input: Shift + 0, action: zoom_in_shift}, {label: 'ß', shift: '?'}, {label: '´', shift: '`'}, {label: '⌫', width: 2}]
-      - [{label: Tab, width: 1.5}, {label: Q, action: up}, {label: W, action: forward}, {label: E, action: down}, {label: R, action: camera_reset}, {label: T, action: restart}, {label: Z}, {label: U, action: roll_minus}, {label: I, action: sideways_minus}, {label: O, action: roll_plus}, {label: P, action: sideways_plus}, {label: Ü}, {label: '+', shift: '*', action: zoom_in}, {label: Enter, width: 1.5, tall: true}]
-      - [{label: Caps, width: 1.75}, {label: A, action: leftward}, {label: S, action: back}, {label: D, action: rightward}, {label: F, action: fit}, {label: G}, {label: H}, {label: J, action: tilt_forward}, {label: K, action: tilt_back}, {label: L}, {label: Ö}, {label: Ä}, {label: '#', shift: "'"}, {gap: 1.25}]
-      - [{label: Shift, width: 1.25, action: shift}, {label: '<', shift: '>'}, {label: Y}, {label: X}, {label: C, action: calibrate}, {label: V, action: voice}, {label: B}, {label: N}, {label: M, action: sound}, {label: ',', shift: ';'}, {label: '.', shift: ':'}, {label: '-', shift: '_', action: zoom_out}, {label: Shift, width: 2.75, action: shift}]
-      - [{label: Ctrl, width: 1.25}, {label: Win, width: 1.25}, {label: Alt, width: 1.25, action: alt}, {label: Space, width: 6.25, action: grasp}, {label: AltGr, width: 1.25}, {label: Win, width: 1.25}, {label: Menu, width: 1.25}, {label: Ctrl, width: 1.25}]
+      - [{label: '^', shift: '°'}, {label: '1', shift: '!', action: left}, {label: '2', shift: '"', action: right}, {label: '3', shift: '§', action: both}, {label: '4', shift: '$'}, {label: '5', shift: '%'}, {label: '6', shift: '&'}, {label: '7', shift: '/'}, {label: '8', shift: '('}, {label: '9', shift: ')'}, {label: '0', shift: '='}, {label: 'ß', shift: '?'}, {label: '´', shift: '`'}, {label: '⌫', width: 2}]
+      - [{label: Tab, width: 1.5}, {label: Q, action: up}, {label: W, action: forward}, {label: E, action: down}, {label: R, action: camera_reset}, {label: T, action: restart}, {label: Z}, {label: U}, {label: I}, {label: O}, {label: P}, {label: Ü}, {label: '+', shift: '*', action: zoom_in}, {label: Enter, width: 1.5, tall: true}]
+      - [{label: Caps, width: 1.75}, {label: A, action: leftward}, {label: S, action: back}, {label: D, action: rightward}, {label: F, action: fit}, {label: G}, {label: H}, {label: J}, {label: K}, {label: L}, {label: Ö}, {label: Ä}, {label: '#', shift: "'"}, {gap: 1.25}]
+      - [{label: Shift, width: 1.25}, {label: '<', shift: '>'}, {label: Y}, {label: X}, {label: C, action: calibrate}, {label: V, action: voice}, {label: B}, {label: N}, {label: M, action: sound}, {label: ',', shift: ';'}, {label: '.', shift: ':'}, {label: '-', shift: '_', action: zoom_out}, {label: Shift, width: 2.75}]
+      - [{label: Ctrl, width: 1.25}, {label: Win, width: 1.25}, {label: Alt, width: 1.25}, {label: Space, width: 6.25, action: grasp}, {label: AltGr, width: 1.25}, {label: Win, width: 1.25}, {label: Menu, width: 1.25}, {label: Ctrl, width: 1.25}]
     arrows:
     - [{gap: 1}, {label: '↑', action: arrow_up}, {gap: 1}]
     - [{label: '←', action: arrow_left}, {label: '↓', action: arrow_down}, {label: '→', action: arrow_right}]
@@ -545,40 +592,22 @@ controls_help:
       detail: "Movement and grasp keys now apply to both grippers."
     up:
       title: "Raise gripper"
-      detail: "Move the selected gripper upward. Hold Shift for a finer step."
+      detail: "Move the selected gripper upward. Use Movement to adjust travel."
     down:
       title: "Lower gripper"
-      detail: "Move the selected gripper downward. Hold Shift for a finer step."
+      detail: "Move the selected gripper downward. Use Movement to adjust travel."
     forward:
       title: "Move forward"
-      detail: "Move the selected gripper forward across the table. Hold Shift for a finer step."
+      detail: "Move the selected gripper forward across the table. Use Movement to adjust travel."
     back:
       title: "Move back"
-      detail: "Move the selected gripper back across the table. Hold Shift for a finer step."
+      detail: "Move the selected gripper back across the table. Use Movement to adjust travel."
     leftward:
       title: "Move left"
-      detail: "Move the selected gripper left across the table. Hold Shift for a finer step."
+      detail: "Move the selected gripper left across the table. Use Movement to adjust travel."
     rightward:
       title: "Move right"
-      detail: "Move the selected gripper right across the table. Hold Shift for a finer step."
-    tilt_forward:
-      title: "Tilt wrist forward"
-      detail: "Tilt the selected wrist forward. K turns it back; Shift makes the turn finer."
-    tilt_back:
-      title: "Tilt wrist back"
-      detail: "Tilt the selected wrist back. J turns it forward; Shift makes the turn finer."
-    sideways_minus:
-      title: "Tilt wrist sideways −"
-      detail: "Tilt the selected wrist sideways. P turns it the other way; Shift makes the turn finer."
-    sideways_plus:
-      title: "Tilt wrist sideways +"
-      detail: "Tilt the selected wrist sideways. I turns it the other way; Shift makes the turn finer."
-    roll_minus:
-      title: "Roll wrist −"
-      detail: "Roll the selected wrist. O turns it the other way; Shift makes the turn finer."
-    roll_plus:
-      title: "Roll wrist +"
-      detail: "Roll the selected wrist. U turns it the other way; Shift makes the turn finer."
+      detail: "Move the selected gripper right across the table. Use Movement to adjust travel."
     grasp:
       title: "Open or close gripper"
       detail: "Toggle the selected gripper. With both selected, close both if either is open."
@@ -603,18 +632,9 @@ controls_help:
     zoom_in:
       title: "Zoom in"
       detail: "Zoom the outside camera in."
-    zoom_in_shift:
-      title: "Zoom in with Shift"
-      detail: "Hold Shift on the German 0 key to type = and zoom the outside camera in."
     zoom_out:
       title: "Zoom out"
       detail: "Zoom the outside camera out."
-    shift:
-      title: "Fine moves / mouse modifiers"
-      detail: "Hold with movement or wrist keys for finer steps. Shift-drag pans the outside camera; Shift-wheel over a gripper tilts its wrist."
-    alt:
-      title: "Alternate drag plane"
-      detail: "Hold Alt while dragging a gripper to use the alternate movement plane."
     arrow_up:
       title: "Camera up / gripper up"
       detail: "Rotate the outside camera upward. In Robot eyes, raise the selected gripper instead."
@@ -632,17 +652,17 @@ controls_help:
       detail: "Drag a gripper to move it in the plane facing the camera. Drag empty space to orbit the outside view, or look up/down in Robot eyes."
     mouse_right:
       title: "Pan outside camera"
-      detail: "Right-drag or middle-drag pans the outside camera. Shift-drag does the same."
+      detail: "Right-drag or middle-drag pans the outside camera."
     mouse_wheel:
       title: "Grip / zoom / head tilt"
-      detail: "Over a gripper, wheel down closes and up opens; Shift-wheel tilts the wrist. Over empty space, zoom the outside view or tilt the head in Robot eyes. Press and drag the wheel to pan the outside view."
+      detail: "Over a gripper, wheel down closes and up opens. Over empty space, zoom the outside view or tilt the head in Robot eyes. Press and drag the wheel to pan the outside view."
     mouse_gesture:
       title: "Fit / touch zoom"
       detail: "Double-click fits the outside view. Pinch with two fingers zooms the outside view; Robot eyes uses vertical dragging for head tilt."
-physics: Rigid contacts, friction-limited grasps, deformable XPBD fabric and an elastic
-  cable run at 240 Hz. Cable and fabric loads pull back on the grippers. These are
-  physical approximations; connector forces are representative, not measured hardware
-  calibration.
+physics: Objects collide, carry weight and can slip from a light grip. The shirt bends,
+  stretches and contacts itself; its loads pull back on the grippers. Beer changes a
+  vessel’s weight and balance as it pours. These are physical models, not measured
+  hardware-force calibration.
 ui:
   task: Task
   next: Next task
@@ -679,7 +699,7 @@ motion:
   reset: Reset to 1×
 guidance:
   mouse: Drag a gripper to reach. Scroll down on it to close and up to open. Space
-    toggles the selected gripper. Hold Alt while dragging to change the movement plane.
+    toggles the selected gripper. Q/E raises or lowers it; Movement adjusts travel.
   stages:
     approach:
       title: Line up the gripper

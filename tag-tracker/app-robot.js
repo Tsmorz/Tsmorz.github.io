@@ -359,7 +359,7 @@ function drawRobotFlat(c, o, h, now) {
     seg(P(k.elbow), P(k.wrist), 0.035, fill, armInk, al);
     ball(P(k.wrist), 0.036, a.live && !a.idle ? K.accent : well, ink, al);
     // The fallback uses the same housing, opening and moving linkage as WebGL/contacts.
-    const G=RCORE.gripper(m),layout=RobotGL.gripperLayout(m,a.jaw===undefined?G.gapMax:a.jaw),at=p=>P(C.add(k.wrist,C.mulv(H,p)));
+    const G=RCORE.gripper(m),layout=RobotGL.gripperLayout(m,a.jaw===undefined?G.gapMax:a.jaw,a.jawState),at=p=>P(C.add(k.wrist,C.mulv(H,p)));
     const hot=hotOf(a),edge=hot?K.accent:ink,dark=hot?K.accent:well;
     const cylinder=(centre,radius,half,color)=>{
       const rings=[-1,1].map(sign=>Array.from({length:16},(_,i)=>at([centre[0]+radius*Math.cos(i*Math.PI/8),centre[1]+radius*Math.sin(i*Math.PI/8),centre[2]+sign*half])));
@@ -419,12 +419,12 @@ function resetTaskRobot(sc=RB.scene){
       const old=sc.arms.find(a=>a.side===side),q=robotReady().slice(),k=RCORE.fk(sc.m,side,q);
       RB.slew.set(side,{q:q.slice(),v:Array(7).fill(0)});
       if(old?.key!=null)RB.prev.set(old.key,{side,q:q.slice(),elbow:k.elbow,tag:{q:q.slice(),elbow:k.elbow}});
-      return {...old,side,q,open:1,jaw:RCORE.gripper(sc.m).gapMax,wristStop:0,reach:true,gap:0,driven:false,idle:true};
+      return {...old,side,q,open:1,jaw:RCORE.gripper(sc.m).gapMax,jawState:null,wristStop:0,reach:true,gap:0,driven:false,idle:true};
     });RB.scene=sc;
   }
   rebaseCaptureOrientations();
   TB.generation++;TB.t=performance.now();TB.heard=null;
-  TASK_HAPTIC.reset();for(const b of S.boards)b.hapticLast=null;
+  cancelTaskHaptics();for(const b of S.boards)b.hapticLast=null;
   SND?.reset?.();
 }
 function placeTable(sc) {
@@ -480,6 +480,7 @@ function tableStep(sc) {
     const h = W.hands[a.side], P = W.handPose(a.side);
     if (!h || !P) continue;
     a.jaw = h.gap;
+    a.jawState={carrierGap:h.carrierGap??h.gap,padCompression:h.padCompression};
     // Contact deflection must preserve the commanded elbow branch, rather than re-optimise
     // its posture on every solver fluctuation. The command already carries elbow preference.
     const k = RCORE.fk(m, a.side, a.q), s = RCORE.handIK(m, a.side, { R: C.mul3(Rt, P.R), t: C.mulv(Rt, C.sub(P.t, sc.chest.t)) }, { q: a.q, elbow: k.elbow }, { prefer:false, swing:.5*Math.PI/180 });
@@ -550,8 +551,8 @@ $('soundBtn').onclick = () => setSound(!S.settings.robot.sound);
 $('tagsDriveBtn').onclick = () => { TB.drive.clear(); for (const k of [...RB.prev.keys()]) if (String(k).startsWith('drive')) RB.prev.delete(k); paintRobotBtns(); };
 
 // Moving a hand with the mouse (or a finger): press on a gripper and drag it across the view, in the robot's plane the
-// view looks most squarely at (grabPlane); with Alt held, in the next one. Scrolling on a hand opens and closes it
-// (with Shift: tips the fingers down and up), and Space opens or closes the last one moved. A moved hand stays where it
+// view looks most squarely at (grabPlane). Scrolling on a hand opens and closes it,
+// and Space opens or closes the last one moved. A moved hand stays where it
 // was put until Tags drive, Calibrate robot, or a reload.
 function plotOrbit() {
   const V = S.view, r = plot.getBoundingClientRect();
@@ -597,17 +598,16 @@ function rayHit(o, r, e, p, n) {
 }
 // The plane a hand is dragged in: its normal is whichever of the robot's forward, side and up (the table's axes, else the
 // chest's, upright) the view looks most nearly along. From above the hand moves side to side and forward and back, from
-// the side forward and back and up and down, from the front side to side and up and down. Alt takes the next nearest,
-// so from above it lifts the hand.
+// the side forward and back and up and down, from the front side to side and up and down.
 function grabFrame() {
   const ch = RB.scene.chest;
   return TB.world ? TB.world.table.R : RCORE.upright([ch.R[0], ch.R[3], ch.R[6]]);
 }
-function grabPlane(o, alt) {
+function grabPlane(o) {
   const R = grabFrame();
   const by = [0, 1, 2].map((i) => [R[i], R[3 + i], R[6 + i]]).map((a) => ({ a, d: Math.abs(a[0] * o.fwd[0] + a[1] * o.fwd[1] + a[2] * o.fwd[2]) }));
   by.sort((x, y) => y.d - x.d);
-  return by[alt ? 1 : 0].a;
+  return by[0].a;
 }
 // Screen overlay uses the same final camera as picking and the rendered hand, including robot eyes.
 function paintDragPlaneGuide(o, w, h) {
@@ -626,7 +626,7 @@ function paintDragPlaneGuide(o, w, h) {
   el.hidden = false;
 }
 function handGrab(e) {
-  if (e.shiftKey || (e.pointerType === 'mouse' && e.button !== 0)) return false;
+  if (e.pointerType === 'mouse' && e.button !== 0) return false;
   const hit = handAt(e);
   if (!hit) return false;
   selectPlayHand(String(hit.a.side)); TASK.moved = true;
@@ -635,9 +635,9 @@ function handGrab(e) {
   const kept = TB.drive.get(hit.a.side);
   if (kept && !hit.a.reach) { TB.drive.delete(hit.a.side); driveOf(hit.a).open = kept.open; }
   const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
-  const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n);
+  const { o, r } = plotOrbit(), n = grabPlane(o), at = rayHit(o, r, e, p, n);
   if (!at) return false;
-  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, at, basis:grabFrame().slice() };
+  TB.grab = { id: e.pointerId, side: hit.a.side, n, at, basis:grabFrame().slice() };
   plot.setPointerCapture(e.pointerId); plot.style.cursor = 'grabbing';
   return true;
 }
@@ -653,8 +653,6 @@ function handMove(e) {
   // plane that followed it would move the target with it
   const G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit();
-  // Alt pressed or let go mid-drag: carry on from here on the other plane
-  if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.at = at; g.alt = e.altKey; g.basis = grabFrame().slice(); } return true; }
   const at = rayHit(o, r, e, p, g.n);
   if (!at) return true;
   // the new grip point; on the table (or the floor, the other arm or the other gripper) it goes at most PHYS.PRESS past
@@ -684,8 +682,7 @@ function handWheel(e) {
   if (!hit || !hit.a) return false;
   selectPlayHand(String(hit.a.side)); TASK.moved = true;
   const d = driveOf(hit.a), dy = e.deltaY || e.deltaX;
-  if (e.shiftKey) d.R = C.mul3(d.R, RCORE.Ry(Math.sign(dy) * 0.06));
-  else d.open = Math.min(1, Math.max(0, d.open - dy * 0.002)); // scrolling down (towards you) closes it, like a trigger
+  d.open = Math.min(1, Math.max(0, d.open - dy * 0.002)); // scrolling down (towards you) closes it, like a trigger
   return true;
 }
 plot.addEventListener('keydown', (e) => {

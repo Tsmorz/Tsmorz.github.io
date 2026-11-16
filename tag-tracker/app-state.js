@@ -24,8 +24,9 @@ const S = {
   tags: store.get('tags', []), // {id, name, size (m), slot}
   calibs: store.get('calibs', {}), // camera label -> calibration (labels survive reloads; device ids may not)
   square: store.get('square', 25),
-  quality: store.get('quality', 'precise'),
+  quality: store.get('quality', 'fast'),
   res: store.get('res', '1280x720'),
+  captureFps: window.TagCameraCore.normalizeFps(store.get('captureFps', 'max')),
   camId: store.get('camId', ''),
   mode: 'track', tab: 'tasks',
   worker: null, ready: false, familyCount: 587,

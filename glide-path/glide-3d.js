@@ -39,6 +39,8 @@ function Glide3D(env) {
       line('profLine', 'lines', { 'line-color': C.flight, 'line-width': 3, 'line-opacity': 0.95 }),
       line('routeCase', 'lines', { 'line-color': C.casing, 'line-width': 7, 'line-opacity': 0.9 }),
       line('routeLine', 'lines', { 'line-color': C.route, 'line-width': 4 }),
+      line('aircraftGps', 'lines', { 'line-color': C.flight, 'line-width': 4 }),
+      line('aircraftEstimate', 'lines', { 'line-color': C.route, 'line-width': 4, 'line-dasharray': [3, 3] }),
       line('windCase','lines',{'line-color':C.casing,'line-width':5}),
       line('windLine','lines',{'line-color':C.line,'line-width':1.5}),
       { id: 'dsArea', type: 'fill', source: 'lines', filter: is('dsArea'), paint: { 'fill-color': C.line, 'fill-opacity': .12 } },
@@ -50,6 +52,9 @@ function Glide3D(env) {
         'circle-stroke-color': C.line, 'circle-stroke-width': 1.5, 'circle-pitch-alignment': 'map' } },
       { id: 'routeEnd', type: 'circle', source: 'points', filter: is('routeEnd'), paint: { 'circle-radius': 7, 'circle-color': C.route,
         'circle-stroke-color': C.casing, 'circle-stroke-width': 2 } },
+      { id: 'aircraftTrackPoint', type: 'circle', source: 'points', filter: is('aircraftTrackPoint'), paint: { 'circle-radius': 3, 'circle-color': C.flight } },
+      { id: 'aircraftPhoto', type: 'circle', source: 'points', filter: is('aircraftPhoto'), paint: { 'circle-radius': 6, 'circle-color': C.flight, 'circle-stroke-color': C.casing, 'circle-stroke-width': 2 } },
+      { id: 'aircraftSample', type: 'circle', source: 'points', filter: is('aircraftSample'), paint: { 'circle-radius': 9, 'circle-color': C.line, 'circle-stroke-color': C.casing, 'circle-stroke-width': 3 } },
       { id: 'probe', type: 'circle', source: 'points', filter: is('probe'), paint: { 'circle-radius': 8, 'circle-color': C.line,
         'circle-stroke-color': C.casing, 'circle-stroke-width': 3 } }
     ]
@@ -77,6 +82,10 @@ function Glide3D(env) {
     set('routeCase', 'line-color', C.casing); set('routeLine', 'line-color', C.route);
     set('ticks', 'circle-color', C.casing); set('ticks', 'circle-stroke-color', C.line);
     set('routeEnd', 'circle-color', C.route); set('routeEnd', 'circle-stroke-color', C.casing);
+    set('aircraftTrackPoint', 'circle-color', C.flight);
+    set('aircraftGps', 'line-color', C.flight); set('aircraftEstimate', 'line-color', C.route);
+    set('aircraftPhoto', 'circle-color', C.flight); set('aircraftPhoto', 'circle-stroke-color', C.casing);
+    set('aircraftSample', 'circle-color', C.line); set('aircraftSample', 'circle-stroke-color', C.casing);
     set('probe', 'circle-color', C.line); set('probe', 'circle-stroke-color', C.casing);
   }
 
@@ -175,11 +184,14 @@ function Glide3D(env) {
         }
       }
     }
+    const aircraft = env.aircraft?.() || [];
+    lines.push(...aircraft.filter(f => f.geometry.type === 'LineString'));
     m.getSource('lines').setData({ type: 'FeatureCollection', features: lines });
 
     const pts = layers.profTicks.getLayers().map(t => point('tick', t.getLatLng()));
     if (on(layers.routeEnd)) pts.push(point('routeEnd', layers.routeEnd.getLatLng()));
     if (on(layers.probe)) pts.push(point('probe', layers.probe.getLatLng()));
+    pts.push(...aircraft.filter(f => f.geometry.type === 'Point'));
     m.getSource('points').setData({ type: 'FeatureCollection', features: pts });
 
     // the launch: a pin you can drag, as on the 2D map; brought into view when it moves off screen

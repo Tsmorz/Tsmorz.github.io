@@ -11,8 +11,7 @@
   // Stein dimensions (m), shared by its geometry, its liquid and its grip zone.
   const STEIN = { R: 0.05, Ri: 0.043, H: 0.13, floor: 0.01, handle: { x: 0.078, r: 0.005, w: 0.009, z0: 0.035, z1: 0.115 } };
   // A 0.5 l Weissbier bottle: outside sections {z0, z1, r} from its base, and the inside (3 mm glass) from its inner floor.
-  // 72 mm across, so the jaws close on its body or neck; gripped from above, only the neck clears the palm.
-  // `grip`: where the pads go, high on the neck so the palm clears the mouth by over a centimetre.
+  // 72 mm across; grip high on the neck from the side so the palm leaves the open mouth clear.
   const BOTTLE = { floor: 0.006, H: 0.241, grip: 0.221, neck: { r: 0.0135, z0: 0.185, z1: 0.236 },
     outside: [{ z0: 0, z1: 0.145, r: 0.036 }, { z0: 0.145, z1: 0.16, r: 0.03 }, { z0: 0.16, z1: 0.172, r: 0.024 }, { z0: 0.172, z1: 0.185, r: 0.018 }, { z0: 0.185, z1: 0.241, r: 0.0135 }],
     inside: [{ z0: 0, z1: 0.139, r: 0.033 }, { z0: 0.139, z1: 0.152, r: 0.028 }, { z0: 0.152, z1: 0.165, r: 0.022 }, { z0: 0.165, z1: 0.177, r: 0.016 }, { z0: 0.177, z1: 0.235, r: 0.0105 }] };
@@ -84,7 +83,8 @@
     const at = (p) => C.add(table.t, C.mulv(table.R, p));
     for (const s of level.objects || []) {
       const zone = s.kind === 'stein' ? { grip_zone: { min: [STEIN.R + .002, -.03, .02], max: [STEIN.handle.x + .03, .03, STEIN.H + .01] } } : {};
-      const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, ...zone, pieces: geometry(s.kind,s.artwork) }, at(s.at), C.mul3(table.R, s.R || I));
+      const massProperties=s.kind==='bottle'?Pour.shellMassProperties(BOTTLE.outside,BOTTLE.inside,BOTTLE.floor,s.mass||.12):undefined;
+      const b = W.add(s.kind === 'ball' || s.kind === 'cup' ? s.kind : { ...s, ...zone, ...(massProperties?{massProperties}:{}),pieces: geometry(s.kind,s.artwork) }, at(s.at), C.mul3(table.R, s.R || I));
       Object.assign(b, { key: s.key, color: s.color, label: s.label }); byKey.set(s.key, b);
     }
     for (const s of level.cloths || []) { const c = Cloth.towel(s, table); W.cloths.push(c); byKey.set(s.key, c); }
@@ -115,9 +115,89 @@
     if(level.pour){
       // Beer poured from one stein into the other: more than `spill_limit` of it outside both spoils the attempt.
       const spec=level.pour,V0=spec.litres/1000,container=key=>CONTAINER[byKey.get(key).kind];
-      const from=Pour.vessel(byKey.get(spec.from),{...container(spec.from),volume:V0}),to=Pour.vessel(byKey.get(spec.to),{...container(spec.to),volume:0});
-      const solid=(q,skip)=>W.bodies.some(b=>b!==skip&&b.pieces&&C.norm(C.sub(q,b.t))<b.bound+.005&&P.bodyDistance(b,C.sub(C.mulv(C.tr3(b.R),C.sub(q,b.t)),b.off))<0);
+      const fluid={density:spec.density||1000,discharge:spec.discharge??.64,glug:spec.glug!==false};
+      const from=Pour.vessel(byKey.get(spec.from),{...container(spec.from),...fluid,volume:V0}),to=Pour.vessel(byKey.get(spec.to),{...container(spec.to),...fluid,volume:0});
+      // Rigid bottle proxies are solid stacked cylinders. For liquid transport only,
+      // subtract the actual interior void so a stream can enter the open neck and
+      // hit its wall/floor instead of being collected at an imaginary closed cap.
+      const voids=new Map([...byKey.values()].filter(b=>CONTAINER[b.kind]).map(b=>[b,CONTAINER[b.kind]]));
+      const distance=(b,q)=>{
+        let d=b.kind==='ball'?C.norm(q)-P.BALL.r:P.bodyDistance(b,q),inside=voids.get(b);
+        if(inside){let air=Infinity;for(const s of inside.shape.sections)air=Math.min(air,P.pieceDistance(q,{type:'cylinder',p:[0,0,inside.floor+(s.z0+s.z1)/2],r:s.r,h:(s.z1-s.z0)/2}));d=Math.max(d,-air);}
+        return d;
+      };
+      let previous=new Map(),previousLinks=new Map(),frames=new Map(),stepDuration=P.H;
+      const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+      const entities=()=>[...W.bodies,...Object.values(W.hands).map(h=>h.body)];
+      const snapshot=b=>{
+        if(b.kind!=='hand')return W.poseOf(b);
+        const hand=W.hands[b.side],boxes=(b.padBoxes||(gripper?.padShape&&hand?[1,-1].map(jaw=>{const shape=gripper.padShape(jaw,hand.carrierGap??hand.gap,hand.padCompression?.[jaw]||[0,0,0]);return {p:C.add(shape.c,b.off),h:shape.h,jaw};}):[])).map(box=>({p:box.p.slice(),h:box.h.slice(),jaw:box.jaw}));
+        return {R:b.R.slice(),t:b.t.slice(),bound:b.bound,boxes,spheres:b.sp.filter(s=>!s.jaw||!boxes.length).map(s=>({p:s.p.slice(),r:s.r}))};
+      };
+      const frame=b=>{
+        if(frames.has(b))return frames.get(b);
+        const end=snapshot(b),start=previous.get(b)||end,rotation=C.so3Log(C.mul3(C.tr3(start.R),end.R)),angle=C.norm(rotation),jawMotion=b.kind==='hand'?Math.max(0,...end.spheres.map((s,i)=>{const old=start.spheres?.[i]||s;return C.norm(C.sub(s.p,old.p))+Math.abs(s.r-old.r);}),...end.boxes.map(box=>{const old=start.boxes?.find(x=>x.jaw===box.jaw)||box;return C.norm(C.sub(box.p,old.p))+C.norm(C.sub(box.h,old.h));})):0,motion=C.norm(C.sub(end.t,start.t))+angle*(Math.max(b.bound,start.bound||0)+C.norm(b.off||[0,0,0]))+jawMotion;
+        const at=t=>({t:start.t.map((x,i)=>x+(end.t[i]-x)*t),R:angle<1e-8?end.R:C.mul3(start.R,C.rodrigues(rotation.map(x=>x*t)))});
+        const f={motion,start,end,at};frames.set(b,f);return f;
+      };
+      const signed=(b,p,t)=>{
+        const f=frame(b),pose=f.at(t),q=C.mulv(C.tr3(pose.R),C.sub(p,pose.t));
+        if(b.kind!=='hand')return distance(b,q);
+        let d=Infinity;for(let i=0;i<f.end.spheres.length;i++){const s=f.end.spheres[i],old=f.start.spheres?.[i]||s,c=old.p.map((x,k)=>x+(s.p[k]-x)*t);d=Math.min(d,C.norm(C.sub(q,c))-(old.r+(s.r-old.r)*t));}
+        for(const box of f.end.boxes){const old=f.start.boxes?.find(x=>x.jaw===box.jaw)||box;d=Math.min(d,P.pieceDistance(q,{type:'box',p:old.p.map((v,i)=>v+(box.p[i]-v)*t),h:old.h.map((v,i)=>v+(box.h[i]-v)*t)}));}return d;
+      };
+      const surfaceVelocity=(b,p,t,featurePoint=p)=>{
+        const rigid=C.add(b.v||[0,0,0],cross(b.w||[0,0,0],C.sub(p,b.t)));if(b.kind!=='hand')return rigid;
+        const f=frame(b),pose=f.at(t),q=C.mulv(C.tr3(pose.R),C.sub(featurePoint,pose.t)),material=C.mulv(C.tr3(pose.R),C.sub(p,pose.t));let best=Infinity,motion=[0,0,0];
+        for(let i=0;i<f.end.spheres.length;i++){
+          const s=f.end.spheres[i],old=f.start.spheres?.[i]||s,c=old.p.map((v,k)=>v+(s.p[k]-v)*t),r=old.r+(s.r-old.r)*t,delta=C.sub(q,c),length=C.norm(delta),distance=length-r;
+          if(distance<best){best=distance;const radial=C.sub(material,c),normal=C.norm(radial)>1e-12?radial.map(v=>v/C.norm(radial)):[0,0,0];motion=s.p.map((v,k)=>(v-old.p[k]+normal[k]*(s.r-old.r))/stepDuration);}
+        }
+        for(const box of f.end.boxes){
+          const old=f.start.boxes?.find(x=>x.jaw===box.jaw)||box,c=old.p.map((v,i)=>v+(box.p[i]-v)*t),h=old.h.map((v,i)=>v+(box.h[i]-v)*t),distance=P.pieceDistance(q,{type:'box',p:c,h});
+          if(distance<best){best=distance;const u=material.map((v,i)=>Math.max(-1,Math.min(1,(v-c[i])/h[i])));motion=box.p.map((v,i)=>(v-old.p[i]+u[i]*(box.h[i]-old.h[i]))/stepDuration);}
+        }
+        return C.add(rigid,C.mulv(pose.R,motion));
+      };
+      const solid=(q,skip)=>entities().some(b=>b!==skip&&signed(b,q,1)<0);
+      solid.beginStep=(dt=P.H)=>{stepDuration=dt;previous=new Map(entities().map(b=>[b,snapshot(b)]));previousLinks=new Map(W.robotLinks.map(l=>[l.id,{a:l.a.slice(),b:l.b.slice()}]));frames=new Map();};
+      solid.sweep=(a,b,skip,radius=0,startTime=0,endTime=1)=>{
+        const delta=C.sub(b,a),length=C.norm(delta),span=Math.max(0,endTime-startTime),time=t=>startTime+span*t;let best=null;
+        for(const body of entities()){
+          if(body===skip)continue;const f=frame(body),speed=length+f.motion*span,center=f.start.t.map((x,i)=>(x+f.end.t[i])/2),projection=length>1e-12?Math.max(0,Math.min(1,C.sub(center,a).reduce((sum,x,i)=>sum+x*delta[i],0)/(length*length))):0,nearest=a.map((x,i)=>x+delta[i]*projection);
+          if(C.norm(C.sub(nearest,center))>body.bound+C.norm(body.off||[0,0,0])+f.motion+radius)continue;
+          let t=0,iterations=0;
+          for(;iterations<256&&t<=1&&(!best||t<best.fraction);iterations++){
+            const p=a.map((x,k)=>x+delta[k]*t),d=signed(body,p,time(t))-radius;
+            if(d<=.00005){
+              const e=.00001,normal=[0,1,2].map(k=>{const lo=p.slice(),hi=p.slice();lo[k]-=e;hi[k]+=e;return signed(body,hi,time(t))-signed(body,lo,time(t));}),n=C.norm(normal),up=n>1e-12?normal.map(x=>x/n):[0,0,1];
+              const point=p.map((x,k)=>x-up[k]*radius),at=time(t);best={fraction:t,point,normal:up,body};
+              if(body.kind==='hand'){best.surfaceVelocityAt=point=>surfaceVelocity(body,point,at,p);best.surfaceVelocity=best.surfaceVelocityAt(point);}break;
+            }
+            if(speed<1e-12)break;t+=Math.max(.000025,d*.9)/speed;
+          }
+          if(iterations===256&&t<=1&&(!best||t<best.fraction)){
+            // Exhaustion is not a certificate of free space. Return the last
+            // checked centre so transport can retain/absorb it conservatively.
+            const centre=a.map((x,k)=>x+delta[k]*t);best={fraction:t,point:centre,centre,body,limited:true};
+          }
+        }
+        // The arm capsules are prescribed kinematics. They absorb a jet just as
+        // a fixed fixture does; never let beer pass through the forearm to a mug.
+        for(const link of W.robotLinks){
+          const start=previousLinks.get(link.id)||link,speed=length+Math.max(C.norm(C.sub(link.a,start.a)),C.norm(C.sub(link.b,start.b)))*span;
+          let t=0,iterations=0;
+          for(;iterations<256&&t<=1&&(!best||t<best.fraction);iterations++){
+            const p=a.map((x,k)=>x+delta[k]*t),u=start.a.map((x,k)=>x+(link.a[k]-x)*time(t)),v=start.b.map((x,k)=>x+(link.b[k]-x)*time(t)),axis=C.sub(v,u),den=axis.reduce((s,x)=>s+x*x,0),q=den?Math.max(0,Math.min(1,C.sub(p,u).reduce((s,x,k)=>s+x*axis[k],0)/den)):0,near=C.add(u,axis.map(x=>x*q)),radial=C.sub(p,near),distance=C.norm(radial),d=distance-link.r-radius;
+            if(d<=.00005){const normal=distance>1e-12?radial.map(x=>x/distance):[0,0,1];best={fraction:t,point:p.map((x,k)=>x-normal[k]*radius),normal,kind:'arm'};break;}
+            if(speed<1e-12)break;t+=Math.max(.000025,d*.9)/speed;
+          }
+          if(iterations===256&&t<=1&&(!best||t<best.fraction)){const centre=a.map((x,k)=>x+delta[k]*t);best={fraction:t,point:centre,centre,kind:'arm',limited:true};}
+        }
+        return best;
+      };
       game.pour=Pour.pour(W,[from,to],table,solid);game.pour.from=from;game.pour.to=to;game.pour.V0=V0;game.pour.spoiled=false;
+      W.preStep.push(dt=>game.pour.prepare(dt));
       W.mechanisms.push(dt=>{game.pour.step(dt);if(game.pour.spilled>spec.spill_limit*V0)game.pour.spoiled=true;});
       const reset=game.reset;game.reset=()=>{reset();game.pour.reset();game.pour.spoiled=false;};
     }
@@ -167,7 +247,8 @@
         const f = Cloth.folded(b), ps = b.nodes.map((n) => g.local(n.p)), mid = [0, 1, 2].map((i) => ps.reduce((s, p) => s + p[i], 0) / ps.length);
         const span = [0, 1].map((i) => Math.max(...ps.map((p) => p[i])) - Math.min(...ps.map((p) => p[i])));
         if(b.kind==='towel'&&!b.pins.size&&b.firstHands.size===2&&f.x&&f.compact)b.foldStage=1;
-        return (b.kind==='shirt' ? f.complete : r.folds===2 ? b.foldStage===1&&b.foldHands.size===2&&f.complete : (f.x || f.y) && f.compact && Math.max(...span) > Math.min(b.width, b.height) * 0.75) && b.pins.size === 0 && b.touched.size === 2
+        const free=b.kind==='shirt'?![...b.pins.values()].some(pin=>pin.loaded!==false):b.pins.size===0;
+        return (b.kind==='shirt' ? f.complete : r.folds===2 ? b.foldStage===1&&b.foldHands.size===2&&f.complete : (f.x || f.y) && f.compact && Math.max(...span) > Math.min(b.width, b.height) * 0.75) && free && b.touched.size === 2
           && within(mid, r.at, r.tolerance) && b.nodes.every((n) => C.norm(n.v) < 0.05);
       }
       const pose = W.poseOf(b), p = g.local(pose.t);
@@ -235,11 +316,11 @@
     const result=state=>({...base,state});
     if(r.type==='fold'){
       if(b.kind==='shirt'){
-        const f=Cloth.folded(b);
-        if([...b.pins.values()].some(p=>{const y=b.material[p.i][1];return y>b.bodySpan/2&&f.sleeves[0]||y<-b.bodySpan/2&&f.sleeves[1];}))return result('shirt_sleeve_release');
+        const f=Cloth.folded(b),pins=[...b.pins.values()].filter(pin=>pin.loaded!==false);
+        if(pins.some(pin=>(pin.materialPoints||[b.material[pin.i]]).some(p=>p[1]>b.bodySpan/2&&f.sleeves[0]||p[1]<-b.bodySpan/2&&f.sleeves[1])))return result('shirt_sleeve_release');
         if(!f.sleeves[0])return result('shirt_left');
         if(!f.sleeves[1])return result('shirt_right');
-        return result(f.complete?(b.pins.size?'shirt_release':'settle'):b.pins.size>=2?'shirt_fold':'shirt_hem');
+        return result(f.complete?(pins.length?'shirt_release':'settle'):pins.length>=2?'shirt_fold':'shirt_hem');
       }
       if(r.folds===2){
         const f=Cloth.folded(b),second=b.foldStage===1;

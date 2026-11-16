@@ -26,6 +26,18 @@
     const alpha=cam=>{isolated.draw({...o,cam});const pixel=new Uint8Array(4);testGL.readPixels(48,48,1,1,testGL.RGBA,testGL.UNSIGNED_BYTE,pixel);return pixel[3];};
     const inside=alpha({eye:[0,0,.075],right:[0,-1,0],up:[0,0,1],fwd:[1,0,0]}),outside=alpha({eye:[.12,0,.075],right:[0,1,0],up:[0,0,1],fwd:[-1,0,0]});
     assert(inside===0&&outside===255&&testGL.getError()===testGL.NO_ERROR,'paper prints outward only, with no mirrored lettering visible from inside the bottle');
-    return {passed:true,outlinedCursive:true,redStag:true,npotTexture:true,separateShadowUnit:true,oneSidedPaper:true,webglErrors:0};
+    // Compile the real foam branch and sample its material at close and distant
+    // views. Its fine cells shade the conserved surface without alpha holes.
+    const foamCanvas=document.createElement('canvas'),foamGL=foamCanvas.getContext('webgl'),locations=foamGL.getUniformLocation,uniform=foamGL.uniform1f;let surfaceLocation,plain=false;
+    foamGL.getUniformLocation=function(program,name){const location=locations.call(foamGL,program,name);if(name==='uSurface')surfaceLocation=location;return location;};
+    foamGL.uniform1f=function(location,value){return uniform.call(foamGL,location,plain&&location===surfaceLocation&&value===8?0:value);};
+    const foamRenderer=RobotGL.create(foamCanvas),foam={key:'foam',layer:'foam',color:'#f3ead6',points:Array.from({length:40},(_,i)=>[.03*Math.cos(i*Math.PI/20),.03*Math.sin(i*Math.PI/20),0]),up:[0,0,1],foam:1,foamHeight:.002,headroom:.01},before=JSON.stringify(foam);
+    const foamView={...o,w:256,h:256,fov:30,props:{...o.props,bodies:[],liquids:[foam],dims:{...o.props.dims,compounds:{}}}};
+    const readFoam=distance=>{foamRenderer.draw({...foamView,cam:{eye:[0,0,distance],right:[1,0,0],up:[0,1,0],fwd:[0,0,-1]}});const pixels=new Uint8Array(256*256*4);foamGL.readPixels(0,0,256,256,foamGL.RGBA,foamGL.UNSIGNED_BYTE,pixels);return pixels;};
+    const fine=readFoam(.12),foamProgram=foamGL.getParameter(foamGL.CURRENT_PROGRAM),rough=foamGL.getUniform(foamProgram,locations.call(foamGL,foamProgram,'uRough'));plain=true;const smooth=readFoam(.12);plain=false;const distant=readFoam(.7);
+    let difference=0,count=0,holes=0;for(let y=64;y<192;y++)for(let x=64;x<192;x++){const i=(y*256+x)*4;if(fine[i+3]!==255)holes++;for(let k=0;k<3;k++){difference+=Math.abs(fine[i+k]-smooth[i+k]);count++;}}
+    assert(rough>=.8&&rough<=.98&&holes===0&&difference/count>.2&&distant.some((v,i)=>i%4===3&&v===255)&&JSON.stringify(foam)===before&&foamGL.getError()===foamGL.NO_ERROR,'fine rough foam cells are visible up close, remain opaque at both scales, and never alter physical head data');
+    foamGL.getUniformLocation=locations;foamGL.uniform1f=uniform;
+    return {passed:true,outlinedCursive:true,redStag:true,npotTexture:true,separateShadowUnit:true,oneSidedPaper:true,foamRoughness:rough,foamCellDifference:difference/count,webglErrors:0};
   }finally{gl.texImage2D=texImage;}
 })()

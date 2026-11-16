@@ -1,0 +1,52 @@
+// task build && task shot -- /glide-path/ --eval-file tests/glide/aircraft.js --console
+(async () => {
+  const el = id => document.getElementById(id), assert = (v, why) => { if (!v) throw Error(why); };
+  el('guide').close();
+  const deadline = Date.now() + 30000;
+  while (!currentPlan()) { if (Date.now() > deadline) throw Error('Initial launch not ready'); await new Promise(r => setTimeout(r, 80)); }
+  if (compact.matches) el('settingsToggle').click();
+  document.querySelector('[data-sec="aircraft-flight"]').open = true;
+  const at = (t_ms, location = 'gps') => ({ t_ms, utc_ms: null, location, lat_deg: location === 'missing' ? null : 44.077964 + t_ms / 100000000, lon_deg: location === 'missing' ? null : -103.245844 + t_ms / 100000000, alt_m: 1080 + t_ms / 1000, state: 'flight', roll_deg: 2, pitch_deg: -3 });
+  const flight = { schema: 'p4-flight', version: 1, source: 'simulation', frame: 'WGS84', track: [at(0), at(1000), at(2000, 'missing'), at(3000), at(4000, 'estimated'), at(5000, 'estimated')], photos: [{ ...at(1000), name: '20261116/IMG00001.JPG' }, { ...at(2000, 'missing'), name: '20261116/IMG00002.JPG' }], events: [{ t_ms: 2000, code: 'gps_lost', detail: '<img src=x onerror="alert(1)">' }], plan: currentPlan() };
+  const original = currentPlan();
+  let input = new DataTransfer(); input.items.add(new File([JSON.stringify(flight)], 'flight.json', { type: 'application/json' })); el('aircraftFile').files = input.files;
+  await el('aircraftFile').onchange({ target: el('aircraftFile') });
+  assert(el('aircraftOrigin').textContent.includes('Simulation · not a real flight'), 'simulation is prominently labelled');
+  assert(el('flightRecordStatus').textContent.includes('3 GPS') && el('flightRecordStatus').textContent.includes('2 estimated'), 'measured and estimated counts remain distinct');
+  assert(GlidePlan.samePlan(original, currentPlan()), 'review never changes the active planned path');
+  assert(aircraftUI.features().filter(f => f.geometry.type === 'LineString').length === 2, 'GPS gap and source change prevent artificial joins');
+  assert(aircraftUI.features().filter(f => f.properties.k === 'aircraftPhoto').length === 1, 'missing-location photo is not put on the map');
+  assert(!el('aircraftEvents').querySelector('img') && el('aircraftEvents').textContent.includes('<img'), 'diagnostic text is never interpreted as HTML');
+  el('aircraftTime').value = '2000'; el('aircraftTime').dispatchEvent(new Event('input'));
+  assert(el('aircraftSample').textContent.includes('Location unavailable'), 'GPS loss remains missing during replay');
+  assert(!aircraftUI.features().some(f => f.properties.k === 'aircraftSample'), 'missing replay sample has no map marker');
+  el('aircraftTime').value = '4500'; el('aircraftTime').dispatchEvent(new Event('input'));
+  assert(el('aircraftSample').textContent.includes('4.0 s') && el('aircraftSample').textContent.includes('Estimated position'), 'sample replay does not interpolate a fictional fix');
+  assert(!el('aircraftPlan').hidden && el('aircraftPlan').href.includes('#plan='), 'saved planned path is available separately');
+  const wrong = new DataTransfer(); wrong.items.add(new File(['{"schema":"p4-flight","version":2}'], 'wrong.json')); el('aircraftFile').files = wrong.files;
+  await el('aircraftFile').onchange({ target: el('aircraftFile') });
+  assert(el('flightRecordStatus').textContent.includes('Unsupported') && aircraftUI.features().length, 'invalid import retains previous valid overlay');
+  assert(el('aircraftOrigin').textContent.includes('Simulation'), 'simulation origin stays visible after an import error');
+  const sidecar = { schema: 'p4c-photo', version: 1, file: '20261116/IMG00003.JPG', captured_ms: 6000, utc_ms: null, flight_state: 'flight', location: { source: 'gps', lat_deg: 44.078, lon_deg: -103.245, alt_m: 1085 }, attitude: { valid: false } };
+  input = new DataTransfer(); input.items.add(new File([JSON.stringify(sidecar)], 'IMG00003.JSN')); el('aircraftFile').files = input.files;
+  await el('aircraftFile').onchange({ target: el('aircraftFile') });
+  assert(el('aircraftReplay').hidden && el('aircraftPhotos').textContent.includes('IMG00003.JPG'), 'raw sidecar imports without a flight log');
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 4;
+  const jpeg = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+  input = new DataTransfer(); input.items.add(new File([jpeg], 'IMG00003.JPG', { type: 'image/jpeg' })); el('aircraftPictures').files = input.files;
+  el('aircraftPictures').dispatchEvent(new Event('change'));
+  el('aircraftPhotos').querySelector('button').click();
+  const img = el('aircraftPhotos').querySelector('img'); assert(img && img.src.startsWith('blob:'), 'photo preview uses only a local selected image'); await img.decode();
+  el('aircraftFit').click();
+  assert(!el('aircraftClear').disabled && !el('aircraftFit').disabled, 'located photos can be shown on the map');
+  assert(document.documentElement.scrollWidth <= innerWidth + 1, 'flight controls fit the viewport');
+  el('aircraftClear').click(); assert(!aircraftUI.features().length && el('aircraftReplay').hidden, 'clear removes flight and replay markers');
+  assert(el('flightRecordStatus').textContent === CONTENT.aircraft_flight.empty, 'clear restores empty state');
+  // Leave a flight showing for visual QA.
+  aircraftUI.load(flight); el('aircraftTime').value = '4500'; el('aircraftTime').dispatchEvent(new Event('input')); el('aircraftFit').click();
+  document.querySelectorAll('details.group').forEach(d => { d.open = d.dataset.sec === 'aircraft-flight'; });
+  if (compact.matches) el('expandDrawer').click();
+  await new Promise(requestAnimationFrame);
+  const panel = el('panel'); panel.scrollTop += document.querySelector('[data-sec="aircraft-flight"]').getBoundingClientRect().top - panel.getBoundingClientRect().top - (compact.matches ? 48 : 0);
+  console.log('PASS: aircraft file picker, schema errors, GPS loss, estimated replay, simulation labels, diagnostics escaping, sidecars, local photo preview, fit and clear');
+})();

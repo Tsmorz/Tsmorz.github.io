@@ -43,7 +43,7 @@
     const travel=C.sub(rayHit(g.o,g.r,end,g.p,g.n),at);
     assert(C.norm(C.sub(C.sub(g.d.t,before),travel.map(v=>2*v)))<1e-8,'the new gain affects only subsequent pointer travel');
     const beforeAlt=g.d.t.slice();handMove({...end,altKey:true});
-    assert(C.norm(C.sub(g.d.t,beforeAlt))<1e-12,'changing drag plane does not jump the gripper');
+    assert(C.norm(C.sub(g.d.t,beforeAlt))<1e-12,'the retired Alt modifier does not move the gripper or change its drag plane');
     handDrop(g.e);
     gain(.5);const atKey=g.d.t.slice(),up=C.mulv(TB.world.table.R,[0,0,.006]);playNudge('up');
     assert(C.norm(C.sub(C.sub(g.d.t,atKey),up))<1e-9,'keyboard movement shares the sensitivity');

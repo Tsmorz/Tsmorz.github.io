@@ -24,8 +24,8 @@
       const delta=C.sub(d.t,before);
       assert(C.norm(delta)>1e-5&&Math.abs(delta.reduce((s,v,i)=>s+v*TB.grab.n[i],0))<1e-9,'real pointer movement stays in the visible plane');
       const at=d.t.slice(),normal=TB.grab.n.slice();handMove({...e,clientX:e.clientX+8,altKey:true});draw3d();
-      const changed=verify();assert(C.norm(C.sub(d.t,at))<1e-12,'Alt changes the plane without moving the target');
-      assert(Math.abs(normal.reduce((s,v,i)=>s+v*TB.grab.n[i],0))<1e-9&&axes.join()!==changed.join(),'Alt replaces the visible movement axes with the new locked plane');
+      const changed=verify();assert(C.norm(C.sub(d.t,at))<1e-12,'pressing a retired modifier does not move the target');
+      assert(C.norm(C.sub(normal,TB.grab.n))<1e-12&&axes.join()===changed.join(),'Alt no longer changes the locked movement plane');
       const basis=TB.grab.basis.slice(),chest=RB.scene.chest.R;
       RB.scene.chest.R=C.mul3(RCORE.Rz(.3),chest);paintDragPlaneGuide(RB.view,plot.clientWidth,plot.clientHeight);verify();
       assert(C.norm(C.sub(TB.grab.basis,basis))<1e-12,'body movement cannot rotate an ongoing drag guide');RB.scene.chest.R=chest;
@@ -39,6 +39,6 @@
     setMode('tasks');await sleep(150);begin();taskLevel('sort');draw3d();assert(el.hidden&&!TB.grab,'a new task hides the guide');
     taskLevel('bowl');await sleep(150);e=begin();handMove({...e,clientX:e.clientX+12});draw3d();verify();
     assert(document.documentElement.scrollWidth<=innerWidth+1,'the overlay adds no page overflow');
-    return {passed:true,outsideAndEyes:true,altPlane:true,constrainedProjection:true,lifecycle:true,viewport:[innerWidth,innerHeight]};
+    return {passed:true,outsideAndEyes:true,modifiersRemoved:true,constrainedProjection:true,lifecycle:true,viewport:[innerWidth,innerHeight]};
   }finally{plot.setPointerCapture=capture;}
 })()

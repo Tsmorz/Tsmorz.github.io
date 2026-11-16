@@ -19,11 +19,12 @@
     }
     return {edges,neighbours};
   }
-  function refine(count,triangles){
+  function refine(count,triangles,anchors){
     const {edges,neighbours}=edgesOf(count,triangles),boundary=Array.from({length:count},()=>[]),stencils=[],next=[];
     for(const e of edges.values())if(e.opposite.length===1){boundary[e.a].push(e.b);boundary[e.b].push(e.a);}
     for(let i=0;i<count;i++){
-      if(boundary[i].length===2)stencils.push({ids:[i,...boundary[i]],weights:[.75,.125,.125]});
+      if(anchors.has(i))stencils.push({ids:[i],weights:[1]});
+      else if(boundary[i].length===2)stencils.push({ids:[i,...boundary[i]],weights:[.75,.125,.125]});
       else{
         const ids=[...neighbours[i]],n=ids.length,beta=n===3?3/16:n?3/(8*n):0;
         stencils.push({ids:[i,...ids],weights:[1-n*beta,...ids.map(()=>beta)]});
@@ -50,6 +51,7 @@
     const count=c.nodes.length,{edges}=edgesOf(count,c.triangles),neighbours=Array.from({length:count},()=>[]),anchors=new Set(Object.values(c.landmarks||{}).flat().filter(Number.isInteger));
     for(const e of edges.values())if(e.opposite.length===1){neighbours[e.a].push(e.b);neighbours[e.b].push(e.a);}
     let stencils=Array.from({length:count},(_,i)=>({ids:[i],weights:[1]}));
+    if(c.patternSmooth)return {stencils,points:new Float64Array(count*3)};
     // Fair the little grid zigzags before refinement, without changing the physical cut pattern.
     // Convex stencils keep the visible edge attached to the original sheet under deformation.
     for(let pass=0;pass<4;pass++)stencils=stencils.map((s,i)=>{
@@ -69,10 +71,12 @@
   function topology(c){
     let cache=caches.get(c);
     if(cache&&cache.material===c.material&&cache.inputTriangles===c.triangles&&cache.inputCount===c.nodes.length)return cache;
-    const inputCount=c.nodes.length,levels=[fairBoundary(c)];let count=inputCount,triangles=c.triangles.slice(),uv=new Float64Array(c.material.flatMap(p=>p.slice(0,2)));
+    const inputCount=c.nodes.length,levels=[fairBoundary(c)],anchors=new Set(Object.values(c.landmarks||{}).flat().filter(Number.isInteger));
+    if(c.panels===2)for(const i of [...anchors])anchors.add(i<c.panelSize?i+c.panelSize:i-c.panelSize);
+    let count=inputCount,triangles=c.triangles.slice(),uv=new Float64Array(c.material.flatMap(p=>p.slice(0,2)));
     uv=evaluate(uv,2,levels[0].stencils,new Float64Array(count*2));
     for(let i=0;i<2;i++){
-      const level=refine(count,triangles);levels.push(level);count=level.stencils.length;triangles=level.triangles;
+      const level=refine(count,triangles,anchors);levels.push(level);count=level.stencils.length;triangles=level.triangles;
       uv=evaluate(uv,2,level.stencils,new Float64Array(count*2));
     }
     const boundary=[...edgesOf(count,triangles).edges.values()].filter(e=>e.opposite.length===1),outgoing=new Map(boundary.map(e=>[e.a,e])),ordered=[],seen=new Set();
@@ -81,18 +85,20 @@
       let e=first,travel=0;
       while(e&&!seen.has(e)){
         seen.add(e);const dx=uv[e.b*2]-uv[e.a*2],dy=uv[e.b*2+1]-uv[e.a*2+1],length=Math.hypot(dx,dy);
-        ordered.push({...e,travel,length});travel+=length;e=outgoing.get(e.b);
+        const mx=(uv[e.a*2]+uv[e.b*2])/2,my=(uv[e.a*2+1]+uv[e.b*2+1])/2,neck=Math.abs(my)<(c.neckRadius||.034)+.001&&mx>c.width/2-(c.neckRadius||.034)-.002;
+        ordered.push({...e,travel,length,neck});travel+=length;e=outgoing.get(e.b);
       }
     }
     const distances=new Float32Array(count*2);
     for(let i=0;i<count;i++){
-      const x=uv[i*2],y=uv[i*2+1];let nearest=Infinity,travel=0;
+      const x=uv[i*2],y=uv[i*2+1];let nearest=Infinity,travel=0,neck=false;
       for(const e of ordered){
         const ax=uv[e.a*2],ay=uv[e.a*2+1],dx=uv[e.b*2]-ax,dy=uv[e.b*2+1]-ay,L=dx*dx+dy*dy;
         const t=L?clamp(((x-ax)*dx+(y-ay)*dy)/L,0,1):0,d=Math.hypot(x-ax-t*dx,y-ay-t*dy);
-        if(d<nearest){nearest=d;travel=e.travel+t*e.length;}
+        if(d<nearest){nearest=d;travel=e.travel+t*e.length;neck=e.neck;}
       }
-      distances[i*2]=nearest;distances[i*2+1]=travel;
+      // Signed seam travel marks the neck binding without another GPU attribute.
+      distances[i*2]=nearest;distances[i*2+1]=neck?-(travel+.001):travel;
     }
     const vertices=count*2+ordered.length*4,idx=[];
     if(vertices>65535)throw new Error('Garment render mesh exceeds 16-bit indices');
@@ -122,7 +128,7 @@
       const nx=L>1e-12?normals[at]/L:R[2],ny=L>1e-12?normals[at+1]/L:R[5],nz=L>1e-12?normals[at+2]/L:R[8];
       normals.set([nx,ny,nz],at);
       // A turned-under hem is fractions of a millimetre proud of the thin cotton, not plush pile.
-      const distance=cache.distances[i*2],hem=.00035*Math.exp(-distance*distance/(.0022*.0022));
+      const distance=cache.distances[i*2],hem=.00035*Math.exp(-distance*distance/(.0022*.0022))+(cache.distances[i*2+1]<0?.00015*Math.exp(-(((distance-.0025)/.0025)**2)):0);
       for(const side of [1,-1]){
         const index=(side===1?i:i+count)*3,offset=side*(half+hem);
         let x=points[at]+nx*offset,y=points[at+1]+ny*offset,z=points[at+2]+nz*offset;

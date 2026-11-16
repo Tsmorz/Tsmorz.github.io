@@ -17,15 +17,16 @@
   // the drive in table coordinates
   const setT=q=>{d.t=C.add(T.t,C.mulv(T.R,q));},getT=()=>L(d.t);
   for(let i=0;i<30;i++){setT(C.add(getT(),[0,0,.001]));await wait(16);}
-  const goal=[Bc[0]-toB[0]*.095,Bc[1]-toB[1]*.095];
-  for(let i=0;i<240;i++){const q=getT(),e=[goal[0]-q[0],goal[1]-q[1]],l=Math.hypot(...e)||1,k=Math.min(1,.0025/l);setT([q[0]+e[0]*k,q[1]+e[1]*k,q[2]]);await wait(16);}
+  const localOffset=C.mulv(C.tr3(T.R),offset),goal=[Bc[0]-toB[0]*.095-localOffset[0],Bc[1]-toB[1]*.095-localOffset[1]];
+  for(let i=0;i<240;i++){const q=getT(),e=[goal[0]-q[0],goal[1]-q[1]],l=Math.hypot(...e)||1,k=Math.min(1,.10/60/l);setT([q[0]+e[0]*k,q[1]+e[1]*k,q[2]]);await wait(16);}
   let tilt=0,maxTilt=0;const start=performance.now();
-  while(performance.now()-start<40000&&!(p.from.V<p.V0*.02&&!p.drops.length)){
-    const recent=p.drops.filter(x=>x.from===p.from&&x.age<.12),pouring=recent.length>0;
-    const aim=pouring?[0,1].map(j=>recent.reduce((acc,x)=>{const q=L(x.p),v=C.mulv(C.tr3(T.R),x.v),z=q[2]-Brim,t=(v[2]+Math.sqrt(Math.max(0,v[2]*v[2]+2*9.81*Math.max(0,z))))/9.81;return acc+q[j]+v[j]*t;},0)/recent.length):mouth().slice(0,2);
-    const err=[Bc[0]-aim[0],Bc[1]-aim[1]],step=err.map(x=>x*(pouring?.06:0)),sl=Math.hypot(...step),k=sl>.0025?.0025/sl:1,c=clearance(),q=getT(),z=L(hand())[2];
+  while(performance.now()-start<55000&&!(p.from.V<p.V0*.02&&!p.drops.length)){
+    const recent=p.drops.filter(x=>x.from===p.from&&x.age<.08&&L(x.p)[2]>Brim),pouring=recent.length>0,total=recent.reduce((s,d)=>s+d.vol,0),jet=p.from.jet;
+    const jp=jet?L(jet.point):null,jv=jet?C.mulv(C.tr3(T.R),jet.velocity):null,flight=jet?(jv[2]+Math.sqrt(Math.max(0,jv[2]**2+2*9.81*Math.max(0,jp[2]-Brim))))/9.81:0;
+    const aim=jet?[0,1].map(j=>jp[j]+jv[j]*flight):pouring?[0,1].map(j=>recent.reduce((acc,x)=>{const q=L(x.p),v=C.mulv(C.tr3(T.R),x.v),z=q[2]-Brim,t=(v[2]+Math.sqrt(Math.max(0,v[2]*v[2]+2*9.81*Math.max(0,z))))/9.81;return acc+x.vol*(q[j]+v[j]*t);},0)/total):mouth().slice(0,2);
+    const err=[Bc[0]-aim[0],Bc[1]-aim[1]],step=err.map(x=>x*(pouring?.02:0)),sl=Math.hypot(...step),k=sl>.10/60?.10/60/sl:1,c=clearance(),q=getT(),z=L(hand())[2];
     setT([q[0]+step[0]*k,q[1]+step[1]*k,c<.012||lowestZ()<.01?Math.max(q[2],z)+.002:Number.isFinite(c)&&c>.035&&lowestZ()>.02&&mouth()[2]-Brim>.05?Math.min(q[2],z)-.0008:q[2]]);
-    if(!pouring||Math.hypot(...err)<.025)tilt=Math.min(170,tilt+.5);
+    if(!pouring||Math.hypot(...err)<.008)tilt=Math.min(170,tilt+.2);
     d.R=C.mul3(C.mul3(C.mul3(T.R,RCORE.Rx(roll*tilt*Math.PI/180)),C.tr3(T.R)),neutral);
     const R=C.mul3(C.tr3(T.R),W.poseOf(A).R);maxTilt=Math.max(maxTilt,Math.acos(Math.max(-1,Math.min(1,R[8])))*180/Math.PI);
     await wait(16);

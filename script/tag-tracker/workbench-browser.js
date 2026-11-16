@@ -65,7 +65,7 @@
   key(plot, 'ArrowDown');
   assert(C.norm(C.sub(drive.t,start)) < 1e-8 && S.settings.robot.headTilt === tilt, 'Down lowers the gripper without tilting the head');
   key(plot, 'ArrowUp', true);
-  assert(C.norm(C.sub(C.sub(drive.t,start),axis.map(v=>v*.0002))) < 1e-8, 'Shift+Up provides the fine 0.2 mm lift');
+  assert(C.norm(C.sub(C.sub(drive.t,start),axis.map(v=>v*.012))) < 1e-8, 'Shift no longer changes movement sensitivity');
   key(plot, 'ArrowDown', true);
   key(plot, 'ArrowLeft'); key(plot, 'ArrowRight');
   assert(C.norm(C.sub(drive.t,start)) < 1e-8, 'Left and Right move the gripper sideways');
@@ -75,9 +75,8 @@
   const physicalRise = C.sub(TB.world.handPose(1).t,before).reduce((sum,v,i)=>sum+v*axis[i],0);
   assert(physicalRise > .02, 'arrow-key lift moves the physical gripper through IK and motor slew');
   for (let i=0;i<3;i++) key(plot, 'ArrowDown');
-  const wristRotation=drive.R.slice();key(plot,'i');
-  assert(C.norm(C.so3Log(C.mul3(C.tr3(wristRotation),drive.R)))>.08,'sideways wrist tilt is directly available for sleeve folding');key(plot,'p');
-  assert(C.norm(C.so3Log(C.mul3(C.tr3(wristRotation),drive.R)))<1e-8,'opposite sideways wrist keys return to the same orientation');
+  const wristRotation=drive.R.slice();for(const k of ['i','p','j','k','u','o'])key(plot,k);
+  assert(C.norm(C.so3Log(C.mul3(C.tr3(wristRotation),drive.R)))<1e-8,'retired wrist keys leave orientation to the capture device or wrist tags');
   key(plot, '2'); assert(TASK.hand === '-1', '2 selects the right gripper');
   key(plot, '3'); assert(chosenHands().length === 2, '3 selects both grippers');
   key(plot, '1');
@@ -112,7 +111,7 @@
   $('tab-tasks').click();
   taskLevel('laundry');await wait(450);
   const shirt=TB.world.cloths[0];
-  assert(shirt.kind==='shirt'&&shirt.halfThickness===.001&&!shirt.pile&&shirt.landmarks.cuffs.length===2,'the fabric task loads a thin cut-pattern T-shirt');
+  assert(shirt.kind==='shirt'&&shirt.panels===2&&shirt.halfThickness===.0003&&!shirt.pile&&shirt.landmarks.cuffs.length===2,'the fabric task loads a thin sewn T-shirt with two physical panels');
   const meshes=RobotGL.meshes(RB.scene.m);
   assert([1,-1].every(j=>meshes.finger[j].filter(p=>p.tip).length===1&&meshes.finger[j].every(p=>p.grip))&&[1,-1].every(j=>meshes.hand[j].some(p=>p.grip)&&meshes.hand[j].some(p=>!p.grip))&&[...meshes.upper,...meshes.fore,...meshes.foreLight,...meshes.body].every(p=>!p.grip),'gripper fingers and palm highlight together while wrist cuffs and arms stay unhighlighted');
   return { passed: true, persistentTabs: true, preservedTask: true, eyeArrowControls: true, viewport: [innerWidth,innerHeight] };

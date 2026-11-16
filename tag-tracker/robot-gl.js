@@ -12,6 +12,9 @@
 })(typeof self !== 'undefined' ? self : this, function (C, RC, ClothRender, LiquidRender) {
   'use strict';
   const TAU = 2 * Math.PI;
+  // Representative turbid wheat-beer attenuation in metres. A thin falling jet
+  // transmits light; a deep glass has a cloudy body instead of the same opacity.
+  const beerOpacity=depth=>Math.max(0,Math.min(.98,1-Math.exp(-110*Math.max(0,Number.isFinite(depth)?depth:0))));
   // signed power, for superellipses. sin(π) is ~1e-16, not 0, and a small power of that is not small (to the 0.06 the
   // table's top uses it is 0.11), which split the shape open at its seam: values that should be 0 are 0.
   const sp = (w, e) => (Math.abs(w) < 1e-9 ? 0 : Math.sign(w) * Math.pow(Math.abs(w), e));
@@ -75,10 +78,19 @@
 
   // Hand-frame display/fallback contract. Contacts share this linkage through RobotCore.gripper;
   // the pads stay parallel at their task grasp depth rather than simulating adaptive wrapping.
-  function gripperLayout(m,gap=0){
-    const G=RC.gripper(m),opening=Math.max(0,Math.min(G.gapMax,gap));
+  function gripperLayout(m,gap=0,state){
+    const G=RC.gripper(m),opening=Math.max(0,Math.min(G.gapMax,state?.carrierGap??gap));
     return {gap:opening,body:G.body,cuff:{c:[0,0,-.009],r:.032,h:.013},halfWidth:G.halfWidth(opening),
-      fingers:G.linkage(opening).map(j=>({...j,backbone:{c:[G.finger.c[0],j.side*(opening/2+G.finger.c[1]),G.finger.c[2]],h:G.finger.h.slice()},pad:{c:[G.pad.c[0],j.side*(opening/2+G.pad.c[1]),G.pad.c[2]],h:G.pad.h.slice()}}))};
+      fingers:G.linkage(opening).map(j=>{
+        const compression=state?.padCompression?.[j.side]||[0,0,0],pad=G.padShape?G.padShape(j.side,opening,compression):{c:[G.pad.c[0],j.side*(opening/2+G.pad.c[1]),G.pad.c[2]],h:G.pad.h.slice()};
+        const scale=pad.h.map((v,i)=>v/G.pad.h[i]),base=G.pad.c.map((v,i)=>i===1?j.side*v:v);
+        return {...j,backbone:{c:[G.finger.c[0],j.side*(opening/2+G.finger.c[1]),G.finger.c[2]],h:G.finger.h.slice()},pad,
+          padTransform:{R:[1,0,0,0,1,0,0,0,1],t:pad.c.map((v,i)=>v-base[i]*scale[i]),scale}};
+      })};
+  }
+  function gripperFingerPose(part,side,layout){
+    const jaw=layout.fingers.find(j=>j.side===side);
+    return part.tip?jaw.padTransform:{R:[1,0,0,0,1,0,0,0,1],t:[0,side*layout.gap/2,0]};
   }
   function linkCapsule(length,r){
     const extent=length/2+r;
@@ -412,10 +424,26 @@ uniform vec3 uEye,uKey,uFill,uBase,uRimCol,uFadeTo,uSky,uGround;
 uniform float uSpec,uShine,uRim,uEmit,uFade,uAlpha,uShadowOn,uSurface,uMetal,uRough,uTransmit,uTexture,uRobot;uniform sampler2D uShadow,uLabel;
 float noise(vec3 p){return fract(sin(dot(floor(p),vec3(12.9898,78.233,37.719)))*43758.5453);}
 float fleece(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(noise(vec3(i,0.0)),noise(vec3(i+vec2(1.0,0.0),0.0)),f.x),mix(noise(vec3(i+vec2(0.0,1.0),0.0)),noise(vec3(i+vec2(1.0,1.0),0.0)),f.x),f.y);}
+// Metric foam UVs give sub-millimetre cells; the last component is distance to a membrane.
+vec3 foamCell(vec2 p){vec2 cell=floor(p),f=fract(p),nearest=vec2(0.0);float first=8.0,second=8.0;
+ for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++){vec2 grid=vec2(float(x),float(y)),id=cell+grid;
+ vec2 offset=grid+.18+.64*vec2(noise(vec3(id,3.0)),noise(vec3(id,19.0)))-f;float d=dot(offset,offset);
+ if(d<first){second=first;first=d;nearest=offset;}else second=min(second,d);}
+ return vec3(nearest,sqrt(second)-sqrt(first));}
 float depth(vec2 p){return dot(texture2D(uShadow,p),vec4(1.0/16777216.0,1.0/65536.0,1.0/256.0,1.0))*(255.0/256.0);}
-float shade(vec3 N){if(uShadowOn<0.5)return 1.0;vec3 q=vShadow.xyz/vShadow.w*.5+.5;if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0||q.z>1.0)return 1.0;
- float a=0.0,bias=max(.00035,.0012*(1.0-dot(N,uKey))),gap=max(0.0,q.z-depth(q.xy)),radius=1.0+min(3.0,gap*150.0);
- for(int x=-1;x<=1;x++)for(int y=-1;y<=1;y++)a+=step(q.z-bias,depth(q.xy+vec2(float(x),float(y))*radius/2048.0));return .12+.88*a/9.0;}
+float shadowPCF(vec3 q,vec2 gradient,vec2 uv,float bias){vec2 pixel=uv*2048.0-.5,base=floor(pixel),f=fract(pixel);float visibility=0.0;
+ for(int x=0;x<2;x++)for(int y=0;y<2;y++){vec2 tap=(base+vec2(float(x),float(y))+.5)/2048.0;float weight=mix(1.0-f.x,f.x,float(x))*mix(1.0-f.y,f.y,float(y));
+ visibility+=weight*step(q.z+dot(gradient,tap-q.xy)-bias,depth(tap));}return visibility;}
+float shade(vec3 N){if(uShadowOn<0.5)return 1.0;vec3 q=vShadow.xyz/vShadow.w*.5+.5;vec3 dx=dFdx(q),dy=dFdy(q);if(q.x<0.0||q.x>1.0||q.y<0.0||q.y>1.0||q.z>1.0)return 1.0;
+ // Compare each nearest depth texel against the receiver plane at that texel,
+ // rather than against the centre fragment's depth on a sloping surface.
+ float determinant=dx.x*dy.y-dx.y*dy.x;vec2 gradient=vec2(0.0);
+ if(abs(determinant)>.0000000001)gradient=vec2(dy.y*dx.z-dx.y*dy.z,dx.x*dy.z-dy.x*dx.z)/determinant;
+ vec2 centre=(floor(q.xy*2048.0)+.5)/2048.0;float gap=max(0.0,q.z+dot(gradient,centre-q.xy)-depth(centre)),radius=1.0+min(3.0,gap*150.0),a=0.0;
+ float bias=max(.000025,.00006*(1.0-dot(N,uKey)));
+ // Bilinear comparison weights make penumbrae continuous between map texels.
+ for(int x=0;x<2;x++)for(int y=0;y<2;y++)a+=shadowPCF(q,gradient,q.xy+(vec2(float(x),float(y))-.5)*radius/2048.0,bias);
+ return .12+.88*a*.25;}
 // Analytic studio environment: broad softboxes reflected in the materials, with roughness blur.
 vec3 studio(vec3 r,float rough){float hemi=clamp(r.z*.5+.5,0.0,1.0);vec3 env=mix(vec3(.045,.052,.065),vec3(.32,.37,.45),hemi);
  float a=pow(max(0.0,dot(r,normalize(vec3(-.45,-.55,.8)))),mix(180.0,5.0,rough));
@@ -427,10 +455,13 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
  if(uSurface>3.5&&abs(N.z)>.8){float row=floor(vLocal.y*6.0),fy=fract(vLocal.y*6.0),fx=fract(vLocal.x*1.35+row*.37),seam=min(min(fy,1.0-fy),min(fx,1.0-fx));base*=.96+.07*noise(vec3(row,0,0));base*=mix(.72,1.0,smoothstep(.0,max(.005,fwidth(seam)*1.2),seam));}}
  if(uSurface>2.5&&uSurface<3.5){vec2 uv=vW.xy+vW.z*vec2(.37,-.29);float visible=1.0-smoothstep(.35,2.5,max(fwidth(uv.x),fwidth(uv.y))*400.0);base*=.87+visible*(.20*fleece(uv*1800.0)+.12*fleece(uv*550.0));N=normalize(N+visible*.20*vec3(fleece(uv*1800.0+vec2(17,3))-.5,fleece(uv*1800.0+vec2(5,29))-.5,0));}
  if(uSurface>4.5&&uSurface<5.5){float visible=1.0-smoothstep(.2,1.0,fwidth(vLocal.z*1800.0));float brush=sin(vLocal.z*1800.0+sin(vLocal.y*19.0));rough+=visible*.025*brush;base*=.98+visible*.015*brush;}
- if(uSurface>5.5&&uSurface<6.5){vec2 thread=vUV*1700.0;float visible=1.0-smoothstep(.25,1.2,max(fwidth(thread.x),fwidth(thread.y))),weave=sin(thread.x*6.283)*sin(thread.y*6.283);base*=.97+visible*.035*weave;
- float seam=(1.0-smoothstep(.0004,.0018,abs(vHem.x-.0035)))*.12;float stitches=(1.0-smoothstep(.00015,.00065,abs(vHem.x-.0018)))*smoothstep(.35,.55,sin(vHem.y*3000.0));base*=1.0-seam;base+=vec3(.035)*stitches;
- vec3 tx=dFdx(vW)*dFdy(vUV.y)-dFdy(vW)*dFdx(vUV.y);if(length(tx)>.0000001){tx=normalize(tx);vec3 ty=normalize(cross(N,tx));N=normalize(N+visible*.035*(tx*cos(thread.x*6.283)+ty*cos(thread.y*6.283)));}}
+ if(uSurface>5.5&&uSurface<6.5){vec2 thread=vUV*1700.0,stitch=fract(thread)-.5;float visible=1.0-smoothstep(.25,1.2,max(fwidth(thread.x),fwidth(thread.y))),phase=(stitch.y+.62*abs(stitch.x))*6.283,knit=cos(phase);base*=.98+visible*.025*knit;
+ float collar=(1.0-smoothstep(-.001,0.0,vHem.y))*(1.0-smoothstep(.0045,.006,vHem.x)),rib=cos(abs(vHem.y)*5700.0);float seam=(1.0-smoothstep(.0004,.0018,abs(vHem.x-.0035)))*.12;float stitches=(1.0-smoothstep(.00015,.00065,abs(vHem.x-.0018)))*smoothstep(.35,.55,sin(abs(vHem.y)*3000.0));base*=1.0-seam-collar*(.15+.035*rib);base+=vec3(.035)*stitches;
+ vec3 tx=dFdx(vW)*dFdy(vUV.y)-dFdy(vW)*dFdx(vUV.y);if(length(tx)>.0000001){tx=normalize(tx);vec3 ty=normalize(cross(N,tx));N=normalize(N+visible*.025*sin(phase)*(tx*(.62*sign(stitch.x))+ty));}}
  if(uSurface>6.5&&uSurface<7.5){float ripple=sin(vUV.y*110.0+vUV.x*14.0);rough+=.02*ripple;}
+ if(uSurface>7.5&&uSurface<8.5){vec2 uv=vUV*1350.0;float footprint=max(fwidth(uv.x),fwidth(uv.y)),visible=1.0-smoothstep(.25,.9,footprint),aa=max(.018,footprint*.65);vec3 cell=foamCell(uv);
+ float membrane=1.0-smoothstep(.025-aa,.075+aa,cell.z);base*=.985-visible*(.075*membrane+.012*dot(cell.xy,cell.xy));rough=clamp(rough+visible*.055*membrane,.8,.98);
+ vec3 tx=dFdx(vW)*dFdy(vUV.y)-dFdy(vW)*dFdx(vUV.y);if(length(tx)>.0000001){tx=normalize(tx);vec3 ty=normalize(cross(N,tx));N=normalize(N+visible*.10*(tx*cell.x+ty*cell.y));}}
  float nl=max(dot(N,uKey),0.0),nv=max(dot(N,V),.001),sh=shade(N);vec3 H=normalize(uKey+V);float nh=max(dot(N,H),0.0),vh=max(dot(V,H),0.0);
  float a=rough*rough,a2=a*a,den=nh*nh*(a2-1.0)+1.0,D=a2/(3.14159265*den*den+.0001),k=(rough+1.0)*(rough+1.0)/8.0,G=nv/(nv*(1.0-k)+k)*nl/(nl*(1.0-k)+k);
  vec3 f0=mix(vec3(.04),base,uMetal),F=f0+(1.0-f0)*pow(1.0-vh,5.0),spec=D*G*F/(4.0*nv*max(nl,.001));
@@ -472,19 +503,19 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     floor:{base:lin('#966d49'),spec:.28,shine:45,rim:0},
     wood:{base:lin('#805638'),spec:.18,shine:24,rim:0},plaster:{base:lin('#e2d4b9'),spec:.08,shine:8,rim:0},fabric:{base:[1,1,1],spec:.08,shine:6,rim:0},rug:{base:lin('#706452'),spec:.03,shine:4,rim:0},
     ceramic: { base: lin('#ece8e1'), spec:.85, shine:90, rim:.6, rough:.23 },
-    liquid: { base: lin('#c18a29'), spec:1.2, shine:180, rim:.3, rough:.13, transmit:1, alpha:.42 },
+    liquid: { base: lin('#c18a29'), spec:1.2, shine:180, rim:.3, rough:.16, transmit:.72, alpha:.42 },
     label: { base: lin('#efe7d4'), spec: 0.15, shine: 12, rim: 0.3,rough:.8 }, labelBand: { base: lin('#2d4f8c'), spec: 0.3, shine: 30, rim: 0.4 },
-    foam: {base:lin('#f3ead6'),spec:.12,shine:8,rim:.1},
+    foam: {base:lin('#f3ead6'),spec:.12,shine:8,rim:.1,rough:.86},
     cotton: {base:lin('#536f95'),spec:.12,shine:8,rim:0,rough:.9},
     bottleGlass:{base:lin('#5a3514'),spec:1.1,shine:180,rim:.4,rough:.12,transmit:1,alpha:.42},
     pewter: {base:lin('#a4a5a2'),spec:1,shine:45,rim:.3,metal:.92,rough:.4}, gold:{base:lin('#bd9149'),spec:1,shine:60,rim:.3,metal:.88,rough:.3},
   };
   // the model matrix of a pose {R row-major, t}, scaled by s; and its rotation for the normals (column-major)
   function model4(p, s) {
-    const R = p.R, k = s || 1;
-    return new Float32Array([R[0] * k, R[3] * k, R[6] * k, 0, R[1] * k, R[4] * k, R[7] * k, 0, R[2] * k, R[5] * k, R[8] * k, 0, p.t[0], p.t[1], p.t[2], 1]);
+    const R = p.R, k = Array.isArray(s)||ArrayBuffer.isView(s)?s:[s||1,s||1,s||1];
+    return new Float32Array([R[0] * k[0], R[3] * k[0], R[6] * k[0], 0, R[1] * k[1], R[4] * k[1], R[7] * k[1], 0, R[2] * k[2], R[5] * k[2], R[8] * k[2], 0, p.t[0], p.t[1], p.t[2], 1]);
   }
-  const rot3 = (R) => new Float32Array([R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]]);
+  const rot3 = (R,s) => {const k=Array.isArray(s)||ArrayBuffer.isView(s)?s:[1,1,1];return new Float32Array([R[0]/k[0], R[3]/k[0], R[6]/k[0], R[1]/k[1], R[4]/k[1], R[7]/k[1], R[2]/k[2], R[5]/k[2], R[8]/k[2]]);};
 
   function create(canvas) {
     const gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true, depth: true });
@@ -639,7 +670,7 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
       const attributes=g=>{for(const [location,buffer,size]of [[aPos,g.b,3],[aNrm,g.n,3],[aUV,g.uv,2],[aHem,g.hem,2]]){if(location<0)continue;gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,0,0);}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);};
       const drawG = (g, pose, s) => {
         if(o.game){commands.push({g,pose,s,mat:current});return;}
-        gl.uniformMatrix4fv(U.uModel, false, model4(pose, s)); gl.uniformMatrix3fv(U.uRot, false, rot3(pose.R));
+        gl.uniformMatrix4fv(U.uModel, false, model4(pose, s)); gl.uniformMatrix3fv(U.uRot, false, rot3(pose.R,s));
         gl.bindBuffer(gl.ARRAY_BUFFER, g.b); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, g.n); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 0, 0);
         attributes(g); gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
@@ -683,14 +714,16 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
           setMat(c.radius?'top':c.kind==='shirt'?'cotton':'fabric', 0, lin(c.color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
         // Amber surfaces and streams use the transparent pass; foam stays opaque.
-        const meshes = [...(o.props.liquids || []).map(l=>['liquid'+l.key+(l.layer||''),liquidMesh(l),l.color,l.layer]),...(o.props.streams||[]).map((s,i)=>['stream'+i,LiquidRender.streamMesh(s),s.color])];
-        if(o.props.particles?.length)meshes.push(['beerDrops',LiquidRender.particleMesh(o.props.particles),o.props.streams?.[0]?.color||mats.liquid.base]);
-        for (const [key, mesh, color,layer] of meshes) {
+        const meshes = [...(o.props.liquids || []).map(l=>['liquid'+l.key+(l.layer||''),liquidMesh(l),l.color,l.layer,l.depth]),...(o.props.streams||[]).map((s,i)=>['stream'+i,LiquidRender.streamMesh(s),s.color,null,s.radii?.length?2*s.radii.reduce((a,r)=>a+r,0)/s.radii.length:.004])];
+        if(o.props.particles?.length)meshes.push(['beerDrops',LiquidRender.particleMesh(o.props.particles),o.props.streams?.[0]?.color||mats.liquid.base,null,.0024]);
+        for (const [key, mesh, color,layer,depth] of meshes) {
           liveCloths.add(key);
           let g = clothGPU.get(key);
           if (!g || g.count !== mesh.idx.length || g.vertices !== mesh.pos.length) { if (g) free(g); g = upload(mesh); clothGPU.set(key, g); }
           else updateMesh(g,mesh);
-          setMat(layer==='foam'?'foam':'liquid', 0, Array.isArray(color)?color:lin(color)); drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
+          setMat(layer==='foam'?'foam':'liquid', 0, Array.isArray(color)?color:lin(color));
+          if(layer!=='foam'&&Number.isFinite(depth)){current={...current,alpha:beerOpacity(depth)};applyMat(current);}
+          drawG(g, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] });
         }
         for (const [k, g] of clothGPU) if (!liveCloths.has(k)) { free(g); clothGPU.delete(k); }
       }
@@ -716,8 +749,8 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
         const hot = a.hot ? glow.map((x) => x * (a.hot > 1 ? 1.25 : 1)) : null;
         for(const p of B.hand[a.side]){setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(k.R,k.wrist));}
         const jaw = a.jaw === undefined ? RC.gripper(o.m).gapMax : a.jaw;
-        for (const j of [1, -1]) for(const p of B.finger[j]){setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(k.R,C.add(k.wrist,C.mulv(k.R,[0,j*jaw/2,0]))));}
-        const linkage=gripperLayout(o.m,jaw);
+        const linkage=gripperLayout(o.m,jaw,a.jawState);
+        for (const j of [1, -1]) for(const p of B.finger[j]){const pose=gripperFingerPose(p,j,linkage);setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(C.mul3(k.R,pose.R),C.add(k.wrist,C.mulv(k.R,pose.t))),pose.scale);}
         for(const p of B.linkages){const pose=gripperPartPose(p,linkage);setMat(p.mat,fade,p.grip?hot:null);drawG(p.g,at(C.mul3(k.R,pose.R),C.add(k.wrist,C.mulv(k.R,pose.t))));}
         keep(k.shoulder); keep(k.elbow); keep(C.add(k.wrist, C.mulv(k.R, [0, 0, -o.m.hand]))); keep(C.add(k.shoulder, [0, a.side * 0.08, 0.08]));
       }
@@ -748,13 +781,16 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
         const rows=[row(rt,1/2.2),row(up,1/2.2),row(fw,1/4,-1),[0,0,0,1]],lightPV=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)lightPV[c*4+r]=rows[r][c];
         const bind=(g,pos,nrm)=>{gl.bindBuffer(gl.ARRAY_BUFFER,g.b);gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,3,gl.FLOAT,false,0,0);if(nrm!==null){gl.bindBuffer(gl.ARRAY_BUFFER,g.n);gl.enableVertexAttribArray(nrm);gl.vertexAttribPointer(nrm,3,gl.FLOAT,false,0,0);}gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);};
         if(shadowsSupported){gl.disable(gl.DITHER);gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFB);gl.viewport(0,0,2048,2048);gl.clearColor(1,1,1,1);gl.depthMask(true);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.BLEND);gl.useProgram(depthProg);gl.uniformMatrix4fv(depthPV,false,lightPV);
+          // Props can replace/delete the previous frame's attribute buffers.
+          // Depth needs position only; main paint restores every shaded attribute.
+          for(const location of [aPos,aNrm,aUV,aHem])if(location>=0&&location!==depthPos)gl.disableVertexAttribArray(location);
           for(const q of commands.filter(q=>q.mat.alpha>=1)){gl.uniformMatrix4fv(depthModel,false,model4(q.pose,q.s));bind(q.g,depthPos,null);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);}
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.enable(gl.DITHER);clear();gl.useProgram(prog);gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.uniformMatrix4fv(U.uPV,false,PV);gl.uniformMatrix4fv(U.uLightPV,false,lightPV);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,shadow);gl.uniform1i(U.uShadow,0);gl.uniform1f(U.uShadowOn,shadowsSupported?1:0);gl.uniform3fv(U.uKey,light);gl.uniform1f(U.uAlpha,1);
         gl.uniform3fv(U.uFill,unit([.7,.25,.65]));
-        const paint=q=>{applyMat(q.mat);gl.uniformMatrix4fv(U.uModel,false,model4(q.pose,q.s));gl.uniformMatrix3fv(U.uRot,false,rot3(q.pose.R));attributes(q.g);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);};
+        const paint=q=>{applyMat(q.mat);gl.uniformMatrix4fv(U.uModel,false,model4(q.pose,q.s));gl.uniformMatrix3fv(U.uRot,false,rot3(q.pose.R,q.s));attributes(q.g);gl.drawElements(gl.TRIANGLES,q.g.count,gl.UNSIGNED_SHORT,0);};
         for(const q of commands)if(q.mat.alpha>=1)paint(q);
-        const distance=q=>dot(C.sub(C.add(q.pose.t,C.mulv(q.pose.R,q.g.centre.map(v=>v*(q.s??1)))),cam.eye),cam.fwd);
+        const distance=q=>dot(C.sub(C.add(q.pose.t,C.mulv(q.pose.R,q.g.centre.map((v,i)=>v*(Array.isArray(q.s)||ArrayBuffer.isView(q.s)?q.s[i]:q.s??1)))),cam.eye),cam.fwd);
         gl.depthMask(false);
         for(const q of commands.filter(q=>q.mat.alpha<1).sort((a,b)=>distance(b)-distance(a)))paint(q);
         gl.depthMask(true);gl.uniform1f(U.uAlpha,1);
@@ -766,5 +802,5 @@ void main(){vec3 N=normalize(vN),V=normalize(uEye-vW);if(uTexture>.5&&dot(N,V)<=
     return self;
   }
 
-  return { meshes, actorMeshes, supportLayout, gripperLayout,gripperPartPose,robotPalette:ROBOT_COLORS, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beveledBox, create, lin };
+  return { meshes, actorMeshes, supportLayout, gripperLayout,gripperFingerPose,gripperPartPose,robotPalette:ROBOT_COLORS, propMeshes, compoundMeshes, profileSampler, clothMesh, cableMesh, liquidMesh, beerOpacity, beveledBox, create, lin };
 });

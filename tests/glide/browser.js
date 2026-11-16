@@ -86,7 +86,7 @@
   }
   await navigator.serviceWorker.ready;
   el('verifyAreas').click(); await wait(() => !el('verifyAreas').disabled, 'offline verification');
-  assert(el('saveStatus').textContent.includes('26/26 page files verified') && el('saveStatus').textContent.includes('Incomplete'), 'offline verification distinguishes page readiness from missing saved terrain');
+  assert(el('saveStatus').textContent.includes('28/28 page files verified') && el('saveStatus').textContent.includes('Incomplete'), 'offline verification distinguishes page readiness from missing saved terrain');
   // Exercise a partial offline download, retry, eviction and overlapping-area deletion in this disposable profile.
   // Use a valid fetched PNG for cache writes so this does not download 277 more real tiles.
   const tileURLs = areaKeys({ lat: original.lat, lon: original.lon }), realFetch = window.fetch;

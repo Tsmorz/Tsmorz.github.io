@@ -14,9 +14,9 @@
       assert(handGrab(e),`side ${side}: real gripper picking begins the drag`);
       const d=TB.drive.get(side);
       for(let i=0;i<100;i++){
-        // Repeated large reversals, including the alternate lift plane, force arm
+        // Repeated large reversals, including ignored modifier keys, force arm
         // stops and collisions without replacing any solver or physical state.
-        const altKey=i>=50;if(altKey!==TB.grab.alt)handMove({...e,altKey});
+        const altKey=i>=50;
         const start=d.t.slice(),normal=TB.grab.n.slice(),angle=i*.91;
         handMove({...e,altKey,clientX:e.clientX+Math.sin(angle)*r.width*1.7,clientY:e.clientY+Math.cos(angle*.73)*r.height*1.7});
         await sleep(18);draw3d();frames++;
@@ -36,7 +36,6 @@
       // pointer's last ray hit rather than teleporting it to the accepted target.
       const start=d.t.slice();let reverseTravel=0;
       for(const altKey of [true,false,true]){
-        handMove({...e,altKey});
         for(let i=0;i<40;i++){
           const n=TB.grab.n,delta=C.sub(home,d.t),along=C.sub(delta,n.map(v=>v*delta.reduce((s,x,j)=>s+x*n[j],0))),distance=C.norm(along);
           if(distance<.001)break;

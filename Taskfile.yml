@@ -108,6 +108,7 @@ tasks:
     desc: Check the glide, wind, terrain and saved-area maths behind /glide-path/ (Node, no build)
     cmds:
       - script/test-glide
+      - script/test-glide-aircraft
 
   check:tag-tracker:
     desc: Check the pose, history and plot maths behind /tag-tracker/ (Node, no build; detection too if OpenCV.js is installed)

@@ -82,11 +82,23 @@
   // widest the pads open.
   function gripper(m) {
     const fl = Math.max(0.045, (m && m.hand ? m.hand : MODEL.hand) - 0.045), z = -(0.07 + fl / 2);
+    const tip=z-(fl/2+.006);
     const G={
       gapMax: 0.085, fl,
       body: { type:'cylinder',r:.0375,c: [0, 0, -0.045], h: [.0375,.0375,0.024] },
-      finger: { c: [0, 0.009, z], h: [0.02, 0.009, fl / 2 + 0.006] },
-      pad: { c: [0, 0.0015, -(0.075 + fl * 0.6)], h: [0.016, 0.002, fl * 0.36] },
+      // Robotiq's 2024-04-02 instruction manual, Fig. 5-7: 22 × 38 × 7.8 mm
+      // NBR overmold with a 16.2 mm holder. The metal is
+      // recessed behind the rubber face and tip. Preserve the overall tip reach.
+      finger: { c: [0, 0.0095, z], h: [0.0081, 0.0085, fl / 2 + 0.006-.0008] },
+      pad: { c: [0, 0.0039, tip+.019], h: [0.011, 0.0039, .019] },
+    };
+    // Signed cloth-force/pad-stiffness in the hand frame. Only the pressed face
+    // moves inward; the opposite face remains attached to the metal carrier.
+    G.padShape=(jaw,carrierGap,compression=[0,0,0])=>{
+      if((jaw!==1&&jaw!==-1)||!Number.isFinite(carrierGap)||carrierGap<0||carrierGap>G.gapMax+1e-12||compression.length!==3||!compression.every(Number.isFinite))throw Error('Invalid gripper pad deformation.');
+      const c=[G.pad.c[0]-compression[0]/2,jaw*(carrierGap/2+G.pad.c[1])-compression[1]/2,G.pad.c[2]-compression[2]/2],h=G.pad.h.map((v,i)=>v-Math.abs(compression[i])/2);
+      if(h.some(v=>v<=1e-12))throw Error('Gripper pad compression collapsed its volume.');
+      return {c,h};
     };
     // Robotiq-style two-link mechanics, shared by rendering and colliding sphere chains.
     // The task contact model keeps the pads parallel; it does not simulate adaptive wrapping.

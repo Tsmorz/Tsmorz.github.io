@@ -1,11 +1,11 @@
 // PhysicsCore: the table the tag tracker's robot plays on (a ball, a mug that can tip over), with no DOM, so
 // script/test-tag-tracker can run it in Node. A small rigid-body engine made for this one scene.
 //
-// Bodies: the props (a ball; a mug with a handle) and the robot's two hands. Each has spheres it touches things with
+// Bodies: the props (a ball; a mug with a handle) and the robot's two hands. Most use spheres they touch things with
 // (the ball is one; the mug's are on its rims and handle, all a plane can ever touch on it; a hand's fill its gripper and
 // line its two jaws), and the mug also has its exact shape as a distance function (walls, floor, rounded lip, handle),
-// which the ball and the hands' spheres meet. So every contact is a sphere against: the table (a box), the floor (a
-// plane), the mug's shape, another sphere, or an arm link (a capsule moved by the page, kinematic).
+// which the ball and the hands' legacy prop samples meet. Deformed rubber pads use exact boxes against the table,
+// floor, other hand and arm capsules; their thin faces never create a quadratic sphere grid in empty/cloth worlds.
 // Contacts are solved by sequential impulses at 240 Hz: Coulomb friction, restitution, rolling resistance and spin
 // friction in proportion to the contact force, warm starting; overlap is pushed out by split impulses, which correct
 // position without adding speed. Props at rest sleep until something comes near. Gravity is -z: the plot's frame is z up.
@@ -52,6 +52,13 @@
   function inv3(M) {
     const [a, b, c, d, e, f, g, h, i] = M, A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g, det = a * A + b * B + c * C;
     return [A / det, -(b * i - c * h) / det, (b * f - c * e) / det, B / det, (a * i - c * g) / det, -(a * f - c * d) / det, C / det, -(a * h - b * g) / det, (a * e - b * d) / det];
+  }
+  function physicalTensor(M,positive=false){
+    if(!Array.isArray(M)||M.length!==9||!M.every(Number.isFinite))return false;
+    const s=Math.max(1e-20,...M.map(Math.abs)),det=M[0]*(M[4]*M[8]-M[5]*M[7])-M[1]*(M[3]*M[8]-M[5]*M[6])+M[2]*(M[3]*M[7]-M[4]*M[6]);
+    if([0,4,8].some(i=>M[i]<-s*1e-8)||[1,2,5].some(i=>Math.abs(M[i]-M[(i%3)*3+Math.floor(i/3)])>s*1e-8))return false;
+    if([[0,1],[0,2],[1,2]].some(([a,b])=>M[a*3+a]*M[b*3+b]-M[a*3+b]**2 < -(s**2)*1e-8)||det < -(s**3)*1e-8)return false;
+    return !positive||(M[0]>0&&M[0]*M[4]-M[1]*M[3]>0&&det>0);
   }
   const clampLen = (v, cap) => { const l = norm(v); return l > cap ? [scale(v, cap / l), true] : [v, false]; };
 
@@ -114,7 +121,15 @@
   // other axis); a sphere touching makes a patch `patch` across. It lets go when neither pad has held the prop for `free`
   // s, or when the pinch is `drop` from the pads. `beta`: how much of a drift it puts right each step.
   // The jaws take it once both pads are within `touch` of it (m, the two together).
-  const GRIP = { force: 15, k: 1000, minF: 0.3, mu: 0.75, patch: 0.003, touch: 0.0005, free: 0.025, drop: 0.008, beta: 0.2 };
+  // A conservative 2F-85 squeeze, sufficient for a full bottle's real neck-held
+  // weight/torque. Robotiq specifies 20–235 N grasp force; this model caps each jaw
+  // at 60 N and still limits holding force/torque by the actual pad patch.
+  const GRIP = { force: 60, k: 2000, minF: 0.3, mu: 0.75, patch: 0.003, touch: 0.0005, free: 0.025, drop: 0.008, beta: 0.2 };
+  // GRIP.k is the model stiffness between the loaded rubber faces. Preserve it
+  // with two NBR pads and the carrier in series; these are effective model
+  // parameters, not a factory calibration of the rubber or drive train.
+  const JAW=Object.freeze({padStiffness:9000,carrierStiffness:1/(1/GRIP.k-2/9000)});
+  const jawLoad=(R,jaw,force)=>-jaw*.5*(R[1]*force[0]+R[4]*force[1]+R[7]*force[2]);
   const JAW_SPEED = 0.25;
   // a prop never turns faster than this (rad/s): a guard against a solver blow-up, never reached in the tests
   const W_MAX = 60;
@@ -191,7 +206,26 @@
     return makeBody('cup', { m: CUP.mass, Ib: M.I, off: scale(M.com, -1), sp, sdf: true, bound, mu: CUP.mu, e: CUP.e, crr: CUP.crr, rollR: CUP.R, mat: 'ceramic' });
   }
   // A hand: its spheres in its own frame (the wrist's, moved to its centre of mass) at a jaw gap g. G: RobotCore.gripper.
-  function handSpheres(G, g) {
+  const sampleGrid=(h,r)=>{const span=Math.max(0,h-r),n=Math.max(1,Math.ceil(2*span/(1.5*r)));return span<1e-10?[0]:Array.from({length:n+1},(_,i)=>-span+2*span*i/n);};
+  // Only legacy rigid-prop/SDF contacts need the inscribed rubber samples.
+  // Empty/cotton worlds use the two actual pad boxes, independent of thickness.
+  function padSpheres(G,g,carrierGap=g,padCompression={}) {
+    const out=[];
+    for(const j of [1,-1]){
+      const p=G.padShape?G.padShape(j,carrierGap,padCompression[j]||[0,0,0]):{c:[G.pad.c[0],j*(g/2+G.pad.c[1]),G.pad.c[2]],h:G.pad.h},r=Math.min(...p.h);
+      for(const x of sampleGrid(p.h[0],r))for(const z of sampleGrid(p.h[2],r))out.push({p:sub([p.c[0]+x,p.c[1],p.c[2]+z],HAND.com),r,jaw:j,padU:[p.h[0]>r?x/(p.h[0]-r):0,p.h[2]>r?z/(p.h[2]-r):0],flat:[0,-j,0],mu:PAD_MU,mat:'rubber'});
+    }
+    return out;
+  }
+  function padBoxes(G,h){
+    if(!G)return [];
+    return [1,-1].map(jaw=>{const shape=G.padShape?G.padShape(jaw,h.carrierGap??h.gap,h.padCompression?.[jaw]||[0,0,0]):{c:[G.pad.c[0],jaw*(h.gap/2+G.pad.c[1]),G.pad.c[2]],h:G.pad.h};return {R:h.body.R,t:add(h.body.t,mulv(h.body.R,sub(shape.c,HAND.com))),h:shape.h,jaw,shape,mu:PAD_MU,mat:'rubber'};});
+  }
+  function padMaterialMotion(G,h,box,p){
+    const u=tmulv(box.R,sub(p,box.t)).map((v,k)=>Math.max(-1,Math.min(1,v/box.h[k]))),current=sub(box.shape.c.map((v,k)=>v+u[k]*box.h[k]),HAND.com),start=h._jawStart||{carrierGap:h.carrierGap,padCompression:h.padCompression},old=G.padShape(box.jaw,start.carrierGap,start.padCompression[box.jaw]),previous=sub(old.c.map((v,k)=>v+u[k]*old.h[k]),HAND.com);
+    return {p:current,padU:u,motion:scale(sub(current,previous),1/H)};
+  }
+  function handSpheres(G, g,carrierGap=g,padCompression={}) {
     const c = HAND.com, out = [];
     const at = (p, r, extra) => out.push(Object.assign({ p: sub(p, c), r, mu: ROBOT_MU, mat: 'aluminium' }, extra || {}));
     at([0, 0, -0.012], 0.03);
@@ -201,18 +235,17 @@
       at(G.body.c,r,{palm:true});
       for(let k=0;k<8;k++){const a=k*Math.PI/4;at(add(G.body.c,[ring*Math.cos(a),ring*Math.sin(a),0]),r,{palm:true});}
     }else for(const y of [-0.04,-0.02,0,.02,.04])at([0,y,G.body.c[2]],Math.min(G.body.h[0],G.body.h[2]),{palm:true});
-    const fr = G.finger.h[1], top = G.finger.c[2] + G.finger.h[2] - fr, bot = G.finger.c[2] - G.finger.h[2] + fr;
-    for (const j of [1, -1]) for (const x of [-0.011, 0, 0.011]) for (let k = 0; k < 4; k++) {
-      // a pad's spheres touch with the pad's own flat face (`flat`, pointing into the gap)
-      at([x, j * (g / 2 + fr), top + ((bot - top) * k) / 3], fr, { jaw: j, flat: [0, -j, 0], mu: PAD_MU, mat: 'rubber' });
+    for(const j of [1,-1]){
+      const f=G.finger,r=Math.min(...f.h);
+      for(const x of sampleGrid(f.h[0],r))for(const y of sampleGrid(f.h[1],r))for(const z of sampleGrid(f.h[2],r))at([f.c[0]+x,j*(carrierGap/2+f.c[1]+y),f.c[2]+z],r,{finger:j});
     }
-    for(const jaw of G.linkage?.(g)||[]){
-      for(const s of jaw.segments){
+    for(const jaw of G.linkage?.(carrierGap)||[]){
+      for(const [index,s]of jaw.segments.entries()){
         const d=sub(s.b,s.a),n=Math.max(1,Math.ceil((norm(d)-1e-9)/(1.5*s.r)));
         // Joint spheres cover each endpoint; bounded spacing fills the metal bars.
-        for(let k=1;k<n;k++)at(madd(s.a,d,k/n),s.r,{link:true});
+        for(let k=1;k<n;k++)at(madd(s.a,d,k/n),s.r,{link:true,linkRef:{side:jaw.side,segment:index,t:k/n}});
       }
-      for(const j of jaw.joints)at(j.p,j.r,{link:true});
+      for(const [index,j]of jaw.joints.entries())at(j.p,j.r,{link:true,linkRef:{side:jaw.side,joint:index}});
     }
     return out;
   }
@@ -269,6 +302,13 @@
       const rotated = rMr(s.R || I3, diag(local));
       for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) Ib[a * 3 + b] += rotated[a * 3 + b] + m * ((a === b ? dd : 0) - d[a] * d[b]);
     });
+    // A hollow vessel may use solid collision proxies, but its glass mass must
+    // come from its actual shell rather than pretending that the cavity is solid.
+    if(spec.massProperties){
+      const props=spec.massProperties;
+      if(!Array.isArray(props.center)||props.center.length!==3||!props.center.every(Number.isFinite)||!physicalTensor(props.inertia,true))throw Error('Invalid dry mass properties.');
+      com=props.center.slice();for(let i=0;i<9;i++)Ib[i]=props.inertia[i];
+    }
     for (const s of sp) s.p = sub(s.p, com);
     const bound = Math.max(...sp.map((s) => norm(s.p) + s.r));
     return makeBody(spec.kind || 'prop', { m: mass, Ib, off: scale(com, -1), sp, sdf: true, pieces,
@@ -294,6 +334,56 @@
     const q = add(a, scale(ab, u)), d = sub(c, q), dl = norm(d);
     return { dist: dl - r - rc, n: dl > 1e-9 ? scale(d, 1 / dl) : [0, 0, 1], u };
   }
+  const boxAxes=B=>[0,1,2].map(k=>[B.R[k],B.R[k+3],B.R[k+6]]);
+  const boxPoint=(B,p)=>add(B.t,mulv(B.R,p));
+  const boxCorners=B=>Array.from({length:8},(_,i)=>boxPoint(B,B.h.map((v,k)=>(i&(1<<k)?1:-1)*v)));
+  function closestSegments(a,b,c,d){
+    const u=sub(b,a),v=sub(d,c),w=sub(a,c),A=dot(u,u),B=dot(u,v),C=dot(v,v),D=dot(u,w),E=dot(v,w),den=A*C-B*B;let s=den>1e-20?Math.max(0,Math.min(1,(B*E-C*D)/den)):0,t=C>1e-20?(B*s+E)/C:0;
+    if(t<0){t=0;s=A>1e-20?Math.max(0,Math.min(1,-D/A)):0;}else if(t>1){t=1;s=A>1e-20?Math.max(0,Math.min(1,(B-D)/A)):0;}
+    return {a:madd(a,u,s),b:madd(c,v,t),s,t};
+  }
+  // SAT gives the exact overlap/translation axis. Face clipping retains the
+  // full finite contact polygon, rather than sampling a compressed thin face.
+  function boxBox(A,B){
+    const aa=boxAxes(A),bb=boxAxes(B),delta=sub(A.t,B.t);let dist=-Infinity,n=[0,0,1],feature=null;
+    const test=(axis,kind,i,j)=>{const L=norm(axis);if(L<1e-10)return;axis=scale(axis,1/L);const signed=dot(delta,axis),rA=A.h.reduce((s,h,k)=>s+h*Math.abs(dot(aa[k],axis)),0),rB=B.h.reduce((s,h,k)=>s+h*Math.abs(dot(bb[k],axis)),0),gap=Math.abs(signed)-rA-rB;if(gap>dist+1e-12){dist=gap;n=scale(axis,signed>=0?1:-1);feature={kind,i,j};}};
+    aa.forEach((axis,i)=>test(axis,'a',i));bb.forEach((axis,i)=>test(axis,'b',i));aa.forEach((a,i)=>bb.forEach((b,j)=>test(cross(a,b),'edge',i,j)));
+    const face=(box,axes,k,out)=>{const sign=dot(axes[k],out)>=0?1:-1,other=[0,1,2].filter(i=>i!==k),centre=madd(box.t,axes[k],sign*box.h[k]);return {centre,axes:other.map(i=>axes[i]),half:other.map(i=>box.h[i]),polygon:[[-1,-1],[1,-1],[1,1],[-1,1]].map(s=>add(centre,add(scale(axes[other[0]],s[0]*box.h[other[0]]),scale(axes[other[1]],s[1]*box.h[other[1]]))))};};
+    let points=[];
+    if(feature.kind==='edge'){
+      const edge=(box,axes,k,direction)=>{let centre=box.t.slice();for(let i=0;i<3;i++)if(i!==k)centre=madd(centre,axes[i],(dot(axes[i],direction)>=0?1:-1)*box.h[i]);return [madd(centre,axes[k],-box.h[k]),madd(centre,axes[k],box.h[k])];};
+      const ea=edge(A,aa,feature.i,scale(n,-1)),eb=edge(B,bb,feature.j,n),closest=closestSegments(...ea,...eb);points=[{p:closest.a,dist}];
+    }else{
+      const refA=feature.kind==='a',reference=refA?A:B,ra=refA?aa:bb,incident=refA?B:A,ia=refA?bb:aa,out=refA?scale(n,-1):n,ref=face(reference,ra,feature.i,out);let k=0;for(let i=1;i<3;i++)if(Math.abs(dot(ia[i],out))>Math.abs(dot(ia[k],out)))k=i;
+      let polygon=face(incident,ia,k,scale(out,-1)).polygon;
+      for(let axis=0;axis<2;axis++)for(const sign of [-1,1]){
+        const normal=scale(ref.axes[axis],sign),offset=dot(normal,ref.centre)+ref.half[axis],clipped=[];
+        for(let i=0;i<polygon.length;i++){const a=polygon[i],b=polygon[(i+1)%polygon.length],da=dot(normal,a)-offset,db=dot(normal,b)-offset;if(da<=1e-10)clipped.push(a);if((da<0&&db>0)||(da>0&&db<0))clipped.push(lerp(a,b,da/(da-db)));}polygon=clipped;
+      }
+      points=polygon.map(p=>{const d=dot(sub(p,ref.centre),out);return {p:refA?madd(p,out,-d):p,dist:d};});
+    }
+    return {dist,n,points};
+  }
+  // Piecewise-quadratic minimization of a segment against a box is exact and
+  // bounded by its six face crossings, irrespective of rubber thickness.
+  function boxCapsule(B,a,b,r){
+    const start=tmulv(B.R,sub(a,B.t)),end=tmulv(B.R,sub(b,B.t)),delta=sub(end,start),breaks=[0,1];
+    for(let k=0;k<3;k++)if(Math.abs(delta[k])>1e-15)for(const sign of [-1,1]){const t=(sign*B.h[k]-start[k])/delta[k];if(t>0&&t<1)breaks.push(t);}breaks.sort((a,b)=>a-b);
+    let best=Infinity,u=0,local=null,closest=null;
+    const at=t=>{const p=madd(start,delta,t),q=p.map((v,k)=>Math.max(-B.h[k],Math.min(B.h[k],v))),distance=dot(sub(p,q),sub(p,q));if(distance<best){best=distance;u=t;local=p;closest=q;}};
+    for(let i=0;i<breaks.length-1;i++){const lo=breaks[i],hi=breaks[i+1],mid=(lo+hi)/2;let numerator=0,denominator=0;for(let k=0;k<3;k++){const p=start[k]+delta[k]*mid;if(Math.abs(p)>B.h[k]){numerator+=delta[k]*(start[k]-Math.sign(p)*B.h[k]);denominator+=delta[k]*delta[k];}}at(lo);at(hi);if(denominator>0)at(Math.max(lo,Math.min(hi,-numerator/denominator)));}
+    if(best>1e-20){const length=Math.sqrt(best),out=mulv(B.R,scale(sub(local,closest),1/length));return {dist:length-r,n:scale(out,-1),p:boxPoint(B,closest),u};}
+    // If the axis crosses the box, also test edge/axis separating directions:
+    // a diagonal capsule can leave through an edge before either whole face.
+    const axes=boxAxes(B),segment=sub(b,a),centre=scale(add(a,b),.5),directions=[...axes,...axes.map(axis=>cross(axis,segment))];
+    for(const corner of boxCorners(B)){const t=dot(segment,segment)>1e-20?Math.max(0,Math.min(1,dot(sub(corner,a),segment)/dot(segment,segment))):0;directions.push(sub(corner,madd(a,segment,t)));}
+    let depth=Infinity,n=[0,0,1];
+    for(let axis of directions){const L=norm(axis);if(L<1e-12)continue;axis=scale(axis,1/L);const signed=dot(sub(B.t,centre),axis),d=B.h.reduce((v,h,k)=>v+h*Math.abs(dot(axes[k],axis)),0)+Math.abs(dot(segment,axis))/2+r-Math.abs(signed);if(d<depth){depth=d;n=scale(axis,signed>=0?1:-1);}}
+    const outward=scale(n,-1),coordinates=axes.map((axis,k)=>Math.abs(dot(axis,outward))<1e-9?0:Math.sign(dot(axis,outward))*B.h[k]),free=axes.map((axis,k)=>Math.abs(dot(axis,outward))<1e-9?k:-1).filter(k=>k>=0);let p;
+    if(free.length===1){const k=free[0],lo=coordinates.slice(),hi=coordinates.slice();lo[k]=-B.h[k];hi[k]=B.h[k];const witness=closestSegments(boxPoint(B,lo),boxPoint(B,hi),a,b);p=witness.a;u=witness.t;}
+    else{u=dot(segment,n)>=0?1:0;const cap=u?end:start;for(const k of free)coordinates[k]=Math.max(-B.h[k],Math.min(B.h[k],cap[k]));p=boxPoint(B,coordinates);}
+    return {dist:-depth,n,p,u};
+  }
   const tangents = (n) => { const a = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0], t1 = unit(cross(n, a)); return [t1, cross(n, t1)]; };
 
   // The world. opts: { table: {R, t (the middle of its top), size: [x, y] (m), thick, mu (its grip; TABLE_MU, a rubber
@@ -303,11 +393,66 @@
     const o = opts || {}, G = o.gripper, table = o.table || null;
     const tableBox = table ? { R: table.R, t: add(table.t, mulv(table.R, [0, 0, -(table.thick || 0.03) / 2])), h: [table.size[0] / 2, table.size[1] / 2, (table.thick || 0.03) / 2] } : null;
     const floorZ = o.floor === undefined ? (table ? table.t[2] - 0.75 : -1) : o.floor, tableMu = table && table.mu !== undefined ? table.mu : TABLE_MU;
-    const W = { bodies: [], hands: {}, time: 0, carry: 0, warm: new Map(), table, tableBox, floorZ, starts: [], capped: 0, record: null, respawns: 0, cloths: [], cables: [], mechanisms: [], contactGenerators: [] };
+    const W = { bodies: [], hands: {}, time: 0, carry: 0, warm: new Map(), table, tableBox, floorZ, gripper:G, robotLinks:[], contactState:null, starts: [], capped: 0, record: null, respawns: 0, cloths: [], cables: [], preStep:[], mechanisms: [], contactGenerators: [] };
     let prevLinks = new Map(), nextLinks = [], nextHands = [];
     const touching = []; // props touching each other this substep
     let acc = null; // the step's sums for W.record
     const lastTouch = new Map(); // when each pair last touched, for impacts
+    const emptyCompression=()=>({'1':[0,0,0],'-1':[0,0,0]}),clipForce=value=>Math.max(-GRIP.force,Math.min(GRIP.force,value));
+    const jawState=h=>({carrierGap:h.carrierGap??h.gap,padCompression:Object.fromEntries([1,-1].map(j=>[j,(h.padCompression?.[j]||[0,0,0]).slice()]))});
+    function prepareJaw(h){
+      if(!Number.isFinite(h.carrierGap))h.carrierGap=h.gap;
+      if(!h.padCompression)h.padCompression=emptyCompression();
+      if(!Number.isFinite(h.driveGap))h.driveGap=h.carrierGap;
+      h._jawOpening=h.target>=h.gap-1e-12;h._jawStartCommitted=h._jawCommitted===true;
+      h._jawStart=jawState(h);h._jawStartPressure=h.fabricForce||0;h._jawBaseline=null;h._jawCommitted=false;
+      // An opening command releases a stored closing spring immediately. The
+      // unloaded drive then retains the same full-gap speed limit as free jaws.
+      if(h._jawOpening)h.driveGap=Math.max(h.driveGap,h.carrierGap);
+      h.driveGap+=Math.max(-JAW_SPEED*H,Math.min(JAW_SPEED*H,h.target-h.driveGap));
+    }
+    function refreshJaw(h,start=h._jawStart||jawState(h)){
+      const b=h.body,previous=b.sp,next=handSpheres(G,h.gap,h.carrierGap,h.padCompression),oldLinks=G.linkage?.(start.carrierGap)||[];
+      if(next.length!==previous.length)W.warm.clear(); // sphere topology changed; old point impulses no longer match
+      h.carrierRate=(h.carrierGap-start.carrierGap)/H;
+      for(const s of next){
+        if(s.finger)s.motion=[0,s.finger*h.carrierRate/2,0];
+        else if(s.jaw&&G.padShape){
+          const old=G.padShape(s.jaw,start.carrierGap,start.padCompression[s.jaw]),r=Math.min(...old.h),at=[old.c[0]+s.padU[0]*(old.h[0]-r),old.c[1],old.c[2]+s.padU[1]*(old.h[2]-r)];
+          s.motion=scale(sub(s.p,sub(at,HAND.com)),1/H);s.radiusRate=(s.r-r)/H;
+        }else if(s.linkRef){
+          const ref=s.linkRef,jaw=oldLinks.find(j=>j.side===ref.side),part=jaw&&(ref.joint===undefined?jaw.segments[ref.segment]:jaw.joints[ref.joint]),point=part&&(ref.joint===undefined?lerp(part.a,part.b,ref.t):part.p);
+          if(point)s.motion=scale(sub(s.p,sub(point,HAND.com)),1/H);
+        }
+      }
+      b.padBoxes=G.padShape?[1,-1].map(jaw=>{const shape=G.padShape(jaw,h.carrierGap,h.padCompression[jaw]);return {p:sub(shape.c,HAND.com),h:shape.h,jaw};}):[];
+      const padBound=Math.max(0,...b.padBoxes.map(box=>norm(box.p)+norm(box.h)));
+      b.sp=next;b.bound=Math.max(HAND.bound,padBound,...next.map(s=>norm(s.p)+s.r));
+      h.jawRate=(h.gap-(h._jawStartGap??h.gap))/H;
+    }
+    // One baseline and one final commit per fixed substep. All cloth normal and
+    // tangent loads share the full-gap actuator coordinate; neither jaw gets a
+    // second spring or force budget. A rigid grasp keeps its existing solver.
+    W.jawActuator=function(side){
+      const h=W.hands[side];if(!h||h.grip||!h._jawStart)return null;
+      if(!h._jawBaseline){
+        const force=clipForce(JAW.carrierStiffness*(h.carrierGap-h.driveGap)),freezeCompression=value=>Object.freeze(Object.fromEntries([1,-1].map(j=>[j,Object.freeze(value[j].slice())]))),compression=freezeCompression(h.padCompression),startCompression=freezeCompression(h._jawStart.padCompression);
+        h._jawBaseline=Object.freeze({side,gap:h.gap,carrierGap:h.carrierGap,driveGap:h.driveGap,restOffset:h.driveGap-h.carrierGap,padCompression:compression,startCarrierGap:h._jawStart.carrierGap,startPadCompression:startCompression,dt:H,force,rawForce:JAW.carrierStiffness*(h.carrierGap-h.driveGap),preload:Math.max(0,force),nominalPreload:Math.max(0,clipForce(GRIP.k*(h.gap-h.driveGap))),stiffness:JAW.carrierStiffness,compliance:1/JAW.carrierStiffness,padStiffness:JAW.padStiffness,maxForce:GRIP.force,minGap:0,maxGap:G.gapMax,opening:h._jawOpening});
+      }
+      return h._jawBaseline;
+    };
+    W.applyJawActuator=function(side,baseline,result){
+      const h=W.hands[side];if(!h||baseline!==h._jawBaseline||!baseline||h._jawCommitted)throw Error('Stale or repeated jaw actuator commit.');
+      const carrierGap=result.carrierGap,load=result.load,compression=result.padCompression,pressure=result.pressure||{'1':0,'-1':0};
+      if(!Number.isFinite(carrierGap)||carrierGap<0||carrierGap>G.gapMax||!Number.isFinite(load)||!compression||[1,-1].some(j=>!Array.isArray(compression[j])||compression[j].length!==3||!compression[j].every(Number.isFinite)||!Number.isFinite(pressure[j])||pressure[j]<0))throw Error('Invalid jaw actuator result.');
+      const plus=G.padShape(1,carrierGap,compression[1]),minus=G.padShape(-1,carrierGap,compression[-1]),gap=plus.c[1]-plus.h[1]-(minus.c[1]+minus.h[1]),atLow=carrierGap<=1e-12,atHigh=carrierGap>=G.gapMax-1e-12;
+      if(gap<0||result.gap!==undefined&&(!Number.isFinite(result.gap)||Math.abs(result.gap-gap)>1e-9))throw Error('Jaw result does not match its loaded rubber faces.');
+      if(load>GRIP.force+1e-9&&!atHigh||load< -GRIP.force-1e-9&&!atLow)throw Error('Jaw actuator load exceeds its force limit without a mechanical stop.');
+      const force=clipForce(JAW.carrierStiffness*(carrierGap-h.driveGap)),imbalance=load-force,tolerance=result.tolerance===undefined?1e-6:JAW.carrierStiffness*result.tolerance;
+      if(!(tolerance>0&&Number.isFinite(tolerance))||!atLow&&!atHigh&&Math.abs(imbalance)>tolerance||atLow&&imbalance>tolerance||atHigh&&imbalance< -tolerance)throw Error('Jaw actuator result violates spring or mechanical-stop equilibrium.');
+      h.carrierGap=carrierGap;h.padCompression=Object.fromEntries([1,-1].map(j=>[j,compression[j].slice()]));h.gap=gap;h.jawLoad=load;h.jawForce=force;h.jawStopForce=atLow||atHigh?imbalance:0;h.jawEquilibriumResidual=Math.abs(imbalance-h.jawStopForce);
+      h.fabricForce=h.F=Math.min(GRIP.force,pressure[1],pressure[-1]);h._jawCommitted=true;refreshJaw(h);return {gap:h.gap,carrierGap:h.carrierGap,force:h.jawForce,stopForce:h.jawStopForce};
+    };
 
     W.add = function (kind, pos, Rq) {
       const b = typeof kind === 'object' ? compoundBody(kind) : kind === 'ball' ? ballBody() : cupBody();
@@ -315,23 +460,116 @@
       W.bodies.push(b); W.starts.push({ pos: pos.slice(), R: (Rq || I3).slice() });
       return b;
     };
+    const parallelAxis=(mass,d)=>{const r2=dot(d,d);return I3.map((v,i)=>mass*(v*r2-d[Math.floor(i/3)]*d[i%3]));};
+    function applyMass(b,mass,center,inertia,spheres){
+      b.m=mass;b.invM=1/mass;b.Ib=inertia.slice();b.invIb=inv3(b.Ib);b.off=scale(center,-1);
+      b.sp=spheres.map(s=>({...s,p:sub(s.p,center)}));b.bound=Math.max(...b.sp.map(s=>norm(s.p)+s.r));
+      b.iW=rMr(b.R,b.invIb);b.Iw=rMr(b.R,b.Ib);b.im=b.asleep||b.fixed?0:b.invM;b.iWe=b.asleep||b.fixed?Array(9).fill(0):b.iW;
+    }
+    function restoreDry(b){
+      const dry=b.dryMass;if(!dry)return;
+      applyMass(b,dry.mass,dry.center,dry.inertia,dry.spheres);b.fluid=null;
+    }
+    // Fluid moments use the vessel's shape frame. Fluxes are signed world-space
+    // masses/velocities at the lip or impact point. Mixing is inelastic, while
+    // total linear and angular momentum (about the world origin) is conserved.
+    W.setFluid=function(b,fluid,fluxes=[]){
+      if(!W.bodies.includes(b)||b.fixed)throw Error('Fluid needs a dynamic vessel in this world.');
+      const mass=fluid?.mass,center=fluid?.center,inertia=fluid?.inertia;
+      if(!Number.isFinite(mass)||mass<0||!Array.isArray(center)||center.length!==3||!center.every(Number.isFinite)||!Array.isArray(inertia)||inertia.length!==9||!inertia.every(Number.isFinite))throw Error('Invalid fluid mass properties.');
+      if(!physicalTensor(inertia))throw Error('Fluid inertia must be positive semidefinite.');
+      for(const f of fluxes)if(!Number.isFinite(f.mass)||!Array.isArray(f.point)||f.point.length!==3||!f.point.every(Number.isFinite)||!Array.isArray(f.velocity)||f.velocity.length!==3||!f.velocity.every(Number.isFinite))throw Error('Invalid fluid momentum flux.');
+      const oldCenter=scale(b.off,-1),origin=add(b.t,mulv(b.R,b.off)),oldMass=b.m,oldTensor=b.Ib;
+      const dry=b.dryMass||{mass:b.m,center:oldCenter.slice(),inertia:b.Ib.slice(),spheres:b.sp.map(s=>({...s,p:add(s.p,oldCenter)}))};
+      const total=dry.mass+mass,com=scale(add(scale(dry.center,dry.mass),scale(center,mass)),1/total);
+      const a=parallelAxis(dry.mass,sub(dry.center,com)),c=parallelAxis(mass,sub(center,com));
+      const tensor=dry.inertia.map((v,i)=>v+inertia[i]+a[i]+c[i]);
+      if(!physicalTensor(tensor,true))throw Error('Fluid produced a singular vessel inertia.');
+      if(fluxes.length&&Math.abs(fluxes.reduce((sum,f)=>sum+f.mass,0)-(total-oldMass))>1e-8)throw Error('Fluid mass and momentum flux disagree.');
+      let momentum=scale(b.v,oldMass),angular=add(mulv(rMr(b.R,b.Ib),b.w),cross(b.t,momentum));
+      for(const f of fluxes){const p=scale(f.velocity,f.mass);momentum=add(momentum,p);angular=add(angular,cross(f.point,p));}
+      const next=add(origin,mulv(b.R,com)),shift=sub(oldCenter,com),worldShift=sub(b.t,next);
+      b.dryMass=dry;applyMass(b,total,com,tensor,dry.spheres);b.t=next;
+      b.v=scale(momentum,1/total);b.w=mulv(b.iW,sub(angular,cross(next,momentum)));
+      for(const h of Object.values(W.hands))if(h.grip?.body===b)h.grip.pB=add(h.grip.pB,shift);
+      if(b.externalImpulse)b.externalImpulse.angular=add(b.externalImpulse.angular,cross(worldShift,b.externalImpulse.linear));
+      b.fluid={mass,center:center.slice(),inertia:inertia.slice()};
+      const changed=Math.abs(total-oldMass)>1e-9||norm(shift)>1e-7||tensor.some((v,i)=>Math.abs(v-oldTensor[i])>1e-10);
+      if(changed){for(const x of [b,...(b.group||[])])if(!x.fixed){x.asleep=false;x.still=0;x.im=x.invM;if(x.iW)x.iWe=x.iW;}}
+      return b.fluid;
+    };
+    // A jet hitting an exterior wall, prop or robot transfers the same impulse
+    // that the parcel loses. A fixed fixture absorbs it without moving.
+    W.applyImpulse=function(b,impulse,point){
+      if(!W.bodies.includes(b)&&!Object.values(W.hands).some(h=>h.body===b))throw Error('Impulse body is not in this world.');
+      if(!Array.isArray(impulse)||impulse.length!==3||!impulse.every(Number.isFinite)||!Array.isArray(point)||point.length!==3||!point.every(Number.isFinite))throw Error('Invalid world impulse.');
+      if(b.fixed)return false;
+      const torque=cross(sub(point,b.t),impulse);b.iW=rMr(b.R,b.invIb);b.Iw=rMr(b.R,b.Ib);
+      b.v=madd(b.v,impulse,b.invM);b.w=add(b.w,mulv(b.iW,torque));
+      for(const x of [b,...(b.group||[])])if(!x.fixed){x.asleep=false;x.still=0;x.im=x.invM;if(x.iW)x.iWe=x.iW;}
+      if(b.kind==='hand'&&acc&&W.contactState?.hands[b.side]){
+        const h=handAcc(b);h.f=add(h.f,impulse);h.tau=add(h.tau,torque);
+        W.contactState.hands[b.side].force=madd(W.contactState.hands[b.side].force,impulse,1/H);
+      }
+      return true;
+    };
+    // A deformable solve uses this frozen COM/mobility in its Schur response.
+    // Commit its aggregate wrench at the SAME time level as the cloth, rather
+    // than leaving a certified virtual pose behind a next-step impulse queue.
+    const deformableTokens=new WeakMap(),deformableVersions=new WeakMap();
+    const freezeVector=value=>Object.freeze(Array.from(value));
+    const ownsBody=b=>W.bodies.includes(b)||Object.values(W.hands).some(h=>h.body===b);
+    W.deformableResponse=function(b,dt){
+      if(!ownsBody(b)||!(dt>0&&Number.isFinite(dt)))throw Error('Invalid deformable response body or timestep.');
+      const inverseMass=b.fixed?0:b.invM,inverseInertia=b.fixed?Array(9).fill(0):rMr(b.R,b.invIb),inertia=rMr(b.R,b.Ib);
+      if(!(inverseMass>=0&&Number.isFinite(inverseMass))||!inverseInertia.every(Number.isFinite))throw Error('Invalid deformable body mobility.');
+      const linearMomentum=scale(b.v,b.m),angularMomentum=add(mulv(inertia,b.w),cross(b.t,linearMomentum));
+      const token=Object.freeze({dt,fixed:!!b.fixed,mass:b.m,position:freezeVector(b.t),rotation:freezeVector(b.R),velocity:freezeVector(b.v),angularVelocity:freezeVector(b.w),inverseMass,inverseInertia:freezeVector(inverseInertia),linearMomentum:freezeVector(linearMomentum),angularMomentum:freezeVector(angularMomentum)});
+      deformableTokens.set(token,{body:b,version:deformableVersions.get(b)||0,quaternion:(b.q||qOf(b.R)).slice(),inertia:b.Ib.slice(),inverseBodyInertia:b.invIb.slice(),used:false});
+      return token;
+    };
+    W.applyDeformableResponse=function(token,wrench){
+      const saved=deformableTokens.get(token),b=saved?.body,same=(a,c)=>a.length===c.length&&a.every((v,i)=>v===c[i]);
+      if(!saved||saved.used||!ownsBody(b)||saved.version!==(deformableVersions.get(b)||0)||b.m!==token.mass||!!b.fixed!==token.fixed||!same(b.t,token.position)||!same(b.R,token.rotation)||!same(b.v,token.velocity)||!same(b.w,token.angularVelocity)||!same(b.Ib,saved.inertia)||!same(b.invIb,saved.inverseBodyInertia))throw Error('Stale or repeated deformable response commit.');
+      const force=wrench?.force,torque=wrench?.torque;
+      if(!Array.isArray(force)||force.length!==3||!force.every(Number.isFinite)||!Array.isArray(torque)||torque.length!==3||!torque.every(Number.isFinite))throw Error('Invalid deformable wrench.');
+      const dt=token.dt,impulse=scale(force,dt),angularImpulse=scale(torque,dt),translation=scale(force,token.inverseMass*dt*dt),rotation=scale(mulv(token.inverseInertia,torque),dt*dt);
+      if(![...translation,...rotation,...impulse,...angularImpulse].every(Number.isFinite))throw Error('Nonfinite deformable response.');
+      let next;
+      if(!token.fixed){
+        const momentum=add(token.linearMomentum,impulse),angular=add(token.angularMomentum,add(angularImpulse,cross(token.position,impulse)));
+        const t=add(token.position,translation),q=qstep(saved.quaternion,rotation,1),R=rOf(q),iW=rMr(R,b.invIb),Iw=rMr(R,b.Ib),v=scale(momentum,1/b.m),w=mulv(iW,sub(angular,cross(t,momentum)));
+        if(![...t,...q,...R,...iW,...Iw,...v,...w].every(Number.isFinite))throw Error('Nonfinite deformable response state.');
+        next={t,q,R,iW,Iw,v,w};
+      }
+      saved.used=true;deformableVersions.set(b,saved.version+1);
+      if(next){
+        Object.assign(b,next);
+        // Other subsystems may already own a deferred impulse. Transport its
+        // moment arm without consuming or duplicating that independent impulse.
+        if(b.externalImpulse)b.externalImpulse.angular=add(b.externalImpulse.angular,cross(scale(translation,-1),b.externalImpulse.linear));
+        for(const x of [b,...(b.group||[])])if(!x.fixed){x.asleep=false;x.still=0;x.im=x.invM;if(x.iW)x.iWe=x.iW;}
+      }
+      return {translation,rotation,impulse,angularImpulse,torqueAtNewCOM:sub(torque,cross(translation,force))};
+    };
     // a body's shape frame (the ball's centre, the mug's base) at pos, turned R
     function place(b, pos, R) { b.R = R.slice(); b.q = qOf(R); b.t = add(pos, mulv(R, scale(b.off, -1))); b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.asleep = false; b.still = 0; b.lost = 0; b.group = []; b.externalImpulse = null; b.insertion = null; }
     W.reset = function () {
       W.resetRobot();
-      W.bodies.forEach((b, i) => place(b, W.starts[i].pos, W.starts[i].R));
+      W.bodies.forEach((b, i) => {restoreDry(b);place(b, W.starts[i].pos, W.starts[i].R);});
       W.cloths.forEach((c) => c.reset()); W.cables.forEach(c => c.reset());
       W.warm.clear(); W.record = null; lastTouch.clear(); W.respawns = 0; W.carry = 0;
     };
     // A task reset has no path from the old hands/arms to the new ones. Seed both
     // ends of interpolation, fresh jaws and free-body state without taking a step.
     W.resetRobot = function (robot) {
-      W.hands={};prevLinks=new Map();nextLinks=robot?.links||[];nextHands=robot?.hands||[];
+      W.hands={};prevLinks=new Map();nextLinks=robot?.links||[];nextHands=robot?.hands||[];W.robotLinks=nextLinks;W.contactState=null;
       for(const L of nextLinks)prevLinks.set(L.id,{a:L.a.slice(),b:L.b.slice()});
       for(const hd of nextHands){
         const body=handBody(G),pose={R:hd.pose.R.slice(),t:hd.pose.t.slice()},gap=Math.max(0,Math.min(1,hd.opening??1))*G.gapMax;
         body.side=hd.side;place(body,pose.t,pose.R);body.sp=handSpheres(G,gap);
-        W.hands[hd.side]={side:hd.side,body,gap,target:gap,grip:null,F:0,touch:[null,null],pads:[[],[]],aim:pose};
+        W.hands[hd.side]={side:hd.side,body,gap,carrierGap:gap,driveGap:gap,padCompression:emptyCompression(),target:gap,grip:null,F:0,fabricGap:null,fabricForce:0,touch:[null,null],pads:[[],[]],aim:pose};
+        refreshJaw(W.hands[hd.side]);
       }
       W.warm.clear();W.record=null;lastTouch.clear();touching.length=0;acc=null;W.carry=0;
     };
@@ -341,11 +579,11 @@
     W.initialize = function (robot) {
       W.resetRobot(robot);
       if(!W.bodies.some(b=>!b.fixed))return;
-      const time=W.time,mechanisms=W.mechanisms;W.mechanisms=[];
+      const time=W.time,mechanisms=W.mechanisms,preStep=W.preStep;W.mechanisms=[];W.preStep=[];
       try{for(let i=0;i<240;i++)W.step(H);}finally{
-        W.mechanisms=mechanisms;const elapsed=W.time-time;W.time=time;
+        W.mechanisms=mechanisms;W.preStep=preStep;const elapsed=W.time-time;W.time=time;
         for(const [key,at]of lastTouch)lastTouch.set(key,at-elapsed);
-        W.record=null;W.carry=0;
+        W.record=null;W.contactState=null;W.carry=0;
       }
     };
     // where the page draws a body's shape (or a hand's wrist)
@@ -403,6 +641,7 @@
     };
 
     function substep(a0, a1, links, hands) {
+      for(const step of W.preStep)step(H);
       const props = W.bodies, hb = hands.map((x) => x.h.body);
       // a sleeping prop is still there, but nothing moves it: it meets the others as if it were fixed
       const Z = [0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -413,10 +652,12 @@
         b.im = b.asleep || b.fixed ? 0 : b.invM; b.iWe = b.asleep || b.fixed ? Z : b.iW; }
       // the arm links now (a1) and a moment ago (a0), for their velocities
       const kin = links.map((L) => ({ id: L.id, r: L.r, a: lerp(L.a0, L.a1, a1), b: lerp(L.b0, L.b1, a1), pa: lerp(L.a0, L.a1, a0), pb: lerp(L.b0, L.b1, a0) }));
+      W.robotLinks=kin;
       // the hands: their jaws, then pulled towards the arm
       for (const x of hands) {
         const h = x.h, b = h.body, T0 = { R: rOf(nlerp(x.q0, x.q1, a0)), t: lerp(x.t0, x.t1, a0) }, T1 = { R: rOf(nlerp(x.q0, x.q1, a1)), t: lerp(x.t0, x.t1, a1) };
-        const g0 = h.gap, squeeze = Math.min(GRIP.force, GRIP.k * (h.gap - h.target));
+        const g0 = h.gap;prepareJaw(h);h._jawStartGap=g0;
+        const squeeze = Math.min(GRIP.force, GRIP.k * (h.gap - h.target));
         if (h.grip) {
           const g = h.grip;
           g.free = h.touch[0] === g.body && h.touch[1] === g.body ? 0 : g.free + H;
@@ -436,12 +677,26 @@
           else if (h.target > h.gap) h.gap = Math.min(h.target, h.gap + JAW_SPEED * H);
           else if (h.target < h.gap) h.gap = Math.max(h.target, h.gap - JAW_SPEED * H);
         }
-        h.jawRate = (h.gap - g0) / H;
-        const previous=b.sp;b.sp=handSpheres(G,h.gap);b.bound=HAND.bound;
-        for(let i=0;i<b.sp.length;i++){
-          const s=b.sp[i];b.bound=Math.max(b.bound,norm(s.p)+s.r);
-          if(s.link&&previous[i]?.link)s.motion=scale(sub(s.p,previous[i].p),1/H);
+        // Fabric has a finite clamped thickness just like a rigid prop. Its solver
+        // supplies that gap; normal force starts only when the pads reach it.
+        h.fabricForce=0;
+        if(!h.grip&&Number.isFinite(h.fabricGap)&&h.fabricGap>0&&h.target<h.fabricGap){
+          const gap=Math.min(G.gapMax,h.fabricGap);h.gap=Math.max(h.gap,gap);
+          if(h.gap<=gap+1e-9)h.fabricForce=h.F=Math.min(GRIP.force,GRIP.k*(gap-h.target));
         }
+        if(W.cloths.length&&!h.grip){
+          // Carrier effort and pad deformation are distinct. A toe/side load
+          // can compress rubber with zero closing effort; clearing it here
+          // would replay the same recovery as new boundary motion every step.
+          // The fresh cloth result replaces it, or the no-commit path clears it.
+          h.padCompression=h._jawStartCommitted?h._jawStart.padCompression:emptyCompression();
+          if(!(h.jawLoad>0)||h._jawOpening){h.carrierGap=h.driveGap;h.fabricForce=0;}
+          else{h.carrierGap=h._jawStart.carrierGap;h.fabricForce=h._jawStartPressure;}
+          if(G.padShape){const plus=G.padShape(1,h.carrierGap,h.padCompression[1]),minus=G.padShape(-1,h.carrierGap,h.padCompression[-1]);h.gap=plus.c[1]-plus.h[1]-(minus.c[1]+minus.h[1]);}
+          else h.gap=h.carrierGap;
+          h.F=h.fabricForce;
+        }else{h.carrierGap=h.gap;h.padCompression=emptyCompression();}
+        refreshJaw(h);
         h.touch = [null, null]; h.pads = [[], []];
         const c0 = add(T0.t, mulv(T0.R, HAND.com)), c1 = add(T1.t, mulv(T1.R, HAND.com)), K = HAND.w;
         const [F] = clampLen(scale(add(scale(sub(c1, b.t), K * K), scale(sub(scale(sub(c1, c0), 1 / H), b.v), 2 * K)), HAND.mass), HAND.force);
@@ -468,7 +723,23 @@
       // contacts
       const cs = [], world = (b) => b.sp.map((s) => ({ c: add(b.t, mulv(b.R, s.p)), r: s.r, s }));
       const S = new Map([...props, ...hb].map((b) => [b, world(b)]));
-      const jawExt = (b, s) => { const h = hands.find((x) => x.h.body === b); return s.motion?mulv(b.R,s.motion):s.jaw ? mulv(b.R, [0, (s.jaw * h.h.jawRate) / 2, 0]) : null; };
+      const handByBody=new Map(hands.map(x=>[x.h.body,x.h])),pads=new Map(hands.map(x=>[x.h.body,padBoxes(G,x.h)])),legacy=new Map();
+      W.padContactStats={boxes:[...pads.values()].reduce((n,p)=>n+p.length,0),legacyRubber:0,handSpherePairs:0,padSpherePairs:0,padBoxPairs:0,padContacts:0};
+      const propSamples=b=>{
+        if(b.kind!=='hand')return S.get(b);if(legacy.has(b))return legacy.get(b);
+        const h=handByBody.get(b),start=h._jawStart||{carrierGap:h.carrierGap,padCompression:h.padCompression},rubber=padSpheres(G,h.gap,h.carrierGap,h.padCompression);
+        if(h._legacyPadCount!==undefined&&h._legacyPadCount!==rubber.length)W.warm.clear();h._legacyPadCount=rubber.length;
+        rubber.forEach(s=>{const old=G.padShape(s.jaw,start.carrierGap,start.padCompression[s.jaw]),r=Math.min(...old.h),p=[old.c[0]+s.padU[0]*(old.h[0]-r),old.c[1],old.c[2]+s.padU[1]*(old.h[2]-r)];s.motion=scale(sub(s.p,sub(p,HAND.com)),1/H);s.radiusRate=(s.r-r)/H;});
+        W.padContactStats.legacyRubber+=rubber.length;const all=[...S.get(b),...rubber.map(s=>({c:add(b.t,mulv(b.R,s.p)),r:s.r,s}))];legacy.set(b,all);return all;
+      };
+      const padFeature=(b,box,p)=>{
+        return {...padMaterialMotion(G,handByBody.get(b),box,p),jaw:box.jaw,flat:[0,-box.jaw,0],mu:PAD_MU,mat:'rubber',padBox:true};
+      };
+      const putPad=(A,box,B,other,p,n,dist,key,otherBox=null)=>{
+        const ct=contact(A,-1,B,other,p,n,dist,B?null:[0,0,0],otherBox?PAD_MU:B?Math.sqrt(PAD_MU*(B.kind==='hand'?(B.sp[other]?.mu??ROBOT_MU):B.mu)):PAD_MU,key);ct.sA=padFeature(A,box,p);
+        if(otherBox)ct.sB=padFeature(B,otherBox,madd(p,n,-dist));cs.push(ct);W.padContactStats.padContacts++;return ct;
+      };
+      const jawExt = (b, s,normal) => { const h = hands.find((x) => x.h.body === b),jaw=s.jaw||s.finger,velocity=s.motion?mulv(b.R,s.motion):jaw?mulv(b.R,[0,(jaw*h.h.jawRate)/2,0]):[0,0,0];return s.radiusRate?madd(velocity,normal,s.radiusRate):velocity; };
       // a hand's sphere s meeting something along nOut (out of the hand): a pad turns that to its face, and notes it
       const padN = (b, s, nOut, other, dist) => {
         if (!s.flat) return nOut;
@@ -485,6 +756,10 @@
           if (tableBox) { const k = sphereBox(c, r, tableBox, tableBox.h); if (k.dist < MARGIN) cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, [0, 0, 0], isHand ? s.mu : tableMu, 'T')); }
           if (c[2] - r - floorZ < MARGIN) cs.push(contact(b, i, null, -1, [c[0], c[1], c[2] - r], [0, 0, 1], c[2] - r - floorZ, [0, 0, 0], isHand ? s.mu : TABLE_MU, 'F'));
         });
+        for(const box of pads.get(b)||[]){
+          if(tableBox){const hit=boxBox(box,tableBox);if(hit.dist<MARGIN)for(const [i,q]of hit.points.entries())if(q.dist<MARGIN)putPad(b,box,null,-1,q.p,hit.n,q.dist,'T:pad'+box.jaw+':'+i);}
+          for(const [i,p]of boxCorners(box).entries())if(p[2]-floorZ<MARGIN)putPad(b,box,null,-1,p,[0,0,1],p[2]-floorZ,'F:pad'+box.jaw+':'+i);
+        }
         for (const L of kin) {
           // a gripper meets the other arm, never its own (it hangs on that one): links are named by their arm's side
           if (isHand && parseFloat(String(L.id)) === b.side) continue;
@@ -503,6 +778,7 @@
             const p = add(L.a, scale(sub(L.b, L.a), k.u)), pp = add(L.pa, scale(sub(L.pb, L.pa), k.u));
             cs.push(contact(b, i, null, -1, sub(c, scale(k.n, r)), k.n, k.dist, scale(sub(p, pp), 1 / H), isHand ? Math.min(s.mu, ROBOT_MU) : ROBOT_MU, 'L' + L.id));
           });
+          for(const box of pads.get(b)||[]){const hit=boxCapsule(box,L.a,L.b,L.r);if(hit.dist<MARGIN){const ct=putPad(b,box,null,-1,hit.p,hit.n,hit.dist,'L'+L.id+':pad'+box.jaw);ct.vB=scale(sub(lerp(L.a,L.b,hit.u),lerp(L.pa,L.pb,hit.u)),1/H);ct.mu=Math.min(PAD_MU,ROBOT_MU);}}
         }
       }
       // body against body: spheres against the mug's shape, or against each other
@@ -514,44 +790,50 @@
           // the two grippers against each other: rigid, sphere against sphere, both moving (each pulled by its arm)
           const SA = S.get(A), SB = S.get(B);
           for (let p = 0; p < SA.length; p++) for (let q = 0; q < SB.length; q++) {
+            W.padContactStats.handSpherePairs++;
             const d = sub(SA[p].c, SB[q].c), dl = norm(d), dist = dl - SA[p].r - SB[q].r;
             if (dist >= MARGIN || dl < 1e-9) continue;
             const n = scale(d, 1 / dl);
             cs.push(contact(A, p, B, q, sub(SA[p].c, scale(n, SA[p].r)), n, dist, null, Math.sqrt(SA[p].s.mu * SB[q].s.mu), 'h' + B.id + ':' + q));
           }
+          for(const [hand,other,otherS]of [[A,B,SB],[B,A,SA]])for(const box of pads.get(hand)||[])for(const [i,sphere]of otherS.entries()){
+            W.padContactStats.padSpherePairs++;const hit=sphereBox(sphere.c,sphere.r,box,box.h);if(hit.dist>=MARGIN)continue;
+            putPad(hand,box,other,i,madd(sphere.c,hit.n,-sphere.r-hit.dist),scale(hit.n,-1),hit.dist,'h'+other.id+':pad'+box.jaw+':sphere'+i);
+          }
+          for(const a of pads.get(A)||[])for(const b of pads.get(B)||[]){W.padContactStats.padBoxPairs++;const hit=boxBox(a,b);if(hit.dist<MARGIN)for(const [i,q]of hit.points.entries())if(q.dist<MARGIN)putPad(A,a,B,-1,q.p,hit.n,q.dist,'h'+B.id+':pad'+a.jaw+':pad'+b.jaw+':'+i,b);}
           continue;
         }
         if ((A.asleep || A.fixed) && (B.asleep || B.fixed)) continue;
         if (A.sdf) { const x = A; A = B; B = x; }
         if (B.sdf) {
           // A's spheres against the mug B
-          const sdfContacts = (A, B) => S.get(A).forEach(({ c, r, s }, k) => {
+          const sdfContacts = (A, B) => propSamples(A).forEach(({ c, r, s }, k) => {
             const loc = sub(tmulv(B.R, sub(c, B.t)), B.off), d = bodyDistance(B, loc) - r;
             if (d >= MARGIN) return;
             let n = mulv(B.R, bodyNormal(B, loc));
             if (A.kind === 'hand') n = scale(padN(A, s, scale(n, -1), B, d), -1);
-            cs.push(contact(A, k, B, -1, sub(c, scale(n, r)), n, d, null, A.kind === 'hand' ? s.mu : Math.sqrt(A.mu * B.mu), 'm' + B.id));
+            const ct=contact(A,s.jaw?-1:k,B,-1,sub(c,scale(n,r)),n,d,null,A.kind==='hand'?s.mu:Math.sqrt(A.mu*B.mu),'m'+B.id+(s.jaw?':pad'+s.jaw+':'+k:''));if(s.jaw)ct.sA=s;cs.push(ct);
           });
           sdfContacts(A, B);
           if (A.sdf) sdfContacts(B, A); // both sides of a face/edge contact on compound props
         } else {
           // sphere against sphere (the ball and a hand): A is the prop
           if (A.kind === 'hand') { const x = A; A = B; B = x; }
-          const SA = S.get(A), SB = S.get(B);
+          const SA = propSamples(A), SB = propSamples(B);
           for (let p = 0; p < SA.length; p++) for (let q = 0; q < SB.length; q++) {
             const d = sub(SA[p].c, SB[q].c), dl = norm(d), dist = dl - SA[p].r - SB[q].r;
             if (dist >= MARGIN || dl < 1e-9) continue;
             let n = scale(d, 1 / dl);
             if (B.kind === 'hand') n = padN(B, SB[q].s, n, A, dist);
-            cs.push(contact(A, p, B, q, sub(SA[p].c, scale(n, SA[p].r)), n, dist, null, B.kind === 'hand' ? SB[q].s.mu : Math.sqrt(A.mu * B.mu), 'b' + B.id + ':' + q));
+            const s=SB[q].s,ct=contact(A,p,B,s.jaw?-1:q,sub(SA[p].c,scale(n,SA[p].r)),n,dist,null,B.kind==='hand'?s.mu:Math.sqrt(A.mu*B.mu),'b'+B.id+':'+q);if(s.jaw)ct.sB=s;cs.push(ct);
           }
         }
       }
       for (const generate of W.contactGenerators) for (const c of generate())
         cs.push(contact(c.A,-1,c.B,-1,c.p,c.n,c.dist,null,c.mu,c.key));
       for (const ct of cs) {
-        if (ct.A.kind === 'hand' && ct.sA && (ct.sA.jaw||ct.sA.link)) ct.eA = jawExt(ct.A, ct.sA);
-        if (ct.B && ct.B.kind === 'hand' && ct.sB && (ct.sB.jaw||ct.sB.link)) ct.eB = jawExt(ct.B, ct.sB);
+        if (ct.A.kind === 'hand' && ct.sA && (ct.sA.jaw||ct.sA.finger||ct.sA.link)) ct.eA = jawExt(ct.A, ct.sA,scale(ct.n,-1));
+        if (ct.B && ct.B.kind === 'hand' && ct.sB && (ct.sB.jaw||ct.sB.finger||ct.sB.link)) ct.eB = jawExt(ct.B, ct.sB,ct.n);
         prep(ct);
       }
       const js = [];
@@ -595,6 +877,9 @@
         else b.lost = 0;
       }
       for (const c of W.cloths) c.step(H, W);
+      for(const {h}of hands)if(W.cloths.length&&!h.grip&&!h._jawCommitted){
+        h.carrierGap=h.driveGap;h.padCompression=emptyCompression();h.gap=h.carrierGap;h.fabricForce=h.F=h.jawLoad=h.jawForce=h.jawStopForce=0;h._jawCommitted=true;refreshJaw(h);
+      }
       for (const c of W.cables) c.step(H, W);
       for (const step of W.mechanisms) step(H);
     }
@@ -780,6 +1065,8 @@
       const h = handAcc(b), pad = s && s.jaw ? s.jaw : 0, k = ct.pair + '|' + pad, m = norm(P);
       const L = cross(sub(ct.p, b.t), P);
       h.f = add(h.f, P); h.tau = add(h.tau, L);
+      const live=W.contactState.hands[b.side];
+      live.force=madd(live.force,P,1/H);live.contacts.push({other:from,pad,f:scale(P,1/H),p:ct.p.slice()});
       let q = h.parts.get(k);
       if (!q) h.parts.set(k, (q = { from, pad, P: [0, 0, 0], L: [0, 0, 0], w: 0, p: [0, 0, 0] }));
       q.P = add(q.P, P); q.L = add(q.L, L); q.w += m; q.p = madd(q.p, ct.p, m);
@@ -788,6 +1075,9 @@
     function collect(cs, js) {
       acc.n++;
       const t = W.time + acc.n * H, seen = new Map();
+      // Force history is useful for plots and impact impulses; sustained haptics
+      // must use this final fixed-step state so an earlier touch cannot outlive it.
+      W.contactState={time:t,hands:Object.fromEntries(Object.keys(W.hands).map(side=>[side,{force:[0,0,0],contacts:[],grip:null}])),touches:[]};
       for (const ct of cs) {
         let e = seen.get(ct.pair);
         if (!e) seen.set(ct.pair, (e = { ct, best: 0, N: 0, app: 0 }));
@@ -813,6 +1103,7 @@
       for (const j of js) {
         const hb = j.B, h = handAcc(hb), l = scale(j.l, -1), L = scale(add(cross(j.rB, j.l), j.a), -1);
         h.f = add(h.f, l); h.tau = add(h.tau, L);
+        const live=W.contactState.hands[hb.side];live.force=madd(live.force,l,1/H);live.grip={slipping:!!(j.slipL||j.slipA)};
         const g = h.grip || (h.grip = { body: j.A, P: [0, 0, 0], L: [0, 0, 0] });
         g.P = add(g.P, l); g.L = add(g.L, L);
         g.p = add(hb.t, mulv(hb.R, j.g.pH)); g.sx = j.g.sx; g.sz = j.g.sz; g.R = hb.R;
@@ -820,6 +1111,7 @@
       // a pair that starts touching, fast enough, after a while apart, is an impact
       for (const [pair, e] of seen) {
         if (e.N <= 0) continue;
+        W.contactState.touches.push({a:who(e.ct.A,e.ct.sA),b:other(e.ct),force:e.N/H});
         const last = lastTouch.get(pair);
         if ((last === undefined || t - last > IMPACT.gap) && e.app >= IMPACT.speed) {
           acc.events.push({ type: 'impact', t, speed: e.app, impulse: e.N, force:e.N/H, p: e.ct.p.slice(), a: who(e.ct.A, e.ct.sA), b: other(e.ct) });
@@ -939,5 +1231,5 @@
   // How far a body is tipped from upright (rad), for the tests.
   const tilt = (b) => Math.acos(Math.max(-1, Math.min(1, b.R[8])));
 
-  return { BALL, CUP, LIP, HAND, GRIP, H, JAW_SPEED, W_MAX, MATERIALS, IMPACT, PRESS, haptics, holdBack, world, scene, sphereBox, sphereCapsule, cupSdf, cupMassProps, pieceDistance, shapeDistance, shapeNormal, bodyDistance, bodyNormal, tilt, qOf, rOf, rotvec };
+  return { BALL, CUP, LIP, HAND, GRIP, JAW, jawLoad, H, JAW_SPEED, W_MAX, MATERIALS, IMPACT, PRESS, haptics, holdBack, world, scene, sphereBox, sphereCapsule,boxBox,boxCapsule,padBoxes,padMaterialMotion,padSpheres, cupSdf, cupMassProps, pieceDistance, shapeDistance, shapeNormal, bodyDistance, bodyNormal, tilt, qOf, rOf, rotvec };
 });

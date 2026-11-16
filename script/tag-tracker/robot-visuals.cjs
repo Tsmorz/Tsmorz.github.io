@@ -2,8 +2,9 @@
 module.exports=function({check}){
   const root=require('path').resolve(__dirname,'../..'),G=require(root+'/tag-tracker/robot-gl'),R=require(root+'/tag-tracker/robot-core'),C=require(root+'/tag-tracker/tracker-core');
   const near=(a,b)=>Math.abs(a-b)<1e-6,bounds=mesh=>[0,1,2].map(k=>{const values=mesh.pos.filter((_,i)=>i%3===k);return [Math.min(...values),Math.max(...values)];});
+  check(G.beerOpacity(0)===0&&G.beerOpacity(.001)<G.beerOpacity(.004)&&G.beerOpacity(.004)<G.beerOpacity(.08)&&G.beerOpacity(.08)<=.98,'beer attenuation depends on actual depth: thin streams transmit more light than a deep cloudy glass');
   const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0);
-  let sound=true,grounded=true,continuous=true,eligible=true,matching=true,contrast=true,standing=true,linkage=true;
+  let sound=true,grounded=true,continuous=true,eligible=true,matching=true,contrast=true,standing=true,linkage=true,compressed=true;
   for(const dims of [{},{upper:.2,fore:.18,half:.12,up:.05,back:0}]){
     const m=R.model(dims),M=G.meshes(m),gripper=R.gripper(m);
     const floor=R.fk(m,1,R.HOME).wrist[2]-gripper.halfWidth(gripper.gapMax)-.045-.75,preview=G.supportLayout(m),task=G.supportLayout(m,floor);
@@ -39,6 +40,15 @@ module.exports=function({check}){
     }
     const closed=G.gripperPartPose(M.linkages[0],G.gripperLayout(m,0)),opened=G.gripperPartPose(M.linkages[0],G.gripperLayout(m,gripper.gapMax));
     linkage=linkage&&C.norm(C.sub(closed.t,opened.t))>.005;
+    for(const carrierGap of [.001,.04]){
+      const state={carrierGap,padCompression:{1:[.001,-.0008,-.0005],'-1':[-.0004,.0003,.0002]}},layout=G.gripperLayout(m,carrierGap+.0011,state);
+      compressed=compressed&&layout.fingers.every(j=>j.pad.h.every((v,k)=>v<gripper.pad.h[k]));
+      for(const side of [1,-1])for(const part of M.finger[side]){
+        const pose=G.gripperFingerPose(part,side,layout),jaw=layout.fingers.find(j=>j.side===side),shape=part.tip?jaw.pad:jaw.backbone,scale=pose.scale||[1,1,1];
+        const coordinates=[[],[],[]];for(let i=0;i<part.mesh.pos.length;i+=3){const point=C.add(pose.t,C.mulv(pose.R,scale.map((v,k)=>v*part.mesh.pos[i+k])));point.forEach((v,k)=>coordinates[k].push(v));}
+        compressed=compressed&&coordinates.every((values,k)=>near(Math.min(...values),shape.c[k]-shape.h[k])&&near(Math.max(...values),shape.c[k]+shape.h[k]));
+      }
+    }
   }
   check(continuous,'one thin continuous round mast joins the low AMR deck directly to the torso at either floor height');
   check(grounded,'four AMR tires meet the floor while the broad chassis and bumper retain at least 40 mm ground clearance');
@@ -48,5 +58,6 @@ module.exports=function({check}){
   check(matching,'finger and pad render bounds still match both mirrored physical gripper boxes');
   check(contrast&&G.robotPalette.dark==='#24282e'&&G.lin(G.robotPalette.metal)[2]>=G.lin(G.robotPalette.metal)[0]&&G.lin(G.robotPalette.shell)[2]>=G.lin(G.robotPalette.shell)[0],'silver and neutral-white robot surfaces retain black chest panels, joints, fingers and rail accents');
   check(linkage,'75 mm Robotiq-style housing and 85 mm animated jaws preserve pad depth; exposed side links/joints remain inside their shared collision capsules and spheres');
+  check(compressed,'asymmetric rubber compression deforms the displayed pads within their actual collision boxes while metal and linkages follow the carrier stroke');
 };
 if(require.main===module){const assert=require('node:assert/strict');module.exports({check:(ok,msg)=>{assert.ok(ok,msg);process.stdout.write('ok '+msg+'\n');}});}

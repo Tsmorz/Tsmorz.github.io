@@ -361,11 +361,11 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
         try {
           if (m.mode === 'calib') {
             const img = src.parts[0].img, b = V.detectBoard(img), pose = m.square ? V.boardPose(b.ids, b.pts, m.cam, m.square) : null;
-            post({ type: 'board', src: m.src, seq: m.seq, time: m.time, w: src.w, h: src.h, ms: performance.now() - t0, ids: b.ids, pts: b.pts, markers: b.markers, pose });
+            post({ type: 'board', src: m.src, session: m.session, seq: m.seq, time: m.time, w: src.w, h: src.h, ms: performance.now() - t0, ids: b.ids, pts: b.pts, markers: b.markers, pose });
           } else {
             const r = V.track(src.whole ? src.parts[0].img : src.parts, m.cam, m.sizes, m.defaultSize, m.bodies, m.raw, m.learn);
             const searched = src.whole ? 1 : src.parts.reduce((a, q) => a + q.img.rows * q.img.cols, 0) / (src.w * src.h);
-            post({ type: 'tags', src: m.src, seq: m.seq, time: m.time, w: src.w, h: src.h, ms: performance.now() - t0, tags: r.tags, bodies: r.bodies, rois: src.whole ? null : m.rois, searched });
+            post({ type: 'tags', src: m.src, session: m.session, seq: m.seq, time: m.time, w: src.w, h: src.h, ms: performance.now() - t0, tags: r.tags, bodies: r.bodies, rois: src.whole ? null : m.rois, searched });
           }
         } finally { for (const q of src.parts) if (q.own) q.img.delete(); }
       } else if (m.type === 'calibrate') {
@@ -380,7 +380,7 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') (funct
       }
     } catch (e) {
       for (const x of [m.bitmap, m.frame]) if (x) try { x.close(); } catch (_) { /* already closed */ }
-      post({ type: 'error', of: m.type, src: m.src, seq: m.seq, text: String((e && e.message) || e) });
+      post({ type: 'error', of: m.type, src: m.src, session: m.session, seq: m.seq, text: String((e && e.message) || e) });
     }
   };
 })();

@@ -17,6 +17,8 @@
 //      and the search windows for the next frame
 //   5f. recordings and notes (the export formats, timed note lines), cleaning Whisper's text, voice commands, and the
 //      voice gate that ends an utterance after a pause
+//   5r. camera frame-rate/resolution preferences and supported manual exposure
+//   5s. stream identity across restarts and asynchronous frame preparation/transfer failures
 //   5g. motion sensors (nrf-controller boards): their bytes, their clocks on the page's, how a board sits on its
 //      object (with mirror-image outliers), and the filter with a gyro and VQF's tilt against without
 //   5h. the robot: home pose, IK against FK, elbows out and low, steady joints, out of reach, calibration with one,
@@ -686,7 +688,22 @@ if (run('5g')) {
 }
 
 if (run('5h')) {
-  console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a screen; its settings');
+  console.log('5h. the robot: arms, inverse kinematics, calibration; thin cotton mechanics and pickup');
+  require('./tag-tracker/patch-contact.cjs')({check});
+  require('./tag-tracker/contact-newton.cjs')({check});
+  require('./tag-tracker/contact-vi.cjs')({check});
+  require('./tag-tracker/contact-warm.cjs')({check});
+  require('./tag-tracker/contact-projection.cjs')({check});
+  require('./tag-tracker/contact-ngs.cjs')({check});
+  require('./tag-tracker/contact-tangent.cjs')({check});
+  require('./tag-tracker/contact-refine.cjs')({check});
+  require('./tag-tracker/contact-prox.cjs')({check});
+  require('./tag-tracker/cloth-contact.cjs')({check});
+  require('./tag-tracker/cloth-candidates.cjs')({check});
+  require('./tag-tracker/cloth-body-coupling.cjs')({check});
+  require('./tag-tracker/cloth-support-friction.cjs')({check});
+  require('./tag-tracker/cloth-mechanics.cjs')({check,budget});
+  require('./tag-tracker/cloth-pickup.cjs')({check});
   require('./tag-tracker/gripper-stability.cjs')({check});
   require('./tag-tracker/robot-visuals.cjs')({check});
   require('./tag-tracker/cloth-render.cjs')({check});
@@ -921,6 +938,11 @@ if (run('5h')) {
 
 if (run('5i')) {
   require('./tag-tracker/robotiq-physics.cjs')({check});
+  require('./tag-tracker/fluid-physics.cjs')({check});
+  require('./tag-tracker/cloth-coupling.cjs')({check});
+  require('./tag-tracker/coupled-contact.cjs')({check});
+  require('./tag-tracker/jaw-actuator.cjs')({check});
+  require('./tag-tracker/pad-collision.cjs')({check});
   console.log('5i. the table: the physics the robot plays with, and the gripper on the operator\'s hand');
   require('./tag-tracker/restart.cjs')({check});
   require('./tag-tracker/sound-reset.cjs')({check});
@@ -1044,7 +1066,7 @@ if (run('5i')) {
   // a firm one holds it
   // Approach the upper handle so the wider Robotiq housing clears the vessel rim.
   const hx = -(P.CUP.handle.x + P.CUP.handle.a) - 0.002, hz = P.CUP.handle.z+.01, atHandle = { R: I, t: [hx, 0, hz - G.finger.c[2]] };
-  const hl = gripLift(Rz180, atHandle, 0.001), hf = gripLift(Rz180, atHandle, 1);
+  const hl = gripLift(Rz180, atHandle, 1/P.GRIP.k), hf = gripLift(Rz180, atHandle, 1);
   check(hl.took && Math.abs(hl.gap - 2 * P.CUP.handle.b) < 0.001 && hl.held && hl.tilt > 30 && hl.z > 0.06 && hf.held && hf.tilt < 5 && hf.z > 0.11,
     `pinched by its handle (jaws ${(hl.gap * 1000).toFixed(1)} mm apart) and lifted, the mug swings ${hl.tilt.toFixed(0)}° about the jaws held lightly and stays held; held firmly, ${hf.tilt.toFixed(1)}°`);
   check(hl.slipped && hl.use > 0.99 && !hf.slipped && hf.use < 0.9, `the record says so: the light pinch uses all the pads can hold and slips; the firm one ${(hf.use * 100).toFixed(0)}% of it, never slipping`);
@@ -1060,14 +1082,14 @@ if (run('5i')) {
   }
   check(spin < 20 && !capped && !astray, `the mug taken from the side by the fingertips (${runs} ways), lifted and moved, turns at most ${spin.toFixed(1)} rad/s and stays between the pads or is let go`);
   // a light grip lets the mug slide out of the jaws back onto the table; a firm one lifts it; opening a millimetre lets go
-  const side = { R: Rh, t: [-P.CUP.R + 0.01 - tipX, 0, 0.04] }, sl = gripLift(I, side, 0.0005), sf = gripLift(I, side, 1);
+  const side = { R: Rh, t: [-P.CUP.R + 0.01 - tipX, 0, 0.04] }, sl = gripLift(I, side, .5/P.GRIP.k), sf = gripLift(I, side, 1);
   sf.W.setRobot({ hands: [{ side: 1, pose: { R: Rh, t: C.add(side.t, [0, 0, 0.12]) }, opening: (sf.gap + 0.001) / G.gapMax }] }); sf.W.step(P.H);
   check(sl.took && !sl.h.grip && sl.z < 0.002 && sf.held && sf.z > 0.11 && sf.tilt < 5 && !sf.h.grip,
     `held lightly (0.5 N) the mug slides out of the jaws onto the table (${(sl.z * 1000).toFixed(1)} mm up); held firmly it lifts ${(sf.z * 100).toFixed(1)} cm; opening 1 mm lets go at once`);
   // a pinch with only the fingertips on its rim lets it tip about the pads; with the whole pad it stays level
-  const rimAt = (depth) => ({ R: Rz(Math.PI / 2), t: [(P.CUP.R + P.CUP.Ri) / 2, 0, P.CUP.H - depth - (G.finger.c[2] - G.finger.h[2])] });
-  const rt = gripLift(Rz180, rimAt(0.003), 1), rw = gripLift(Rz180, rimAt(0.025), 1);
-  check(rt.held && rt.tilt > 30 && rw.held && rw.tilt < 5, `pinched by the fingertips on its rim the mug tips ${rt.tilt.toFixed(0)}° about the pads; pinched with the whole pad, ${rw.tilt.toFixed(1)}°`);
+  const rimAt = (depth) => ({ R: Rz(Math.PI / 2), t: [(P.CUP.R + P.CUP.Ri) / 2, 0, P.CUP.H - depth - (G.pad.c[2] - G.pad.h[2])] });
+  const rt = gripLift(Rz180, rimAt(0.003), 3/P.GRIP.k), rw = gripLift(Rz180, rimAt(0.025), 3/P.GRIP.k);
+  check(rt.held && rt.tilt > 30 && rt.slipped && rw.held && rw.tilt < 5 && !rw.slipped, `pinched at3N by the fingertips on its rim the mug tips ${rt.tilt.toFixed(0)}° about the pads; pinched with the whole pad, ${rw.tilt.toFixed(1)}°`);
   // a hand moving fast knocks the ball on rather than passing through it
   W = P.world({ table, gripper: G });
   const b6 = W.add('ball', [0, 0, P.BALL.r]);
@@ -1105,8 +1127,8 @@ if (run('5i')) {
     });
     const rh = Wh.record.hands[1], push = rh.contacts.filter((x) => x.other.kind === 'hand').reduce((v, x) => C.add(v, x.f), [0, 0, 0]);
     const felt = P.haptics(Wh.record, 1).touches.find((x) => x.via === 'hand') || {};
-    // The open fingers now extend past the narrower cylindrical palm and meet first.
-    check(worst > -0.002 && Wh.hands[1].body.t[1] > Wh.hands[-1].body.t[1] && Math.abs(push[1] - P.HAND.force) < 0.1 * P.HAND.force && clash.length >= 1 && clash[0].a.mat === 'rubber' && felt.mat === 'rubber',
+    // The outside metal carriers extend beyond the inward-facing rubber pads.
+    check(worst > -0.002 && Wh.hands[1].body.t[1] > Wh.hands[-1].body.t[1] && Math.abs(push[1] - P.HAND.force) < 0.1 * P.HAND.force && clash.length >= 1 && clash[0].a.mat === 'aluminium' && felt.mat === 'aluminium',
       `two grippers driven into each other meet and stop (overlap at most ${(-worst * 1000).toFixed(1)} mm), pushing with ${push[1].toFixed(1)} N (all an arm can: ${P.HAND.force} N); a clank at ${((clash[0] || {}).speed || 0).toFixed(2)} m/s, felt as ${felt.mat || 'nothing'}`);
     // (the link runs along y at x = 10 cm, level with the fingers; overlap is the deepest any of the hand's spheres goes into it)
     const sweep = (link) => {
@@ -1306,6 +1328,11 @@ if (run('5q')) {
   require('./tag-tracker/balance.cjs')({ check, near });
 }
 
+if (run('5r')) {
+  console.log('5r. camera capture preferences and supported exposure settings');
+  require('./tag-tracker/camera-settings.cjs')({ check });
+}
+
 // The UDP bridge (tag-tracker/udp-bridge.py), driven as the page drives it.
 function testBridge() {
   const { spawnSync, spawn } = require('child_process'), dgram = require('dgram'), net = require('net');
@@ -1343,8 +1370,8 @@ function testBridge() {
 
 let cvPkg = null;
 try { cvPkg = require.resolve('@techstark/opencv-js', { paths: [process.cwd(), path.join(__dirname, '..')] }); } catch (e) { cvPkg = null; }
-if(run('5n')){console.log('5n. beer poured between steins by the handle, and props off the table');require('./tag-tracker/liquid-render.cjs')({check});require('./tag-tracker/pour-visuals.cjs')({check});require('./tag-tracker/pour.cjs')({check,near});}
-const bridged = Promise.all([run('5d') ? testBridge() : Promise.resolve(),run('5l') ? require('./tag-tracker/advanced.cjs')({check,near}) : Promise.resolve(),run('5m') ? require('./tag-tracker/controller-link.cjs')({check,near}) : Promise.resolve()]);
+if(run('5n')){console.log('5n. beer poured between steins by the handle, and props off the table');require('./tag-tracker/liquid-render.cjs')({check});require('./tag-tracker/pour-visuals.cjs')({check});require('./tag-tracker/pour-physics.cjs')({check});require('./tag-tracker/pour.cjs')({check,near});}
+const bridged = Promise.all([run('5d') ? testBridge() : Promise.resolve(),run('5l') ? require('./tag-tracker/advanced.cjs')({check,near}) : Promise.resolve(),run('5m') ? require('./tag-tracker/controller-link.cjs')({check,near}) : Promise.resolve(),run('5s') ? require('./tag-tracker/camera-pipeline.cjs')({check}) : Promise.resolve()]);
 if (!run('6') && !run('6b')) bridged.then(finish);
 else if (!cvPkg) bridged.then(() => {
   console.log('6. detection and calibration: skipped (OpenCV.js not installed)');
@@ -1434,6 +1461,18 @@ else bridged.then(async () => {
     check(angs.length === 6 && Math.max(...angs) < 5, `and its rotation within ${Math.max(...angs).toFixed(2)}° (under 5°); OpenCV's own pose alone: up to ${Math.max(...rawAng).toFixed(1)}°`);
   }
   budget(ms / n, 100, `detection and SE(3) refinement on 1280×720 with sensor noise: ${(ms / n).toFixed(0)} ms per frame in Node (under 100)`);
+  // Fast is the new-visitor default. Keep a tilted, roughly 40 px tag readable at both 16:9 capture sizes.
+  V.setFamily('APRILTAG_36h11', 'fast');
+  for (const [w, h, z] of [[1280, 720, 2], [640, 360, 1]]) {
+    const R = C.mul3(rotXYZ(0.25, -0.2, 0.7), rotXYZ(Math.PI, 0, 0)), t = [0.08, -0.03, z];
+    const source = render(pad, At, R, t, 150), image = new cv.Mat();
+    cv.resize(source, image, new cv.Size(w, h), 0, 0, cv.INTER_AREA);
+    const lens = C.scaleIntrinsics(cam, w, h);
+    const found = V.track(image, lens, { 42: size }, size, [], false).tags.find((tag) => tag.id === 42);
+    check(found && found.cands.some((pose) => C.norm(C.sub(pose.t, t)) < 0.05 * z), `Fast detection finds a tilted 40 px tag at ${w}×${h} with depth error under 5%`);
+    source.delete(); image.delete();
+  }
+  V.setFamily('APRILTAG_36h11', 'precise');
   // Searching only a window round where the tag should be finds the same corners as searching the whole picture, in
   // whole-picture pixels, and costs a fraction of the time.
   {

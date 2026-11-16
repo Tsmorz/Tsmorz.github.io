@@ -72,6 +72,16 @@ test('capture raw IMU reaches its own consumer while haptic acknowledgements kee
   } finally {await p.link.close();}
 });
 
+test('task rumble cancellation sends only the capture TacHammer STOP and obeys freshness/busy gates',async()=>{
+  const p=peer();await p.link.open();
+  try{
+    await p.link.stopTacHammer();assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x46]]);
+    p.link.writing=true;await assert.rejects(p.link.stopTacHammer(),/busy/);p.link.writing=false;
+    p.advance(501);await assert.rejects(p.link.stopTacHammer(),/stale/);
+    assert.equal(p.commands.length,1);
+  }finally{await p.link.close();}
+});
+
 test('stale stream, stale readiness and unready actuator refuse feedback', async () => {
   const p = peer(); await p.link.open();
   try {
@@ -105,7 +115,7 @@ test('real task dispatcher sends force-graded native capture percentages while r
   const p = peer(); await p.link.open();
   try {
     const b = { state: 'live', act: { tachammerReady: true }, actT: 0, hapticSide: '1', hapticRateHz: 25,
-      hapticCharacteristic: { writeValueWithResponse: bytes => p.link.command(bytes) } };
+      hapticCharacteristic: { writeValueWithResponse: bytes => p.link.command(bytes),stopHaptics:()=>p.link.stopTacHammer() } };
     const world = { hands: { 1: {} }, record: { hands: { 1: { force: [.2, 0, 0] } } } };
     const d = TaskHaptics.dispatcher();
     b.transport='capture';b.motion={ready:false};
@@ -119,9 +129,10 @@ test('real task dispatcher sends force-graded native capture percentages while r
     p.advance(150);
     d.tick({ boards: [b], world, arms: [], now: 150, enabled: true, level: 75 });
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x44,1,TaskHaptics.impactLevel(.2)],[0x44,6,1]]);
-    b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
-    assert.equal(p.commands.length, 2);
+    assert.deepEqual(p.commands.map(c=>[c.type,...c.body]),[[0x44,1,TaskHaptics.impactLevel(.2)],[0x44,6,7]]);
+    p.advance(50);b.hapticSide = 'off'; d.tick({ boards: [b], world, arms: [], now: 200, enabled: true });
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(p.commands.length, 3);assert.deepEqual([p.commands[2].type,...p.commands[2].body],[0x46]);
   } finally { await p.link.close(); }
 });
 
@@ -140,6 +151,6 @@ test('real mass-dependent impact grades reach capture waveform ACKs and USB/ESB 
       parser.push(Controller.frame({type:Controller.TYPE.COMMAND,board:23,pipe:1,stamp:100,payload:packet}));
       assert.deepEqual([...frames[0].payload],[2,2,1,expected,0,0]);
     }
-    assert.deepEqual(levels,[6,9,16,25,38]);assert.equal(p.commands.length,5);
+    assert.deepEqual(levels,[28,30,35,41,50]);assert.equal(p.commands.length,5);
   }finally{await p.link.close();}
 });

@@ -35,42 +35,53 @@
   function surfaceMesh(l){
     const pts=l.points||[];if(pts.length<3)return empty();
     const n=unit(l.up||[0,0,1]),[u,v]=frame(n),centre=mul(pts.reduce(add,[0,0,0]),1/pts.length),b=builder();
-    const foam=l.layer==='foam',phase=l.phase||0,strength=clamp(l.agitation||0,0,1),coverage=foam?.88+.08*clamp(l.foam||0,0,1):1;
-    const impact=l.impact?.point||centre,impactStrength=clamp(l.impact?.strength??strength,0,1),base=foam?.0015+.003*(l.foam||0):0;
+    const foam=l.layer==='foam',phase=l.phase||0,strength=clamp(l.agitation||0,0,1),amount=clamp(l.foam||0,0,1);
+    const headroom=Math.max(0,l.headroom??.04),equivalent=clamp(l.foamHeight??(.0015+.003*amount),0,headroom);
+    if(foam&&(equivalent<1e-7||amount===0))return empty();
+    // Initial foam spreads from the actual impact; its covered area and height
+    // retain the gas-volume/area relationship before it covers the whole surface.
+    const coverage=foam?Math.sqrt(clamp(equivalent/.002,.0064,1)):1,impact=l.impact?.point||centre;
+    const patch=foam?add(centre,mul(sub(impact,centre),(1-coverage)*.6)):centre;
+    const impactStrength=clamp(l.impact?.strength??strength,0,1),base=foam?Math.min(headroom,equivalent/(coverage*coverage)):0;
+    const wave=Math.min(.00085,Math.max(.00002,(l.depth??.08)*.2));
     const height=(p,r)=>{
-      const d=norm(sub(p,impact)),ripple=impactStrength*.00085*Math.sin(d*420-phase*19)*Math.exp(-d*22)*(1-r*r);
-      return base+ripple+(foam?.00022*Math.sin(dot(sub(p,centre),u)*1800)*Math.sin(dot(sub(p,centre),v)*1600):0);
+      const d=norm(sub(p,impact)),ripple=impactStrength*wave*Math.sin(d*420-phase*19)*Math.exp(-d*22)*(1-r*r);
+      const meniscus=foam?Math.min(.0003,base*.12)*r**8:0;
+      return foam?clamp(base+ripple*.35+meniscus,0,headroom):ripple;
     };
-    const c=b.vertex(add(centre,mul(n,height(centre,0))),[0,0]),rings=9,rows=[];
+    const c=b.vertex(add(patch,mul(n,height(patch,0))),[0,0]),rings=9,rows=[],locations=[];
     for(let j=1;j<=rings;j++){
-      const r=j/rings,row=[];
+      const r=j/rings,row=[],points=[];
       for(let i=0;i<pts.length;i++){
-        const delta=mul(sub(pts[i],centre),r*coverage),p=add(centre,delta);
+        const delta=mul(sub(pts[i],centre),r*coverage),p=add(patch,delta);points.push(p);
         row.push(b.vertex(add(p,mul(n,height(p,r))),[dot(delta,u),dot(delta,v)]));
       }
-      rows.push(row);
+      rows.push(row);locations.push(points);
       for(let i=0;i<pts.length;i++){
         const next=(i+1)%pts.length,a=row[i],d=row[next];
         if(j===1)b.triangle(c,a,d);else{const p=rows[j-2][i],q=rows[j-2][next];b.triangle(p,a,d);b.triangle(p,d,q);}
       }
     }
-    // The outline can arrive in either winding (a tilted, clipped surface).
-    const winding=dot(cross(sub(pts[0],centre),sub(pts[1],centre)),n);
-    // Separate bubble domes follow the same moving surface and remain inside its outline.
+    const winding=dot(cross(sub(pts[0],centre),sub(pts[1],centre)),n),surfaceIndices=pts.length*3+(rings-1)*pts.length*6;
     if(foam){
-      for(let k=0;k<36;k++){
-        const angle=k*2.399963229728653,r=Math.sqrt((k+.5)/36)*.83,index=angle/TAU*pts.length,wrapped=((index%pts.length)+pts.length)%pts.length,i=Math.floor(wrapped),f=wrapped-i;
-        const edge=add(mul(pts[i],1-f),mul(pts[(i+1)%pts.length],f)),p=add(centre,mul(sub(edge,centre),r*coverage));
-        const radius=.00065+.0008*(.5+.5*Math.sin(k*13.7)),at=add(p,mul(n,height(p,r)));
-        dome(b,at,u,v,n,radius,radius*(.28+.18*Math.sin(k*3.1)**2),k*.013);
+      // The head has visible thickness down to the beer; no floating opaque lid.
+      const top=rows.at(-1),bottom=locations.at(-1).map(p=>b.vertex(p,[dot(sub(p,centre),u),dot(sub(p,centre),v)]));
+      for(let i=0;i<pts.length;i++){const j=(i+1)%pts.length;b.triangle(top[i],bottom[i],bottom[j]);b.triangle(top[i],bottom[j],top[j]);}
+      const count=Math.ceil(36*clamp(amount,.15,1));
+      for(let k=0;k<count;k++){
+        const angle=k*2.399963229728653,r=Math.sqrt((k+.5)/count)*.88,index=angle/TAU*pts.length,wrapped=((index%pts.length)+pts.length)%pts.length,i=Math.floor(wrapped),f=wrapped-i;
+        const edge=add(mul(pts[i],1-f),mul(pts[(i+1)%pts.length],f)),p=add(patch,mul(sub(edge,centre),r*coverage));
+        const radius=(.00065+.0008*(.5+.5*Math.sin(k*13.7)))*Math.min(1,coverage*2),at=add(p,mul(n,height(p,r)));
+        const bubbleHeight=Math.min(radius*(.28+.18*Math.sin(k*3.1)**2),Math.max(0,headroom-height(p,r)));
+        if(bubbleHeight>1e-6)dome(b,at,u,v,n,radius,bubbleHeight,k*.013);
       }
     }
     const mesh=b.finish();
     if(winding<0){
-      // Flip only the surface fan, not the already outward-facing bubble domes.
-      const surfaceIndices=pts.length*3+(rings-1)*pts.length*6;
-      for(let k=0;k<surfaceIndices;k+=3){const tmp=mesh.idx[k+1];mesh.idx[k+1]=mesh.idx[k+2];mesh.idx[k+2]=tmp;}
-      for(let k=0;k<(1+rings*pts.length)*3;k++)mesh.nrm[k]*=-1;
+      // Flip the surface and skirt, never the already outward-facing bubble domes.
+      const count=surfaceIndices+(foam?pts.length*6:0);
+      for(let k=0;k<count;k+=3){const tmp=mesh.idx[k+1];mesh.idx[k+1]=mesh.idx[k+2];mesh.idx[k+2]=tmp;}
+      for(let k=0;k<(1+rings*pts.length+(foam?pts.length:0))*3;k++)mesh.nrm[k]*=-1;
     }
     return mesh;
   }

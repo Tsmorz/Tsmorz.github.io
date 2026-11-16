@@ -187,7 +187,7 @@ function draw3d() {
       if (pinch) V.dist = Math.min(50, Math.max(0.1, V.dist * pinch / d));
       pinch = d; return;
     }
-    if (e.shiftKey || e.buttons === 4 || e.buttons === 2) pan(dx, dy);
+    if (e.buttons === 4 || e.buttons === 2) pan(dx, dy);
     else { V.yaw -= dx * 0.008; V.pitch = Math.max(-1.5, Math.min(1.5, V.pitch + dy * 0.008)); }
   });
   const up = (e) => { safely(handDrop, e); pts.delete(e.pointerId); pinch = 0; };

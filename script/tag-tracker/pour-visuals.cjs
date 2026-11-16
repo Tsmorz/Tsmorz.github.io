@@ -13,6 +13,6 @@ module.exports=function({check}){
   const mug=G.compoundMeshes(stein),profile=G.profileSampler(stein[0].profile);let bounded=true;for(let i=0;i<=1000;i++){const [r,z]=profile(i/1000);bounded=bounded&&r>=-1e-9&&r<=T.STEIN.R+1e-9&&z>=-1e-9&&z<=T.STEIN.H+1e-9;}
   check(mugSolid.length===32&&stein.some(p=>p.type==='stein-handle'&&p.visual)&&stein.some(p=>p.type==='lozenges'&&p.material==='labelBand')&&mug.every(valid)&&bounded,'stein retains blue/white lozenges and all 32 collision pieces while its rounded handle and wall/lip profile render smoothly without overshoot');
   const game=T.create(level,{R:I,t:[0,0,0],size:[.5,.9]},R.gripper(R.model())),b=game.byKey.get('bottle'),m=game.byKey.get('mug');
-  check(b.m===.3&&m.m===.25&&b.pieces.length===solid.length&&m.pieces.length===mugSolid.length&&m.gripZone.min[0]===T.STEIN.R+.002&&b.drawn.find(p=>p.artwork).artwork.title===art.title&&game.pour.from.V0===.0005,'artwork passes through real scene construction without changing prop mass, handle-only grip or beer volume');
+  check(b.dryMass.mass===.3&&Math.abs(b.m-.8)<1e-12&&m.m===.25&&b.pieces.length===solid.length&&m.pieces.length===mugSolid.length&&m.gripZone.min[0]===T.STEIN.R+.002&&b.drawn.find(p=>p.artwork).artwork.title===art.title&&game.pour.from.V0===.0005,'artwork preserves dry prop mass, handle-only grip and beer volume while the full bottle includes its real liquid load');
 };
 if(require.main===module){const assert=require('node:assert/strict');module.exports({check:(ok,msg)=>{assert.ok(ok,msg);process.stdout.write('ok '+msg+'\n');}});}

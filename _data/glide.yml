@@ -118,3 +118,29 @@ trajectory:
   limited: Excess height remains at this destination within the descent limit and terrain constraints.
   disabled: Best-glide arrival. Set a measured descent sink limit under Aircraft to plan a steeper approach.
   legend: Solid path in the air; matching trace on the ground.
+aircraft_flight:
+  title: Recorded aircraft flight
+  intro: Open a flight JSON file or photo metadata (.JSN) from the aircraft. Files stay in this browser tab. This does not command the aircraft.
+  import: Open flight or photo metadata
+  pictures: Add matching photos
+  clear: Clear flight
+  fit: Show flight on map
+  replay: Flight replay
+  empty: No aircraft flight loaded.
+  plan_only: Planned path · no recorded flight
+  source_recorded: Recorded on device
+  source_simulation: Simulation · not a real flight
+  gps: Measured GPS
+  estimated: Estimated position
+  missing: Location unavailable
+  legend: Solid line = measured GPS. Dashed line = estimated position. Gaps remain gaps. Marks are ground traces; they do not show aircraft height.
+  photos: Photos
+  events: Diagnostics
+  no_photos: No photo metadata in this file.
+  no_events: No diagnostic events in this file.
+  plan_export: Save planned path
+  plan_open: Open file's planned path
+  plan_note: Planned paths are planning data only. The aircraft does not follow them automatically.
+  device: Open aircraft dashboard
+  connection: Join the aircraft WiFi and open http://4.3.2.1, or use its address on your existing network. Open its dashboard in a separate tab; import its exported files here. HTTPS pages cannot reliably read a local HTTP device, and its password is never entered here.
+  dashboard_url: http://p4-camera.local
