@@ -37,7 +37,8 @@ test("every packet and value of the C fixture", () => {
   assert.ok(Math.abs(info.accel_g_per_lsb - 0.000244) < 1e-9);
   assert.deepEqual([info.tof_budget_ms, info.tof_distance_mode], [15, 1]);
   assert.equal(info.flags, wire.INFO_IMU_OK | wire.INFO_MIC_OK | wire.INFO_TOF_OK | wire.INFO_TACHAMMER_OK);
-  assert.deepEqual([info.haptic_rate_hz, info.erm_step_us, info.clip_max_samples, info.clip_max_erm], [16000, 10000, 96000, 600]);
+  assert.deepEqual([info.haptic_rate_hz, info.clip_max_samples], [16000, 96000]);
+  assert.equal(info.erm_step_us, undefined); // the ERM's fields are read past (zeros from version 6)
 
   const imu = packets[1].body;
   assert.deepEqual(imu.seq, [100, 101, 102]);
@@ -88,8 +89,16 @@ test("the page's encoders write the C encoder's bytes", () => {
   }
 });
 
+test("a version 5 stream, from a board that had an ERM, still reads", () => {
+  const { packets } = readAll(fixtureStream(5).bytes);
+  const info = packets[0].body;
+  assert.equal(info.version, 5);
+  assert.deepEqual([info.haptic_rate_hz, info.clip_max_samples], [16000, 96000]);
+  assert.equal(wire.playbackKindName(3), "ERM effect");
+});
+
 test("reader constants match the versioned firmware contract", () => {
-  const contract = JSON.parse(readFileSync(join(ROOT, "tests/fixtures/capture/v5/contract.json")));
+  const contract = JSON.parse(readFileSync(join(ROOT, "tests/fixtures/capture/v6/contract.json")));
   assert.equal(wire.VERSION, contract.version);
   for (const [key, value] of Object.entries(contract.limits)) assert.equal(wire[key], value);
   for (const [key, value] of Object.entries(contract.packets)) assert.equal(wire[key], value);
@@ -122,8 +131,9 @@ test("not our stream", () => {
 
 test("outgoing commands match the versioned firmware contract", async () => {
   const { COMMAND } = await import("../../haptography/device.js");
-  const contract = JSON.parse(readFileSync(join(ROOT, "tests/fixtures/capture/v5/contract.json")));
-  for (const [key, name] of Object.entries({ begin: "CLIP_BEGIN", data: "CLIP_DATA", play: "PLAY_CLIP", waveform: "PLAY_WAVEFORM", effect: "PLAY_ERM_EFFECT", stop: "STOP", setProfile: "SET_PROFILE" })) {
+  const contract = JSON.parse(readFileSync(join(ROOT, "tests/fixtures/capture/v6/contract.json")));
+  for (const [key, name] of Object.entries({ begin: "CLIP_BEGIN", data: "CLIP_DATA", play: "PLAY_CLIP", waveform: "PLAY_WAVEFORM", stop: "STOP", setProfile: "SET_PROFILE" })) {
     assert.equal(COMMAND[key], contract.commands[name]);
   }
+  assert.deepEqual(Object.keys(COMMAND).length, Object.keys(contract.commands).length);
 });

@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export function fixtureStream() {
-  const path = join(ROOT, "tests/fixtures/capture/v5/stream.bin");
+export const CAPTURE_FIXTURES = join(ROOT, "tests/fixtures/capture/v6");
+export function fixtureStream(version = 6) {
+  const path = join(ROOT, `tests/fixtures/capture/v${version}/stream.bin`);
   return { path, bytes: new Uint8Array(readFileSync(path)) };
 }
 export function rng(seed) {

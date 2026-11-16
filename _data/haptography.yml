@@ -30,7 +30,6 @@ controls:
   - { id: high, name: Low-pass, unit: Hz, min: 21, max: 600, step: 1, value: 400 }
   - { id: attack, name: Attack, unit: ms, min: 0, max: 200, step: 1, value: 20 }
   - { id: release, name: Release, unit: ms, min: 0, max: 200, step: 1, value: 20 }
-  - { id: ermShare, name: ERM envelope share, unit: "%", min: 0, max: 100, step: 1, value: 30, hint: The ERM follows the slow envelope; the TacHammer carries the waveform. }
 
 # The Library tab. Each waveform is drawn by library-core.js from these parameters (all times in ms):
 #   knock: a half-sine push `ms` wide, a reversed `brake` pulse (0-1) and an optional ringing tail

@@ -92,7 +92,7 @@ layout: null
     </div>
     <div class="chips" style="margin-top: 8px" aria-label="Sensors and actuators">
       <span class="chip" id="s-imu">IMU</span><span class="chip" id="s-mic">Mic</span><span class="chip" id="s-tof">ToF</span>
-      <span class="chip" id="s-tach">Hammer</span><span class="chip" id="s-erm">ERM</span>
+      <span class="chip" id="s-tach">Hammer</span>
     </div>
     <p id="device-health" role="status"></p>
     <button id="export-diagnostics" type="button" disabled>Export diagnostics</button>
@@ -247,7 +247,6 @@ layout: null
         <h3>Source</h3>
         <label for="signal-kind">Create from</label><select id="signal-kind" name="kind">{% for source in site.data.haptography.sources %}<option value="{{ source.id }}"{% if source.id == 'sine' %} selected{% endif %}>{{ source.name }}</option>{% endfor %}</select>
         <p id="target-source" class="muted">To use a recording, select a stroke in Record and press Recreate selection.</p>
-        <label for="signal-output">Send to</label><select id="signal-output" name="output"><option value="hammer">TacHammer</option><option value="erm">ERM envelope</option><option value="both">TacHammer + ERM</option></select>
         {% for control in site.data.haptography.controls %}
         <div class="signal-control" data-control="{{ control.id }}">
           <label for="signal-{{ control.id }}">{{ control.name }} <span>{{ control.unit }}</span></label>
@@ -275,7 +274,6 @@ layout: null
         <div class="signal-tracks">
           <div class="track target-track"><div class="plot-head"><span id="target-heading">Source shape</span><span id="target-readout"></span></div><div class="plot studio-plot" id="plot-target"><canvas class="base"></canvas><canvas class="over"></canvas></div><div class="axis"><canvas id="target-axis"></canvas></div></div>
           <div class="track drive-track"><div class="plot-head"><span>TacHammer command <span class="unit">% full scale</span></span><span id="drive-readout"></span></div><div class="plot studio-plot" id="plot-drive"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
-          <div class="track" id="erm-plot-wrap" hidden><div class="plot-head"><span>ERM envelope <span class="unit">% full scale</span></span><span>One level per device step</span></div><div class="plot studio-plot small-plot" id="plot-erm"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
           <div class="track spectrum-track"><div class="plot-head"><span>Drive spectrum</span><span id="spectrum-band-label">Passband shaded</span></div><div class="plot studio-plot" id="plot-drive-spectrum"><canvas class="base"></canvas><canvas class="over"></canvas></div></div>
         </div>
         <div id="comparison-panel" hidden>

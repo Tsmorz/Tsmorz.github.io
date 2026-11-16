@@ -35,8 +35,8 @@ export async function mountLibrary(api) {
   }));
   const items = () => [...catalog, ...recorded()];
   const driveOf = (item) => {
-    if (item.variant) return { drive: Float64Array.from(item.variant.result.drive, (v) => v * level()), erm: item.variant.result.erm ? Float64Array.from(item.variant.result.erm, (v) => v * level()) : null };
-    return { drive: L.drive(item, level()), erm: null };
+    if (item.variant) return Float64Array.from(item.variant.result.drive, (v) => v * level());
+    return L.drive(item, level());
   };
 
   function shown() {
@@ -96,13 +96,13 @@ export async function mountLibrary(api) {
     if (!toBoard && !toSpeakers) { say(api.source() ? "Turn on Speakers or Actuator to hear it." : "Turn on Speakers (top right), or connect a board.", true); return; }
     api.stopAudio(); stopSpeakers();
     playing = item.id; mark();
-    const { drive, erm } = driveOf(item);
+    const drive = driveOf(item);
     const where = [toSpeakers && "speakers", toBoard && (api.source()?.kind === "demo" ? "simulated actuator" : "TacHammer")].filter(Boolean).join(" and ");
     say(`${item.name} · ${(peak(drive) * 100).toFixed(0)}% peak drive · on the ${where}`);
     const audio = toSpeakers ? playOnSpeakers(item.variant ? L.driveAudio(drive) : L.speaker(item, level())) : null;
     try {
       // The studio owns the board: it uploads the clip, plays it and sends STOP on failure.
-      if (toBoard) await api.playOnce(drive, erm, item.name, { speakers: false });
+      if (toBoard) await api.playOnce(drive, item.name, { speakers: false });
       await audio;
     } catch (err) { say(err.message, true); }
     if (playing === item.id) { playing = null; mark(); }
