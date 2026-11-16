@@ -229,6 +229,7 @@ function drawRobot(c, o, w, h, now) {
   render();
   // Rendering supplies the fit bounds; finish the fit before the browser presents this frame.
   if (!S.view.fitted) { autoFit(); c.clearRect(0, 0, w, h); render(); }
+  paintDragPlaneGuide(o, w, h);
   hoverNow();
   paintRobotText(now);
   paintTaskLabels(o, w, h);
@@ -535,11 +536,31 @@ function rayHit(o, r, e, p, n) {
 // chest's, upright) the view looks most nearly along. From above the hand moves side to side and forward and back, from
 // the side forward and back and up and down, from the front side to side and up and down. Alt takes the next nearest,
 // so from above it lifts the hand.
+function grabFrame() {
+  const ch = RB.scene.chest;
+  return TB.world ? TB.world.table.R : RCORE.upright([ch.R[0], ch.R[3], ch.R[6]]);
+}
 function grabPlane(o, alt) {
-  const ch = RB.scene.chest, R = TB.world ? TB.world.table.R : RCORE.upright([ch.R[0], ch.R[3], ch.R[6]]);
+  const R = grabFrame();
   const by = [0, 1, 2].map((i) => [R[i], R[3 + i], R[6 + i]]).map((a) => ({ a, d: Math.abs(a[0] * o.fwd[0] + a[1] * o.fwd[1] + a[2] * o.fwd[2]) }));
   by.sort((x, y) => y.d - x.d);
   return by[alt ? 1 : 0].a;
+}
+// Screen overlay uses the same final camera as picking and the rendered hand, including robot eyes.
+function paintDragPlaneGuide(o, w, h) {
+  const el = $('dragPlaneGuide'), g = TB.grab, sc = RB.scene, d = g && TB.drive.get(g.side);
+  if (!o || S.settings.show3d !== 'robot' || !g || !d || !sc || !sc.arms.some(a=>a.side===g.side)) { el.hidden = true; return; }
+  const centre = C.add(d.t,C.mulv(d.R,[0,0,RCORE.gripper(sc.m).finger.c[2]]));
+  const guide = RCORE.dragPlaneGuide(centre,g.basis,g.n);
+  if (!guide) { el.hidden = true; return; }
+  const corners = guide.corners.map(p=>o.project(p)), axes = guide.axes.map(a=>({...a,from:o.project(a.from),to:o.project(a.to),label:o.project(a.label)}));
+  if (corners.some(p=>!p) || axes.some(a=>!a.from||!a.to||!a.label)) { el.hidden = true; return; }
+  const point = p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`;
+  const grid = guide.grid.map(line=>line.map(p=>o.project(p))).filter(line=>line.every(Boolean));
+  const svg = el.firstElementChild;
+  svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  svg.innerHTML = `<defs><marker id="dragPlaneArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M1 1L5 3L1 5"/></marker></defs><polygon points="${corners.map(point).join(' ')}"/><path class="drag-plane-grid" d="${grid.map(([a,b])=>`M${point(a)}L${point(b)}`).join(' ')}"/>` + axes.map(a=>`<g data-drag-axis="${a.index}"><path class="drag-plane-axis" d="M${point(a.from)}L${point(a.to)}" marker-start="url(#dragPlaneArrow)" marker-end="url(#dragPlaneArrow)"/><text x="${Math.max(45,Math.min(w-45,a.label[0])).toFixed(1)}" y="${Math.max(14,Math.min(h-8,a.label[1])).toFixed(1)}">${escapeHtml(TASK_DATA.motion.drag_axes[a.index])}</text></g>`).join('');
+  el.hidden = false;
 }
 function handGrab(e) {
   if (e.shiftKey || (e.pointerType === 'mouse' && e.button !== 0)) return false;
@@ -553,7 +574,7 @@ function handGrab(e) {
   const d = driveOf(hit.a), sc = RB.scene, G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit(), n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n);
   if (!at) return false;
-  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, at };
+  TB.grab = { id: e.pointerId, side: hit.a.side, alt: e.altKey, n, at, basis:grabFrame().slice() };
   plot.setPointerCapture(e.pointerId); plot.style.cursor = 'grabbing';
   return true;
 }
@@ -570,7 +591,7 @@ function handMove(e) {
   const G = RCORE.gripper(sc.m), p = C.add(d.t, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   const { o, r } = plotOrbit();
   // Alt pressed or let go mid-drag: carry on from here on the other plane
-  if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.at = at; g.alt = e.altKey; } return true; }
+  if (e.altKey !== g.alt) { const n = grabPlane(o, e.altKey), at = rayHit(o, r, e, p, n); if (at) { g.n = n; g.at = at; g.alt = e.altKey; g.basis = grabFrame().slice(); } return true; }
   const at = rayHit(o, r, e, p, g.n);
   if (!at) return true;
   // the new grip point; on the table (or the floor, the other arm or the other gripper) it goes at most PHYS.PRESS past
@@ -592,7 +613,8 @@ function handMove(e) {
   d.t = C.sub(want, C.mulv(d.R, [0, 0, G.finger.c[2]]));
   return true;
 }
-function handDrop(e) { if (TB.grab && TB.grab.id === e.pointerId) { TB.grab = null; plot.style.cursor = ''; TB.ptr = { clientX: e.clientX, clientY: e.clientY, buttons: 0 }; } }
+function handDrop(e) { if (TB.grab && TB.grab.id === e.pointerId) { TB.grab = null; $('dragPlaneGuide').hidden = true; plot.style.cursor = ''; TB.ptr = { clientX: e.clientX, clientY: e.clientY, buttons: 0 }; } }
+plot.addEventListener('lostpointercapture', handDrop);
 plot.addEventListener('pointerleave', () => { if (!TB.grab) { TB.ptr = null; TB.hover = null; plot.style.cursor = ''; } });
 function handWheel(e) {
   const hit = TB.grab ? { a: RB.scene.arms.find((x) => x.side === TB.grab.side) } : handAt(e);

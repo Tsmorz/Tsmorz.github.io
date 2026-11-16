@@ -245,6 +245,13 @@ html.bv-open,html.bv-open body{overflow:hidden}
 .plot3d canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
 .plot3d canvas:active{cursor:grabbing}
 .plot3d #plotGL{pointer-events:none} /* the shaded robot, over the grid; the plot canvas under it takes the pointer */
+#dragPlaneGuide{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:hidden}
+#dragPlaneGuide svg{width:100%;height:100%;display:block}
+#dragPlaneGuide polygon{fill:var(--accent);fill-opacity:.055;stroke:var(--accent);stroke-opacity:.45;stroke-width:1}
+#dragPlaneGuide path{fill:none;stroke:var(--accent);stroke-width:1.2}
+#dragPlaneGuide .drag-plane-grid{stroke-opacity:.22}
+#dragPlaneGuide .drag-plane-axis{stroke-opacity:.8}
+#dragPlaneGuide text{fill:var(--ink);stroke:var(--panel);stroke-width:3;paint-order:stroke;text-anchor:middle;dominant-baseline:middle;font:500 11px Archivo,system-ui,sans-serif}
 .plot3d .vbtns{position:absolute;right:10px;top:10px;z-index:2;display:flex;gap:6px}
 .plot3d .vbtns .btn{background:var(--panel)}.plot3d .vbtns .btn.primary{background:var(--accent)}
 .plot3d .help{position:absolute;right:10px;bottom:8px;font-size:12px;color:var(--muted);pointer-events:none;display:flex;gap:14px}
@@ -775,6 +782,7 @@ body.game-screen .card3d>.card-h,body.game-screen #taskPanel,body.game-screen #r
         </div>
         <canvas id="plot" tabindex="0" role="img" aria-label="{{ site.data.tag_tasks.controls.scene_label }}"></canvas>
         <canvas id="plotGL" aria-hidden="true" hidden></canvas>
+        <div id="dragPlaneGuide" aria-hidden="true" hidden><svg></svg></div>
         <div id="taskLabels" aria-hidden="true"></div>
         <div class="legend" id="legend3d"></div>
         <div class="rhint" id="robotHint" role="status" hidden></div>
@@ -1036,7 +1044,7 @@ body.game-screen .card3d>.card-h,body.game-screen #taskPanel,body.game-screen #r
 <!-- each ?v= is a hash of its script, so a browser never runs a cached old copy beside new ones: after changing a script,
      run `task versions` (check:fast fails until you do) -->
 <script src="tracker-core.js?v=52a69d77"></script>
-<script src="robot-core.js?v=9767b0f2"></script>
+<script src="robot-core.js?v=269209e3"></script>
 <script src="robot-gl.js?v=6ab33826"></script>
 <script src="physics-core.js?v=880a682e"></script>
 <script id="teleopData" type="application/json">{{ site.data.tag_tasks | jsonify }}</script>
@@ -1052,10 +1060,10 @@ body.game-screen .card3d>.card-h,body.game-screen #taskPanel,body.game-screen #r
 <script src="lib/qrcode-generator/qrcode.js"></script>
 <script src="app-state.js?v=5ead985c"></script>
 <script src="app-cameras.js?v=1709d28f"></script>
-<script src="app-plot.js?v=ced3cea6"></script>
-<script src="app-robot.js?v=ce3bd2b8"></script>
+<script src="app-plot.js?v=8f2723c3"></script>
+<script src="app-robot.js?v=23c0407f"></script>
 <script src="app-tasks.js?v=7c61f66e"></script>
-<script src="app-views.js?v=66c75231"></script>
+<script src="app-views.js?v=705e4feb"></script>
 <script src="app-calibrate.js?v=ad2cfe2e"></script>
 <script src="app-share.js?v=fc9c910c"></script>
 <script src="voice-core.js?v=452722f2"></script>

@@ -689,6 +689,11 @@ if (run('5h')) {
   console.log('5h. the robot: arms, inverse kinematics, calibration; tags on a screen; its settings');
   const RC = require(path.join(__dirname, '..', 'tag-tracker/robot-core.js'));
   const m = RC.model(), D = Math.PI / 180, N = 2000;
+  for(const rotation of [[0,0,0],[.4,-.7,.9]])for(const axis of [0,1,2])for(const sign of [-1,1]){
+    const R=C.rodrigues(rotation),centre=[.2,-.1,.5],normal=[R[axis],R[axis+3],R[axis+6]].map(v=>v*sign),guide=RC.dragPlaneGuide(centre,R,normal);
+    const points=[...guide.corners,...guide.grid.flat(),...guide.axes.flatMap(a=>[a.from,a.to,a.label])];
+    check(guide.axes.length===2&&guide.axes.every(a=>a.index!==axis)&&points.every(p=>Math.abs(C.sub(p,centre).reduce((s,v,i)=>s+v*normal[i],0))<1e-12)&&near(guide.corners.reduce((s,p)=>C.add(s,p.map(v=>v/4)),[0,0,0]),centre,1e-12), 'drag guide follows the locked plane in a rotated frame, normal axis '+axis+', sign '+sign);
+  }
   const rotErr = (A, B) => C.norm(C.so3Log(C.mul3(C.tr3(A), B)));
   const randQ = () => RC.JOINTS.map((j, i) => { const lo = i === 3 ? RC.MIN_BEND : j.lo; return lo + (j.hi - lo) * rnd(); }); // (the IK keeps the elbow bent MIN_BEND)
   const palm = (f, side) => [-side * f.R[1], -side * f.R[4], -side * f.R[7]], fingers = (f) => [-f.R[2], -f.R[5], -f.R[8]];

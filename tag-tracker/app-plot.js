@@ -54,6 +54,7 @@ function steadyRef() {
   return b.a.length > 2 ? C.meanPose(b.a, 10, 0.1) : tr.pose;
 }
 function draw3d() {
+  if (S.settings.show3d !== 'robot') $('dragPlaneGuide').hidden = true;
   const { c, w, h } = sizeCanvas(plot);
   c.clearRect(0, 0, w, h);
   const V = S.view, o = C.orbit({ yaw: V.yaw, pitch: V.pitch, dist: V.dist, target: V.target, fov: 45, w, h });

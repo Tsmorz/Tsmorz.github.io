@@ -281,7 +281,7 @@ function setMode(m) {
   } else document.querySelector('.col').appendChild($('calibCard'));
   paintRobotBtns(); clearOverlays(); renderRig();
 }
-function stopTaskInput() { TB.grab = null; TB.ptr = null; TASK_HAPTIC.reset(); }
+function stopTaskInput() { TB.grab = null; TB.ptr = null; $('dragPlaneGuide').hidden = true; TASK_HAPTIC.reset(); }
 const TABS = ['calib', 'track', 'tasks'];
 TABS.forEach((t, i) => {
   const b = $('tab-' + t);

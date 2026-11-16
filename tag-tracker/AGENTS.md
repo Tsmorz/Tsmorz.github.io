@@ -64,6 +64,8 @@ Mouse targets (`TB.drive`) are world-fixed until Resume AprilTags or recalibrati
 `holdBack` must keep corrections inside the drag plane; reaching an arm limit must not lift its target
 out of that plane. Only the actual gripper is pickable. Picking, drawing and projection must share the
 head camera, including its tilt. Calibrate robot reads un-tared poses.
+`dragPlaneGuide` projects the locked `TB.grab.n` at the commanded grasp point with the final camera;
+never infer another plane from the pointer or let the guide intercept input.
 
 Keep limited-spring physical hands and collisions with the other arm/gripper; exclude their own
 side-prefixed links. Rigid grip loads sum joint and pad forces; internal cancellation is not external load.

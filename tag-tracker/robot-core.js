@@ -360,5 +360,18 @@
     return { R: mul3(rodrigues(r), home.R), t: add(home.t, d) };
   }
 
-  return { MODEL, JOINTS, HOME, MIN_BEND, PREFER, SLEW, reachOf, model, gripper, slew, fk, ik, wrist, handIK, inReach, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose };
+  // A visual guide for the actual locked drag plane, in the table/chest reference frame.
+  // Its centre is the commanded grasp point, not the pointer ray's unconstrained hit.
+  function dragPlaneGuide(centre, R, normal, extent = .075) {
+    const axes = [0,1,2].map(i => ({index:i, v:[R[i],R[i+3],R[i+6]]})).filter(a => Math.abs(dot(a.v,normal)) < 1e-6);
+    if (axes.length !== 2) return null;
+    const at = (u,v) => add(centre,add(scale(axes[0].v,u*extent),scale(axes[1].v,v*extent)));
+    return {
+      corners: [[-1,-1],[1,-1],[1,1],[-1,1]].map(([u,v])=>at(u,v)),
+      grid: [-.5,.5].flatMap(t=>[[at(-1,t),at(1,t)],[at(t,-1),at(t,1)]]),
+      axes: axes.map((a,i)=>({index:a.index,from:i?at(0,-1):at(-1,0),to:i?at(0,1):at(1,0),label:i?at(0,1.3):at(1.3,0)})),
+    };
+  }
+
+  return { MODEL, JOINTS, HOME, MIN_BEND, PREFER, SLEW, reachOf, model, gripper, slew, fk, ik, wrist, handIK, inReach, calibrate, targets, place, upright, Rx, Ry, Rz, demoPose, dragPlaneGuide };
 });
