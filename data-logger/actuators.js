@@ -28,24 +28,6 @@ export const tachammerMaxLevel = (id) => {
   return !entry ? 0 : entry.drake ? TACHAMMER_DRAKE_MAX_LEVEL : 100;
 };
 
-// The pancake ERM through the DRV2605L: one effect each from TI's ROM library A.
-export const ERM_PRESETS = [
-  { id: 1, key: "STRONG_CLICK", effect: 1, label: "Strong click" },
-  { id: 2, key: "SHARP_CLICK", effect: 4, label: "Sharp click" },
-  { id: 3, key: "SOFT_BUMP", effect: 7, label: "Soft bump" },
-  { id: 4, key: "DOUBLE_CLICK", effect: 10, label: "Double click" },
-  { id: 5, key: "TRIPLE_CLICK", effect: 12, label: "Triple click" },
-  { id: 6, key: "STRONG_BUZZ", effect: 14, label: "Strong buzz" },
-  { id: 7, key: "ALERT_750MS", effect: 15, label: "Alert, 750 ms" },
-  { id: 8, key: "PULSING", effect: 52, label: "Pulsing" },
-  { id: 9, key: "HUM", effect: 64, label: "Hum" },
-  { id: 10, key: "RAMP_DOWN", effect: 70, label: "Ramp down" },
-  { id: 11, key: "RAMP_UP", effect: 82, label: "Ramp up" },
-  { id: 12, key: "LONG_BUZZ", effect: 118, label: "Long buzz (until stopped)" },
-];
-export const ERM_ROM_EFFECT_MAX = 123;
-export const RUMBLE_MS = { min: 10, max: 5000 }; // ACTUATOR_RUMBLE_MIN_MS / MAX_MS
-
 // The feedback servo (src/servo_motion.c has the motions).
 export const SERVO_PATTERNS = [
   { id: 1, key: "CENTER", label: "Centre" },
