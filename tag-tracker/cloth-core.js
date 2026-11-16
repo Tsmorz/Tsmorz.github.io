@@ -324,14 +324,17 @@
     c.reset = () => { c.acceptedContact=null;c.contactGeneration=0;for(const side of pins.keys())if(c.lastWorld?.hands[side]){delete c.lastWorld.hands[side].fabricGap;c.lastWorld.hands[side].fabricForce=0;}c.nodes = start.map((p) => ({ p:p.slice(),v:[0,0,0] }));pins.clear();c.forces.clear();c.folds.clear();c.touched.clear();c.reactions={};c.restTime=0;c.foldStage=0;c.firstHands.clear();c.foldHands.clear();for(const e of edges)e.rest=e.rest0;for(const m of membranes)m.lambda.fill(0);for(const b of bends)b.lambda.fill(0);c.edgePose=null;c.edgePairs=[];c.edgeBroadphase=null;c.surfacePose=null;c.surfaceManifold=null;c.surfaceBroadphase=null;c.patchContacts=[]; };
     c.reset();
     c.step = (dt, W) => {
-      const ns = c.nodes,G=W.gripper,pad=G?.pad||{c:[0,0,-.0925],h:[.022,.002,.0375]};c.contactGeneration=(c.contactGeneration||0)+1;if(c.acceptedContact&&(c.acceptedContact.world!==W||c.acceptedContact.gripper!==G||c.acceptedContact.generation<c.contactGeneration-1||c.contactStepComplete===false||c.acceptedContact.hands.some(([side,body])=>W.hands[side]?.body!==body)))c.acceptedContact=null;c.contactStepComplete=false;c.lastWorld=W;c.reactions={};c.patchContacts=[];c.bodyOffsets=null;c.padStates=new Map();c.gripSupport={};c.patchResidual=0;c.patchIterations=0;c.patchFeasibility=0;c.surfaceStats={samples:0,rows:0,iterations:0};c.coldContacts=true;c.surfaceTableWrench={force:[0,0,0],torque:[0,0,0]};c.jawBaselines=new Map();c.jawStops=new Map();c.handGeometry=new Map();for(const [side,h]of Object.entries(W.hands)){const a=W.jawActuator?.(side);if(a)c.jawBaselines.set(side,a);if(G)c.handGeometry.set(side,handGeometry(G,h,a));}resetJawModes(c);
+      c.newtonCalls=0;const ns = c.nodes,G=W.gripper,pad=G?.pad||{c:[0,0,-.0925],h:[.022,.002,.0375]};c.contactGeneration=(c.contactGeneration||0)+1;if(c.acceptedContact&&(c.acceptedContact.world!==W||c.acceptedContact.gripper!==G||c.acceptedContact.generation<c.contactGeneration-1||c.contactStepComplete===false||c.acceptedContact.hands.some(([side,body])=>W.hands[side]?.body!==body)))c.acceptedContact=null;c.contactStepComplete=false;c.lastWorld=W;c.reactions={};c.patchContacts=[];c.bodyOffsets=null;c.padStates=new Map();c.gripSupport={};c.patchResidual=0;c.patchIterations=0;c.patchFeasibility=0;c.surfaceStats={samples:0,rows:0,iterations:0};c.coldContacts=true;c.surfaceTableWrench={force:[0,0,0],torque:[0,0,0]};c.jawBaselines=new Map();c.jawStops=new Map();c.handGeometry=new Map();for(const [side,h]of Object.entries(W.hands)){const a=W.jawActuator?.(side);if(a)c.jawBaselines.set(side,a);if(G)c.handGeometry.set(side,handGeometry(G,h,a));}resetJawModes(c);
       const bodyResponses=new Map(),frozenBody=body=>{
         if(bodyResponses.has(body))return bodyResponses.get(body);
         const token=shirt&&!body.fixed&&W.deformableResponse?W.deformableResponse(body,dt):null,im=body.fixed?0:token?.inverseMass??body.invM??(body.m?1/body.m:0);let inertia=body.fixed?Array(9).fill(0):token?.inverseInertia||body.iW||Array(9).fill(0);
         if(!token&&!body.fixed&&body.R&&body.invIb)inertia=Array.from({length:9},(_,at)=>{const i=Math.floor(at/3),j=at%3;let value=0;for(let k=0;k<3;k++)for(let l=0;l<3;l++)value+=body.R[3*i+k]*body.invIb[3*k+l]*body.R[3*j+l];return value;});
         const value={token,position:token?.position||body.t.slice(),im,inertia};bodyResponses.set(body,value);return value;
       };
-      let commonTableOwned=false,commonOwnershipRetry=false;
+      let commonTableOwned=false,commonOwnershipRetry=false,commonNodes=null;
+      // The common solve owns only the material near a hand. Far nodes keep the
+      // cheap per-node table/layer contacts, so its size does not grow with the garment.
+      const owns=id=>!commonNodes||commonNodes.has(id);
       const trimPin=(side,h,pin,pose)=>{
         if(!shirt||!G)return true;
         const pad=c.handGeometry.get(side).region;const kept=[];for(let layer=0;layer<pin.layers;layer++)if(pin.points.slice(layer*3,layer*3+3).some(point=>{const p=point.ids.reduce((v,id,k)=>add(v,mul(ns[id].p,point.w[k])),[0,0,0]),local=mt(pose.R,sub(p,pose.t));return Math.abs(local[0]-pad.c[0])<=pad.h[0]+radius&&Math.abs(local[2]-pad.c[2])<=pad.h[2]+radius&&Math.abs(local[1]-pad.c[1])<=pad.h[1]+radius;}))kept.push(layer);
@@ -492,7 +495,7 @@
         if(body&&!body.fixed){const at=ids.reduce((p,id,k)=>add(p,mul(ns[id].p,bary[k])),[0,0,0]),previous=robotContacts.get(body)||{force:[0,0,0],torque:[0,0,0],at,side},reaction=mul(add(mul(normal,force),frictionForce),-1);previous.force=add(previous.force,reaction);previous.torque=add(previous.torque,cross(sub(at,body.t),reaction));robotContacts.set(body,previous);}
       };
       const collideTable=(n,i)=>{
-        if(commonTableOwned)return;
+        if(commonTableOwned&&owns(i))return;
         if (W.tableBox) {
           const B=W.tableBox,dx=n.p[0]-B.t[0],dy=n.p[1]-B.t[1],dz=n.p[2]-B.t[2],lx=B.R[0]*dx+B.R[3]*dy+B.R[6]*dz,ly=B.R[1]*dx+B.R[4]*dy+B.R[7]*dz,lz=B.R[2]*dx+B.R[5]*dy+B.R[8]*dz,oldZ=B.R[2]*(old[i][0]-B.t[0])+B.R[5]*(old[i][1]-B.t[1])+B.R[8]*(old[i][2]-B.t[2]);
           // Fabric pressed into the slab from above leaves through the top, never the nearest face: a grip
@@ -551,6 +554,11 @@
         }
         return false;
       };
+      const ownCommon=()=>{
+        if(commonNodes||!handBoxes.length)return;const reach=c.commonReach??.04;commonNodes=new Set();
+        for(let i=0;i<ns.length;i++){const p=ns[i].p;for(const box of handBoxes)if(p[0]>=box.low[0]-reach&&p[0]<=box.high[0]+reach&&p[1]>=box.low[1]-reach&&p[1]<=box.high[1]+reach&&p[2]>=box.low[2]-reach&&p[2]<=box.high[2]+reach){commonNodes.add(i);break;}}
+        for(const a of attachments)for(const id of a.ids||[])commonNodes.add(id);
+      };
       const collideHandSurfaces=()=>{
         const jointPins=attachments.filter(a=>{const h=W.hands[a.side];if(!(h.fabricForce>0)&&!c.jawBaselines.has(a.side))return false;if(!G)return true;const pose=W.handPose(a.side),p=mt(pose.R,sub(a.ids.reduce((v,id,k)=>add(v,mul(ns[id].p,a.w[k])),[0,0,0]),pose.t)),region=c.handGeometry.get(a.side).region;return p.every((v,k)=>Math.abs(v-region.c[k])<=region.h[k]+radius);});
         if(!handBoxes.length&&!jointPins.length&&!commonTableOwned){c.acceptedContact=null;return;}
@@ -588,7 +596,7 @@
         // A different contact projection can introduce a pad contact after the
         // initial ownership test. Restart this material pass before solving it,
         // so no preliminary table/layer preload survives into the common law.
-        if(!commonTableOwned&&(surfaceTangents.length||jointPins.length)){commonTableOwned=true;commonOwnershipRetry=true;return;}
+        if(!commonTableOwned&&(surfaceTangents.length||jointPins.length)){commonTableOwned=true;ownCommon();commonOwnershipRetry=true;return;}
         // Include the actual supporting sheets and table in the same normal
         // system. Projecting a free upper particle and putting it back afterward
         // loses the pressure of a trapped cloth/rubber/table sandwich.
@@ -610,16 +618,16 @@
           // Supporting layers are part of the same total-pressure problem.
           // Their preliminary projections are bypassed below, not retained as
           // hidden preload beneath the new surface constraints.
-          for(const pair of surfacePairs)if(pair.q===c){
+          for(const pair of surfacePairs)if(pair.q===c&&(owns(pair.i)||pair.ids.some(owns))){
             const i=sample([pair.i],[1]),j=sample(pair.ids,pair.contact.w),key=i<j?i+':'+j:j+':'+i;if(layerKeys.has(key))continue;layerKeys.add(key);
             const normal=mul(pair.contact.n,pair.side);contacts.push({row:[[i,1],[j,-1]],normal,point:samples[i].point,base:dot(sub(samples[i].point,samples[j].point),normal)-2*radius,compliance:1e-12});
           }
-          for(const pair of edgePairs){const row=pair.ids.map((id,k)=>[sample([id],[1]),pair.w[k]]),point=pair.ids.reduce((p,id,k)=>add(p,mul(ns[id].p,pair.w[k])),[0,0,0]);contacts.push({row,normal:pair.n,point:ns[pair.ids[0]].p,base:dot(point,pair.n)-2*radius,compliance:1e-12});}
+          for(const pair of edgePairs){if(!pair.ids.some(owns))continue;const row=pair.ids.map((id,k)=>[sample([id],[1]),pair.w[k]]),point=pair.ids.reduce((p,id,k)=>add(p,mul(ns[id].p,pair.w[k])),[0,0,0]);contacts.push({row,normal:pair.n,point:ns[pair.ids[0]].p,base:dot(point,pair.n)-2*radius,compliance:1e-12});}
           // For a flat table and affine cloth triangles, nodal plane support
           // also supports their interiors. Use one total force per node instead
           // of overlapping nodal and barycentric copies of the same support.
           const B=W.tableBox;
-          for(let id=0;B&&id<ns.length;id++){
+          for(let id=0;B&&id<ns.length;id++){if(!owns(id))continue;
             const i=sample([id],[1]),point=samples[i].point,local=mt(B.R,sub(point,B.t)),oldLocal=mt(B.R,sub(old[id],B.t)),top=Math.abs(local[0])<B.h[0]&&Math.abs(local[1])<B.h[1]&&oldLocal[2]>=-B.h[2],q=top?{dist:local[2]-B.h[2]-radius,n:[B.R[2],B.R[5],B.R[8]]}:P.sphereBox(point,radius,B,B.h);
             contacts.push({i,row:[[i,1]],normal:q.n,point,base:q.dist,compliance:1e-12,table:true});
           }
@@ -710,7 +718,7 @@
           const delta=c.materialForceResponse(nodal),positions=free.map((point,id)=>point.map((value,axis)=>value+delta[3*id+axis])),pressure=new Map(Object.keys(W.hands).map(side=>[side,{'1':0,'-1':0}])),loads=new Map();
           contacts.forEach((contact,i)=>{if(contact.state){const alignment=dot(contact.normal,contact.state.closing);if(alignment>.5)pressure.get(contact.h.side)[contact.jaw]+=alignment*payload.normalForces[i];}});
           payload.loads.forEach(value=>loads.set(c.jawModes.get(String(value.side)),value.load));
-          const violations=[];surfaceTangents.forEach((contact,index)=>{if(selected.has(index))return;const state=tangentState(index,positions,field,pressure,{lambda:payload.normalForces[contacts.indexOf(contact)],loads}),check=Patch.frictionResidual([0,0,0],state.tangent,state.cap,state.L);if(check.residual>(c.contactTolerance??radius*.001)||check.feasibility>1e-9)violations.push(index);});
+          const violations=[];surfaceTangents.forEach((contact,index)=>{if(selected.has(index))return;const state=tangentState(index,positions,field,pressure,{lambda:payload.normalForces[contacts.indexOf(contact)],loads});if(!(state.L>0)||!(state.cap>=0)||!Number.isFinite(state.cap)||!state.tangent.every(Number.isFinite))return;const check=Patch.frictionResidual([0,0,0],state.tangent,state.cap,state.L);if(check.residual>(c.contactTolerance??radius*.001)||check.feasibility>1e-9)violations.push(index);});
           return violations;
         };
         // Numerical continuation only: material coordinates identify the old
@@ -754,7 +762,7 @@
         };
         const newtonTried=new Map(),tangentActive=new Set(),jointNormalActive=new Set();let newtonPrediction=null,pendingNewton=null;
         const newtonCandidate=(solution,pressure,coverageDepth=0,reuseNormalCandidate=false)=>{
-          if(!Newton||coverageDepth>=16||[...c.jawModes.values()].some(mode=>mode.stop||Math.abs(mode.extra)>1e-15))return null;
+          if(coverageDepth===0&&++c.newtonCalls>(c.newtonBudget??2))return null;if(!Newton||coverageDepth>=16||[...c.jawModes.values()].some(mode=>mode.stop||Math.abs(mode.extra)>1e-15))return null;
           prepareWarm();
           surfaceTangents.forEach((_,index)=>{if(len(warmToe[index])>1e-10)tangentActive.add(index);});
           const active=[...tangentActive].sort((a,b)=>a-b),key=active.join(','),prior=newtonTried.get(key);if(!active.length||prior&&!(prior.attempts<3&&frictionResidual<prior.residual*.5))return null;newtonTried.set(key,{attempts:(prior?.attempts||0)+1,residual:frictionResidual});
@@ -883,7 +891,7 @@
           const solved={forces,normalForces:physicalNormals,caps:payload.caps.slice(0,pinData.length),normalResidual:payload.normalResidual,pinResidual:payload.frictionResidual,feasibility:result.evaluation.feasibility,converged:true,iterations:result.iterations,applications:result.applications||0};pendingNewton={solved,modes:payload.loads.map(value=>({side:value.side,load:value.load,extra:0}))};newtonPrediction={ngs:!!result.ngs,active,forces:proposed.map(v=>v.slice()),gradients:active.map((_,i)=>payload.gradient.slice(count+2*i,count+2*i+2)),normal:physicalNormals,caps:payload.caps.slice(pinData.length)};return proposed;
 
         };
-        let accepted=null,warm=null,warmVersion=null,lastToe=null,lastEta=null,lastStops=null,frictionResidual=Infinity,previousFriction=Infinity,stepScale=1,frictionTrace=[],trialBackup=null,trialResidual=Infinity,strictCommon=c.coldContacts;
+        let accepted=null,best=null,last=null,warm=null,warmVersion=null,lastToe=null,lastEta=null,lastStops=null,frictionResidual=Infinity,previousFriction=Infinity,stepScale=1,frictionTrace=[],trialBackup=null,trialResidual=Infinity,strictCommon=c.coldContacts;
         for(let sweep=0;sweep<128;sweep++){
           toeNodal.fill(0);const toeField=new Map(),toeLoad=new Map();for(let i=0;i<surfaceTangents.length;i++){const contact=surfaceTangents[i],F=toe[i];addSurfaceTangent(i,F,toeNodal,toeField);if(contact.jawMode)toeLoad.set(contact.jawMode,(toeLoad.get(contact.jawMode)||0)-dot(F,mv(contact.frame.pose.R,[0,(contact.jaw||0)/2,0])));}
           c.materialForceResponse(toeNodal,toeDelta);
@@ -895,7 +903,7 @@
             // acceptance rule. Re-solve a small inner miss with the ORIGINAL
             // tolerance and a fresh full operator/pressure/bounds certificate.
             if(!inner.converged&&strictCommon&&inner.feasibility<=1e-9&&inner.normalResidual<=physicalTolerance&&inner.pinResidual<=physicalTolerance&&(inner.normalBoundResidual||0)<=1e-9){const checked=Patch.solveCoupled({...problem,tolerance:physicalTolerance,warm:inner.warm});if(checked.converged)c.surfaceStats.certifiedRestarts=(c.surfaceStats.certifiedRestarts||0)+1;return checked;}return inner;});}
-          if(!solution.converged){if(lastToe){for(let i=0;i<toe.length;i++)toe[i]=mul(add(toe[i],lastToe[i]),.5);for(const [side,value]of lastEta)toeEta.set(side,((toeEta.get(side)||0)+value)/2);warm=null;stepScale*=.5;frictionHistory.length=0;continue;}throw new Error('Joint cloth contact did not converge: pin '+solution.pinResidual+' normal '+solution.normalResidual+' bounds '+solution.normalBoundResidual);}
+          if(!solution.converged){if(lastToe){for(let i=0;i<toe.length;i++)toe[i]=mul(add(toe[i],lastToe[i]),.5);for(const [side,value]of lastEta)toeEta.set(side,((toeEta.get(side)||0)+value)/2);warm=null;stepScale*=.5;frictionHistory.length=0;continue;}if(best&&!c.strictContact)break;if(!c.strictContact&&solution.normalForces?.every(Number.isFinite)&&solution.forces?.every(f=>f.every(Number.isFinite)))c.surfaceStats.unconverged=(c.surfaceStats.unconverged||0)+1;else throw new Error('Joint cloth contact did not converge: pin '+solution.pinResidual+' normal '+solution.normalResidual+' bounds '+solution.normalBoundResidual);}
           warm=solution.warm;allNodal.set(toeNodal);const field=new Map([...background].map(([body,value])=>[body,{...value,force:value.force.slice(),torque:value.torque.slice()}]));for(const [body,value]of toeField)addForce(field,body,body.t,value.force,value.side),field.get(body).torque=add(field.get(body).torque,value.torque);
           for(let i=0;i<contacts.length;i++){const contact=contacts[i],F=solution.normalForces[i];for(const [id,w]of rows[i])for(let axis=0;axis<3;axis++)allNodal[3*id+axis]+=w*contact.normal[axis]*F;if(contact.body)addForce(field,contact.body,contact.point,mul(jacobians[i].direction,F),contact.h?.side??null);}
           for(let i=0;i<jointPins.length;i++){const a=jointPins[i],F=solution.forces[i];a.ids.forEach((id,k)=>{for(let axis=0;axis<3;axis++)allNodal[3*id+axis]+=a.w[k]*F[axis];});addForce(field,pinData[i].body,pinData[i].point,mul(F,-1),a.side);}
@@ -913,18 +921,18 @@
           // Accept only a fully re-solved common force/normal/actuator state.
           // A small projected update can be caused by damping, not convergence.
           for(let index=0;index<surfaceTangents.length;index++){
-            const state=tangentState(index,positions,field,pressure),force=toe[index],cap=state.cap,check=Patch.frictionResidual(force,state.tangent,cap,state.L),value=check.residual;
+            const state=tangentState(index,positions,field,pressure),force=toe[index],cap=state.cap;if(!(state.L>0)||!(cap>=0)||!Number.isFinite(cap)||!state.tangent.every(Number.isFinite)||!force.every(Number.isFinite))continue;const check=Patch.frictionResidual(force,state.tangent,cap,state.L),value=check.residual;
             if(value>(c.contactTolerance??radius*.001))tangentActive.add(index);feasibility=Math.max(feasibility,check.feasibility);if(value>residual){residual=value;worst={index,normal:state.normal,point:surfaceTangents[index].point,updatedPoint:state.point,tangent:state.tangent,force:force.slice(),cap,L:state.L,lambda:surfaceTangents[index].lambda,jawJ:surfaceTangents[index].jawJ};}
           }
           if(newtonPrediction&&toe.every((force,index)=>len(sub(force,newtonPrediction.forces[index]))<1e-12)){const error=Math.max(0,...newtonPrediction.active.map((index,i)=>{const state=tangentState(index,positions,field,pressure),expected=newtonPrediction.gradients[i];return Math.hypot(...state.axes.map((axis,k)=>dot(axis,state.tangent)-expected[k]));}));c.newtonDiagnostic.comparison={gradient:error,capacity:Math.max(0,...newtonPrediction.active.map((index,i)=>Math.abs(tangentState(index,positions,field,pressure).cap-newtonPrediction.caps[i]))),normal:Math.max(0,...solution.normalForces.map((v,i)=>Math.abs(v-newtonPrediction.normal[i]))),normalResidual:solution.normalResidual};if(newtonPrediction.ngs)c.ngsComparison=c.newtonDiagnostic.comparison;newtonPrediction=null;}
           for(const [side,mode]of c.jawModes)if(!mode.stop&&Math.abs(mode.extra)>1e-15){const complementarity=mode.extra>0?mode.base.maxForce-mode.load:mode.base.maxForce+mode.load;if(complementarity>1e-8)residual=Math.max(residual,Math.abs(mode.extra));}
           frictionResidual=residual;frictionTrace.push({sweep,residual,feasibility,stepScale});if(frictionTrace.length>8)frictionTrace.shift();
-          if(residual<=(c.contactTolerance??radius*.001)&&feasibility<=1e-9){accepted={solution,field,toeField,pressure};break;}
+          if(residual<=(c.contactTolerance??radius*.001)&&feasibility<=1e-9){accepted={solution,field,toeField,pressure};break;}last={residual,accepted:{solution,field,toeField,pressure},positions:ns.map(n=>n.p.slice())};if(feasibility<=1e-9&&(!best||residual<best.residual))best={residual,accepted:{solution,field,toeField,pressure},positions:ns.map(n=>n.p.slice())};
           if(trialBackup&&residual>Math.max(trialResidual*1.2,c.contactTolerance??radius*.001)){for(let i=0;i<toe.length;i++)toe[i]=trialBackup.toe[i].slice();toeEta.clear();for(const [side,value]of trialBackup.eta)toeEta.set(side,value);c.jawStops=new Map(trialBackup.stops);trialBackup=null;frictionHistory.length=0;warm=null;continue;}trialBackup=null;
           // Exact global stick trial removes near-dependent GS modes. It uses
           // only load-bearing tangents, all normals, and zero elastic compliance;
           // singular/capped/actuator-branch trials fall back without softening.
-          const freeJaw=[...c.jawModes.values()].every(mode=>!mode.stop&&Math.abs(mode.extra)<1e-15),newton=newtonCandidate(solution,pressure,0,coldNormalBaseline);if(newton){strictCommon=true;c.coldContacts=true;}if(freeJaw&&!newton)throw new Error('Cloth joint VI did not converge: '+JSON.stringify({newton:c.newtonDiagnostic,ngs:c.ngsDiagnostic,ngsComparison:c.ngsComparison,warm:c.warmDiagnostic,residual,feasibility}));const stick=newton||(!freeJaw&&sweep%4===0?stickCandidate(solution,pressure,field):null);if(stick){trialBackup={toe:toe.map(v=>v.slice()),eta:new Map(toeEta),stops:new Map(c.jawStops)};trialResidual=residual;for(let i=0;i<toe.length;i++)toe[i]=stick[i];for(const side of toeEta.keys())toeEta.set(side,0);lastToe=null;frictionHistory.length=0;previousFriction=Infinity;warm=null;continue;}
+          const freeJaw=[...c.jawModes.values()].every(mode=>!mode.stop&&Math.abs(mode.extra)<1e-15),newton=newtonCandidate(solution,pressure,0,coldNormalBaseline);if(newton){strictCommon=true;c.coldContacts=true;}if(freeJaw&&!newton&&(best||!c.strictContact))break;if(freeJaw&&!newton)throw new Error('Cloth joint VI did not converge: '+JSON.stringify({newton:c.newtonDiagnostic,ngs:c.ngsDiagnostic,ngsComparison:c.ngsComparison,warm:c.warmDiagnostic,residual,feasibility}));const stick=newton||(!freeJaw&&sweep%4===0?stickCandidate(solution,pressure,field):null);if(stick){trialBackup={toe:toe.map(v=>v.slice()),eta:new Map(toeEta),stops:new Map(c.jawStops)};trialResidual=residual;for(let i=0;i<toe.length;i++)toe[i]=stick[i];for(const side of toeEta.keys())toeEta.set(side,0);lastToe=null;frictionHistory.length=0;previousFriction=Infinity;warm=null;continue;}
           if(residual>Math.max(...frictionTrace.slice(0,-1).map(q=>q.residual))*2&&lastToe&&stepScale>1e-6){for(let i=0;i<toe.length;i++)toe[i]=mul(add(toe[i],lastToe[i]),.5);for(const [side,value]of lastEta)toeEta.set(side,((toeEta.get(side)||0)+value)/2);c.jawStops=new Map(lastStops);stepScale*=.5;frictionHistory.length=0;warm=null;continue;}
           previousFriction=residual;lastToe=toe.map(v=>v.slice());lastEta=new Map(toeEta);lastStops=new Map(c.jawStops);
           c.frictionDiagnostic={trace:frictionTrace,worst,active:contacts.flatMap((contact,i)=>solution.normalForces[i]>1e-10?[[i,solution.normalForces[i]]]:[]),modes:[...c.jawModes].map(([side,mode])=>({side,load:mode.load,extra:mode.extra,stop:mode.stop}))};
@@ -947,7 +955,7 @@
           for(const [side,mode]of c.jawModes)if(!mode.stop){const Qtoe=surfaceTangents.reduce((sum,q,i)=>sum+(q.jawMode===mode?-dot(toe[i],mv(q.frame.pose.R,[0,q.jaw/2,0])):0),0);if(Math.abs(Qtoe)<mode.base.maxForce-1e-8&&Math.abs(toeEta.get(side)||0)>1e-15){residual=Math.max(residual,Math.abs(toeEta.get(side)));toeEta.set(side,0);controlChanged=true;}}
 
         }
-        if(!accepted)throw new Error('Cloth normal/tangent replacement did not converge: '+frictionResidual+' '+JSON.stringify({...c.frictionDiagnostic,stick:c.stickDiagnostic,newton:c.newtonDiagnostic}));
+        const fallback=c.strictContact?best:best||last;if(!accepted&&fallback){accepted=fallback.accepted;frictionResidual=fallback.residual;fallback.positions.forEach((p,id)=>{ns[id].p=p;});c.surfaceStats.unconverged=(c.surfaceStats.unconverged||0)+1;}if(!accepted)throw new Error('Cloth normal/tangent replacement did not converge: '+frictionResidual+' '+JSON.stringify({...c.frictionDiagnostic,stick:c.stickDiagnostic,newton:c.newtonDiagnostic}));
         const {solution,field,pressure}=accepted;c.surfaceResidual=solution.normalResidual;c.patchResidual=solution.pinResidual;c.patchFeasibility=solution.feasibility;c.frictionResidual=frictionResidual;c.surfaceStats.samples=Math.max(c.surfaceStats.samples,samples.length);c.surfaceStats.rows=Math.max(c.surfaceStats.rows,contacts.length);c.surfaceStats.applications=Math.max(c.surfaceStats.applications||0,solution.applications);c.surfaceStats.iterations=Math.max(c.surfaceStats.iterations,solution.iterations||0);c.bodyOffsets=new Map([...field].map(([body,value])=>[body,{translation:mul(value.force,bodies.get(body).im*dt*dt),rotation:mul(mv(bodies.get(body).inertia,value.torque),dt*dt)}]));
         attachments.forEach(a=>{a.lambda=[0,0,0];a.capacity=0;a.responsePoint=null;});jointPins.forEach((a,i)=>{a.lambda=mul(solution.forces[i],dt*dt);a.capacity=solution.caps?.[i]??pinData[i].cap;a.responsePoint=pinData[i].point.slice();});c.gripSupport={};for(const [side,pin]of pins){const Pside=pressure.get(side),loaded=G?Pside&&Pside[1]>0&&Pside[-1]>0:(W.hands[side]?.fabricForce||0)>0;pin.loaded=!!loaded&&jointPins.some(a=>a.side===side);if(pin.loaded){pin.acquired=true;c.touched.add(+side);if(c.foldStage===1){if(pin.throughFold)c.foldHands.add(+side);}else c.firstHands.add(+side);}c.gripSupport[side]={command:c.jawBaselines.get(side)?.maxForce??W.hands[side].fabricForce,pressure:Pside||{'1':0,'-1':0},capacity:jointPins.reduce((sum,a)=>sum+(a.side===side?a.capacity:0),0)};}
         const hasLoad=solution.normalForces.some(force=>force>1e-10)||solution.forces.some(force=>len(force)>1e-10)||toe.some(force=>len(force)>1e-10);if(hasLoad){const pinForces=new Map();jointPins.forEach((a,i)=>pinForces.set(a.pointRef,{body:W.hands[a.side].body,force:mt(W.handPose(a.side).R,solution.forces[i])}));const normalForces=descriptors.map((descriptor,i)=>({descriptor,force:Math.max(0,solution.normalForces[i]),tangent:null}));surfaceTangents.forEach((contact,i)=>{normalForces[contacts.indexOf(contact)].tangent=mt(contact.frame.pose.R,toe[i]);});c.acceptedContact={world:W,gripper:G,hands:Object.entries(W.hands).map(([side,h])=>[side,h.body]),generation:c.contactGeneration,normals:normalForces,pins:pinForces};}else c.acceptedContact=null;
@@ -1043,7 +1051,7 @@
       };
       const solveSurface=()=>{
         for(const pair of surfacePairs){
-          if(commonTableOwned&&pair.q===c)continue;
+          if(commonTableOwned&&pair.q===c&&(owns(pair.i)||pair.ids.some(owns)))continue;
           const {i,q,ids}=pair,w=pair.contact.w,n=pair.contact.n,sgn=pair.side,nx=n[0]*sgn,ny=n[1]*sgn,nz=n[2]*sgn,a=ns[i].p,b=q.nodes[ids[0]].p,d=q.nodes[ids[1]].p,e=q.nodes[ids[2]].p;
           const distance=(a[0]-b[0]*w[0]-d[0]*w[1]-e[0]*w[2])*nx+(a[1]-b[1]*w[0]-d[1]*w[1]-e[1]*w[2])*ny+(a[2]-b[2]*w[0]-d[2]*w[1]-e[2]*w[2])*nz;
           const thickness=radius+(q.halfThickness||.0025);if(distance>=thickness&&!pair.lambda)continue;
@@ -1080,16 +1088,14 @@
       };
       buildEdges();
       const solveEdges=()=>{
-        if(commonTableOwned)return;
-        for(const pair of edgePairs){
+        for(const pair of edgePairs){if(commonTableOwned&&pair.ids.some(owns))continue;
           const distance=pair.ids.reduce((s,id,k)=>s+pair.w[k]*dot(ns[id].p,pair.n),0);if(distance>=2*radius&&!pair.lambda)continue;
           solveLayer(pair,pair.ids,pair.w,pair.n,distance,2*radius);
         }
       };
       const tableFriction=new Map();
       const solveTableFriction=()=>{
-        if(commonTableOwned)return;
-        for(const [i,normal]of tablePush)if(shirt||!attached.has(i)){
+        for(const [i,normal]of tablePush)if((shirt||!attached.has(i))&&!(commonTableOwned&&owns(i))){
           const delta=mt(table.R,sub(ns[i].p,old[i])),previous=tableFriction.get(i)||[0,0],candidate=[previous[0]+delta[0],previous[1]+delta[1]],L=Math.hypot(...candidate),scale=L>0?Math.min(1,(shirt?c.friction:.75)*normal/L):1,next=candidate.map(v=>v*scale);
           const correction=mv(table.R,[next[0]-previous[0],next[1]-previous[1],0]);ns[i].p=sub(ns[i].p,correction);if(weights[i])tableReaction(ns[i].p,mul(correction,-1/(weights[i]*dt*dt)));tableFriction.set(i,next);
         }
@@ -1104,7 +1110,7 @@
           }
           applyPins();
         }
-        commonOwnershipRetry=false;if(shirt)commonTableOwned=commonTableOwned||needsCommonTable();
+        commonOwnershipRetry=false;if(shirt&&!commonTableOwned&&needsCommonTable()){commonTableOwned=true;ownCommon();}
         ns.forEach(collide);solveSurface();solveEdges();solveTableFriction();if(shirt)collideHandSurfaces();
         if(commonOwnershipRetry){it--;continue;}
       }

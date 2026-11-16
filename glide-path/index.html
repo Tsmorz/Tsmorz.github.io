@@ -154,7 +154,7 @@ layout: null
       <div id="aircraftReplay" hidden><label for="aircraftTime">{{ site.data.glide.aircraft_flight.replay }}</label><input id="aircraftTime" type="range" min="0" max="1" step="1"><output id="aircraftSample" for="aircraftTime"></output></div>
       <details><summary>{{ site.data.glide.aircraft_flight.photos }} <span id="aircraftPhotoCount"></span></summary><label class="flight-file">{{ site.data.glide.aircraft_flight.pictures }}<input id="aircraftPictures" type="file" accept="image/jpeg,.jpg" multiple></label><ol id="aircraftPhotos" class="aircraft-photos"></ol></details>
       <details><summary>{{ site.data.glide.aircraft_flight.events }}</summary><ol id="aircraftEvents" class="aircraft-events"></ol></details>
-      <div class="btns"><button id="aircraftExportPlan" class="btn sm" type="button">{{ site.data.glide.aircraft_flight.plan_export }}</button><a id="aircraftPlan" class="btn sm" hidden>{{ site.data.glide.aircraft_flight.plan_open }}</a></div>
+      <div class="btns"><button id="aircraftExportPlan" class="btn sm" type="button">{{ site.data.glide.aircraft_flight.plan_export }}</button><a id="aircraftPlan" class="btn sm" href="#" hidden>{{ site.data.glide.aircraft_flight.plan_open }}</a></div>
       <p class="hint">{{ site.data.glide.aircraft_flight.plan_note }}</p>
       <a class="btn sm" href="{{ site.data.glide.aircraft_flight.dashboard_url }}" target="_blank" rel="noopener noreferrer">{{ site.data.glide.aircraft_flight.device }}</a>
       <p class="hint">{{ site.data.glide.aircraft_flight.connection }}</p>

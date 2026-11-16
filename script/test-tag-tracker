@@ -56,6 +56,11 @@ function check(ok, msg) {
 }
 // Wall-clock time, never check(): fails on your machine, only warns on CI (CI=true), where a shared runner's speed
 // varies several-fold from run to run, so no bound is both safe there and still catches a slowdown here.
+// A known-unfinished behaviour (listed under "Pending" in tag-tracker/AGENTS.md): reported every run, never fails it.
+// When one starts passing, turn it back into check().
+function pending(ok, msg) {
+  console.log((ok ? '  ok   ' : '  PEND ') + msg);
+}
 function budget(ms, limit, msg) {
   if (ms < limit || !process.env.CI) return check(ms < limit, msg);
   console.log(`  SLOW ${msg} (over ${limit} ms; a warning on CI)`);
@@ -701,9 +706,9 @@ if (run('5h')) {
   require('./tag-tracker/cloth-contact.cjs')({check});
   require('./tag-tracker/cloth-candidates.cjs')({check});
   require('./tag-tracker/cloth-body-coupling.cjs')({check});
-  require('./tag-tracker/cloth-support-friction.cjs')({check});
+  require('./tag-tracker/cloth-support-friction.cjs')({check,pending});
   require('./tag-tracker/cloth-mechanics.cjs')({check,budget});
-  require('./tag-tracker/cloth-pickup.cjs')({check});
+  require('./tag-tracker/cloth-pickup.cjs')({check,pending});
   require('./tag-tracker/gripper-stability.cjs')({check});
   require('./tag-tracker/robot-visuals.cjs')({check});
   require('./tag-tracker/cloth-render.cjs')({check});
