@@ -834,10 +834,10 @@
   <section>
     <h2>Actuators <span class="muted">test by hand</span><button type="button" class="info" popovertarget="act-info" aria-label="About the actuators"></button></h2>
     <div class="row">
-      <button id="act-open" type="button" disabled title="Play the TacHammer, the ERM and the servo, and watch the joystick and buttons">Test…</button>
+      <button id="act-open" type="button" disabled title="Play the TacHammer and the servo, and watch the joystick and buttons">Test…</button>
     </div>
     <p class="hint" id="act-summary">Connect a board to test its actuators.</p>
-    <div class="info-pop" id="act-info" popover><p>A controller board drives a TacHammer through an I2S amp, a pancake vibration motor through a DRV2605L, and a feedback servo, and reads a joystick and four buttons. Test plays each one's library of waveforms by hand and shows what comes back.</p><p>The board finds out at start-up which parts answer. A bare board still lists what its firmware can drive, and the parts' readouts stay empty.</p></div>
+    <div class="info-pop" id="act-info" popover><p>A controller board drives a TacHammer through an I2S amp and a feedback servo, and reads a joystick and four buttons. Test plays each one's library of waveforms by hand and shows what comes back.</p><p>The board finds out at start-up which parts answer. A bare board still lists what its firmware can drive, and the parts' readouts stay empty.</p></div>
   </section>
   <section>
     <h2>Tracking LEDs <span class="muted">saved on the board</span><button type="button" class="info" popovertarget="ir-info" aria-label="About the tracking LEDs"></button></h2>
@@ -1040,7 +1040,6 @@
   <div class="dialog-body">
     <div class="info-pop" id="act-help" popover>
       <p>Start the TacHammer at a low level: it hits its end stops hard. Pulses (click, knock, heartbeat) are felt as taps, sines as a buzz.</p>
-      <p>The ERM's presets are effects from TI's ROM library A. Any effect number 1-123 plays too, and Rumble runs the motor at a steady level for a set time.</p>
       <p>The servo follows the slider while you drag it. Its plot shows the command (blue) against the position its feedback wire reports (orange) over the last 10 s. Spring first measures how the feedback moves, then holds the centre and gives way when you push it.</p>
       <p>Closing this dialog stops everything, and the servo goes limp.</p>
     </div>
@@ -1050,13 +1049,6 @@
         <label>Waveform <select id="act-tac-wave"></select></label>
         <label>Level <input type="range" id="act-tac-level" min="1" max="100" value="30"><output class="readout" id="act-tac-level-out"></output></label>
         <div class="row"><button class="primary" id="act-tac-play" type="button" disabled>Play</button><span class="hint" id="act-tac-note"></span></div>
-      </section>
-      <section class="act-card">
-        <h3>ERM <span class="hint" id="act-erm-note"></span></h3>
-        <div class="row"><label>Preset <select id="act-erm-preset"></select></label><button id="act-erm-play" type="button" disabled>Play</button></div>
-        <div class="row"><label>Effect <input type="number" id="act-erm-effect" value="47"></label><button id="act-erm-effect-play" type="button" disabled>Play</button></div>
-        <div class="row"><label>Rumble <input type="range" id="act-erm-level" min="1" max="100" value="60"><output class="readout" id="act-erm-level-out"></output></label>
-          <label><input type="number" id="act-erm-ms" value="500" step="10"> ms</label><button id="act-erm-rumble" type="button" disabled>Rumble</button></div>
       </section>
       <section class="act-card">
         <h3>Servo</h3>

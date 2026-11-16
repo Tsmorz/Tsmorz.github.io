@@ -1,11 +1,10 @@
-// The Actuators dialog (Settings › Actuators › Test…): plays the TacHammer's waveforms, the ERM's
-// effects and the servo's motions on the selected board by hand, and shows what the board reports
+// The Actuators dialog (Settings › Actuators › Test…): plays the TacHammer's waveforms and the
+// servo's motions on the selected board by hand, and shows what the board reports
 // back: the servo's command against its feedback, the joystick and the wired keys. actuators.js
 // has the library and the arithmetic; the board runs everything (src/actuators/).
 import { fitCanvas, hairline } from "./canvas.js";
 import {
-  ERM_PRESETS, ERM_ROM_EFFECT_MAX, KEYS, RUMBLE_MS, SERVO_PATTERNS, SERVO_PULSE_US, ServoTrace, TACHAMMER_WAVEFORMS, feedbackFraction,
-  heldKeys, pulseToDegrees, stickPoint,
+  KEYS, SERVO_PATTERNS, SERVO_PULSE_US, ServoTrace, TACHAMMER_WAVEFORMS, feedbackFraction, heldKeys, pulseToDegrees, stickPoint,
 } from "./actuators.js";
 import { CONTROL_STATES } from "./control.js";
 import { ACTUATOR_COMMANDS } from "./wire.js";
@@ -144,7 +143,6 @@ export function renderActuators() {
 
   const set = (ids, enabled) => ids.forEach((id) => ($(id).disabled = !enabled));
   set(["act-tac-play"], usable && status.tachammerReady);
-  set(["act-erm-play", "act-erm-effect-play", "act-erm-rumble"], usable && status.ermReady);
   set(["act-servo-pulse", "act-servo-center", "act-servo-run", "act-servo-release"], usable && status.servoReady);
   set(["act-stop"], usable);
 
@@ -154,7 +152,6 @@ export function renderActuators() {
   }
   const playing = TACHAMMER_WAVEFORMS.find((entry) => entry.id === status.tachammerWaveform);
   $("act-tac-note").textContent = !status.tachammerReady ? "No I2S on this board." : playing ? `Playing: ${playing.label}` : "";
-  $("act-erm-note").textContent = !status.ermReady ? "No DRV2605L answered at boot: check its wiring and 3V3." : status.ermPlaying ? "Playing…" : "";
   const pattern = SERVO_PATTERNS.find((entry) => entry.id === status.servoPattern);
   const fraction = feedbackFraction(status);
   $("act-servo-readout").textContent = [
@@ -184,18 +181,14 @@ function sendSliderPulse() {
 export function initActuators(options) {
   ({ getBoard } = options);
   fillSelect($("act-tac-wave"), TACHAMMER_WAVEFORMS);
-  fillSelect($("act-erm-preset"), ERM_PRESETS.map((entry) => ({ ...entry, label: `${entry.label} (#${entry.effect})` })));
   fillSelect($("act-servo-pattern"), SERVO_PATTERNS);
   $("act-keys").replaceChildren(...Object.values(KEYS).map((key) => {
     const item = Object.assign(document.createElement("li"), { textContent: key });
     item.dataset.key = key;
     return item;
   }));
-  Object.assign($("act-erm-effect"), { min: 1, max: ERM_ROM_EFFECT_MAX });
-  Object.assign($("act-erm-ms"), { min: RUMBLE_MS.min, max: RUMBLE_MS.max });
   Object.assign($("act-servo-pulse"), { min: SERVO_PULSE_US.min, max: SERVO_PULSE_US.max, value: SERVO_PULSE_US.center });
   showLevel("act-tac-level", "act-tac-level-out");
-  showLevel("act-erm-level", "act-erm-level-out");
   showLevel("act-servo-amp", "act-servo-amp-out");
   showLevel("act-servo-pulse", "act-servo-pulse-out", " µs");
 
@@ -205,17 +198,6 @@ export function initActuators(options) {
 
   $("act-tac-play").addEventListener("click", () =>
     send({ command: ACTUATOR_COMMANDS.tachammerPlay, id: Number($("act-tac-wave").value), level: levelOf("act-tac-level") }));
-  $("act-erm-play").addEventListener("click", () => send({ command: ACTUATOR_COMMANDS.ermPreset, id: Number($("act-erm-preset").value) }));
-  $("act-erm-effect-play").addEventListener("click", () => {
-    const effect = Number($("act-erm-effect").value);
-    if (!Number.isInteger(effect) || effect < 1 || effect > ERM_ROM_EFFECT_MAX) return say(`Effects run from 1 to ${ERM_ROM_EFFECT_MAX}.`, true);
-    send({ command: ACTUATOR_COMMANDS.ermEffect, value: effect });
-  });
-  $("act-erm-rumble").addEventListener("click", () => {
-    const ms = Number($("act-erm-ms").value);
-    if (!Number.isInteger(ms) || ms < RUMBLE_MS.min || ms > RUMBLE_MS.max) return say(`A rumble lasts ${RUMBLE_MS.min}-${RUMBLE_MS.max} ms.`, true);
-    send({ command: ACTUATOR_COMMANDS.ermRumble, level: levelOf("act-erm-level"), value: ms });
-  });
   $("act-servo-pulse").addEventListener("input", () => {
     if (!sliderTimer) sliderTimer = setTimeout(sendSliderPulse, SLIDER_SEND_MS);
   });
@@ -237,7 +219,7 @@ export function renderActuatorSummary() {
   if (!board?.connected) $("act-summary").textContent = "Connect a board to test its actuators.";
   else if (!board.hasActuators) $("act-summary").textContent = "This board's firmware has no actuators: update it.";
   else {
-    const parts = [["TacHammer", status.tachammerReady], ["ERM", status.ermReady], ["servo", status.servoReady], ["joystick", status.analogReady]];
+    const parts = [["TacHammer", status.tachammerReady], ["servo", status.servoReady], ["joystick", status.analogReady]];
     const found = parts.filter(([, ready]) => ready).map(([name]) => name);
     $("act-summary").textContent = found.length ? `Ready: ${found.join(", ")}.` : "Nothing found on this board.";
   }

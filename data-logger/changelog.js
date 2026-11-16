@@ -8,6 +8,15 @@
 
 export const CHANGELOG = [
   {
+    id: "2026-11-16-no-erm",
+    date: "2026-11-16",
+    firmware: "next",
+    title: "Controllers without the vibration motor",
+    items: [
+      "Controller boards no longer drive the pancake vibration motor (ERM) or its DRV2605L: the TacHammer does all the haptics. The Actuators dialog's ERM card is gone.",
+    ],
+  },
+  {
     id: "2026-11-15-haptics",
     date: "2026-11-15",
     firmware: "next",
